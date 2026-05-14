@@ -8,6 +8,26 @@ import { TaskStatus, TaskLabel, TaskPriority } from '@prisma/client';
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async generateDisplayId(): Promise<string> {
+    const today = new Date();
+    const yy = String(today.getFullYear()).slice(2);
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const prefix = `TASK-${yy}${mm}${dd}`;
+
+    const lastTask = await this.prisma.task.findFirst({
+      where: { displayId: { startsWith: prefix } },
+      orderBy: { displayId: 'desc' },
+      select: { displayId: true },
+    });
+
+    const nextNo = lastTask
+      ? parseInt(lastTask.displayId.split('-').pop() || '0') + 1
+      : 1;
+
+    return `${prefix}-${String(nextNo).padStart(4, '0')}`;
+  }
+
   async findAll(query: {
     page?: number;
     perPage?: number;
@@ -98,8 +118,10 @@ export class TasksService {
   }
 
   async create(dto: CreateTaskDto, userId: string) {
+    const displayId = await this.generateDisplayId();
     return this.prisma.task.create({
       data: {
+        displayId,
         title: dto.title,
         status: dto.status as TaskStatus,
         label: dto.label as TaskLabel,

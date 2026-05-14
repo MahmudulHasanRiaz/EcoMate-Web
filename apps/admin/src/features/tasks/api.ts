@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api-client'
 
 export interface TaskResponse {
   id: string
+  displayId: string
   title: string
   status: string
   label: string

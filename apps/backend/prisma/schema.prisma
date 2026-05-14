@@ -62,6 +62,7 @@ model User {
 
 model Task {
   id          String       @id @default(uuid())
+  displayId   String       @unique
   title       String
   status      TaskStatus   @default(todo)
   label       TaskLabel    @default(feature)

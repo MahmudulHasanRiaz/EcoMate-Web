@@ -33,12 +33,12 @@ export const tasksColumns: ColumnDef<TaskResponse>[] = [
     meta: { className: 'w-12' },
   },
   {
-    accessorKey: 'id',
+    accessorKey: 'displayId',
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Task' />
+      <DataTableColumnHeader column={column} title='Task ID' />
     ),
-    cell: ({ row }) => <div className='w-20 truncate'>{row.getValue('id')}</div>,
-    meta: { className: 'w-24', tdClassName: 'ps-4' },
+    cell: ({ row }) => <div className='w-36 font-mono text-sm'>{row.getValue('displayId')}</div>,
+    meta: { className: 'w-36', tdClassName: 'ps-4' },
     enableSorting: false,
     enableHiding: false,
   },
