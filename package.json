@@ -6,9 +6,17 @@
     "apps/*"
   ],
   "scripts": {
-    "admin:dev": "npm run dev --workspace=apps/admin",
-    "storefront:dev": "npm run dev --workspace=apps/storefront",
-    "backend:dev": "npm run start:dev --workspace=apps/backend",
+    "admin:dev": "npm run dev --workspace=admin",
+    "storefront:dev": "npm run dev --workspace=storefront",
+    "backend:dev": "npm run start:dev --workspace=backend",
+    "dev": "concurrently \"npm run admin:dev\" \"npm run storefront:dev\" \"npm run backend:dev\"",
     "install:all": "npm install"
+  },
+  "overrides": {
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

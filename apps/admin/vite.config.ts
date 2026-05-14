@@ -8,6 +8,7 @@ import { playwright } from '@vitest/browser-playwright'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/admin/',
   plugins: [
     tanstackRouter({
       target: 'react',
@@ -20,6 +21,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['react', 'react-dom'],
   },
   test: {
     silent: 'passed-only',

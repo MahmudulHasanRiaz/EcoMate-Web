@@ -25,11 +25,11 @@ function RouteComponent() {
   return (
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
-      afterSignOutUrl='/clerk/sign-in'
-      signInUrl='/clerk/sign-in'
-      signUpUrl='/clerk/sign-up'
-      signInFallbackRedirectUrl='/clerk/user-management'
-      signUpFallbackRedirectUrl='/clerk/user-management'
+      afterSignOutUrl='/admin/clerk/sign-in'
+      signInUrl='/admin/clerk/sign-in'
+      signUpUrl='/admin/clerk/sign-up'
+      signInFallbackRedirectUrl='/admin/clerk/user-management'
+      signUpFallbackRedirectUrl='/admin/clerk/user-management'
     >
       <Outlet />
     </ClerkProvider>
