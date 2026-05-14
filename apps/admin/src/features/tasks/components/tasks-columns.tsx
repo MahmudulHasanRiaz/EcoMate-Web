@@ -30,13 +30,15 @@ export const tasksColumns: ColumnDef<TaskResponse>[] = [
     ),
     enableSorting: false,
     enableHiding: false,
+    meta: { className: 'w-12' },
   },
   {
     accessorKey: 'id',
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title='Task' />
     ),
-    cell: ({ row }) => <div className='w-20'>{row.getValue('id')}</div>,
+    cell: ({ row }) => <div className='w-20 truncate'>{row.getValue('id')}</div>,
+    meta: { className: 'w-24', tdClassName: 'ps-4' },
     enableSorting: false,
     enableHiding: false,
   },
@@ -53,9 +55,11 @@ export const tasksColumns: ColumnDef<TaskResponse>[] = [
       const label = labels.find((label) => label.value === row.original.label)
 
       return (
-        <div className='flex space-x-2'>
+        <div className='flex min-w-0 space-x-2'>
           {label && <Badge variant='outline'>{label.label}</Badge>}
-          <span className='truncate font-medium'>{row.getValue('title')}</span>
+          <span className='truncate font-medium flex-1'>
+            {row.getValue('title')}
+          </span>
         </div>
       )
     },
