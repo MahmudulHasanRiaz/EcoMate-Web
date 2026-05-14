@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MailPlus, Send } from 'lucide-react'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { usersApi } from '../api'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -51,10 +52,15 @@ export function UsersInviteDialog({
     defaultValues: { email: '', role: '', desc: '' },
   })
 
-  const onSubmit = (values: UserInviteForm) => {
-    form.reset()
-    showSubmittedData(values)
-    onOpenChange(false)
+  const onSubmit = async (values: UserInviteForm) => {
+    try {
+      await usersApi.invite(values.email, values.role, values.desc)
+      toast.success(`Invitation sent to ${values.email}`)
+      form.reset()
+      onOpenChange(false)
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to send invitation')
+    }
   }
 
   return (

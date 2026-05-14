@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  inactive
+  invited
+  suspended
+}
+
+enum UserRole {
+  superadmin
+  admin
+  cashier
+  manager
+}
+
+enum TaskStatus {
+  backlog
+  todo
+  in_progress @map("in progress")
+  done
+  canceled
+}
+
+enum TaskLabel {
+  bug
+  feature
+  documentation
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  critical
+}
+
+model User {
+  id          String     @id @default(uuid())
+  firstName   String
+  lastName    String
+  username    String     @unique
+  email       String     @unique
+  phoneNumber String
+  password    String
+  status      UserStatus @default(active)
+  role        UserRole   @default(admin)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tasks         Task[]
+  settings      UserSettings?
+  refreshTokens RefreshToken[]
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  title       String
+  status      TaskStatus   @default(todo)
+  label       TaskLabel    @default(feature)
+  priority    TaskPriority @default(medium)
+  assignee    String?
+  description String?
+  dueDate     DateTime?
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id])
+}
+
+model UserSettings {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  theme                          String  @default("light")
+  font                           String  @default("inter")
+  username                       String?
+  email                          String?
+  bio                            String?
+  urls                           String?
+  accountName                    String?
+  accountDob                     String?
+  accountLanguage                String?
+  notificationType               String  @default("all")
+  notificationMobile             Boolean @default(false)
+  notificationCommunicationEmail Boolean @default(false)
+  notificationSocialEmail        Boolean @default(false)
+  notificationMarketingEmail     Boolean @default(false)
+  notificationSecurityEmail      Boolean @default(true)
+  displayItems                   String?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

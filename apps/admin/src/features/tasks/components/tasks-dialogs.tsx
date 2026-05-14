@@ -1,4 +1,4 @@
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { useTaskMutations } from '../hooks'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { TasksImportDialog } from './tasks-import-dialog'
 import { TasksMutateDrawer } from './tasks-mutate-drawer'
@@ -6,6 +6,8 @@ import { useTasks } from './tasks-provider'
 
 export function TasksDialogs() {
   const { open, setOpen, currentRow, setCurrentRow } = useTasks()
+  const { deleteTask } = useTaskMutations()
+
   return (
     <>
       <TasksMutateDrawer
@@ -45,14 +47,9 @@ export function TasksDialogs() {
               }, 500)
             }}
             handleConfirm={() => {
+              deleteTask.mutate(currentRow.id)
               setOpen(null)
-              setTimeout(() => {
-                setCurrentRow(null)
-              }, 500)
-              showSubmittedData(
-                currentRow,
-                'The following task has been deleted:'
-              )
+              setTimeout(() => setCurrentRow(null), 500)
             }}
             className='max-w-md'
             title={`Delete this task: ${currentRow.id} ?`}

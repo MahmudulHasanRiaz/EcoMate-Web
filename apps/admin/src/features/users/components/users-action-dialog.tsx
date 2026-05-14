@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { useUserMutations } from '../hooks'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
 import { SelectDropdown } from '@/components/select-dropdown'
 import { roles } from '../data/data'
-import { type User } from '../data/schema'
+import { type UserResponse } from '../api'
 
 const formSchema = z
   .object({
@@ -91,10 +91,11 @@ const formSchema = z
       path: ['confirmPassword'],
     }
   )
+
 type UserForm = z.infer<typeof formSchema>
 
 type UserActionDialogProps = {
-  currentRow?: User
+  currentRow?: UserResponse
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -105,6 +106,8 @@ export function UsersActionDialog({
   onOpenChange,
 }: UserActionDialogProps) {
   const isEdit = !!currentRow
+  const { createUser, updateUser } = useUserMutations()
+
   const form = useForm<UserForm>({
     resolver: zodResolver(formSchema),
     defaultValues: isEdit
@@ -128,8 +131,30 @@ export function UsersActionDialog({
   })
 
   const onSubmit = (values: UserForm) => {
-    form.reset()
-    showSubmittedData(values)
+    if (isEdit && currentRow) {
+      const updateData: any = {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        username: values.username,
+        email: values.email,
+        phoneNumber: values.phoneNumber,
+        role: values.role,
+      }
+      if (values.password) {
+        updateData.password = values.password
+      }
+      updateUser.mutate({ id: currentRow.id, data: updateData })
+    } else {
+      createUser.mutate({
+        firstName: values.firstName,
+        lastName: values.lastName,
+        username: values.username,
+        email: values.email,
+        phoneNumber: values.phoneNumber,
+        password: values.password,
+        role: values.role,
+      })
+    }
     onOpenChange(false)
   }
 

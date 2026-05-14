@@ -1,21 +1,27 @@
-import { getRouteApi } from '@tanstack/react-router'
+import { useState } from 'react'
+import type { PaginationState } from '@tanstack/react-table'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { useUsersQuery } from './hooks'
 import { UsersDialogs } from './components/users-dialogs'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider } from './components/users-provider'
 import { UsersTable } from './components/users-table'
-import { users } from './data/users'
-
-const route = getRouteApi('/_authenticated/users/')
 
 export function Users() {
-  const search = route.useSearch()
-  const navigate = route.useNavigate()
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+
+  const { data, isLoading } = useUsersQuery({
+    page: pagination.pageIndex + 1,
+    perPage: pagination.pageSize,
+  })
 
   return (
     <UsersProvider>
@@ -36,7 +42,13 @@ export function Users() {
           </div>
           <UsersPrimaryButtons />
         </div>
-        <UsersTable data={users} search={search} navigate={navigate} />
+        <UsersTable
+          data={data?.data || []}
+          pageCount={data?.meta?.totalPages || 0}
+          pagination={pagination}
+          onPaginationChange={setPagination}
+          isLoading={isLoading}
+        />
       </Main>
 
       <UsersDialogs />

@@ -1,16 +1,28 @@
+import { useState } from 'react'
+import type { PaginationState } from '@tanstack/react-table'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { useTasksQuery } from './hooks'
 import { TasksDialogs } from './components/tasks-dialogs'
 import { TasksPrimaryButtons } from './components/tasks-primary-buttons'
 import { TasksProvider } from './components/tasks-provider'
 import { TasksTable } from './components/tasks-table'
-import { tasks } from './data/tasks'
 
 export function Tasks() {
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+
+  const { data, isLoading } = useTasksQuery({
+    page: pagination.pageIndex + 1,
+    perPage: pagination.pageSize,
+  })
+
   return (
     <TasksProvider>
       <Header fixed>
@@ -30,7 +42,13 @@ export function Tasks() {
           </div>
           <TasksPrimaryButtons />
         </div>
-        <TasksTable data={tasks} />
+        <TasksTable
+          data={data?.data || []}
+          pageCount={data?.meta?.totalPages || 0}
+          pagination={pagination}
+          onPaginationChange={setPagination}
+          isLoading={isLoading}
+        />
       </Main>
 
       <TasksDialogs />

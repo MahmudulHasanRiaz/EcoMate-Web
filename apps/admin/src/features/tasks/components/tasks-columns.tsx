@@ -3,10 +3,10 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { labels, priorities, statuses } from '../data/data'
-import { type Task } from '../data/schema'
+import { type TaskResponse } from '../api'
 import { DataTableRowActions } from './data-table-row-actions'
 
-export const tasksColumns: ColumnDef<Task>[] = [
+export const tasksColumns: ColumnDef<TaskResponse>[] = [
   {
     id: 'select',
     header: ({ table }) => (

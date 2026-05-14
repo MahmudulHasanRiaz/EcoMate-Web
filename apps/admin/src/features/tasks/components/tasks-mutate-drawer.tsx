@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { useTaskMutations } from '../hooks'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -23,12 +23,12 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { SelectDropdown } from '@/components/select-dropdown'
-import { type Task } from '../data/schema'
+import { type TaskResponse } from '../api'
 
 type TaskMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  currentRow?: Task
+  currentRow?: TaskResponse
 }
 
 const formSchema = z.object({
@@ -45,6 +45,7 @@ export function TasksMutateDrawer({
   currentRow,
 }: TaskMutateDrawerProps) {
   const isUpdate = !!currentRow
+  const { createTask, updateTask } = useTaskMutations()
 
   const form = useForm<TaskForm>({
     resolver: zodResolver(formSchema),
@@ -57,10 +58,12 @@ export function TasksMutateDrawer({
   })
 
   const onSubmit = (data: TaskForm) => {
-    // do something with the form data
+    if (isUpdate && currentRow) {
+      updateTask.mutate({ id: currentRow.id, data })
+    } else {
+      createTask.mutate(data)
+    }
     onOpenChange(false)
-    form.reset()
-    showSubmittedData(data)
   }
 
   return (
