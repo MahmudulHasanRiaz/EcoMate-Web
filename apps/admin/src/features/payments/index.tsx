@@ -85,7 +85,7 @@ export function Payments() {
                     <TableCell>
                       <Badge style={{ backgroundColor: methodColors[p.method] || '#6B7280', color: '#fff' }} className='text-xs'>{p.method.toUpperCase()}</Badge>
                     </TableCell>
-                    <TableCell className='font-medium'>${p.amount}</TableCell>
+                    <TableCell className='font-medium'>${Number(p.amount).toFixed(2)}</TableCell>
                     <TableCell className='font-mono text-xs'>{p.transactionId || '—'}</TableCell>
                     <TableCell>
                       {p.status === 'pending' && <Badge variant='outline' className='text-xs border-yellow-500 text-yellow-600'>Pending</Badge>}

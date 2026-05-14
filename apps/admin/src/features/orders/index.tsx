@@ -72,7 +72,7 @@ export function Orders() {
                         {order.status.name}
                       </Badge>
                     </TableCell>
-                    <TableCell className='text-right font-medium'>${order.total}</TableCell>
+                    <TableCell className='text-right font-medium'>${Number(order.total).toFixed(2)}</TableCell>
                     <TableCell>{order.items.length}</TableCell>
                     <TableCell className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell><Button variant='ghost' size='icon' onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}><Eye className='h-4 w-4' /></Button></TableCell>
@@ -109,8 +109,8 @@ export function Orders() {
                   <div>
                     <p className='text-sm text-muted-foreground'>Status</p>
                     <Badge style={{ backgroundColor: statusColors[selectedOrder.status.name] || '#6B7280', color: '#fff' }}>{selectedOrder.status.name}</Badge>
-                    <p className='text-sm mt-1'>Total: <strong>${selectedOrder.total}</strong></p>
-                    <p className='text-sm'>Shipping: ${selectedOrder.shippingCharge}</p>
+                    <p className='text-sm mt-1'>Total: <strong>${Number(selectedOrder.total).toFixed(2)}</strong></p>
+                    <p className='text-sm'>Shipping: ${Number(selectedOrder.shippingCharge).toFixed(2)}</p>
                   </div>
                 </div>
                 <div>
@@ -124,7 +124,7 @@ export function Orders() {
                         <TableRow key={item.id}>
                           <TableCell>{item.product.name}</TableCell>
                           <TableCell className='text-right'>{item.quantity}</TableCell>
-                          <TableCell className='text-right'>${item.price}</TableCell>
+                          <TableCell className='text-right'>${Number(item.price).toFixed(2)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

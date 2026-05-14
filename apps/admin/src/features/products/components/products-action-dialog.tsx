@@ -26,6 +26,7 @@ import { type ProductResponse } from '../api'
 
 const formSchema = z.object({
   name: z.string().min(1, 'Name is required.'),
+  slug: z.string().min(1, 'Slug is required.'),
   description: z.string().optional(),
   basePrice: z.string().min(1, 'Price is required.'),
   salePrice: z.string().optional(),
@@ -54,14 +55,16 @@ export function ProductsActionDialog({
     defaultValues: isEdit
       ? {
           name: currentRow.name,
+          slug: currentRow.slug,
           description: currentRow.description ?? '',
           basePrice: String(currentRow.basePrice),
-          salePrice: currentRow.salePrice ? String(currentRow.salePrice) : '',
+          salePrice: currentRow.salePrice != null ? String(currentRow.salePrice) : '',
           isActive: currentRow.isActive,
           isEdit,
         }
       : {
           name: '',
+          slug: '',
           description: '',
           basePrice: '',
           salePrice: '',
@@ -71,8 +74,10 @@ export function ProductsActionDialog({
   })
 
   const onSubmit = (values: ProductForm) => {
+    const slug = values.slug || values.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     const payload: any = {
       name: values.name,
+      slug,
       description: values.description || undefined,
       basePrice: parseFloat(values.basePrice) || 0,
       salePrice: values.salePrice ? parseFloat(values.salePrice) : undefined,
@@ -120,9 +125,28 @@ export function ProductsActionDialog({
                       <Input
                         placeholder='Product name'
                         className='col-span-4'
-                        autoComplete='off'
                         {...field}
+                        onChange={(e) => {
+                          field.onChange(e)
+                          if (!isEdit) {
+                            const slug = e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                            form.setValue('slug', slug)
+                          }
+                        }}
                       />
+                    </FormControl>
+                    <FormMessage className='col-span-4 col-start-3' />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='slug'
+                render={({ field }) => (
+                  <FormItem className='grid grid-cols-6 items-center space-y-0 gap-x-4 gap-y-1'>
+                    <FormLabel className='col-span-2 text-end'>Slug</FormLabel>
+                    <FormControl>
+                      <Input placeholder='product-slug' className='col-span-4' {...field} />
                     </FormControl>
                     <FormMessage className='col-span-4 col-start-3' />
                   </FormItem>

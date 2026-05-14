@@ -62,11 +62,11 @@ export const productsColumns: ColumnDef<ProductResponse>[] = [
       return price
     },
     cell: ({ row }) => {
-      const basePrice = row.original.basePrice
-      const salePrice = row.original.salePrice
+      const basePrice = parseFloat(String(row.original.basePrice))
+      const salePrice = row.original.salePrice != null ? parseFloat(String(row.original.salePrice)) : null
       return (
         <div className='flex items-center gap-2'>
-          {salePrice != null && salePrice < basePrice ? (
+          {salePrice !== null && salePrice < basePrice ? (
             <>
               <span className='text-muted-foreground line-through text-xs'>
                 ${basePrice.toFixed(2)}
