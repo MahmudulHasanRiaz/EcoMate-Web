@@ -8,32 +8,27 @@ import { UsersModule } from './users/users.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SettingsModule } from './settings/settings.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CategoriesModule } from './categories/categories.module';
+import { AttributesModule } from './attributes/attributes.module';
+import { ProductsModule } from './products/products.module';
+import { OrdersModule } from './orders/orders.module';
+import { OrderStatusController } from './orders/order-status.controller';
+import { PaymentsModule } from './payments/payments.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    PrismaModule,
-    AuthModule,
-    UsersModule,
-    TasksModule,
-    SettingsModule,
-    DashboardModule,
+    PrismaModule, AuthModule, UsersModule, TasksModule,
+    SettingsModule, DashboardModule, CategoriesModule,
+    AttributesModule, ProductsModule, OrdersModule, PaymentsModule,
   ],
+  controllers: [OrderStatusController],
   providers: [
-    {
-      provide: APP_PIPE,
-      useClass: ValidationPipe,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: JwtAuthGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
+    { provide: APP_PIPE, useClass: ValidationPipe },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}

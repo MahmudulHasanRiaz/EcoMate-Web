@@ -16,7 +16,6 @@ import {
   UserCog,
   UserX,
   Users,
-  MessagesSquare,
   ShieldCheck,
   Command,
 } from 'lucide-react'
@@ -50,20 +49,39 @@ export const sidebarData: SidebarData = {
           icon: ListTodo,
         },
         {
-          title: 'Apps',
-          url: '/apps',
-          icon: Package,
-        },
-        {
-          title: 'Chats',
-          url: '/chats',
-          badge: '3',
-          icon: MessagesSquare,
-        },
-        {
           title: 'Users',
           url: '/users',
           icon: Users,
+        },
+      ],
+    },
+    {
+      title: 'E-Commerce',
+      items: [
+        {
+          title: 'Categories',
+          url: '/categories',
+          icon: Package,
+        },
+        {
+          title: 'Attributes',
+          url: '/attributes',
+          icon: Palette,
+        },
+        {
+          title: 'Products',
+          url: '/products',
+          icon: Package,
+        },
+        {
+          title: 'Orders',
+          url: '/orders',
+          icon: ListTodo,
+        },
+        {
+          title: 'Payments',
+          url: '/payments',
+          icon: ShieldCheck,
         },
       ],
     },

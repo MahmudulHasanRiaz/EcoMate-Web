@@ -19,6 +19,7 @@ enum UserRole {
   admin
   cashier
   manager
+  customer
 }
 
 enum TaskStatus {
@@ -58,6 +59,8 @@ model User {
   tasks         Task[]
   settings      UserSettings?
   refreshTokens RefreshToken[]
+  orders        Order[]
+  payments      Payment[]     @relation("VerifiedPayments")
 }
 
 model Task {
@@ -111,4 +114,162 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  parentId  String?
+  image     String?
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+}
+
+model Attribute {
+  id        String           @id @default(uuid())
+  name      String           @unique
+  values    AttributeValue[]
+  createdAt DateTime         @default(now())
+}
+
+model AttributeValue {
+  id          String                       @id @default(uuid())
+  value       String
+  attributeId String
+  sortOrder   Int                          @default(0)
+
+  attribute   Attribute                     @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  variants    ProductVariantAttributeValue[]
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?   @db.Text
+  basePrice   Decimal   @db.Decimal(10, 2)
+  salePrice   Decimal?  @db.Decimal(10, 2)
+  categoryId  String?
+  tags        Json?     @default("[]")
+  images      Json?     @default("[]")
+  seoMeta     Json?     @default("{}")
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category   Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants   ProductVariant[]
+  orderItems OrderItem[]
+}
+
+model ProductVariant {
+  id        String    @id @default(uuid())
+  productId String
+  sku       String    @unique
+  price     Decimal?  @db.Decimal(10, 2)
+  stock     Int       @default(0)
+  image     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  product         Product                          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attributeValues ProductVariantAttributeValue[]
+  orderItems      OrderItem[]
+}
+
+model ProductVariantAttributeValue {
+  id               String          @id @default(uuid())
+  variantId        String
+  attributeValueId String
+
+  variant         ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributeValue  AttributeValue  @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, attributeValueId])
+}
+
+model OrderStatus {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  color        String   @default("#6B7280")
+  nextStatuses Json?    @default("[]")
+  isInitial    Boolean  @default(false)
+  isFinal      Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  orders Order[]
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  displayId       String    @unique
+  customerId      String
+  statusId        String
+  subtotal        Decimal   @db.Decimal(10, 2)
+  shippingCharge  Decimal   @default(0) @db.Decimal(10, 2)
+  discount        Decimal   @default(0) @db.Decimal(10, 2)
+  total           Decimal   @db.Decimal(10, 2)
+  shippingAddress Json?     @default("{}")
+  notes           String?
+  timeline        Json?     @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  customer User        @relation(fields: [customerId], references: [id])
+  status   OrderStatus @relation(fields: [statusId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+  shipment Shipment?
+}
+
+model OrderItem {
+  id        String    @id @default(uuid())
+  orderId   String
+  productId String
+  variantId String?
+  quantity  Int       @default(1)
+  price     Decimal   @db.Decimal(10, 2)
+  createdAt DateTime  @default(now())
+
+  order   Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product          @relation(fields: [productId], references: [id])
+  variant ProductVariant?  @relation(fields: [variantId], references: [id])
+}
+
+model Payment {
+  id            String    @id @default(uuid())
+  orderId       String
+  method        String
+  amount        Decimal   @db.Decimal(10, 2)
+  transactionId String?
+  screenshot    String?
+  status        String    @default("pending")
+  verifiedBy    String?
+  verifiedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  verifier User?  @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
+}
+
+model Shipment {
+  id         String    @id @default(uuid())
+  orderId    String    @unique
+  trackingNo String?
+  courier    String?
+  status     String    @default("pending")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
