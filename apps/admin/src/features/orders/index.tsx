@@ -138,6 +138,10 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
 
   const itemSubtotal = order.items.reduce((s, i) => s + nn(i.price) * i.quantity, 0)
 
+  const rawDiscount = parseFloat(discount) || 0
+  const effectiveDiscount = discountType === 'percentage' ? itemSubtotal * (rawDiscount / 100) : rawDiscount
+  const calculatedTotal = Math.max(0, itemSubtotal + (parseFloat(shippingCharge) || 0) - effectiveDiscount)
+
   return (
     <>
       <Header fixed>
@@ -319,6 +323,20 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
                   <div className='flex gap-1 border rounded-md p-0.5 w-fit'>
                     <Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}><DollarSign className='h-3 w-3 mr-1' /> Flat</Button>
                     <Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}><Percent className='h-3 w-3 mr-1' /> %</Button>
+                  </div>
+                  <div className='bg-muted/50 rounded-lg p-3 space-y-1.5 text-sm'>
+                    <div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div>
+                    <div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span></div>
+                    {rawDiscount > 0 && (
+                      <div className='flex justify-between text-green-600'>
+                        <span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${rawDiscount}%)` : ''}</span>
+                        <span>-৳{fmt(effectiveDiscount)}</span>
+                      </div>
+                    )}
+                    <div className='flex justify-between font-bold text-base pt-1.5 border-t border-border/50'>
+                      <span>Total</span>
+                      <span className='tabular-nums'>৳{fmt(calculatedTotal)}</span>
+                    </div>
                   </div>
                   <div><Label className='text-xs'>Customer Notes</Label><Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} placeholder='Customer notes...' /></div>
                   <div><Label className='text-xs'>Office Notes</Label><Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} placeholder='Internal office notes...' /></div>
