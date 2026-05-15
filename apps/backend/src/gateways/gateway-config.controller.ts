@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('gateways')
@@ -9,21 +9,21 @@ export class GatewayConfigController {
   async findAll() { return this.prisma.paymentGatewayConfig.findMany({ orderBy: { gateway: 'asc' } }); }
 
   @Put(':gateway')
-  async upsert(@Body() dto: Record<string, any>) {
+  async upsertOne(@Param('gateway') gateway: string, @Body() dto: any) {
     return this.prisma.paymentGatewayConfig.upsert({
-      where: { gateway: dto.gateway },
+      where: { gateway },
       create: {
-        gateway: dto.gateway,
-        enabled: dto.enabled ?? false,
+        gateway,
+        enabled: dto.enabled ?? true,
         mode: dto.mode || 'personal',
         phoneNumber: dto.phoneNumber || null,
         credentials: dto.credentials || {},
       },
       update: {
-        enabled: dto.enabled ?? undefined,
-        mode: dto.mode ?? undefined,
-        phoneNumber: dto.phoneNumber ?? undefined,
-        credentials: dto.credentials ?? undefined,
+        enabled: dto.enabled,
+        mode: dto.mode,
+        phoneNumber: dto.phoneNumber,
+        credentials: dto.credentials,
       },
     });
   }
