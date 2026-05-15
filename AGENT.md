@@ -179,4 +179,39 @@ If uncertain:
 - Choose the more observable system
 - Choose the more scalable design
 
+
+# REALTIME ARCHITECTURE RULES
+
+Realtime infrastructure MUST remain optional and enhancement-oriented.
+
+The platform MAY use:
+- WebSocket
+- Socket.io
+- Redis Pub/Sub
+
+ONLY for:
+- admin live updates
+- notifications
+- operational dashboards
+- realtime monitoring
+- internal operational tooling
+
+Core commerce functionality MUST remain API-first.
+
+The following systems MUST work fully WITHOUT websocket connectivity:
+- checkout
+- order placement
+- payment processing
+- inventory operations
+- authentication
+- storefront browsing
+
+Realtime systems MUST NEVER become a hard dependency for core business operations.
+
+If websocket infrastructure fails:
+- the platform MUST remain fully operational
+- only realtime UX enhancements may degrade
+
+DO NOT prematurely over-engineer realtime architecture before operational systems become stable.
+
 END OF PROTOCOL 
