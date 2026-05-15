@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search } from 'lucide-react'
+import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search, Link2, ExternalLink } from 'lucide-react'
 import { mediaApi, uploadApi, mediaUrl, type MediaResponse } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Link } from '@tanstack/react-router'
 
 export function Media() {
   const queryClient = useQueryClient()
@@ -22,6 +23,13 @@ export function Media() {
   const [selected, setSelected] = useState<MediaResponse | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MediaResponse | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  const { data: attachDetails } = useQuery({
+    queryKey: ['media', 'attachments', selected?.id],
+    queryFn: () => selected ? mediaApi.getAttachments(selected.id).then(r => r.data) : null,
+    enabled: !!selected,
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['media', page, search, typeFilter, attachFilter],
@@ -105,7 +113,10 @@ export function Media() {
                 <div
                   key={m.id}
                   className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
-                  onClick={() => setSelected(selected?.id === m.id ? null : m)}
+                  onClick={() => {
+                    if (selected?.id === m.id) { setSelected(null); setDetailOpen(false); }
+                    else { setSelected(m); setDetailOpen(true); }
+                  }}
                 >
                   {m.mimeType.startsWith('image/') ? (
                     <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' />
@@ -149,23 +160,71 @@ export function Media() {
         )}
 
         {selected && (
-          <div className='fixed bottom-4 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg px-4 py-3 flex items-center gap-4 z-50'>
-            <img src={mediaUrl(selected.url)} alt='' className='h-10 w-10 rounded object-cover' />
-            <div className='min-w-0'>
-              <p className='text-sm font-medium truncate max-w-48'>{selected.filename}</p>
-              <p className='text-xs text-muted-foreground'>{formatSize(selected.size)} - {selected.mimeType}</p>
+          <>
+            {detailOpen && (
+              <div className='fixed inset-0 z-40 bg-black/40' onClick={() => { setDetailOpen(false); setSelected(null); }} />
+            )}
+            <div className={`fixed bottom-0 left-0 right-0 z-50 bg-background border-t shadow-2xl transition-all duration-300 ${detailOpen ? 'h-80' : 'h-auto'}`}>
+              <div className='max-w-7xl mx-auto px-6 py-3 flex items-start gap-6'>
+                <button className='absolute top-2 right-4 text-muted-foreground hover:text-foreground' onClick={() => { setDetailOpen(false); setSelected(null); }}>
+                  <X className='h-5 w-5' />
+                </button>
+
+                <div className='shrink-0'>
+                  {selected.mimeType.startsWith('image/') ? (
+                    <img src={mediaUrl(selected.url)} alt='' className='h-20 w-20 rounded-lg object-cover border' />
+                  ) : (
+                    <div className='h-20 w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
+                  )}
+                </div>
+
+                <div className='flex-1 min-w-0'>
+                  <div className='flex items-center gap-3 mb-3'>
+                    <div>
+                      <h3 className='font-medium truncate'>{selected.filename}</h3>
+                      <p className='text-xs text-muted-foreground'>{formatSize(selected.size)} · {selected.mimeType} · {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : ''}</p>
+                    </div>
+                    <div className='flex gap-1.5 ml-auto'>
+                      <Button variant='outline' size='sm' className='h-7 text-xs' onClick={() => copyUrl(selected.url, selected.id)}>
+                        {copied === selected.id ? <Check className='h-3 w-3 mr-1 text-green-600' /> : <Copy className='h-3 w-3 mr-1' />}
+                        {copied === selected.id ? 'Copied' : 'Copy URL'}
+                      </Button>
+                      <Button variant='outline' size='sm' className='h-7 text-xs' onClick={() => { setDetailOpen(!detailOpen); }}>
+                        <Link2 className='h-3 w-3 mr-1' />
+                        Attachments ({attachDetails?.length || selected._count?.attachments || 0})
+                      </Button>
+                      <Button variant='ghost' size='sm' className='h-7 text-xs text-destructive hover:text-destructive' onClick={() => { setDeleteTarget(selected); setSelected(null); setDetailOpen(false); }}>
+                        <Trash2 className='h-3 w-3 mr-1' /> Delete
+                      </Button>
+                    </div>
+                  </div>
+
+                  {detailOpen && (
+                    <div className='overflow-y-auto max-h-52'>
+                      <h4 className='text-xs font-medium text-muted-foreground mb-2'>ATTACHED TO</h4>
+                      {!attachDetails || attachDetails.length === 0 ? (
+                        <p className='text-sm text-muted-foreground py-4'>Not attached anywhere. This media can be safely deleted.</p>
+                      ) : (
+                        <div className='space-y-1'>
+                          {attachDetails.map((att, i) => (
+                            <div key={i} className='flex items-center gap-2 text-sm py-1 px-2 rounded hover:bg-muted/50'>
+                              <Badge variant='outline' className='text-xs capitalize'>{att.entityType}</Badge>
+                              <span className='flex-1 truncate'>{att.entityName}</span>
+                              {att.entityType === 'product' && (
+                                <Link to='/products' className='text-xs text-primary hover:underline flex items-center gap-1 shrink-0'>
+                                  View <ExternalLink className='h-3 w-3' />
+                                </Link>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <Button variant='outline' size='sm' onClick={() => copyUrl(selected.url, selected.id)}>
-              {copied === selected.id ? <Check className='h-3.5 w-3.5 mr-1 text-green-600' /> : <Copy className='h-3.5 w-3.5 mr-1' />}
-              {copied === selected.id ? 'Copied' : 'Copy URL'}
-            </Button>
-            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => { setDeleteTarget(selected); setSelected(null); }}>
-              <Trash2 className='h-4 w-4 text-destructive' />
-            </Button>
-            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => setSelected(null)}>
-              <X className='h-4 w-4' />
-            </Button>
-          </div>
+          </>
         )}
       </Main>
 

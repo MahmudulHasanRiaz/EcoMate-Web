@@ -14,6 +14,12 @@ export class MediaController {
     return this.svc.findAll({ page: page ? parseInt(page) : undefined, perPage: perPage ? parseInt(perPage) : undefined, search, type, attached });
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) { return this.svc.findOne(id); }
+
+  @Get(':id/attachments')
+  getAttachments(@Param('id') id: string) { return this.svc.getAttachments(id); }
+
   @Delete(':id')
   remove(@Param('id') id: string) { return this.svc.remove(id); }
 

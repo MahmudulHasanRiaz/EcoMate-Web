@@ -27,6 +27,34 @@ export class MediaService {
     return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
   }
 
+  async findOne(id: string) {
+    const media = await this.prisma.media.findUnique({
+      where: { id },
+      include: { attachments: true, _count: { select: { attachments: true } } },
+    });
+    if (!media) throw new NotFoundException('Media not found');
+    return media;
+  }
+
+  async getAttachments(id: string) {
+    const media = await this.prisma.media.findUnique({
+      where: { id },
+      include: { attachments: true },
+    });
+    if (!media) throw new NotFoundException('Media not found');
+
+    const details: { entityType: string; entityId: string; entityName: string }[] = [];
+    for (const att of media.attachments) {
+      let entityName = att.entityId;
+      if (att.entityType === 'product') {
+        const product = await this.prisma.product.findUnique({ where: { id: att.entityId }, select: { name: true } });
+        if (product) entityName = product.name;
+      }
+      details.push({ entityType: att.entityType, entityId: att.entityId, entityName });
+    }
+    return details;
+  }
+
   async remove(id: string) {
     const media = await this.prisma.media.findUnique({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');

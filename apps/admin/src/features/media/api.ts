@@ -10,6 +10,8 @@ export interface PaginatedResponse<T> { data: T[]; meta: { total: number; page: 
 
 export const mediaApi = {
   list: (query?: any) => apiClient.get<PaginatedResponse<MediaResponse>>('/media', { params: query }),
+  get: (id: string) => apiClient.get<MediaResponse>(`/media/${id}`),
+  getAttachments: (id: string) => apiClient.get<{ entityType: string; entityId: string; entityName: string }[]>(`/media/${id}/attachments`),
   delete: (id: string) => apiClient.delete(`/media/${id}`),
 }
 
