@@ -1,91 +1,198 @@
 import { useState, useEffect } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { systemSettingsApi } from './storage-api'
+import { apiClient } from '@/lib/api-client'
+import steadfastLogo from '@/assets/payment-logos/steadfast.png'
+import pathaoLogo from '@/assets/payment-logos/pathao.png'
+import redxLogo from '@/assets/payment-logos/redx.webp'
+import carrybeeLogo from '@/assets/payment-logos/carrybee.jpg'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Truck, Save } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
+
+const courierLogos: Record<string, string> = {
+  steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
+}
+
+const courierApi = {
+  listCreds: () => apiClient.get('/couriers/credentials'),
+  updateCreds: (courier: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credentials/${courier}`, d),
+}
+
+interface CourierFormState {
+  enabled: boolean; apiKey: string; secretKey: string; username: string
+  password: string; clientId: string; clientSecret: string; storeId: string; mode: string
+}
+
+interface CourierInfo {
+  name: string; color: string; fields: (keyof CourierFormState)[]; guide: string; docUrl?: string
+}
+
+const courierInfo: Record<string, CourierInfo> = {
+  steadfast: {
+    name: 'Steadfast', color: '#0EA5E9',
+    fields: ['apiKey', 'secretKey'],
+    guide: 'Get your API Key and Secret Key from Steadfast Merchant Panel → Settings → API.',
+    docUrl: 'https://portal.packzy.com',
+  },
+  pathao: {
+    name: 'Pathao', color: '#F97316',
+    fields: ['clientId', 'clientSecret', 'username', 'password', 'storeId'],
+    guide: 'Get credentials from Pathao Merchant Portal. Store ID found in Store Settings.',
+    docUrl: 'https://merchant.pathao.com',
+  },
+  redx: {
+    name: 'RedX', color: '#EF4444',
+    fields: ['apiKey'],
+    guide: 'Get your API token from RedX Merchant Dashboard → API Settings. Use as API Key.',
+    docUrl: 'https://redx.com.bd/developer-api/',
+  },
+  carrybee: {
+    name: 'Carrybee', color: '#8B5CF6',
+    fields: ['clientId', 'clientSecret'],
+    guide: 'Get Client ID and Client Secret from Carrybee Developer Portal.',
+    docUrl: 'https://developers.carrybee.com',
+  },
+}
+
+const defaultForm: CourierFormState = {
+  enabled: false, apiKey: '', secretKey: '', username: '',
+  password: '', clientId: '', clientSecret: '', storeId: '', mode: 'sandbox',
+}
 
 export function CourierSettings() {
   const queryClient = useQueryClient()
-  const { data: settings, isLoading } = useQuery({
-    queryKey: ['system-settings'],
-    queryFn: () => systemSettingsApi.getAll().then(r => r.data),
+  const { data: creds, isLoading } = useQuery({
+    queryKey: ['courier-creds'],
+    queryFn: () => courierApi.listCreds().then(r => r.data),
   })
 
-  const [hoorinKey, setHoorinKey] = useState('')
+  const [forms, setForms] = useState<Record<string, CourierFormState>>({})
+
+  const list = Array.isArray(creds) ? creds : (creds as Record<string, unknown>)?.data as unknown[] || []
 
   useEffect(() => {
-    if (settings) {
-      setHoorinKey(settings.courier_hoorin_api_key || '')
+    if (list.length > 0) {
+      const f: Record<string, CourierFormState> = {}
+      for (const c of list as Record<string, unknown>[]) {
+        const courier = c['courier'] as string
+        f[courier] = {
+          enabled: c['enabled'] as boolean || false,
+          apiKey: (c['apiKey'] as string) || (c['credentials'] as Record<string, string>)?.['apiKey'] || '',
+          secretKey: (c['secretKey'] as string) || (c['credentials'] as Record<string, string>)?.['secretKey'] || '',
+          username: (c['username'] as string) || (c['credentials'] as Record<string, string>)?.['username'] || '',
+          password: (c['password'] as string) || (c['credentials'] as Record<string, string>)?.['password'] || '',
+          clientId: (c['clientId'] as string) || (c['credentials'] as Record<string, string>)?.['clientId'] || '',
+          clientSecret: (c['clientSecret'] as string) || (c['credentials'] as Record<string, string>)?.['clientSecret'] || '',
+          storeId: (c['storeId'] as string) || (c['credentials'] as Record<string, string>)?.['storeId'] || '',
+          mode: (c['mode'] as string) || 'sandbox',
+        }
+      }
+      setForms(f)
     }
-  }, [settings])
+  }, [list.length])
 
-  const setMut = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) => systemSettingsApi.set(key, value),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system-settings'] }),
+  const updateMut = useMutation({
+    mutationFn: ({ courier, data }: { courier: string; data: Record<string, unknown> }) => courierApi.updateCreds(courier, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courier-creds'] }); toast.success('Credentials saved') },
+    onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to save') },
   })
 
-  const handleSave = () => {
-    setMut.mutate({ key: 'courier_hoorin_api_key', value: hoorinKey }, {
-      onSuccess: () => toast.success('Courier settings saved successfully'),
-      onError: () => toast.error('Failed to save settings'),
-    })
+  if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
+
+  const handleSave = (courier: string) => {
+    const f = forms[courier]
+    if (!f) return
+    updateMut.mutate({ courier, data: { ...f, credentials: {} } })
   }
 
-  if (isLoading) return <div className='flex items-center justify-center min-h-[400px]'><Loader2 className='animate-spin h-8 w-8 text-primary' /></div>
+  const fieldLabel: Record<string, string> = {
+    apiKey: 'API Key', secretKey: 'Secret Key', username: 'Username',
+    password: 'Password', clientId: 'Client ID', clientSecret: 'Client Secret',
+    storeId: 'Store ID',
+  }
 
   return (
-    <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
-        <h2 className='text-2xl font-bold tracking-tight'>Logistics Integration</h2>
-        <p className='text-muted-foreground'>
-          Configure third-party courier services for tracking and history.
-        </p>
-      </div>
-      <Separator className='my-6' />
-      
-      <Card className='border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center gap-2 mb-1'>
-            <Truck className='h-5 w-5 text-primary' />
-            <CardTitle className='text-xl'>Hoorin Courier</CardTitle>
-          </div>
-          <CardDescription>
-            Connect your Hoorin account to fetch delivery history and track packages.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className='space-y-4'>
-          <div className='space-y-2'>
-            <Label htmlFor='hoorin-key'>API Key</Label>
-            <div className='relative'>
-              <Input 
-                id='hoorin-key'
-                type='password' 
-                value={hoorinKey} 
-                onChange={e => setHoorinKey(e.target.value)} 
-                placeholder='Enter Hoorin API key' 
-                className='bg-background/50'
-              />
-            </div>
-            <p className='text-xs text-muted-foreground flex items-center gap-1.5 mt-1 px-1'>
-              <span>Used for fetching delivery history. Get yours at <a href='https://dash.hoorin.com' target='_blank' className='text-primary hover:underline'>dash.hoorin.com</a></span>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className='flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-dashed border-muted-foreground/20'>
-        <div className='text-sm text-muted-foreground'>
-          Changes will take effect immediately.
+    <div>
+      <div className='flex items-center justify-between mb-6'>
+        <div>
+          <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
+          <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
         </div>
-        <Button onClick={handleSave} size='lg' className='px-8 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]' disabled={setMut.isPending}>
-          {setMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Save className='h-4 w-4 mr-2' />}
-          Save Changes
-        </Button>
+      </div>
+
+      <div className='grid gap-4 md:grid-cols-2'>
+        {list.map((c: Record<string, unknown>) => {
+          const courier = c['courier'] as string
+          const info = courierInfo[courier]
+          const form = forms[courier] || defaultForm
+          if (!info) return null
+
+          return (
+            <Card key={courier} className={form.enabled ? 'border-l-4' : ''} style={form.enabled ? { borderLeftColor: info.color } : {}}>
+              <CardHeader className='pb-3'>
+                <div className='flex items-center justify-between'>
+                <div className='flex items-center gap-3'>
+                  <img src={courierLogos[courier]} alt={info.name} className='h-9 w-9 rounded-lg object-contain bg-muted p-1' />
+                  <div>
+                      <CardTitle className='text-base'>{info.name}</CardTitle>
+                      <p className='text-xs text-muted-foreground'>
+                        {form.enabled
+                          ? <span className='text-green-600 flex items-center gap-1'><CheckCircle2 className='h-3 w-3' /> Connected</span>
+                          : <span className='flex items-center gap-1'><XCircle className='h-3 w-3' /> Disabled</span>
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <Switch checked={form.enabled} onCheckedChange={(v) => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], enabled: v } }))} />
+                </div>
+              </CardHeader>
+              <CardContent className='space-y-3'>
+                <div className='flex gap-2'>
+                  <Badge variant='outline' className='text-xs'>{form.mode === 'production' ? 'Production' : 'Sandbox'}</Badge>
+                  <button
+                    className='text-xs text-muted-foreground hover:text-primary'
+                    onClick={() => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], mode: prev[courier].mode === 'sandbox' ? 'production' : 'sandbox' } }))}
+                  >
+                    Switch to {form.mode === 'sandbox' ? 'Production' : 'Sandbox'}
+                  </button>
+                </div>
+
+                <div className='space-y-2'>
+                  {info.fields.map(field => (
+                    <div key={field}>
+                      <Label className='text-xs'>{fieldLabel[field] || field}</Label>
+                      <Input
+                        className='h-8 text-sm'
+                        type={field.includes('secret') || field === 'password' ? 'password' : 'text'}
+                        value={String(form[field] || '')}
+                        onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [field]: e.target.value } }))}
+                        placeholder={`Enter ${fieldLabel[field] || field}...`}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <p className='text-[11px] text-muted-foreground leading-relaxed'>
+                  {info.guide}
+                  {info.docUrl && (
+                    <a href={info.docUrl} target='_blank' rel='noopener noreferrer' className='text-primary hover:underline ml-1 inline-flex items-center gap-0.5'>
+                      Docs <ExternalLink className='h-2.5 w-2.5' />
+                    </a>
+                  )}
+                </p>
+
+                <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
+                  <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials
+                </Button>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )
