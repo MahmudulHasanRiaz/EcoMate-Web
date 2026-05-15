@@ -224,9 +224,11 @@ model Order {
   subtotal        Decimal   @db.Decimal(10, 2)
   shippingCharge  Decimal   @default(0) @db.Decimal(10, 2)
   discount        Decimal   @default(0) @db.Decimal(10, 2)
+  discountType    String    @default("flat")
   total           Decimal   @db.Decimal(10, 2)
   shippingAddress Json?     @default("{}")
-  notes           String?
+  customerNotes   String?
+  officeNotes     String?
   timeline        Json?     @default("[]")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

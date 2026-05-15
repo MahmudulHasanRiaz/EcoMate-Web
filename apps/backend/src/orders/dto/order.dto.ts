@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsArray, ValidateNested, IsInt, Min, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsArray, ValidateNested, IsInt, Min, IsObject, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class OrderItemDto {
@@ -13,13 +13,32 @@ export class CreateOrderDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => OrderItemDto) items: OrderItemDto[];
   @IsOptional() @IsNumber() shippingCharge?: number;
   @IsOptional() @IsNumber() discount?: number;
+  @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
   @IsOptional() @IsObject() shippingAddress?: any;
-  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() customerNotes?: string;
+  @IsOptional() @IsString() officeNotes?: string;
 }
 
 export class UpdateOrderStatusDto {
   @IsString() statusId: string;
-  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() note?: string;
+}
+
+export class UpdateOrderDto {
+  @IsOptional() @IsNumber() shippingCharge?: number;
+  @IsOptional() @IsNumber() discount?: number;
+  @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
+  @IsOptional() @IsObject() shippingAddress?: any;
+  @IsOptional() @IsString() customerNotes?: string;
+  @IsOptional() @IsString() officeNotes?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OrderItemDto) items?: OrderItemDto[];
+}
+
+export class UpdateOrderItemDto {
+  @IsString() productId: string;
+  @IsOptional() @IsString() variantId?: string;
+  @IsInt() @Min(1) quantity: number;
+  @IsNumber() price: number;
 }
 
 export class CreatePaymentDto {

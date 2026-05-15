@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { CreateOrderDto, UpdateOrderStatusDto, UpdateOrderDto, UpdateOrderItemDto } from './dto/order.dto';
 
 @Injectable()
 export class OrdersService {
@@ -17,17 +17,21 @@ export class OrdersService {
     return `${prefix}-${String(nextNo).padStart(4, '0')}`;
   }
 
+  private recalculate(items: { price: number; quantity: number }[], shipping: number, discount: number) {
+    const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+    return { subtotal, total: Math.max(0, subtotal + shipping - discount) };
+  }
+
   async findAll(query: { page?: number; perPage?: number; search?: string; statusId?: string; sort?: string; order?: string }) {
     const page = query.page || 1; const perPage = query.perPage || 10; const where: any = {};
     if (query.search) where.displayId = { contains: query.search, mode: 'insensitive' };
     if (query.statusId) where.statusId = query.statusId;
     const [data, total] = await Promise.all([
       this.prisma.order.findMany({
-        where, skip: (page - 1) * perPage, take: perPage,
-        orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
+        where, skip: (page - 1) * perPage, take: perPage, orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
         include: {
           customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
-          status: true, items: { include: { product: { select: { id: true, name: true } } } },
+          status: true, items: { include: { product: { select: { id: true, name: true, images: true } } } },
           payments: true, shipment: true,
         },
       }),
@@ -42,7 +46,7 @@ export class OrdersService {
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
         status: true, shipment: true,
-        items: { include: { product: { select: { id: true, name: true, images: true } } } },
+        items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
         payments: { include: { verifier: { select: { id: true, firstName: true, lastName: true } } } },
       },
     });
@@ -55,24 +59,24 @@ export class OrdersService {
     const initialStatus = await this.prisma.orderStatus.findFirst({ where: { isInitial: true } });
     if (!initialStatus) throw new BadRequestException('No initial order status configured');
 
-    const subtotal = dto.items.reduce((s, i) => s + i.price * i.quantity, 0);
-    const total = subtotal + (dto.shippingCharge || 0) - (dto.discount || 0);
+    const { subtotal, total } = this.recalculate(dto.items, dto.shippingCharge || 0, dto.discount || 0);
 
     const order = await this.prisma.order.create({
       data: {
         displayId, customerId: dto.customerId, statusId: initialStatus.id,
-        subtotal, shippingCharge: dto.shippingCharge || 0, discount: dto.discount || 0, total,
-        shippingAddress: dto.shippingAddress as any, notes: dto.notes,
+        subtotal, shippingCharge: dto.shippingCharge || 0, discount: dto.discount || 0,
+        discountType: dto.discountType || 'flat', total,
+        shippingAddress: dto.shippingAddress as any,
+        customerNotes: dto.customerNotes, officeNotes: dto.officeNotes,
         items: { create: dto.items.map(i => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: i.price })) },
         timeline: [{ status: initialStatus.name, timestamp: new Date().toISOString(), note: 'Order created' }] as any,
       },
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-        status: true, items: { include: { product: { select: { id: true, name: true } } } },
+        status: true, items: { include: { product: { select: { id: true, name: true, images: true } } } },
       },
     });
 
-    // Decrease stock
     for (const item of dto.items) {
       if (item.variantId) {
         await this.prisma.productVariant.update({ where: { id: item.variantId }, data: { stock: { decrement: item.quantity } } });
@@ -80,6 +84,45 @@ export class OrdersService {
     }
 
     return order;
+  }
+
+  async updateOrder(id: string, dto: UpdateOrderDto) {
+    const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const data: any = {};
+    if (dto.shippingCharge !== undefined) data.shippingCharge = dto.shippingCharge;
+    if (dto.discount !== undefined) data.discount = dto.discount;
+    if (dto.discountType !== undefined) data.discountType = dto.discountType;
+    if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes;
+    if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
+    if (dto.shippingAddress !== undefined) data.shippingAddress = dto.shippingAddress as any;
+
+    if (dto.items && dto.items.length > 0) {
+      await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
+      await this.prisma.orderItem.createMany({
+        data: dto.items.map(i => ({
+          orderId: id, productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: i.price,
+        })),
+      });
+    }
+
+    const currentItems = dto.items && dto.items.length > 0 ? dto.items : order.items.map(i => ({ price: Number(i.price), quantity: i.quantity }));
+    const shipping = data.shippingCharge !== undefined ? data.shippingCharge : Number(order.shippingCharge);
+    const discount = data.discount !== undefined ? data.discount : Number(order.discount);
+    const { subtotal, total } = this.recalculate(currentItems as any[], shipping, discount);
+    data.subtotal = subtotal;
+    data.total = total;
+
+    return this.prisma.order.update({
+      where: { id }, data,
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
+        status: true, shipment: true,
+        items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
+        payments: true,
+      },
+    });
   }
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string) {
@@ -94,12 +137,40 @@ export class OrdersService {
       throw new BadRequestException(`Cannot transition from "${order.status.name}" to "${newStatus.name}"`);
     }
 
-    const timeline = [...((order.timeline as any[]) || []), { status: newStatus.name, timestamp: new Date().toISOString(), note: dto.notes || '' }];
+    const timeline = [...((order.timeline as any[]) || []), {
+      status: newStatus.name,
+      timestamp: new Date().toISOString(),
+      note: dto.note || '',
+      changedBy: userId,
+    }];
 
     return this.prisma.order.update({
       where: { id },
       data: { statusId: dto.statusId, timeline: timeline as any },
       include: { status: true, customer: { select: { id: true, firstName: true, lastName: true } } },
     });
+  }
+
+  async addItem(orderId: string, dto: UpdateOrderItemDto) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    await this.prisma.orderItem.create({
+      data: { orderId, productId: dto.productId, variantId: dto.variantId, quantity: dto.quantity, price: dto.price },
+    });
+
+    const items = [...order.items.map(i => ({ price: Number(i.price), quantity: i.quantity })), { price: dto.price, quantity: dto.quantity }];
+    const { subtotal, total } = this.recalculate(items, Number(order.shippingCharge), Number(order.discount));
+    return this.prisma.order.update({ where: { id: orderId }, data: { subtotal, total }, include: { items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } } } });
+  }
+
+  async removeItem(orderId: string, itemId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) throw new NotFoundException('Order not found');
+    await this.prisma.orderItem.delete({ where: { id: itemId } });
+
+    const remaining = order.items.filter(i => i.id !== itemId).map(i => ({ price: Number(i.price), quantity: i.quantity }));
+    const { subtotal, total } = this.recalculate(remaining, Number(order.shippingCharge), Number(order.discount));
+    return this.prisma.order.update({ where: { id: orderId }, data: { subtotal, total }, include: { items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } } } });
   }
 }

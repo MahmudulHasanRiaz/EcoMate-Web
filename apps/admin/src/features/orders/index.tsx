@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ordersApi, type OrderResponse } from './api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { ordersApi, mediaUrl, type OrderResponse } from './api'
+import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -9,81 +11,75 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, Eye } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock } from 'lucide-react'
 import type { PaginationState } from '@tanstack/react-table'
 
-const statusColors: Record<string, string> = {
-  Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6',
-  Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E',
-  'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B',
-}
+const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
+
+function nn(v: number | string) { return Number(v) }
+function fmt(v: number | string) { return nn(v).toFixed(2) }
 
 export function Orders() {
+  const queryClient = useQueryClient()
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
-  const [selectedOrder, setSelectedOrder] = useState<OrderResponse | null>(null)
+  const [selected, setSelected] = useState<OrderResponse | null>(null)
+
+  const { data: orderStatuses } = useQuery({ queryKey: ['order-statuses'], queryFn: () => apiClient.get('/order-statuses').then(r => r.data as any[]) })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', pagination],
+    queryKey: ['orders', pagination], enabled: !selected,
     queryFn: () => ordersApi.list({ page: pagination.pageIndex + 1, perPage: pagination.pageSize }).then(r => r.data),
   })
 
+  const statusMut = useMutation({
+    mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      ordersApi.get(id).then(r => setSelected(r.data))
+      toast.success('Status updated')
+    },
+  })
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => ordersApi.updateOrder(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      ordersApi.get(id).then(r => setSelected(r.data))
+      toast.success('Order updated')
+    },
+  })
+
+  if (selected) return <OrderDetail order={selected} onBack={() => { setSelected(null); queryClient.invalidateQueries({ queryKey: ['orders'] }) }} onUpdateStatus={(statusId, note) => statusMut.mutate({ id: selected.id, statusId, note })} onUpdate={(data) => updateMut.mutate({ id: selected.id, data })} statuses={orderStatuses || []} />
+
   return (
     <>
-      <Header fixed>
-        <Search className='me-auto' />
-        <ThemeSwitch />
-        <ConfigDrawer />
-        <ProfileDropdown />
-      </Header>
+      <Header fixed><Search className='me-auto' /><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
-        <div>
-          <h2 className='text-2xl font-bold tracking-tight'>Orders</h2>
-          <p className='text-muted-foreground'>Manage customer orders and track fulfillment.</p>
-        </div>
-        <Card>
-          <CardContent className='p-0'>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order ID</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className='text-right'>Total</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead></TableHead>
+        <div><h2 className='text-2xl font-bold tracking-tight'>Orders</h2><p className='text-muted-foreground'>Manage customer orders and track fulfillment.</p></div>
+        <Card><CardContent className='p-0'>
+          <Table>
+            <TableHeader><TableRow><TableHead>Order ID</TableHead><TableHead>Customer</TableHead><TableHead>Status</TableHead><TableHead className='text-right'>Total</TableHead><TableHead>Items</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {isLoading ? <TableRow><TableCell colSpan={6} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow> :
+               data?.data?.length ? data.data.map(o => (
+                <TableRow key={o.id} className='cursor-pointer hover:bg-muted/50' onClick={() => setSelected(o)}>
+                  <TableCell className='font-mono text-sm font-medium'>{o.displayId}</TableCell>
+                  <TableCell><div className='text-sm font-medium'>{o.customer.firstName} {o.customer.lastName}</div><div className='text-xs text-muted-foreground'>{o.customer.phoneNumber}</div></TableCell>
+                  <TableCell><Badge style={{ backgroundColor: statusColors[o.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>{o.status.name}</Badge></TableCell>
+                  <TableCell className='text-right font-medium'>৳{fmt(o.total)}</TableCell>
+                  <TableCell>{o.items.length}</TableCell>
+                  <TableCell className='text-xs text-muted-foreground'>{new Date(o.createdAt).toLocaleDateString()}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={7} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow>
-                ) : data?.data?.length ? data.data.map(order => (
-                  <TableRow key={order.id} className='cursor-pointer hover:bg-muted/50' onClick={() => setSelectedOrder(order)}>
-                    <TableCell className='font-mono text-sm font-medium'>{order.displayId}</TableCell>
-                    <TableCell>
-                      <div className='text-sm font-medium'>{order.customer.firstName} {order.customer.lastName}</div>
-                      <div className='text-xs text-muted-foreground'>{order.customer.phoneNumber}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
-                        {order.status.name}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className='text-right font-medium'>${Number(order.total).toFixed(2)}</TableCell>
-                    <TableCell>{order.items.length}</TableCell>
-                    <TableCell className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell><Button variant='ghost' size='icon' onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}><Eye className='h-4 w-4' /></Button></TableCell>
-                  </TableRow>
-                )) : (
-                  <TableRow><TableCell colSpan={7} className='text-center py-8 text-muted-foreground'>No orders yet</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+              )) : <TableRow><TableCell colSpan={6} className='text-center py-8 text-muted-foreground'>No orders yet</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </CardContent></Card>
         {data?.meta && data.meta.totalPages > 1 && (
           <div className='flex items-center justify-between'>
             <span className='text-sm text-muted-foreground'>Page {pagination.pageIndex + 1} of {data.meta.totalPages}</span>
@@ -93,72 +89,187 @@ export function Orders() {
             </div>
           </div>
         )}
+      </Main>
+    </>
+  )
+}
 
-        <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-          <DialogContent className='max-w-2xl max-h-[80vh] overflow-y-auto'>
-            <DialogHeader><DialogTitle>Order {selectedOrder?.displayId}</DialogTitle></DialogHeader>
-            {selectedOrder && (
-              <div className='space-y-4'>
-                <div className='grid grid-cols-2 gap-4'>
-                  <div>
-                    <p className='text-sm text-muted-foreground'>Customer</p>
-                    <p className='font-medium'>{selectedOrder.customer.firstName} {selectedOrder.customer.lastName}</p>
-                    <p className='text-sm'>{selectedOrder.customer.email}</p>
-                    <p className='text-sm'>{selectedOrder.customer.phoneNumber}</p>
-                  </div>
-                  <div>
-                    <p className='text-sm text-muted-foreground'>Status</p>
-                    <Badge style={{ backgroundColor: statusColors[selectedOrder.status.name] || '#6B7280', color: '#fff' }}>{selectedOrder.status.name}</Badge>
-                    <p className='text-sm mt-1'>Total: <strong>${Number(selectedOrder.total).toFixed(2)}</strong></p>
-                    <p className='text-sm'>Shipping: ${Number(selectedOrder.shippingCharge).toFixed(2)}</p>
-                  </div>
-                </div>
-                <div>
-                  <p className='text-sm font-medium mb-2'>Items</p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow><TableHead>Product</TableHead><TableHead className='text-right'>Qty</TableHead><TableHead className='text-right'>Price</TableHead></TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedOrder.items.map(item => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.product.name}</TableCell>
-                          <TableCell className='text-right'>{item.quantity}</TableCell>
-                          <TableCell className='text-right'>${Number(item.price).toFixed(2)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                {selectedOrder.timeline && selectedOrder.timeline.length > 0 && (
-                  <div>
-                    <p className='text-sm font-medium mb-2'>Timeline</p>
-                    <div className='space-y-2'>
-                      {(selectedOrder.timeline as any[]).map((t: any, i: number) => (
-                        <div key={i} className='flex gap-3 text-sm'>
-                          <span className='text-muted-foreground w-28'>{new Date(t.timestamp).toLocaleString()}</span>
-                          <Badge style={{ backgroundColor: statusColors[t.status] || '#6B7280', color: '#fff' }} className='text-xs'>{t.status}</Badge>
-                          {t.note && <span className='text-muted-foreground'>{t.note}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {selectedOrder.payments.length > 0 && (
-                  <div>
-                    <p className='text-sm font-medium mb-2'>Payments</p>
-                    {selectedOrder.payments.map(p => (
-                      <div key={p.id} className='flex gap-3 text-sm items-center'>
-                        <Badge variant='outline'>{p.method}</Badge>
-                        <span>${p.amount}</span>
-                        <Badge variant={p.status === 'verified' ? 'default' : 'secondary'} className={p.status === 'verified' ? 'bg-green-500' : ''}>{p.status}</Badge>
-                        {p.transactionId && <span className='text-muted-foreground'>TrxID: {p.transactionId}</span>}
-                      </div>
+function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { order: OrderResponse; onBack: () => void; onUpdateStatus: (s: string, n?: string) => void; onUpdate: (d: any) => void; statuses: any[] }) {
+  const [editing, setEditing] = useState(false)
+  const [shippingCharge, setShippingCharge] = useState(String(nn(order.shippingCharge)))
+  const [discount, setDiscount] = useState(String(nn(order.discount)))
+  const [discountType, setDiscountType] = useState(order.discountType || 'flat')
+  const [customerNotes, setCustomerNotes] = useState(order.customerNotes || '')
+  const [officeNotes, setOfficeNotes] = useState(order.officeNotes || '')
+  const [statusNote, setStatusNote] = useState('')
+  const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
+
+  const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map(id => statuses.find((s: any) => s.id === id)).filter(Boolean)
+
+  const handleSaveEdit = () => {
+    const ship = parseFloat(shippingCharge) || 0
+    const disc = parseFloat(discount) || 0
+    onUpdate({ shippingCharge: ship, discount: disc, discountType, customerNotes: customerNotes || null, officeNotes: officeNotes || null })
+    setEditing(false)
+  }
+
+  const itemSubtotal = order.items.reduce((s, i) => s + nn(i.price) * i.quantity, 0)
+
+  return (
+    <>
+      <Header fixed>
+        <Button variant='ghost' onClick={onBack} className='me-auto'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button>
+        <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+      </Header>
+      <Main className='flex flex-1 flex-col gap-6'>
+        <div className='flex items-center justify-between gap-4'>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>{order.displayId}</h2>
+            <p className='text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p>
+          </div>
+          <div className='flex items-center gap-2'>
+            {!editing && <Button variant='outline' size='sm' onClick={() => setEditing(true)}><Pencil className='h-4 w-4 mr-1' /> Edit</Button>}
+            <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
+              <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
+              {allowedStatuses.length > 0 && (
+                <select
+                  className='text-sm border-0 bg-transparent focus:outline-none'
+                  value=''
+                  onChange={e => { if (e.target.value) setShowStatusDialog(e.target.value) }}
+                >
+                  <option value=''>Change...</option>
+                  {allowedStatuses.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className='grid grid-cols-3 gap-6'>
+          <div className='col-span-2 space-y-6'>
+            <Card>
+              <CardHeader className='pb-2'><CardTitle className='text-base'>Items</CardTitle></CardHeader>
+              <CardContent className='p-0'>
+                <Table>
+                  <TableHeader><TableRow><TableHead>Product</TableHead><TableHead className='text-right'>Price</TableHead><TableHead className='text-right'>Qty</TableHead><TableHead className='text-right'>Total</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {order.items.map(item => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className='flex items-center gap-3'>
+                            {item.product.images && Array.isArray(item.product.images) && item.product.images[0]
+                              ? <img src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' />
+                              : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>
+                            }
+                            <span className='text-sm font-medium'>{item.product.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className='text-right text-sm'>৳{fmt(item.price)}</TableCell>
+                        <TableCell className='text-right text-sm'>{item.quantity}</TableCell>
+                        <TableCell className='text-right text-sm font-medium'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
+                      </TableRow>
                     ))}
+                  </TableBody>
+                </Table>
+                <div className='px-4 py-3 border-t space-y-1'>
+                  <div className='flex justify-between text-sm'><span>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div>
+                  <div className='flex justify-between text-sm'><span>Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>
+                  {nn(order.discount) > 0 && <div className='flex justify-between text-sm text-green-600'><span>Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}
+                  <div className='flex justify-between font-bold text-base pt-1 border-t'><span>Total</span><span>৳{fmt(order.total)}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className='pb-2'><CardTitle className='text-base'>Timeline</CardTitle></CardHeader>
+              <CardContent>
+                <div className='space-y-0'>
+                  {(order.timeline as any[]).map((t: any, i: number) => (
+                    <div key={i} className='relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0' style={{ borderColor: statusColors[t.status] || '#6B7280' }}>
+                      <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: statusColors[t.status] || '#6B7280' }} />
+                      <div className='flex items-center gap-2'>
+                        <Badge style={{ backgroundColor: statusColors[t.status] || '#6B7280', color: '#fff' }} className='text-xs'>{t.status}</Badge>
+                        <span className='text-xs text-muted-foreground flex items-center gap-1'><Clock className='h-3 w-3' /> {new Date(t.timestamp).toLocaleString()}</span>
+                      </div>
+                      {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className='space-y-6'>
+            <Card>
+              <CardHeader className='pb-2'><CardTitle className='text-base'>Customer</CardTitle></CardHeader>
+              <CardContent className='space-y-1 text-sm'>
+                <p className='font-medium'>{order.customer.firstName} {order.customer.lastName}</p>
+                <p className='text-muted-foreground'>{order.customer.email}</p>
+                <p className='text-muted-foreground'>{order.customer.phoneNumber}</p>
+              </CardContent>
+            </Card>
+
+            {editing ? (
+              <Card>
+                <CardHeader className='pb-2'><CardTitle className='text-base flex items-center justify-between'>Edit Order <Button size='sm' onClick={handleSaveEdit}><Save className='h-3.5 w-3.5 mr-1' /> Save</Button></CardTitle></CardHeader>
+                <CardContent className='space-y-3'>
+                  <div className='grid grid-cols-2 gap-3'>
+                    <div><Label className='text-xs'>Shipping</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div>
+                    <div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div>
                   </div>
+                  <div className='flex gap-1 border rounded-md p-0.5 w-fit'>
+                    <Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}><DollarSign className='h-3 w-3 mr-1' /> Flat</Button>
+                    <Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}><Percent className='h-3 w-3 mr-1' /> %</Button>
+                  </div>
+                  <div><Label className='text-xs'>Customer Notes</Label><Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} placeholder='Customer notes...' /></div>
+                  <div><Label className='text-xs'>Office Notes</Label><Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} placeholder='Internal office notes...' /></div>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <Card>
+                  <CardHeader className='pb-2'><CardTitle className='text-base'>Details</CardTitle></CardHeader>
+                  <CardContent className='space-y-2 text-sm'>
+                    <div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(order.subtotal)}</span></div>
+                    <div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>
+                    {nn(order.discount) > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}
+                    <div className='flex justify-between font-bold pt-1 border-t'><span>Total</span><span>৳{fmt(order.total)}</span></div>
+                  </CardContent>
+                </Card>
+
+                {order.customerNotes && (
+                  <Card><CardHeader className='pb-2'><CardTitle className='text-base text-xs uppercase text-muted-foreground'>Customer Notes</CardTitle></CardHeader><CardContent><p className='text-sm'>{order.customerNotes}</p></CardContent></Card>
                 )}
-              </div>
+                {order.officeNotes && (
+                  <Card><CardHeader className='pb-2'><CardTitle className='text-base text-xs uppercase text-muted-foreground'>Office Notes</CardTitle></CardHeader><CardContent><p className='text-sm text-muted-foreground'>{order.officeNotes}</p></CardContent></Card>
+                )}
+
+                {order.shipment && (
+                  <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Shipment</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Courier: {order.shipment.courier}</p><p>Tracking: {order.shipment.trackingNo}</p><Badge variant='outline'>{order.shipment.status}</Badge></CardContent></Card>
+                )}
+
+                {order.payments.map(p => (
+                  <Card key={p.id}><CardHeader className='pb-2'><CardTitle className='text-base text-xs flex items-center justify-between'><span>{p.method.toUpperCase()}</span><Badge className={p.status === 'verified' ? 'bg-green-500 text-xs' : 'text-xs'}>{p.status}</Badge></CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Amount: ৳{fmt(p.amount)}</p>{p.transactionId && <p>TrxID: {p.transactionId}</p>}</CardContent></Card>
+                ))}
+              </>
             )}
+          </div>
+        </div>
+
+        <Dialog open={!!showStatusDialog} onOpenChange={() => setShowStatusDialog(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Change Status</DialogTitle></DialogHeader>
+            <div className='space-y-3 py-2'>
+              <p className='text-sm'>Current: <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge></p>
+              {showStatusDialog && (
+                <p className='text-sm'>New: <Badge style={{ backgroundColor: statusColors[statuses.find((s: any) => s.id === showStatusDialog)?.name] || '#6B7280', color: '#fff' }}>{statuses.find((s: any) => s.id === showStatusDialog)?.name}</Badge></p>
+              )}
+              <div><Label>Note</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} placeholder='Add a note for this status change...' /></div>
+            </div>
+            <div className='flex justify-end gap-2'>
+              <Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote(''); }}>Cancel</Button>
+              <Button onClick={() => { onUpdateStatus(showStatusDialog!, statusNote || undefined); setShowStatusDialog(null); }}>Confirm</Button>
+            </div>
           </DialogContent>
         </Dialog>
       </Main>

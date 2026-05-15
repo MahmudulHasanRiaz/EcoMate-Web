@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { CreateOrderDto, UpdateOrderStatusDto, UpdateOrderDto, UpdateOrderItemDto } from './dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('orders')
@@ -15,8 +15,23 @@ export class OrdersController {
   @Get(':id') findOne(@Param('id') id: string) { return this.svc.findOne(id); }
   @Post() create(@Body() dto: CreateOrderDto) { return this.svc.create(dto); }
 
+  @Put(':id')
+  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
+    return this.svc.updateOrder(id, dto);
+  }
+
   @Put(':id/status')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto, @CurrentUser() user: { userId: string }) {
     return this.svc.updateStatus(id, dto, user.userId);
+  }
+
+  @Post(':id/items')
+  addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) {
+    return this.svc.addItem(id, dto);
+  }
+
+  @Delete(':id/items/:itemId')
+  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.svc.removeItem(id, itemId);
   }
 }
