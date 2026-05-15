@@ -58,8 +58,10 @@ export const sidebarData: SidebarData = {
 
     // ===== SHARED FOOTER (Moved below) =====
     { title: 'Secondary', items: [
-      { title: 'Settings', url: '/op/settings/personal', icon: Settings },
-      { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle },
+      { title: 'Settings', url: '/op/settings/personal', icon: Settings, panel: 'operational' },
+      { title: 'Settings', url: '/mon/settings/system', icon: Settings, panel: 'monitoring' },
+      { title: 'Help Center', url: '/op/help-center', icon: HelpCircle, panel: 'operational' },
+      { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle, panel: 'monitoring' },
     ]},
   ],
 }

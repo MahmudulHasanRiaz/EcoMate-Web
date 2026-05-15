@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import {
   ChevronsUpDown,
   LogOut,
@@ -34,6 +34,8 @@ type NavUserProps = {
 export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar()
   const [open, setOpen] = useDialogState()
+  const { pathname } = useLocation()
+  const isMon = pathname.startsWith('/mon')
 
   return (
     <>
@@ -84,14 +86,15 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-              <Link to='/op/settings/personal'>Profile</Link>
+                  <Link to={isMon ? '/mon/settings/system' : '/op/settings/personal'}>
+                    {isMon ? 'System Settings' : 'Profile'}
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-              <Link to='/op/settings/personal'>Billing</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-              <Link to='/mon/settings/system'>Settings</Link>
-                </DropdownMenuItem>
+                {!isMon && (
+                  <DropdownMenuItem asChild>
+                    <Link to='/op/settings/account'>Billing</Link>
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem

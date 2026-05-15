@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import useDialogState from '@/hooks/use-dialog-state'
 import { useAuthStore } from '@/stores/auth-store'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -18,6 +18,8 @@ import { SignOutDialog } from '@/components/sign-out-dialog'
 export function ProfileDropdown() {
   const [open, setOpen] = useDialogState()
   const user = useAuthStore((s) => s.auth.user)
+  const { pathname } = useLocation()
+  const isMon = pathname.startsWith('/mon')
 
   const displayName = user?.email?.split('@')[0] || 'Admin'
   const initials = displayName.slice(0, 2).toUpperCase()
@@ -45,14 +47,15 @@ export function ProfileDropdown() {
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
-              <Link to='/op/settings/personal'>Profile</Link>
+              <Link to={isMon ? '/mon/settings/system' : '/op/settings/personal'}>
+                {isMon ? 'System Settings' : 'Profile'}
+              </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to='/op/settings/personal'>Account</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to='/mon/settings/system'>Settings</Link>
-            </DropdownMenuItem>
+            {!isMon && (
+              <DropdownMenuItem asChild>
+                <Link to='/op/settings/account'>Account</Link>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>

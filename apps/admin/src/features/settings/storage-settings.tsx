@@ -33,7 +33,6 @@ export function StorageSettings() {
       setR2SecretKey(settings.storage_r2_secret_key || '')
       setR2Bucket(settings.storage_r2_bucket || '')
       setR2PublicUrl(settings.storage_r2_public_url || '')
-      setHoorinKey(settings.courier_hoorin_api_key || '')
     }
   }, [settings])
 
@@ -50,13 +49,10 @@ export function StorageSettings() {
       { key: 'storage_r2_secret_key', value: r2SecretKey },
       { key: 'storage_r2_bucket', value: r2Bucket },
       { key: 'storage_r2_public_url', value: r2PublicUrl },
-      { key: 'courier_hoorin_api_key', value: hoorinKey },
     ]
     
-    // Use a single promise.all for better tracking if api supported bulk, 
-    // but here we follow existing pattern with feedback
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
-      .then(() => toast.success('Settings saved successfully'))
+      .then(() => toast.success('Storage settings saved successfully'))
       .catch(() => toast.error('Failed to save some settings'))
   }
 
@@ -167,36 +163,6 @@ export function StorageSettings() {
               </div>
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
-
-      <Card className='border-none shadow-md'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center gap-2 mb-1'>
-            <Truck className='h-5 w-5 text-primary' />
-            <CardTitle className='text-xl'>Logistics Integration</CardTitle>
-          </div>
-          <CardDescription>
-            Configure third-party courier services for tracking and history.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className='space-y-4'>
-          <div className='space-y-2'>
-            <Label htmlFor='hoorin-key'>Hoorin Courier API Key</Label>
-            <div className='relative'>
-              <Input 
-                id='hoorin-key'
-                type='password' 
-                value={hoorinKey} 
-                onChange={e => setHoorinKey(e.target.value)} 
-                placeholder='Enter Hoorin API key' 
-                className='bg-background/50'
-              />
-            </div>
-            <p className='text-xs text-muted-foreground flex items-center gap-1.5 mt-1 px-1'>
-              <span>Used for fetching delivery history. Get yours at <a href='https://dash.hoorin.com' target='_blank' className='text-primary hover:underline'>dash.hoorin.com</a></span>
-            </p>
-          </div>
         </CardContent>
       </Card>
 
