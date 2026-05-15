@@ -1,0 +1,90 @@
+import { Controller, Get, Post, Put, Body, Param, Query, Req } from '@nestjs/common';
+import { CourierManagerService } from './courier-manager.service';
+import { PrismaService } from '../prisma/prisma.service';
+import type { Request } from 'express';
+
+@Controller('couriers')
+export class CourierManagerController {
+  constructor(
+    private readonly svc: CourierManagerService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @Get('credentials')
+  async listCredentials() {
+    return this.prisma.courierCredentials.findMany({ orderBy: { courier: 'asc' } });
+  }
+
+  @Put('credentials/:courier')
+  async upsertCredentials(@Param('courier') courier: string, @Body() dto: Record<string, unknown>) {
+    return this.prisma.courierCredentials.upsert({
+      where: { courier },
+      create: {
+        courier,
+        enabled: dto['enabled'] as boolean ?? false,
+        mode: dto['mode'] as string || 'sandbox',
+        apiKey: dto['apiKey'] as string,
+        secretKey: dto['secretKey'] as string,
+        username: dto['username'] as string,
+        password: dto['password'] as string,
+        clientId: dto['clientId'] as string,
+        clientSecret: dto['clientSecret'] as string,
+        storeId: dto['storeId'] as string,
+        credentials: dto['credentials'] || {},
+      },
+      update: {
+        enabled: dto['enabled'] as boolean,
+        mode: dto['mode'] as string,
+        apiKey: dto['apiKey'] as string,
+        secretKey: dto['secretKey'] as string,
+        username: dto['username'] as string,
+        password: dto['password'] as string,
+        clientId: dto['clientId'] as string,
+        clientSecret: dto['clientSecret'] as string,
+        storeId: dto['storeId'] as string,
+        credentials: dto['credentials'] || {},
+      },
+    });
+  }
+
+  @Post('dispatch/:courier')
+  async dispatch(@Param('courier') courier: string, @Body() dto: { orderIds: string[] }) {
+    return this.svc.dispatch(courier, dto.orderIds);
+  }
+
+  @Get('dispatch-logs')
+  async dispatchLogs(@Query('orderId') orderId?: string, @Query('courier') courier?: string) {
+    const where: Record<string, unknown> = {};
+    if (orderId) where.orderId = orderId;
+    if (courier) where.courier = courier;
+    return this.prisma.courierDispatchLog.findMany({ where: where as any, orderBy: { createdAt: 'desc' }, take: 50 });
+  }
+
+  @Post('webhook/:courier')
+  async webhook(@Param('courier') courier: string, @Req() req: Request, @Body() body: unknown) {
+    const data = body as Record<string, unknown>;
+    const orderId = (data['merchant_order_id'] || data['invoice'] || data['orderNumber'] || data['order_id']) as string;
+    const status = (data['status'] || data['event'] || data['delivery_status']) as string;
+
+    if (orderId && status) {
+      let order = await this.prisma.order.findFirst({ where: { displayId: orderId } });
+      if (!order) order = await this.prisma.order.findFirst({ where: { courierConsignmentId: orderId } });
+
+      if (order) {
+        const statusMap: Record<string, string> = {
+          pending: 'In Courier', picked: 'In Courier', delivered: 'Delivered',
+          cancelled: 'Cancelled', returned: 'Returned', partial: 'Partial Return',
+          hold: 'On Hold', in_transit: 'In Courier', failed: 'Cancelled',
+        };
+        const mapped = statusMap[status?.toLowerCase()] || status;
+
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { courierStatus: mapped },
+        });
+      }
+    }
+
+    return { received: true };
+  }
+}

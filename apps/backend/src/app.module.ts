@@ -20,6 +20,12 @@ import { MediaModule } from './media/media.module';
 import { CustomersModule } from './customers/customers.module';
 import { CourierModule } from './courier/courier.module';
 import { GatewayModule } from './gateways/gateway.module';
+import { HealthModule } from './health/health.module';
+import { CouponsModule } from './coupons/coupons.module';
+import { ShipmentModule } from './shipment/shipment.module';
+import { RefundsModule } from './refunds/refunds.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { CourierManagerModule } from './courier-manager/courier-manager.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -28,7 +34,10 @@ import { RolesGuard } from './auth/roles.guard';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule, AuthModule, UsersModule, TasksModule,
     SettingsModule, DashboardModule, CategoriesModule,
-    AttributesModule, ProductsModule, OrdersModule, PaymentsModule, UploadModule, SystemSettingsModule, MediaModule, CustomersModule, CourierModule, GatewayModule,
+    AttributesModule, ProductsModule, OrdersModule, PaymentsModule,
+    UploadModule, SystemSettingsModule, MediaModule, CustomersModule,
+    CourierModule, GatewayModule, HealthModule, CouponsModule,
+    ShipmentModule, RefundsModule, InventoryModule, CourierManagerModule,
   ],
   controllers: [OrderStatusController],
   providers: [

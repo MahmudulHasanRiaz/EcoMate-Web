@@ -1,7 +1,7 @@
 import {
-  LayoutDashboard, Monitor, ListTodo, Package, Palette, Settings,
-  Wrench, UserCog, Bell, Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins,
+  LayoutDashboard, Monitor, ListTodo, Package, Palette,
+  Wrench, UserCog, Users, ShieldCheck, HelpCircle, Percent,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -29,31 +29,29 @@ export const sidebarData: SidebarData = {
       { title: 'Customers', url: '/customers', icon: Users },
       { title: 'Payments', url: '/payments', icon: Coins },
     ]},
-    { title: 'Management', panel: 'operational', items: [
-      { title: 'Users', url: '/users', icon: Users },
+    { title: 'Content', panel: 'operational', items: [
       { title: 'Media Gallery', url: '/media', icon: Monitor },
     ]},
 
     // ===== MONITORING / ADMIN PANEL =====
+    { title: 'Management', panel: 'monitoring', items: [
+      { title: 'Users', url: '/users', icon: Users },
+      { title: 'Inventory', url: '/inventory', icon: AlertTriangle },
+    ]},
     { title: 'Finance', panel: 'monitoring', items: [
       { title: 'Coupons', url: '/coupons', icon: Percent },
       { title: 'Refunds', url: '/refunds', icon: RefreshCw },
     ]},
     { title: 'Logistics', panel: 'monitoring', items: [
       { title: 'Shipments', url: '/shipments', icon: Truck },
-      { title: 'Inventory', url: '/inventory', icon: AlertTriangle },
     ]},
     { title: 'Settings', panel: 'monitoring', icon: Settings, items: [
-      { title: 'Profile', url: '/settings', icon: UserCog },
-      { title: 'Account', url: '/settings/account', icon: Wrench },
-      { title: 'Appearance', url: '/settings/appearance', icon: Palette },
-      { title: 'Notifications', url: '/settings/notifications', icon: Bell },
-      { title: 'Display', url: '/settings/display', icon: Monitor },
-    ]},
-    { title: 'System', panel: 'monitoring', items: [
-      { title: 'Storage', url: '/settings/storage', icon: Wrench },
-      { title: 'Gateways', url: '/settings/gateways', icon: ShieldCheck },
-      { title: 'Order Status', url: '/settings/order-statuses', icon: RefreshCw },
+      { title: 'Personal', url: '/settings/personal', icon: UserCog },
+      { title: 'System', url: '/settings/system', icon: Settings },
+      { title: 'Order Status', url: '/settings/system/order-statuses', icon: RefreshCw },
+      { title: 'Courier', url: '/settings/system/courier', icon: Truck },
+      { title: 'Gateways', url: '/settings/system/gateways', icon: CreditCard },
+      { title: 'Storage', url: '/settings/system/storage', icon: Wrench },
       { title: 'Help Center', url: '/help-center', icon: HelpCircle },
     ]},
   ],
