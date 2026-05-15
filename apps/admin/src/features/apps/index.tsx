@@ -19,7 +19,7 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { apps } from './data/apps'
 
-const route = getRouteApi('/_authenticated/apps/')
+const route = getRouteApi('/_authenticated/op/apps/')
 
 type AppType = 'all' | 'connected' | 'notConnected'
 
@@ -30,11 +30,8 @@ const appText = new Map<AppType, string>([
 ])
 
 export function Apps() {
-  const {
-    filter = '',
-    type = 'all',
-    sort: initSort = 'asc',
-  } = route.useSearch()
+  const search = route.useSearch() as any
+  const { filter = '', type = 'all', sort: initSort = 'asc' } = search
   const navigate = route.useNavigate()
 
   const [sort, setSort] = useState(initSort)

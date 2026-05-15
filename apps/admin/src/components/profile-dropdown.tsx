@@ -45,22 +45,13 @@ export function ProfileDropdown() {
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
-              <Link to='/settings'>
-                Profile
-                <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
-              </Link>
+              <Link to='/op/settings/personal'>Profile</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to='/settings/account'>
-                Account
-                <DropdownMenuShortcut>⌘A</DropdownMenuShortcut>
-              </Link>
+              <Link to='/op/settings/personal'>Account</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to='/settings'>
-                Settings
-                <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
-              </Link>
+              <Link to='/mon/settings/system'>Settings</Link>
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />

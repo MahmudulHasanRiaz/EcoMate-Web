@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette,
-  Wrench, UserCog, Users, ShieldCheck, HelpCircle, Percent,
+  Users, ShieldCheck, HelpCircle, Percent,
   RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
@@ -58,8 +58,7 @@ export const sidebarData: SidebarData = {
 
     // ===== SHARED FOOTER (Moved below) =====
     { title: 'Secondary', items: [
-      { title: 'Settings', url: '/op/settings/personal', icon: Settings, panel: 'operational' },
-      { title: 'Settings', url: '/mon/settings/system', icon: Settings, panel: 'monitoring' },
+      { title: 'Settings', url: '/op/settings/personal', icon: Settings },
       { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle },
     ]},
   ],

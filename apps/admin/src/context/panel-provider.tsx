@@ -16,10 +16,9 @@ export function PanelProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const loc = routerState.location.pathname
-    const isMon = loc.startsWith('/mon')
-    if (isMon) {
+    if (loc.includes('/mon/') || loc.includes('/mon')) {
       setActivePanel('monitoring')
-    } else {
+    } else if (loc.includes('/op/') || loc.includes('/op') || loc === '/' || loc === '/admin/') {
       setActivePanel('operational')
     }
   }, [routerState.location.pathname])

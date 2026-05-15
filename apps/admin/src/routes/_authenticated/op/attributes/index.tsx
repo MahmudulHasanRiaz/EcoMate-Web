@@ -1,6 +1,3 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Attributes } from '@/features/attributes'
-
-export const Route = createFileRoute('/_authenticated/op/attributes/')({
-  component: Attributes,
-})
+export const Route = createFileRoute('/_authenticated/op/attributes/')({ component: Attributes })

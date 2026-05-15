@@ -211,7 +211,7 @@ export function Media() {
                               <Badge variant='outline' className='text-xs capitalize'>{att.entityType}</Badge>
                               <span className='flex-1 truncate'>{att.entityName}</span>
                               {att.entityType === 'product' && (
-                                <Link to='/products' className='text-xs text-primary hover:underline flex items-center gap-1 shrink-0'>
+                                <Link to='/op/products' className='text-xs text-primary hover:underline flex items-center gap-1 shrink-0'>
                                   View <ExternalLink className='h-3 w-3' />
                                 </Link>
                               )}

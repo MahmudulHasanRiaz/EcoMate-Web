@@ -43,24 +43,15 @@ import { Route as AuthenticatedOpCampaignsIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
-import { Route as AuthenticatedMonSettingsIndexRouteImport } from './routes/_authenticated/mon/settings/index'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
-import { Route as AuthenticatedOpSettingsNotificationsRouteImport } from './routes/_authenticated/op/settings/notifications'
-import { Route as AuthenticatedOpSettingsDisplayRouteImport } from './routes/_authenticated/op/settings/display'
-import { Route as AuthenticatedOpSettingsAppearanceRouteImport } from './routes/_authenticated/op/settings/appearance'
-import { Route as AuthenticatedOpSettingsAccountRouteImport } from './routes/_authenticated/op/settings/account'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
-import { Route as AuthenticatedMonSettingsSystemStorageIndexRouteImport } from './routes/_authenticated/mon/settings/system/storage/index'
-import { Route as AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/system/order-statuses/index'
-import { Route as AuthenticatedMonSettingsSystemGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/system/gateways/index'
-import { Route as AuthenticatedMonSettingsSystemCourierIndexRouteImport } from './routes/_authenticated/mon/settings/system/courier/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -251,12 +242,6 @@ const AuthenticatedMonUsersIndexRoute =
     path: '/mon/users/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedMonSettingsIndexRoute =
-  AuthenticatedMonSettingsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
 const AuthenticatedMonHelpCenterIndexRoute =
   AuthenticatedMonHelpCenterIndexRouteImport.update({
     id: '/mon/help-center/',
@@ -274,30 +259,6 @@ const AuthenticatedMonActivityLogsIndexRoute =
     id: '/mon/activity-logs/',
     path: '/mon/activity-logs/',
     getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedOpSettingsNotificationsRoute =
-  AuthenticatedOpSettingsNotificationsRouteImport.update({
-    id: '/notifications',
-    path: '/notifications',
-    getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
-  } as any)
-const AuthenticatedOpSettingsDisplayRoute =
-  AuthenticatedOpSettingsDisplayRouteImport.update({
-    id: '/display',
-    path: '/display',
-    getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
-  } as any)
-const AuthenticatedOpSettingsAppearanceRoute =
-  AuthenticatedOpSettingsAppearanceRouteImport.update({
-    id: '/appearance',
-    path: '/appearance',
-    getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
-  } as any)
-const AuthenticatedOpSettingsAccountRoute =
-  AuthenticatedOpSettingsAccountRouteImport.update({
-    id: '/account',
-    path: '/account',
-    getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
   } as any)
 const AuthenticatedOpSettingsPersonalIndexRoute =
   AuthenticatedOpSettingsPersonalIndexRouteImport.update({
@@ -335,30 +296,6 @@ const AuthenticatedMonSettingsCourierIndexRoute =
     path: '/courier/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedMonSettingsSystemStorageIndexRoute =
-  AuthenticatedMonSettingsSystemStorageIndexRouteImport.update({
-    id: '/system/storage/',
-    path: '/system/storage/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
-const AuthenticatedMonSettingsSystemOrderStatusesIndexRoute =
-  AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport.update({
-    id: '/system/order-statuses/',
-    path: '/system/order-statuses/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
-const AuthenticatedMonSettingsSystemGatewaysIndexRoute =
-  AuthenticatedMonSettingsSystemGatewaysIndexRouteImport.update({
-    id: '/system/gateways/',
-    path: '/system/gateways/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
-const AuthenticatedMonSettingsSystemCourierIndexRoute =
-  AuthenticatedMonSettingsSystemCourierIndexRouteImport.update({
-    id: '/system/courier/',
-    path: '/system/courier/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -377,14 +314,9 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
-  '/op/settings/account': typeof AuthenticatedOpSettingsAccountRoute
-  '/op/settings/appearance': typeof AuthenticatedOpSettingsAppearanceRoute
-  '/op/settings/display': typeof AuthenticatedOpSettingsDisplayRoute
-  '/op/settings/notifications': typeof AuthenticatedOpSettingsNotificationsRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
-  '/mon/settings/': typeof AuthenticatedMonSettingsIndexRoute
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
@@ -408,10 +340,6 @@ export interface FileRoutesByFullPath {
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
-  '/mon/settings/system/courier/': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
-  '/mon/settings/system/gateways/': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
-  '/mon/settings/system/order-statuses/': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
-  '/mon/settings/system/storage/': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof authForgotPasswordRoute
@@ -425,18 +353,14 @@ export interface FileRoutesByTo {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
+  '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
-  '/op/settings/account': typeof AuthenticatedOpSettingsAccountRoute
-  '/op/settings/appearance': typeof AuthenticatedOpSettingsAppearanceRoute
-  '/op/settings/display': typeof AuthenticatedOpSettingsDisplayRoute
-  '/op/settings/notifications': typeof AuthenticatedOpSettingsNotificationsRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
-  '/mon/settings': typeof AuthenticatedMonSettingsIndexRoute
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
@@ -460,10 +384,6 @@ export interface FileRoutesByTo {
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
-  '/mon/settings/system/courier': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
-  '/mon/settings/system/gateways': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
-  '/mon/settings/system/order-statuses': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
-  '/mon/settings/system/storage': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -484,14 +404,9 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
-  '/_authenticated/op/settings/account': typeof AuthenticatedOpSettingsAccountRoute
-  '/_authenticated/op/settings/appearance': typeof AuthenticatedOpSettingsAppearanceRoute
-  '/_authenticated/op/settings/display': typeof AuthenticatedOpSettingsDisplayRoute
-  '/_authenticated/op/settings/notifications': typeof AuthenticatedOpSettingsNotificationsRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
-  '/_authenticated/mon/settings/': typeof AuthenticatedMonSettingsIndexRoute
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
@@ -515,10 +430,6 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
-  '/_authenticated/mon/settings/system/courier/': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
-  '/_authenticated/mon/settings/system/gateways/': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
-  '/_authenticated/mon/settings/system/order-statuses/': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
-  '/_authenticated/mon/settings/system/storage/': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -539,14 +450,9 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/mon/'
     | '/op/'
-    | '/op/settings/account'
-    | '/op/settings/appearance'
-    | '/op/settings/display'
-    | '/op/settings/notifications'
     | '/mon/activity-logs/'
     | '/mon/analytics/'
     | '/mon/help-center/'
-    | '/mon/settings/'
     | '/mon/users/'
     | '/op/apps/'
     | '/op/attributes/'
@@ -570,10 +476,6 @@ export interface FileRouteTypes {
     | '/mon/settings/storage/'
     | '/mon/settings/system/'
     | '/op/settings/personal/'
-    | '/mon/settings/system/courier/'
-    | '/mon/settings/system/gateways/'
-    | '/mon/settings/system/order-statuses/'
-    | '/mon/settings/system/storage/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/forgot-password'
@@ -587,18 +489,14 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/'
+    | '/mon/settings'
     | '/op/settings'
     | '/errors/$error'
     | '/mon'
     | '/op'
-    | '/op/settings/account'
-    | '/op/settings/appearance'
-    | '/op/settings/display'
-    | '/op/settings/notifications'
     | '/mon/activity-logs'
     | '/mon/analytics'
     | '/mon/help-center'
-    | '/mon/settings'
     | '/mon/users'
     | '/op/apps'
     | '/op/attributes'
@@ -622,10 +520,6 @@ export interface FileRouteTypes {
     | '/mon/settings/storage'
     | '/mon/settings/system'
     | '/op/settings/personal'
-    | '/mon/settings/system/courier'
-    | '/mon/settings/system/gateways'
-    | '/mon/settings/system/order-statuses'
-    | '/mon/settings/system/storage'
   id:
     | '__root__'
     | '/_authenticated'
@@ -645,14 +539,9 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
-    | '/_authenticated/op/settings/account'
-    | '/_authenticated/op/settings/appearance'
-    | '/_authenticated/op/settings/display'
-    | '/_authenticated/op/settings/notifications'
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
     | '/_authenticated/mon/help-center/'
-    | '/_authenticated/mon/settings/'
     | '/_authenticated/mon/users/'
     | '/_authenticated/op/apps/'
     | '/_authenticated/op/attributes/'
@@ -676,10 +565,6 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/op/settings/personal/'
-    | '/_authenticated/mon/settings/system/courier/'
-    | '/_authenticated/mon/settings/system/gateways/'
-    | '/_authenticated/mon/settings/system/order-statuses/'
-    | '/_authenticated/mon/settings/system/storage/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -936,13 +821,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/mon/settings/': {
-      id: '/_authenticated/mon/settings/'
-      path: '/'
-      fullPath: '/mon/settings/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
     '/_authenticated/mon/help-center/': {
       id: '/_authenticated/mon/help-center/'
       path: '/mon/help-center'
@@ -963,34 +841,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/mon/activity-logs/'
       preLoaderRoute: typeof AuthenticatedMonActivityLogsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/op/settings/notifications': {
-      id: '/_authenticated/op/settings/notifications'
-      path: '/notifications'
-      fullPath: '/op/settings/notifications'
-      preLoaderRoute: typeof AuthenticatedOpSettingsNotificationsRouteImport
-      parentRoute: typeof AuthenticatedOpSettingsRouteRoute
-    }
-    '/_authenticated/op/settings/display': {
-      id: '/_authenticated/op/settings/display'
-      path: '/display'
-      fullPath: '/op/settings/display'
-      preLoaderRoute: typeof AuthenticatedOpSettingsDisplayRouteImport
-      parentRoute: typeof AuthenticatedOpSettingsRouteRoute
-    }
-    '/_authenticated/op/settings/appearance': {
-      id: '/_authenticated/op/settings/appearance'
-      path: '/appearance'
-      fullPath: '/op/settings/appearance'
-      preLoaderRoute: typeof AuthenticatedOpSettingsAppearanceRouteImport
-      parentRoute: typeof AuthenticatedOpSettingsRouteRoute
-    }
-    '/_authenticated/op/settings/account': {
-      id: '/_authenticated/op/settings/account'
-      path: '/account'
-      fullPath: '/op/settings/account'
-      preLoaderRoute: typeof AuthenticatedOpSettingsAccountRouteImport
-      parentRoute: typeof AuthenticatedOpSettingsRouteRoute
     }
     '/_authenticated/op/settings/personal/': {
       id: '/_authenticated/op/settings/personal/'
@@ -1034,53 +884,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsCourierIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/mon/settings/system/storage/': {
-      id: '/_authenticated/mon/settings/system/storage/'
-      path: '/system/storage'
-      fullPath: '/mon/settings/system/storage/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsSystemStorageIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
-    '/_authenticated/mon/settings/system/order-statuses/': {
-      id: '/_authenticated/mon/settings/system/order-statuses/'
-      path: '/system/order-statuses'
-      fullPath: '/mon/settings/system/order-statuses/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
-    '/_authenticated/mon/settings/system/gateways/': {
-      id: '/_authenticated/mon/settings/system/gateways/'
-      path: '/system/gateways'
-      fullPath: '/mon/settings/system/gateways/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsSystemGatewaysIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
-    '/_authenticated/mon/settings/system/courier/': {
-      id: '/_authenticated/mon/settings/system/courier/'
-      path: '/system/courier'
-      fullPath: '/mon/settings/system/courier/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsSystemCourierIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
   }
 }
 
 interface AuthenticatedMonSettingsRouteRouteChildren {
-  AuthenticatedMonSettingsIndexRoute: typeof AuthenticatedMonSettingsIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
-  AuthenticatedMonSettingsSystemCourierIndexRoute: typeof AuthenticatedMonSettingsSystemCourierIndexRoute
-  AuthenticatedMonSettingsSystemGatewaysIndexRoute: typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
-  AuthenticatedMonSettingsSystemOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
-  AuthenticatedMonSettingsSystemStorageIndexRoute: typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 
 const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteRouteChildren =
   {
-    AuthenticatedMonSettingsIndexRoute: AuthenticatedMonSettingsIndexRoute,
     AuthenticatedMonSettingsCourierIndexRoute:
       AuthenticatedMonSettingsCourierIndexRoute,
     AuthenticatedMonSettingsGatewaysIndexRoute:
@@ -1091,14 +907,6 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsStorageIndexRoute,
     AuthenticatedMonSettingsSystemIndexRoute:
       AuthenticatedMonSettingsSystemIndexRoute,
-    AuthenticatedMonSettingsSystemCourierIndexRoute:
-      AuthenticatedMonSettingsSystemCourierIndexRoute,
-    AuthenticatedMonSettingsSystemGatewaysIndexRoute:
-      AuthenticatedMonSettingsSystemGatewaysIndexRoute,
-    AuthenticatedMonSettingsSystemOrderStatusesIndexRoute:
-      AuthenticatedMonSettingsSystemOrderStatusesIndexRoute,
-    AuthenticatedMonSettingsSystemStorageIndexRoute:
-      AuthenticatedMonSettingsSystemStorageIndexRoute,
   }
 
 const AuthenticatedMonSettingsRouteRouteWithChildren =
@@ -1107,21 +915,11 @@ const AuthenticatedMonSettingsRouteRouteWithChildren =
   )
 
 interface AuthenticatedOpSettingsRouteRouteChildren {
-  AuthenticatedOpSettingsAccountRoute: typeof AuthenticatedOpSettingsAccountRoute
-  AuthenticatedOpSettingsAppearanceRoute: typeof AuthenticatedOpSettingsAppearanceRoute
-  AuthenticatedOpSettingsDisplayRoute: typeof AuthenticatedOpSettingsDisplayRoute
-  AuthenticatedOpSettingsNotificationsRoute: typeof AuthenticatedOpSettingsNotificationsRoute
   AuthenticatedOpSettingsPersonalIndexRoute: typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
 
 const AuthenticatedOpSettingsRouteRouteChildren: AuthenticatedOpSettingsRouteRouteChildren =
   {
-    AuthenticatedOpSettingsAccountRoute: AuthenticatedOpSettingsAccountRoute,
-    AuthenticatedOpSettingsAppearanceRoute:
-      AuthenticatedOpSettingsAppearanceRoute,
-    AuthenticatedOpSettingsDisplayRoute: AuthenticatedOpSettingsDisplayRoute,
-    AuthenticatedOpSettingsNotificationsRoute:
-      AuthenticatedOpSettingsNotificationsRoute,
     AuthenticatedOpSettingsPersonalIndexRoute:
       AuthenticatedOpSettingsPersonalIndexRoute,
   }

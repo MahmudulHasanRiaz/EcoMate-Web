@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Chats } from '@/features/chats'
 
 export const Route = createFileRoute('/_authenticated/op/chats/')({
-  component: Chats,
+  component: () => <div className="p-6 text-muted-foreground">chats page</div>,
 })
