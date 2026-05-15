@@ -1,0 +1,22 @@
+
+> admin@2.2.1 build
+> tsc -b && vite build
+
+src/components/layout/data/sidebar-data.ts(61,74): error TS2353: Object literal may only specify known properties, and 'panel' does not exist in type 'NavLink'.
+src/components/layout/data/sidebar-data.ts(62,73): error TS2353: Object literal may only specify known properties, and 'panel' does not exist in type 'NavLink'.
+src/components/layout/data/sidebar-data.ts(63,73): error TS2353: Object literal may only specify known properties, and 'panel' does not exist in type 'NavLink'.
+src/components/layout/data/sidebar-data.ts(64,74): error TS2353: Object literal may only specify known properties, and 'panel' does not exist in type 'NavLink'.
+src/components/layout/nav-user.tsx(95,27): error TS2322: Type '"/op/settings/account"' is not assignable to type '"/" | "/forgot-password" | "/otp" | "/sign-in" | "/sign-in-2" | "/sign-up" | "/401" | "/403" | "/404" | "/500" | "/503" | "/mon/settings" | "/op/settings" | "/errors/$error" | ... 30 more ... | "/op/settings/personal"'.
+src/components/profile-dropdown.tsx(56,23): error TS2322: Type '"/op/settings/account"' is not assignable to type '"/" | "/forgot-password" | "/otp" | "/sign-in" | "/sign-in-2" | "/sign-up" | "/401" | "/403" | "/404" | "/500" | "/503" | "/mon/settings" | "/op/settings" | "/errors/$error" | ... 30 more ... | "/op/settings/personal"'.
+src/features/settings/storage-settings.tsx(10,50): error TS6133: 'Truck' is declared but its value is never read.
+src/features/settings/storage-settings.tsx(26,10): error TS6133: 'hoorinKey' is declared but its value is never read.
+src/features/settings/storage-settings.tsx(26,21): error TS6133: 'setHoorinKey' is declared but its value is never read.
+src/routes/_authenticated/mon/index.tsx(1,27): error TS6133: 'redirect' is declared but its value is never read.
+src/routes/_authenticated/op/index.tsx(1,27): error TS6133: 'redirect' is declared but its value is never read.
+npm error Lifecycle script `build` failed with error:
+npm error code 2
+npm error path /Users/riaz/Custom Development Projects/EcoMate Web/apps/admin
+npm error workspace admin@2.2.1
+npm error location /Users/riaz/Custom Development Projects/EcoMate Web/apps/admin
+npm error command failed
+npm error command sh -c tsc -b && vite build

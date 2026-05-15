@@ -46,16 +46,16 @@ export function ProfileDropdown() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem asChild>
-              <Link to={isMon ? '/mon/settings/system' : '/op/settings/personal'}>
-                {isMon ? 'System Settings' : 'Profile'}
-              </Link>
-            </DropdownMenuItem>
-            {!isMon && (
-              <DropdownMenuItem asChild>
-                <Link to='/op/settings/account'>Account</Link>
-              </DropdownMenuItem>
-            )}
+                <DropdownMenuItem asChild>
+                  <Link to={isMon ? '/mon/settings/system' : '/op/settings/personal'}>
+                    {isMon ? 'System Settings' : 'Profile'}
+                  </Link>
+                </DropdownMenuItem>
+                {!isMon && (
+                  <DropdownMenuItem asChild>
+                    <Link to='/op/settings/personal'>Billing</Link>
+                  </DropdownMenuItem>
+                )}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>

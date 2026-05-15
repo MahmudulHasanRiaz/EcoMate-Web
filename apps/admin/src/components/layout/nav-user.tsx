@@ -92,7 +92,7 @@ export function NavUser({ user }: NavUserProps) {
                 </DropdownMenuItem>
                 {!isMon && (
                   <DropdownMenuItem asChild>
-                    <Link to='/op/settings/account'>Billing</Link>
+                    <Link to='/op/settings/personal'>Billing</Link>
                   </DropdownMenuItem>
                 )}
               </DropdownMenuGroup>
