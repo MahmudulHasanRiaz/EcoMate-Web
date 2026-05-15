@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const gatewayLabels: Record<string, string> = {
