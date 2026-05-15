@@ -17,14 +17,21 @@ export class CreateVariantDto {
 export class CreateProductDto {
   @IsString() @MinLength(1) name: string;
   @IsString() @MinLength(1) slug: string;
+  @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() shortDesc?: string;
   @IsNumber() basePrice: number;
   @IsOptional() @IsNumber() salePrice?: number;
+  @IsOptional() @IsString() sku?: string;
+  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsArray() images?: string[];
   @IsOptional() @IsObject() seoMeta?: any;
+  @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsBoolean() manageStock?: boolean;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CreateVariantDto)
   variants?: CreateVariantDto[];
 }
@@ -32,12 +39,25 @@ export class CreateProductDto {
 export class UpdateProductDto {
   @IsOptional() @IsString() @MinLength(1) name?: string;
   @IsOptional() @IsString() slug?: string;
+  @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() shortDesc?: string;
   @IsOptional() @IsNumber() basePrice?: number;
   @IsOptional() @IsNumber() salePrice?: number;
+  @IsOptional() @IsString() sku?: string;
+  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string | null;
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsArray() images?: string[];
   @IsOptional() @IsObject() seoMeta?: any;
+  @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsBoolean() manageStock?: boolean;
+}
+
+export class GenerateVariantsDto {
+  @IsArray() @IsString({ each: true }) attributeIds: string[];
+  @IsOptional() @IsNumber() defaultPrice?: number;
+  @IsOptional() @IsInt() defaultStock?: number;
 }

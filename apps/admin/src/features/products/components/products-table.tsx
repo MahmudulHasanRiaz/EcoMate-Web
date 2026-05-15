@@ -1,156 +1,62 @@
 import { useState } from 'react'
-import {
-  type SortingState,
-  type VisibilityState,
-  type PaginationState,
-  flexRender,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table'
+import { type SortingState, type VisibilityState, type PaginationState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DataTablePagination } from '@/components/data-table'
 import { type ProductResponse } from '../api'
 import { productsColumns } from './products-columns'
 
-type DataTableProps = {
-  data: ProductResponse[]
-  pageCount: number
-  pagination: PaginationState
-  onPaginationChange: (pagination: PaginationState) => void
-  isLoading?: boolean
+type Props = {
+  data: ProductResponse[]; pageCount: number; pagination: PaginationState;
+  onPaginationChange: (p: PaginationState) => void; isLoading?: boolean;
+  onEdit: (row: ProductResponse) => void; onDelete: (row: ProductResponse) => void;
 }
 
-export function ProductsTable({
-  data,
-  pageCount,
-  pagination,
-  onPaginationChange,
-  isLoading,
-}: DataTableProps) {
-  const [rowSelection, setRowSelection] = useState({})
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete }: Props) {
   const [sorting, setSorting] = useState<SortingState>([])
+  const [columnVisibility] = useState<VisibilityState>({})
+
+  const columns = productsColumns(onEdit, onDelete)
 
   const table = useReactTable({
-    data,
-    columns: productsColumns,
-    pageCount,
-    state: {
-      sorting,
-      pagination,
-      rowSelection,
-      columnVisibility,
+    data, columns, pageCount, state: { sorting, pagination, columnVisibility },
+    manualPagination: true, onPaginationChange: (updater) => {
+      const newState = typeof updater === 'function' ? updater(pagination) : updater;
+      onPaginationChange(newState);
     },
-    manualPagination: true,
-    enableRowSelection: true,
-    onPaginationChange: (updater) => {
-      if (typeof updater === 'function') {
-        const newState = updater(pagination)
-        onPaginationChange(newState)
-      } else {
-        onPaginationChange(updater)
-      }
-    },
-    onRowSelectionChange: setRowSelection,
-    onSortingChange: setSorting,
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
+    onSortingChange: setSorting, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(),
   })
 
   return (
-    <div
-      className={cn(
-        'max-sm:has-[div[role="toolbar"]]:mb-16',
-        'flex flex-1 flex-col gap-4'
-      )}
-    >
+    <div className='flex flex-1 flex-col gap-4'>
       <div className='overflow-hidden rounded-md border'>
         <Table>
           <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className='group/row'>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      colSpan={header.colSpan}
-                      className={cn(
-                        'bg-background group-hover/row:bg-muted group-data-[state=selected]/row:bg-muted',
-                        header.column.columnDef.meta?.className,
-                        header.column.columnDef.meta?.thClassName
-                      )}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  )
-                })}
+            {table.getHeaderGroups().map(hg => (
+              <TableRow key={hg.id}>
+                {hg.headers.map(h => (
+                  <TableHead key={h.id} colSpan={h.colSpan} className={cn(h.column.columnDef.meta as any)}>
+                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={productsColumns.length}
-                  className='h-24 text-center'
-                >
-                  Loading...
-                </TableCell>
-              </TableRow>
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                  className='group/row'
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        'bg-background group-hover/row:bg-muted group-data-[state=selected]/row:bg-muted',
-                        cell.column.columnDef.meta?.className,
-                        cell.column.columnDef.meta?.tdClassName
-                      )}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
+              <TableRow><TableCell colSpan={10} className='h-24 text-center'>Loading...</TableCell></TableRow>
+            ) : table.getRowModel().rows.length ? (
+              table.getRowModel().rows.map(row => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map(cell => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={productsColumns.length}
-                  className='h-24 text-center'
-                >
-                  No results.
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={10} className='h-24 text-center text-muted-foreground'>No products found.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

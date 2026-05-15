@@ -59,19 +59,25 @@ export const sidebarData: SidebarData = {
       title: 'E-Commerce',
       items: [
         {
-          title: 'Categories',
-          url: '/categories',
-          icon: Package,
-        },
-        {
-          title: 'Attributes',
-          url: '/attributes',
-          icon: Palette,
-        },
-        {
           title: 'Products',
-          url: '/products',
           icon: Package,
+          items: [
+            {
+              title: 'All Products',
+              url: '/products',
+              icon: Package,
+            },
+            {
+              title: 'Categories',
+              url: '/categories',
+              icon: Package,
+            },
+            {
+              title: 'Attributes',
+              url: '/attributes',
+              icon: Palette,
+            },
+          ],
         },
         {
           title: 'Orders',
@@ -82,6 +88,11 @@ export const sidebarData: SidebarData = {
           title: 'Payments',
           url: '/payments',
           icon: ShieldCheck,
+        },
+        {
+          title: 'Media Gallery',
+          url: '/media',
+          icon: Monitor,
         },
       ],
     },
@@ -174,6 +185,11 @@ export const sidebarData: SidebarData = {
               title: 'Display',
               url: '/settings/display',
               icon: Monitor,
+            },
+            {
+              title: 'Storage',
+              url: '/settings/storage',
+              icon: Wrench,
             },
           ],
         },

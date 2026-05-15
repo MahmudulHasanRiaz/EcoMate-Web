@@ -1,142 +1,99 @@
 import { type ColumnDef } from '@tanstack/react-table'
-import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import { DataTableColumnHeader } from '@/components/data-table'
+import { Button } from '@/components/ui/button'
+import { Pencil, Trash2, Package } from 'lucide-react'
 import { type ProductResponse } from '../api'
-import { DataTableRowActions } from './data-table-row-actions'
 
-export const productsColumns: ColumnDef<ProductResponse>[] = [
-  {
-    id: 'select',
-    header: ({ table }) => (
-      <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() ||
-          (table.getIsSomePageRowsSelected() && 'indeterminate')
-        }
-        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label='Select all'
-        className='translate-y-0.5'
-      />
-    ),
-    meta: {
-      className: cn('inset-s-0 z-10 rounded-tl-[inherit] max-md:sticky'),
+function imgUrl(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  return `http://localhost:4000${url}`
+}
+
+export function productsColumns(
+  onEdit: (row: ProductResponse) => void,
+  onDelete: (row: ProductResponse) => void,
+): ColumnDef<ProductResponse>[] {
+  return [
+    {
+      id: 'image',
+      header: '',
+      cell: ({ row }) => {
+        const img = Array.isArray(row.original.images) ? row.original.images[0] : null
+        return img
+          ? <img src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' />
+          : <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+      },
+      enableSorting: false,
     },
-    cell: ({ row }) => (
-      <Checkbox
-        checked={row.getIsSelected()}
-        onCheckedChange={(value) => row.toggleSelected(!!value)}
-        aria-label='Select row'
-        className='translate-y-0.5'
-      />
-    ),
-    enableSorting: false,
-    enableHiding: false,
-  },
-  {
-    accessorKey: 'name',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Name' />
-    ),
-    cell: ({ row }) => (
-      <div className='max-w-48 truncate ps-3 font-medium'>
-        {row.getValue('name')}
-      </div>
-    ),
-    meta: {
-      className: cn(
-        'drop-shadow-[0_1px_2px_rgb(0_0_0_/_0.1)] dark:drop-shadow-[0_1px_2px_rgb(255_255_255_/_0.1)]',
-        'inset-s-6 ps-0.5 max-md:sticky @4xl/content:table-cell @4xl/content:drop-shadow-none'
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <div>
+          <p className='font-medium text-sm'>{row.getValue('name')}</p>
+          {row.original.sku && <p className='text-xs text-muted-foreground'>SKU: {row.original.sku}</p>}
+        </div>
       ),
     },
-    enableHiding: false,
-  },
-  {
-    id: 'price',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Price' />
-    ),
-    accessorFn: (row) => {
-      const price = row.salePrice ?? row.basePrice
-      return price
+    {
+      id: 'type',
+      header: 'Type',
+      accessorFn: (row) => row.type,
+      cell: ({ getValue }) => <Badge variant='outline' className='capitalize'>{getValue<string>()}</Badge>,
     },
-    cell: ({ row }) => {
-      const basePrice = parseFloat(String(row.original.basePrice))
-      const salePrice = row.original.salePrice != null ? parseFloat(String(row.original.salePrice)) : null
-      return (
-        <div className='flex items-center gap-2'>
-          {salePrice !== null && salePrice < basePrice ? (
-            <>
-              <span className='text-muted-foreground line-through text-xs'>
-                ${basePrice.toFixed(2)}
-              </span>
-              <span className='font-medium text-green-600 dark:text-green-400'>
-                ${salePrice.toFixed(2)}
-              </span>
-            </>
-          ) : (
-            <span>${basePrice.toFixed(2)}</span>
-          )}
+    {
+      id: 'price',
+      header: 'Price',
+      accessorFn: (row) => parseFloat(String(row.basePrice)),
+      cell: ({ row }) => {
+        const bp = parseFloat(String(row.original.basePrice))
+        const sp = row.original.salePrice ? parseFloat(String(row.original.salePrice)) : null
+        return (
+          <div>
+            {sp !== null && sp < bp ? (
+              <>
+                <span className='line-through text-muted-foreground text-xs'>${bp.toFixed(2)}</span>
+                <span className='text-green-600 font-medium ml-1'>${sp.toFixed(2)}</span>
+              </>
+            ) : <span className='font-medium'>${bp.toFixed(2)}</span>}
+          </div>
+        )
+      },
+    },
+    {
+      id: 'stock',
+      header: 'Stock',
+      accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.stock, 0) : row.stock,
+      cell: ({ row, getValue }) => {
+        const s = getValue<number>()
+        return <Badge variant={s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'} className='text-xs'>{s}</Badge>
+      },
+    },
+    {
+      id: 'category',
+      header: 'Category',
+      accessorFn: (row) => row.category?.name || '—',
+      cell: ({ getValue }) => <span className='text-sm text-muted-foreground'>{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'isActive',
+      header: 'Status',
+      cell: ({ getValue }) => getValue() ? <Badge className='bg-green-500 text-xs'>Active</Badge> : <Badge variant='secondary' className='text-xs'>Draft</Badge>,
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <div className='flex gap-1 justify-end'>
+          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onEdit(row.original)}>
+            <Pencil className='h-3.5 w-3.5' />
+          </Button>
+          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDelete(row.original)}>
+            <Trash2 className='h-3.5 w-3.5 text-destructive' />
+          </Button>
         </div>
-      )
+      ),
     },
-  },
-  {
-    id: 'category',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Category' />
-    ),
-    accessorFn: (row) => row.category?.name ?? '—',
-    cell: ({ row }) => (
-      <div className='text-sm'>{row.getValue('category')}</div>
-    ),
-    enableSorting: false,
-  },
-  {
-    id: 'stock',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Stock' />
-    ),
-    accessorFn: (row) =>
-      row.variants?.reduce((sum, v) => sum + (v.stock || 0), 0) ?? 0,
-    cell: ({ row }) => {
-      const stock = row.getValue<number>('stock')
-      return (
-        <Badge variant={stock > 0 ? 'default' : 'destructive'} className='text-xs'>
-          {stock}
-        </Badge>
-      )
-    },
-  },
-  {
-    accessorKey: 'isActive',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Status' />
-    ),
-    cell: ({ row }) => {
-      const isActive = row.getValue('isActive')
-      return (
-        <Badge
-          variant='outline'
-          className={cn(
-            'capitalize',
-            isActive
-              ? 'text-green-600 border-green-300 bg-green-50 dark:text-green-400 dark:border-green-800 dark:bg-green-950'
-              : 'text-muted-foreground'
-          )}
-        >
-          {isActive ? 'Active' : 'Draft'}
-        </Badge>
-      )
-    },
-    filterFn: (row, id, value) => {
-      return value.includes(row.getValue(id))
-    },
-    enableSorting: false,
-  },
-  {
-    id: 'actions',
-    cell: DataTableRowActions,
-  },
-]
+  ]
+}

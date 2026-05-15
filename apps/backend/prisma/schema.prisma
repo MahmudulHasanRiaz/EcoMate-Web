@@ -153,14 +153,21 @@ model Product {
   id          String    @id @default(uuid())
   name        String
   slug        String    @unique
+  type        String    @default("simple")
   description String?   @db.Text
+  shortDesc   String?   @db.Text
   basePrice   Decimal   @db.Decimal(10, 2)
   salePrice   Decimal?  @db.Decimal(10, 2)
+  sku         String?
+  stock       Int       @default(0)
+  lowStockQty Int?
   categoryId  String?
   tags        Json?     @default("[]")
   images      Json?     @default("[]")
   seoMeta     Json?     @default("{}")
+  isFeatured  Boolean   @default(false)
   isActive    Boolean   @default(true)
+  manageStock Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -272,4 +279,34 @@ model Shipment {
   updatedAt  DateTime  @updatedAt
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
+model Media {
+  id         String   @id @default(uuid())
+  filename   String
+  url        String
+  mimeType   String
+  size       Int
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  attachments MediaAttachment[]
+}
+
+model MediaAttachment {
+  id         String   @id @default(uuid())
+  mediaId    String
+  entityType String
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, entityType, entityId])
 }
