@@ -289,6 +289,17 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+model PaymentGatewayConfig {
+  id          String   @id @default(uuid())
+  gateway     String   @unique
+  enabled     Boolean  @default(false)
+  mode        String   @default("personal")
+  phoneNumber String?
+  credentials Json?     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Media {
   id         String   @id @default(uuid())
   filename   String

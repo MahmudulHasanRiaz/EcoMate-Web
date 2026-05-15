@@ -19,6 +19,7 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { MediaModule } from './media/media.module';
 import { CustomersModule } from './customers/customers.module';
 import { CourierModule } from './courier/courier.module';
+import { GatewayModule } from './gateways/gateway.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -27,7 +28,7 @@ import { RolesGuard } from './auth/roles.guard';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule, AuthModule, UsersModule, TasksModule,
     SettingsModule, DashboardModule, CategoriesModule,
-    AttributesModule, ProductsModule, OrdersModule, PaymentsModule, UploadModule, SystemSettingsModule, MediaModule, CustomersModule, CourierModule,
+    AttributesModule, ProductsModule, OrdersModule, PaymentsModule, UploadModule, SystemSettingsModule, MediaModule, CustomersModule, CourierModule, GatewayModule,
   ],
   controllers: [OrderStatusController],
   providers: [

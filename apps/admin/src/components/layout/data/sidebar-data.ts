@@ -191,6 +191,11 @@ export const sidebarData: SidebarData = {
               url: '/settings/storage',
               icon: Wrench,
             },
+            {
+              title: 'Gateways',
+              url: '/settings/gateways',
+              icon: ShieldCheck,
+            },
           ],
         },
         {

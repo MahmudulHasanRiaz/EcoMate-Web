@@ -40,6 +40,7 @@ import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_a
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedSettingsStorageIndexRouteImport } from './routes/_authenticated/settings/storage/index'
+import { Route as AuthenticatedSettingsGatewaysIndexRouteImport } from './routes/_authenticated/settings/gateways/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -209,6 +210,12 @@ const AuthenticatedSettingsStorageIndexRoute =
     path: '/storage/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedSettingsGatewaysIndexRoute =
+  AuthenticatedSettingsGatewaysIndexRouteImport.update({
+    id: '/gateways/',
+    path: '/gateways/',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -240,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
+  '/settings/gateways/': typeof AuthenticatedSettingsGatewaysIndexRoute
   '/settings/storage/': typeof AuthenticatedSettingsStorageIndexRoute
 }
 export interface FileRoutesByTo {
@@ -271,6 +279,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/settings/gateways': typeof AuthenticatedSettingsGatewaysIndexRoute
   '/settings/storage': typeof AuthenticatedSettingsStorageIndexRoute
 }
 export interface FileRoutesById {
@@ -305,6 +314,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
+  '/_authenticated/settings/gateways/': typeof AuthenticatedSettingsGatewaysIndexRoute
   '/_authenticated/settings/storage/': typeof AuthenticatedSettingsStorageIndexRoute
 }
 export interface FileRouteTypes {
@@ -339,6 +349,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/tasks/'
     | '/users/'
+    | '/settings/gateways/'
     | '/settings/storage/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -370,6 +381,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tasks'
     | '/users'
+    | '/settings/gateways'
     | '/settings/storage'
   id:
     | '__root__'
@@ -403,6 +415,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
+    | '/_authenticated/settings/gateways/'
     | '/_authenticated/settings/storage/'
   fileRoutesById: FileRoutesById
 }
@@ -639,6 +652,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsStorageIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/settings/gateways/': {
+      id: '/_authenticated/settings/gateways/'
+      path: '/gateways'
+      fullPath: '/settings/gateways/'
+      preLoaderRoute: typeof AuthenticatedSettingsGatewaysIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
   }
 }
 
@@ -648,6 +668,7 @@ interface AuthenticatedSettingsRouteRouteChildren {
   AuthenticatedSettingsDisplayRoute: typeof AuthenticatedSettingsDisplayRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+  AuthenticatedSettingsGatewaysIndexRoute: typeof AuthenticatedSettingsGatewaysIndexRoute
   AuthenticatedSettingsStorageIndexRoute: typeof AuthenticatedSettingsStorageIndexRoute
 }
 
@@ -659,6 +680,8 @@ const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteCh
     AuthenticatedSettingsNotificationsRoute:
       AuthenticatedSettingsNotificationsRoute,
     AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+    AuthenticatedSettingsGatewaysIndexRoute:
+      AuthenticatedSettingsGatewaysIndexRoute,
     AuthenticatedSettingsStorageIndexRoute:
       AuthenticatedSettingsStorageIndexRoute,
   }
