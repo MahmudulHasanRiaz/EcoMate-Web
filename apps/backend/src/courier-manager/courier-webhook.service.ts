@@ -157,7 +157,8 @@ export class CourierWebhookService {
 function mapSteadfastStatus(raw?: string | null): string | null {
   if (!raw) return null;
   const s = raw.toLowerCase().replace(/[\s-]+/g, '_');
-  if (['pending', 'in_review', 'picked', 'in_transit', 'at_hub', 'out_for_delivery', 'hold'].includes(s)) return 'In Courier';
+  if (['in_review', 'in_review_approval_pending'].includes(s)) return null; // Not yet picked up
+  if (['pending', 'picked', 'in_transit', 'at_hub', 'out_for_delivery', 'hold'].includes(s)) return 'In Courier';
   if (s === 'delivered' || s.startsWith('delivered')) return 'Delivered';
   if (s === 'cancelled' || s.startsWith('cancelled')) return 'Cancelled';
   if (['partial', 'partial_delivered'].includes(s)) return 'Partial Return';
