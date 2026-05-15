@@ -10,7 +10,14 @@ export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
 
-  const groups = sidebarData.navGroups.filter(g => !g.panel || g.panel === activePanel)
+  const mainGroups = sidebarData.navGroups.filter(
+    (g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel)
+  )
+
+  const secondaryGroup = sidebarData.navGroups.find((g) => g.title === 'Secondary')
+  const footerItems = secondaryGroup?.items.filter(
+    (item: any) => !item.panel || item.panel === activePanel
+  )
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
@@ -18,9 +25,14 @@ export function AppSidebar() {
         <TeamSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        {groups.map((props) => <NavGroup key={props.title} {...props} />)}
+        {mainGroups.map((props) => (
+          <NavGroup key={props.title} {...props} />
+        ))}
       </SidebarContent>
       <SidebarFooter>
+        {footerItems && (
+          <NavGroup title='' items={footerItems} />
+        )}
         <NavUser user={sidebarData.user} />
       </SidebarFooter>
       <SidebarRail />

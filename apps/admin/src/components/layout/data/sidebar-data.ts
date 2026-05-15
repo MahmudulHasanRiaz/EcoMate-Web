@@ -39,25 +39,21 @@ export const sidebarData: SidebarData = {
     { title: 'Logistics', panel: 'operational', items: [
       { title: 'Shipments', url: '/op/shipments', icon: Truck },
     ]},
-    { title: 'Personal', panel: 'operational', items: [
-      { title: 'Profile Settings', url: '/op/settings/personal', icon: UserCog },
-    ]},
-
     // ===== MONITORING / ADMIN PANEL =====
     { title: 'Overview', panel: 'monitoring', items: [
       { title: 'Dashboard', url: '/mon', icon: LayoutDashboard },
-      { title: 'Analytics', url: '/mon/analytics', icon: Monitor }, // Placeholder URL
+      { title: 'Analytics', url: '/mon/analytics', icon: Monitor },
     ]},
     { title: 'Administration', panel: 'monitoring', items: [
       { title: 'User Management', url: '/mon/users', icon: Users },
-      { title: 'Activity Logs', url: '/mon/activity-logs', icon: ListTodo }, // Placeholder URL
+      { title: 'Activity Logs', url: '/mon/activity-logs', icon: ListTodo },
     ]},
-    { title: 'System Setup', panel: 'monitoring', icon: Settings, items: [
-      { title: 'General Settings', url: '/mon/settings/system', icon: Settings },
-      { title: 'Payment Gateways', url: '/mon/settings/gateways', icon: CreditCard },
-      { title: 'Storage Config', url: '/mon/settings/storage', icon: Wrench },
-      { title: 'Courier Settings', url: '/mon/settings/courier', icon: Truck },
-      { title: 'Order Statuses', url: '/mon/settings/order-statuses', icon: RefreshCw },
+
+    // ===== SHARED FOOTER (Moved below) =====
+    { title: 'Secondary', items: [
+      { title: 'Settings', url: '/op/settings/personal', icon: Settings, panel: 'operational' },
+      { title: 'Settings', url: '/mon/settings/system', icon: Settings, panel: 'monitoring' },
+      { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle },
     ]},
   ],
 }
