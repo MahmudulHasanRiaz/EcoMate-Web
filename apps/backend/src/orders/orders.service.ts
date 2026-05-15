@@ -78,6 +78,9 @@ export class OrdersService {
     });
 
     for (const item of dto.items) {
+      await this.prisma.inventoryLog.create({
+        data: { productId: item.productId, variantId: item.variantId, quantity: -item.quantity, type: 'order_placed', reason: `Order ${displayId}`, createdAt: new Date() },
+      });
       if (item.variantId) {
         await this.prisma.productVariant.update({ where: { id: item.variantId }, data: { stock: { decrement: item.quantity } } });
       }

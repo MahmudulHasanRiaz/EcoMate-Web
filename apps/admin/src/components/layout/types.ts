@@ -32,6 +32,8 @@ type NavItem = NavCollapsible | NavLink
 
 type NavGroup = {
   title: string
+  panel?: string
+  icon?: React.ElementType
   items: NavItem[]
 }
 
