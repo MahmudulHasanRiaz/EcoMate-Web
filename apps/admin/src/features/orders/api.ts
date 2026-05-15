@@ -21,6 +21,7 @@ export const ordersApi = {
   create: (data: any) => apiClient.post<OrderResponse>('/orders', data),
   updateOrder: (id: string, data: any) => apiClient.put<OrderResponse>(`/orders/${id}`, data),
   updateStatus: (id: string, statusId: string, note?: string) => apiClient.put(`/orders/${id}/status`, { statusId, note }),
+  addNote: (orderId: string, note: string, visibility: 'public' | 'private') => apiClient.post(`/orders/${orderId}/note`, { note, visibility }),
   addItem: (orderId: string, data: { productId: string; quantity: number; price: number; variantId?: string }) => apiClient.post(`/orders/${orderId}/items`, data),
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
 }

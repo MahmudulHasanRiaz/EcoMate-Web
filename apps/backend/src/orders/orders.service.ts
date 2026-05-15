@@ -87,25 +87,38 @@ export class OrdersService {
   }
 
   async updateOrder(id: string, dto: UpdateOrderDto) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
+    const order = await this.prisma.order.findUnique({ where: { id }, include: { items: { include: { product: { select: { id: true, name: true } } } } } });
     if (!order) throw new NotFoundException('Order not found');
 
+    const timeline = [...((order.timeline as any[]) || [])];
+    const now = new Date().toISOString();
+
+    if (dto.shippingCharge !== undefined && Number(dto.shippingCharge) !== Number(order.shippingCharge)) {
+      timeline.push({ type: 'shipping', visibility: 'public', timestamp: now, oldValue: Number(order.shippingCharge), newValue: Number(dto.shippingCharge), note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}` });
+    }
+
+    if (dto.discount !== undefined && Number(dto.discount) !== Number(order.discount)) {
+      timeline.push({ type: 'discount', visibility: 'public', timestamp: now, oldValue: Number(order.discount), newValue: Number(dto.discount), discountType: dto.discountType || order.discountType, note: `Discount changed to ৳${Number(dto.discount)} (${dto.discountType || order.discountType})` });
+    }
+
+    if (dto.items && dto.items.length > 0) {
+      await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
+      await this.prisma.orderItem.createMany({
+        data: dto.items.map(i => ({ orderId: id, productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: i.price })),
+      });
+      const oldItems = order.items.map(i => `${i.product.name} ×${i.quantity}`).join(', ');
+      const newItems = dto.items.map(i => `${i.productId} ×${i.quantity}`).join(', '); // will resolve below
+      timeline.push({ type: 'items', visibility: 'public', timestamp: now, note: 'Order items updated' });
+    }
+
     const data: any = {};
+    data.timeline = timeline;
     if (dto.shippingCharge !== undefined) data.shippingCharge = dto.shippingCharge;
     if (dto.discount !== undefined) data.discount = dto.discount;
     if (dto.discountType !== undefined) data.discountType = dto.discountType;
     if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes;
     if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
     if (dto.shippingAddress !== undefined) data.shippingAddress = dto.shippingAddress as any;
-
-    if (dto.items && dto.items.length > 0) {
-      await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
-      await this.prisma.orderItem.createMany({
-        data: dto.items.map(i => ({
-          orderId: id, productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: i.price,
-        })),
-      });
-    }
 
     const currentItems = dto.items && dto.items.length > 0 ? dto.items : order.items.map(i => ({ price: Number(i.price), quantity: i.quantity }));
     const shipping = data.shippingCharge !== undefined ? data.shippingCharge : Number(order.shippingCharge);
@@ -122,6 +135,24 @@ export class OrdersService {
         items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
         payments: true,
       },
+    });
+  }
+
+  async addNote(orderId: string, note: string, visibility: 'public' | 'private', userId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const timeline = [...((order.timeline as any[]) || []), {
+      type: 'note',
+      visibility,
+      timestamp: new Date().toISOString(),
+      note,
+      addedBy: userId,
+    }];
+
+    return this.prisma.order.update({
+      where: { id: orderId }, data: { timeline: timeline as any },
+      include: { status: true, customer: { select: { id: true, firstName: true, lastName: true } } },
     });
   }
 

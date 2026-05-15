@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ordersApi, mediaUrl, type OrderResponse } from './api'
@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, ShoppingBag } from 'lucide-react'
 import { PaymentLogo } from '@/components/payment-logo'
 import type { PaginationState } from '@tanstack/react-table'
 
@@ -95,7 +95,10 @@ export function Orders() {
   )
 }
 
-function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { order: OrderResponse; onBack: () => void; onUpdateStatus: (s: string, n?: string) => void; onUpdate: (d: any) => void; statuses: any[] }) {
+function OrderDetail({ order: initialOrder, onBack, onUpdateStatus, onUpdate, statuses }: { order: OrderResponse; onBack: () => void; onUpdateStatus: (s: string, n?: string) => void; onUpdate: (d: any) => void; statuses: any[] }) {
+  const [order, setOrder] = useState(initialOrder)
+
+  useEffect(() => { setOrder(initialOrder) }, [initialOrder])
   const [editing, setEditing] = useState(false)
   const [shippingCharge, setShippingCharge] = useState(String(nn(order.shippingCharge)))
   const [discount, setDiscount] = useState(String(nn(order.discount)))
@@ -106,6 +109,18 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
   const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
   const [showCustomerInfo, setShowCustomerInfo] = useState(false)
   const [showCourier, setShowCourier] = useState(false)
+  const [newNote, setNewNote] = useState('')
+  const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
+  const [showAllTimeline, setShowAllTimeline] = useState(false)
+
+  const noteMut = useMutation({
+    mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
+    onSuccess: () => {
+      ordersApi.get(order.id).then(r => setOrder(r.data))
+      setNewNote('')
+      toast.success('Note added')
+    },
+  })
 
   const phone = order.customer.phoneNumber?.replace(/[^\d]/g, '')
 
@@ -211,16 +226,72 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
               <CardHeader className='pb-2'><CardTitle className='text-base'>Timeline</CardTitle></CardHeader>
               <CardContent>
                 <div className='space-y-0'>
-                  {(order.timeline as any[]).map((t: any, i: number) => (
-                    <div key={i} className='relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0' style={{ borderColor: statusColors[t.status] || '#6B7280' }}>
-                      <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: statusColors[t.status] || '#6B7280' }} />
-                      <div className='flex items-center gap-2'>
-                        <Badge style={{ backgroundColor: statusColors[t.status] || '#6B7280', color: '#fff' }} className='text-xs'>{t.status}</Badge>
-                        <span className='text-xs text-muted-foreground flex items-center gap-1'><Clock className='h-3 w-3' /> {new Date(t.timestamp).toLocaleString()}</span>
+                  {(order.timeline as any[]).slice(0, showAllTimeline ? undefined : 8).map((t: any, i: number) => {
+                    const isStatus = !!t.status && !t.type
+                    const isNote = t.type === 'note'
+                    const isShipping = t.type === 'shipping'
+                    const isDiscount = t.type === 'discount'
+                    const isItems = t.type === 'items'
+                    const isPrivate = t.visibility === 'private'
+                    const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1'
+
+                    return (
+                      <div key={i} className='relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0' style={{ borderColor: color }}>
+                        <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: color }} />
+                        <div className='flex items-center gap-2 flex-wrap'>
+                          {isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
+                          {isShipping && <Badge variant='outline' className='text-xs flex items-center gap-1'><ArrowRightLeft className='h-2.5 w-2.5' /> Shipping</Badge>}
+                          {isDiscount && <Badge variant='outline' className='text-xs flex items-center gap-1'><Tag className='h-2.5 w-2.5' /> Discount</Badge>}
+                          {isItems && <Badge variant='outline' className='text-xs flex items-center gap-1'><ShoppingBag className='h-2.5 w-2.5' /> Items</Badge>}
+                          {isNote && <Badge variant='outline' className='text-xs flex items-center gap-1'><MessageSquarePlus className='h-2.5 w-2.5' /> Note</Badge>}
+                          {isPrivate && <Badge variant='secondary' className='text-xs flex items-center gap-0.5'><EyeOff className='h-2.5 w-2.5' /> Private</Badge>}
+                          {!isPrivate && isNote && <Badge variant='secondary' className='text-xs flex items-center gap-0.5 bg-green-500/10 text-green-600'><Eye className='h-2.5 w-2.5' /> Public</Badge>}
+                          <span className='text-xs text-muted-foreground flex items-center gap-1'><Clock className='h-3 w-3' /> {new Date(t.timestamp).toLocaleString()}</span>
+                        </div>
+                        {t.note && (
+                          <p className={`text-sm mt-1 ${isPrivate ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}>
+                            {isShipping && t.oldValue !== undefined && (
+                              <span className='mr-1'>৳{fmt(t.oldValue)} → ৳{fmt(t.newValue)}</span>
+                            )}
+                            {isDiscount && t.oldValue !== undefined && (
+                              <span className='mr-1'>৳{fmt(t.oldValue)} → ৳{fmt(t.newValue)} ({t.discountType})</span>
+                            )}
+                            {t.note}
+                          </p>
+                        )}
                       </div>
-                      {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
+                    )
+                  })}
+                  {order.timeline && (order.timeline as any[]).length > 8 && (
+                    <button onClick={() => setShowAllTimeline(!showAllTimeline)} className='text-xs text-primary hover:underline pl-6'>
+                      {showAllTimeline ? 'Show less' : `Show all (${(order.timeline as any[]).length})`}
+                    </button>
+                  )}
+                </div>
+
+                <div className='mt-4 pt-3 border-t'>
+                  <div className='flex items-center gap-2 mb-2'>
+                    <div className='flex gap-0.5 border rounded-md p-0.5'>
+                      <Button variant={noteVisibility === 'public' ? 'default' : 'ghost'} size='sm' className='h-6 text-xs' onClick={() => setNoteVisibility('public')}>
+                        <Eye className='h-3 w-3 mr-1' /> Public
+                      </Button>
+                      <Button variant={noteVisibility === 'private' ? 'default' : 'ghost'} size='sm' className='h-6 text-xs' onClick={() => setNoteVisibility('private')}>
+                        <EyeOff className='h-3 w-3 mr-1' /> Private
+                      </Button>
                     </div>
-                  ))}
+                  </div>
+                  <div className='flex gap-2'>
+                    <Input
+                      placeholder='Add a note...'
+                      value={newNote}
+                      onChange={e => setNewNote(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) { noteMut.mutate({ id: order.id, note: newNote.trim(), visibility: noteVisibility }) } }}
+                      className='text-sm'
+                    />
+                    <Button size='sm' disabled={!newNote.trim() || noteMut.isPending} onClick={() => noteMut.mutate({ id: order.id, note: newNote.trim(), visibility: noteVisibility })}>
+                      <MessageSquarePlus className='h-3.5 w-3.5' />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

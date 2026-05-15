@@ -34,4 +34,9 @@ export class OrdersController {
   removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
     return this.svc.removeItem(id, itemId);
   }
+
+  @Post(':id/note')
+  addNote(@Param('id') id: string, @Body() dto: { note: string; visibility: 'public' | 'private' }, @CurrentUser() user: { userId: string }) {
+    return this.svc.addNote(id, dto.note, dto.visibility, user.userId);
+  }
 }
