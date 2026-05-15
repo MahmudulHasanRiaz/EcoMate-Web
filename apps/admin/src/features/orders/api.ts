@@ -8,6 +8,11 @@ export interface OrderResponse {
   courierService?: string | null; courierStatus?: string | null;
   courierTrackingCode?: string | null; courierConsignmentId?: string | null;
   trackingUrl?: string | null;
+  dispatchLogs?: {
+    id: string; courier: string; status: string; message?: string | null;
+    consignmentId?: string | null; trackingCode?: string | null;
+    createdAt: string;
+  }[];
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string };
   status: { id: string; name: string; color: string; nextStatuses: string[] };

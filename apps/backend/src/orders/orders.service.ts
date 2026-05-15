@@ -57,6 +57,7 @@ export class OrdersService {
         status: true, shipment: true,
         items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
         payments: { include: { verifier: { select: { id: true, firstName: true, lastName: true } } } },
+        dispatchLogs: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order) throw new NotFoundException('Order not found');

@@ -312,6 +312,37 @@ function OrderDetail({ order: initialOrder, onBack, onUpdateStatus, onUpdate, st
                 </div>
               </CardContent>
             </Card>
+
+            {order.dispatchLogs && order.dispatchLogs.length > 0 && (
+              <Card>
+                <CardHeader className='pb-2'><CardTitle className='text-base flex items-center gap-2'><Truck className='h-4 w-4' /> Dispatch History</CardTitle></CardHeader>
+                <CardContent className='p-0'>
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Courier</TableHead><TableHead>Status</TableHead><TableHead>Consignment / Tracking</TableHead><TableHead>Date</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {order.dispatchLogs.map(log => {
+                        const trackUrl = log.trackingCode ? `https://redx.com.bd/track-global-parcel/?trackingId=${encodeURIComponent(log.trackingCode)}` : ''
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className='font-medium text-sm capitalize'>{log.courier}</TableCell>
+                            <TableCell><Badge variant={log.status === 'success' ? 'default' : 'destructive'} className='text-xs'>{log.status}</Badge></TableCell>
+                            <TableCell className='text-sm font-mono'>{log.consignmentId || log.trackingCode || '—'}</TableCell>
+                            <TableCell className='text-xs text-muted-foreground'>{new Date(log.createdAt).toLocaleString()}</TableCell>
+                            <TableCell>
+                              {(log.trackingCode || log.consignmentId) && (
+                                <Button size='icon' variant='ghost' className='h-7 w-7' title='Track' onClick={() => window.open(trackUrl, '_blank')}>
+                                  <ExternalLink className='h-3.5 w-3.5' />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <div className='space-y-6'>
