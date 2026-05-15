@@ -1,10 +1,19 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderStatusDto, UpdateOrderDto, UpdateOrderItemDto } from './dto/order.dto';
+import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 
 @Injectable()
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private transformOrder(order: any) {
+    if (!order) return order;
+    return {
+      ...order,
+      trackingUrl: buildTrackingUrl(order.courierService, order.courierTrackingCode, order.courierConsignmentId),
+    };
+  }
 
   private async generateDisplayId(): Promise<string> {
     const today = new Date();
@@ -37,7 +46,7 @@ export class OrdersService {
       }),
       this.prisma.order.count({ where }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return { data: data.map((o: any) => this.transformOrder(o)), meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
   }
 
   async findOne(id: string) {
@@ -51,7 +60,7 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException('Order not found');
-    return order;
+    return this.transformOrder(order);
   }
 
   async create(dto: CreateOrderDto) {

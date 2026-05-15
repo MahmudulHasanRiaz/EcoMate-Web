@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, ShoppingBag } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, ShoppingBag, ExternalLink } from 'lucide-react'
 import { PaymentLogo } from '@/components/payment-logo'
 import type { PaginationState } from '@tanstack/react-table'
 
@@ -65,19 +65,26 @@ export function Orders() {
         <div><h2 className='text-2xl font-bold tracking-tight'>Orders</h2><p className='text-muted-foreground'>Manage customer orders and track fulfillment.</p></div>
         <Card><CardContent className='p-0'>
           <Table>
-            <TableHeader><TableRow><TableHead>Order ID</TableHead><TableHead>Customer</TableHead><TableHead>Status</TableHead><TableHead className='text-right'>Total</TableHead><TableHead>Items</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Order ID</TableHead><TableHead>Customer</TableHead><TableHead>Status</TableHead><TableHead className='text-right'>Total</TableHead><TableHead>Items</TableHead><TableHead>Date</TableHead><TableHead className='text-center'>Track</TableHead></TableRow></TableHeader>
             <TableBody>
-              {isLoading ? <TableRow><TableCell colSpan={6} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow> :
-               data?.data?.length ? data.data.map(o => (
-                <TableRow key={o.id} className='cursor-pointer hover:bg-muted/50' onClick={() => setSelected(o)}>
-                  <TableCell className='font-mono text-sm font-medium'>{o.displayId}</TableCell>
-                  <TableCell><div className='text-sm font-medium'>{o.customer.firstName} {o.customer.lastName}</div><div className='text-xs text-muted-foreground'>{o.customer.phoneNumber}</div></TableCell>
-                  <TableCell><Badge style={{ backgroundColor: statusColors[o.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>{o.status.name}</Badge></TableCell>
-                  <TableCell className='text-right font-medium'>৳{fmt(o.total)}</TableCell>
-                  <TableCell>{o.items.length}</TableCell>
-                  <TableCell className='text-xs text-muted-foreground'>{new Date(o.createdAt).toLocaleDateString()}</TableCell>
-                </TableRow>
-              )) : <TableRow><TableCell colSpan={6} className='text-center py-8 text-muted-foreground'>No orders yet</TableCell></TableRow>}
+               {isLoading ? <TableRow><TableCell colSpan={7} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow> :
+                data?.data?.length ? data.data.map(o => (
+                 <TableRow key={o.id} className='cursor-pointer hover:bg-muted/50' onClick={() => setSelected(o)}>
+                   <TableCell className='font-mono text-sm font-medium'>{o.displayId}</TableCell>
+                   <TableCell><div className='text-sm font-medium'>{o.customer.firstName} {o.customer.lastName}</div><div className='text-xs text-muted-foreground'>{o.customer.phoneNumber}</div></TableCell>
+                   <TableCell><Badge style={{ backgroundColor: statusColors[o.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>{o.status.name}</Badge></TableCell>
+                   <TableCell className='text-right font-medium'>৳{fmt(o.total)}</TableCell>
+                   <TableCell>{o.items.length}</TableCell>
+                   <TableCell className='text-xs text-muted-foreground'>{new Date(o.createdAt).toLocaleDateString()}</TableCell>
+                   <TableCell className='text-center'>
+                     {o.trackingUrl ? (
+                       <Button size='icon' variant='ghost' className='h-7 w-7' title={`Track via ${o.courierService || 'Courier'}`} onClick={(e) => { e.stopPropagation(); window.open(o.trackingUrl!, '_blank') }}>
+                         <ExternalLink className='h-3.5 w-3.5' />
+                       </Button>
+                     ) : <span className='text-xs text-muted-foreground'>—</span>}
+                   </TableCell>
+                 </TableRow>
+               )) : <TableRow><TableCell colSpan={7} className='text-center py-8 text-muted-foreground'>No orders yet</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent></Card>
@@ -172,7 +179,17 @@ function OrderDetail({ order: initialOrder, onBack, onUpdateStatus, onUpdate, st
           <div className='flex items-center gap-2'>
             {!editing && <Button variant='outline' size='sm' onClick={() => setEditing(true)}><Pencil className='h-4 w-4 mr-1' /> Edit</Button>}
             <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
-              <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
+              <div className='flex items-center gap-1.5'>
+                <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
+                {order.courierService && order.courierStatus && (
+                  <Badge variant='outline' className='text-xs flex items-center gap-1'><Truck className='h-3 w-3' /> {order.courierStatus}</Badge>
+                )}
+                {order.trackingUrl && (
+                  <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}>
+                    <ExternalLink className='h-3 w-3' />
+                  </Button>
+                )}
+              </div>
               {allowedStatuses.length > 0 && (
                 <select
                   className='text-sm border-0 bg-transparent focus:outline-none'

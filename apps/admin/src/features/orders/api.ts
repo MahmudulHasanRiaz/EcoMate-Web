@@ -5,6 +5,9 @@ export interface OrderResponse {
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
   shippingAddress: any; customerNotes?: string | null; officeNotes?: string | null; timeline: any[];
+  courierService?: string | null; courierStatus?: string | null;
+  courierTrackingCode?: string | null; courierConsignmentId?: string | null;
+  trackingUrl?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string };
   status: { id: string; name: string; color: string; nextStatuses: string[] };
