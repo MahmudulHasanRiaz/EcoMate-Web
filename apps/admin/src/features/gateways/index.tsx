@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2 } from 'lucide-react'
+import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const gatewayLabels: Record<string, string> = {
@@ -21,9 +21,9 @@ const gatewayLabels: Record<string, string> = {
 
 const gatewayDescriptions: Record<string, string> = {
   bkash: 'Manual bKash payment with number verification.',
-  nagad: 'Nagad manual or automatic payment gateway.',
+  nagad: 'Nagad manual payment gateway.',
   rocket: 'Rocket mobile banking integration.',
-  bkash_pgw: 'Official bKash Payment Gateway (Tokenized).',
+  bkash_pgw: 'Official bKash Payment Gateway (Tokenized API).',
   cod: 'Standard Cash on Delivery for physical goods.',
 }
 
@@ -35,13 +35,13 @@ export function GatewaySettings() {
   })
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [editData, setEditData] = useState<Record<string, { enabled: boolean; mode: string; phoneNumber: string; credentials: string }>>({})
+  const [editData, setEditData] = useState<Record<string, any>>({})
 
   const updateMut = useMutation({
     mutationFn: ({ gateway, data }: { gateway: string; data: any }) => gatewayApi.update(gateway, data),
     onSuccess: () => { 
       queryClient.invalidateQueries({ queryKey: ['gateways'] })
-      toast.success('Gateway settings updated') 
+      toast.success('Settings updated successfully') 
     },
   })
 
@@ -51,9 +51,9 @@ export function GatewaySettings() {
       ...prev,
       [g.gateway]: {
         enabled: g.enabled,
-        mode: g.mode || 'personal',
+        mode: g.mode || (g.gateway === 'bkash_pgw' ? 'sandbox' : 'personal'),
         phoneNumber: g.phoneNumber || '',
-        credentials: JSON.stringify(g.credentials || {}, null, 2),
+        credentials: g.credentials || {},
       },
     }))
   }
@@ -66,25 +66,7 @@ export function GatewaySettings() {
   const handleSave = (gateway: string) => {
     const d = editData[gateway]
     if (!d) return
-    
-    let parsedCredentials = {}
-    try {
-      parsedCredentials = JSON.parse(d.credentials)
-    } catch (e) {
-      toast.error('Invalid JSON credentials format')
-      return
-    }
-
-    updateMut.mutate({
-      gateway,
-      data: {
-        gateway,
-        enabled: d.enabled,
-        mode: d.mode,
-        phoneNumber: d.phoneNumber || null,
-        credentials: parsedCredentials,
-      },
-    })
+    updateMut.mutate({ gateway, data: { ...d, gateway } })
   }
 
   if (isLoading) return (
@@ -93,161 +75,190 @@ export function GatewaySettings() {
     </div>
   )
 
+  const manualGateways = (gateways || []).filter(g => ['bkash', 'nagad', 'rocket', 'upay', 'cellfin'].includes(g.gateway))
+  const pgwGateway = (gateways || []).find(g => g.gateway === 'bkash_pgw')
+  const codGateway = (gateways || []).find(g => g.gateway === 'cod')
+
   return (
-    <div className='space-y-6 w-full pb-8'>
+    <div className='space-y-8 w-full pb-12'>
       <div className='space-y-0.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Payment Gateways</h2>
         <p className='text-muted-foreground'>
-          Manage your store&apos;s checkout options and automated payment gateways.
+          Manage your store&apos;s checkout options, manual payments and automated APIs.
         </p>
       </div>
       <Separator className='my-6' />
 
-      <div className='grid gap-6'>
-        {(gateways || []).map(g => {
-          const isOpen = expanded[g.gateway]
-          const d = editData[g.gateway] || { 
-            enabled: g.enabled, 
-            mode: g.mode || 'personal', 
-            phoneNumber: g.phoneNumber || '', 
-            credentials: JSON.stringify(g.credentials || {}, null, 2) 
-          }
+      {/* Cash on Delivery Section */}
+      {codGateway && (
+        <Card className='border-none shadow-sm bg-muted/20'>
+          <CardContent className='p-4 flex items-center justify-between'>
+            <div className='flex items-center gap-4'>
+              <div className='p-2 rounded-lg bg-background border shadow-sm'>
+                <Truck className='h-5 w-5 text-primary' />
+              </div>
+              <div className='space-y-0.5'>
+                <CardTitle className='text-base'>Cash on Delivery</CardTitle>
+                <CardDescription className='text-xs'>Allow customers to pay when they receive the order.</CardDescription>
+              </div>
+            </div>
+            <div className='flex items-center gap-3'>
+              <Switch 
+                checked={codGateway.enabled} 
+                onCheckedChange={(v) => updateMut.mutate({ gateway: 'cod', data: { enabled: v, gateway: 'cod' } })} 
+              />
+              <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+                {codGateway.enabled ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          return (
-            <Card key={g.id} className={cn(
-              'transition-all duration-300 border shadow-sm overflow-hidden',
-              isOpen ? 'ring-1 ring-primary' : 'hover:border-primary/50'
-            )}>
-              <div 
-                className='p-4 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4'
-                onClick={() => handleToggleExpand(g)}
-              >
-                <div className='flex items-center gap-4'>
-                  <div className='p-2 rounded-lg bg-background border shadow-sm shrink-0'>
+      {/* Manual Payments Section */}
+      <div className='space-y-4'>
+        <div className='flex items-center gap-2 px-1'>
+          <ShieldCheck className='h-4 w-4 text-primary' />
+          <h3 className='text-sm font-bold uppercase tracking-wider'>Manual Payment Methods</h3>
+        </div>
+        <div className='grid gap-4'>
+          {manualGateways.map(g => {
+            const isOpen = expanded[g.gateway]
+            const d = editData[g.gateway] || { enabled: g.enabled, mode: g.mode || 'personal', phoneNumber: g.phoneNumber || '' }
+            return (
+              <Card key={g.id} className={cn('transition-all duration-200 border shadow-sm overflow-hidden', isOpen ? 'ring-1 ring-primary' : 'hover:border-muted-foreground/20')}>
+                <div className='p-4 cursor-pointer flex items-center justify-between gap-4' onClick={() => handleToggleExpand(g)}>
+                  <div className='flex items-center gap-4'>
                     <PaymentLogo method={g.gateway} size='md' showName={false} />
+                    <div className='space-y-0.5'>
+                      <CardTitle className='text-sm flex items-center gap-2'>
+                        {gatewayLabels[g.gateway]}
+                        {g.enabled && <CheckCircle2 className='h-3 w-3 text-green-500' />}
+                      </CardTitle>
+                      <CardDescription className='text-[11px]'>{gatewayDescriptions[g.gateway]}</CardDescription>
+                    </div>
                   </div>
-                  <div className='space-y-0.5'>
-                    <CardTitle className='text-base flex items-center gap-2'>
-                      {gatewayLabels[g.gateway] || g.gateway}
-                      {g.enabled && (
-                        <CheckCircle2 className='h-3.5 w-3.5 text-green-500' />
-                      )}
-                    </CardTitle>
-                    <CardDescription className='text-xs line-clamp-1'>
-                      {gatewayDescriptions[g.gateway] || 'Configure payment settings.'}
-                    </CardDescription>
+                  <div className='flex items-center gap-4'>
+                    <Switch checked={d.enabled} onCheckedChange={(v) => { initEdit(g); setEditData(p => ({ ...p, [g.gateway]: { ...d, enabled: v } })) }} onClick={e => e.stopPropagation()} />
+                    {isOpen ? <ChevronUp className='h-4 w-4 text-muted-foreground' /> : <ChevronDown className='h-4 w-4 text-muted-foreground' />}
                   </div>
                 </div>
-                
-                <div className='flex items-center justify-between sm:justify-end gap-4'>
-                  <div className='flex items-center gap-2'>
-                    <span className={cn(
-                      'text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full',
-                      d.enabled 
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-                        : 'bg-muted text-muted-foreground'
-                    )}>
-                      {d.enabled ? 'Active' : 'Inactive'}
-                    </span>
-                    <Switch 
-                      checked={d.enabled} 
-                      onCheckedChange={(v) => {
-                        initEdit(g);
-                        setEditData(prev => ({ ...prev, [g.gateway]: { ...d, enabled: v } }))
-                      }} 
-                      onClick={e => e.stopPropagation()}
-                    />
-                  </div>
-                  <Button variant='ghost' size='sm' className='h-8 w-8 p-0'>
-                    {isOpen ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
-                  </Button>
+                {isOpen && (
+                  <CardContent className='p-4 pt-0 border-t bg-muted/5 animate-in fade-in slide-in-from-top-1'>
+                    <div className='pt-4 grid gap-4 sm:grid-cols-2'>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold'>Account Type</Label>
+                        <Select value={d.mode} onValueChange={v => setEditData(p => ({ ...p, [g.gateway]: { ...d, mode: v } }))}>
+                          <SelectTrigger className='h-9'><SelectValue placeholder='Select' /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value='personal'>Personal</SelectItem>
+                            <SelectItem value='agent'>Agent</SelectItem>
+                            <SelectItem value='merchant'>Merchant</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
+                        <Input className='h-9' value={d.phoneNumber} onChange={e => setEditData(p => ({ ...p, [g.gateway]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
+                      </div>
+                      <div className='sm:col-span-2 flex justify-end'>
+                        <Button size='sm' onClick={() => handleSave(g.gateway)} disabled={updateMut.isPending}>
+                          {updateMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}
+                          Save Configuration
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* bKash PGW Section */}
+      {pgwGateway && (
+        <div className='space-y-4 pt-2'>
+          <div className='flex items-center gap-2 px-1'>
+            <Zap className='h-4 w-4 text-primary' />
+            <h3 className='text-sm font-bold uppercase tracking-wider'>Automatic Payment Gateway</h3>
+          </div>
+          <Card className={cn('transition-all duration-200 border shadow-sm overflow-hidden', expanded[pgwGateway.gateway] ? 'ring-1 ring-primary' : 'hover:border-muted-foreground/20')}>
+            <div className='p-4 cursor-pointer flex items-center justify-between gap-4' onClick={() => handleToggleExpand(pgwGateway)}>
+              <div className='flex items-center gap-4'>
+                <div className='p-2 rounded-lg bg-background border shadow-sm shrink-0'>
+                  <PaymentLogo method='bkash_pgw' size='md' showName={false} />
+                </div>
+                <div className='space-y-0.5'>
+                  <CardTitle className='text-sm flex items-center gap-2'>
+                    bKash Payment Gateway
+                    {pgwGateway.enabled && <CheckCircle2 className='h-3 w-3 text-green-500' />}
+                  </CardTitle>
+                  <CardDescription className='text-[11px]'>Official Tokenized API for automated real-time payments.</CardDescription>
                 </div>
               </div>
-
-              {isOpen && (
-                <CardContent className='p-4 pt-0 border-t bg-muted/5 animate-in fade-in slide-in-from-top-2 duration-200' onClick={e => e.stopPropagation()}>
-                  <div className='pt-4 grid gap-6 md:grid-cols-12'>
-                    <div className='md:col-span-7 space-y-4'>
-                      <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
-                        <div className='space-y-2'>
-                          <Label className='text-xs font-semibold'>Account Type</Label>
-                          <Select 
-                            value={d.mode} 
-                            onValueChange={v => setEditData(prev => ({ ...prev, [g.gateway]: { ...d, mode: v } }))}
-                          >
-                            <SelectTrigger className='h-9'>
-                              <SelectValue placeholder='Select type' />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value='personal'>Personal</SelectItem>
-                              <SelectItem value='agent'>Agent</SelectItem>
-                              <SelectItem value='merchant'>Merchant</SelectItem>
-                              <SelectItem value='production'>Production (PGW)</SelectItem>
-                              <SelectItem value='sandbox'>Sandbox (PGW)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        
-                        <div className='space-y-2'>
-                          <Label className='text-xs font-semibold flex items-center gap-1.5'>
-                            <Phone className='h-3 w-3' /> Phone Number
-                          </Label>
-                          <Input
-                            className='h-9'
-                            value={d.phoneNumber}
-                            onChange={e => setEditData(prev => ({ ...prev, [g.gateway]: { ...d, phoneNumber: e.target.value } }))}
-                            placeholder='01XXXXXXXXX'
-                          />
-                        </div>
-                      </div>
-
-                      <div className='space-y-2'>
-                        <Label className='text-xs font-semibold'>Credentials (JSON)</Label>
-                        <Textarea
-                          className='min-h-[120px] font-mono text-[11px] bg-background'
-                          value={d.credentials}
-                          onChange={e => setEditData(prev => ({ ...prev, [g.gateway]: { ...d, credentials: e.target.value } }))}
-                          placeholder='{\n  "appKey": "...",\n  "secretKey": "..."\n}'
-                        />
-                      </div>
+              <div className='flex items-center gap-4'>
+                <Switch checked={editData[pgwGateway.gateway]?.enabled ?? pgwGateway.enabled} onCheckedChange={(v) => { initEdit(pgwGateway); setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], enabled: v } })) }} onClick={e => e.stopPropagation()} />
+                {expanded[pgwGateway.gateway] ? <ChevronUp className='h-4 w-4 text-muted-foreground' /> : <ChevronDown className='h-4 w-4 text-muted-foreground' />}
+              </div>
+            </div>
+            {expanded[pgwGateway.gateway] && (
+              <CardContent className='p-4 pt-0 border-t bg-muted/5 animate-in fade-in slide-in-from-top-1'>
+                <div className='pt-4 grid gap-6 md:grid-cols-12'>
+                  <div className='md:col-span-7 space-y-4'>
+                    <div className='space-y-2'>
+                      <Label className='text-xs font-semibold'>API Environment</Label>
+                      <Select value={editData[pgwGateway.gateway]?.mode || 'sandbox'} onValueChange={v => setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], mode: v } }))}>
+                        <SelectTrigger className='h-9'><SelectValue placeholder='Select' /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='sandbox'>Sandbox (Testing Mode)</SelectItem>
+                          <SelectItem value='production'>Production (Live Mode)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-
-                    <div className='md:col-span-5 space-y-4'>
-                      <div className='rounded-lg bg-background border p-4 space-y-2'>
-                        <div className='flex items-center gap-2 font-semibold text-xs text-primary'>
-                          <Settings2 className='h-3.5 w-3.5' />
-                          <span>Quick Guide</span>
-                        </div>
-                        <ul className='text-[11px] space-y-2 text-muted-foreground'>
-                          <li className='flex gap-2'><Info className='h-3 w-3 shrink-0 mt-0.5' /> Manual accounts need phone numbers only.</li>
-                          <li className='flex gap-2'><Info className='h-3 w-3 shrink-0 mt-0.5' /> PGW requires API credentials.</li>
-                        </ul>
-                        <Separator className='my-2' />
-                        <div className='flex justify-end pt-2'>
-                          <Button 
-                            size='sm' 
-                            className='w-full' 
-                            onClick={() => handleSave(g.gateway)} 
-                            disabled={updateMut.isPending}
-                          >
-                            {updateMut.isPending ? (
-                              <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' />
-                            ) : (
-                              <Save className='h-3.5 w-3.5 mr-2' />
-                            )}
-                            Save Changes
-                          </Button>
-                        </div>
+                    <div className='grid gap-4 sm:grid-cols-2'>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold'>App Key</Label>
+                        <Input className='h-9' value={editData[pgwGateway.gateway]?.credentials?.appKey || ''} onChange={e => setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], credentials: { ...p[pgwGateway.gateway].credentials, appKey: e.target.value } } }))} placeholder='App Key' />
+                      </div>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold'>App Secret</Label>
+                        <Input className='h-9' type='password' value={editData[pgwGateway.gateway]?.credentials?.appSecret || ''} onChange={e => setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], credentials: { ...p[pgwGateway.gateway].credentials, appSecret: e.target.value } } }))} placeholder='App Secret' />
+                      </div>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold'>API Username</Label>
+                        <Input className='h-9' value={editData[pgwGateway.gateway]?.credentials?.username || ''} onChange={e => setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], credentials: { ...p[pgwGateway.gateway].credentials, username: e.target.value } } }))} placeholder='Username' />
+                      </div>
+                      <div className='space-y-2'>
+                        <Label className='text-xs font-semibold'>API Password</Label>
+                        <Input className='h-9' type='password' value={editData[pgwGateway.gateway]?.credentials?.password || ''} onChange={e => setEditData(p => ({ ...p, [pgwGateway.gateway]: { ...p[pgwGateway.gateway], credentials: { ...p[pgwGateway.gateway].credentials, password: e.target.value } } }))} placeholder='Password' />
                       </div>
                     </div>
                   </div>
-                </CardContent>
-              )}
-            </Card>
-          )
-        })}
-      </div>
+                  <div className='md:col-span-5 space-y-4'>
+                    <div className='rounded-lg bg-background border p-4 space-y-3'>
+                      <div className='flex items-center gap-2 font-semibold text-xs text-primary'>
+                        <Settings2 className='h-3.5 w-3.5' />
+                        <span>Integration Guide</span>
+                      </div>
+                      <ul className='text-[10px] space-y-2 text-muted-foreground'>
+                        <li className='flex gap-2'><Info className='h-3 w-3 shrink-0 mt-0.5' /> Use <b>Sandbox</b> credentials for local testing.</li>
+                        <li className='flex gap-2'><Info className='h-3 w-3 shrink-0 mt-0.5' /> <b>Production</b> credentials require official approval.</li>
+                        <li className='flex gap-2'><Info className='h-3 w-3 shrink-0 mt-0.5' /> Check official <a href='https://developer.bka.sh/' target='_blank' className='text-primary hover:underline'>bKash Documentation</a> for keys.</li>
+                      </ul>
+                      <Separator className='my-2' />
+                      <Button size='sm' className='w-full' onClick={() => handleSave(pgwGateway.gateway)} disabled={updateMut.isPending}>
+                        {updateMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}
+                        Save API Settings
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
-
