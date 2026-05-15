@@ -224,23 +224,47 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </select>
                 </div>
                 <div className='space-y-1.5'>
-                  <Label>Stock Qty</Label>
-                  <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
+                  <div className='flex items-center gap-3 pt-1'>
+                    <Switch checked={manageStock} onCheckedChange={setManageStock} />
+                    <Label>Manage Stock</Label>
+                  </div>
                 </div>
               </div>
 
-              <div className='grid grid-cols-2 gap-4'>
-                <div className='flex items-center gap-3 pt-2'>
-                  <Switch checked={manageStock} onCheckedChange={setManageStock} />
-                  <Label>Manage Stock</Label>
-                </div>
-                {manageStock && (
+              {manageStock ? (
+                <div className='grid grid-cols-2 gap-4'>
+                  <div className='space-y-1.5'>
+                    <Label>Stock Quantity</Label>
+                    <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
+                  </div>
                   <div className='space-y-1.5'>
                     <Label>Low Stock Alert</Label>
                     <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className='flex items-center gap-3 pt-1'>
+                  <Label>Stock Status:</Label>
+                  <div className='flex gap-1 border rounded-md p-0.5'>
+                    <Button
+                      variant={parseInt(stock) > 0 ? 'default' : 'ghost'}
+                      size='sm'
+                      className='h-7 text-xs'
+                      onClick={() => setStock('10')}
+                    >
+                      In Stock
+                    </Button>
+                    <Button
+                      variant={parseInt(stock) <= 0 ? 'default' : 'ghost'}
+                      size='sm'
+                      className='h-7 text-xs'
+                      onClick={() => setStock('0')}
+                    >
+                      Out of Stock
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <div className='flex gap-6 pt-2'>
                 <div className='flex items-center gap-2'>

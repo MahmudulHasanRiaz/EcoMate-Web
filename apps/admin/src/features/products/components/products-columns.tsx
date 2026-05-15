@@ -67,7 +67,14 @@ export function productsColumns(
       accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.stock, 0) : row.stock,
       cell: ({ row, getValue }) => {
         const s = getValue<number>()
-        return <Badge variant={s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'} className='text-xs'>{s}</Badge>
+        const label = row.original.manageStock
+          ? `${s}`
+          : s <= 0 ? 'Out of Stock' : 'In Stock'
+        return (
+          <Badge variant={s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'} className='text-xs'>
+            {label}
+          </Badge>
+        )
       },
     },
     {
