@@ -14,45 +14,41 @@ export const sidebarData: SidebarData = {
   navGroups: [
     // ===== OPERATIONAL PANEL =====
     { title: 'Overview', panel: 'operational', items: [
-      { title: 'Dashboard', url: '/', icon: LayoutDashboard },
-      { title: 'Tasks', url: '/tasks', icon: ListTodo },
+      { title: 'Dashboard', url: '/op', icon: LayoutDashboard },
+      { title: 'Tasks', url: '/op/tasks', icon: ListTodo },
     ]},
     { title: 'Catalog', panel: 'operational', items: [
       { title: 'Products', icon: Package, items: [
-        { title: 'All Products', url: '/products', icon: Package },
-        { title: 'Categories', url: '/categories', icon: Package },
-        { title: 'Attributes', url: '/attributes', icon: Palette },
+        { title: 'All Products', url: '/op/products', icon: Package },
+        { title: 'Categories', url: '/op/categories', icon: Package },
+        { title: 'Attributes', url: '/op/attributes', icon: Palette },
       ]},
     ]},
     { title: 'Sales', panel: 'operational', items: [
-      { title: 'Orders', url: '/orders', icon: ListTodo },
-      { title: 'Customers', url: '/customers', icon: Users },
-      { title: 'Payments', url: '/payments', icon: Coins },
+      { title: 'Orders', url: '/op/orders', icon: ListTodo },
+      { title: 'Customers', url: '/op/customers', icon: Users },
+      { title: 'Payments', url: '/op/payments', icon: Coins },
     ]},
     { title: 'Content', panel: 'operational', items: [
-      { title: 'Media Gallery', url: '/media', icon: Monitor },
+      { title: 'Media Gallery', url: '/op/media', icon: Monitor },
     ]},
 
     // ===== MONITORING / ADMIN PANEL =====
-    { title: 'Management', panel: 'monitoring', items: [
-      { title: 'Users', url: '/users', icon: Users },
-      { title: 'Inventory', url: '/inventory', icon: AlertTriangle },
+    { title: 'Administration', panel: 'monitoring', items: [
+      { title: 'Users', url: '/mon/users', icon: Users },
+      { title: 'Settings', url: '/mon/settings', icon: Settings },
     ]},
-    { title: 'Finance', panel: 'monitoring', items: [
-      { title: 'Coupons', url: '/coupons', icon: Percent },
-      { title: 'Refunds', url: '/refunds', icon: RefreshCw },
+    { title: 'Monitoring', panel: 'monitoring', items: [
+      { title: 'Inventory', url: '/mon/inventory', icon: AlertTriangle },
+      { title: 'Logs', url: '/mon/settings/system', icon: Settings },
     ]},
-    { title: 'Logistics', panel: 'monitoring', items: [
-      { title: 'Shipments', url: '/shipments', icon: Truck },
+    { title: 'Operations', panel: 'monitoring', items: [
+      { title: 'Coupons', url: '/mon/coupons', icon: Percent },
+      { title: 'Refunds', url: '/mon/refunds', icon: RefreshCw },
+      { title: 'Shipments', url: '/mon/shipments', icon: Truck },
     ]},
-    { title: 'Settings', panel: 'monitoring', icon: Settings, items: [
-      { title: 'Personal', url: '/settings/personal', icon: UserCog },
-      { title: 'System', url: '/settings/system', icon: Settings },
-      { title: 'Order Status', url: '/settings/system/order-statuses', icon: RefreshCw },
-      { title: 'Courier', url: '/settings/system/courier', icon: Truck },
-      { title: 'Gateways', url: '/settings/system/gateways', icon: CreditCard },
-      { title: 'Storage', url: '/settings/system/storage', icon: Wrench },
-      { title: 'Help Center', url: '/help-center', icon: HelpCircle },
+    { title: 'Support', panel: 'monitoring', items: [
+      { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle },
     ]},
   ],
 }

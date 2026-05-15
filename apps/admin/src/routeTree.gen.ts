@@ -21,35 +21,41 @@ import { Route as authSignIn2RouteImport } from './routes/(auth)/sign-in-2'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as authOtpRouteImport } from './routes/(auth)/otp'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
-import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
-import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
-import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
-import { Route as AuthenticatedShipmentsIndexRouteImport } from './routes/_authenticated/shipments/index'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedRefundsIndexRouteImport } from './routes/_authenticated/refunds/index'
-import { Route as AuthenticatedProductsIndexRouteImport } from './routes/_authenticated/products/index'
-import { Route as AuthenticatedPaymentsIndexRouteImport } from './routes/_authenticated/payments/index'
-import { Route as AuthenticatedOrdersIndexRouteImport } from './routes/_authenticated/orders/index'
-import { Route as AuthenticatedMediaIndexRouteImport } from './routes/_authenticated/media/index'
-import { Route as AuthenticatedInventoryIndexRouteImport } from './routes/_authenticated/inventory/index'
-import { Route as AuthenticatedHelpCenterIndexRouteImport } from './routes/_authenticated/help-center/index'
-import { Route as AuthenticatedCustomersIndexRouteImport } from './routes/_authenticated/customers/index'
-import { Route as AuthenticatedCouponsIndexRouteImport } from './routes/_authenticated/coupons/index'
-import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats/index'
-import { Route as AuthenticatedCategoriesIndexRouteImport } from './routes/_authenticated/categories/index'
-import { Route as AuthenticatedAttributesIndexRouteImport } from './routes/_authenticated/attributes/index'
-import { Route as AuthenticatedAppsIndexRouteImport } from './routes/_authenticated/apps/index'
-import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
-import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
-import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
-import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedOpIndexRouteImport } from './routes/_authenticated/op/index'
+import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticated/mon/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
-import { Route as AuthenticatedSettingsSystemIndexRouteImport } from './routes/_authenticated/settings/system/index'
-import { Route as AuthenticatedSettingsPersonalIndexRouteImport } from './routes/_authenticated/settings/personal/index'
-import { Route as AuthenticatedSettingsSystemStorageIndexRouteImport } from './routes/_authenticated/settings/system/storage/index'
-import { Route as AuthenticatedSettingsSystemOrderStatusesIndexRouteImport } from './routes/_authenticated/settings/system/order-statuses/index'
-import { Route as AuthenticatedSettingsSystemGatewaysIndexRouteImport } from './routes/_authenticated/settings/system/gateways/index'
-import { Route as AuthenticatedSettingsSystemCourierIndexRouteImport } from './routes/_authenticated/settings/system/courier/index'
+import { Route as AuthenticatedMonSettingsRouteRouteImport } from './routes/_authenticated/mon/settings/route'
+import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authenticated/op/tasks/index'
+import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
+import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
+import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
+import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
+import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
+import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
+import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_authenticated/op/categories/index'
+import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
+import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
+import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
+import { Route as AuthenticatedMonShipmentsIndexRouteImport } from './routes/_authenticated/mon/shipments/index'
+import { Route as AuthenticatedMonSettingsIndexRouteImport } from './routes/_authenticated/mon/settings/index'
+import { Route as AuthenticatedMonRefundsIndexRouteImport } from './routes/_authenticated/mon/refunds/index'
+import { Route as AuthenticatedMonInventoryIndexRouteImport } from './routes/_authenticated/mon/inventory/index'
+import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
+import { Route as AuthenticatedMonCouponsIndexRouteImport } from './routes/_authenticated/mon/coupons/index'
+import { Route as AuthenticatedMonSettingsNotificationsRouteImport } from './routes/_authenticated/mon/settings/notifications'
+import { Route as AuthenticatedMonSettingsDisplayRouteImport } from './routes/_authenticated/mon/settings/display'
+import { Route as AuthenticatedMonSettingsAppearanceRouteImport } from './routes/_authenticated/mon/settings/appearance'
+import { Route as AuthenticatedMonSettingsAccountRouteImport } from './routes/_authenticated/mon/settings/account'
+import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
+import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsPersonalIndexRouteImport } from './routes/_authenticated/mon/settings/personal/index'
+import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
+import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
+import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
+import { Route as AuthenticatedMonSettingsSystemStorageIndexRouteImport } from './routes/_authenticated/mon/settings/system/storage/index'
+import { Route as AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/system/order-statuses/index'
+import { Route as AuthenticatedMonSettingsSystemGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/system/gateways/index'
+import { Route as AuthenticatedMonSettingsSystemCourierIndexRouteImport } from './routes/_authenticated/mon/settings/system/courier/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -110,179 +116,217 @@ const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSettingsRouteRoute =
-  AuthenticatedSettingsRouteRouteImport.update({
-    id: '/settings',
-    path: '/settings',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
-  id: '/users/',
-  path: '/users/',
+const AuthenticatedOpIndexRoute = AuthenticatedOpIndexRouteImport.update({
+  id: '/op/',
+  path: '/op/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
-  id: '/tasks/',
-  path: '/tasks/',
+const AuthenticatedMonIndexRoute = AuthenticatedMonIndexRouteImport.update({
+  id: '/mon/',
+  path: '/mon/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedShipmentsIndexRoute =
-  AuthenticatedShipmentsIndexRouteImport.update({
-    id: '/shipments/',
-    path: '/shipments/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedSettingsIndexRoute =
-  AuthenticatedSettingsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedRefundsIndexRoute =
-  AuthenticatedRefundsIndexRouteImport.update({
-    id: '/refunds/',
-    path: '/refunds/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedProductsIndexRoute =
-  AuthenticatedProductsIndexRouteImport.update({
-    id: '/products/',
-    path: '/products/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedPaymentsIndexRoute =
-  AuthenticatedPaymentsIndexRouteImport.update({
-    id: '/payments/',
-    path: '/payments/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedOrdersIndexRoute =
-  AuthenticatedOrdersIndexRouteImport.update({
-    id: '/orders/',
-    path: '/orders/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedMediaIndexRoute = AuthenticatedMediaIndexRouteImport.update({
-  id: '/media/',
-  path: '/media/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedInventoryIndexRoute =
-  AuthenticatedInventoryIndexRouteImport.update({
-    id: '/inventory/',
-    path: '/inventory/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedHelpCenterIndexRoute =
-  AuthenticatedHelpCenterIndexRouteImport.update({
-    id: '/help-center/',
-    path: '/help-center/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedCustomersIndexRoute =
-  AuthenticatedCustomersIndexRouteImport.update({
-    id: '/customers/',
-    path: '/customers/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedCouponsIndexRoute =
-  AuthenticatedCouponsIndexRouteImport.update({
-    id: '/coupons/',
-    path: '/coupons/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedChatsIndexRoute = AuthenticatedChatsIndexRouteImport.update({
-  id: '/chats/',
-  path: '/chats/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedCategoriesIndexRoute =
-  AuthenticatedCategoriesIndexRouteImport.update({
-    id: '/categories/',
-    path: '/categories/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedAttributesIndexRoute =
-  AuthenticatedAttributesIndexRouteImport.update({
-    id: '/attributes/',
-    path: '/attributes/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedAppsIndexRoute = AuthenticatedAppsIndexRouteImport.update({
-  id: '/apps/',
-  path: '/apps/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedSettingsNotificationsRoute =
-  AuthenticatedSettingsNotificationsRouteImport.update({
-    id: '/notifications',
-    path: '/notifications',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedSettingsDisplayRoute =
-  AuthenticatedSettingsDisplayRouteImport.update({
-    id: '/display',
-    path: '/display',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedSettingsAppearanceRoute =
-  AuthenticatedSettingsAppearanceRouteImport.update({
-    id: '/appearance',
-    path: '/appearance',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedSettingsAccountRoute =
-  AuthenticatedSettingsAccountRouteImport.update({
-    id: '/account',
-    path: '/account',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedSettingsSystemIndexRoute =
-  AuthenticatedSettingsSystemIndexRouteImport.update({
+const AuthenticatedMonSettingsRouteRoute =
+  AuthenticatedMonSettingsRouteRouteImport.update({
+    id: '/mon/settings',
+    path: '/mon/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpTasksIndexRoute =
+  AuthenticatedOpTasksIndexRouteImport.update({
+    id: '/op/tasks/',
+    path: '/op/tasks/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpProductsIndexRoute =
+  AuthenticatedOpProductsIndexRouteImport.update({
+    id: '/op/products/',
+    path: '/op/products/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpPaymentsIndexRoute =
+  AuthenticatedOpPaymentsIndexRouteImport.update({
+    id: '/op/payments/',
+    path: '/op/payments/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpOrdersIndexRoute =
+  AuthenticatedOpOrdersIndexRouteImport.update({
+    id: '/op/orders/',
+    path: '/op/orders/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpMediaIndexRoute =
+  AuthenticatedOpMediaIndexRouteImport.update({
+    id: '/op/media/',
+    path: '/op/media/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpCustomersIndexRoute =
+  AuthenticatedOpCustomersIndexRouteImport.update({
+    id: '/op/customers/',
+    path: '/op/customers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpChatsIndexRoute =
+  AuthenticatedOpChatsIndexRouteImport.update({
+    id: '/op/chats/',
+    path: '/op/chats/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpCategoriesIndexRoute =
+  AuthenticatedOpCategoriesIndexRouteImport.update({
+    id: '/op/categories/',
+    path: '/op/categories/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAttributesIndexRoute =
+  AuthenticatedOpAttributesIndexRouteImport.update({
+    id: '/op/attributes/',
+    path: '/op/attributes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAppsIndexRoute =
+  AuthenticatedOpAppsIndexRouteImport.update({
+    id: '/op/apps/',
+    path: '/op/apps/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonUsersIndexRoute =
+  AuthenticatedMonUsersIndexRouteImport.update({
+    id: '/mon/users/',
+    path: '/mon/users/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonShipmentsIndexRoute =
+  AuthenticatedMonShipmentsIndexRouteImport.update({
+    id: '/mon/shipments/',
+    path: '/mon/shipments/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsIndexRoute =
+  AuthenticatedMonSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonRefundsIndexRoute =
+  AuthenticatedMonRefundsIndexRouteImport.update({
+    id: '/mon/refunds/',
+    path: '/mon/refunds/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonInventoryIndexRoute =
+  AuthenticatedMonInventoryIndexRouteImport.update({
+    id: '/mon/inventory/',
+    path: '/mon/inventory/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonHelpCenterIndexRoute =
+  AuthenticatedMonHelpCenterIndexRouteImport.update({
+    id: '/mon/help-center/',
+    path: '/mon/help-center/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonCouponsIndexRoute =
+  AuthenticatedMonCouponsIndexRouteImport.update({
+    id: '/mon/coupons/',
+    path: '/mon/coupons/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsNotificationsRoute =
+  AuthenticatedMonSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsDisplayRoute =
+  AuthenticatedMonSettingsDisplayRouteImport.update({
+    id: '/display',
+    path: '/display',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsAppearanceRoute =
+  AuthenticatedMonSettingsAppearanceRouteImport.update({
+    id: '/appearance',
+    path: '/appearance',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsAccountRoute =
+  AuthenticatedMonSettingsAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsSystemIndexRoute =
+  AuthenticatedMonSettingsSystemIndexRouteImport.update({
     id: '/system/',
     path: '/system/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsPersonalIndexRoute =
-  AuthenticatedSettingsPersonalIndexRouteImport.update({
+const AuthenticatedMonSettingsStorageIndexRoute =
+  AuthenticatedMonSettingsStorageIndexRouteImport.update({
+    id: '/storage/',
+    path: '/storage/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsPersonalIndexRoute =
+  AuthenticatedMonSettingsPersonalIndexRouteImport.update({
     id: '/personal/',
     path: '/personal/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsSystemStorageIndexRoute =
-  AuthenticatedSettingsSystemStorageIndexRouteImport.update({
+const AuthenticatedMonSettingsOrderStatusesIndexRoute =
+  AuthenticatedMonSettingsOrderStatusesIndexRouteImport.update({
+    id: '/order-statuses/',
+    path: '/order-statuses/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsGatewaysIndexRoute =
+  AuthenticatedMonSettingsGatewaysIndexRouteImport.update({
+    id: '/gateways/',
+    path: '/gateways/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsCourierIndexRoute =
+  AuthenticatedMonSettingsCourierIndexRouteImport.update({
+    id: '/courier/',
+    path: '/courier/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsSystemStorageIndexRoute =
+  AuthenticatedMonSettingsSystemStorageIndexRouteImport.update({
     id: '/system/storage/',
     path: '/system/storage/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsSystemOrderStatusesIndexRoute =
-  AuthenticatedSettingsSystemOrderStatusesIndexRouteImport.update({
+const AuthenticatedMonSettingsSystemOrderStatusesIndexRoute =
+  AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport.update({
     id: '/system/order-statuses/',
     path: '/system/order-statuses/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsSystemGatewaysIndexRoute =
-  AuthenticatedSettingsSystemGatewaysIndexRouteImport.update({
+const AuthenticatedMonSettingsSystemGatewaysIndexRoute =
+  AuthenticatedMonSettingsSystemGatewaysIndexRouteImport.update({
     id: '/system/gateways/',
     path: '/system/gateways/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsSystemCourierIndexRoute =
-  AuthenticatedSettingsSystemCourierIndexRouteImport.update({
+const AuthenticatedMonSettingsSystemCourierIndexRoute =
+  AuthenticatedMonSettingsSystemCourierIndexRouteImport.update({
     id: '/system/courier/',
     path: '/system/courier/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
-  '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
   '/sign-in': typeof authSignInRoute
@@ -293,34 +337,41 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/settings/account': typeof AuthenticatedSettingsAccountRoute
-  '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/settings/display': typeof AuthenticatedSettingsDisplayRoute
-  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
-  '/apps/': typeof AuthenticatedAppsIndexRoute
-  '/attributes/': typeof AuthenticatedAttributesIndexRoute
-  '/categories/': typeof AuthenticatedCategoriesIndexRoute
-  '/chats/': typeof AuthenticatedChatsIndexRoute
-  '/coupons/': typeof AuthenticatedCouponsIndexRoute
-  '/customers/': typeof AuthenticatedCustomersIndexRoute
-  '/help-center/': typeof AuthenticatedHelpCenterIndexRoute
-  '/inventory/': typeof AuthenticatedInventoryIndexRoute
-  '/media/': typeof AuthenticatedMediaIndexRoute
-  '/orders/': typeof AuthenticatedOrdersIndexRoute
-  '/payments/': typeof AuthenticatedPaymentsIndexRoute
-  '/products/': typeof AuthenticatedProductsIndexRoute
-  '/refunds/': typeof AuthenticatedRefundsIndexRoute
-  '/settings/': typeof AuthenticatedSettingsIndexRoute
-  '/shipments/': typeof AuthenticatedShipmentsIndexRoute
-  '/tasks/': typeof AuthenticatedTasksIndexRoute
-  '/users/': typeof AuthenticatedUsersIndexRoute
-  '/settings/personal/': typeof AuthenticatedSettingsPersonalIndexRoute
-  '/settings/system/': typeof AuthenticatedSettingsSystemIndexRoute
-  '/settings/system/courier/': typeof AuthenticatedSettingsSystemCourierIndexRoute
-  '/settings/system/gateways/': typeof AuthenticatedSettingsSystemGatewaysIndexRoute
-  '/settings/system/order-statuses/': typeof AuthenticatedSettingsSystemOrderStatusesIndexRoute
-  '/settings/system/storage/': typeof AuthenticatedSettingsSystemStorageIndexRoute
+  '/mon/': typeof AuthenticatedMonIndexRoute
+  '/op/': typeof AuthenticatedOpIndexRoute
+  '/mon/settings/account': typeof AuthenticatedMonSettingsAccountRoute
+  '/mon/settings/appearance': typeof AuthenticatedMonSettingsAppearanceRoute
+  '/mon/settings/display': typeof AuthenticatedMonSettingsDisplayRoute
+  '/mon/settings/notifications': typeof AuthenticatedMonSettingsNotificationsRoute
+  '/mon/coupons/': typeof AuthenticatedMonCouponsIndexRoute
+  '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/inventory/': typeof AuthenticatedMonInventoryIndexRoute
+  '/mon/refunds/': typeof AuthenticatedMonRefundsIndexRoute
+  '/mon/settings/': typeof AuthenticatedMonSettingsIndexRoute
+  '/mon/shipments/': typeof AuthenticatedMonShipmentsIndexRoute
+  '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
+  '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
+  '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
+  '/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
+  '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
+  '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/media/': typeof AuthenticatedOpMediaIndexRoute
+  '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
+  '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
+  '/op/products/': typeof AuthenticatedOpProductsIndexRoute
+  '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
+  '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
+  '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/personal/': typeof AuthenticatedMonSettingsPersonalIndexRoute
+  '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/mon/settings/system/courier/': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
+  '/mon/settings/system/gateways/': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
+  '/mon/settings/system/order-statuses/': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
+  '/mon/settings/system/storage/': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof authForgotPasswordRoute
@@ -335,38 +386,43 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/settings/account': typeof AuthenticatedSettingsAccountRoute
-  '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/settings/display': typeof AuthenticatedSettingsDisplayRoute
-  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
-  '/apps': typeof AuthenticatedAppsIndexRoute
-  '/attributes': typeof AuthenticatedAttributesIndexRoute
-  '/categories': typeof AuthenticatedCategoriesIndexRoute
-  '/chats': typeof AuthenticatedChatsIndexRoute
-  '/coupons': typeof AuthenticatedCouponsIndexRoute
-  '/customers': typeof AuthenticatedCustomersIndexRoute
-  '/help-center': typeof AuthenticatedHelpCenterIndexRoute
-  '/inventory': typeof AuthenticatedInventoryIndexRoute
-  '/media': typeof AuthenticatedMediaIndexRoute
-  '/orders': typeof AuthenticatedOrdersIndexRoute
-  '/payments': typeof AuthenticatedPaymentsIndexRoute
-  '/products': typeof AuthenticatedProductsIndexRoute
-  '/refunds': typeof AuthenticatedRefundsIndexRoute
-  '/settings': typeof AuthenticatedSettingsIndexRoute
-  '/shipments': typeof AuthenticatedShipmentsIndexRoute
-  '/tasks': typeof AuthenticatedTasksIndexRoute
-  '/users': typeof AuthenticatedUsersIndexRoute
-  '/settings/personal': typeof AuthenticatedSettingsPersonalIndexRoute
-  '/settings/system': typeof AuthenticatedSettingsSystemIndexRoute
-  '/settings/system/courier': typeof AuthenticatedSettingsSystemCourierIndexRoute
-  '/settings/system/gateways': typeof AuthenticatedSettingsSystemGatewaysIndexRoute
-  '/settings/system/order-statuses': typeof AuthenticatedSettingsSystemOrderStatusesIndexRoute
-  '/settings/system/storage': typeof AuthenticatedSettingsSystemStorageIndexRoute
+  '/mon': typeof AuthenticatedMonIndexRoute
+  '/op': typeof AuthenticatedOpIndexRoute
+  '/mon/settings/account': typeof AuthenticatedMonSettingsAccountRoute
+  '/mon/settings/appearance': typeof AuthenticatedMonSettingsAppearanceRoute
+  '/mon/settings/display': typeof AuthenticatedMonSettingsDisplayRoute
+  '/mon/settings/notifications': typeof AuthenticatedMonSettingsNotificationsRoute
+  '/mon/coupons': typeof AuthenticatedMonCouponsIndexRoute
+  '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/inventory': typeof AuthenticatedMonInventoryIndexRoute
+  '/mon/refunds': typeof AuthenticatedMonRefundsIndexRoute
+  '/mon/settings': typeof AuthenticatedMonSettingsIndexRoute
+  '/mon/shipments': typeof AuthenticatedMonShipmentsIndexRoute
+  '/mon/users': typeof AuthenticatedMonUsersIndexRoute
+  '/op/apps': typeof AuthenticatedOpAppsIndexRoute
+  '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
+  '/op/categories': typeof AuthenticatedOpCategoriesIndexRoute
+  '/op/chats': typeof AuthenticatedOpChatsIndexRoute
+  '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/media': typeof AuthenticatedOpMediaIndexRoute
+  '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
+  '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
+  '/op/products': typeof AuthenticatedOpProductsIndexRoute
+  '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
+  '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
+  '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/personal': typeof AuthenticatedMonSettingsPersonalIndexRoute
+  '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/mon/settings/system/courier': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
+  '/mon/settings/system/gateways': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
+  '/mon/settings/system/order-statuses': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
+  '/mon/settings/system/storage': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/otp': typeof authOtpRoute
   '/(auth)/sign-in': typeof authSignInRoute
@@ -378,40 +434,46 @@ export interface FileRoutesById {
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
-  '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
-  '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
-  '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
-  '/_authenticated/apps/': typeof AuthenticatedAppsIndexRoute
-  '/_authenticated/attributes/': typeof AuthenticatedAttributesIndexRoute
-  '/_authenticated/categories/': typeof AuthenticatedCategoriesIndexRoute
-  '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
-  '/_authenticated/coupons/': typeof AuthenticatedCouponsIndexRoute
-  '/_authenticated/customers/': typeof AuthenticatedCustomersIndexRoute
-  '/_authenticated/help-center/': typeof AuthenticatedHelpCenterIndexRoute
-  '/_authenticated/inventory/': typeof AuthenticatedInventoryIndexRoute
-  '/_authenticated/media/': typeof AuthenticatedMediaIndexRoute
-  '/_authenticated/orders/': typeof AuthenticatedOrdersIndexRoute
-  '/_authenticated/payments/': typeof AuthenticatedPaymentsIndexRoute
-  '/_authenticated/products/': typeof AuthenticatedProductsIndexRoute
-  '/_authenticated/refunds/': typeof AuthenticatedRefundsIndexRoute
-  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
-  '/_authenticated/shipments/': typeof AuthenticatedShipmentsIndexRoute
-  '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
-  '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
-  '/_authenticated/settings/personal/': typeof AuthenticatedSettingsPersonalIndexRoute
-  '/_authenticated/settings/system/': typeof AuthenticatedSettingsSystemIndexRoute
-  '/_authenticated/settings/system/courier/': typeof AuthenticatedSettingsSystemCourierIndexRoute
-  '/_authenticated/settings/system/gateways/': typeof AuthenticatedSettingsSystemGatewaysIndexRoute
-  '/_authenticated/settings/system/order-statuses/': typeof AuthenticatedSettingsSystemOrderStatusesIndexRoute
-  '/_authenticated/settings/system/storage/': typeof AuthenticatedSettingsSystemStorageIndexRoute
+  '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
+  '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
+  '/_authenticated/mon/settings/account': typeof AuthenticatedMonSettingsAccountRoute
+  '/_authenticated/mon/settings/appearance': typeof AuthenticatedMonSettingsAppearanceRoute
+  '/_authenticated/mon/settings/display': typeof AuthenticatedMonSettingsDisplayRoute
+  '/_authenticated/mon/settings/notifications': typeof AuthenticatedMonSettingsNotificationsRoute
+  '/_authenticated/mon/coupons/': typeof AuthenticatedMonCouponsIndexRoute
+  '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/_authenticated/mon/inventory/': typeof AuthenticatedMonInventoryIndexRoute
+  '/_authenticated/mon/refunds/': typeof AuthenticatedMonRefundsIndexRoute
+  '/_authenticated/mon/settings/': typeof AuthenticatedMonSettingsIndexRoute
+  '/_authenticated/mon/shipments/': typeof AuthenticatedMonShipmentsIndexRoute
+  '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
+  '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
+  '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
+  '/_authenticated/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
+  '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
+  '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
+  '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
+  '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
+  '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
+  '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
+  '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
+  '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/_authenticated/mon/settings/personal/': typeof AuthenticatedMonSettingsPersonalIndexRoute
+  '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/_authenticated/mon/settings/system/courier/': typeof AuthenticatedMonSettingsSystemCourierIndexRoute
+  '/_authenticated/mon/settings/system/gateways/': typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
+  '/_authenticated/mon/settings/system/order-statuses/': typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
+  '/_authenticated/mon/settings/system/storage/': typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/settings'
     | '/forgot-password'
     | '/otp'
     | '/sign-in'
@@ -422,34 +484,41 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/mon/settings'
     | '/errors/$error'
-    | '/settings/account'
-    | '/settings/appearance'
-    | '/settings/display'
-    | '/settings/notifications'
-    | '/apps/'
-    | '/attributes/'
-    | '/categories/'
-    | '/chats/'
-    | '/coupons/'
-    | '/customers/'
-    | '/help-center/'
-    | '/inventory/'
-    | '/media/'
-    | '/orders/'
-    | '/payments/'
-    | '/products/'
-    | '/refunds/'
-    | '/settings/'
-    | '/shipments/'
-    | '/tasks/'
-    | '/users/'
-    | '/settings/personal/'
-    | '/settings/system/'
-    | '/settings/system/courier/'
-    | '/settings/system/gateways/'
-    | '/settings/system/order-statuses/'
-    | '/settings/system/storage/'
+    | '/mon/'
+    | '/op/'
+    | '/mon/settings/account'
+    | '/mon/settings/appearance'
+    | '/mon/settings/display'
+    | '/mon/settings/notifications'
+    | '/mon/coupons/'
+    | '/mon/help-center/'
+    | '/mon/inventory/'
+    | '/mon/refunds/'
+    | '/mon/settings/'
+    | '/mon/shipments/'
+    | '/mon/users/'
+    | '/op/apps/'
+    | '/op/attributes/'
+    | '/op/categories/'
+    | '/op/chats/'
+    | '/op/customers/'
+    | '/op/media/'
+    | '/op/orders/'
+    | '/op/payments/'
+    | '/op/products/'
+    | '/op/tasks/'
+    | '/mon/settings/courier/'
+    | '/mon/settings/gateways/'
+    | '/mon/settings/order-statuses/'
+    | '/mon/settings/personal/'
+    | '/mon/settings/storage/'
+    | '/mon/settings/system/'
+    | '/mon/settings/system/courier/'
+    | '/mon/settings/system/gateways/'
+    | '/mon/settings/system/order-statuses/'
+    | '/mon/settings/system/storage/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/forgot-password'
@@ -464,37 +533,42 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/errors/$error'
-    | '/settings/account'
-    | '/settings/appearance'
-    | '/settings/display'
-    | '/settings/notifications'
-    | '/apps'
-    | '/attributes'
-    | '/categories'
-    | '/chats'
-    | '/coupons'
-    | '/customers'
-    | '/help-center'
-    | '/inventory'
-    | '/media'
-    | '/orders'
-    | '/payments'
-    | '/products'
-    | '/refunds'
-    | '/settings'
-    | '/shipments'
-    | '/tasks'
-    | '/users'
-    | '/settings/personal'
-    | '/settings/system'
-    | '/settings/system/courier'
-    | '/settings/system/gateways'
-    | '/settings/system/order-statuses'
-    | '/settings/system/storage'
+    | '/mon'
+    | '/op'
+    | '/mon/settings/account'
+    | '/mon/settings/appearance'
+    | '/mon/settings/display'
+    | '/mon/settings/notifications'
+    | '/mon/coupons'
+    | '/mon/help-center'
+    | '/mon/inventory'
+    | '/mon/refunds'
+    | '/mon/settings'
+    | '/mon/shipments'
+    | '/mon/users'
+    | '/op/apps'
+    | '/op/attributes'
+    | '/op/categories'
+    | '/op/chats'
+    | '/op/customers'
+    | '/op/media'
+    | '/op/orders'
+    | '/op/payments'
+    | '/op/products'
+    | '/op/tasks'
+    | '/mon/settings/courier'
+    | '/mon/settings/gateways'
+    | '/mon/settings/order-statuses'
+    | '/mon/settings/personal'
+    | '/mon/settings/storage'
+    | '/mon/settings/system'
+    | '/mon/settings/system/courier'
+    | '/mon/settings/system/gateways'
+    | '/mon/settings/system/order-statuses'
+    | '/mon/settings/system/storage'
   id:
     | '__root__'
     | '/_authenticated'
-    | '/_authenticated/settings'
     | '/(auth)/forgot-password'
     | '/(auth)/otp'
     | '/(auth)/sign-in'
@@ -506,34 +580,41 @@ export interface FileRouteTypes {
     | '/(errors)/500'
     | '/(errors)/503'
     | '/_authenticated/'
+    | '/_authenticated/mon/settings'
     | '/_authenticated/errors/$error'
-    | '/_authenticated/settings/account'
-    | '/_authenticated/settings/appearance'
-    | '/_authenticated/settings/display'
-    | '/_authenticated/settings/notifications'
-    | '/_authenticated/apps/'
-    | '/_authenticated/attributes/'
-    | '/_authenticated/categories/'
-    | '/_authenticated/chats/'
-    | '/_authenticated/coupons/'
-    | '/_authenticated/customers/'
-    | '/_authenticated/help-center/'
-    | '/_authenticated/inventory/'
-    | '/_authenticated/media/'
-    | '/_authenticated/orders/'
-    | '/_authenticated/payments/'
-    | '/_authenticated/products/'
-    | '/_authenticated/refunds/'
-    | '/_authenticated/settings/'
-    | '/_authenticated/shipments/'
-    | '/_authenticated/tasks/'
-    | '/_authenticated/users/'
-    | '/_authenticated/settings/personal/'
-    | '/_authenticated/settings/system/'
-    | '/_authenticated/settings/system/courier/'
-    | '/_authenticated/settings/system/gateways/'
-    | '/_authenticated/settings/system/order-statuses/'
-    | '/_authenticated/settings/system/storage/'
+    | '/_authenticated/mon/'
+    | '/_authenticated/op/'
+    | '/_authenticated/mon/settings/account'
+    | '/_authenticated/mon/settings/appearance'
+    | '/_authenticated/mon/settings/display'
+    | '/_authenticated/mon/settings/notifications'
+    | '/_authenticated/mon/coupons/'
+    | '/_authenticated/mon/help-center/'
+    | '/_authenticated/mon/inventory/'
+    | '/_authenticated/mon/refunds/'
+    | '/_authenticated/mon/settings/'
+    | '/_authenticated/mon/shipments/'
+    | '/_authenticated/mon/users/'
+    | '/_authenticated/op/apps/'
+    | '/_authenticated/op/attributes/'
+    | '/_authenticated/op/categories/'
+    | '/_authenticated/op/chats/'
+    | '/_authenticated/op/customers/'
+    | '/_authenticated/op/media/'
+    | '/_authenticated/op/orders/'
+    | '/_authenticated/op/payments/'
+    | '/_authenticated/op/products/'
+    | '/_authenticated/op/tasks/'
+    | '/_authenticated/mon/settings/courier/'
+    | '/_authenticated/mon/settings/gateways/'
+    | '/_authenticated/mon/settings/order-statuses/'
+    | '/_authenticated/mon/settings/personal/'
+    | '/_authenticated/mon/settings/storage/'
+    | '/_authenticated/mon/settings/system/'
+    | '/_authenticated/mon/settings/system/courier/'
+    | '/_authenticated/mon/settings/system/gateways/'
+    | '/_authenticated/mon/settings/system/order-statuses/'
+    | '/_authenticated/mon/settings/system/storage/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -636,159 +717,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
+    '/_authenticated/op/': {
+      id: '/_authenticated/op/'
+      path: '/op'
+      fullPath: '/op/'
+      preLoaderRoute: typeof AuthenticatedOpIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/users/': {
-      id: '/_authenticated/users/'
-      path: '/users'
-      fullPath: '/users/'
-      preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
+    '/_authenticated/mon/': {
+      id: '/_authenticated/mon/'
+      path: '/mon'
+      fullPath: '/mon/'
+      preLoaderRoute: typeof AuthenticatedMonIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/tasks/': {
-      id: '/_authenticated/tasks/'
-      path: '/tasks'
-      fullPath: '/tasks/'
-      preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/shipments/': {
-      id: '/_authenticated/shipments/'
-      path: '/shipments'
-      fullPath: '/shipments/'
-      preLoaderRoute: typeof AuthenticatedShipmentsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/settings/': {
-      id: '/_authenticated/settings/'
-      path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/refunds/': {
-      id: '/_authenticated/refunds/'
-      path: '/refunds'
-      fullPath: '/refunds/'
-      preLoaderRoute: typeof AuthenticatedRefundsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/products/': {
-      id: '/_authenticated/products/'
-      path: '/products'
-      fullPath: '/products/'
-      preLoaderRoute: typeof AuthenticatedProductsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/payments/': {
-      id: '/_authenticated/payments/'
-      path: '/payments'
-      fullPath: '/payments/'
-      preLoaderRoute: typeof AuthenticatedPaymentsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/orders/': {
-      id: '/_authenticated/orders/'
-      path: '/orders'
-      fullPath: '/orders/'
-      preLoaderRoute: typeof AuthenticatedOrdersIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/media/': {
-      id: '/_authenticated/media/'
-      path: '/media'
-      fullPath: '/media/'
-      preLoaderRoute: typeof AuthenticatedMediaIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/inventory/': {
-      id: '/_authenticated/inventory/'
-      path: '/inventory'
-      fullPath: '/inventory/'
-      preLoaderRoute: typeof AuthenticatedInventoryIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/help-center/': {
-      id: '/_authenticated/help-center/'
-      path: '/help-center'
-      fullPath: '/help-center/'
-      preLoaderRoute: typeof AuthenticatedHelpCenterIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/customers/': {
-      id: '/_authenticated/customers/'
-      path: '/customers'
-      fullPath: '/customers/'
-      preLoaderRoute: typeof AuthenticatedCustomersIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/coupons/': {
-      id: '/_authenticated/coupons/'
-      path: '/coupons'
-      fullPath: '/coupons/'
-      preLoaderRoute: typeof AuthenticatedCouponsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/chats/': {
-      id: '/_authenticated/chats/'
-      path: '/chats'
-      fullPath: '/chats/'
-      preLoaderRoute: typeof AuthenticatedChatsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/categories/': {
-      id: '/_authenticated/categories/'
-      path: '/categories'
-      fullPath: '/categories/'
-      preLoaderRoute: typeof AuthenticatedCategoriesIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/attributes/': {
-      id: '/_authenticated/attributes/'
-      path: '/attributes'
-      fullPath: '/attributes/'
-      preLoaderRoute: typeof AuthenticatedAttributesIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/apps/': {
-      id: '/_authenticated/apps/'
-      path: '/apps'
-      fullPath: '/apps/'
-      preLoaderRoute: typeof AuthenticatedAppsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/settings/notifications': {
-      id: '/_authenticated/settings/notifications'
-      path: '/notifications'
-      fullPath: '/settings/notifications'
-      preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/settings/display': {
-      id: '/_authenticated/settings/display'
-      path: '/display'
-      fullPath: '/settings/display'
-      preLoaderRoute: typeof AuthenticatedSettingsDisplayRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/settings/appearance': {
-      id: '/_authenticated/settings/appearance'
-      path: '/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof AuthenticatedSettingsAppearanceRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/settings/account': {
-      id: '/_authenticated/settings/account'
-      path: '/account'
-      fullPath: '/settings/account'
-      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
@@ -797,134 +738,334 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/settings/system/': {
-      id: '/_authenticated/settings/system/'
+    '/_authenticated/mon/settings': {
+      id: '/_authenticated/mon/settings'
+      path: '/mon/settings'
+      fullPath: '/mon/settings'
+      preLoaderRoute: typeof AuthenticatedMonSettingsRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/tasks/': {
+      id: '/_authenticated/op/tasks/'
+      path: '/op/tasks'
+      fullPath: '/op/tasks/'
+      preLoaderRoute: typeof AuthenticatedOpTasksIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/products/': {
+      id: '/_authenticated/op/products/'
+      path: '/op/products'
+      fullPath: '/op/products/'
+      preLoaderRoute: typeof AuthenticatedOpProductsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/payments/': {
+      id: '/_authenticated/op/payments/'
+      path: '/op/payments'
+      fullPath: '/op/payments/'
+      preLoaderRoute: typeof AuthenticatedOpPaymentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/orders/': {
+      id: '/_authenticated/op/orders/'
+      path: '/op/orders'
+      fullPath: '/op/orders/'
+      preLoaderRoute: typeof AuthenticatedOpOrdersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/media/': {
+      id: '/_authenticated/op/media/'
+      path: '/op/media'
+      fullPath: '/op/media/'
+      preLoaderRoute: typeof AuthenticatedOpMediaIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/customers/': {
+      id: '/_authenticated/op/customers/'
+      path: '/op/customers'
+      fullPath: '/op/customers/'
+      preLoaderRoute: typeof AuthenticatedOpCustomersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/chats/': {
+      id: '/_authenticated/op/chats/'
+      path: '/op/chats'
+      fullPath: '/op/chats/'
+      preLoaderRoute: typeof AuthenticatedOpChatsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/categories/': {
+      id: '/_authenticated/op/categories/'
+      path: '/op/categories'
+      fullPath: '/op/categories/'
+      preLoaderRoute: typeof AuthenticatedOpCategoriesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/attributes/': {
+      id: '/_authenticated/op/attributes/'
+      path: '/op/attributes'
+      fullPath: '/op/attributes/'
+      preLoaderRoute: typeof AuthenticatedOpAttributesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/apps/': {
+      id: '/_authenticated/op/apps/'
+      path: '/op/apps'
+      fullPath: '/op/apps/'
+      preLoaderRoute: typeof AuthenticatedOpAppsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/users/': {
+      id: '/_authenticated/mon/users/'
+      path: '/mon/users'
+      fullPath: '/mon/users/'
+      preLoaderRoute: typeof AuthenticatedMonUsersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/shipments/': {
+      id: '/_authenticated/mon/shipments/'
+      path: '/mon/shipments'
+      fullPath: '/mon/shipments/'
+      preLoaderRoute: typeof AuthenticatedMonShipmentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/settings/': {
+      id: '/_authenticated/mon/settings/'
+      path: '/'
+      fullPath: '/mon/settings/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/refunds/': {
+      id: '/_authenticated/mon/refunds/'
+      path: '/mon/refunds'
+      fullPath: '/mon/refunds/'
+      preLoaderRoute: typeof AuthenticatedMonRefundsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/inventory/': {
+      id: '/_authenticated/mon/inventory/'
+      path: '/mon/inventory'
+      fullPath: '/mon/inventory/'
+      preLoaderRoute: typeof AuthenticatedMonInventoryIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/help-center/': {
+      id: '/_authenticated/mon/help-center/'
+      path: '/mon/help-center'
+      fullPath: '/mon/help-center/'
+      preLoaderRoute: typeof AuthenticatedMonHelpCenterIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/coupons/': {
+      id: '/_authenticated/mon/coupons/'
+      path: '/mon/coupons'
+      fullPath: '/mon/coupons/'
+      preLoaderRoute: typeof AuthenticatedMonCouponsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/settings/notifications': {
+      id: '/_authenticated/mon/settings/notifications'
+      path: '/notifications'
+      fullPath: '/mon/settings/notifications'
+      preLoaderRoute: typeof AuthenticatedMonSettingsNotificationsRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/display': {
+      id: '/_authenticated/mon/settings/display'
+      path: '/display'
+      fullPath: '/mon/settings/display'
+      preLoaderRoute: typeof AuthenticatedMonSettingsDisplayRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/appearance': {
+      id: '/_authenticated/mon/settings/appearance'
+      path: '/appearance'
+      fullPath: '/mon/settings/appearance'
+      preLoaderRoute: typeof AuthenticatedMonSettingsAppearanceRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/account': {
+      id: '/_authenticated/mon/settings/account'
+      path: '/account'
+      fullPath: '/mon/settings/account'
+      preLoaderRoute: typeof AuthenticatedMonSettingsAccountRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/system/': {
+      id: '/_authenticated/mon/settings/system/'
       path: '/system'
-      fullPath: '/settings/system/'
-      preLoaderRoute: typeof AuthenticatedSettingsSystemIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/system/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSystemIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/settings/personal/': {
-      id: '/_authenticated/settings/personal/'
+    '/_authenticated/mon/settings/storage/': {
+      id: '/_authenticated/mon/settings/storage/'
+      path: '/storage'
+      fullPath: '/mon/settings/storage/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/personal/': {
+      id: '/_authenticated/mon/settings/personal/'
       path: '/personal'
-      fullPath: '/settings/personal/'
-      preLoaderRoute: typeof AuthenticatedSettingsPersonalIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/personal/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsPersonalIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/settings/system/storage/': {
-      id: '/_authenticated/settings/system/storage/'
+    '/_authenticated/mon/settings/order-statuses/': {
+      id: '/_authenticated/mon/settings/order-statuses/'
+      path: '/order-statuses'
+      fullPath: '/mon/settings/order-statuses/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/gateways/': {
+      id: '/_authenticated/mon/settings/gateways/'
+      path: '/gateways'
+      fullPath: '/mon/settings/gateways/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsGatewaysIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/courier/': {
+      id: '/_authenticated/mon/settings/courier/'
+      path: '/courier'
+      fullPath: '/mon/settings/courier/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsCourierIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/system/storage/': {
+      id: '/_authenticated/mon/settings/system/storage/'
       path: '/system/storage'
-      fullPath: '/settings/system/storage/'
-      preLoaderRoute: typeof AuthenticatedSettingsSystemStorageIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/system/storage/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSystemStorageIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/settings/system/order-statuses/': {
-      id: '/_authenticated/settings/system/order-statuses/'
+    '/_authenticated/mon/settings/system/order-statuses/': {
+      id: '/_authenticated/mon/settings/system/order-statuses/'
       path: '/system/order-statuses'
-      fullPath: '/settings/system/order-statuses/'
-      preLoaderRoute: typeof AuthenticatedSettingsSystemOrderStatusesIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/system/order-statuses/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/settings/system/gateways/': {
-      id: '/_authenticated/settings/system/gateways/'
+    '/_authenticated/mon/settings/system/gateways/': {
+      id: '/_authenticated/mon/settings/system/gateways/'
       path: '/system/gateways'
-      fullPath: '/settings/system/gateways/'
-      preLoaderRoute: typeof AuthenticatedSettingsSystemGatewaysIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/system/gateways/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSystemGatewaysIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/settings/system/courier/': {
-      id: '/_authenticated/settings/system/courier/'
+    '/_authenticated/mon/settings/system/courier/': {
+      id: '/_authenticated/mon/settings/system/courier/'
       path: '/system/courier'
-      fullPath: '/settings/system/courier/'
-      preLoaderRoute: typeof AuthenticatedSettingsSystemCourierIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      fullPath: '/mon/settings/system/courier/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSystemCourierIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
   }
 }
 
-interface AuthenticatedSettingsRouteRouteChildren {
-  AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
-  AuthenticatedSettingsAppearanceRoute: typeof AuthenticatedSettingsAppearanceRoute
-  AuthenticatedSettingsDisplayRoute: typeof AuthenticatedSettingsDisplayRoute
-  AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
-  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
-  AuthenticatedSettingsPersonalIndexRoute: typeof AuthenticatedSettingsPersonalIndexRoute
-  AuthenticatedSettingsSystemIndexRoute: typeof AuthenticatedSettingsSystemIndexRoute
-  AuthenticatedSettingsSystemCourierIndexRoute: typeof AuthenticatedSettingsSystemCourierIndexRoute
-  AuthenticatedSettingsSystemGatewaysIndexRoute: typeof AuthenticatedSettingsSystemGatewaysIndexRoute
-  AuthenticatedSettingsSystemOrderStatusesIndexRoute: typeof AuthenticatedSettingsSystemOrderStatusesIndexRoute
-  AuthenticatedSettingsSystemStorageIndexRoute: typeof AuthenticatedSettingsSystemStorageIndexRoute
+interface AuthenticatedMonSettingsRouteRouteChildren {
+  AuthenticatedMonSettingsAccountRoute: typeof AuthenticatedMonSettingsAccountRoute
+  AuthenticatedMonSettingsAppearanceRoute: typeof AuthenticatedMonSettingsAppearanceRoute
+  AuthenticatedMonSettingsDisplayRoute: typeof AuthenticatedMonSettingsDisplayRoute
+  AuthenticatedMonSettingsNotificationsRoute: typeof AuthenticatedMonSettingsNotificationsRoute
+  AuthenticatedMonSettingsIndexRoute: typeof AuthenticatedMonSettingsIndexRoute
+  AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
+  AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
+  AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  AuthenticatedMonSettingsPersonalIndexRoute: typeof AuthenticatedMonSettingsPersonalIndexRoute
+  AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
+  AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
+  AuthenticatedMonSettingsSystemCourierIndexRoute: typeof AuthenticatedMonSettingsSystemCourierIndexRoute
+  AuthenticatedMonSettingsSystemGatewaysIndexRoute: typeof AuthenticatedMonSettingsSystemGatewaysIndexRoute
+  AuthenticatedMonSettingsSystemOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsSystemOrderStatusesIndexRoute
+  AuthenticatedMonSettingsSystemStorageIndexRoute: typeof AuthenticatedMonSettingsSystemStorageIndexRoute
 }
 
-const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteChildren =
+const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteRouteChildren =
   {
-    AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
-    AuthenticatedSettingsAppearanceRoute: AuthenticatedSettingsAppearanceRoute,
-    AuthenticatedSettingsDisplayRoute: AuthenticatedSettingsDisplayRoute,
-    AuthenticatedSettingsNotificationsRoute:
-      AuthenticatedSettingsNotificationsRoute,
-    AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
-    AuthenticatedSettingsPersonalIndexRoute:
-      AuthenticatedSettingsPersonalIndexRoute,
-    AuthenticatedSettingsSystemIndexRoute:
-      AuthenticatedSettingsSystemIndexRoute,
-    AuthenticatedSettingsSystemCourierIndexRoute:
-      AuthenticatedSettingsSystemCourierIndexRoute,
-    AuthenticatedSettingsSystemGatewaysIndexRoute:
-      AuthenticatedSettingsSystemGatewaysIndexRoute,
-    AuthenticatedSettingsSystemOrderStatusesIndexRoute:
-      AuthenticatedSettingsSystemOrderStatusesIndexRoute,
-    AuthenticatedSettingsSystemStorageIndexRoute:
-      AuthenticatedSettingsSystemStorageIndexRoute,
+    AuthenticatedMonSettingsAccountRoute: AuthenticatedMonSettingsAccountRoute,
+    AuthenticatedMonSettingsAppearanceRoute:
+      AuthenticatedMonSettingsAppearanceRoute,
+    AuthenticatedMonSettingsDisplayRoute: AuthenticatedMonSettingsDisplayRoute,
+    AuthenticatedMonSettingsNotificationsRoute:
+      AuthenticatedMonSettingsNotificationsRoute,
+    AuthenticatedMonSettingsIndexRoute: AuthenticatedMonSettingsIndexRoute,
+    AuthenticatedMonSettingsCourierIndexRoute:
+      AuthenticatedMonSettingsCourierIndexRoute,
+    AuthenticatedMonSettingsGatewaysIndexRoute:
+      AuthenticatedMonSettingsGatewaysIndexRoute,
+    AuthenticatedMonSettingsOrderStatusesIndexRoute:
+      AuthenticatedMonSettingsOrderStatusesIndexRoute,
+    AuthenticatedMonSettingsPersonalIndexRoute:
+      AuthenticatedMonSettingsPersonalIndexRoute,
+    AuthenticatedMonSettingsStorageIndexRoute:
+      AuthenticatedMonSettingsStorageIndexRoute,
+    AuthenticatedMonSettingsSystemIndexRoute:
+      AuthenticatedMonSettingsSystemIndexRoute,
+    AuthenticatedMonSettingsSystemCourierIndexRoute:
+      AuthenticatedMonSettingsSystemCourierIndexRoute,
+    AuthenticatedMonSettingsSystemGatewaysIndexRoute:
+      AuthenticatedMonSettingsSystemGatewaysIndexRoute,
+    AuthenticatedMonSettingsSystemOrderStatusesIndexRoute:
+      AuthenticatedMonSettingsSystemOrderStatusesIndexRoute,
+    AuthenticatedMonSettingsSystemStorageIndexRoute:
+      AuthenticatedMonSettingsSystemStorageIndexRoute,
   }
 
-const AuthenticatedSettingsRouteRouteWithChildren =
-  AuthenticatedSettingsRouteRoute._addFileChildren(
-    AuthenticatedSettingsRouteRouteChildren,
+const AuthenticatedMonSettingsRouteRouteWithChildren =
+  AuthenticatedMonSettingsRouteRoute._addFileChildren(
+    AuthenticatedMonSettingsRouteRouteChildren,
   )
 
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedMonSettingsRouteRoute: typeof AuthenticatedMonSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
-  AuthenticatedAppsIndexRoute: typeof AuthenticatedAppsIndexRoute
-  AuthenticatedAttributesIndexRoute: typeof AuthenticatedAttributesIndexRoute
-  AuthenticatedCategoriesIndexRoute: typeof AuthenticatedCategoriesIndexRoute
-  AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
-  AuthenticatedCouponsIndexRoute: typeof AuthenticatedCouponsIndexRoute
-  AuthenticatedCustomersIndexRoute: typeof AuthenticatedCustomersIndexRoute
-  AuthenticatedHelpCenterIndexRoute: typeof AuthenticatedHelpCenterIndexRoute
-  AuthenticatedInventoryIndexRoute: typeof AuthenticatedInventoryIndexRoute
-  AuthenticatedMediaIndexRoute: typeof AuthenticatedMediaIndexRoute
-  AuthenticatedOrdersIndexRoute: typeof AuthenticatedOrdersIndexRoute
-  AuthenticatedPaymentsIndexRoute: typeof AuthenticatedPaymentsIndexRoute
-  AuthenticatedProductsIndexRoute: typeof AuthenticatedProductsIndexRoute
-  AuthenticatedRefundsIndexRoute: typeof AuthenticatedRefundsIndexRoute
-  AuthenticatedShipmentsIndexRoute: typeof AuthenticatedShipmentsIndexRoute
-  AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
-  AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
+  AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
+  AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
+  AuthenticatedMonCouponsIndexRoute: typeof AuthenticatedMonCouponsIndexRoute
+  AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
+  AuthenticatedMonInventoryIndexRoute: typeof AuthenticatedMonInventoryIndexRoute
+  AuthenticatedMonRefundsIndexRoute: typeof AuthenticatedMonRefundsIndexRoute
+  AuthenticatedMonShipmentsIndexRoute: typeof AuthenticatedMonShipmentsIndexRoute
+  AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
+  AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
+  AuthenticatedOpAttributesIndexRoute: typeof AuthenticatedOpAttributesIndexRoute
+  AuthenticatedOpCategoriesIndexRoute: typeof AuthenticatedOpCategoriesIndexRoute
+  AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
+  AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
+  AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
+  AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
+  AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
+  AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
+  AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedMonSettingsRouteRoute:
+    AuthenticatedMonSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
-  AuthenticatedAppsIndexRoute: AuthenticatedAppsIndexRoute,
-  AuthenticatedAttributesIndexRoute: AuthenticatedAttributesIndexRoute,
-  AuthenticatedCategoriesIndexRoute: AuthenticatedCategoriesIndexRoute,
-  AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
-  AuthenticatedCouponsIndexRoute: AuthenticatedCouponsIndexRoute,
-  AuthenticatedCustomersIndexRoute: AuthenticatedCustomersIndexRoute,
-  AuthenticatedHelpCenterIndexRoute: AuthenticatedHelpCenterIndexRoute,
-  AuthenticatedInventoryIndexRoute: AuthenticatedInventoryIndexRoute,
-  AuthenticatedMediaIndexRoute: AuthenticatedMediaIndexRoute,
-  AuthenticatedOrdersIndexRoute: AuthenticatedOrdersIndexRoute,
-  AuthenticatedPaymentsIndexRoute: AuthenticatedPaymentsIndexRoute,
-  AuthenticatedProductsIndexRoute: AuthenticatedProductsIndexRoute,
-  AuthenticatedRefundsIndexRoute: AuthenticatedRefundsIndexRoute,
-  AuthenticatedShipmentsIndexRoute: AuthenticatedShipmentsIndexRoute,
-  AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
-  AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
+  AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
+  AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
+  AuthenticatedMonCouponsIndexRoute: AuthenticatedMonCouponsIndexRoute,
+  AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
+  AuthenticatedMonInventoryIndexRoute: AuthenticatedMonInventoryIndexRoute,
+  AuthenticatedMonRefundsIndexRoute: AuthenticatedMonRefundsIndexRoute,
+  AuthenticatedMonShipmentsIndexRoute: AuthenticatedMonShipmentsIndexRoute,
+  AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
+  AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,
+  AuthenticatedOpAttributesIndexRoute: AuthenticatedOpAttributesIndexRoute,
+  AuthenticatedOpCategoriesIndexRoute: AuthenticatedOpCategoriesIndexRoute,
+  AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,
+  AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
+  AuthenticatedOpMediaIndexRoute: AuthenticatedOpMediaIndexRoute,
+  AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
+  AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
+  AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
+  AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
