@@ -12,11 +12,13 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy } from 'lucide-react'
 
 const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
 }
+
+const webhookBase = 'http://localhost:4000/api/webhooks/courier'
 
 const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),
@@ -185,6 +187,16 @@ export function CourierSettings() {
                     </a>
                   )}
                 </p>
+
+                <div className='bg-muted/50 rounded-md p-2 space-y-1'>
+                  <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Webhook URL</Label>
+                  <div className='flex items-center gap-1'>
+                    <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate'>{webhookBase}/{courier}</code>
+                    <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(`${webhookBase}/${courier}`); toast.success('Copied') }}>
+                      <Copy className='h-3 w-3' />
+                    </Button>
+                  </div>
+                </div>
 
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
                   <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials
