@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck } from 'lucide-react'
+import { PaymentLogo } from '@/components/payment-logo'
 import type { PaginationState } from '@tanstack/react-table'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -347,7 +348,7 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
                 )}
 
                 {order.payments.map(p => (
-                  <Card key={p.id}><CardHeader className='pb-2'><CardTitle className='text-base text-xs flex items-center justify-between'><span>{p.method.toUpperCase()}</span><Badge className={p.status === 'verified' ? 'bg-green-500 text-xs' : 'text-xs'}>{p.status}</Badge></CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Amount: ৳{fmt(p.amount)}</p>{p.transactionId && <p>TrxID: {p.transactionId}</p>}</CardContent></Card>
+                  <Card key={p.id}><CardHeader className='pb-2'><CardTitle className='text-base text-xs flex items-center justify-between'><PaymentLogo method={p.method} size='sm' /><Badge className={p.status === 'verified' ? 'bg-green-500 text-xs' : 'text-xs'}>{p.status}</Badge></CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Amount: ৳{fmt(p.amount)}</p>{p.transactionId && <p>TrxID: {p.transactionId}</p>}</CardContent></Card>
                 ))}
               </>
             )}

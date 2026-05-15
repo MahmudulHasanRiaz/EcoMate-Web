@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Loader2, Check, X } from 'lucide-react'
+import { PaymentLogo } from '@/components/payment-logo'
 import type { PaginationState } from '@tanstack/react-table'
 
 interface PaymentResponse {
@@ -27,11 +28,6 @@ interface PaymentResponse {
 const paymentsApi = {
   list: (query?: any) => apiClient.get('/payments', { params: query }),
   verify: (id: string, status: string) => apiClient.put(`/payments/${id}/verify`, { status }),
-}
-
-const methodColors: Record<string, string> = {
-  cod: '#6B7280', bkash: '#E91E63', nagad: '#F44336', upay: '#2196F3',
-  rocket: '#8E24AA', selfin: '#00BCD4', card: '#4CAF50',
 }
 
 export function Payments() {
@@ -83,7 +79,7 @@ export function Payments() {
                   <TableRow key={p.id}>
                     <TableCell className='font-mono text-sm'>{p.order.displayId}</TableCell>
                     <TableCell>
-                      <Badge style={{ backgroundColor: methodColors[p.method] || '#6B7280', color: '#fff' }} className='text-xs'>{p.method.toUpperCase()}</Badge>
+                      <PaymentLogo method={p.method} size='sm' showName={false} />
                     </TableCell>
                     <TableCell className='font-medium'>${Number(p.amount).toFixed(2)}</TableCell>
                     <TableCell className='font-mono text-xs'>{p.transactionId || '—'}</TableCell>
