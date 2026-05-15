@@ -62,7 +62,14 @@ export function StorageSettings() {
   if (isLoading) return <div className='flex items-center justify-center min-h-[400px]'><Loader2 className='animate-spin h-8 w-8 text-primary' /></div>
 
   return (
-    <div className='space-y-6'>
+    <div className='space-y-6 w-full pb-8'>
+      <div className='space-y-0.5'>
+        <h2 className='text-2xl font-bold tracking-tight'>Media Storage</h2>
+        <p className='text-muted-foreground'>
+          Choose where your product images and other assets are hosted.
+        </p>
+      </div>
+      <Separator className='my-6' />
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
         <CardHeader className='pb-4'>
           <div className='flex items-center gap-2 mb-1'>
