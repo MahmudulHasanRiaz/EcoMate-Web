@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog } from 'lucide-react'
+import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -35,6 +35,16 @@ const sidebarNavItems = [
     href: '/settings/display',
     icon: <Monitor size={18} />,
   },
+  {
+    title: 'Storage',
+    href: '/settings/storage',
+    icon: <HardDrive size={18} />,
+  },
+  {
+    title: 'Payment Gateways',
+    href: '/settings/gateways',
+    icon: <CreditCard size={18} />,
+  },
 ]
 
 export function Settings() {
@@ -62,7 +72,7 @@ export function Settings() {
           <aside className='top-0 lg:sticky lg:w-1/5'>
             <SidebarNav items={sidebarNavItems} />
           </aside>
-          <div className='flex w-full overflow-y-hidden p-1'>
+          <div className='flex w-full overflow-y-auto p-1 pr-4'>
             <Outlet />
           </div>
         </div>
