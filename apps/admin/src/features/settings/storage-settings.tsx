@@ -22,6 +22,7 @@ export function StorageSettings() {
   const [r2SecretKey, setR2SecretKey] = useState('')
   const [r2Bucket, setR2Bucket] = useState('')
   const [r2PublicUrl, setR2PublicUrl] = useState('')
+  const [hoorinKey, setHoorinKey] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -31,6 +32,7 @@ export function StorageSettings() {
       setR2SecretKey(settings.storage_r2_secret_key || '')
       setR2Bucket(settings.storage_r2_bucket || '')
       setR2PublicUrl(settings.storage_r2_public_url || '')
+      setHoorinKey(settings.courier_hoorin_api_key || '')
     }
   }, [settings])
 
@@ -47,6 +49,7 @@ export function StorageSettings() {
       { key: 'storage_r2_secret_key', value: r2SecretKey },
       { key: 'storage_r2_bucket', value: r2Bucket },
       { key: 'storage_r2_public_url', value: r2PublicUrl },
+      { key: 'courier_hoorin_api_key', value: hoorinKey },
     ]
     updates.forEach(u => setMut.mutate(u))
     toast.success('Storage settings saved')
@@ -92,6 +95,14 @@ export function StorageSettings() {
             </div>
           </div>
         )}
+
+        <div className='border-t pt-4 mt-2 space-y-3'>
+          <div className='space-y-1.5'>
+            <Label>Hoorin Courier API Key</Label>
+            <Input type='password' value={hoorinKey} onChange={e => setHoorinKey(e.target.value)} placeholder='Enter your Hoorin API key' />
+            <p className='text-xs text-muted-foreground'>Used to fetch courier delivery history per phone number. Get key at dash.hoorin.com</p>
+          </div>
+        </div>
 
         <Button onClick={handleSave} disabled={setMut.isPending}>
           {setMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-1' /> : null}

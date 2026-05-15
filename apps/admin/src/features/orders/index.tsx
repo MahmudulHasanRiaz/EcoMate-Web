@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck } from 'lucide-react'
 import type { PaginationState } from '@tanstack/react-table'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -103,6 +103,28 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
   const [officeNotes, setOfficeNotes] = useState(order.officeNotes || '')
   const [statusNote, setStatusNote] = useState('')
   const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
+  const [showCustomerInfo, setShowCustomerInfo] = useState(false)
+  const [showCourier, setShowCourier] = useState(false)
+
+  const phone = order.customer.phoneNumber?.replace(/[^\d]/g, '')
+
+  const { data: customerSummary } = useQuery({
+    queryKey: ['customer-summary', phone],
+    queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data),
+    enabled: !!phone,
+  })
+
+  const { data: courierData, isLoading: courierLoading } = useQuery({
+    queryKey: ['courier-search', phone],
+    queryFn: () => apiClient.get(`/courier/search?phone=${phone}`).then(r => r.data),
+    enabled: showCourier && !!phone,
+  })
+
+  const { data: courierSummary } = useQuery({
+    queryKey: ['courier-summary', phone],
+    queryFn: () => apiClient.get(`/courier/summary?phone=${phone}`).then(r => r.data),
+    enabled: showCourier && !!phone,
+  })
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map(id => statuses.find((s: any) => s.id === id)).filter(Boolean)
 
@@ -207,6 +229,82 @@ function OrderDetail({ order, onBack, onUpdateStatus, onUpdate, statuses }: { or
                 <p className='text-muted-foreground'>{order.customer.email}</p>
                 <p className='text-muted-foreground'>{order.customer.phoneNumber}</p>
               </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCustomerInfo(!showCustomerInfo)}>
+                <CardTitle className='text-base flex items-center justify-between'>
+                  <span className='flex items-center gap-1.5'><User className='h-4 w-4' /> History</span>
+                  {showCustomerInfo ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+                </CardTitle>
+              </CardHeader>
+              {showCustomerInfo && (
+                <CardContent className='space-y-2 text-sm'>
+                  {customerSummary?.customer ? (
+                    <>
+                      <div className='grid grid-cols-2 gap-2'>
+                        <div className='bg-muted/50 rounded p-2 text-center'><p className='text-lg font-bold'>{customerSummary.summary.totalOrders}</p><p className='text-xs text-muted-foreground'>Orders</p></div>
+                        <div className='bg-muted/50 rounded p-2 text-center'><p className='text-lg font-bold'>৳{Number(customerSummary.summary.totalSpent).toFixed(0)}</p><p className='text-xs text-muted-foreground'>Spent</p></div>
+                      </div>
+                      {customerSummary.recentOrders.length > 0 && (
+                        <div>
+                          <p className='text-xs font-medium text-muted-foreground mb-1'>Recent Orders</p>
+                          {customerSummary.recentOrders.map((o: any) => (
+                            <div key={o.id} className='flex items-center justify-between py-1 border-b last:border-0'>
+                              <span className='font-mono text-xs'>{o.displayId}</span>
+                              <div className='flex items-center gap-2'>
+                                <Badge style={{ backgroundColor: statusColors[o.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>{o.status.name}</Badge>
+                                <span className='text-xs'>৳{Number(o.total).toFixed(0)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : <p className='text-xs text-muted-foreground'>No history found for this number.</p>}
+                </CardContent>
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCourier(!showCourier)}>
+                <CardTitle className='text-base flex items-center justify-between'>
+                  <span className='flex items-center gap-1.5'><Truck className='h-4 w-4' /> Courier History</span>
+                  {showCourier ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+                </CardTitle>
+              </CardHeader>
+              {showCourier && (
+                <CardContent className='space-y-2 text-sm'>
+                  {courierLoading ? <Loader2 className='animate-spin h-4 w-4 mx-auto' /> :
+                   courierData?.error ? <p className='text-xs text-muted-foreground'>{courierData.error}</p> :
+                   courierData?.Summaries ? (
+                    <>
+                      {courierSummary?.totalSummary && (
+                        <div className='flex gap-2 mb-2'>
+                          <Badge variant='secondary' className='text-xs'>Total: {courierSummary.totalSummary['Total Parcels']}</Badge>
+                          <Badge className='bg-green-500 text-xs'>Delivered: {courierSummary.totalSummary['Delivered Parcels']}</Badge>
+                          <Badge variant='destructive' className='text-xs'>Canceled: {courierSummary.totalSummary['Canceled Parcels']}</Badge>
+                        </div>
+                      )}
+                      {Object.entries(courierData.Summaries as Record<string, any>).map(([name, stats]: [string, any]) => {
+                        const total = stats['Total Parcels'] || stats['Total Delivery'] || 0
+                        const delivered = stats['Delivered Parcels'] || stats['Successful Delivery'] || 0
+                        const canceled = stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0
+                        return (
+                          <div key={name} className='flex items-center justify-between py-1 border-b last:border-0'>
+                            <span className='font-medium text-xs'>{name}</span>
+                            <div className='flex gap-2 text-xs'>
+                              <span className='text-muted-foreground'>Total: {total}</span>
+                              <span className='text-green-600'>Del: {delivered}</span>
+                              {canceled > 0 && <span className='text-red-500'>Cxl: {canceled}</span>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </>
+                  ) : <p className='text-xs text-muted-foreground'>No courier data or API key not configured.</p>}
+                </CardContent>
+              )}
             </Card>
 
             {editing ? (
