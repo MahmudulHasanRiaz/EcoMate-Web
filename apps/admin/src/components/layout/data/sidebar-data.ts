@@ -39,6 +39,13 @@ export const sidebarData: SidebarData = {
     { title: 'Logistics', panel: 'operational', items: [
       { title: 'Shipments', url: '/op/shipments', icon: Truck },
     ]},
+    { title: 'Content', panel: 'operational', items: [
+      { title: 'Media Gallery', url: '/op/media', icon: Monitor },
+    ]},
+    { title: 'Communications', panel: 'operational', items: [
+      { title: 'Chats', url: '/op/chats', icon: RefreshCw }, // Placeholder Icon
+      { title: 'Apps', url: '/op/apps', icon: Package },
+    ]},
     // ===== MONITORING / ADMIN PANEL =====
     { title: 'Overview', panel: 'monitoring', items: [
       { title: 'Dashboard', url: '/mon', icon: LayoutDashboard },
