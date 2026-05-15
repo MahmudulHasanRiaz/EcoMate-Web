@@ -217,4 +217,17 @@ export class OrdersService {
     const { subtotal, total } = this.recalculate(remaining, Number(order.shippingCharge), Number(order.discount));
     return this.prisma.order.update({ where: { id: orderId }, data: { subtotal, total }, include: { items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } } } });
   }
+
+  async bulkOrders(ids: string[]) {
+    if (!ids?.length || ids.length > 500) return [];
+    return this.prisma.order.findMany({
+      where: { id: { in: ids } },
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
+        status: true,
+        items: { include: { product: { select: { id: true, name: true, images: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }

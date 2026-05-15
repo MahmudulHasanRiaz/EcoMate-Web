@@ -16,27 +16,25 @@ export class OrdersController {
   @Post() create(@Body() dto: CreateOrderDto) { return this.svc.create(dto); }
 
   @Put(':id')
-  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
-    return this.svc.updateOrder(id, dto);
-  }
+  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) { return this.svc.updateOrder(id, dto); }
 
   @Put(':id/status')
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto, @CurrentUser() user: { userId: string }) {
-    return this.svc.updateStatus(id, dto, user.userId);
-  }
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto, @CurrentUser() user: { userId: string }) { return this.svc.updateStatus(id, dto, user.userId); }
 
   @Post(':id/items')
-  addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) {
-    return this.svc.addItem(id, dto);
-  }
+  addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) { return this.svc.addItem(id, dto); }
 
   @Delete(':id/items/:itemId')
-  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
-    return this.svc.removeItem(id, itemId);
-  }
+  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) { return this.svc.removeItem(id, itemId); }
 
   @Post(':id/note')
   addNote(@Param('id') id: string, @Body() dto: { note: string; visibility: 'public' | 'private' }, @CurrentUser() user: { userId: string }) {
     return this.svc.addNote(id, dto.note, dto.visibility, user.userId);
+  }
+
+  @Post('bulk')
+  async bulkOrders(@Body() dto: { ids: string[] }) {
+    const orders = await this.svc.bulkOrders(dto.ids || []);
+    return { orders };
   }
 }
