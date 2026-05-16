@@ -13,75 +13,103 @@ export function InvoiceTemplate({ order }: { order: any }) {
       <style>{`
         @page { size: A4; margin: 12mm; }
         .invoice-container { font-family: 'Inter', sans-serif; color: #111; max-width: 210mm; }
-        .no-print { display: none !important; }
+        @media print {
+          .invoice-container { page-break-after: avoid; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       `}</style>
 
-      <div className="flex items-center justify-between border-b pb-4 mb-4">
+      <div className="flex items-start justify-between border-b-2 border-black pb-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">EcoMate</h1>
-          <p className="text-sm text-muted-foreground">01800000000</p>
+          <h1 className="text-2xl font-bold tracking-tight">EcoMate</h1>
+          <p className="text-xs text-muted-foreground">01800000000</p>
           <p className="text-xs text-muted-foreground">Dhaka, Bangladesh</p>
+          <p className="text-xs text-muted-foreground mt-1">TRN: 123456789</p>
         </div>
         <div className="text-right">
-          <h2 className="text-xl font-bold uppercase tracking-wide">Invoice</h2>
-          <div className="mt-2">
-            <Barcode value={order.displayId || order.id} width={1.2} height={28} fontSize={9} margin={1} />
+          <h2 className="text-xl font-bold uppercase tracking-wider">Tax Invoice</h2>
+          <div className="mt-1">
+            <Barcode value={order.displayId || order.id} width={1} height={24} fontSize={8} margin={0} />
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-2 gap-8 mb-6">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Billed To</p>
-          <p className="font-medium">{order.customer?.firstName} {order.customer?.lastName}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Bill To</p>
+          <p className="font-semibold text-sm">{order.customer?.firstName} {order.customer?.lastName}</p>
           <p className="text-sm text-muted-foreground">{order.customer?.phoneNumber}</p>
-          <p className="text-sm text-muted-foreground">{order.customer?.email}</p>
-          <p className="text-sm text-muted-foreground">{typeof order.shippingAddress === 'string' ? order.shippingAddress : order.shippingAddress?.address || ''}</p>
+          {order.customer?.email && <p className="text-sm text-muted-foreground">{order.customer?.email}</p>}
+          <p className="text-sm text-muted-foreground mt-1">{typeof order.shippingAddress === 'string' ? order.shippingAddress : order.shippingAddress?.address || order.shippingAddress?.district || ''}</p>
         </div>
         <div className="text-right">
-          <div className="space-y-1 text-sm">
-            <p><span className="text-muted-foreground">Invoice #:</span> {order.displayId}</p>
-            <p><span className="text-muted-foreground">Date:</span> {new Date(order.createdAt).toLocaleDateString()}</p>
-            <p><span className="text-muted-foreground">Status:</span> {order.status?.name}</p>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-end gap-2"><span className="text-muted-foreground">Invoice #</span><span className="font-mono font-medium">{order.displayId}</span></div>
+            <div className="flex justify-end gap-2"><span className="text-muted-foreground">Date</span><span>{new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+            <div className="flex justify-end gap-2"><span className="text-muted-foreground">Status</span><span className="font-medium">{order.status?.name}</span></div>
+            {order.courierService && <div className="flex justify-end gap-2"><span className="text-muted-foreground">Courier</span><span className="capitalize">{order.courierService}</span></div>}
           </div>
         </div>
       </div>
 
-      <table className="w-full border-collapse mb-4 text-sm">
+      <table className="w-full border-collapse mb-6 text-sm">
         <thead>
-          <tr className="border-b-2 border-black">
-            <th className="text-left py-2">Item</th>
-            <th className="text-right py-2">Qty</th>
-            <th className="text-right py-2">Price</th>
-            <th className="text-right py-2">Total</th>
+          <tr className="border-y-2 border-black bg-muted/20">
+            <th className="text-left py-2.5 px-2 w-8">#</th>
+            <th className="text-left py-2.5">Item</th>
+            <th className="text-right py-2.5 w-16">Qty</th>
+            <th className="text-right py-2.5 w-24">Price</th>
+            <th className="text-right py-2.5 w-24">Total</th>
           </tr>
         </thead>
         <tbody>
           {order.items?.map((item: any, i: number) => (
             <tr key={i} className="border-b">
+              <td className="py-2 px-2 text-muted-foreground">{i + 1}</td>
               <td className="py-2">{item.product?.name || 'Product'}</td>
               <td className="text-right py-2">{item.quantity}</td>
               <td className="text-right py-2">৳{fmt(item.price)}</td>
-              <td className="text-right py-2">৳{fmt(nm(item.price) * item.quantity)}</td>
+              <td className="text-right py-2 font-medium">৳{fmt(nm(item.price) * item.quantity)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="flex justify-end mb-4">
-        <div className="w-64 space-y-1.5 text-sm">
+      <div className="flex justify-end mb-6">
+        <div className="w-72 space-y-2 text-sm border-t-2 border-black pt-3">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>৳{fmt(subtotal)}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>
-          {nm(order.discount) > 0 && <div className="flex justify-between text-green-600"><span className="text-muted-foreground">Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}
-          <div className="flex justify-between font-bold text-base border-t pt-1.5"><span>Total</span><span>৳{fmt(order.total)}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Delivery Charge</span><span>৳{fmt(order.shippingCharge)}</span></div>
+          {nm(order.discount) > 0 && (
+            <div className="flex justify-between text-green-600"><span className="text-muted-foreground">Discount ({order.discountType === 'percentage' ? `${order.discount}%` : 'flat'})</span><span>-৳{fmt(order.discount)}</span></div>
+          )}
+          <div className="flex justify-between font-bold text-base border-t border-double pt-2 mt-1">
+            <span>Total</span><span className="text-lg">৳{fmt(order.total)}</span>
+          </div>
         </div>
       </div>
 
-      {order.customerNotes && <p className="text-xs text-muted-foreground mb-4 italic">{order.customerNotes}</p>}
+      {order.customerNotes && (
+        <div className="mb-4 p-3 bg-muted/20 rounded text-xs text-muted-foreground italic">
+          <span className="font-medium not-italic">Note:</span> {order.customerNotes}
+        </div>
+      )}
 
-      <div className="text-center text-xs text-muted-foreground mt-8 pt-4 border-t">
-        <p>Thank you for your purchase!</p>
-        <p>EcoMate — Sustainable Shopping</p>
+      {order.payments?.length > 0 && (
+        <div className="mb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Payment</p>
+          <div className="flex flex-wrap gap-2">
+            {order.payments.map((p: any) => (
+              <span key={p.id} className="text-xs bg-muted/30 rounded px-2 py-0.5">
+                {p.method?.toUpperCase()}: ৳{fmt(p.amount)} ({p.status})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-center text-[10px] text-muted-foreground mt-8 pt-4 border-t">
+        <p className="font-medium text-black mb-0.5">EcoMate — Sustainable Shopping</p>
+        <p>This is a computer-generated invoice. No signature required.</p>
       </div>
     </div>
   )

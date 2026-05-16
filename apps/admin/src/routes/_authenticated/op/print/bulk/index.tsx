@@ -53,13 +53,17 @@ function BulkPrint() {
         ) : type === 'sticker' ? (
           orders.map((o: any) => <StickerTemplate key={o.id} order={o} />)
         ) : (
-          orders.map((o: any, i: number) => (
-            <div key={o.id} style={i < orders.length - 1 ? { breakAfter: 'page' } : undefined}>
-              <InvoiceTemplate order={o} />
-            </div>
+          orders.map((o: any) => (
+            <InvoiceTemplate key={o.id} order={o} />
           ))
         )}
       </div>
+      <style>{`
+        @media print {
+          .invoice-container { page-break-after: always; }
+          .invoice-container:last-child { page-break-after: auto; }
+        }
+      `}</style>
     </div>
   )
 }
