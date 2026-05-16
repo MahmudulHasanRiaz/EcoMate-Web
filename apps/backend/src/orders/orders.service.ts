@@ -31,10 +31,23 @@ export class OrdersService {
     return { subtotal, total: Math.max(0, subtotal + shipping - discount) };
   }
 
-  async findAll(query: { page?: number; perPage?: number; search?: string; statusId?: string; sort?: string; order?: string }) {
+  async findAll(query: { page?: number; perPage?: number; search?: string; statusId?: string; courier?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string }) {
     const page = query.page || 1; const perPage = query.perPage || 10; const where: any = {};
-    if (query.search) where.displayId = { contains: query.search, mode: 'insensitive' };
+    if (query.search) {
+      where.OR = [
+        { displayId: { contains: query.search, mode: 'insensitive' } },
+        { customer: { firstName: { contains: query.search, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: query.search, mode: 'insensitive' } } },
+        { customer: { phoneNumber: { contains: query.search } } },
+      ];
+    }
     if (query.statusId) where.statusId = query.statusId;
+    if (query.courier) where.courierService = query.courier;
+    if (query.dateFrom || query.dateTo) {
+      where.createdAt = {};
+      if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
+      if (query.dateTo) where.createdAt.lte = new Date(query.dateTo);
+    }
     const [data, total] = await Promise.all([
       this.prisma.order.findMany({
         where, skip: (page - 1) * perPage, take: perPage, orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
@@ -229,5 +242,18 @@ export class OrdersService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async bulkStatusChange(ids: string[], statusId: string) {
+    const status = await this.prisma.orderStatus.findUnique({ where: { id: statusId } });
+    if (!status) throw new BadRequestException('Status not found');
+    await this.prisma.order.updateMany({ where: { id: { in: ids } }, data: { statusId } });
+    return { updated: ids.length, status: status.name };
+  }
+
+  async bulkDispatch(courier: string, ids: string[], _userId: string) {
+    const { CourierManagerService } = await import('../courier-manager/courier-manager.service.js');
+    const mgr = new CourierManagerService(this.prisma);
+    return mgr.dispatch(courier, ids);
   }
 }
