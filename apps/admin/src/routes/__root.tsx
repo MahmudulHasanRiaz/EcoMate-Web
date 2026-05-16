@@ -13,15 +13,17 @@ export const Route = createRootRouteWithContext<{
   component: () => {
     return (
       <>
-        <NavigationProgress />
+        <div className="no-print">
+          <NavigationProgress />
+          <Toaster duration={5000} />
+          {import.meta.env.MODE === 'development' && (
+            <>
+              <ReactQueryDevtools buttonPosition='bottom-left' />
+              <TanStackRouterDevtools position='bottom-right' />
+            </>
+          )}
+        </div>
         <Outlet />
-        <Toaster duration={5000} />
-        {import.meta.env.MODE === 'development' && (
-          <>
-            <ReactQueryDevtools buttonPosition='bottom-left' />
-            <TanStackRouterDevtools position='bottom-right' />
-          </>
-        )}
       </>
     )
   },
