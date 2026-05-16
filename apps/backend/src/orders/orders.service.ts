@@ -57,6 +57,7 @@ export class OrdersService {
           customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
           status: true, items: { include: { product: { select: { id: true, name: true, images: true } } } },
           payments: true, shipment: true,
+          assignee: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
       this.prisma.order.count({ where }),

@@ -8,6 +8,8 @@ export interface OrderResponse {
   courierService?: string | null; courierStatus?: string | null;
   courierTrackingCode?: string | null; courierConsignmentId?: string | null;
   trackingUrl?: string | null;
+  assignedToId?: string | null; assignedAt?: string | null;
+  assignee?: { id: string; firstName: string; lastName: string } | null;
   dispatchLogs?: {
     id: string; courier: string; status: string; message?: string | null;
     consignmentId?: string | null; trackingCode?: string | null;
@@ -32,6 +34,7 @@ export const ordersApi = {
   addNote: (orderId: string, note: string, visibility: 'public' | 'private') => apiClient.post(`/orders/${orderId}/note`, { note, visibility }),
   addItem: (orderId: string, data: { productId: string; quantity: number; price: number; variantId?: string }) => apiClient.post(`/orders/${orderId}/items`, data),
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
+  bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
 }
 
 export function mediaUrl(url: string): string {

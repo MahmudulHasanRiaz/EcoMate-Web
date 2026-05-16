@@ -19,9 +19,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -117,6 +118,7 @@ function OrderRowSkeleton() {
       <TableCell><div className='space-y-1'><Skeleton className='h-4 w-28' /><Skeleton className='h-3 w-24' /></div></TableCell>
       <TableCell><Skeleton className='h-6 w-[100px] rounded-full' /></TableCell>
       <TableCell><Skeleton className='h-5 w-24 rounded-full' /></TableCell>
+      <TableCell><Skeleton className='h-5 w-20 rounded-full' /></TableCell>
       <TableCell><Skeleton className='h-4 w-16 ml-auto' /></TableCell>
       <TableCell><Skeleton className='h-4 w-6 ml-auto' /></TableCell>
       <TableCell><Skeleton className='h-7 w-7 rounded' /></TableCell>
@@ -192,11 +194,16 @@ export function Orders() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Bulk status updated') },
   })
 
+  const bulkAssignMut = useMutation({
+    mutationFn: (d: { ids: string[]; assignedToId: string | null }) => ordersApi.bulkAssign(d.ids, d.assignedToId === '__unassign__' ? null : d.assignedToId),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Orders assigned') },
+  })
+
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
   const toggleOne = (id: string) => setSelected(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id])
   const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next }), [])
 
-  const clearAllFilters = () => { setSearch(''); setStatusFilter('all'); setCourierFilter('all'); setPage(1) }
+  const clearAllFilters = () => { setSearch(''); setStatusFilter('all'); setCourierFilter('all'); setAssigneeFilter('all'); setPage(1) }
   const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all'
 
   const statusCountMap = useMemo(() => {
@@ -278,14 +285,17 @@ export function Orders() {
                   {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize'>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={assigneeFilter} onValueChange={v => { setAssigneeFilter(v); setPage(1) }}>
-                <SelectTrigger className={`h-8 w-[140px] text-sm ${assigneeFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='All Staff' /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all'>All Staff</SelectItem>
-                  <SelectItem value='unassigned'>Unassigned</SelectItem>
-                  {staff.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.firstName} {s.lastName}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={[
+                  { id: 'all', label: 'All Staff' },
+                  { id: 'unassigned', label: 'Unassigned' },
+                  ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
+                ]}
+                value={assigneeFilter}
+                onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
+                placeholder='Filter by staff...'
+                searchPlaceholder='Search staff...'
+              />
               <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
                 <SelectTrigger className='h-8 w-[100px] text-sm'><SelectValue /></SelectTrigger>
                 <SelectContent>{[10,25,50,100,200,500,1000].map(n => <SelectItem key={n} value={String(n)}>{n} rows</SelectItem>)}<SelectItem value='custom'>Custom...</SelectItem></SelectContent>
@@ -314,6 +324,11 @@ export function Orders() {
                     <Truck className='h-3 w-3' />{courierFilter}<X className='h-3 w-3' />
                   </button>
                 )}
+                {assigneeFilter !== 'all' && (() => { const person = assigneeFilter === 'unassigned' ? null : staff.find((s: any) => s.id === assigneeFilter); return (
+                  <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors'>
+                    <UserCheck className='h-3 w-3' />{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName} ${person.lastName}` : 'Staff'}<X className='h-3 w-3' />
+                  </button>
+                ) })()}
                 {search && (
                   <button onClick={() => setSearch('')} className='inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors'>
                     "{search.length > 20 ? search.slice(0, 20) + '...' : search}"<X className='h-3 w-3' />
@@ -336,6 +351,7 @@ export function Orders() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Courier</TableHead>
+                    <TableHead>Assigned To</TableHead>
                     <TableHead className='text-right cursor-pointer select-none' onClick={() => { setSort('total'); setOrder(o => o === 'asc' ? 'desc' : 'asc') }}>
                       Total {sort === 'total' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
                     </TableHead>
@@ -421,6 +437,18 @@ export function Orders() {
                             <span className='text-xs text-muted-foreground/50'>Not assigned</span>
                           )}
                         </TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          {o.assignee ? (
+                            <div className='flex items-center gap-1.5'>
+                              <div className='h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0'>
+                                {o.assignee.firstName?.[0]}{o.assignee.lastName?.[0]}
+                              </div>
+                              <span className='text-xs font-medium truncate max-w-[80px]'>{o.assignee.firstName} {o.assignee.lastName}</span>
+                            </div>
+                          ) : (
+                            <span className='text-xs text-muted-foreground/50 italic'>Unassigned</span>
+                          )}
+                        </TableCell>
                         <TableCell className='text-right font-semibold text-sm'>৳{fmt(o.total)}</TableCell>
                         <TableCell className='text-right text-sm text-muted-foreground'>{o.items.length}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -432,6 +460,21 @@ export function Orders() {
                               <DropdownMenuItem onClick={() => copyToClipboard(o.customer.phoneNumber, 'Phone')}><Phone className='h-4 w-4 mr-2' />Copy Phone</DropdownMenuItem>
                               {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')}><MapPin className='h-4 w-4 mr-2' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
+                              <DropdownMenuGroup className='px-2 py-1.5 text-xs text-muted-foreground'>
+                                <div className='flex items-center gap-1.5 mb-1 font-medium text-foreground'><UserPlus className='h-3.5 w-3.5' />Assign to</div>
+                                <div className='flex flex-col gap-0.5 max-h-32 overflow-y-auto'>
+                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }) }} className='flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors'>
+                                    <span className='text-muted-foreground italic'>Unassign</span>
+                                  </button>
+                                  {staff.map((s: any) => (
+                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }) }} className={`flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors ${o.assignee?.id === s.id ? 'bg-accent font-medium' : ''}`}>
+                                      <div className='h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0'>{s.firstName?.[0]}{s.lastName?.[0]}</div>
+                                      <span>{s.firstName} {s.lastName}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')}><Printer className='h-4 w-4 mr-2' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')}><Receipt className='h-4 w-4 mr-2' />Print Invoice</DropdownMenuItem>
                               {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
@@ -441,7 +484,7 @@ export function Orders() {
                       </TableRow>,
                       isExpanded && (
                         <TableRow key={`${o.id}-detail`} className='even:bg-muted/[0.02]'>
-                          <TableCell colSpan={9} className='p-0 border-0'>
+                          <TableCell colSpan={10} className='p-0 border-0'>
                             <div className='overflow-hidden' style={{ borderTop: `2px solid ${accentColor}` }}>
                               <div className='px-6 py-5 grid grid-cols-1 lg:grid-cols-5 gap-5'>
                                 <div className='lg:col-span-3 space-y-3'>
@@ -558,6 +601,20 @@ export function Orders() {
                                     </div>
                                   )}
 
+                                  {o.assignee && (
+                                    <div className='rounded-lg border bg-background px-3 py-2 shadow-sm'>
+                                      <div className='flex items-center gap-2'>
+                                        <div className='h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0'>
+                                          {o.assignee.firstName?.[0]}{o.assignee.lastName?.[0]}
+                                        </div>
+                                        <div>
+                                          <div className='text-xs font-semibold text-muted-foreground uppercase tracking-wider'>Assigned To</div>
+                                          <div className='text-sm font-medium'>{o.assignee.firstName} {o.assignee.lastName}</div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {o.payments && o.payments.length > 0 && (
                                     <div className='space-y-1.5'>
                                       <div className='text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>Payments</div>
@@ -589,7 +646,7 @@ export function Orders() {
                       )
                     ].filter(Boolean)
                   }) : (
-                    <TableRow><TableCell colSpan={9} className='p-0 border-0'><EmptyState search={search} statusFilter={statusFilter} onClear={clearAllFilters} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className='p-0 border-0'><EmptyState search={search} statusFilter={statusFilter} onClear={clearAllFilters} /></TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -623,6 +680,23 @@ export function Orders() {
               <SelectTrigger className='h-8 w-[160px] text-sm'><SelectValue placeholder='Change Status' /></SelectTrigger>
               <SelectContent>{statusList.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
             </Select>
+            <div className='flex items-center gap-2'>
+              <SearchableSelect
+                options={[
+                  { id: 'unassigned', label: 'Unassign' },
+                  ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
+                ]}
+                value={''}
+                onChange={(v) => { if (v) bulkAssignMut.mutate({ ids: selected, assignedToId: v }) }}
+                placeholder='Assign to...'
+                searchPlaceholder='Search staff...'
+              />
+              {selected.length > 0 && (
+                <Button variant='outline' size='sm' className='h-8 text-xs text-muted-foreground' onClick={() => bulkAssignMut.mutate({ ids: selected, assignedToId: '__unassign__' })} title='Unassign all selected'>
+                  <X className='h-3 w-3' />
+                </Button>
+              )}
+            </div>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=sticker&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Stickers</Button>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=invoice&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Invoices</Button>
           </div>
