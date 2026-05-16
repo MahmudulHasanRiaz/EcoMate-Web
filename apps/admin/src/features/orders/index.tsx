@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -256,40 +256,57 @@ export function Orders() {
           })}
         </div>
 
-<Card>
-          <CardContent className='p-2.5'>
-            <div className='flex flex-wrap items-center gap-1.5'>
-              <div className='relative w-[180px]'>
-                <Input ref={searchInputRef} placeholder='Search...' value={search} onChange={e => setSearch(e.target.value)} className='h-7 text-sm pr-6' />
+        <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10 backdrop-blur-sm'>
+          <CardContent className='p-3'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <div className='relative w-[220px]'>
+                <SearchIcon className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+                <Input 
+                  ref={searchInputRef} 
+                  placeholder='Search orders...' 
+                  value={search} 
+                  onChange={e => setSearch(e.target.value)} 
+                  className='h-9 text-sm pl-9 pr-7 bg-background/70 focus:bg-background border-none shadow-sm transition-colors' 
+                />
                 {search && (
-                  <button onClick={() => setSearch('')} className='absolute right-1 top-1/2 -translate-y-1/2'>
-                    <X className='h-3 w-3 text-muted-foreground' />
+                  <button onClick={() => setSearch('')} className='absolute right-2 top-1/2 -translate-y-1/2 hover:text-foreground transition-colors'>
+                    <X className='h-3.5 w-3.5 text-muted-foreground' />
                   </button>
                 )}
               </div>
-              <div className='w-[130px]'>
+              
+              <div className='w-[140px]'>
                 <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-                  <SelectTrigger className='h-7 text-xs'><SelectValue placeholder='Status' /></SelectTrigger>
+                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'>
+                    <SelectValue placeholder='Status' />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value='all'>All</SelectItem>
+                    <SelectItem value='all'>All Statuses</SelectItem>
                     {statusList.map((s: any) => (
                       <SelectItem key={s.id} value={s.id}>
-                        <span className='flex items-center gap-1.5'><span className='h-1.5 w-1.5 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}</span>
+                        <span className='flex items-center gap-2'>
+                          <span className='h-2 w-2 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />
+                          {s.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className='w-[110px]'>
+
+              <div className='w-[130px]'>
                 <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
-                  <SelectTrigger className='h-7 text-xs'><SelectValue placeholder='Courier' /></SelectTrigger>
+                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'>
+                    <SelectValue placeholder='Courier' />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value='all'>All</SelectItem>
-                    {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize text-xs'>{c}</SelectItem>)}
+                    <SelectItem value='all'>All Couriers</SelectItem>
+                    {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize text-sm'>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className='w-[150px]'>
+
+              <div className='w-[160px]'>
                 <SearchableSelect
                   options={[
                     { id: 'all', label: 'All Staff' },
@@ -299,48 +316,54 @@ export function Orders() {
                   value={assigneeFilter}
                   onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
                   placeholder='Staff'
-                  searchPlaceholder='Search...'
-                  triggerClassName='h-7 text-xs'
+                  searchPlaceholder='Search staff...'
+                  triggerClassName='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'
                 />
               </div>
-              <div className='w-[80px]'>
+
+              <div className='w-[90px]'>
                 <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
-                  <SelectTrigger className='h-7 text-xs'><SelectValue /></SelectTrigger>
-                  <SelectContent>{[10,25,50,100].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}<SelectItem value='custom'>More...</SelectItem></SelectContent>
+                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[10,25,50,100].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+                    <SelectItem value='custom'>Custom...</SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
+
               {showCustomRows && (
-                <div className='flex items-center gap-1'>
-                  <Input type='number' className='h-7 w-16 text-xs' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
-                  <Button size='sm' variant='ghost' className='h-6 px-1.5' onClick={() => { setShowCustomRows(false); setCustomRows('') }}>✓</Button>
+                <div className='flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-200'>
+                  <Input type='number' className='h-9 w-16 text-sm bg-background/70' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
+                  <Button size='sm' variant='ghost' className='h-8 w-8 px-0 hover:bg-background/50' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>✓</Button>
                 </div>
               )}
+
               {hasActiveFilters && (
-                <Button variant='ghost' size='sm' className='h-6 text-xs text-muted-foreground' onClick={clearAllFilters}>
-                  <X className='h-3 w-3 mr-0.5' />Clear
+                <Button variant='ghost' size='sm' className='h-9 text-sm text-muted-foreground hover:text-foreground hover:bg-background/50' onClick={clearAllFilters}>
+                  <X className='h-4 w-4 mr-1.5' />Reset
                 </Button>
               )}
             </div>
             {hasActiveFilters && (
-              <div className='flex flex-wrap gap-1.5 mt-2 pt-2 border-t'>
+              <div className='flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-muted-foreground/10'>
                 {statusFilter !== 'all' && (() => { const s = statusList.find((st: any) => st.id === statusFilter); return s ? (
-                  <button onClick={() => { setStatusFilter('all'); setPage(1) }} className='inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>
-                    <span className='h-1.5 w-1.5 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}<X className='h-2.5 w-2.5 ml-0.5' />
+                  <button onClick={() => { setStatusFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
+                    <span className='h-1.5 w-1.5 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                   </button>
                 ) : null })()}
                 {courierFilter !== 'all' && (
-                  <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>
-                    <Truck className='h-2.5 w-2.5' />{courierFilter}<X className='h-2.5 w-2.5 ml-0.5' />
+                  <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
+                    <Truck className='h-3 w-3 text-muted-foreground' />{courierFilter}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                   </button>
                 )}
                 {assigneeFilter !== 'all' && (() => { const person = assigneeFilter === 'unassigned' ? null : staff.find((s: any) => s.id === assigneeFilter); return (
-                  <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>
-                    <UserCheck className='h-2.5 w-2.5' />{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName}` : 'Staff'}<X className='h-2.5 w-2.5 ml-0.5' />
+                  <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
+                    <UserCheck className='h-3 w-3 text-muted-foreground' />{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName}` : 'Staff'}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                   </button>
                 ) })()}
                 {search && (
-                  <button onClick={() => setSearch('')} className='inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>
-                    "{search.slice(0,15)}{search.length > 15 ? '...' : ''}"<X className='h-2.5 w-2.5 ml-0.5' />
+                  <button onClick={() => setSearch('')} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
+                    <span className='text-muted-foreground'>Search:</span> "{search.slice(0,15)}{search.length > 15 ? '...' : ''}"<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                   </button>
                 )}
               </div>
