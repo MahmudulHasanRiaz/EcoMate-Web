@@ -1,4 +1,10 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  MinLength,
+  MaxLength,
+  IsDateString,
+} from 'class-validator';
 
 export class UpdateAccountDto {
   @IsOptional()

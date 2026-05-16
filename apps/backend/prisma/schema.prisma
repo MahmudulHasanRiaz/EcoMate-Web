@@ -343,20 +343,21 @@ enum CourierService {
 }
 
 model CourierCredentials {
-  id            String   @id @default(uuid())
-  courier       String   @unique
-  enabled       Boolean  @default(false)
-  mode          String   @default("sandbox")
-  apiKey        String?
-  secretKey     String?
-  username      String?
-  password      String?
-  clientId      String?
-  clientSecret  String?
-  storeId       String?
-  credentials   Json?    @default("{}")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  courier        String   @unique
+  enabled        Boolean  @default(false)
+  mode           String   @default("sandbox")
+  apiKey         String?
+  secretKey      String?
+  username       String?
+  password       String?
+  clientId       String?
+  clientSecret   String?
+  storeId        String?
+  webhookSecret  String?
+  credentials    Json?    @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model CourierDispatchLog {

@@ -154,7 +154,8 @@ export class TasksService {
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.status !== undefined) data.status = dto.status as TaskStatus;
     if (dto.label !== undefined) data.label = dto.label as TaskLabel;
-    if (dto.priority !== undefined) data.priority = dto.priority as TaskPriority;
+    if (dto.priority !== undefined)
+      data.priority = dto.priority as TaskPriority;
     if (dto.assignee !== undefined) data.assignee = dto.assignee;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
@@ -192,7 +193,10 @@ export class TasksService {
     return { message: `${ids.length} tasks deleted successfully` };
   }
 
-  async bulkUpdate(ids: string[], update: { status?: string; priority?: string }) {
+  async bulkUpdate(
+    ids: string[],
+    update: { status?: string; priority?: string },
+  ) {
     const data: any = {};
     if (update.status) data.status = update.status;
     if (update.priority) data.priority = update.priority;

@@ -6,7 +6,11 @@ export class GatewayConfigController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  async findAll() { return this.prisma.paymentGatewayConfig.findMany({ orderBy: { gateway: 'asc' } }); }
+  async findAll() {
+    return this.prisma.paymentGatewayConfig.findMany({
+      orderBy: { gateway: 'asc' },
+    });
+  }
 
   @Put(':gateway')
   async upsertOne(@Param('gateway') gateway: string, @Body() dto: any) {

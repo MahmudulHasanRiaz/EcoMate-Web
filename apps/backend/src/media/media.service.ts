@@ -9,9 +9,18 @@ export class MediaService {
     private readonly storage: StorageService,
   ) {}
 
-  async findAll(query: { page?: number; perPage?: number; search?: string; type?: string; attached?: string }) {
-    const page = query.page || 1; const perPage = query.perPage || 24; const where: any = {};
-    if (query.search) where.filename = { contains: query.search, mode: 'insensitive' };
+  async findAll(query: {
+    page?: number;
+    perPage?: number;
+    search?: string;
+    type?: string;
+    attached?: string;
+  }) {
+    const page = query.page || 1;
+    const perPage = query.perPage || 24;
+    const where: any = {};
+    if (query.search)
+      where.filename = { contains: query.search, mode: 'insensitive' };
     if (query.type === 'image') where.mimeType = { startsWith: 'image/' };
     if (query.type === 'video') where.mimeType = { startsWith: 'video/' };
     if (query.attached === 'yes') where.attachments = { some: {} };
@@ -19,12 +28,21 @@ export class MediaService {
 
     const [data, total] = await Promise.all([
       this.prisma.media.findMany({
-        where, skip: (page - 1) * perPage, take: perPage, orderBy: { createdAt: 'desc' },
-        include: { attachments: { select: { entityType: true, entityId: true } }, _count: { select: { attachments: true } } },
+        where,
+        skip: (page - 1) * perPage,
+        take: perPage,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          attachments: { select: { entityType: true, entityId: true } },
+          _count: { select: { attachments: true } },
+        },
       }),
       this.prisma.media.count({ where }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findOne(id: string) {
@@ -43,14 +61,25 @@ export class MediaService {
     });
     if (!media) throw new NotFoundException('Media not found');
 
-    const details: { entityType: string; entityId: string; entityName: string }[] = [];
+    const details: {
+      entityType: string;
+      entityId: string;
+      entityName: string;
+    }[] = [];
     for (const att of media.attachments) {
       let entityName = att.entityId;
       if (att.entityType === 'product') {
-        const product = await this.prisma.product.findUnique({ where: { id: att.entityId }, select: { name: true } });
+        const product = await this.prisma.product.findUnique({
+          where: { id: att.entityId },
+          select: { name: true },
+        });
         if (product) entityName = product.name;
       }
-      details.push({ entityType: att.entityType, entityId: att.entityId, entityName });
+      details.push({
+        entityType: att.entityType,
+        entityId: att.entityId,
+        entityName,
+      });
     }
     return details;
   }
@@ -76,15 +105,29 @@ export class MediaService {
   }
 
   async detach(mediaId: string, entityType: string, entityId: string) {
-    await this.prisma.mediaAttachment.deleteMany({ where: { mediaId, entityType, entityId } });
+    await this.prisma.mediaAttachment.deleteMany({
+      where: { mediaId, entityType, entityId },
+    });
     return { message: 'Detached' };
   }
 
-  async syncAttachments(entityType: string, entityId: string, mediaIds: string[]) {
-    await this.prisma.mediaAttachment.deleteMany({ where: { entityType, entityId, mediaId: { notIn: mediaIds.length ? mediaIds : ['__none__'] } } });
+  async syncAttachments(
+    entityType: string,
+    entityId: string,
+    mediaIds: string[],
+  ) {
+    await this.prisma.mediaAttachment.deleteMany({
+      where: {
+        entityType,
+        entityId,
+        mediaId: { notIn: mediaIds.length ? mediaIds : ['__none__'] },
+      },
+    });
     for (const mId of mediaIds) {
       await this.prisma.mediaAttachment.upsert({
-        where: { mediaId_entityType_entityId: { mediaId: mId, entityType, entityId } },
+        where: {
+          mediaId_entityType_entityId: { mediaId: mId, entityType, entityId },
+        },
         create: { mediaId: mId, entityType, entityId },
         update: {},
       });

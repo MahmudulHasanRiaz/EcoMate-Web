@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
@@ -24,12 +28,24 @@ export class StorageService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getConfig(): Promise<StorageConfig> {
-    const provider = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_provider' } });
-    const r2Endpoint = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_r2_endpoint' } });
-    const r2AccessKey = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_r2_access_key' } });
-    const r2SecretKey = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_r2_secret_key' } });
-    const r2Bucket = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_r2_bucket' } });
-    const r2PublicUrl = await this.prisma.systemSetting.findUnique({ where: { key: 'storage_r2_public_url' } });
+    const provider = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_provider' },
+    });
+    const r2Endpoint = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_r2_endpoint' },
+    });
+    const r2AccessKey = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_r2_access_key' },
+    });
+    const r2SecretKey = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_r2_secret_key' },
+    });
+    const r2Bucket = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_r2_bucket' },
+    });
+    const r2PublicUrl = await this.prisma.systemSetting.findUnique({
+      where: { key: 'storage_r2_public_url' },
+    });
 
     return {
       provider: (provider?.value as 'local' | 'r2') || 'local',
@@ -42,18 +58,29 @@ export class StorageService {
   }
 
   private getS3Client(config: StorageConfig): S3Client {
-    if (!this.s3Client && config.provider === 'r2' && config.r2Endpoint && config.r2AccessKey && config.r2SecretKey) {
+    if (
+      !this.s3Client &&
+      config.provider === 'r2' &&
+      config.r2Endpoint &&
+      config.r2AccessKey &&
+      config.r2SecretKey
+    ) {
       this.s3Client = new S3Client({
         region: 'auto',
         endpoint: config.r2Endpoint,
-        credentials: { accessKeyId: config.r2AccessKey, secretAccessKey: config.r2SecretKey },
+        credentials: {
+          accessKeyId: config.r2AccessKey,
+          secretAccessKey: config.r2SecretKey,
+        },
         forcePathStyle: true,
       });
     }
     return this.s3Client!;
   }
 
-  async upload(file: Express.Multer.File): Promise<{ url: string; filename: string; size: number }> {
+  async upload(
+    file: Express.Multer.File,
+  ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
     const ext = extname(file.originalname).toLowerCase();
     const filename = `${uuid()}${ext}`;
@@ -83,10 +110,16 @@ export class StorageService {
     const config = await this.getConfig();
     if (config.provider === 'r2' && config.r2Bucket) {
       const client = this.getS3Client(config);
-      await client.send(new DeleteObjectCommand({ Bucket: config.r2Bucket, Key: filename }));
+      await client.send(
+        new DeleteObjectCommand({ Bucket: config.r2Bucket, Key: filename }),
+      );
       return;
     }
     const filepath = join(process.cwd(), 'uploads', filename);
-    try { await unlink(filepath); } catch { /* ignore */ }
+    try {
+      await unlink(filepath);
+    } catch {
+      /* ignore */
+    }
   }
 }

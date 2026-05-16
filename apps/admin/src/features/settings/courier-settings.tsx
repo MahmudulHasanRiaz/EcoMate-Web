@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy } from 'lucide-react'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff } from 'lucide-react'
 
 const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
@@ -23,11 +23,13 @@ const webhookBase = 'http://localhost:4000/api/webhooks/courier'
 const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),
   updateCreds: (courier: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credentials/${courier}`, d),
+  generateWebhookSecret: (courier: string) => apiClient.post(`/couriers/credentials/${courier}/generate-webhook-secret`, {}),
 }
 
 interface CourierFormState {
   enabled: boolean; apiKey: string; secretKey: string; username: string
   password: string; clientId: string; clientSecret: string; storeId: string; mode: string
+  webhookSecret?: string
 }
 
 interface CourierInfo {
@@ -64,6 +66,7 @@ const courierInfo: Record<string, CourierInfo> = {
 const defaultForm: CourierFormState = {
   enabled: false, apiKey: '', secretKey: '', username: '',
   password: '', clientId: '', clientSecret: '', storeId: '', mode: 'sandbox',
+  webhookSecret: '',
 }
 
 export function CourierSettings() {
@@ -92,6 +95,7 @@ export function CourierSettings() {
           clientSecret: (c['clientSecret'] as string) || (c['credentials'] as Record<string, string>)?.['clientSecret'] || '',
           storeId: (c['storeId'] as string) || (c['credentials'] as Record<string, string>)?.['storeId'] || '',
           mode: (c['mode'] as string) || 'sandbox',
+          webhookSecret: (c['webhookSecret'] as string) || '',
         }
       }
       setForms(f)
@@ -102,6 +106,22 @@ export function CourierSettings() {
     mutationFn: ({ courier, data }: { courier: string; data: Record<string, unknown> }) => courierApi.updateCreds(courier, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courier-creds'] }); toast.success('Credentials saved') },
     onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to save') },
+  })
+
+  const [showSecret, setShowSecret] = useState<Record<string, boolean>>({})
+
+  const generateWebhookMut = useMutation({
+    mutationFn: (courier: string) => courierApi.generateWebhookSecret(courier),
+    onSuccess: (res: unknown, courier) => {
+      const response = res as { data?: { webhookSecret?: string }; webhookSecret?: string }
+      const secret = response?.data?.webhookSecret || response?.webhookSecret
+      if (secret) {
+        setForms(prev => ({ ...prev, [courier]: { ...prev[courier], webhookSecret: secret } }))
+        toast.success('Webhook secret generated')
+      }
+      queryClient.invalidateQueries({ queryKey: ['courier-creds'] })
+    },
+    onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to generate secret') },
   })
 
   if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
@@ -196,6 +216,47 @@ export function CourierSettings() {
                       <Copy className='h-3 w-3' />
                     </Button>
                   </div>
+                </div>
+
+                <div className='bg-muted/50 rounded-md p-2 space-y-2'>
+                  <div className='flex items-center justify-between'>
+                    <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Bearer Token (Auth)</Label>
+                    {form.webhookSecret ? (
+                      <Button 
+                        variant='ghost' 
+                        size='sm' 
+                        className='h-5 text-[10px]' 
+                        onClick={() => setShowSecret(prev => ({ ...prev, [courier]: !prev[courier] }))}
+                      >
+                        {showSecret[courier] ? <EyeOff className='h-3 w-3 mr-1' /> : <Eye className='h-3 w-3 mr-1' />}
+                        {showSecret[courier] ? 'Hide' : 'Show'}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {form.webhookSecret ? (
+                    <div className='flex items-center gap-1'>
+                      <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate font-mono'>
+                        {showSecret[courier] ? form.webhookSecret : '••••••••••••••••••••••••••••••••'}
+                      </code>
+                      <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(form.webhookSecret || ''); toast.success('Token copied') }}>
+                        <Copy className='h-3 w-3' />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      size='sm' 
+                      variant='outline' 
+                      className='w-full text-xs h-7' 
+                      onClick={() => generateWebhookMut.mutate(courier)}
+                      disabled={generateWebhookMut.isPending}
+                    >
+                      {generateWebhookMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <RefreshCw className='h-3 w-3 mr-1' />}
+                      Generate Bearer Token
+                    </Button>
+                  )}
+                  <p className='text-[10px] text-muted-foreground'>
+                    Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
+                  </p>
                 </div>
 
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>

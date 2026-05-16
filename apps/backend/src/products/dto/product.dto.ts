@@ -1,4 +1,14 @@
-import { IsString, IsOptional, IsBoolean, IsInt, IsNumber, IsArray, ValidateNested, MinLength, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  MinLength,
+  IsObject,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VariantAttributeDto {
@@ -10,7 +20,10 @@ export class CreateVariantDto {
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsString() image?: string;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => VariantAttributeDto)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariantAttributeDto)
   attributeValues?: VariantAttributeDto[];
 }
 
@@ -32,7 +45,10 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() manageStock?: boolean;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CreateVariantDto)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateVariantDto)
   variants?: CreateVariantDto[];
 }
 

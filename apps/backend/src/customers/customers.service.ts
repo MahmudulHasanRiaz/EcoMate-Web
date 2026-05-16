@@ -17,7 +17,10 @@ export class CustomersService {
       where: { customerId: user.id },
       orderBy: { createdAt: 'desc' },
       select: {
-        id: true, displayId: true, total: true, statusId: true,
+        id: true,
+        displayId: true,
+        total: true,
+        statusId: true,
         createdAt: true,
         status: { select: { name: true, color: true } },
       },
@@ -29,7 +32,11 @@ export class CustomersService {
 
     return {
       customer: user,
-      summary: { totalOrders, totalSpent, lastOrderDate: lastOrder?.createdAt || null },
+      summary: {
+        totalOrders,
+        totalSpent,
+        lastOrderDate: lastOrder?.createdAt || null,
+      },
       recentOrders: orders.slice(0, 5),
     };
   }

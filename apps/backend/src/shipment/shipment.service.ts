@@ -17,8 +17,18 @@ interface CreateOrUpdateShipmentDto {
 }
 
 const orderInclude = {
-  customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
-  items: { include: { product: { select: { id: true, name: true, images: true } } } },
+  customer: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phoneNumber: true,
+    },
+  },
+  items: {
+    include: { product: { select: { id: true, name: true, images: true } } },
+  },
 } satisfies Prisma.OrderInclude;
 
 @Injectable()
@@ -36,7 +46,8 @@ export class ShipmentService {
         { orderId: { contains: query.search, mode: 'insensitive' } },
       ];
     }
-    if (query.courier) where.courier = { contains: query.courier, mode: 'insensitive' };
+    if (query.courier)
+      where.courier = { contains: query.courier, mode: 'insensitive' };
     if (query.status) where.status = query.status;
 
     const [data, total] = await Promise.all([
@@ -50,7 +61,10 @@ export class ShipmentService {
       this.prisma.shipment.count({ where }),
     ]);
 
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findByOrderId(orderId: string) {
@@ -58,12 +72,15 @@ export class ShipmentService {
       where: { orderId },
       include: { order: { include: orderInclude } },
     });
-    if (!shipment) throw new NotFoundException('Shipment not found for this order');
+    if (!shipment)
+      throw new NotFoundException('Shipment not found for this order');
     return shipment;
   }
 
   async createOrUpdate(orderId: string, dto: CreateOrUpdateShipmentDto) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new NotFoundException('Order not found');
 
     return this.prisma.shipment.upsert({

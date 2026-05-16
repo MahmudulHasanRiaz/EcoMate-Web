@@ -9,7 +9,18 @@ export class HealthController {
   @Public()
   @Get()
   async check() {
-    const dbOk = await this.prisma.$queryRawUnsafe('SELECT 1').then(() => true).catch(() => false);
-    return { status: dbOk ? 'healthy' : 'degraded', timestamp: new Date().toISOString(), uptime: process.uptime(), checks: { database: dbOk ? 'ok' : 'failed', memory: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB` } };
+    const dbOk = await this.prisma
+      .$queryRawUnsafe('SELECT 1')
+      .then(() => true)
+      .catch(() => false);
+    return {
+      status: dbOk ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      checks: {
+        database: dbOk ? 'ok' : 'failed',
+        memory: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+      },
+    };
   }
 }

@@ -25,7 +25,10 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.authService.register(dto);
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
@@ -40,7 +43,10 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.authService.login(dto);
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
@@ -60,7 +66,10 @@ export class AuthController {
     @CurrentUser() user: { userId: string; refreshToken: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.refresh(user.userId, user.refreshToken);
+    const result = await this.authService.refresh(
+      user.userId,
+      user.refreshToken,
+    );
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env['NODE_ENV'] === 'production',

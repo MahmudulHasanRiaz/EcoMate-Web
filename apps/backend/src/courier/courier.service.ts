@@ -9,7 +9,9 @@ export class CourierService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async getApiKey(): Promise<string | null> {
-    const setting = await this.prisma.systemSetting.findUnique({ where: { key: 'courier_hoorin_api_key' } });
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'courier_hoorin_api_key' },
+    });
     return setting?.value || null;
   }
 

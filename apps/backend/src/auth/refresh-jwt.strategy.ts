@@ -4,7 +4,10 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 
 @Injectable()
-export class RefreshJwtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
+export class RefreshJwtStrategy extends PassportStrategy(
+  Strategy,
+  'jwt-refresh',
+) {
   constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -13,7 +16,8 @@ export class RefreshJwtStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey: process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret',
+      secretOrKey:
+        process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret',
       passReqToCallback: true,
     });
   }

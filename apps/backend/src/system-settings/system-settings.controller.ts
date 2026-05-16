@@ -18,7 +18,9 @@ export class SystemSettingsController {
   }
 
   @Get('storage')
-  async getStorageConfig() { return this.storage.getConfig(); }
+  async getStorageConfig() {
+    return this.storage.getConfig();
+  }
 
   @Post(':key')
   async set(@Param('key') key: string, @Body() body: { value: string }) {

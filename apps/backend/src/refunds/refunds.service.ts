@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 
@@ -13,7 +17,12 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export class RefundsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(query: { page?: number; perPage?: number; status?: string; orderId?: string }) {
+  async findAll(query: {
+    page?: number;
+    perPage?: number;
+    status?: string;
+    orderId?: string;
+  }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: Record<string, unknown> = {};
@@ -33,7 +42,10 @@ export class RefundsService {
       }),
       this.prisma.refund.count({ where }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findOne(id: string) {
@@ -64,7 +76,11 @@ export class RefundsService {
     });
   }
 
-  async updateStatus(id: string, dto: UpdateRefundStatusDto, processedBy: string) {
+  async updateStatus(
+    id: string,
+    dto: UpdateRefundStatusDto,
+    processedBy: string,
+  ) {
     const refund = await this.prisma.refund.findUnique({ where: { id } });
     if (!refund) throw new NotFoundException('Refund not found');
 

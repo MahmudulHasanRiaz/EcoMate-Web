@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Put,
-  Body,
-} from '@nestjs/common';
+import { Controller, Get, Put, Body } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';

@@ -5,10 +5,15 @@ import type { Response } from 'express';
 
 @Controller('payments/bkash')
 export class BkashPgwController {
-  constructor(private readonly bkash: BkashPgwService, private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly bkash: BkashPgwService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post('create')
-  async create(@Body() dto: { amount: number; orderId: string; invoiceNo: string }) {
+  async create(
+    @Body() dto: { amount: number; orderId: string; invoiceNo: string },
+  ) {
     return this.bkash.createPayment(dto.amount, dto.orderId, dto.invoiceNo);
   }
 
@@ -22,10 +27,14 @@ export class BkashPgwController {
         const { token } = await this.bkash.grantToken();
         const result = await this.bkash.executePayment(paymentID, token);
         if (result.transactionStatus === 'Completed') {
-          res.redirect(`${frontendUrl}/admin/orders?bkash=success&trxID=${result.trxID}`);
+          res.redirect(
+            `${frontendUrl}/admin/orders?bkash=success&trxID=${result.trxID}`,
+          );
           return;
         }
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
     }
     res.redirect(`${frontendUrl}/admin/orders?bkash=failed`);
   }

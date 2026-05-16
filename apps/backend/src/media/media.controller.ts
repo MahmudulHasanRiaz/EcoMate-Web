@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Delete, Param, Query, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Query,
+  Body,
+} from '@nestjs/common';
 import { MediaService } from './media.service';
 
 @Controller('media')
@@ -7,29 +15,49 @@ export class MediaController {
 
   @Get()
   findAll(
-    @Query('page') page?: string, @Query('perPage') perPage?: string,
-    @Query('search') search?: string, @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('search') search?: string,
+    @Query('type') type?: string,
     @Query('attached') attached?: string,
   ) {
-    return this.svc.findAll({ page: page ? parseInt(page) : undefined, perPage: perPage ? parseInt(perPage) : undefined, search, type, attached });
+    return this.svc.findAll({
+      page: page ? parseInt(page) : undefined,
+      perPage: perPage ? parseInt(perPage) : undefined,
+      search,
+      type,
+      attached,
+    });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.svc.findOne(id); }
+  findOne(@Param('id') id: string) {
+    return this.svc.findOne(id);
+  }
 
   @Get(':id/attachments')
-  getAttachments(@Param('id') id: string) { return this.svc.getAttachments(id); }
+  getAttachments(@Param('id') id: string) {
+    return this.svc.getAttachments(id);
+  }
 
   @Delete(':id')
-  remove(@Param('id') id: string) { return this.svc.remove(id); }
+  remove(@Param('id') id: string) {
+    return this.svc.remove(id);
+  }
 
   @Post(':id/attach')
-  attach(@Param('id') id: string, @Body() dto: { entityType: string; entityId: string }) {
+  attach(
+    @Param('id') id: string,
+    @Body() dto: { entityType: string; entityId: string },
+  ) {
     return this.svc.attach(id, dto.entityType, dto.entityId);
   }
 
   @Post(':id/detach')
-  detach(@Param('id') id: string, @Body() dto: { entityType: string; entityId: string }) {
+  detach(
+    @Param('id') id: string,
+    @Body() dto: { entityType: string; entityId: string },
+  ) {
     return this.svc.detach(id, dto.entityType, dto.entityId);
   }
 }

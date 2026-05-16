@@ -1,42 +1,59 @@
-import { Controller, Post, Body, Param, Req } from '@nestjs/common';
+import { Controller, Post, Body, Param, Req, UnauthorizedException, Logger } from '@nestjs/common';
 import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import type { Request } from 'express';
 
 @Controller('webhooks/courier')
 export class CourierWebhookController {
-  constructor(private readonly svc: CourierWebhookService) {}
+  private readonly logger = new Logger(CourierWebhookController.name);
 
-  @Public()
+  constructor(
+    private readonly svc: CourierWebhookService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  private async validateWebhookToken(courier: string, authHeader: string | undefined): Promise<void> {
+    if (!authHeader) throw new UnauthorizedException('Missing authorization header');
+
+    const [type, token] = authHeader.split(' ');
+    if (type !== 'Bearer' || !token) throw new UnauthorizedException('Invalid authorization format');
+
+    const creds = await this.prisma.courierCredentials.findUnique({ where: { courier } });
+    if (!creds?.webhookSecret) throw new UnauthorizedException('Webhook not configured');
+
+    if (token !== creds.webhookSecret) throw new UnauthorizedException('Invalid token');
+  }
+
   @Post('steadfast')
   async steadfast(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    this.log('Steadfast', body, req);
+    const authHeader = req.headers['authorization'];
+    await this.validateWebhookToken('steadfast', authHeader);
+    this.logger.log('Steadfast webhook received');
     return this.svc.handleSteadfast(body);
   }
 
-  @Public()
   @Post('pathao')
   async pathao(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    this.log('Pathao', body, req);
+    const authHeader = req.headers['authorization'];
+    await this.validateWebhookToken('pathao', authHeader);
+    this.logger.log('Pathao webhook received');
     return this.svc.handlePathao(body);
   }
 
-  @Public()
   @Post('redx')
   async redx(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    this.log('RedX', body, req);
+    const authHeader = req.headers['authorization'];
+    await this.validateWebhookToken('redx', authHeader);
+    this.logger.log('RedX webhook received');
     return this.svc.handleRedx(body);
   }
 
-  @Public()
   @Post('carrybee')
   async carrybee(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    this.log('Carrybee', body, req);
+    const authHeader = req.headers['authorization'];
+    await this.validateWebhookToken('carrybee', authHeader);
+    this.logger.log('Carrybee webhook received');
     return this.svc.handleCarrybee(body);
-  }
-
-  private log(courier: string, body: unknown, _req: Request) {
-    const logger = (require as any)('@nestjs/common').Logger;
-    new logger('CourierWebhook').log(`${courier} webhook received`);
   }
 }

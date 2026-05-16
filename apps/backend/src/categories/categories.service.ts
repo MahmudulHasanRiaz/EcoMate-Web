@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 
@@ -16,14 +20,20 @@ export class CategoriesService {
   async findOne(id: string) {
     const cat = await this.prisma.category.findUnique({
       where: { id },
-      include: { children: true, parent: true, _count: { select: { products: true } } },
+      include: {
+        children: true,
+        parent: true,
+        _count: { select: { products: true } },
+      },
     });
     if (!cat) throw new NotFoundException('Category not found');
     return cat;
   }
 
   async create(dto: CreateCategoryDto) {
-    const existing = await this.prisma.category.findUnique({ where: { slug: dto.slug } });
+    const existing = await this.prisma.category.findUnique({
+      where: { slug: dto.slug },
+    });
     if (existing) throw new ConflictException('Slug already exists');
 
     return this.prisma.category.create({ data: dto as any });
@@ -34,7 +44,9 @@ export class CategoriesService {
     if (!cat) throw new NotFoundException('Category not found');
 
     if (dto.slug && dto.slug !== cat.slug) {
-      const exist = await this.prisma.category.findUnique({ where: { slug: dto.slug } });
+      const exist = await this.prisma.category.findUnique({
+        where: { slug: dto.slug },
+      });
       if (exist) throw new ConflictException('Slug already exists');
     }
 
@@ -45,7 +57,10 @@ export class CategoriesService {
     const cat = await this.prisma.category.findUnique({ where: { id } });
     if (!cat) throw new NotFoundException('Category not found');
 
-    await this.prisma.category.updateMany({ where: { parentId: id }, data: { parentId: null } });
+    await this.prisma.category.updateMany({
+      where: { parentId: id },
+      data: { parentId: null },
+    });
     await this.prisma.category.delete({ where: { id } });
     return { message: 'Category deleted' };
   }

@@ -8,15 +8,33 @@ export class PaymentsController {
   constructor(private readonly svc: PaymentsService) {}
 
   @Get()
-  findAll(@Query('page') page?: string, @Query('perPage') perPage?: string, @Query('method') method?: string, @Query('status') status?: string, @Query('orderId') orderId?: string) {
-    return this.svc.findAll({ page: page ? parseInt(page) : undefined, perPage: perPage ? parseInt(perPage) : undefined, method, status, orderId });
+  findAll(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('method') method?: string,
+    @Query('status') status?: string,
+    @Query('orderId') orderId?: string,
+  ) {
+    return this.svc.findAll({
+      page: page ? parseInt(page) : undefined,
+      perPage: perPage ? parseInt(perPage) : undefined,
+      method,
+      status,
+      orderId,
+    });
   }
 
   @Post(':orderId')
-  create(@Param('orderId') orderId: string, @Body() dto: CreatePaymentDto) { return this.svc.create(orderId, dto); }
+  create(@Param('orderId') orderId: string, @Body() dto: CreatePaymentDto) {
+    return this.svc.create(orderId, dto);
+  }
 
   @Put(':id/verify')
-  verify(@Param('id') id: string, @Body() dto: VerifyPaymentDto, @CurrentUser() user: { userId: string }) {
+  verify(
+    @Param('id') id: string,
+    @Body() dto: VerifyPaymentDto,
+    @CurrentUser() user: { userId: string },
+  ) {
     return this.svc.verify(id, dto, user.userId);
   }
 }

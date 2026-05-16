@@ -28,7 +28,9 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('User with this email or username already exists');
+      throw new ConflictException(
+        'User with this email or username already exists',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
@@ -78,7 +80,9 @@ export class AuthService {
 
     if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
       if (tokenRecord) {
-        await this.prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
+        await this.prisma.refreshToken.delete({
+          where: { id: tokenRecord.id },
+        });
       }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -129,7 +133,9 @@ export class AuthService {
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
     if (dto.currentPassword === dto.newPassword) {
-      throw new BadRequestException('New password must be different from current password');
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
     }
 
     const user = await this.prisma.user.findUnique({
@@ -140,7 +146,10 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
+    const isPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.password,
+    );
     if (!isPasswordValid) {
       throw new BadRequestException('Current password is incorrect');
     }
@@ -166,10 +175,16 @@ export class AuthService {
     return { message: 'If the email exists, a reset code has been sent' };
   }
 
-  private async generateTokens(user: { id: string; email: string; role: string }) {
+  private async generateTokens(user: {
+    id: string;
+    email: string;
+    role: string;
+  }) {
     const payload = { sub: user.id, email: user.email, role: user.role };
-    const accessExpiresIn = (process.env['JWT_EXPIRES_IN'] || '15m') as StringValue;
-    const refreshExpiresIn = (process.env['JWT_REFRESH_EXPIRES_IN'] || '7d') as StringValue;
+    const accessExpiresIn = (process.env['JWT_EXPIRES_IN'] ||
+      '15m') as StringValue;
+    const refreshExpiresIn = (process.env['JWT_REFRESH_EXPIRES_IN'] ||
+      '7d') as StringValue;
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env['JWT_SECRET'] || 'eco-mate-jwt-secret',

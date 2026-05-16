@@ -71,6 +71,10 @@ export class UsersController {
 
   @Post('invite')
   async invite(@Body() dto: InviteUserDto) {
-    return { message: `Invitation sent to ${dto.email}`, email: dto.email, role: dto.role };
+    return {
+      message: `Invitation sent to ${dto.email}`,
+      email: dto.email,
+      role: dto.role,
+    };
   }
 }

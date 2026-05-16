@@ -8,6 +8,8 @@ export class CreateRefundDto {
 }
 
 export class UpdateRefundStatusDto {
-  @IsString() @IsIn(['pending', 'approved', 'completed', 'rejected']) status: string;
+  @IsString()
+  @IsIn(['pending', 'approved', 'completed', 'rejected'])
+  status: string;
   @IsOptional() @IsString() notes?: string;
 }

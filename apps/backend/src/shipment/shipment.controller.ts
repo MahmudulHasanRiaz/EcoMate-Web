@@ -34,7 +34,10 @@ export class ShipmentController {
   }
 
   @Put('order/:orderId')
-  createOrUpdate(@Param('orderId') orderId: string, @Body() dto: CreateOrUpdateShipmentDto) {
+  createOrUpdate(
+    @Param('orderId') orderId: string,
+    @Body() dto: CreateOrUpdateShipmentDto,
+  ) {
     return this.svc.createOrUpdate(orderId, dto);
   }
 }
