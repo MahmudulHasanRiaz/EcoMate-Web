@@ -14,7 +14,7 @@ function StickerPage() {
   const [order, setOrder] = useState<any>(null)
 
   useEffect(() => {
-    apiClient.get(`/orders/${id}`).then(r => setOrder(r.data))
+    apiClient.get(`/orders/${id}`).then(r => { setOrder(r.data); setTimeout(() => window.print(), 500); })
   }, [id])
 
   return (

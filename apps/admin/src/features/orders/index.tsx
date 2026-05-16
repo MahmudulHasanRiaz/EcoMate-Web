@@ -83,7 +83,7 @@ export function Orders() {
                          <ExternalLink className='h-3.5 w-3.5' />
                        </Button>
                      ) : null}
-                     <Button size='icon' variant='ghost' className='h-7 w-7' title='Sticker' onClick={(e) => { e.stopPropagation(); window.open(`/op/print/sticker/${o.id}`, '_blank') }}>
+                     <Button size='icon' variant='ghost' className='h-7 w-7' title='Sticker' onClick={(e) => { e.stopPropagation(); window.open(`/admin/op/print/sticker/${o.id}`, '_blank') }}>
                        <Printer className='h-3.5 w-3.5' />
                      </Button>
                      </div>
@@ -183,8 +183,8 @@ function OrderDetail({ order: initialOrder, onBack, onUpdateStatus, onUpdate, st
           </div>
           <div className='flex items-center gap-2'>
             {!editing && <Button variant='outline' size='sm' onClick={() => setEditing(true)}><Pencil className='h-4 w-4 mr-1' /> Edit</Button>}
-            <Button variant='outline' size='sm' onClick={() => window.open(`/op/print/sticker/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Sticker</Button>
-            <Button variant='outline' size='sm' onClick={() => window.open(`/op/print/invoice/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Invoice</Button>
+            <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Sticker</Button>
+            <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Invoice</Button>
             <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
               <div className='flex items-center gap-1.5'>
                 <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
