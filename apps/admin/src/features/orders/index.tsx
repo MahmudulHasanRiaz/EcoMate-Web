@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, CancelIcon } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye } from 'lucide-react'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -113,14 +113,12 @@ function OrderRowSkeleton() {
     <TableRow>
       <TableCell><Skeleton className='h-4 w-4' /></TableCell>
       <TableCell><Skeleton className='h-4 w-4' /></TableCell>
-      <TableCell><Skeleton className='h-4 w-24' /></TableCell>
+      <TableCell><div className='space-y-1'><Skeleton className='h-4 w-24' /><Skeleton className='h-3 w-16' /></div></TableCell>
       <TableCell><div className='space-y-1'><Skeleton className='h-4 w-28' /><Skeleton className='h-3 w-24' /></div></TableCell>
       <TableCell><Skeleton className='h-6 w-[100px] rounded-full' /></TableCell>
-      <TableCell><Skeleton className='h-5 w-16 rounded-full' /></TableCell>
+      <TableCell><Skeleton className='h-5 w-24 rounded-full' /></TableCell>
       <TableCell><Skeleton className='h-4 w-16 ml-auto' /></TableCell>
       <TableCell><Skeleton className='h-4 w-6 ml-auto' /></TableCell>
-      <TableCell><div className='space-y-1'><Skeleton className='h-4 w-16' /><Skeleton className='h-3 w-10' /></div></TableCell>
-      <TableCell><Skeleton className='h-7 w-7 rounded' /></TableCell>
       <TableCell><Skeleton className='h-7 w-7 rounded' /></TableCell>
     </TableRow>
   )
@@ -331,10 +329,6 @@ export function Orders() {
                       Total {sort === 'total' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
                     </TableHead>
                     <TableHead className='text-right'>Items</TableHead>
-                    <TableHead className='cursor-pointer select-none' onClick={() => { setSort('createdAt'); setOrder(o => o === 'asc' ? 'desc' : 'asc') }}>
-                      Date {sort === 'createdAt' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
-                    </TableHead>
-                    <TableHead className='text-center'>Track</TableHead>
                     <TableHead className='w-10'></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -365,6 +359,12 @@ export function Orders() {
                               <TooltipTrigger asChild><button onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }} className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'><ClipboardCopy className='h-3 w-3' /></button></TooltipTrigger>
                               <TooltipContent>Copy order ID</TooltipContent>
                             </Tooltip>
+                          </div>
+                          <div className='flex items-center gap-1.5 mt-0.5'>
+                            <span className='cursor-pointer text-[11px] text-muted-foreground select-none' onClick={e => { e.stopPropagation(); setSort('createdAt'); setOrder(prev => prev === 'asc' ? 'desc' : 'asc') }}>
+                              {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                              <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -397,19 +397,21 @@ export function Orders() {
                           </Select>
                         </TableCell>
                         <TableCell>
-                          {o.courierService
-                            ? <Badge variant='outline' className='text-xs capitalize gap-1'><Truck className='h-2.5 w-2.5' /> {o.courierService}</Badge>
-                            : <span className='text-xs text-muted-foreground/50'>Not assigned</span>}
+                          {o.courierService ? (
+                            <div className='flex items-center gap-1.5'>
+                              <Badge variant='outline' className='text-xs capitalize gap-1'><Truck className='h-2.5 w-2.5' /> {o.courierService}</Badge>
+                              {o.trackingUrl && (
+                                <button onClick={e => { e.stopPropagation(); window.open(o.trackingUrl, '_blank') }} className='text-muted-foreground hover:text-primary transition-colors' title='Track shipment'>
+                                  <ExternalLink className='h-3 w-3' />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className='text-xs text-muted-foreground/50'>Not assigned</span>
+                          )}
                         </TableCell>
                         <TableCell className='text-right font-semibold text-sm'>৳{fmt(o.total)}</TableCell>
                         <TableCell className='text-right text-sm text-muted-foreground'>{o.items.length}</TableCell>
-                        <TableCell>
-                          <div className='text-xs'>{new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</div>
-                          <div className='text-[11px] text-muted-foreground'>{relativeTime(o.createdAt)}</div>
-                        </TableCell>
-                        <TableCell className='text-center' onClick={e => e.stopPropagation()}>
-                          {o.trackingUrl ? <Button size='icon' variant='ghost' className='h-7 w-7' title='Track' onClick={() => window.open(o.trackingUrl, '_blank')}><ExternalLink className='h-3.5 w-3.5' /></Button> : <span className='text-xs text-muted-foreground/50'>—</span>}
-                        </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='h-7 w-7'><MoreHorizontal className='h-3.5 w-3.5' /></Button></DropdownMenuTrigger>
@@ -428,7 +430,7 @@ export function Orders() {
                       </TableRow>,
                       isExpanded && (
                         <TableRow key={`${o.id}-detail`} className='even:bg-muted/[0.02]'>
-                          <TableCell colSpan={11} className='p-0 border-0'>
+                          <TableCell colSpan={9} className='p-0 border-0'>
                             <div className='overflow-hidden' style={{ borderTop: `2px solid ${accentColor}` }}>
                               <div className='px-6 py-5 grid grid-cols-1 lg:grid-cols-5 gap-5'>
                                 <div className='lg:col-span-3 space-y-3'>
@@ -576,7 +578,7 @@ export function Orders() {
                       )
                     ].filter(Boolean)
                   }) : (
-                    <TableRow><TableCell colSpan={11} className='p-0 border-0'><EmptyState search={search} statusFilter={statusFilter} onClear={clearAllFilters} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className='p-0 border-0'><EmptyState search={search} statusFilter={statusFilter} onClear={clearAllFilters} /></TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
