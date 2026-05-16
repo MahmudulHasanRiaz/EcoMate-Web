@@ -43,7 +43,6 @@ export function StickerTemplate({ order }: { order: any }) {
 
       <div className="row font-bold text-xs mt-1">
         <span>COD: ৳{fmt(order.total)}</span>
-        <span>{order.displayId}</span>
       </div>
 
       <div className="product-list mt-1">
@@ -60,7 +59,6 @@ export function StickerTemplate({ order }: { order: any }) {
 
       <div className="row text-[7px]">
         <span>Shipping: ৳{fmt(order.shippingCharge)}</span>
-        <span>{order.displayId}</span>
       </div>
       <div className="row text-[9px] font-bold mt-0.5">
         <span>Total</span>
