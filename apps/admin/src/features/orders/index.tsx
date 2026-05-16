@@ -256,8 +256,8 @@ export function Orders() {
           })}
         </div>
 
-        <Card>
-          <CardContent className='p-3'>
+<Card>
+          <CardContent className='p-3 space-y-2'>
             <div className='flex flex-wrap items-center gap-2'>
               <div className='relative flex-1 min-w-[200px] max-w-xs'>
                 <Input ref={searchInputRef} placeholder='Search order/customer/phone... (⌘K)' value={search} onChange={e => setSearch(e.target.value)} className='h-8 text-sm pr-8' />
@@ -268,7 +268,7 @@ export function Orders() {
                 )}
               </div>
               <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-                <SelectTrigger className={`h-8 w-[140px] text-sm ${statusFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='All Statuses' /></SelectTrigger>
+                <SelectTrigger className={`h-8 w-[130px] text-sm ${statusFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='Status' /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value='all'>All Statuses</SelectItem>
                   {statusList.map((s: any) => (
@@ -279,41 +279,39 @@ export function Orders() {
                 </SelectContent>
               </Select>
               <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
-                <SelectTrigger className={`h-8 w-[140px] text-sm ${courierFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='All Couriers' /></SelectTrigger>
+                <SelectTrigger className={`h-8 w-[120px] text-sm ${courierFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='Courier' /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value='all'>All Couriers</SelectItem>
                   {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize'>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SearchableSelect
-                options={[
-                  { id: 'all', label: 'All Staff' },
-                  { id: 'unassigned', label: 'Unassigned' },
-                  ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
-                ]}
-                value={assigneeFilter}
-                onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
-                placeholder='Filter by staff...'
-                searchPlaceholder='Search staff...'
-              />
               <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
-                <SelectTrigger className='h-8 w-[100px] text-sm'><SelectValue /></SelectTrigger>
-                <SelectContent>{[10,25,50,100,200,500,1000].map(n => <SelectItem key={n} value={String(n)}>{n} rows</SelectItem>)}<SelectItem value='custom'>Custom...</SelectItem></SelectContent>
+                <SelectTrigger className='h-8 w-[90px] text-sm'><SelectValue /></SelectTrigger>
+                <SelectContent>{[10,25,50,100,200,500,1000].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}<SelectItem value='custom'>Custom...</SelectItem></SelectContent>
               </Select>
+            </div>
+            <div className='flex flex-wrap items-center gap-2'>
+              <div className='flex-1 min-w-[180px] max-w-[200px]'>
+                <SearchableSelect
+                  options={[
+                    { id: 'all', label: 'All Staff' },
+                    { id: 'unassigned', label: 'Unassigned' },
+                    ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
+                  ]}
+                  value={assigneeFilter}
+                  onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
+                  placeholder='Filter by staff...'
+                  searchPlaceholder='Search staff...'
+                />
+              </div>
               {hasActiveFilters && (
-                <Button variant='ghost' size='sm' className='h-8 text-xs text-muted-foreground' onClick={clearAllFilters}>
-                  <X className='h-3.5 w-3.5 mr-1' /> Clear filters
+                <Button variant='ghost' size='sm' className='h-7 text-xs text-muted-foreground' onClick={clearAllFilters}>
+                  <X className='h-3 w-3 mr-1' /> Clear filters
                 </Button>
-              )}
-              {showCustomRows && (
-                <div className='flex items-center gap-1'>
-                  <Input type='number' className='h-8 w-20 text-sm' placeholder='Rows' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
-                  <Button size='sm' className='h-8' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>Set</Button>
-                </div>
               )}
             </div>
             {hasActiveFilters && (
-              <div className='flex flex-wrap gap-1.5 mt-2'>
+              <div className='flex flex-wrap gap-1.5 pt-1 border-t'>
                 {statusFilter !== 'all' && (() => { const s = statusList.find((st: any) => st.id === statusFilter); return s ? (
                   <button onClick={() => { setStatusFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors'>
                     <span className='h-2 w-2 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}<X className='h-3 w-3' />
