@@ -58,7 +58,8 @@ export function StickerTemplate({ order }: { order: any }) {
       <div className="divider" />
 
       <div className="row text-[7px]">
-        <span>Shipping: ৳{fmt(order.shippingCharge)}</span>
+        <span>Delivery Charge:</span>
+        <span>৳{fmt(order.shippingCharge)}</span>
       </div>
       <div className="row text-[9px] font-bold mt-0.5">
         <span>Total</span>
