@@ -276,22 +276,21 @@ export function Orders() {
               </div>
               
               <div className='w-[140px]'>
-                <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'>
-                    <SelectValue placeholder='Status' />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='all'>All Statuses</SelectItem>
-                    {statusList.map((s: any) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        <span className='flex items-center gap-2'>
-                          <span className='h-2 w-2 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />
-                          {s.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={[
+                    { id: 'all', label: 'All Statuses' },
+                    ...statusList.map((s: any) => ({
+                      id: s.id,
+                      label: s.name,
+                      icon: <span className='h-2 w-2 rounded-full shrink-0' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />
+                    }))
+                  ]}
+                  value={statusFilter}
+                  onChange={(v) => { setStatusFilter(v || 'all'); setPage(1) }}
+                  placeholder='Status'
+                  searchPlaceholder='Search status...'
+                  triggerClassName='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'
+                />
               </div>
 
               <div className='w-[130px]'>
