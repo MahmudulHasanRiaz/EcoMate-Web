@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi } from './api'
 import { apiClient } from '@/lib/api-client'
@@ -26,6 +27,8 @@ export function Orders() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
+  const [customRows, setCustomRows] = useState('')
+  const [showCustomRows, setShowCustomRows] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [courierFilter, setCourierFilter] = useState('all')
@@ -89,10 +92,16 @@ export function Orders() {
                   {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize'>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={String(perPage)} onValueChange={v => { setPerPage(parseInt(v)); setPage(1) }}>
+              <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
                 <SelectTrigger className='h-8 w-[100px] text-sm'><SelectValue /></SelectTrigger>
-                <SelectContent>{[10,25,50,100].map(n => <SelectItem key={n} value={String(n)}>{n} rows</SelectItem>)}</SelectContent>
+                <SelectContent>{[10,25,50,100,200,500,1000].map(n => <SelectItem key={n} value={String(n)}>{n} rows</SelectItem>)}<SelectItem value='custom'>Custom...</SelectItem></SelectContent>
               </Select>
+              {showCustomRows && (
+                <div className='flex items-center gap-1'>
+                  <Input type='number' className='h-8 w-20 text-sm' placeholder='Rows' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
+                  <Button size='sm' className='h-8' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>Set</Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -123,7 +132,9 @@ export function Orders() {
                  data?.data?.length ? data.data.map((o: any) => (
                   <TableRow key={o.id} className={selected.includes(o.id) ? 'bg-muted/30' : ''}>
                     <TableCell><Checkbox checked={selected.includes(o.id)} onCheckedChange={() => toggleOne(o.id)} /></TableCell>
-                    <TableCell className='font-mono text-sm font-medium'>{o.displayId}</TableCell>
+                    <TableCell className='font-mono text-sm font-medium'>
+                      <Link to='/op/orders/$id' params={{ id: o.id }} className='hover:underline text-primary'>{o.displayId}</Link>
+                    </TableCell>
                     <TableCell>
                       <div className='text-sm font-medium'>{o.customer.firstName} {o.customer.lastName}</div>
                       <div className='text-xs text-muted-foreground'>{o.customer.phoneNumber}</div>

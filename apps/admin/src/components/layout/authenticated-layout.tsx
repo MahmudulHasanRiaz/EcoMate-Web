@@ -34,7 +34,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
       <PanelProvider>
       <LayoutProvider>
         <SidebarProvider defaultOpen={defaultOpen}>
-          <SkipToMain />
+          <div className="no-print"><SkipToMain /></div>
           <AppSidebar />
           <SidebarInset
             className={cn(

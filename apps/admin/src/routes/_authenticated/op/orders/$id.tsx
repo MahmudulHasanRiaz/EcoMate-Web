@@ -1,0 +1,240 @@
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { ordersApi, mediaUrl } from '@/features/orders/api'
+import { apiClient } from '@/lib/api-client'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { ConfigDrawer } from '@/components/config-drawer'
+import { ProfileDropdown } from '@/components/profile-dropdown'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { PaymentLogo } from '@/components/payment-logo'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag } from 'lucide-react'
+
+const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
+const nn = (v: number | string) => Number(v)
+const fmt = (v: number | string) => nn(v).toFixed(2)
+
+export const Route = createFileRoute('/_authenticated/op/orders/$id')({ component: OrderDetailPage })
+
+function OrderDetailPage() {
+  const { id } = Route.useParams() as { id: string }
+  const { data: order, isLoading } = useQuery({ queryKey: ['order', id], queryFn: () => ordersApi.get(id).then(r => r.data) })
+
+  const { data: statuses } = useQuery({ queryKey: ['order-statuses'], queryFn: () => apiClient.get('/order-statuses').then(r => r.data as any[]) })
+  const statusList = (Array.isArray(statuses) ? statuses : []) as any[]
+
+  const [editing, setEditing] = useState(false)
+  const [shippingCharge, setShippingCharge] = useState('')
+  const [discount, setDiscount] = useState('')
+  const [discountType, setDiscountType] = useState('flat')
+  const [customerNotes, setCustomerNotes] = useState('')
+  const [officeNotes, setOfficeNotes] = useState('')
+  const [statusNote, setStatusNote] = useState('')
+  const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
+  const [showCustomerInfo, setShowCustomerInfo] = useState(false)
+  const [showCourier, setShowCourier] = useState(false)
+  const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
+
+  useEffect(() => {
+    if (order) {
+      setShippingCharge(String(nn(order.shippingCharge)))
+      setDiscount(String(nn(order.discount)))
+      setDiscountType(order.discountType || 'flat')
+      setCustomerNotes(order.customerNotes || '')
+      setOfficeNotes(order.officeNotes || '')
+    }
+  }, [order])
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => ordersApi.updateOrder(id, data),
+    onSuccess: () => toast.success('Updated'),
+  })
+
+  const statusMut = useMutation({
+    mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
+    onSuccess: () => toast.success('Status updated'),
+  })
+
+  const noteMut = useMutation({
+    mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
+    onSuccess: () => toast.success('Note added'),
+  })
+
+  const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
+  const { data: customerSummary } = useQuery({ queryKey: ['customer-summary', phone], queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data), enabled: !!phone })
+  const { data: courierData, isLoading: courierLoading } = useQuery({ queryKey: ['courier-search', phone], queryFn: () => apiClient.get(`/courier/search?phone=${phone}`).then(r => r.data), enabled: showCourier && !!phone })
+
+  if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
+  if (!order) return <div className='p-6 text-muted-foreground'>Order not found</div>
+
+  const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
+  const handleSaveEdit = () => {
+    updateMut.mutate({ id, data: { shippingCharge: parseFloat(shippingCharge) || 0, discount: parseFloat(discount) || 0, discountType, customerNotes: customerNotes || null, officeNotes: officeNotes || null } })
+    setEditing(false)
+  }
+
+  const rawDiscount = parseFloat(discount) || 0
+  const itemSubtotal = order.items?.reduce((s: number, i: any) => s + nn(i.price) * i.quantity, 0) || 0
+  const effectiveDiscount = discountType === 'percentage' ? itemSubtotal * (rawDiscount / 100) : rawDiscount
+  const calculatedTotal = Math.max(0, itemSubtotal + (parseFloat(shippingCharge) || 0) - effectiveDiscount)
+
+  return (
+    <>
+      <Header fixed><Link to='/op/orders' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+      <Main className='flex flex-1 flex-col gap-6'>
+        <div className='flex items-center justify-between gap-4'>
+          <div><h2 className='text-2xl font-bold tracking-tight'>{order.displayId}</h2><p className='text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p></div>
+          <div className='flex items-center gap-2'>
+            {!editing && <Button variant='outline' size='sm' onClick={() => setEditing(true)}><Pencil className='h-4 w-4 mr-1' /> Edit</Button>}
+            <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Sticker</Button>
+            <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Invoice</Button>
+            <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
+              <div className='flex items-center gap-1.5'>
+                <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
+                {order.courierService && order.courierStatus && <Badge variant='outline' className='text-xs flex items-center gap-1'><Truck className='h-3 w-3' /> {order.courierStatus}</Badge>}
+                {order.trackingUrl && <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}><ExternalLink className='h-3 w-3' /></Button>}
+              </div>
+              {allowedStatuses.length > 0 && (
+                <select className='text-sm border-0 bg-transparent focus:outline-none' value='' onChange={e => { if (e.target.value) setShowStatusDialog(e.target.value) }}>
+                  <option value=''>Change...</option>
+                  {allowedStatuses.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className='grid grid-cols-3 gap-6'>
+          <div className='col-span-2 space-y-6'>
+            <Card>
+              <CardHeader className='pb-2'><CardTitle className='text-base'>Items</CardTitle></CardHeader>
+              <CardContent className='p-0'>
+                <Table>
+                  <TableHeader><TableRow><TableHead>Product</TableHead><TableHead className='text-right'>Price</TableHead><TableHead className='text-right'>Qty</TableHead><TableHead className='text-right'>Total</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {order.items?.map((item: any) => (
+                      <TableRow key={item.id}>
+                        <TableCell><div className='flex items-center gap-3'>{item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? <img src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product.name}</span></div></TableCell>
+                        <TableCell className='text-right text-sm'>৳{fmt(item.price)}</TableCell>
+                        <TableCell className='text-right text-sm'>{item.quantity}</TableCell>
+                        <TableCell className='text-right text-sm font-medium'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className='px-4 py-3 border-t space-y-1'>
+                  <div className='flex justify-between text-sm'><span>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div>
+                  <div className='flex justify-between text-sm'><span>Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>
+                  {nn(order.discount) > 0 && <div className='flex justify-between text-sm text-green-600'><span>Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}
+                  <div className='flex justify-between font-bold text-base pt-1 border-t'><span>Total</span><span>৳{fmt(order.total)}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className='pb-2'><CardTitle className='text-base'>Timeline</CardTitle></CardHeader>
+              <CardContent>
+                <div className='space-y-0'>
+                  {(order.timeline as any[]).map((t: any, i: number) => {
+                    const isStatus = !!t.status && !t.type; const isPrivate = t.visibility === 'private';
+                    const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1';
+                    return (
+                      <div key={i} className='relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0' style={{ borderColor: color }}>
+                        <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: color }} />
+                        <div className='flex items-center gap-2 flex-wrap'>
+                          {isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
+                          {t.type === 'shipping' && <Badge variant='outline' className='text-xs'><ArrowRightLeft className='h-3 w-3 mr-1' />Shipping</Badge>}
+                          {t.type === 'discount' && <Badge variant='outline' className='text-xs'><Tag className='h-3 w-3 mr-1' />Discount</Badge>}
+                          {t.type === 'note' && <Badge variant='outline' className='text-xs'><MessageSquarePlus className='h-3 w-3 mr-1' />Note</Badge>}
+                          {t.type === 'courier' && <Badge variant='outline' className='text-xs'><Truck className='h-3 w-3 mr-1' />{(t as any).courier}</Badge>}
+                          {isPrivate && <Badge variant='secondary' className='text-xs'><EyeOff className='h-2.5 w-2.5 mr-0.5' />Private</Badge>}
+                          <span className='text-xs text-muted-foreground'><Clock className='h-3 w-3 mr-1 inline' />{new Date(t.timestamp).toLocaleString()}</span>
+                        </div>
+                        {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            {order.dispatchLogs && order.dispatchLogs.length > 0 && (
+              <Card>
+                <CardHeader className='pb-2'><CardTitle className='text-base flex items-center gap-2'><Truck className='h-4 w-4' /> Dispatch History</CardTitle></CardHeader>
+                <CardContent className='p-0'>
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Courier</TableHead><TableHead>Status</TableHead><TableHead>ID</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+                    <TableBody>{order.dispatchLogs.map((log: any) => (
+                      <TableRow key={log.id}><TableCell className='font-medium text-sm capitalize'>{log.courier}</TableCell><TableCell><Badge variant={log.status === 'success' ? 'default' : 'destructive'} className='text-xs'>{log.status}</Badge></TableCell><TableCell className='text-sm font-mono'>{log.consignmentId || log.trackingCode || '—'}</TableCell><TableCell className='text-xs text-muted-foreground'>{new Date(log.createdAt).toLocaleString()}</TableCell></TableRow>
+                    ))}</TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className='mt-4 pt-3 border-t flex items-center gap-2'>
+              <Button variant='ghost' size='sm' className='text-xs' onClick={() => setNoteVisibility(v => v === 'public' ? 'private' : 'public')}>
+                {noteVisibility === 'public' ? <Eye className='h-3 w-3 mr-1' /> : <EyeOff className='h-3 w-3 mr-1' />}{noteVisibility === 'public' ? 'Public' : 'Private'}
+              </Button>
+              <Input placeholder='Add note...' className='text-sm h-7' onKeyDown={e => { if (e.key === 'Enter') { noteMut.mutate({ id, note: (e.target as HTMLInputElement).value, visibility: noteVisibility }); (e.target as HTMLInputElement).value = '' } }} />
+            </div>
+          </div>
+
+          <div className='space-y-6'>
+            <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Customer</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p className='font-medium'>{order.customer.firstName} {order.customer.lastName}</p><p className='text-muted-foreground'>{order.customer.email}</p><p className='text-muted-foreground'>{order.customer.phoneNumber}</p></CardContent></Card>
+
+            <Card><CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCustomerInfo(!showCustomerInfo)}><CardTitle className='text-base flex items-center justify-between'><span className='flex items-center gap-1.5'><User className='h-4 w-4' /> History</span>{showCustomerInfo ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}</CardTitle></CardHeader>
+              {showCustomerInfo && customerSummary?.customer ? (
+                <CardContent className='space-y-2 text-sm'>
+                  <div className='grid grid-cols-2 gap-2'><div className='bg-muted/50 rounded p-2 text-center'><p className='text-lg font-bold'>{customerSummary.summary.totalOrders}</p><p className='text-xs text-muted-foreground'>Orders</p></div><div className='bg-muted/50 rounded p-2 text-center'><p className='text-lg font-bold'>৳{nn(customerSummary.summary.totalSpent).toFixed(0)}</p><p className='text-xs text-muted-foreground'>Spent</p></div></div>
+                </CardContent>
+              ) : showCustomerInfo && <CardContent><p className='text-xs text-muted-foreground'>No history</p></CardContent>}
+            </Card>
+
+            <Card><CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCourier(!showCourier)}><CardTitle className='text-base flex items-center justify-between'><span className='flex items-center gap-1.5'><Truck className='h-4 w-4' /> Courier History</span>{showCourier ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}</CardTitle></CardHeader>
+              {showCourier && (courierLoading ? <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent> : courierData?.Summaries ? <CardContent className='space-y-2 text-sm'>{Object.entries(courierData.Summaries as Record<string, any>).map(([name, stats]: [string, any]) => <div key={name} className='flex justify-between'><span className='font-medium text-xs'>{name}</span><span className='text-xs'>{stats['Delivered Parcels'] || stats['Successful Delivery'] || 0}/{stats['Total Parcels'] || stats['Total Delivery'] || 0}</span></div>)}</CardContent> : <CardContent><p className='text-xs text-muted-foreground'>{courierData?.error || 'No data'}</p></CardContent>)}
+            </Card>
+
+            {editing ? (
+              <Card><CardHeader className='pb-2'><CardTitle className='text-base flex items-center justify-between'>Edit <Button size='sm' onClick={handleSaveEdit}><Save className='h-3.5 w-3.5 mr-1' />Save</Button></CardTitle></CardHeader>
+                <CardContent className='space-y-3'>
+                  <div className='grid grid-cols-2 gap-3'><div><Label className='text-xs'>Shipping</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div><div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div></div>
+                  <div className='flex gap-1 border rounded-md p-0.5 w-fit'><Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}><DollarSign className='h-3 w-3 mr-1' />Flat</Button><Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}><Percent className='h-3 w-3 mr-1' />%</Button></div>
+                  <div className='bg-muted/50 rounded-lg p-3 space-y-1.5 text-sm'><div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div><div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span></div>{rawDiscount > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${rawDiscount}%)` : ''}</span><span>-৳{fmt(effectiveDiscount)}</span></div>}<div className='flex justify-between font-bold text-base pt-1.5 border-t'><span>Total</span><span>৳{fmt(calculatedTotal)}</span></div></div>
+                  <div><Label className='text-xs'>Customer Notes</Label><Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} /></div>
+                  <div><Label className='text-xs'>Office Notes</Label><Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} /></div>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Details</CardTitle></CardHeader><CardContent className='space-y-2 text-sm'><div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(order.subtotal)}</span></div><div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>{nn(order.discount) > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}<div className='flex justify-between font-bold pt-1 border-t'><span>Total</span><span>৳{fmt(order.total)}</span></div></CardContent></Card>
+                {order.shipment && <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Shipment</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Courier: {order.shipment.courier}</p><p>Tracking: {order.shipment.trackingNo}</p></CardContent></Card>}
+                {order.payments?.map((p: any) => <Card key={p.id}><CardHeader className='pb-2'><CardTitle className='text-base text-xs flex items-center justify-between'><PaymentLogo method={p.method} size='sm' /><Badge className={p.status === 'verified' ? 'bg-green-500 text-xs' : 'text-xs'}>{p.status}</Badge></CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Amount: ৳{fmt(p.amount)}</p>{p.transactionId && <p>TrxID: {p.transactionId}</p>}</CardContent></Card>)}
+              </>
+            )}
+          </div>
+        </div>
+      </Main>
+      <Dialog open={!!showStatusDialog} onOpenChange={() => setShowStatusDialog(null)}>
+        <DialogContent><DialogHeader><DialogTitle>Change Status</DialogTitle></DialogHeader>
+          <div className='space-y-3 py-2'>
+            <p className='text-sm'>Current: <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge></p>
+            {showStatusDialog && <p className='text-sm'>New: <Badge style={{ backgroundColor: statusColors[statusList.find((s: any) => s.id === showStatusDialog)?.name] || '#6B7280', color: '#fff' }}>{statusList.find((s: any) => s.id === showStatusDialog)?.name}</Badge></p>}
+            <div><Label>Note</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} /></div>
+          </div>
+          <div className='flex justify-end gap-2'><Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote('') }}>Cancel</Button><Button onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }); setShowStatusDialog(null) }}>Confirm</Button></div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
