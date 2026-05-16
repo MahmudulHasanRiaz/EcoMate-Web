@@ -47,34 +47,19 @@ function BulkPrint() {
         </Button>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 print:p-0">
         {loading && orders.length === 0 ? (
           <div className="flex items-center justify-center h-40"><Loader2 className="animate-spin h-8 w-8" /></div>
         ) : type === 'sticker' ? (
-          <div className="print:block" style={{ columnCount: 'auto', columnWidth: '75mm', columnGap: '2mm' }}>
-            {orders.map((o: any) => (
-              <div key={o.id} className='break-inside-avoid mb-2'>
-                <StickerTemplate order={o} />
-              </div>
-            ))}
-          </div>
+          orders.map((o: any) => <StickerTemplate key={o.id} order={o} />)
         ) : (
           orders.map((o: any, i: number) => (
-            <div key={o.id} className={i > 0 ? 'pt-8' : ''}>
-              <div className="page-break" />
+            <div key={o.id} style={i < orders.length - 1 ? { breakAfter: 'page' } : undefined}>
               <InvoiceTemplate order={o} />
             </div>
           ))
         )}
       </div>
-
-      <style>{`
-        @media print {
-          .page-break { page-break-before: always; }
-          .page-break:first-child { page-break-before: auto; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-      `}</style>
     </div>
   )
 }

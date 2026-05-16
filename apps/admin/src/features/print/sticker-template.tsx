@@ -12,7 +12,7 @@ export function StickerTemplate({ order }: { order: any }) {
       <style>{`
         @page { size: 75mm 100mm; margin: 0; }
         .sticker-container {
-          width: 75mm; min-height: 100mm; padding: 3mm 4mm;
+          width: 75mm; height: 100mm; padding: 3mm 4mm;
           font-family: 'Poppins', 'Inter', sans-serif; font-size: 9px; color: #000;
           box-sizing: border-box; background: #fff;
         }
