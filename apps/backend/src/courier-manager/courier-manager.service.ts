@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const BASE_URLS: Record<string, string> = {
   steadfast: 'https://portal.packzy.com/api/v1',
   pathao: 'https://api-hermes.pathao.com',
-  redx: 'https://api.redx.com.bd/v1.0.0-beta',
+  redx: 'https://openapi.redx.com.bd/v1.0.0-beta',
   carrybee: 'https://developers.carrybee.com',
 };
 
@@ -319,49 +319,65 @@ private normalizePhone(raw?: string | null): string {
   }
 
   private async dispatchRedx(creds: any, base: string, order: any) {
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiKey) throw new BadRequestException('RedX API key not configured');
+    const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
+    if (!apiToken) throw new BadRequestException('RedX API token not configured');
 
     const recipient = order.customer;
     const phone = this.normalizePhone(recipient.phoneNumber);
     const total = Number(order.total);
-    const address = order.shippingAddress;
+    const address = order.shippingAddress as Record<string, unknown> | null;
     const name = `${recipient.firstName} ${recipient.lastName}`.trim();
 
-    const payload = {
+    const district = address?.district as string || 'Dhaka';
+    const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
+
+    const itemDescription = order.items?.map((item: any) => item.product?.name || 'Product').join(', ') || 'Product';
+
+    const payload: Record<string, unknown> = {
       merchant_invoice_id: order.displayId,
       customer_name: name || 'Customer',
       customer_phone: phone,
-      delivery_area: address?.district || 'Dhaka',
-      delivery_address: address?.address || 'N/A',
+      delivery_area: district,
+      delivery_area_id: Number(deliveryAreaId) || 1,
+      customer_address: address?.address || address?.district || 'N/A',
       merchant_order_amount: total,
       cash_collection_amount: total,
       parcel_weight_in_gram: 500,
       instruction: order.officeNotes || '',
       value: total,
-      parcel_details: {
-        name: order.items?.[0]?.product?.name || 'Product',
+      is_closed_box: false,
+      parcel_details_json: order.items?.map((item: any) => ({
+        name: item.product?.name || 'Product',
         category: 'Apparel',
-      },
+        value: Number(item.price || 0),
+      })) || [{ name: itemDescription, category: 'Apparel', value: total }],
     };
 
-    try {
-      const res = await fetch(`${base}/parcel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'API-KEY': apiKey },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as Record<string, unknown>;
-      if (data['data']?.['tracking_id']) {
-        const trackingCode = String(
-          (data['data'] as Record<string, unknown>)['tracking_id'],
-        );
-        await this.prisma.order.update({
-          where: { id: order.id },
-          data: { courierService: 'redx', courierTrackingCode: trackingCode },
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${base}/parcel`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'API-ACCESS-TOKEN': `Bearer ${apiToken}` 
+          },
+          body: JSON.stringify(payload),
         });
-        await this.logDispatch({
-          orderId: order.id,
+        const data = (await res.json()) as Record<string, unknown>;
+
+        if (data['data']?.['tracking_id']) {
+          const trackingCode = String(
+            (data['data'] as Record<string, unknown>)['tracking_id'],
+          );
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { courierService: 'redx', courierTrackingCode: trackingCode },
+          });
+          await this.logDispatch({
+            orderId: order.id,
           courier: 'redx',
           status: 'success',
           trackingCode,
@@ -369,21 +385,38 @@ private normalizePhone(raw?: string | null): string {
           responsePayload: data,
         });
         return { trackingCode };
+        }
+        const msg = String(data['message'] || 'RedX dispatch failed');
+        await this.logDispatch({
+          orderId: order.id,
+          courier: 'redx',
+          status: 'failed',
+          message: msg,
+          requestPayload: payload,
+          responsePayload: data,
+        });
+        throw new BadRequestException(msg);
+      } catch (e: unknown) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        this.logger.warn(
+          `RedX dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
       }
-      const msg = String(data['message'] || 'RedX dispatch failed');
-      await this.logDispatch({
-        orderId: order.id,
-        courier: 'redx',
-        status: 'failed',
-        message: msg,
-        requestPayload: payload,
-        responsePayload: data,
-      });
-      throw new BadRequestException(msg);
-    } catch (e: unknown) {
-      if (e instanceof BadRequestException) throw e;
-      throw new BadRequestException((e as Error).message);
     }
+
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'redx',
+      status: 'failed',
+      message: lastError?.message || 'All retry attempts failed',
+      requestPayload: payload,
+    });
+    throw new BadRequestException(
+      lastError?.message || 'RedX dispatch failed after retries',
+    );
   }
 
   private async dispatchCarrybee(creds: any, base: string, order: any) {
@@ -669,5 +702,53 @@ private normalizePhone(raw?: string | null): string {
     }
 
     return { success: successResults, failed: failedResults };
+  }
+
+  async getRedxParcelDetails(trackingId: string) {
+    const creds = await this.getCreds('redx');
+    const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
+    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+
+    const base = BASE_URLS['redx'];
+    const res = await fetch(`${base}/parcel/info/${trackingId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+    });
+    return res.json();
+  }
+
+  async trackRedxParcel(trackingId: string) {
+    const creds = await this.getCreds('redx');
+    const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
+    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+
+    const base = BASE_URLS['redx'];
+    const res = await fetch(`${base}/parcel/track/${trackingId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+    });
+    return res.json();
+  }
+
+  async cancelRedxParcel(trackingId: string, reason: string) {
+    const creds = await this.getCreds('redx');
+    const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
+    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+
+    const base = BASE_URLS['redx'];
+    const res = await fetch(`${base}/parcels`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+      body: JSON.stringify({
+        entity_type: 'parcel-tracking-id',
+        entity_id: trackingId,
+        update_details: {
+          property_name: 'status',
+          new_value: 'cancelled',
+          reason: reason,
+        },
+      }),
+    });
+    return res.json();
   }
 }

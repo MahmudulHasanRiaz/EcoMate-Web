@@ -206,4 +206,19 @@ export class CourierManagerController {
     });
     return this.svc.bulkCreateSteadfastOrders(orders);
   }
+
+  @Get('redx/parcel/:trackingId')
+  async getRedxParcelDetails(@Param('trackingId') trackingId: string) {
+    return this.svc.getRedxParcelDetails(trackingId);
+  }
+
+  @Get('redx/track/:trackingId')
+  async trackRedxParcel(@Param('trackingId') trackingId: string) {
+    return this.svc.trackRedxParcel(trackingId);
+  }
+
+  @Put('redx/cancel/:trackingId')
+  async cancelRedxParcel(@Param('trackingId') trackingId: string, @Body() dto: { reason: string }) {
+    return this.svc.cancelRedxParcel(trackingId, dto.reason);
+  }
 }

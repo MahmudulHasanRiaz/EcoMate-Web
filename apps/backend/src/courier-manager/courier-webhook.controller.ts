@@ -43,8 +43,6 @@ export class CourierWebhookController {
 
   @Post('redx')
   async redx(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    const authHeader = req.headers['authorization'];
-    await this.validateWebhookToken('redx', authHeader);
     this.logger.log('RedX webhook received');
     return this.svc.handleRedx(body);
   }

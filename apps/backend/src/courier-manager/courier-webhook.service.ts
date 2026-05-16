@@ -85,9 +85,13 @@ export class CourierWebhookService {
   }
 
   async handleRedx(body: Record<string, unknown>) {
-    const trackingId = body['tracking_id'] as string;
-    const status = (body['current_status'] as string)?.toLowerCase();
-    const invoiceId = body['merchant_invoice_id'] as string;
+    const trackingNumber = body['tracking_number'] as string;
+    const status = (body['status'] as string)?.toLowerCase();
+    const invoiceNumber = body['invoice_number'] as string;
+    const messageEn = body['message_en'] as string;
+    const deliveryType = body['delivery_type'] as string;
+
+    await this.logWebhookRequest('redx', body);
 
     let order: {
       id: string;
@@ -95,22 +99,22 @@ export class CourierWebhookService {
       courierTrackingCode: string | null;
       courierConsignmentId: string | null;
     } | null = null;
-    if (trackingId)
+    if (trackingNumber)
       order = await this.prisma.order.findFirst({
-        where: { courierTrackingCode: trackingId },
+        where: { courierTrackingCode: trackingNumber, courierService: 'redx' },
       });
-    if (!order && invoiceId)
+    if (!order && invoiceNumber)
       order = await this.prisma.order.findFirst({
-        where: { displayId: invoiceId },
+        where: { displayId: invoiceNumber, courierService: 'redx' },
       });
-    if (!order) return { error: 'Order not found' };
+    if (!order) return { error: 'Order not found or not a RedX order' };
 
     const mappedStatus = mapRedxStatus(status);
     if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
 
     if (this.isRegression(order.courierStatus || '', mappedStatus)) {
       this.logger.warn(
-        `RedX regression blocked: ${trackingId} ${order.courierStatus} → ${mappedStatus}`,
+        `RedX regression blocked: ${trackingNumber} ${order.courierStatus} → ${mappedStatus}`,
       );
       return { ok: true, skipped: 'Status regression blocked' };
     }
@@ -118,14 +122,14 @@ export class CourierWebhookService {
     await this.prisma.order.update({
       where: { id: order.id },
       data: {
-        courierStatus: status,
-        courierTrackingCode: trackingId || order.courierTrackingCode,
+        courierStatus: mappedStatus,
+        courierTrackingCode: trackingNumber || order.courierTrackingCode,
         courierService: 'redx',
       },
     });
     await this.addTimelineEntry(order.id, 'redx', mappedStatus);
-    this.logger.log(`RedX: ${trackingId || invoiceId} → ${mappedStatus}`);
-    return { ok: true, status: mappedStatus };
+    this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`);
+    return { ok: true, status: mappedStatus, deliveryType };
   }
 
   async handleCarrybee(body: Record<string, unknown>) {
@@ -184,6 +188,12 @@ export class CourierWebhookService {
     )
       return false;
     return false;
+  }
+
+  private logWebhookRequest(courier: string, body: Record<string, unknown>) {
+    const tracking = body['tracking_number'] || body['tracking_id'] || body['consignment_id'] || 'unknown';
+    const invoice = body['invoice_number'] || body['merchant_invoice_id'] || body['invoice'] || 'unknown';
+    this.logger.log(`Webhook ${courier}: tracking=${tracking} invoice=${invoice} status=${body['status'] || body['event'] || 'unknown'}`);
   }
 
   private async addTimelineEntry(
