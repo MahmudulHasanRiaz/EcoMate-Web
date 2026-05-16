@@ -29,7 +29,10 @@ export function StickerTemplate({ order }: { order: any }) {
       <div className="divider" />
 
       <div className="space-y-0.5 mb-2">
-        <div className="flex items-center gap-1 text-[9px] font-medium"><User className="h-3 w-3" /> {order.customer?.firstName} {order.customer?.lastName}</div>
+        <div className="row text-[9px]">
+          <span className="font-medium"><User className="h-3 w-3 inline mr-0.5" />{order.customer?.firstName} {order.customer?.lastName}</span>
+          <span className="text-[7px] text-muted-foreground">{new Date(order.createdAt).toLocaleDateString('en-GB')}</span>
+        </div>
         <div className="flex items-center gap-1 text-[8px]"><Phone className="h-3 w-3" /> {order.customer?.phoneNumber}</div>
         <div className="flex items-center gap-1 text-[8px]"><MapPin className="h-3 w-3" /> {typeof order.shippingAddress === 'string' ? order.shippingAddress : order.shippingAddress?.address || order.shippingAddress?.district || ''}</div>
       </div>
@@ -56,9 +59,12 @@ export function StickerTemplate({ order }: { order: any }) {
       <div className="divider" />
 
       <div className="row text-[7px]">
-        <span>Total: ৳{fmt(order.total)}</span>
         <span>Shipping: ৳{fmt(order.shippingCharge)}</span>
-        <span>{new Date(order.createdAt).toLocaleDateString('en-GB')}</span>
+        <span>{order.displayId}</span>
+      </div>
+      <div className="row text-[9px] font-bold mt-0.5">
+        <span>Total</span>
+        <span>৳{fmt(order.total)}</span>
       </div>
     </div>
   )
