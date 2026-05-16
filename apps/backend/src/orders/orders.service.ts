@@ -31,7 +31,7 @@ export class OrdersService {
     return { subtotal, total: Math.max(0, subtotal + shipping - discount) };
   }
 
-  async findAll(query: { page?: number; perPage?: number; search?: string; statusId?: string; courier?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string }) {
+  async findAll(query: { page?: number; perPage?: number; search?: string; statusId?: string; courier?: string; assignedToId?: string; dateFrom?: string; dateTo?: string; sort?: string; order?: string }) {
     const page = query.page || 1; const perPage = query.perPage || 10; const where: any = {};
     if (query.search) {
       where.OR = [
@@ -43,6 +43,8 @@ export class OrdersService {
     }
     if (query.statusId) where.statusId = query.statusId;
     if (query.courier) where.courierService = query.courier;
+    if (query.assignedToId === 'unassigned') where.assignedToId = null;
+    else if (query.assignedToId) where.assignedToId = query.assignedToId;
     if (query.dateFrom || query.dateTo) {
       where.createdAt = {};
       if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
@@ -67,7 +69,7 @@ export class OrdersService {
       where: { id },
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
-        status: true, shipment: true,
+        status: true, shipment: true, assignee: { select: { id: true, firstName: true, lastName: true } },
         items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
         payments: { include: { verifier: { select: { id: true, firstName: true, lastName: true } } } },
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
@@ -157,7 +159,7 @@ export class OrdersService {
       where: { id }, data,
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
-        status: true, shipment: true,
+        status: true, shipment: true, assignee: { select: { id: true, firstName: true, lastName: true } },
         items: { include: { product: { select: { id: true, name: true, images: true, slug: true } } } },
         payments: true,
       },
@@ -255,5 +257,21 @@ export class OrdersService {
     const { CourierManagerService } = await import('../courier-manager/courier-manager.service.js');
     const mgr = new CourierManagerService(this.prisma);
     return mgr.dispatch(courier, ids);
+  }
+
+  async bulkAssign(ids: string[], assignedToId: string | null) {
+    const data: any = { assignedToId };
+    if (assignedToId) data.assignedAt = new Date();
+    else data.assignedAt = null;
+    await this.prisma.order.updateMany({ where: { id: { in: ids } }, data });
+    return { updated: ids.length };
+  }
+
+  async getStaff() {
+    return this.prisma.user.findMany({
+      where: { role: { in: ['admin', 'manager', 'cashier', 'superadmin'] }, status: 'active' },
+      select: { id: true, firstName: true, lastName: true, role: true },
+      orderBy: { firstName: 'asc' },
+    });
   }
 }

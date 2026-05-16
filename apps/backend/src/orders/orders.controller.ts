@@ -9,8 +9,8 @@ export class OrdersController {
   constructor(private readonly svc: OrdersService) {}
 
   @Get()
-  findAll(@Query('page') page?: string, @Query('perPage') perPage?: string, @Query('search') search?: string, @Query('statusId') statusId?: string, @Query('courier') courier?: string, @Query('dateFrom') dateFrom?: string, @Query('dateTo') dateTo?: string, @Query('sort') sort?: string, @Query('order') order?: string) {
-    return this.svc.findAll({ page: page ? parseInt(page) : undefined, perPage: perPage ? parseInt(perPage) : undefined, search, statusId, courier, dateFrom, dateTo, sort, order });
+  findAll(@Query('page') page?: string, @Query('perPage') perPage?: string, @Query('search') search?: string, @Query('statusId') statusId?: string, @Query('courier') courier?: string, @Query('assignedToId') assignedToId?: string, @Query('dateFrom') dateFrom?: string, @Query('dateTo') dateTo?: string, @Query('sort') sort?: string, @Query('order') order?: string) {
+    return this.svc.findAll({ page: page ? parseInt(page) : undefined, perPage: perPage ? parseInt(perPage) : undefined, search, statusId, courier, assignedToId, dateFrom, dateTo, sort, order });
   }
 
   @Get(':id') findOne(@Param('id') id: string) { return this.svc.findOne(id); }
@@ -27,6 +27,8 @@ export class OrdersController {
   @Post('bulk') async bulkOrders(@Body() dto: { ids: string[] }) { const orders = await this.svc.bulkOrders(dto.ids || []); return { orders }; }
   @Post('bulk/status') async bulkStatus(@Body() dto: { ids: string[]; statusId: string }) { return this.svc.bulkStatusChange(dto.ids, dto.statusId); }
   @Post('bulk/dispatch') async bulkDispatch(@Body() dto: { ids: string[]; courier: string }, @CurrentUser() user: { userId: string }) { return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId); }
+  @Post('bulk/assign') async bulkAssign(@Body() dto: { ids: string[]; assignedToId: string | null }) { return this.svc.bulkAssign(dto.ids, dto.assignedToId); }
+  @Get('staff/list') async staffList() { return this.svc.getStaff(); }
 
   @Get('stream/updates')
   @Sse()

@@ -154,6 +154,7 @@ export function Orders() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [courierFilter, setCourierFilter] = useState('all')
+  const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [sort, setSort] = useState('createdAt')
   const [order, setOrder] = useState('desc')
   const [selected, setSelected] = useState<string[]>([])
@@ -173,10 +174,12 @@ export function Orders() {
 
   const { data: statuses } = useQuery({ queryKey: ['order-statuses'], queryFn: () => apiClient.get('/order-statuses').then(r => r.data as any[]) })
   const statusList = (Array.isArray(statuses) ? statuses : []) as any[]
+  const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
+  const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, sort, order],
-    queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, sort, order }).then(r => r.data),
+    queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order],
+    queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order }).then(r => r.data),
   })
 
   const statusMut = useMutation({
@@ -194,7 +197,7 @@ export function Orders() {
   const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next }), [])
 
   const clearAllFilters = () => { setSearch(''); setStatusFilter('all'); setCourierFilter('all'); setPage(1) }
-  const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all'
+  const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all'
 
   const statusCountMap = useMemo(() => {
     if (!data?.data) return {} as Record<string, number>
@@ -273,6 +276,14 @@ export function Orders() {
                 <SelectContent>
                   <SelectItem value='all'>All Couriers</SelectItem>
                   {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize'>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={assigneeFilter} onValueChange={v => { setAssigneeFilter(v); setPage(1) }}>
+                <SelectTrigger className={`h-8 w-[140px] text-sm ${assigneeFilter !== 'all' ? 'border-primary/50 bg-primary/5' : ''}`}><SelectValue placeholder='All Staff' /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all'>All Staff</SelectItem>
+                  <SelectItem value='unassigned'>Unassigned</SelectItem>
+                  {staff.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.firstName} {s.lastName}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>

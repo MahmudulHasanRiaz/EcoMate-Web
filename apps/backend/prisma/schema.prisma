@@ -60,6 +60,7 @@ model User {
   settings      UserSettings?
   refreshTokens RefreshToken[]
   orders        Order[]
+  assignedOrders Order[]      @relation("OrderAssignee")
   payments      Payment[]     @relation("VerifiedPayments")
   refunds       Refund[]      @relation("RefundProcessor")
 }
@@ -234,11 +235,14 @@ model Order {
   courierConsignmentId String?
   courierTrackingCode  String?
   courierStatus   String?
+  assignedToId    String?
+  assignedAt      DateTime?
   timeline        Json?     @default("[]")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   customer User        @relation(fields: [customerId], references: [id])
+  assignee User?        @relation("OrderAssignee", fields: [assignedToId], references: [id])
   status   OrderStatus @relation(fields: [statusId], references: [id])
   items    OrderItem[]
   payments Payment[]
