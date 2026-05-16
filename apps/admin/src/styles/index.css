@@ -86,6 +86,8 @@
   }
 }
 
+@page { margin: 12mm; }
+
 @media print {
   .no-print { display: none !important; }
   body { background: #fff !important; }

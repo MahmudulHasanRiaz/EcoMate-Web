@@ -10,7 +10,6 @@ function PrintLayout() {
       <Outlet />
       <style>{`
         @media print {
-          @page { margin: 0; }
           body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .no-print { display: none !important; }
         }

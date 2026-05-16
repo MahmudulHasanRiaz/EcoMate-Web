@@ -11,10 +11,10 @@ export function InvoiceTemplate({ order }: { order: any }) {
   return (
     <div className="invoice-container">
       <style>{`
-        @page { size: A4; margin: 12mm; }
         .invoice-container { font-family: 'Inter', sans-serif; color: #111; max-width: 210mm; }
+        @page { margin: 12mm; }
         @media print {
-          .invoice-container { page-break-after: avoid; }
+          .invoice-container { page-break-after: avoid; overflow: hidden; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
@@ -27,7 +27,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
           <p className="text-xs text-muted-foreground mt-1">TRN: 123456789</p>
         </div>
         <div className="text-right">
-          <h2 className="text-xl font-bold uppercase tracking-wider">Tax Invoice</h2>
+          <h2 className="text-xl font-bold uppercase tracking-wider">Invoice</h2>
           <div className="mt-1">
             <Barcode value={order.displayId || order.id} width={1} height={24} fontSize={8} margin={0} />
           </div>

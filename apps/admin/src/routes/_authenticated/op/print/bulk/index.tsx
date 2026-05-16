@@ -62,6 +62,8 @@ function BulkPrint() {
         @media print {
           .invoice-container { page-break-after: always; }
           .invoice-container:last-child { page-break-after: auto; }
+          .sticker-container { page-break-after: always; }
+          .sticker-container:last-child { page-break-after: auto; }
         }
       `}</style>
     </div>
