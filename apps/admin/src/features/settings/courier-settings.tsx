@@ -218,46 +218,55 @@ export function CourierSettings() {
                   </div>
                 </div>
 
-                <div className='bg-muted/50 rounded-md p-2 space-y-2'>
-                  <div className='flex items-center justify-between'>
-                    <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Bearer Token (Auth)</Label>
-                    {form.webhookSecret ? (
-                      <Button 
-                        variant='ghost' 
-                        size='sm' 
-                        className='h-5 text-[10px]' 
-                        onClick={() => setShowSecret(prev => ({ ...prev, [courier]: !prev[courier] }))}
-                      >
-                        {showSecret[courier] ? <EyeOff className='h-3 w-3 mr-1' /> : <Eye className='h-3 w-3 mr-1' />}
-                        {showSecret[courier] ? 'Hide' : 'Show'}
-                      </Button>
-                    ) : null}
+{courier === 'redx' ? (
+                  <div className='bg-muted/50 rounded-md p-2 space-y-1'>
+                    <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Webhook Auth</Label>
+                    <p className='text-[10px] text-muted-foreground'>
+                      RedX webhook authentication currently using tracking number + invoice verification.
+                    </p>
                   </div>
-                  {form.webhookSecret ? (
-                    <div className='flex items-center gap-1'>
-                      <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate font-mono'>
-                        {showSecret[courier] ? form.webhookSecret : '••••••••••••••••••••••••••••••••'}
-                      </code>
-                      <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(form.webhookSecret || ''); toast.success('Token copied') }}>
-                        <Copy className='h-3 w-3' />
-                      </Button>
+                ) : (
+                  <div className='bg-muted/50 rounded-md p-2 space-y-2'>
+                    <div className='flex items-center justify-between'>
+                      <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Bearer Token (Auth)</Label>
+                      {form.webhookSecret ? (
+                        <Button 
+                          variant='ghost' 
+                          size='sm' 
+                          className='h-5 text-[10px]' 
+                          onClick={() => setShowSecret(prev => ({ ...prev, [courier]: !prev[courier] }))}
+                        >
+                          {showSecret[courier] ? <EyeOff className='h-3 w-3 mr-1' /> : <Eye className='h-3 w-3 mr-1' />}
+                          {showSecret[courier] ? 'Hide' : 'Show'}
+                        </Button>
+                      ) : null}
                     </div>
-                  ) : (
-                    <Button 
-                      size='sm' 
-                      variant='outline' 
-                      className='w-full text-xs h-7' 
-                      onClick={() => generateWebhookMut.mutate(courier)}
-                      disabled={generateWebhookMut.isPending}
-                    >
-                      {generateWebhookMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <RefreshCw className='h-3 w-3 mr-1' />}
-                      Generate Bearer Token
-                    </Button>
-                  )}
-                  <p className='text-[10px] text-muted-foreground'>
-                    Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
-                  </p>
-                </div>
+                    {form.webhookSecret ? (
+                      <div className='flex items-center gap-1'>
+                        <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate font-mono'>
+                          {showSecret[courier] ? form.webhookSecret : '••••••••••••••••••••••••••••••••'}
+                        </code>
+                        <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(form.webhookSecret || ''); toast.success('Token copied') }}>
+                          <Copy className='h-3 w-3' />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button 
+                        size='sm' 
+                        variant='outline' 
+                        className='w-full text-xs h-7' 
+                        onClick={() => generateWebhookMut.mutate(courier)}
+                        disabled={generateWebhookMut.isPending}
+                      >
+                        {generateWebhookMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <RefreshCw className='h-3 w-3 mr-1' />}
+                        Generate Bearer Token
+                      </Button>
+                    )}
+                    <p className='text-[10px] text-muted-foreground'>
+                      Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
+                    </p>
+                  </div>
+                )}
 
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
                   <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials
