@@ -59,6 +59,8 @@ function OrderDetailPage() {
   const [zones, setZones] = useState<any[]>([])
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [allProducts, setAllProducts] = useState<any[]>([])
+  const [productSearchQuery, setProductSearchQuery] = useState('')
+  const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
 
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]), enabled: showDispatchDialog })
   const activeCouriers = (Array.isArray(courierCreds) ? courierCreds : []).filter((c: any) => c.enabled)
@@ -243,18 +245,66 @@ function OrderDetailPage() {
                     ))}
                     {editing && (
                       <TableRow>
-                        <TableCell colSpan={2}>
-                          <select className='w-full h-8 rounded-md border border-input bg-background px-3 text-sm' value='' onChange={e => {
-                            const prod = allProducts.find((p: any) => p.id === e.target.value)
-                            if (prod) {
-                              setOrderItems([...orderItems, { productId: prod.id, product: prod, quantity: 1, price: prod.price || 0 }])
-                            }
-                          }}>
-                            <option value=''>Add Product...</option>
-                            {allProducts.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                        <TableCell colSpan={4}>
+                          <div className='p-2 space-y-2 relative'>
+                            <Input
+                              placeholder='Search or scan product by name or SKU...'
+                              value={productSearchQuery}
+                              onChange={e => setProductSearchQuery(e.target.value)}
+                              className='text-sm h-8'
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  const exact = allProducts.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
+                                  if (exact) {
+                                    const variant = exact.variants?.find((v: any) => v.sku === productSearchQuery)
+                                    setOrderItems([...orderItems, { 
+                                      productId: exact.id, 
+                                      variantId: variant?.id,
+                                      product: exact, 
+                                      quantity: 1, 
+                                      price: variant?.price || exact.price || 0 
+                                    }])
+                                    setProductSearchQuery('')
+                                    toast.success('Product added')
+                                  } else {
+                                    toast.error('Product not found with this SKU')
+                                  }
+                                }
+                              }}
+                            />
+                            {productSearchQuery && (
+                              <div className='absolute z-10 left-2 right-2 mt-1 border rounded-md max-h-48 overflow-y-auto bg-background shadow-lg'>
+                                {allProducts
+                                  .filter((p: any) => 
+                                    p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || 
+                                    p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())
+                                  )
+                                  .map((p: any) => (
+                                    <div key={p.id} className='flex items-center gap-2 p-2 hover:bg-muted cursor-pointer' onClick={() => {
+                                      if (p.type === 'variable' || p.variants?.length > 0) {
+                                        setSelectedProductForVariants(p)
+                                      } else {
+                                        setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.price || 0 }])
+                                        setProductSearchQuery('')
+                                      }
+                                    }}>
+                                      {p.images && Array.isArray(p.images) && p.images[0] ? (
+                                        <img src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' />
+                                      ) : (
+                                        <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                                      )}
+                                      <div className='flex-1 min-w-0'>
+                                        <p className='text-sm font-medium truncate'>{p.name}</p>
+                                        <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
+                                      </div>
+                                      <div className='text-sm font-medium'>৳{fmt(p.price)}</div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell colSpan={3}></TableCell>
+                        <TableCell></TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -415,6 +465,42 @@ function OrderDetailPage() {
               Dispatch
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!selectedProductForVariants} onOpenChange={() => setSelectedProductForVariants(null)}>
+        <DialogContent><DialogHeader><DialogTitle>Select Variant</DialogTitle></DialogHeader>
+          <div className='space-y-3 py-2'>
+            <p className='text-sm font-medium'>{selectedProductForVariants?.name}</p>
+            <div className='space-y-2 max-h-60 overflow-y-auto'>
+              {selectedProductForVariants?.variants?.map((v: any) => (
+                <div key={v.id} className='flex items-center justify-between p-2 border rounded-md hover:bg-muted cursor-pointer' onClick={() => {
+                  setOrderItems([...orderItems, { 
+                    productId: selectedProductForVariants.id, 
+                    variantId: v.id,
+                    product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` }, 
+                    quantity: 1, 
+                    price: v.price || selectedProductForVariants.price || 0 
+                  }])
+                  setSelectedProductForVariants(null)
+                  setProductSearchQuery('')
+                }}>
+                  <div className='flex items-center gap-2'>
+                    {v.image ? (
+                      <img src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' />
+                    ) : (
+                      <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                    )}
+                    <div>
+                      <p className='text-sm font-medium'>{v.name || 'Default Variant'}</p>
+                      <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
+                    </div>
+                  </div>
+                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className='flex justify-end'><Button variant='outline' onClick={() => setSelectedProductForVariants(null)}>Cancel</Button></div>
         </DialogContent>
       </Dialog>
     </>
