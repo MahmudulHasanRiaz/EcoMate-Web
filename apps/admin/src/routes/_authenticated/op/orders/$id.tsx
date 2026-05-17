@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentLogo } from '@/components/payment-logo'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send } from 'lucide-react'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -245,13 +246,12 @@ function OrderDetailPage() {
                     ))}
                     {editing && (
                       <TableRow>
-                        <TableCell colSpan={4}>
-                          <div className='p-2 space-y-2 relative'>
-                            <Input
-                              placeholder='Search or scan product by name or SKU...'
+                        <TableCell colSpan={5}>
+                          <Command className='border rounded-md shadow-sm' shouldFilter={false}>
+                            <CommandInput 
+                              placeholder='Search or scan product by name or SKU...' 
                               value={productSearchQuery}
-                              onChange={e => setProductSearchQuery(e.target.value)}
-                              className='text-sm h-8'
+                              onValueChange={setProductSearchQuery}
                               onKeyDown={e => {
                                 if (e.key === 'Enter') {
                                   const exact = allProducts.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
@@ -273,38 +273,45 @@ function OrderDetailPage() {
                               }}
                             />
                             {productSearchQuery && (
-                              <div className='absolute z-10 left-2 right-2 mt-1 border rounded-md max-h-48 overflow-y-auto bg-background shadow-lg'>
-                                {allProducts
-                                  .filter((p: any) => 
-                                    p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || 
-                                    p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())
-                                  )
-                                  .map((p: any) => (
-                                    <div key={p.id} className='flex items-center gap-2 p-2 hover:bg-muted cursor-pointer' onClick={() => {
-                                      if (p.type === 'variable' || p.variants?.length > 0) {
-                                        setSelectedProductForVariants(p)
-                                      } else {
-                                        setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.price || 0 }])
-                                        setProductSearchQuery('')
-                                      }
-                                    }}>
-                                      {p.images && Array.isArray(p.images) && p.images[0] ? (
-                                        <img src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' />
-                                      ) : (
-                                        <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
-                                      )}
-                                      <div className='flex-1 min-w-0'>
-                                        <p className='text-sm font-medium truncate'>{p.name}</p>
-                                        <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
-                                      </div>
-                                      <div className='text-sm font-medium'>৳{fmt(p.price)}</div>
-                                    </div>
-                                  ))}
-                              </div>
+                              <CommandList className='max-h-48 overflow-y-auto'>
+                                <CommandEmpty>No results found.</CommandEmpty>
+                                <CommandGroup>
+                                  {allProducts
+                                    .filter((p: any) => 
+                                      p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || 
+                                      p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())
+                                    )
+                                    .map((p: any) => (
+                                      <CommandItem 
+                                        key={p.id} 
+                                        value={p.name}
+                                        onSelect={() => {
+                                          if (p.type === 'variable' || p.variants?.length > 0) {
+                                            setSelectedProductForVariants(p)
+                                          } else {
+                                            setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.price || 0 }])
+                                            setProductSearchQuery('')
+                                          }
+                                        }}
+                                        className='flex items-center gap-2 p-2 cursor-pointer'
+                                      >
+                                        {p.images && Array.isArray(p.images) && p.images[0] ? (
+                                          <img src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' />
+                                        ) : (
+                                          <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                                        )}
+                                        <div className='flex-1 min-w-0'>
+                                          <p className='text-sm font-medium truncate'>{p.name}</p>
+                                          <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
+                                        </div>
+                                        <div className='text-sm font-medium'>৳{fmt(p.price)}</div>
+                                      </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                              </CommandList>
                             )}
-                          </div>
+                          </Command>
                         </TableCell>
-                        <TableCell></TableCell>
                       </TableRow>
                     )}
                   </TableBody>
