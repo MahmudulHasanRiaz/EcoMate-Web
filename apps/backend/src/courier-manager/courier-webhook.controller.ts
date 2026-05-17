@@ -1,8 +1,8 @@
-import { Controller, Post, Body, Param, Req, UnauthorizedException, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Param, Req, Res, UnauthorizedException, Logger } from '@nestjs/common';
 import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 @Controller('webhooks/courier')
 export class CourierWebhookController {
@@ -34,9 +34,26 @@ export class CourierWebhookController {
   }
 
   @Post('pathao')
-  async pathao(@Body() body: Record<string, unknown>, @Req() req: Request) {
-    const authHeader = req.headers['authorization'];
-    await this.validateWebhookToken('pathao', authHeader);
+  async pathao(
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const signature = req.headers['x-pathao-signature'] as string | undefined;
+    if (!signature)
+      throw new UnauthorizedException('Missing X-PATHAO-Signature header');
+
+    const creds = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'pathao' },
+    });
+    if (!creds?.webhookSecret)
+      throw new UnauthorizedException('Pathao webhook not configured');
+
+    if (signature !== creds.webhookSecret)
+      throw new UnauthorizedException('Invalid X-PATHAO-Signature');
+
+    res.set('X-Pathao-Merchant-Webhook-Integration-Secret', creds.webhookSecret);
+
     this.logger.log('Pathao webhook received');
     return this.svc.handlePathao(body);
   }

@@ -308,6 +308,13 @@ export class OrdersService {
       });
     }
 
+    if (dto.customerInfo) {
+      await this.prisma.user.update({
+        where: { id: order.customerId },
+        data: dto.customerInfo,
+      });
+    }
+
     const data: any = {};
     data.timeline = timeline;
     if (dto.shippingCharge !== undefined)

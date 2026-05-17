@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -197,6 +197,28 @@ export function Orders() {
   const bulkAssignMut = useMutation({
     mutationFn: (d: { ids: string[]; assignedToId: string | null }) => ordersApi.bulkAssign(d.ids, d.assignedToId === '__unassign__' ? null : d.assignedToId),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Orders assigned') },
+  })
+
+  const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]) })
+  const activeCouriers = (Array.isArray(courierCreds) ? courierCreds : []) as any[]
+  const [dispatchCourier, setDispatchCourier] = useState('')
+
+  const dispatchMut = useMutation({
+    mutationFn: ({ courier, ids }: { courier: string; ids: string[] }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: ids }),
+    onSuccess: (res) => {
+      const results = (res as any)?.data as any[] || []
+      const succeeded = results.filter((r: any) => r.ok)
+      const failed = results.filter((r: any) => !r.ok)
+      if (failed.length > 0) {
+        toast.error(`${failed.length} order(s) failed to dispatch`)
+        failed.forEach((r: any) => toast.error(r.message || 'Unknown error', { id: r.id }))
+      }
+      if (succeeded.length > 0) toast.success(`${succeeded.length} order(s) dispatched to courier`)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setSelected([])
+      setDispatchCourier('')
+    },
+    onError: (e: unknown) => { toast.error((e as Error).message || 'Dispatch failed') },
   })
 
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
@@ -730,6 +752,20 @@ export function Orders() {
             </div>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=sticker&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Stickers</Button>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=invoice&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Invoices</Button>
+            <div className='flex items-center gap-1 border-l pl-3'>
+              <Select value={dispatchCourier} onValueChange={setDispatchCourier}>
+                <SelectTrigger className='h-8 w-[130px] text-xs'><SelectValue placeholder='Send to...' /></SelectTrigger>
+                <SelectContent>
+                  {activeCouriers.filter((c: any) => c.enabled).map((c: any) => (
+                    <SelectItem key={c.courier} value={c.courier}>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size='sm' className='h-8 text-xs' disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, ids: selected })}>
+                {dispatchMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <Send className='h-3 w-3 mr-1' />}
+                Send
+              </Button>
+            </div>
           </div>
         )}
       </Main>

@@ -44,6 +44,7 @@ export class UpdateOrderDto {
   @IsOptional() @IsObject() shippingAddress?: any;
   @IsOptional() @IsString() customerNotes?: string;
   @IsOptional() @IsString() officeNotes?: string;
+  @IsOptional() @IsObject() customerInfo?: any;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

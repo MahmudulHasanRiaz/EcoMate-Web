@@ -26,6 +26,16 @@ export class CourierManagerController {
     });
   }
 
+  @Get('cities')
+  async getCities() {
+    return this.svc.getCities();
+  }
+
+  @Get('zones')
+  async getZones(@Query('cityId') cityId: string) {
+    return this.svc.getZones(cityId);
+  }
+
   @Put('credentials/:courier')
   async upsertCredentials(
     @Param('courier') courier: string,

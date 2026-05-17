@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { apiClient } from '@/lib/api-client'
@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentLogo } from '@/components/payment-logo'
-import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send } from 'lucide-react'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -27,6 +27,7 @@ const fmt = (v: number | string) => nn(v).toFixed(2)
 export const Route = createFileRoute('/_authenticated/op/orders/$id')({ component: OrderDetailPage })
 
 function OrderDetailPage() {
+  const queryClient = useQueryClient()
   const { id } = Route.useParams() as { id: string }
   const { data: order, isLoading } = useQuery({ queryKey: ['order', id], queryFn: () => ordersApi.get(id).then(r => r.data) })
 
@@ -44,6 +45,39 @@ function OrderDetailPage() {
   const [showCustomerInfo, setShowCustomerInfo] = useState(false)
   const [showCourier, setShowCourier] = useState(false)
   const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
+  const [showDispatchDialog, setShowDispatchDialog] = useState(false)
+  const [dispatchCourier, setDispatchCourier] = useState('')
+
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [address, setAddress] = useState('')
+  const [cityId, setCityId] = useState('')
+  const [zoneId, setZoneId] = useState('')
+  const [cities, setCities] = useState<any[]>([])
+  const [zones, setZones] = useState<any[]>([])
+  const [orderItems, setOrderItems] = useState<any[]>([])
+  const [allProducts, setAllProducts] = useState<any[]>([])
+
+  const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]), enabled: showDispatchDialog })
+  const activeCouriers = (Array.isArray(courierCreds) ? courierCreds : []).filter((c: any) => c.enabled)
+
+  const dispatchMut = useMutation({
+    mutationFn: ({ courier, orderId }: { courier: string; orderId: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId] }),
+    onSuccess: (res) => {
+      const results = (res as any)?.data as any[] || []
+      const succeeded = results.filter((r: any) => r.ok)
+      const failed = results.filter((r: any) => !r.ok)
+      if (failed.length > 0) toast.error(failed[0]?.message || 'Dispatch failed')
+      if (succeeded.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['order', id] })
+        setShowDispatchDialog(false); setDispatchCourier('')
+        toast.success('Order dispatched')
+      }
+    },
+    onError: (e: unknown) => { toast.error((e as Error).message || 'Dispatch failed') },
+  })
 
   useEffect(() => {
     if (order) {
@@ -52,8 +86,29 @@ function OrderDetailPage() {
       setDiscountType(order.discountType || 'flat')
       setCustomerNotes(order.customerNotes || '')
       setOfficeNotes(order.officeNotes || '')
+      setFirstName(order.customer?.firstName || '')
+      setLastName(order.customer?.lastName || '')
+      setEmail(order.customer?.email || '')
+      setCustomerPhone(order.customer?.phoneNumber || '')
+      setAddress(order.shippingAddress?.address || '')
+      setCityId(order.shippingAddress?.cityId || '')
+      setZoneId(order.shippingAddress?.zoneId || '')
+      setOrderItems(order.items || [])
     }
   }, [order])
+
+  useEffect(() => {
+    if (editing) {
+      apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
+      apiClient.get('/products').then(r => setAllProducts(r.data?.data || r.data || [])).catch(() => {})
+    }
+  }, [editing])
+
+  useEffect(() => {
+    if (cityId) {
+      apiClient.get(`/couriers/zones?cityId=${cityId}`).then(r => setZones(r.data as any[])).catch(() => toast.error('Failed to fetch zones'))
+    }
+  }, [cityId])
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => ordersApi.updateOrder(id, data),
@@ -79,12 +134,38 @@ function OrderDetailPage() {
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
   const handleSaveEdit = () => {
-    updateMut.mutate({ id, data: { shippingCharge: parseFloat(shippingCharge) || 0, discount: parseFloat(discount) || 0, discountType, customerNotes: customerNotes || null, officeNotes: officeNotes || null } })
+    updateMut.mutate({
+      id,
+      data: {
+        shippingCharge: parseFloat(shippingCharge) || 0,
+        discount: parseFloat(discount) || 0,
+        discountType,
+        customerNotes: customerNotes || null,
+        officeNotes: officeNotes || null,
+        customerInfo: {
+          firstName,
+          lastName,
+          email,
+          phoneNumber: customerPhone,
+        },
+        shippingAddress: {
+          address,
+          cityId,
+          zoneId,
+        },
+        items: orderItems.map((i: any) => ({
+          productId: i.productId,
+          variantId: i.variantId,
+          quantity: i.quantity,
+          price: i.price,
+        })),
+      }
+    })
     setEditing(false)
   }
 
   const rawDiscount = parseFloat(discount) || 0
-  const itemSubtotal = order.items?.reduce((s: number, i: any) => s + nn(i.price) * i.quantity, 0) || 0
+  const itemSubtotal = (editing ? orderItems : order.items)?.reduce((s: number, i: any) => s + nn(i.price) * i.quantity, 0) || 0
   const effectiveDiscount = discountType === 'percentage' ? itemSubtotal * (rawDiscount / 100) : rawDiscount
   const calculatedTotal = Math.max(0, itemSubtotal + (parseFloat(shippingCharge) || 0) - effectiveDiscount)
 
@@ -98,6 +179,9 @@ function OrderDetailPage() {
             {!editing && <Button variant='outline' size='sm' onClick={() => setEditing(true)}><Pencil className='h-4 w-4 mr-1' /> Edit</Button>}
             <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Sticker</Button>
             <Button variant='outline' size='sm' onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}><Printer className='h-4 w-4 mr-1' /> Invoice</Button>
+            {!order.courierService && (
+              <Button variant='default' size='sm' onClick={() => setShowDispatchDialog(true)}><Send className='h-4 w-4 mr-1' /> Send to Courier</Button>
+            )}
             <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
               <div className='flex items-center gap-1.5'>
                 <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
@@ -122,14 +206,57 @@ function OrderDetailPage() {
                 <Table>
                   <TableHeader><TableRow><TableHead>Product</TableHead><TableHead className='text-right'>Price</TableHead><TableHead className='text-right'>Qty</TableHead><TableHead className='text-right'>Total</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {order.items?.map((item: any) => (
-                      <TableRow key={item.id}>
-                        <TableCell><div className='flex items-center gap-3'>{item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? <img src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product.name}</span></div></TableCell>
-                        <TableCell className='text-right text-sm'>৳{fmt(item.price)}</TableCell>
-                        <TableCell className='text-right text-sm'>{item.quantity}</TableCell>
+                    {(editing ? orderItems : order.items)?.map((item: any, index: number) => (
+                      <TableRow key={item.id || index}>
+                        <TableCell><div className='flex items-center gap-3'>{item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? <img src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product?.name}</span></div></TableCell>
+                        <TableCell className='text-right text-sm'>
+                          {editing ? (
+                            <Input type='number' value={item.price} onChange={e => {
+                              const newItems = [...orderItems]
+                              newItems[index].price = parseFloat(e.target.value) || 0
+                              setOrderItems(newItems)
+                            }} className='w-24 text-right h-8 text-sm' />
+                          ) : (
+                            `৳${fmt(item.price)}`
+                          )}
+                        </TableCell>
+                        <TableCell className='text-right text-sm'>
+                          {editing ? (
+                            <Input type='number' value={item.quantity} onChange={e => {
+                              const newItems = [...orderItems]
+                              newItems[index].quantity = parseInt(e.target.value) || 1
+                              setOrderItems(newItems)
+                            }} className='w-20 text-right h-8 text-sm' />
+                          ) : (
+                            item.quantity
+                          )}
+                        </TableCell>
                         <TableCell className='text-right text-sm font-medium'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
+                        {editing && (
+                          <TableCell className='text-right'>
+                            <Button variant='ghost' size='sm' className='h-7 text-xs text-destructive hover:text-destructive' onClick={() => {
+                              setOrderItems(orderItems.filter((_, i) => i !== index))
+                            }}>Remove</Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
+                    {editing && (
+                      <TableRow>
+                        <TableCell colSpan={2}>
+                          <select className='w-full h-8 rounded-md border border-input bg-background px-3 text-sm' value='' onChange={e => {
+                            const prod = allProducts.find((p: any) => p.id === e.target.value)
+                            if (prod) {
+                              setOrderItems([...orderItems, { productId: prod.id, product: prod, quantity: 1, price: prod.price || 0 }])
+                            }
+                          }}>
+                            <option value=''>Add Product...</option>
+                            {allProducts.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </TableCell>
+                        <TableCell colSpan={3}></TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
                 <div className='px-4 py-3 border-t space-y-1'>
@@ -211,8 +338,40 @@ function OrderDetailPage() {
                   <div className='grid grid-cols-2 gap-3'><div><Label className='text-xs'>Shipping</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div><div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div></div>
                   <div className='flex gap-1 border rounded-md p-0.5 w-fit'><Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}><DollarSign className='h-3 w-3 mr-1' />Flat</Button><Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}><Percent className='h-3 w-3 mr-1' />%</Button></div>
                   <div className='bg-muted/50 rounded-lg p-3 space-y-1.5 text-sm'><div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div><div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span></div>{rawDiscount > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${rawDiscount}%)` : ''}</span><span>-৳{fmt(effectiveDiscount)}</span></div>}<div className='flex justify-between font-bold text-base pt-1.5 border-t'><span>Total</span><span>৳{fmt(calculatedTotal)}</span></div></div>
-                  <div><Label className='text-xs'>Customer Notes</Label><Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} /></div>
-                  <div><Label className='text-xs'>Office Notes</Label><Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} /></div>
+                  
+                  <div className='border-t pt-3 space-y-3'>
+                    <h3 className='text-sm font-medium'>Customer Info</h3>
+                    <div className='grid grid-cols-2 gap-3'>
+                      <div><Label className='text-xs'>First Name</Label><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+                      <div><Label className='text-xs'>Last Name</Label><Input value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+                    </div>
+                    <div><Label className='text-xs'>Email</Label><Input value={email} onChange={e => setEmail(e.target.value)} /></div>
+                    <div><Label className='text-xs'>Phone</Label><Input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} /></div>
+                  </div>
+
+                  <div className='border-t pt-3 space-y-3'>
+                    <h3 className='text-sm font-medium'>Shipping Address</h3>
+                    <div><Label className='text-xs'>Address</Label><Textarea value={address} onChange={e => setAddress(e.target.value)} rows={2} /></div>
+                    <div>
+                      <Label className='text-xs'>City</Label>
+                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={cityId} onChange={e => { setCityId(e.target.value); setZones([]); }}>
+                        <option value=''>Select City...</option>
+                        {cities.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className='text-xs'>Zone</Label>
+                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={zoneId} onChange={e => setZoneId(e.target.value)}>
+                        <option value=''>Select Zone...</option>
+                        {zones.map((z: any) => <option key={z.id} value={z.id}>{z.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className='border-t pt-3 space-y-3'>
+                    <div><Label className='text-xs'>Customer Notes</Label><Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} /></div>
+                    <div><Label className='text-xs'>Office Notes</Label><Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} /></div>
+                  </div>
                 </CardContent>
               </Card>
             ) : (
@@ -233,6 +392,29 @@ function OrderDetailPage() {
             <div><Label>Note</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} /></div>
           </div>
           <div className='flex justify-end gap-2'><Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote('') }}>Cancel</Button><Button onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }); setShowStatusDialog(null) }}>Confirm</Button></div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>
+        <DialogContent><DialogHeader><DialogTitle>Send to Courier</DialogTitle></DialogHeader>
+          <div className='space-y-3 py-2'>
+            <p className='text-sm text-muted-foreground'>Select a courier service to dispatch this order.</p>
+            <div className='space-y-1'>
+              <Label>Courier</Label>
+              <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={dispatchCourier} onChange={e => setDispatchCourier(e.target.value)}>
+                <option value=''>Select...</option>
+                {activeCouriers.map((c: any) => (
+                  <option key={c.courier} value={c.courier}>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className='flex justify-end gap-2'>
+            <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>Cancel</Button>
+            <Button disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, orderId: id })}>
+              {dispatchMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1' /> : <Send className='h-4 w-4 mr-1' />}
+              Dispatch
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
