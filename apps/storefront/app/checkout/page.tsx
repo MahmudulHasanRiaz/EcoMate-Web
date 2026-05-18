@@ -11,7 +11,6 @@ import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/tracking';
-import { getPixelIds } from '@/components/TrackingScripts';
 
 function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
@@ -78,11 +77,8 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    const ids = getPixelIds();
-    if (ids.metaId || ids.tiktokCode) {
-      const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
-      trackEvent('InitiateCheckout', { value, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
-    }
+    const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+    trackEvent('InitiateCheckout', { value, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
   }, []);
 
   const getLeadData = useCallback(() => {

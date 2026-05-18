@@ -1,4 +1,4 @@
-import { getPixelIds } from '@/components/TrackingScripts'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'
 
 declare global {
   interface Window {
@@ -18,25 +18,32 @@ function generateEventId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+let _metaId = '';
+let _tiktokCode = '';
+
+export function setPixelIds(metaId: string, tiktokCode: string) {
+  _metaId = metaId;
+  _tiktokCode = tiktokCode;
+}
+
 export function trackEvent(event: EventName, data?: Record<string, any>) {
   if (typeof window === 'undefined') return;
 
   const eventId = generateEventId();
-  const ids = getPixelIds();
 
   try {
-    if (window.fbq && ids.metaId) {
+    if (window.fbq && _metaId) {
       window.fbq('track', event, data, { eventID: eventId });
     }
   } catch {}
 
   try {
-    if (window.ttq && ids.tiktokCode) {
+    if (window.ttq && _tiktokCode) {
       window.ttq.track(event, data);
     }
   } catch {}
 
-  fetch('/api/tracking/events', {
+  fetch(`${API_URL}/tracking/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Script from "next/script";
+import { setPixelIds } from "@/lib/tracking";
 
 declare global {
   interface Window {
@@ -11,35 +12,32 @@ declare global {
   }
 }
 
-let _metaId = "";
-let _tiktokCode = "";
-
-export function getPixelIds() {
-  return { metaId: _metaId, tiktokCode: _tiktokCode };
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 export default function TrackingScripts() {
-  const [config, setConfig] = useState<{ metaId: string; tiktokCode: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [metaId, setMetaId] = useState("");
+  const [tiktokCode, setTiktokCode] = useState("");
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
-    fetch(`${apiUrl}/system-settings/storefront`)
+    fetch(`${API_URL}/system-settings/storefront`)
       .then((r) => r.json())
       .then((data) => {
-        const metaId = data?.meta?.pixelEnabled ? data.meta.pixelId || "" : "";
-        const tiktokCode = data?.tiktok?.pixelEnabled ? data.tiktok.pixelCode || "" : "";
-        _metaId = metaId;
-        _tiktokCode = tiktokCode;
-        setConfig({ metaId, tiktokCode });
+        const mid = data?.meta?.pixelEnabled ? data.meta.pixelId || "" : "";
+        const ttc = data?.tiktok?.pixelEnabled ? data.tiktok.pixelCode || "" : "";
+        setMetaId(mid);
+        setTiktokCode(ttc);
+        setPixelIds(mid, ttc);
+        setLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => setLoaded(true));
   }, []);
 
-  if (!config) return null;
+  if (!loaded) return null;
 
   return (
     <>
-      {config.metaId && (
+      {metaId && (
         <>
           <Script id="meta-pixel" strategy="afterInteractive">
             {`
@@ -51,19 +49,19 @@ export default function TrackingScripts() {
               t.src=v;s=b.getElementsByTagName(e)[0];
               s.parentNode.insertBefore(t,s)}(window, document,'script',
               'https://connect.facebook.net/en_US/fbevents.js');
-              fbq('init', '${config.metaId}');
+              fbq('init', '${metaId}');
               fbq('track', 'PageView');
             `}
           </Script>
           <noscript>
             <img height="1" width="1" style={{ display: "none" }}
-              src={`https://www.facebook.com/tr?id=${config.metaId}&ev=PageView&noscript=1`}
+              src={`https://www.facebook.com/tr?id=${metaId}&ev=PageView&noscript=1`}
             />
           </noscript>
         </>
       )}
 
-      {config.tiktokCode && (
+      {tiktokCode && (
         <Script id="tiktok-pixel" strategy="afterInteractive">
           {`
             !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];
@@ -75,7 +73,7 @@ export default function TrackingScripts() {
             var o=n&&n.partner;ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=i;var r=document.createElement("script");
             r.type="text/javascript";r.async=true;r.src=i+"?sdkid="+e+"&lib="+t;
             var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(r,a)};
-            ttq.load('${config.tiktokCode}');
+            ttq.load('${tiktokCode}');
             ttq.page();
           `}
         </Script>
