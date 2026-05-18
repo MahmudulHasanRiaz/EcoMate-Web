@@ -1,59 +1,102 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
-const combos = [
-  {
-    id: 1,
-    name: "iPhone + AirPods Pro Bundle",
-    price: 195000,
-    originalPrice: 219998,
-    image: "https://placehold.co/400x300/0089CD/ffffff?text=Bundle+1",
-    discount: "Save ৳24,998",
-    items: ["iPhone 16 Pro Max 256GB", "AirPods Pro 3rd Gen", "Premium Case"]
-  },
-  {
-    id: 2,
-    name: "Samsung Galaxy Watch + Buds",
-    price: 59999,
-    originalPrice: 74998,
-    image: "https://placehold.co/400x300/1428A0/ffffff?text=Bundle+2",
-    discount: "Save ৳14,999",
-    items: ["Galaxy Watch 7 44mm", "Galaxy Buds 3 Pro"]
-  },
-];
+import { useState, useEffect } from 'react';
+import { Gift, Clock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { getCombos } from '@/lib/api/combos';
+import type { Combo } from '@/lib/types';
 
 export default function CombosPage() {
   const router = useRouter();
+  const [combos, setCombos] = useState<Combo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getCombos({ isActive: true }).then(res => setCombos(res.data)).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse space-y-6 w-full max-w-4xl px-4">
+          {[1,2,3].map(i => <div key={i} className="bg-gray-200 h-40 rounded-xl" />)}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-screen-xl mx-auto px-3 md:px-4 py-4 md:py-8">
-      <h1 className="text-[18px] md:text-[24px] font-bold text-gray-900 mb-4">Combo Deals</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {combos.map((combo) => (
-          <div 
-            key={combo.id}
-            onClick={() => router.push(`/combos/${combo.id}`)}
-            className="bg-gradient-to-br from-brand-blue/5 to-brand-blue/10 rounded-[14px] border border-brand-blue/10 p-4 flex gap-4 items-center hover:shadow-lg hover:border-brand-blue/30 transition-all cursor-pointer group"
-          >
-            <div className="w-[120px] h-[120px] bg-white rounded-xl flex items-center justify-center p-2 flex-shrink-0">
-              <img src={combo.image} alt={combo.name} className="w-full h-full object-contain" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-[15px] font-bold text-gray-900 mb-1">{combo.name}</h3>
-              <ul className="text-[12px] text-gray-500 mb-2 space-y-0.5">
-                {combo.items.map((item, i) => (
-                  <li key={i} className="flex items-center gap-1"><span className="w-1 h-1 bg-brand-blue rounded-full" /> {item}</li>
-                ))}
-              </ul>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[20px] font-bold text-gray-900">৳{combo.price.toLocaleString()}</span>
-                <span className="text-[13px] text-gray-400 line-through">৳{combo.originalPrice.toLocaleString()}</span>
-              </div>
-              <span className="inline-block text-[11px] text-white bg-brand-coral px-2 py-0.5 rounded-full font-bold">{combo.discount}</span>
-            </div>
+    <div className="bg-gray-50 min-h-screen pb-16">
+      <div className="bg-gradient-to-r from-brand-blue to-blue-700 text-white py-12 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <Gift className="w-12 h-12 mx-auto mb-4 opacity-90" />
+          <h1 className="text-3xl md:text-4xl font-bold mb-2">Combo Deals</h1>
+          <p className="text-blue-100 text-lg">Save more with our exclusive bundle packages</p>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 -mt-8 space-y-6">
+        {combos.length === 0 ? (
+          <div className="bg-white rounded-xl p-12 text-center shadow-sm">
+            <Gift className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <h3 className="text-xl font-bold text-gray-800 mb-2">No Combos Available</h3>
+            <p className="text-gray-500">Check back later for new combo deals!</p>
           </div>
-        ))}
+        ) : combos.map((combo) => {
+          const savings = combo.originalPrice && combo.originalPrice > combo.price
+            ? Math.round(((combo.originalPrice - combo.price) / combo.originalPrice) * 100)
+            : 0;
+
+          return (
+            <div key={combo.id} className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden cursor-pointer"
+              onClick={() => router.push(`/combos/${combo.id}`)}>
+              <div className="flex flex-col md:flex-row">
+                <div className="md:w-72 h-48 md:h-auto bg-gray-100 relative overflow-hidden flex-shrink-0">
+                  {combo.image ? (
+                    <img src={combo.image} alt={combo.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Gift className="w-16 h-16 text-gray-300" />
+                    </div>
+                  )}
+                  {savings > 0 && (
+                    <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                      -{savings}%
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 p-6 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">{combo.name}</h3>
+                    {combo.shortDesc && <p className="text-gray-500 text-sm mb-3">{combo.shortDesc}</p>}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {combo.items.slice(0, 4).map((item, i) => (
+                        <span key={i} className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
+                          {item.productName} x{item.quantity}
+                        </span>
+                      ))}
+                      {combo.items.length > 4 && (
+                        <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded">+{combo.items.length - 4} more</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-brand-blue">৳{combo.price.toLocaleString()}</span>
+                      {combo.originalPrice && combo.originalPrice > combo.price && (
+                        <span className="text-gray-400 line-through text-sm">৳{combo.originalPrice.toLocaleString()}</span>
+                      )}
+                    </div>
+                    <button className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium text-sm hover:bg-brand-blue/90 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); router.push(`/combos/${combo.id}`); }}>
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -98,7 +98,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
           opacity: isActive ? 0.3 : 1,
         }}
       >
-        <img src={item.image} alt="Flying Item" className="w-full h-full object-contain drop-shadow-md" />
+        <img src={item.image || undefined} alt="Flying Item" className="w-full h-full object-contain drop-shadow-md" />
       </div>
     </div>
   );

@@ -12,8 +12,9 @@ import {
 import { Type } from 'class-transformer';
 
 export class OrderItemDto {
-  @IsString() productId: string;
+  @IsOptional() @IsString() productId?: string;
   @IsOptional() @IsString() variantId?: string;
+  @IsOptional() @IsString() comboId?: string;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
 }

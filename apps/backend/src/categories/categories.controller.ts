@@ -9,16 +9,19 @@ import {
 } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly svc: CategoriesService) {}
 
+  @Public()
   @Get()
   async findAll() {
     return this.svc.findAll();
   }
 
+  @Public()
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);

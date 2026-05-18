@@ -1,7 +1,7 @@
 import {
-  LayoutDashboard, Monitor, ListTodo, Package, Palette,
+  LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard, Radio,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -19,6 +19,7 @@ export const sidebarData: SidebarData = {
     ]},
     { title: 'Catalog', panel: 'operational', items: [
       { title: 'Products', url: '/op/products', icon: Package },
+      { title: 'Combos', url: '/op/combos', icon: Gift },
       { title: 'Categories', url: '/op/categories', icon: Package },
       { title: 'Attributes', url: '/op/attributes', icon: Palette },
       { title: 'Inventory', url: '/op/inventory', icon: AlertTriangle },
@@ -54,6 +55,7 @@ export const sidebarData: SidebarData = {
     { title: 'Administration', panel: 'monitoring', items: [
       { title: 'User Management', url: '/mon/users', icon: Users },
       { title: 'Activity Logs', url: '/mon/activity-logs', icon: ListTodo },
+      { title: 'Tracking', url: '/mon/settings/tracking', icon: Radio },
     ]},
 
     // ===== SHARED FOOTER (Moved below) =====

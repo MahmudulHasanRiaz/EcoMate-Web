@@ -132,6 +132,7 @@ model Category {
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children Category[] @relation("CategoryTree")
   products Product[]
+  combos   Combo[]
 }
 
 model Attribute {
@@ -176,6 +177,7 @@ model Product {
   category   Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   variants   ProductVariant[]
   orderItems OrderItem[]
+  comboItems ComboItem[]
 }
 
 model ProductVariant {
@@ -192,6 +194,7 @@ model ProductVariant {
   product         Product                          @relation(fields: [productId], references: [id], onDelete: Cascade)
   attributeValues ProductVariantAttributeValue[]
   orderItems      OrderItem[]
+  comboItems      ComboItem[]
 }
 
 model ProductVariantAttributeValue {
@@ -203,6 +206,49 @@ model ProductVariantAttributeValue {
   attributeValue  AttributeValue  @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
 
   @@unique([variantId, attributeValueId])
+}
+
+model Combo {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?   @db.Text
+  shortDesc   String?   @db.Text
+  basePrice   Decimal   @db.Decimal(10, 2)
+  salePrice   Decimal?  @db.Decimal(10, 2)
+  image       String?
+  images      Json?     @default("[]")
+  categoryId  String?
+  tags        Json?     @default("[]")
+  seoMeta     Json?     @default("{}")
+  isFeatured  Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  manageStock Boolean   @default(false)
+  stock       Int       @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  items      ComboItem[]
+  orderItems OrderItem[]
+}
+
+model ComboItem {
+  id        String    @id @default(uuid())
+  comboId   String
+  productId String
+  variantId String?
+  quantity  Int       @default(1)
+  price     Decimal?  @db.Decimal(10, 2)
+  createdAt DateTime  @default(now())
+
+  combo   Combo           @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@unique([comboId, productId, variantId])
 }
 
 model OrderStatus {
@@ -254,15 +300,17 @@ model Order {
 model OrderItem {
   id        String    @id @default(uuid())
   orderId   String
-  productId String
+  productId String?
   variantId String?
+  comboId   String?
   quantity  Int       @default(1)
   price     Decimal   @db.Decimal(10, 2)
   createdAt DateTime  @default(now())
 
   order   Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product          @relation(fields: [productId], references: [id])
+  product Product?         @relation(fields: [productId], references: [id])
   variant ProductVariant?  @relation(fields: [variantId], references: [id])
+  combo   Combo?           @relation(fields: [comboId], references: [id])
 }
 
 model Payment {
@@ -410,6 +458,7 @@ model InventoryLog {
   id          String   @id @default(uuid())
   productId   String?
   variantId   String?
+  comboId     String?
   quantity    Int
   type        String
   reason      String?

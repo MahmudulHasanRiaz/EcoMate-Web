@@ -17,6 +17,67 @@ export class SystemSettingsController {
     return map;
   }
 
+  @Get('storefront')
+  async getStorefrontConfig() {
+    const settings = await this.prisma.systemSetting.findMany();
+    const map: Record<string, string> = {};
+    for (const s of settings) map[s.key] = s.value;
+
+    let heroSlides: { image: string; link?: string }[] = [];
+    try { heroSlides = JSON.parse(map['hero_slides'] || '[]'); } catch { heroSlides = []; }
+
+    return {
+      store: {
+        name: map['store_name'] || 'EcoMate',
+        tagline: map['store_tagline'] || '',
+        email: map['store_email'] || '',
+        phone: map['store_phone'] || '',
+        address: map['store_address'] || '',
+      },
+      currency: {
+        code: map['currency'] || 'BDT',
+        symbol: map['currency_symbol'] || '৳',
+      },
+      delivery: {
+        charge: parseFloat(map['delivery_charge'] || '0'),
+        freeDeliveryMin: parseFloat(map['free_delivery_min'] || '0'),
+      },
+      hero: {
+        slides: heroSlides,
+      },
+      social: {
+        facebook: map['social_facebook'] || '',
+        instagram: map['social_instagram'] || '',
+        youtube: map['social_youtube'] || '',
+        whatsapp: map['social_whatsapp'] || '',
+      },
+      seo: {
+        title: map['seo_title'] || '',
+        description: map['seo_description'] || '',
+        keywords: map['seo_keywords'] || '',
+      },
+      footer: {
+        description: map['footer_description'] || '',
+        copyright: map['footer_copyright'] || '',
+      },
+      about: {
+        text: map['about_us_text'] || '',
+      },
+      shipping: {
+        info: map['shipping_info'] || '',
+      },
+      payment: {
+        info: map['payment_info'] || '',
+      },
+      meta: {
+        pixelEnabled: map['meta_pixel_enabled'] === 'true',
+      },
+      tiktok: {
+        pixelEnabled: map['tiktok_pixel_enabled'] === 'true',
+      },
+    };
+  }
+
   @Get('storage')
   async getStorageConfig() {
     return this.storage.getConfig();

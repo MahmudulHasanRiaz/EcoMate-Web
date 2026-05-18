@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const res = await authApi.login(email, password);
+    localStorage.setItem("token", res.accessToken);
     setUser(res.user);
   };
 
@@ -82,11 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string;
   }) => {
     const res = await authApi.register(data);
+    localStorage.setItem("token", res.accessToken);
     setUser(res.user);
   };
 
   const logout = async () => {
     await authApi.logout();
+    localStorage.removeItem("token");
     setUser(null);
   };
 

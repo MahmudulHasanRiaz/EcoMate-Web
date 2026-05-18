@@ -1,0 +1,87 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
+
+interface TrackEvent {
+  eventName: string;
+  eventId: string;
+  eventTime: number;
+  userId?: string;
+  userData: {
+    email?: string;
+    phone?: string;
+    ip?: string;
+    userAgent?: string;
+  };
+  customData?: Record<string, any>;
+}
+
+@Injectable()
+export class MetaConversionsService {
+  private readonly logger = new Logger(MetaConversionsService.name);
+
+  constructor(
+    private config: ConfigService,
+    private prisma: PrismaService,
+  ) {}
+
+  async sendEvent(event: TrackEvent) {
+    const pixelId = await this.getSetting('tracking_meta_pixel_id', 'META_PIXEL_ID');
+    const accessToken = await this.getSetting('tracking_meta_access_token', 'META_ACCESS_TOKEN');
+    const enabled = await this.getSetting('tracking_meta_enabled', null);
+
+    const isEnabled = enabled === 'true' || !!this.config.get('META_PIXEL_ID');
+
+    if (!pixelId || !accessToken || !isEnabled) {
+      this.logger.warn('Meta Pixel not configured, skipping event');
+      return;
+    }
+
+    const apiUrl = `https://graph.facebook.com/v18.0/${pixelId}/events`;
+
+    try {
+      const body = {
+        data: [{
+          event_name: event.eventName,
+          event_time: event.eventTime,
+          event_id: event.eventId,
+          action_source: 'website',
+          user_data: {
+            em: event.userData.email ? this.hash(event.userData.email) : undefined,
+            ph: event.userData.phone ? this.hash(event.userData.phone) : undefined,
+            client_ip_address: event.userData.ip,
+            client_user_agent: event.userData.userAgent,
+          },
+          custom_data: event.customData,
+        }],
+        access_token: accessToken,
+      };
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        this.logger.error(`Meta CAPI error: ${response.status} ${await response.text()}`);
+      }
+    } catch (err) {
+      this.logger.error('Meta CAPI request failed', err);
+    }
+  }
+
+  private async getSetting(systemKey: string, envKey: string | null): Promise<string | null> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({ where: { key: systemKey } });
+      if (setting?.value) return setting.value;
+    } catch {}
+    if (envKey) return this.config.get(envKey) || null;
+    return null;
+  }
+
+  private hash(data: string): string {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(data.toLowerCase().trim()).digest('hex');
+  }
+}

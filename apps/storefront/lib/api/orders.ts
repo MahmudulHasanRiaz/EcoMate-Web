@@ -1,8 +1,16 @@
 import apiClient from "../api-client";
 
+export interface CreateOrderItem {
+  productId?: string;
+  variantId?: string;
+  comboId?: string;
+  quantity: number;
+  price: number;
+}
+
 export interface CreateOrderData {
   customerId: string;
-  items: { productId: string; variantId?: string; quantity: number; price: number }[];
+  items: CreateOrderItem[];
   shippingAddress?: Record<string, unknown>;
   customerNotes?: string;
   shippingCharge?: number;
@@ -32,5 +40,6 @@ export async function getOrder(id: string) {
 
 export async function validateCoupon(code: string) {
   const { data } = await apiClient.get("/coupons");
-  return data.find((c: { code: string }) => c.code === code);
+  const list = Array.isArray(data) ? data : data.data || [];
+  return list.find((c: { code: string }) => c.code === code);
 }

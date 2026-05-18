@@ -6,43 +6,77 @@ export interface ProductsResponse {
   meta: { total: number; page: number; perPage: number; totalPages: number };
 }
 
+function transformBackendProduct(raw: any): Product {
+  const basePrice = Number(raw.basePrice);
+  const salePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
+  const rawImages = Array.isArray(raw.images) ? raw.images : [];
+  const firstImage = rawImages.length > 0 ? rawImages[0] : null;
+
+  return {
+    id: raw.id,
+    name: raw.name,
+    slug: raw.slug,
+    price: salePrice || basePrice,
+    basePrice,
+    originalPrice: salePrice && salePrice < basePrice ? basePrice : undefined,
+    salePrice,
+    image: firstImage,
+    images: rawImages,
+    category: raw.category?.name || "",
+    categoryId: raw.categoryId || undefined,
+    badge: raw.isFeatured ? "Featured" : raw.salePrice ? "Sale" : undefined,
+    saveAmount: salePrice && salePrice < basePrice ? basePrice - salePrice : undefined,
+    isFeatured: raw.isFeatured,
+    description: raw.description || "",
+    shortDesc: raw.shortDesc || "",
+    stock: raw.stock,
+    sku: raw.sku || undefined,
+    type: raw.type,
+    tags: raw.tags || [],
+    isActive: raw.isActive,
+    manageStock: raw.manageStock,
+  };
+}
+
 export async function getProducts(params?: {
   page?: number;
   perPage?: number;
   search?: string;
   categoryId?: string;
   isActive?: boolean;
+  isFeatured?: boolean;
   sort?: string;
   order?: string;
 }): Promise<ProductsResponse> {
   const { data } = await apiClient.get("/products", { params });
-  return data;
+  return {
+    data: (data.data || []).map(transformBackendProduct),
+    meta: data.meta,
+  };
 }
 
 export async function getProduct(id: string): Promise<Product> {
   const { data } = await apiClient.get(`/products/${id}`);
-  return data;
+  return transformBackendProduct(data);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product> {
   const { data } = await apiClient.get("/products", {
     params: { search: slug, perPage: 1 },
   });
-  const found = data.data.find(
-    (p: Product) => p.slug === slug,
-  );
+  const found = data.data.find((p: any) => p.slug === slug);
   if (!found) throw new Error("Product not found");
-  return found;
+  return transformBackendProduct(found);
 }
 
 export async function getFeaturedProducts(): Promise<Product[]> {
   const { data } = await apiClient.get("/products", {
-    params: { isActive: true, perPage: 50 },
+    params: { isActive: true, isFeatured: true, perPage: 50 },
   });
-  return data.data.filter((p: Product) => p.isFeatured);
+  return (data.data || []).map(transformBackendProduct);
 }
 
 export async function getCategories(): Promise<Category[]> {
   const { data } = await apiClient.get("/categories");
-  return data;
+  return Array.isArray(data) ? data : data.data || [];
 }

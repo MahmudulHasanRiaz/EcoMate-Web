@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TrackingService } from '../tracking/tracking.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -14,7 +15,10 @@ import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tracking: TrackingService,
+  ) {}
 
   private transformOrder(order: any) {
     if (!order) return order;
@@ -195,6 +199,7 @@ export class OrdersService {
           create: dto.items.map((i) => ({
             productId: i.productId,
             variantId: i.variantId,
+            comboId: i.comboId,
             quantity: i.quantity,
             price: i.price,
           })),
@@ -220,20 +225,75 @@ export class OrdersService {
       },
     });
 
+    this.tracking.track({
+      eventName: 'purchase',
+      customData: {
+        value: Number(total),
+        currency: 'BDT',
+        content_ids: dto.items.map(i => i.productId || i.comboId).filter(Boolean),
+        num_items: dto.items.reduce((s, i) => s + i.quantity, 0),
+      },
+    }).catch(() => {});
+
     for (const item of dto.items) {
       await this.prisma.inventoryLog.create({
         data: {
           productId: item.productId,
           variantId: item.variantId,
+          comboId: item.comboId,
           quantity: -item.quantity,
           type: 'order_placed',
           reason: `Order ${displayId}`,
           createdAt: new Date(),
         },
       });
-      if (item.variantId) {
-        await this.prisma.productVariant.update({
-          where: { id: item.variantId },
+
+      if (item.comboId) {
+        const combo = await this.prisma.combo.findUnique({
+          where: { id: item.comboId },
+          include: { items: true },
+        });
+        if (combo && combo.manageStock) {
+          await this.prisma.combo.update({
+            where: { id: item.comboId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+        if (combo) {
+          for (const ci of combo.items) {
+            const qty = ci.quantity * item.quantity;
+            if (ci.variantId) {
+              await this.prisma.productVariant.update({
+                where: { id: ci.variantId },
+                data: { stock: { decrement: qty } },
+              });
+            }
+            await this.prisma.product.update({
+              where: { id: ci.productId },
+              data: { stock: { decrement: qty } },
+            });
+            await this.prisma.inventoryLog.create({
+              data: {
+                productId: ci.productId,
+                variantId: ci.variantId,
+                comboId: item.comboId,
+                quantity: -qty,
+                type: 'combo_order',
+                reason: `Combo in Order ${displayId}`,
+                createdAt: new Date(),
+              },
+            });
+          }
+        }
+      } else {
+        if (item.variantId) {
+          await this.prisma.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+        await this.prisma.product.update({
+          where: { id: item.productId },
           data: { stock: { decrement: item.quantity } },
         });
       }
@@ -295,7 +355,7 @@ export class OrdersService {
         })),
       });
       const oldItems = order.items
-        .map((i) => `${i.product.name} ×${i.quantity}`)
+        .map((i) => `${i.product?.name || 'Unknown'} ×${i.quantity}`)
         .join(', ');
       const newItems = dto.items
         .map((i) => `${i.productId} ×${i.quantity}`)

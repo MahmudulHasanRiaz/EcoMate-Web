@@ -14,11 +14,13 @@ import {
   UpdateProductDto,
   GenerateVariantsDto,
 } from './dto/product.dto';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly svc: ProductsService) {}
 
+  @Public()
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -27,6 +29,7 @@ export class ProductsController {
     @Query('type') type?: string,
     @Query('categoryId') categoryId?: string,
     @Query('isActive') isActive?: string,
+    @Query('isFeatured') isFeatured?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
   ) {
@@ -37,11 +40,13 @@ export class ProductsController {
       type,
       categoryId,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
       sort,
       order,
     });
   }
 
+  @Public()
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }

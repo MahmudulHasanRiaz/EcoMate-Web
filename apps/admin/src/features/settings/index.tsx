@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw } from 'lucide-react'
+import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -23,6 +23,7 @@ export function Settings() {
 
   const monNavItems = [
     { title: 'System', href: '/mon/settings/system', icon: <SettingsIcon size={18} /> },
+    { title: 'Storefront', href: '/mon/settings/storefront', icon: <Store size={18} /> },
     { title: 'Gateways', href: '/mon/settings/gateways', icon: <CreditCard size={18} /> },
     { title: 'Storage', href: '/mon/settings/storage', icon: <HardDrive size={18} /> },
     { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },

@@ -39,6 +39,7 @@ import { Route as AuthenticatedOpInventoryIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_authenticated/op/help-center/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
+import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
 import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
 import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_authenticated/op/categories/index'
 import { Route as AuthenticatedOpCampaignsIndexRouteImport } from './routes/_authenticated/op/campaigns/index'
@@ -51,7 +52,9 @@ import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
+import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
+import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
@@ -224,6 +227,12 @@ const AuthenticatedOpCouponsIndexRoute =
     path: '/op/coupons/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpCombosIndexRoute =
+  AuthenticatedOpCombosIndexRouteImport.update({
+    id: '/op/combos/',
+    path: '/op/combos/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpChatsIndexRoute =
   AuthenticatedOpChatsIndexRouteImport.update({
     id: '/op/chats/',
@@ -295,10 +304,22 @@ const AuthenticatedOpPrintBulkIndexRoute =
     path: '/bulk/',
     getParentRoute: () => AuthenticatedOpPrintRouteRoute,
   } as any)
+const AuthenticatedMonSettingsTrackingIndexRoute =
+  AuthenticatedMonSettingsTrackingIndexRouteImport.update({
+    id: '/tracking/',
+    path: '/tracking/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsSystemIndexRoute =
   AuthenticatedMonSettingsSystemIndexRouteImport.update({
     id: '/system/',
     path: '/system/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsStorefrontIndexRoute =
+  AuthenticatedMonSettingsStorefrontIndexRouteImport.update({
+    id: '/storefront/',
+    path: '/storefront/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedMonSettingsStorageIndexRoute =
@@ -366,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
+  '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
@@ -384,7 +406,9 @@ export interface FileRoutesByFullPath {
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -416,6 +440,7 @@ export interface FileRoutesByTo {
   '/op/campaigns': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats': typeof AuthenticatedOpChatsIndexRoute
+  '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
   '/op/help-center': typeof AuthenticatedOpHelpCenterIndexRoute
@@ -434,7 +459,9 @@ export interface FileRoutesByTo {
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -468,6 +495,7 @@ export interface FileRoutesById {
   '/_authenticated/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/_authenticated/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
+  '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/_authenticated/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
@@ -486,7 +514,9 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
+  '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -520,6 +550,7 @@ export interface FileRouteTypes {
     | '/op/campaigns/'
     | '/op/categories/'
     | '/op/chats/'
+    | '/op/combos/'
     | '/op/coupons/'
     | '/op/customers/'
     | '/op/help-center/'
@@ -538,7 +569,9 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/storage/'
+    | '/mon/settings/storefront/'
     | '/mon/settings/system/'
+    | '/mon/settings/tracking/'
     | '/op/print/bulk/'
     | '/op/settings/personal/'
   fileRoutesByTo: FileRoutesByTo
@@ -570,6 +603,7 @@ export interface FileRouteTypes {
     | '/op/campaigns'
     | '/op/categories'
     | '/op/chats'
+    | '/op/combos'
     | '/op/coupons'
     | '/op/customers'
     | '/op/help-center'
@@ -588,7 +622,9 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways'
     | '/mon/settings/order-statuses'
     | '/mon/settings/storage'
+    | '/mon/settings/storefront'
     | '/mon/settings/system'
+    | '/mon/settings/tracking'
     | '/op/print/bulk'
     | '/op/settings/personal'
   id:
@@ -621,6 +657,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/campaigns/'
     | '/_authenticated/op/categories/'
     | '/_authenticated/op/chats/'
+    | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
     | '/_authenticated/op/help-center/'
@@ -639,7 +676,9 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/storage/'
+    | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
+    | '/_authenticated/mon/settings/tracking/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/settings/personal/'
   fileRoutesById: FileRoutesById
@@ -870,6 +909,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpCouponsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/combos/': {
+      id: '/_authenticated/op/combos/'
+      path: '/op/combos'
+      fullPath: '/op/combos/'
+      preLoaderRoute: typeof AuthenticatedOpCombosIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/chats/': {
       id: '/_authenticated/op/chats/'
       path: '/op/chats'
@@ -954,11 +1000,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpPrintBulkIndexRouteImport
       parentRoute: typeof AuthenticatedOpPrintRouteRoute
     }
+    '/_authenticated/mon/settings/tracking/': {
+      id: '/_authenticated/mon/settings/tracking/'
+      path: '/tracking'
+      fullPath: '/mon/settings/tracking/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsTrackingIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/system/': {
       id: '/_authenticated/mon/settings/system/'
       path: '/system'
       fullPath: '/mon/settings/system/'
       preLoaderRoute: typeof AuthenticatedMonSettingsSystemIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/storefront/': {
+      id: '/_authenticated/mon/settings/storefront/'
+      path: '/storefront'
+      fullPath: '/mon/settings/storefront/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsStorefrontIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/storage/': {
@@ -1011,7 +1071,9 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
+  AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
+  AuthenticatedMonSettingsTrackingIndexRoute: typeof AuthenticatedMonSettingsTrackingIndexRoute
 }
 
 const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteRouteChildren =
@@ -1024,8 +1086,12 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
+    AuthenticatedMonSettingsStorefrontIndexRoute:
+      AuthenticatedMonSettingsStorefrontIndexRoute,
     AuthenticatedMonSettingsSystemIndexRoute:
       AuthenticatedMonSettingsSystemIndexRoute,
+    AuthenticatedMonSettingsTrackingIndexRoute:
+      AuthenticatedMonSettingsTrackingIndexRoute,
   }
 
 const AuthenticatedMonSettingsRouteRouteWithChildren =
@@ -1084,6 +1150,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCampaignsIndexRoute: typeof AuthenticatedOpCampaignsIndexRoute
   AuthenticatedOpCategoriesIndexRoute: typeof AuthenticatedOpCategoriesIndexRoute
   AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
+  AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
   AuthenticatedOpHelpCenterIndexRoute: typeof AuthenticatedOpHelpCenterIndexRoute
@@ -1119,6 +1186,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCampaignsIndexRoute: AuthenticatedOpCampaignsIndexRoute,
   AuthenticatedOpCategoriesIndexRoute: AuthenticatedOpCategoriesIndexRoute,
   AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,
+  AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
   AuthenticatedOpHelpCenterIndexRoute: AuthenticatedOpHelpCenterIndexRoute,

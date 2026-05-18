@@ -26,6 +26,8 @@ import { ShipmentModule } from './shipment/shipment.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { CourierManagerModule } from './courier-manager/courier-manager.module';
+import { CombosModule } from './combos/combos.module';
+import { TrackingModule } from './tracking/tracking.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -55,6 +57,8 @@ import { RolesGuard } from './auth/roles.guard';
     RefundsModule,
     InventoryModule,
     CourierManagerModule,
+    CombosModule,
+    TrackingModule,
   ],
   controllers: [OrderStatusController],
   providers: [

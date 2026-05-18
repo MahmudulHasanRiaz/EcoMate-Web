@@ -26,6 +26,7 @@ export class ProductsService {
     type?: string;
     categoryId?: string;
     isActive?: boolean;
+    isFeatured?: boolean;
     sort?: string;
     order?: string;
   }) {
@@ -35,12 +36,14 @@ export class ProductsService {
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
+        { slug: { contains: query.search, mode: 'insensitive' } },
         { sku: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.type) where.type = query.type;
     if (query.isActive !== undefined) where.isActive = query.isActive;
+    if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,

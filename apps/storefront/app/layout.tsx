@@ -10,6 +10,7 @@ import CartDrawer from "@/components/CartDrawer";
 import MobileMenu from "@/components/MobileMenu";
 import FloatingWidgets from "@/components/FloatingWidgets";
 import FlyCartLayer from "@/components/FlyCartLayer";
+import TrackingScripts from "@/components/TrackingScripts";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,6 +39,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased">
+        <TrackingScripts />
         <AuthProvider>
           <CartProvider>
             <Header />
