@@ -27,7 +27,10 @@ export default function TrackingScripts() {
         const ttc = data?.tiktok?.pixelEnabled ? data.tiktok.pixelCode || "" : "";
         setMetaId(mid);
         setTiktokCode(ttc);
-        setPixelIds(mid, ttc);
+        // Pixel script নেই হলে এখনই ready mark করো (queued events flush হবে)
+        if (!mid && !ttc) {
+          setPixelIds(mid, ttc);
+        }
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -39,7 +42,15 @@ export default function TrackingScripts() {
     <>
       {metaId && (
         <>
-          <Script id="meta-pixel" strategy="afterInteractive">
+          <Script
+            id="meta-pixel"
+            strategy="afterInteractive"
+            onLoad={() => {
+              // fbq.js সম্পূর্ণ load হওয়ার পর setPixelIds call করো
+              // এতে এর আগে queue হওয়া সব events (InitiateCheckout ইত্যাদি) এখন fire হবে
+              setPixelIds(metaId, tiktokCode);
+            }}
+          >
             {`
               !function(f,b,e,v,n,t,s)
               {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
