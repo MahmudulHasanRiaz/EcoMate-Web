@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('system-settings')
 export class SystemSettingsController {
@@ -17,6 +18,7 @@ export class SystemSettingsController {
     return map;
   }
 
+  @Public()
   @Get('storefront')
   async getStorefrontConfig() {
     const settings = await this.prisma.systemSetting.findMany();
