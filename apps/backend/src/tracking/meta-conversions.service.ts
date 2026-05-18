@@ -50,6 +50,11 @@ export class MetaConversionsService {
           user_data: {
             em: event.userData.email ? this.hash(event.userData.email) : undefined,
             ph: event.userData.phone ? this.hash(event.userData.phone) : undefined,
+            fn: event.userData.name ? this.hash(this.splitName(event.userData.name).firstName) : undefined,
+            ln: event.userData.name ? this.hash(this.splitName(event.userData.name).lastName) : undefined,
+            external_id: event.userData.phone ? this.hash(event.userData.phone) : undefined,
+            fbp: (event.userData as any).fbp || undefined,
+            fbc: (event.userData as any).fbc || undefined,
             client_ip_address: event.userData.ip,
             client_user_agent: event.userData.userAgent,
           },
@@ -88,5 +93,15 @@ export class MetaConversionsService {
   private hash(data: string): string {
     const crypto = require('crypto');
     return crypto.createHash('sha256').update(data.toLowerCase().trim()).digest('hex');
+  }
+
+  private splitName(fullName: string): { firstName: string; lastName: string } {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) {
+      return { firstName: parts[0], lastName: '' };
+    }
+    const lastName = parts.pop() || '';
+    const firstName = parts.join(' ');
+    return { firstName, lastName };
   }
 }

@@ -36,6 +36,7 @@ export class TrackingService {
       userData: {
         email: userData.email,
         phone: userData.phone,
+        name: userData.name, // নাম যুক্ত করা হলো
         ip: userData.ip,
         userAgent: userData.userAgent,
       },

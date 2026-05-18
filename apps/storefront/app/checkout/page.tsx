@@ -178,7 +178,17 @@ export default function CheckoutPage() {
         paymentMethod: user ? (paymentMethod === 'cod' ? 'cod' : paymentMethod) : paymentMethod,
       });
 
-      trackEvent('Purchase', { value: cartTotal, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
+      // ২০২৬ সালের নিয়ম অনুযায়ী Order ID এবং কাস্টমার ডাটা পাঠানো হচ্ছে
+      trackEvent('Purchase', { 
+        value: cartTotal, 
+        currency: 'BDT', 
+        content_ids: items.map(i => i.id), 
+        num_items: items.reduce((s, i) => s + i.quantity, 0),
+        order_id: order.id // Order ID যুক্ত করা হলো
+      }, { 
+        phone: guestPhone, 
+        name: guestName 
+      });
 
       clearCart();
       try { ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana','checkout_paymentMethod'].forEach(k => localStorage.removeItem(k)) } catch {}

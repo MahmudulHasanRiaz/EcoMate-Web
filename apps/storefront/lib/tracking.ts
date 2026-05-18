@@ -59,7 +59,15 @@ if (typeof window !== 'undefined') {
   window.__flushTrackingQueue = flushQueue;
 }
 
-export function trackEvent(event: EventName, data?: Record<string, any>) {
+function getCookie(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || '';
+  return '';
+}
+
+export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string }) {
   if (typeof window === 'undefined') return;
 
   const eventId = generateEventId();
@@ -81,6 +89,10 @@ export function trackEvent(event: EventName, data?: Record<string, any>) {
     }
   }
 
+  // মেটার জন্য fbp এবং fbc কুকি রিড করো
+  const fbp = getCookie('_fbp');
+  const fbc = getCookie('_fbc');
+
   // Server-side CAPI কল সবসময় যাবে
   fetch(`${API_URL}/tracking/events`, {
     method: 'POST',
@@ -89,6 +101,11 @@ export function trackEvent(event: EventName, data?: Record<string, any>) {
       eventId,
       eventName: eventNameToSnake(event),
       customData: data,
+      userData: {
+        ...userData,
+        fbp,
+        fbc
+      },
     }),
     keepalive: true,
   }).catch(() => {});

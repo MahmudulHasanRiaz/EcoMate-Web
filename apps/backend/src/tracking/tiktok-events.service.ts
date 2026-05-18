@@ -38,14 +38,21 @@ export class TikTokEventsService {
     }
 
     try {
+      const eventName = event.eventName === 'Purchase' ? 'CompletePayment' : event.eventName;
+      
       const body = {
         pixel_code: pixelCode,
-        event: event.eventName,
+        event: eventName,
         event_id: event.eventId,
         timestamp: event.eventTime,
         context: {
           ip: event.userData.ip,
           user_agent: event.userData.userAgent,
+          user: {
+            email: event.userData.email ? this.hash(event.userData.email) : undefined,
+            phone_number: event.userData.phone ? this.hash(event.userData.phone) : undefined,
+            external_id: event.userData.phone ? this.hash(event.userData.phone) : undefined,
+          }
         },
         properties: event.customData || {},
       };
@@ -74,5 +81,10 @@ export class TikTokEventsService {
     } catch {}
     if (envKey) return this.config.get(envKey) || null;
     return null;
+  }
+
+  private hash(data: string): string {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(data.toLowerCase().trim()).digest('hex');
   }
 }
