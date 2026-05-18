@@ -14,8 +14,8 @@
     'https://connect.facebook.net/en_US/fbevents.js');
     
     fbq('init', metaId);
-    // পেজভিউ লাইনটি কমেন্ট করে দিচ্ছি টেস্ট করার জন্য
-    // fbq('track', 'PageView');
+    // টেস্ট শেষ, এবার পেজভিউ চালু করে দিচ্ছি
+    fbq('track', 'PageView');
   }
 
   // টিকটক পিক্সেল

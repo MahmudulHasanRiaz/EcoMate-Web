@@ -6,6 +6,7 @@ import { useCart } from '@/context/CartContext';
 import { useRouter, useParams } from 'next/navigation';
 import { getProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
+import { trackEvent } from '@/lib/tracking';
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
@@ -33,6 +34,17 @@ export default function ProductPage() {
       .then((res) => {
         const found = res.data.find(p => p.slug === slug) || res.data[0] || null;
         setProduct(found);
+        
+        // প্রোডাক্ট পাওয়া গেলে ViewContent ইভেন্ট ফায়ার করো
+        if (found) {
+          trackEvent('ViewContent', {
+            content_ids: [found.id],
+            value: found.price,
+            currency: 'BDT',
+            content_name: found.name,
+            content_type: 'product'
+          });
+        }
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
@@ -142,7 +154,20 @@ export default function ProductPage() {
           </div>
 
           <div className="flex gap-3 mb-4 w-full">
-            <button onClick={() => { inCart ? updateQuantity(product.id, 0) : addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 }); }}
+            <button onClick={() => { 
+              if (inCart) {
+                updateQuantity(product.id, 0);
+              } else {
+                addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 });
+                // কার্টে অ্যাড করলে AddToCart ইভেন্ট ফায়ার করো
+                trackEvent('AddToCart', { 
+                  content_ids: [product.id], 
+                  value: product.price, 
+                  currency: 'BDT',
+                  content_name: product.name
+                });
+              } 
+            }}
               className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue/90 text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px]">
               <ShoppingBag size={16} />
               {inCart ? 'REMOVE FROM CART' : 'ADD TO CART'}
