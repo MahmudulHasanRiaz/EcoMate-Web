@@ -65,6 +65,10 @@ export default function CheckoutPage() {
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
 
+  const validPhone = !user ? normalizePhone(guestPhone) : true
+  const showPhoneError = !user && guestPhone.length > 0 && !validPhone
+  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && (!guestPhone || validPhone)))
+
   useEffect(() => { localStorage.setItem('checkout_guestName', guestName) }, [guestName]);
   useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone) }, [guestPhone]);
   useEffect(() => { localStorage.setItem('checkout_district', district) }, [district]);
@@ -209,9 +213,11 @@ export default function CheckoutPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                       <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
                       <div className="flex">
-                        <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
-                        <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                        <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
+                        <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
+                          className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
                       </div>
+                      {showPhoneError && <p className="text-red-500 text-[12px] mt-1.5">Please enter a valid Bangladeshi phone number</p>}
                     </div>
                   )}
               </div>
@@ -386,8 +392,8 @@ export default function CheckoutPage() {
                   I have read and agree to the <span className="text-brand-blue font-bold cursor-pointer hover:underline">Terms and Conditions</span>, <span className="text-brand-blue font-bold cursor-pointer hover:underline">Privacy Policy</span> & <span className="text-brand-blue font-bold cursor-pointer hover:underline">Refund and Return Policy</span>.
                 </p>
               </div>
-              <button onClick={handlePlaceOrder} disabled={items.length === 0 || submitting}
-                className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${items.length > 0 && !submitting ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
+              <button onClick={handlePlaceOrder} disabled={!canSubmit}
+                className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
                 {submitting ? 'PLACING ORDER...' : 'PLACE ORDER'}
               </button>
             </div>
