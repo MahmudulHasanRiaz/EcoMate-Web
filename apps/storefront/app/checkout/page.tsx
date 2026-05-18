@@ -108,14 +108,15 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
-    const onLeave = () => {
+    const sendLead = () => {
       const data = getLeadData();
-      if (data) navigator.sendBeacon(beaconUrl, JSON.stringify(data));
+      if (data) navigator.sendBeacon(beaconUrl, new Blob([JSON.stringify(data)], { type: 'application/json' }));
     };
-    window.addEventListener('beforeunload', onLeave);
+    window.addEventListener('beforeunload', sendLead);
     return () => {
-      window.removeEventListener('beforeunload', onLeave);
+      window.removeEventListener('beforeunload', sendLead);
       if (leadTimer.current) clearTimeout(leadTimer.current);
+      sendLead();
     };
   }, [getLeadData]);
 
