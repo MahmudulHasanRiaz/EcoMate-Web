@@ -75,11 +75,24 @@ export default function CheckoutPage() {
   useEffect(() => { localStorage.setItem('checkout_thana', thana) }, [thana]);
   useEffect(() => { localStorage.setItem('checkout_paymentMethod', paymentMethod) }, [paymentMethod]);
 
+  const initiatedRef = useRef(false);
+
   useEffect(() => {
     window.scrollTo(0, 0);
-    const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
-    trackEvent('InitiateCheckout', { value, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
   }, []);
+
+  useEffect(() => {
+    if (items.length > 0 && !initiatedRef.current) {
+      const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+      trackEvent('InitiateCheckout', { 
+        value, 
+        currency: 'BDT', 
+        content_ids: items.map(i => i.id), 
+        num_items: items.reduce((s, i) => s + i.quantity, 0) 
+      });
+      initiatedRef.current = true;
+    }
+  }, [items]);
 
   const getLeadData = useCallback(() => {
     const rawPhone = guestPhone || user?.phone || '';
