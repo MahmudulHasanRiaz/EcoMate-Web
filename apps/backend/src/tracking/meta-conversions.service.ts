@@ -30,7 +30,7 @@ export class MetaConversionsService {
     const accessToken = await this.getSetting('tracking_meta_access_token', 'META_ACCESS_TOKEN');
     const enabled = await this.getSetting('tracking_meta_enabled', null);
 
-    const isEnabled = enabled === 'true' || !!this.config.get('META_PIXEL_ID');
+    const isEnabled = enabled === 'true';
 
     if (!pixelId || !accessToken || !isEnabled) {
       this.logger.warn('Meta Pixel not configured, skipping event');

@@ -30,7 +30,7 @@ export class TikTokEventsService {
     const accessToken = await this.getSetting('tracking_tiktok_access_token', 'TIKTOK_ACCESS_TOKEN');
     const enabled = await this.getSetting('tracking_tiktok_enabled', null);
 
-    const isEnabled = enabled === 'true' || !!this.config.get('TIKTOK_PIXEL_CODE');
+    const isEnabled = enabled === 'true';
 
     if (!pixelCode || !accessToken || !isEnabled) {
       this.logger.warn('TikTok Pixel not configured, skipping event');
