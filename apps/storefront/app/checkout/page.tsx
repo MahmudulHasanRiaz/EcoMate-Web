@@ -186,8 +186,8 @@ export default function CheckoutPage() {
         num_items: items.reduce((s, i) => s + i.quantity, 0),
         order_id: order.id // Order ID যুক্ত করা হলো
       }, { 
-        phone: guestPhone, 
-        name: guestName 
+        phone: guestPhone || user?.phone || '', 
+        name: guestName || user?.name || '' 
       });
 
       clearCart();
