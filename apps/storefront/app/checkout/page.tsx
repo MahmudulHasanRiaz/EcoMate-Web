@@ -7,6 +7,7 @@ import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { createOrder } from '@/lib/api/orders';
 import { saveCheckoutLead } from '@/lib/api/checkout-leads';
+import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/tracking';
@@ -48,27 +49,38 @@ export default function CheckoutPage() {
   const { items, cartTotal, clearCart, updateQuantity, removeFromCart } = useCart();
   const { user } = useAuth();
   const router = useRouter();
-  const [district, setDistrict] = useState('');
-  const [thana, setThana] = useState('');
+
+  const readStorage = (key: string, fallback: string) => {
+    if (typeof window === 'undefined') return fallback;
+    try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+  };
+
+  const [district, setDistrict] = useState(() => readStorage('checkout_district', ''));
+  const [thana, setThana] = useState(() => readStorage('checkout_thana', ''));
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [guestName, setGuestName] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [guestName, setGuestName] = useState(() => readStorage('checkout_guestName', ''));
+  const [guestPhone, setGuestPhone] = useState(() => readStorage('checkout_guestPhone', ''));
+  const [paymentMethod, setPaymentMethod] = useState(() => readStorage('checkout_paymentMethod', 'cod'));
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
+
+  useEffect(() => { localStorage.setItem('checkout_guestName', guestName) }, [guestName]);
+  useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone) }, [guestPhone]);
+  useEffect(() => { localStorage.setItem('checkout_district', district) }, [district]);
+  useEffect(() => { localStorage.setItem('checkout_thana', thana) }, [thana]);
+  useEffect(() => { localStorage.setItem('checkout_paymentMethod', paymentMethod) }, [paymentMethod]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
-  const captureLead = useCallback(() => {
-    const phone = guestPhone || user?.phone || '';
+  const getLeadData = useCallback(() => {
+    const rawPhone = guestPhone || user?.phone || '';
+    const phone = normalizePhone(rawPhone);
     const name = guestName || user?.name || '';
-    if (phone.length < 11 || !name) return;
-    const fp = simpleFingerprint(phone, items);
-    if (wasSubmitted.current) return;
-    saveCheckoutLead({
+    if (!phone || !name || wasSubmitted.current) return null;
+    return {
       phone, name,
       address: { district, thana },
       items: items.map(i => ({
@@ -76,9 +88,14 @@ export default function CheckoutPage() {
         image: i.image, isCombo: i.isCombo, comboId: i.comboId,
       })),
       paymentMethod,
-      fingerprint: fp,
-    });
+      fingerprint: simpleFingerprint(phone, items),
+    };
   }, [guestPhone, guestName, items, district, thana, paymentMethod, user]);
+
+  const captureLead = useCallback(() => {
+    const data = getLeadData();
+    if (data) saveCheckoutLead(data);
+  }, [getLeadData]);
 
   const scheduleLeadCapture = useCallback(() => {
     if (leadTimer.current) clearTimeout(leadTimer.current);
@@ -86,14 +103,27 @@ export default function CheckoutPage() {
   }, [captureLead]);
 
   useEffect(() => {
-    return () => { if (leadTimer.current) clearTimeout(leadTimer.current); };
-  }, []);
+    const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
+    const onLeave = () => {
+      const data = getLeadData();
+      if (data) navigator.sendBeacon(beaconUrl, JSON.stringify(data));
+    };
+    window.addEventListener('beforeunload', onLeave);
+    return () => {
+      window.removeEventListener('beforeunload', onLeave);
+      if (leadTimer.current) clearTimeout(leadTimer.current);
+    };
+  }, [getLeadData]);
 
   const handlePlaceOrder = async () => {
     if (items.length === 0 || submitting) return;
-    if (!user && (!guestName || !guestPhone)) {
-      toast.error('Please enter your name and phone number.');
-      return;
+    if (!user) {
+      if (!guestName) { toast.error('Please enter your name.'); return }
+      if (!guestPhone) { toast.error('Please enter your phone number.'); return }
+      if (!normalizePhone(guestPhone)) {
+        toast.error('Please enter a valid Bangladeshi phone number (e.g. 01XXXXXXXXX or +8801XXXXXXXXX).')
+        return
+      }
     }
     setSubmitting(true);
 
@@ -124,13 +154,14 @@ export default function CheckoutPage() {
           thana,
         },
         guestName: user ? undefined : guestName,
-        guestPhone: user ? undefined : guestPhone,
+        guestPhone: user ? undefined : (normalizePhone(guestPhone) || undefined),
         paymentMethod: user ? (paymentMethod === 'cod' ? 'cod' : paymentMethod) : paymentMethod,
       });
 
       trackEvent('Purchase', { value: cartTotal, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
 
       clearCart();
+      try { ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana','checkout_paymentMethod'].forEach(k => localStorage.removeItem(k)) } catch {}
       router.push(`/checkout/thank-you?orderId=${order.id}`);
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to place order. Please try again.';

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePhone } from '../common/utils/phone-utils';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -89,6 +90,16 @@ export class CheckoutLeadsService {
     paymentMethod?: string;
     fingerprint?: string;
   }) {
+    if (dto.phone) {
+      const normalized = normalizePhone(dto.phone);
+      if (!normalized) {
+        throw new BadRequestException(
+          'Invalid Bangladeshi phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.',
+        );
+      }
+      dto.phone = normalized;
+    }
+
     if (dto.fingerprint) {
       const existing = await this.prisma.checkoutLead.findFirst({
         where: { fingerprint: dto.fingerprint, status: 'PENDING' },

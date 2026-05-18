@@ -12,6 +12,7 @@ import {
   UpdateOrderItemDto,
 } from './dto/order.dto';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
+import { normalizePhone } from '../common/utils/phone-utils';
 
 @Injectable()
 export class OrdersService {
@@ -216,6 +217,16 @@ export class OrdersService {
           `Some combos no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
         );
       }
+    }
+
+    if (dto.guestPhone) {
+      const normalized = normalizePhone(dto.guestPhone);
+      if (!normalized) {
+        throw new BadRequestException(
+          'Invalid Bangladeshi phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.',
+        );
+      }
+      dto.guestPhone = normalized;
     }
 
     const order = await this.prisma.order.create({
