@@ -9,6 +9,7 @@ declare global {
     fbq?: any;
     _fbq?: any;
     ttq?: any;
+    __flushTrackingQueue?: () => void;
   }
 }
 
@@ -27,10 +28,9 @@ export default function TrackingScripts() {
         const ttc = data?.tiktok?.pixelEnabled ? data.tiktok.pixelCode || "" : "";
         setMetaId(mid);
         setTiktokCode(ttc);
-        // Pixel script নেই হলে এখনই ready mark করো (queued events flush হবে)
-        if (!mid && !ttc) {
-          setPixelIds(mid, ttc);
-        }
+        
+        // আইডি গুলো লাইব্রেরিতে সেট করো
+        setPixelIds(mid, ttc);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -45,11 +45,6 @@ export default function TrackingScripts() {
           <Script
             id="meta-pixel"
             strategy="afterInteractive"
-            onLoad={() => {
-              // fbq.js সম্পূর্ণ load হওয়ার পর setPixelIds call করো
-              // এতে এর আগে queue হওয়া সব events (InitiateCheckout ইত্যাদি) এখন fire হবে
-              setPixelIds(metaId, tiktokCode);
-            }}
           >
             {`
               !function(f,b,e,v,n,t,s)
@@ -62,6 +57,11 @@ export default function TrackingScripts() {
               'https://connect.facebook.net/en_US/fbevents.js');
               fbq('init', '${metaId}');
               fbq('track', 'PageView');
+              
+              // স্ক্রিপ্ট ইনিশিয়ালাইজ হওয়া মাত্রই কিউ ফ্লাশ করো
+              if (window.__flushTrackingQueue) {
+                window.__flushTrackingQueue();
+              }
             `}
           </Script>
           <noscript>
@@ -86,6 +86,11 @@ export default function TrackingScripts() {
             var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(r,a)};
             ttq.load('${tiktokCode}');
             ttq.page();
+            
+            // টিকটকের জন্যও কিউ ফ্লাশ করো
+            if (window.__flushTrackingQueue) {
+              window.__flushTrackingQueue();
+            }
           `}
         </Script>
       )}

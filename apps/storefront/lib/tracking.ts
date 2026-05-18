@@ -4,6 +4,7 @@ declare global {
   interface Window {
     fbq?: any;
     ttq?: any;
+    __flushTrackingQueue?: () => void;
   }
 }
 
@@ -20,57 +21,67 @@ function generateEventId(): string {
 
 let _metaId = '';
 let _tiktokCode = '';
-let _pixelReady = false;
-
-// Pixel ready হওয়ার আগে আসা events গুলো queue তে রাখা হবে
-type QueuedEvent = { event: EventName; data?: Record<string, any>; eventId: string };
-const _eventQueue: QueuedEvent[] = [];
-
-function fireClientEvents(event: EventName, data: Record<string, any> | undefined, eventId: string) {
-  try {
-    if (window.fbq && _metaId) {
-      window.fbq('track', event, data, { eventID: eventId });
-    }
-  } catch {}
-
-  try {
-    if (window.ttq && _tiktokCode) {
-      window.ttq.track(event, data);
-    }
-  } catch {}
-}
+let _eventQueue: { event: EventName; data?: Record<string, any>; eventId: string }[] = [];
 
 export function setPixelIds(metaId: string, tiktokCode: string) {
   _metaId = metaId;
   _tiktokCode = tiktokCode;
-  _pixelReady = true;
+  // আইডি সেট হওয়ার পর একবার কিউ ফ্লাশ করার চেষ্টা করি
+  flushQueue();
+}
 
-  // Queue তে জমা থাকা events গুলো এখন fire করো
+export function flushQueue() {
+  if (typeof window === 'undefined') return;
+  
+  const fbq = window.fbq;
+  const ttq = window.ttq;
+
+  // যদি আইডিই না থাকে অথবা স্ক্রিপ্ট এখনো লোড না হয়, তাহলে পরে হবে
+  if (!_metaId && !_tiktokCode) return;
+  if ((_metaId && !fbq) && (_tiktokCode && !ttq)) return;
+
   if (_eventQueue.length > 0) {
-    // Pixel script load হওয়ার জন্য সামান্য অপেক্ষা
-    setTimeout(() => {
-      _eventQueue.forEach(({ event, data, eventId }) => {
-        fireClientEvents(event, data, eventId);
-      });
-      _eventQueue.length = 0;
-    }, 300);
+    _eventQueue.forEach(({ event, data, eventId }) => {
+      if (fbq && _metaId) {
+        fbq('track', event, data, { eventID: eventId });
+      }
+      if (ttq && _tiktokCode) {
+        ttq.track(event, data);
+      }
+    });
+    // কিউ ক্লিয়ার করে দাও
+    _eventQueue = [];
   }
+}
+
+// গ্লোবাল উইন্ডো অবজেক্টে ফাংশনটি দিয়ে রাখছি যেন স্ক্রিপ্ট ট্যাগ থেকে কল করা যায়
+if (typeof window !== 'undefined') {
+  window.__flushTrackingQueue = flushQueue;
 }
 
 export function trackEvent(event: EventName, data?: Record<string, any>) {
   if (typeof window === 'undefined') return;
 
   const eventId = generateEventId();
+  const fbq = window.fbq;
+  const ttq = window.ttq;
 
-  if (_pixelReady) {
-    // Pixel already ready — সরাসরি fire করো
-    fireClientEvents(event, data, eventId);
-  } else {
-    // Pixel এখনো load হয়নি — queue তে রাখো
+  // স্ক্রিপ্ট রেডি না থাকলে কিউতে রাখো
+  if (!_metaId && !_tiktokCode) {
     _eventQueue.push({ event, data, eventId });
+  } else if ((_metaId && !fbq) || (_tiktokCode && !ttq)) {
+    _eventQueue.push({ event, data, eventId });
+  } else {
+    // স্ক্রিপ্ট রেডি থাকলে সরাসরি ফায়ার করো
+    if (fbq && _metaId) {
+      fbq('track', event, data, { eventID: eventId });
+    }
+    if (ttq && _tiktokCode) {
+      ttq.track(event, data);
+    }
   }
 
-  // Server-side CAPI call সবসময় যাবে (pixel ready হওয়ার অপেক্ষা করে না)
+  // Server-side CAPI কল সবসময় যাবে
   fetch(`${API_URL}/tracking/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
