@@ -52,6 +52,7 @@ import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
+import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
@@ -304,6 +305,12 @@ const AuthenticatedOpPrintBulkIndexRoute =
     path: '/bulk/',
     getParentRoute: () => AuthenticatedOpPrintRouteRoute,
   } as any)
+const AuthenticatedOpOrdersIncompleteLeadsIndexRoute =
+  AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport.update({
+    id: '/op/orders/incomplete-leads/',
+    path: '/op/orders/incomplete-leads/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsTrackingIndexRoute =
   AuthenticatedMonSettingsTrackingIndexRouteImport.update({
     id: '/tracking/',
@@ -409,6 +416,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -462,6 +470,7 @@ export interface FileRoutesByTo {
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -517,6 +526,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
@@ -572,6 +582,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
+    | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
     | '/op/settings/personal/'
   fileRoutesByTo: FileRoutesByTo
@@ -625,6 +636,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storefront'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
+    | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
     | '/op/settings/personal'
   id:
@@ -679,6 +691,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
+    | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/settings/personal/'
   fileRoutesById: FileRoutesById
@@ -1000,6 +1013,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpPrintBulkIndexRouteImport
       parentRoute: typeof AuthenticatedOpPrintRouteRoute
     }
+    '/_authenticated/op/orders/incomplete-leads/': {
+      id: '/_authenticated/op/orders/incomplete-leads/'
+      path: '/op/orders/incomplete-leads'
+      fullPath: '/op/orders/incomplete-leads/'
+      preLoaderRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/settings/tracking/': {
       id: '/_authenticated/mon/settings/tracking/'
       path: '/tracking'
@@ -1163,6 +1183,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
+  AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1199,6 +1220,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
+  AuthenticatedOpOrdersIncompleteLeadsIndexRoute:
+    AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
