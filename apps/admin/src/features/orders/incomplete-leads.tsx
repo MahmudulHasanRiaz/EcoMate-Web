@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -19,7 +19,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { Loader2, ChevronLeft, ChevronRight, Phone, MapPin, ShoppingCart, UserCheck, MoreHorizontal, Inbox, X, UserPlus, ArrowRightLeft, ChevronRight as ChevronRightIcon, Package } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  ChevronLeft, ChevronRight, Phone, MapPin, ShoppingCart,
+  MoreHorizontal, Inbox, X, UserPlus, ArrowRightLeft, ChevronRight as ChevronRightIcon,
+  Package, Edit3, Trash2,
+} from 'lucide-react'
 
 const statusColors: Record<string, string> = {
   PENDING: '#F59E0B',
@@ -45,22 +52,24 @@ function LeadRowSkeleton() {
     <TableRow>
       <TableCell><Skeleton className='h-4 w-4' /></TableCell>
       <TableCell><div className='space-y-1'><Skeleton className='h-4 w-28' /><Skeleton className='h-3 w-20' /></div></TableCell>
-      <TableCell><Skeleton className='h-4 w-24' /></TableCell>
-      <TableCell><Skeleton className='h-4 w-32' /></TableCell>
-      <TableCell><Skeleton className='h-6 w-24 rounded-full' /></TableCell>
       <TableCell><Skeleton className='h-4 w-16' /></TableCell>
+      <TableCell><Skeleton className='h-4 w-24' /></TableCell>
       <TableCell><Skeleton className='h-4 w-20' /></TableCell>
+      <TableCell><Skeleton className='h-6 w-24 rounded-full' /></TableCell>
+      <TableCell><Skeleton className='h-4 w-12' /></TableCell>
+      <TableCell><Skeleton className='h-4 w-16' /></TableCell>
       <TableCell><Skeleton className='h-7 w-7' /></TableCell>
     </TableRow>
   )
 }
 
 interface Lead {
-  id: string; phone?: string | null; name?: string | null; email?: string | null;
+  id: string; displayId?: string | null; phone?: string | null; name?: string | null; email?: string | null;
   address?: any; items?: any; paymentMethod?: string | null;
   status: string; occurrences: number;
   firstSeenAt: string; lastSeenAt: string;
   assignedTo?: { id: string; firstName: string; lastName: string } | null;
+  convertedBy?: { id: string; firstName: string; lastName: string } | null;
   convertedOrder?: { id: string; displayId: string } | null;
 }
 
@@ -75,7 +84,23 @@ export function IncompleteLeads() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [editingLead, setEditingLead] = useState<Lead | null>(null)
+  const [editForm, setEditForm] = useState<{
+    guestName: string; guestPhone: string; paymentMethod: string;
+    shippingAddress: string; items: any[];
+  }>({ guestName: '', guestPhone: '', paymentMethod: '', shippingAddress: '', items: [] })
+
+  useEffect(() => {
+    if (editingLead) {
+      setEditForm({
+        guestName: editingLead.name || '',
+        guestPhone: editingLead.phone || '',
+        paymentMethod: editingLead.paymentMethod || 'cod',
+        shippingAddress: editingLead.address ? JSON.stringify(editingLead.address) : '',
+        items: (editingLead.items as any[])?.map(i => ({ ...i })) || [],
+      })
+    }
+  }, [editingLead])
 
   useEffect(() => { const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
 
@@ -136,6 +161,12 @@ export function IncompleteLeads() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); setSelected([]); toast.success('Bulk status updated') },
   })
 
+  const convertEditMut = useMutation({
+    mutationFn: ({ id, overrides }: { id: string; overrides: any }) => apiClient.post(`/checkout-leads/${id}/convert`, overrides),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); setEditingLead(null); toast.success('Order created from lead') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Conversion failed'),
+  })
+
   const leads = (data?.data || []) as Lead[]
   const total = data?.meta?.total || 0
   const totalPages = data?.meta?.totalPages || 1
@@ -146,12 +177,6 @@ export function IncompleteLeads() {
 
   const clearAllFilters = () => { setSearch(''); setStatusFilter('all'); setAssigneeFilter('all'); setPage(1) }
   const hasActiveFilters = search || statusFilter !== 'all' || assigneeFilter !== 'all'
-
-  const statusCount = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const l of leads) { map[l.status] = (map[l.status] || 0) + 1 }
-    return map
-  }, [leads])
 
   return (
     <>
@@ -236,10 +261,12 @@ export function IncompleteLeads() {
                   <TableRow>
                     <TableHead className='w-10'><Checkbox checked={leads.length > 0 && selected.length === leads.length} onCheckedChange={toggleAll} /></TableHead>
                     <TableHead className='w-8'></TableHead>
+                    <TableHead>Lead ID</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Items</TableHead>
+                    <TableHead>Assigned</TableHead>
                     <TableHead>Last Seen</TableHead>
                     <TableHead className='w-10'></TableHead>
                   </TableRow>
@@ -263,6 +290,9 @@ export function IncompleteLeads() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          <div className='text-xs font-mono font-medium'>{l.displayId || '—'}</div>
+                        </TableCell>
+                        <TableCell>
                           <div className='text-sm font-medium leading-tight'>{l.name || 'Unknown'}</div>
                           <div className='text-xs text-muted-foreground'>{l.phone || '—'}</div>
                         </TableCell>
@@ -277,6 +307,16 @@ export function IncompleteLeads() {
                           <Badge style={{ backgroundColor: accentColor + '20', color: accentColor, borderColor: accentColor + '40' }} className='text-xs font-medium border'>{l.status.replace('_', ' ')}</Badge>
                         </TableCell>
                         <TableCell className='text-sm'>{itemsCount} item{itemsCount !== 1 ? 's' : ''} {l.occurrences > 1 && <span className='text-xs text-muted-foreground'>(x{l.occurrences})</span>}</TableCell>
+                        <TableCell className='text-xs text-muted-foreground'>
+                          {l.assignedTo ? (
+                            <div className='flex items-center gap-1.5'>
+                              <div className='h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0'>
+                                {l.assignedTo.firstName?.[0]}{l.assignedTo.lastName?.[0]}
+                              </div>
+                              <span>{l.assignedTo.firstName}</span>
+                            </div>
+                          ) : <span className='italic'>—</span>}
+                        </TableCell>
                         <TableCell>
                           <div className='text-xs'>{new Date(l.lastSeenAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</div>
                           <div className='text-[10px] text-muted-foreground'>{relativeTime(l.lastSeenAt)}</div>
@@ -286,8 +326,13 @@ export function IncompleteLeads() {
                             <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='h-7 w-7'><MoreHorizontal className='h-3.5 w-3.5' /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align='end'>
                               {l.status === 'PENDING' && (
+                                <DropdownMenuItem onClick={() => setEditingLead(l)}>
+                                  <Edit3 className='h-4 w-4 mr-2' />Convert with Edit
+                                </DropdownMenuItem>
+                              )}
+                              {l.status === 'PENDING' && (
                                 <DropdownMenuItem onClick={() => convertMut.mutate(l.id)}>
-                                  <ArrowRightLeft className='h-4 w-4 mr-2' />Convert to Order
+                                  <ArrowRightLeft className='h-4 w-4 mr-2' />Quick Convert
                                 </DropdownMenuItem>
                               )}
                               {l.status === 'PENDING' && (
@@ -332,7 +377,7 @@ export function IncompleteLeads() {
                       </TableRow>,
                       isExpanded && (
                         <TableRow key={`${l.id}-detail`} className='even:bg-muted/[0.02]'>
-                          <TableCell colSpan={8} className='p-0 border-0'>
+                          <TableCell colSpan={10} className='p-0 border-0'>
                             <div className='overflow-hidden' style={{ borderTop: `2px solid ${accentColor}` }}>
                               <div className='px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-5'>
                                 <div className='space-y-3'>
@@ -413,7 +458,7 @@ export function IncompleteLeads() {
                       ),
                     ].filter(Boolean)
                   }) : (
-                    <TableRow><TableCell colSpan={8} className='p-0 border-0'>
+                    <TableRow><TableCell colSpan={10} className='p-0 border-0'>
                       <div className='flex flex-col items-center justify-center py-16 px-4'>
                         <div className='h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4'>
                           <Inbox className='h-8 w-8 text-muted-foreground' />
@@ -477,6 +522,88 @@ export function IncompleteLeads() {
           </div>
         )}
       </Main>
+
+      <Dialog open={!!editingLead} onOpenChange={(open) => { if (!open) setEditingLead(null) }}>
+        <DialogContent className='max-w-3xl max-h-[85vh] overflow-y-auto'>
+          <DialogHeader><DialogTitle>Convert Lead {editingLead?.displayId || ''} to Order</DialogTitle></DialogHeader>
+          {editingLead && (
+            <div className='space-y-5 py-2'>
+              <div className='grid grid-cols-2 gap-4'>
+                <div className='space-y-1.5'>
+                  <Label className='text-xs'>Customer Name</Label>
+                  <Input value={editForm.guestName} onChange={e => setEditForm(f => ({ ...f, guestName: e.target.value }))} />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label className='text-xs'>Phone</Label>
+                  <Input value={editForm.guestPhone} onChange={e => setEditForm(f => ({ ...f, guestPhone: e.target.value }))} />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label className='text-xs'>Payment Method</Label>
+                  <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(f => ({ ...f, paymentMethod: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='cod'>Cash On Delivery</SelectItem>
+                      <SelectItem value='bkash'>bKash</SelectItem>
+                      <SelectItem value='nagad'>Nagad</SelectItem>
+                      <SelectItem value='rocket'>Rocket</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label className='text-xs'>Shipping Address</Label>
+                  <Textarea value={editForm.shippingAddress} onChange={e => setEditForm(f => ({ ...f, shippingAddress: e.target.value }))} rows={2} />
+                </div>
+              </div>
+
+              <div className='space-y-2'>
+                <div className='flex items-center justify-between'>
+                  <Label className='text-xs font-semibold'>Order Items</Label>
+                  <span className='text-xs text-muted-foreground'>
+                    Total: ৳{editForm.items.reduce((s: number, i: any) => s + (i.price || 0) * (i.quantity || 1), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className='space-y-2 max-h-60 overflow-y-auto'>
+                  {editForm.items.map((item: any, idx: number) => (
+                    <div key={idx} className='flex items-center gap-2 rounded-lg border bg-background p-2'>
+                      {item.image && <img src={item.image} alt='' className='h-10 w-10 rounded object-cover shrink-0' />}
+                      <div className='flex-1 min-w-0'>
+                        <div className='text-sm font-medium truncate'>{item.name || 'Product'}</div>
+                        <div className='flex items-center gap-2 mt-1'>
+                          <Input type='number' value={item.quantity} onChange={e => {
+                            const items = [...editForm.items]; items[idx] = { ...items[idx], quantity: parseInt(e.target.value) || 0 }; setEditForm(f => ({ ...f, items }))
+                          }} className='h-7 w-16 text-xs' min={1} />
+                          <Input type='number' value={item.price} onChange={e => {
+                            const items = [...editForm.items]; items[idx] = { ...items[idx], price: parseFloat(e.target.value) || 0 }; setEditForm(f => ({ ...f, items }))
+                          }} className='h-7 w-20 text-xs' step='any' min={0} />
+                          <span className='text-xs font-medium w-16 text-right'>৳{((item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <Button variant='ghost' size='icon' className='h-7 w-7 shrink-0 text-red-500' onClick={() => setEditForm(f => ({ ...f, items: f.items.filter((_: any, i: number) => i !== idx) }))}>
+                        <Trash2 className='h-3.5 w-3.5' />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className='gap-2'>
+            <Button variant='outline' onClick={() => setEditingLead(null)}>Cancel</Button>
+            <Button onClick={() => editingLead && convertEditMut.mutate({
+              id: editingLead.id,
+              overrides: {
+                items: editForm.items,
+                guestName: editForm.guestName,
+                guestPhone: editForm.guestPhone,
+                paymentMethod: editForm.paymentMethod,
+                shippingAddress: editForm.shippingAddress ? JSON.parse(editForm.shippingAddress) : undefined,
+              },
+            })} disabled={convertEditMut.isPending || editForm.items.length === 0}>
+              {convertEditMut.isPending ? 'Creating...' : 'Create Order'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

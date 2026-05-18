@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { ConvertOrderDto } from './dto/convert-order.dto';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -123,6 +124,7 @@ export class CheckoutLeadsService {
 
     return this.prisma.checkoutLead.create({
       data: {
+        displayId: await this.leadDisplayId(),
         phone: dto.phone,
         name: dto.name,
         email: dto.email,
@@ -152,15 +154,22 @@ export class CheckoutLeadsService {
     return this.prisma.checkoutLead.update({ where: { id }, data });
   }
 
-  async convertToOrder(id: string, userId: string) {
+  async convertToOrder(id: string, userId: string, overrides?: ConvertOrderDto) {
     const lead = await this.findOne(id);
     if (lead.status !== 'PENDING') {
       throw new BadRequestException('Only PENDING leads can be converted');
     }
 
-    const items = (lead.items as any[]) || [];
+    const items = (overrides?.items || (lead.items as any[]) || []);
     if (items.length === 0) {
       throw new BadRequestException('Lead has no items to convert');
+    }
+
+    let guestPhone = overrides?.guestPhone ?? lead.phone ?? undefined;
+    if (guestPhone) {
+      const normalized = normalizePhone(guestPhone);
+      if (!normalized) throw new BadRequestException('Invalid phone number');
+      guestPhone = normalized;
     }
 
     const initialStatus = await this.prisma.orderStatus.findFirst({
@@ -168,7 +177,13 @@ export class CheckoutLeadsService {
     });
     if (!initialStatus) throw new BadRequestException('No initial order status');
 
-    const displayId = await this.generateDisplayId();
+    const displayId = await this.generateOrderDisplayId();
+
+    const userData = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    const userName = userData ? `${userData.firstName} ${userData.lastName}`.trim() : userId;
 
     const order = await this.prisma.order.create({
       data: {
@@ -177,13 +192,14 @@ export class CheckoutLeadsService {
         statusId: initialStatus.id,
         subtotal: 0,
         total: 0,
-        shippingAddress: lead.address as any,
-        guestName: lead.name,
-        guestPhone: lead.phone,
-        paymentMethod: lead.paymentMethod,
+        shippingAddress: overrides?.shippingAddress ?? (lead.address as any),
+        guestName: overrides?.guestName ?? lead.name,
+        guestPhone,
+        paymentMethod: overrides?.paymentMethod ?? lead.paymentMethod,
         items: {
           create: items.map((i: any) => ({
             productId: i.productId,
+            comboId: i.comboId,
             quantity: i.quantity || 1,
             price: i.price || 0,
           })),
@@ -192,7 +208,7 @@ export class CheckoutLeadsService {
           {
             status: initialStatus.name,
             timestamp: new Date().toISOString(),
-            note: `Converted from checkout lead ${id}`,
+            note: `Converted from lead ${lead.displayId || id} by ${userName}`,
             changedBy: userId,
           },
         ] as any,
@@ -208,12 +224,13 @@ export class CheckoutLeadsService {
       data: { subtotal, total: subtotal },
     });
 
-    if (lead.paymentMethod) {
-      const isPgw = lead.paymentMethod === 'bkash_pgw';
+    const pm = overrides?.paymentMethod ?? lead.paymentMethod;
+    if (pm) {
+      const isPgw = pm === 'bkash_pgw';
       await this.prisma.payment.create({
         data: {
           orderId: order.id,
-          method: lead.paymentMethod,
+          method: pm,
           amount: subtotal,
           status: isPgw ? 'verified' : 'pending',
           verifiedBy: isPgw ? 'system' : null,
@@ -232,9 +249,9 @@ export class CheckoutLeadsService {
       },
     });
 
-    if (lead.phone) {
+    if (guestPhone) {
       await this.prisma.checkoutLead.updateMany({
-        where: { phone: lead.phone, status: 'PENDING', id: { not: id } },
+        where: { phone: guestPhone, status: 'PENDING', id: { not: id } },
         data: {
           status: 'CONVERTED',
           convertedOrderId: order.id,
@@ -296,7 +313,24 @@ export class CheckoutLeadsService {
     return { pending, converted, notConverted, deleted, total: pending + converted + notConverted + deleted };
   }
 
-  private async generateDisplayId(): Promise<string> {
+  private async leadDisplayId(): Promise<string> {
+    const today = new Date();
+    const yy = String(today.getFullYear()).slice(2);
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const prefix = `LEAD-${yy}${mm}${dd}`;
+    const last = await this.prisma.checkoutLead.findFirst({
+      where: { displayId: { startsWith: prefix } },
+      orderBy: { displayId: 'desc' },
+      select: { displayId: true },
+    });
+    const nextNo = last
+      ? parseInt(last.displayId!.split('-').pop() || '0') + 1
+      : 1;
+    return `${prefix}-${String(nextNo).padStart(4, '0')}`;
+  }
+
+  private async generateOrderDisplayId(): Promise<string> {
     const today = new Date();
     const yy = String(today.getFullYear()).slice(2);
     const mm = String(today.getMonth() + 1).padStart(2, '0');

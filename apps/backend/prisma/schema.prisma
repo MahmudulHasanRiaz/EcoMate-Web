@@ -338,6 +338,7 @@ model Payment {
 
 model CheckoutLead {
   id              String    @id @default(uuid())
+  displayId       String?   @unique
   phone           String?
   name            String?
   email           String?

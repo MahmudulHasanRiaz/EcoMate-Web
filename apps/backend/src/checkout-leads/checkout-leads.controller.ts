@@ -4,6 +4,7 @@ import {
 import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { ConvertOrderDto } from './dto/convert-order.dto';
 
 @Controller('checkout-leads')
 export class CheckoutLeadsController {
@@ -65,8 +66,12 @@ export class CheckoutLeadsController {
   }
 
   @Post(':id/convert')
-  convert(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
-    return this.svc.convertToOrder(id, user.userId);
+  convert(
+    @Param('id') id: string,
+    @Body() dto: ConvertOrderDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.svc.convertToOrder(id, user.userId, dto);
   }
 
   @Post('bulk/assign')
