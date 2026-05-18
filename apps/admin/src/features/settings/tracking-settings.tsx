@@ -20,6 +20,7 @@ export function TrackingSettings() {
   const [metaEnabled, setMetaEnabled] = useState(false)
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
+  const [metaTestCode, setMetaTestCode] = useState('')
   const [tiktokEnabled, setTiktokEnabled] = useState(false)
   const [tiktokPixelCode, setTiktokPixelCode] = useState('')
   const [tiktokAccessToken, setTiktokAccessToken] = useState('')
@@ -29,6 +30,7 @@ export function TrackingSettings() {
       setMetaEnabled(settings.tracking_meta_enabled === 'true')
       setMetaPixelId(settings.tracking_meta_pixel_id || '')
       setMetaAccessToken(settings.tracking_meta_access_token || '')
+      setMetaTestCode(settings.tracking_meta_test_code || '')
       setTiktokEnabled(settings.tracking_tiktok_enabled === 'true')
       setTiktokPixelCode(settings.tracking_tiktok_pixel_code || '')
       setTiktokAccessToken(settings.tracking_tiktok_access_token || '')
@@ -45,6 +47,7 @@ export function TrackingSettings() {
       { key: 'tracking_meta_enabled', value: String(metaEnabled) },
       { key: 'tracking_meta_pixel_id', value: metaPixelId },
       { key: 'tracking_meta_access_token', value: metaAccessToken },
+      { key: 'tracking_meta_test_code', value: metaTestCode },
       { key: 'tracking_tiktok_enabled', value: String(tiktokEnabled) },
       { key: 'tracking_tiktok_pixel_code', value: tiktokPixelCode },
       { key: 'tracking_tiktok_access_token', value: tiktokAccessToken },
@@ -105,6 +108,23 @@ export function TrackingSettings() {
               />
             </div>
           </div>
+          
+          <div className='grid gap-6 sm:grid-cols-2 mt-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='meta-test-code'>Test Event Code (Optional)</Label>
+              <Input
+                id='meta-test-code'
+                value={metaTestCode}
+                onChange={e => setMetaTestCode(e.target.value)}
+                placeholder='TEST12345'
+                className='bg-background/50'
+              />
+              <p className='text-xs text-muted-foreground'>
+                Use this to test server-side events in Meta Events Manager. Leave empty for production.
+              </p>
+            </div>
+          </div>
+
           <div className='mt-4'>
             <a
               href='https://developers.facebook.com/docs/marketing-api/conversions-api/get-started'

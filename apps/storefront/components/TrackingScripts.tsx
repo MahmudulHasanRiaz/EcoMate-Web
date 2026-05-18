@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Script from "next/script";
 import { setPixelIds } from "@/lib/tracking";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
@@ -23,26 +24,20 @@ export default function TrackingScripts() {
   }, []);
 
   useEffect(() => {
-    if (metaId || tiktokCode) {
-      // যদি অলরেডি স্ক্রিপ্টটি লোড হয়ে থাকে, তবে আর লোড করো না
-      if (document.getElementById("tracking-script")) return;
-
-      // গ্লোবাল ভেরিয়েবলে আইডিগুলো রাখছি যেন এক্সটার্নাল ফাইলটি রিড করতে পারে
-      (window as any).__META_ID = metaId;
-      (window as any).__TIKTOK_CODE = tiktokCode;
-
-      // এক্সটার্নাল স্ক্রিপ্ট লোড করো
-      const script = document.createElement("script");
-      script.id = "tracking-script";
-      script.src = "/scripts/tracking.js";
-      script.async = true;
-      document.head.appendChild(script);
-
-      return () => {
-        script.remove();
-      };
-    }
+    if (metaId) (window as any).__META_ID = metaId;
+    if (tiktokCode) (window as any).__TIKTOK_CODE = tiktokCode;
   }, [metaId, tiktokCode]);
 
-  return null;
+  // যদি কোনো আইডি না থাকে, তবে কিছুই রেন্ডার করব না
+  if (!metaId && !tiktokCode) return null;
+
+  return (
+    <>
+      <Script
+        id="app-tracking-script"
+        src="/scripts/tracking.js"
+        strategy="afterInteractive"
+      />
+    </>
+  );
 }

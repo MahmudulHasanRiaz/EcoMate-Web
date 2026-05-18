@@ -14,7 +14,8 @@
     'https://connect.facebook.net/en_US/fbevents.js');
     
     fbq('init', metaId);
-    fbq('track', 'PageView');
+    // পেজভিউ লাইনটি কমেন্ট করে দিচ্ছি টেস্ট করার জন্য
+    // fbq('track', 'PageView');
   }
 
   // টিকটক পিক্সেল
@@ -31,8 +32,8 @@
         var o=n&&n.partner;ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=i;
         var r=document.createElement("script");r.type="text/javascript";r.async=true;r.src=i+"?sdkid="+e+"&lib="+t;
         var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(r,a);
-      }; // এখানে ttq.load শেষ
-    }(window,document,'ttq'); // এখানে মূল ফাংশন শেষ এবং এক্সিকিউট হলো
+      };
+    }(window,document,'ttq');
     
     ttq.load(tiktokCode);
     ttq.page();

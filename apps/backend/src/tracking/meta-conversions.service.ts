@@ -28,6 +28,7 @@ export class MetaConversionsService {
   async sendEvent(event: TrackEvent) {
     const pixelId = await this.getSetting('tracking_meta_pixel_id', 'META_PIXEL_ID');
     const accessToken = await this.getSetting('tracking_meta_access_token', 'META_ACCESS_TOKEN');
+    const testCode = await this.getSetting('tracking_meta_test_code', null);
     const enabled = await this.getSetting('tracking_meta_enabled', null);
 
     const isEnabled = enabled === 'true';
@@ -40,7 +41,7 @@ export class MetaConversionsService {
     const apiUrl = `https://graph.facebook.com/v18.0/${pixelId}/events`;
 
     try {
-      const body = {
+      const body: any = {
         data: [{
           event_name: event.eventName,
           event_time: event.eventTime,
@@ -56,6 +57,10 @@ export class MetaConversionsService {
         }],
         access_token: accessToken,
       };
+
+      if (testCode) {
+        body.test_event_code = testCode;
+      }
 
       const response = await fetch(apiUrl, {
         method: 'POST',

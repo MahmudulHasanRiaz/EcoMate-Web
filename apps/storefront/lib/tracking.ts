@@ -46,7 +46,7 @@ export function flushQueue() {
         fbq('track', event, data, { eventID: eventId });
       }
       if (ttq && _tiktokCode) {
-        ttq.track(event, data);
+        ttq.track(event, data, { event_id: eventId });
       }
     });
     // কিউ ক্লিয়ার করে দাও
@@ -77,7 +77,7 @@ export function trackEvent(event: EventName, data?: Record<string, any>) {
       fbq('track', event, data, { eventID: eventId });
     }
     if (ttq && _tiktokCode) {
-      ttq.track(event, data);
+      ttq.track(event, data, { event_id: eventId });
     }
   }
 
