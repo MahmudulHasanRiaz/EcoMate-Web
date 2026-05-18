@@ -9,11 +9,12 @@ export class TrackingController {
   @Public()
   @Post('events')
   async trackEvent(
-    @Body() body: { eventName: string; customData?: Record<string, any> },
+    @Body() body: { eventName: string; eventId?: string; customData?: Record<string, any> },
     @Req() req: any,
   ) {
     await this.tracking.track({
       eventName: body.eventName,
+      eventId: body.eventId,
       userData: {
         ip: req.ip,
         userAgent: req.headers['user-agent'],

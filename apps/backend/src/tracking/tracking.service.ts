@@ -5,6 +5,7 @@ import { v4 as uuid } from 'uuid';
 
 export interface TrackingEvent {
   eventName: string;
+  eventId?: string;
   userId?: string;
   userData?: {
     email?: string;
@@ -23,7 +24,7 @@ export class TrackingService {
   ) {}
 
   async track(event: TrackingEvent) {
-    const eventId = uuid();
+    const eventId = event.eventId || uuid();
     const eventTime = Math.floor(Date.now() / 1000);
     const userData = event.userData || {};
 

@@ -71,9 +71,11 @@ export class SystemSettingsController {
       },
       meta: {
         pixelEnabled: map['meta_pixel_enabled'] === 'true',
+        pixelId: map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
       },
       tiktok: {
         pixelEnabled: map['tiktok_pixel_enabled'] === 'true',
+        pixelCode: map['tracking_tiktok_pixel_code'] || process.env.TIKTOK_PIXEL_CODE || '',
       },
     };
   }
