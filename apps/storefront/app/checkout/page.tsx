@@ -187,7 +187,9 @@ export default function CheckoutPage() {
         order_id: order.id // Order ID যুক্ত করা হলো
       }, { 
         phone: guestPhone || user?.phone || '', 
-        name: guestName || user?.name || '' 
+        name: guestName || user?.name || '',
+        city: district, // জেলা পাঠানো হলো
+        country: 'BD'   // কান্ট্রি পাঠানো হলো
       });
 
       clearCart();

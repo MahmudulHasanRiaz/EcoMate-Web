@@ -55,6 +55,8 @@ export class MetaConversionsService {
             external_id: event.userData.phone ? this.hash(event.userData.phone) : undefined,
             fbp: (event.userData as any).fbp || undefined,
             fbc: (event.userData as any).fbc || undefined,
+            ct: (event.userData as any).city ? this.hash((event.userData as any).city) : undefined, // সিটি হ্যাশ করা হলো
+            cn: (event.userData as any).country ? this.hash((event.userData as any).country) : undefined, // কান্ট্রি হ্যাশ করা হলো
             client_ip_address: event.userData.ip,
             client_user_agent: event.userData.userAgent,
           },

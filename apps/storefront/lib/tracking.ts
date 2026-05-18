@@ -67,7 +67,7 @@ function getCookie(name: string): string {
   return '';
 }
 
-export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string }) {
+export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string }) {
   if (typeof window === 'undefined') return;
 
   const eventId = generateEventId();
