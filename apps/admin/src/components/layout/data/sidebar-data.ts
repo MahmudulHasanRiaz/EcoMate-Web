@@ -25,7 +25,14 @@ export const sidebarData: SidebarData = {
       { title: 'Inventory', url: '/op/inventory', icon: AlertTriangle },
     ]},
     { title: 'Sales', panel: 'operational', items: [
-      { title: 'Orders', url: '/op/orders', icon: ListTodo },
+      {
+        title: 'Orders',
+        icon: ListTodo,
+        items: [
+          { title: 'All Orders', url: '/op/orders' },
+          { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads' },
+        ],
+      },
       { title: 'Customers', url: '/op/customers', icon: Users },
       { title: 'Refunds', url: '/op/refunds', icon: RefreshCw },
     ]},

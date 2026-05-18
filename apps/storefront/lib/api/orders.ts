@@ -19,6 +19,7 @@ export interface CreateOrderData {
   couponCode?: string;
   guestName?: string;
   guestPhone?: string;
+  paymentMethod?: string;
 }
 
 export async function createOrder(data: CreateOrderData) {

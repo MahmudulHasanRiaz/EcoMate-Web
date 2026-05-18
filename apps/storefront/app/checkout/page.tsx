@@ -1,14 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { createOrder } from '@/lib/api/orders';
+import { saveCheckoutLead } from '@/lib/api/checkout-leads';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/tracking';
+
+function simpleFingerprint(phone: string, items: any[]) {
+  const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
+  return `${phone}:${itemStr}`.replace(/\s/g, '');
+}
 
 function CheckoutItemRow({ item, removeFromCart, updateQuantity }: any) {
   return (
@@ -48,9 +54,39 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cod');
+  const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const wasSubmitted = useRef(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, []);
+
+  const captureLead = useCallback(() => {
+    const phone = guestPhone || user?.phone || '';
+    const name = guestName || user?.name || '';
+    if (phone.length < 11 || !name) return;
+    const fp = simpleFingerprint(phone, items);
+    if (wasSubmitted.current) return;
+    saveCheckoutLead({
+      phone, name,
+      address: { district, thana },
+      items: items.map(i => ({
+        id: i.id, name: i.name, price: i.price, quantity: i.quantity,
+        image: i.image, isCombo: i.isCombo, comboId: i.comboId,
+      })),
+      paymentMethod,
+      fingerprint: fp,
+    });
+  }, [guestPhone, guestName, items, district, thana, paymentMethod, user]);
+
+  const scheduleLeadCapture = useCallback(() => {
+    if (leadTimer.current) clearTimeout(leadTimer.current);
+    leadTimer.current = setTimeout(captureLead, 2000);
+  }, [captureLead]);
+
+  useEffect(() => {
+    return () => { if (leadTimer.current) clearTimeout(leadTimer.current); };
   }, []);
 
   const handlePlaceOrder = async () => {
@@ -77,6 +113,8 @@ export default function CheckoutPage() {
         };
       });
 
+      wasSubmitted.current = true;
+
       const order = await createOrder({
         customerId: user?.id,
         items: orderItems as any,
@@ -87,6 +125,7 @@ export default function CheckoutPage() {
         },
         guestName: user ? undefined : guestName,
         guestPhone: user ? undefined : guestPhone,
+        paymentMethod: user ? (paymentMethod === 'cod' ? 'cod' : paymentMethod) : paymentMethod,
       });
 
       trackEvent('Purchase', { value: cartTotal, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
@@ -135,15 +174,15 @@ export default function CheckoutPage() {
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
                   <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Contact Information</h2>
                 </div>
-                {!user && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                    <div className="flex">
-                      <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
-                      <input type="tel" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} placeholder="1X XXXX XXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                  {!user && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                      <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                      <div className="flex">
+                        <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
+                        <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
               </div>
             </div>
 
@@ -209,7 +248,7 @@ export default function CheckoutPage() {
                     </>
                   )}
                   <div className="relative">
-                    <select value={district} onChange={(e) => setDistrict(e.target.value)}
+                    <select value={district} onChange={(e) => { setDistrict(e.target.value); scheduleLeadCapture(); }}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue appearance-none bg-[#fcfcfc] text-gray-600 font-medium">
                       <option value="" disabled>Select District</option>
                       <option value="dhaka">Dhaka</option>
@@ -217,7 +256,7 @@ export default function CheckoutPage() {
                     <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   </div>
                   <div className="relative">
-                    <select value={thana} onChange={(e) => setThana(e.target.value)}
+                    <select value={thana} onChange={(e) => { setThana(e.target.value); scheduleLeadCapture(); }}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue appearance-none bg-[#fcfcfc] text-gray-600 font-medium">
                       <option value="" disabled>Select Thana (Optional)</option>
                       <option value="gulshan">Gulshan</option>
@@ -240,21 +279,23 @@ export default function CheckoutPage() {
                   <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Payment method</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                  <div className="border-2 border-brand-blue bg-brand-blue/5 rounded-lg p-3 flex items-center justify-between cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center"><Package2 size={20} className="text-brand-blue" /></div>
-                      <span className="text-[13px] text-gray-800 font-bold">Cash On Delivery</span>
+                  {[
+                    { key: 'cod', label: 'Cash On Delivery', icon: <Package2 size={20} className="text-brand-blue" />, bg: 'bg-gray-100' },
+                    { key: 'bkash', label: 'bKash', icon: <span className="text-white font-bold text-[10px]">bkash</span>, bg: 'bg-[#e2136e]' },
+                    { key: 'nagad', label: 'Nagad', icon: <span className="text-white font-bold text-[10px]">NAGAD</span>, bg: 'bg-[#f5821f]' },
+                    { key: 'rocket', label: 'Rocket', icon: <span className="text-white font-bold text-[10px]">Rocket</span>, bg: 'bg-[#981ceb]' },
+                  ].map(pm => (
+                    <div key={pm.key} onClick={() => { setPaymentMethod(pm.key); scheduleLeadCapture(); }}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMethod === pm.key ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 ${pm.bg} rounded-md flex items-center justify-center`}>{pm.icon}</div>
+                        <span className="text-[13px] text-gray-800 font-bold">{pm.label}</span>
+                      </div>
+                      {paymentMethod === pm.key && (
+                        <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>
+                      )}
                     </div>
-                    <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>
-                  </div>
-                  <div className="border border-gray-100 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:border-brand-blue transition-all bg-[#fcfcfc]">
-                    <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center"><ShieldCheck size={20} className="text-blue-500" /></div>
-                    <span className="text-[13px] text-gray-800 font-bold whitespace-nowrap">Online Payment</span>
-                  </div>
-                  <div className="border border-gray-100 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:border-brand-blue transition-all bg-[#fcfcfc]">
-                    <div className="w-10 h-10 bg-[#e2136e] rounded-md flex items-center justify-center text-white font-bold text-[10px]">bkash</div>
-                    <span className="text-[13px] text-gray-800 font-bold">Bkash</span>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>

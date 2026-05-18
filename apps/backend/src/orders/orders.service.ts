@@ -233,6 +233,7 @@ export class OrdersService {
         officeNotes: dto.officeNotes,
         guestName: dto.guestName,
         guestPhone: dto.guestPhone,
+        paymentMethod: dto.paymentMethod,
         items: {
           create: dto.items.map((i) => ({
             productId: i.productId,
@@ -252,7 +253,7 @@ export class OrdersService {
       },
       include: {
         customer: {
-          select: { id: true, firstName: true, lastName: true, email: true },
+          select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
         },
         status: true,
         items: {
@@ -262,6 +263,32 @@ export class OrdersService {
         },
       },
     });
+
+    if (dto.paymentMethod) {
+      const isPgw = dto.paymentMethod === 'bkash_pgw';
+      await this.prisma.payment.create({
+        data: {
+          orderId: order.id,
+          method: dto.paymentMethod,
+          amount: total,
+          status: isPgw ? 'verified' : 'pending',
+          verifiedBy: isPgw ? 'system' : null,
+          verifiedAt: isPgw ? new Date() : null,
+        },
+      });
+    }
+
+    const phoneToClose = dto.guestPhone || order.customer?.phoneNumber;
+    if (phoneToClose) {
+      await this.prisma.checkoutLead.updateMany({
+        where: { phone: phoneToClose, status: 'PENDING' },
+        data: {
+          status: 'CONVERTED',
+          convertedOrderId: order.id,
+          convertedAt: new Date(),
+        },
+      });
+    }
 
     this.tracking.track({
       eventName: 'purchase',
@@ -534,14 +561,33 @@ export class OrdersService {
       },
     ];
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: { statusId: dto.statusId, timeline: timeline as any },
       include: {
         status: true,
         customer: { select: { id: true, firstName: true, lastName: true } },
+        payments: true,
       },
     });
+
+    if (newStatus.name === 'Delivered') {
+      const codPayment = updated.payments?.find(
+        (p) => p.method === 'cod' && p.status !== 'verified',
+      );
+      if (codPayment) {
+        await this.prisma.payment.update({
+          where: { id: codPayment.id },
+          data: {
+            status: 'verified',
+            verifiedBy: userId,
+            verifiedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    return updated;
   }
 
   async addItem(orderId: string, dto: UpdateOrderItemDto) {

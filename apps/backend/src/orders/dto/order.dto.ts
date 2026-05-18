@@ -33,6 +33,7 @@ export class CreateOrderDto {
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
+  @IsOptional() @IsString() paymentMethod?: string;
 }
 
 export class UpdateOrderStatusDto {

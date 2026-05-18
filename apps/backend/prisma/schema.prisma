@@ -63,6 +63,9 @@ model User {
   assignedOrders Order[]      @relation("OrderAssignee")
   payments      Payment[]     @relation("VerifiedPayments")
   refunds       Refund[]      @relation("RefundProcessor")
+  assignedLeads    CheckoutLead[] @relation("CheckoutLeadAssignedTo")
+  assignedByMe     CheckoutLead[] @relation("CheckoutLeadAssignedBy")
+  convertedLeads   CheckoutLead[] @relation("CheckoutLeadConvertedBy")
 }
 
 model Task {
@@ -288,6 +291,7 @@ model Order {
   updatedAt       DateTime  @updatedAt
   guestName       String?
   guestPhone      String?
+  paymentMethod   String?
 
   customer User?       @relation(fields: [customerId], references: [id])
   assignee User?        @relation("OrderAssignee", fields: [assignedToId], references: [id])
@@ -330,6 +334,39 @@ model Payment {
 
   order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   verifier User?  @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
+}
+
+model CheckoutLead {
+  id              String    @id @default(uuid())
+  phone           String?
+  name            String?
+  email           String?
+  address         Json?
+  items           Json?
+  payload         Json?
+  paymentMethod   String?
+  status          String    @default("PENDING")
+  fingerprint     String?
+  occurrences     Int       @default(1)
+  firstSeenAt     DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+  assignedToId    String?
+  assignedById    String?
+  assignedAt      DateTime?
+  convertedAt     DateTime?
+  convertedById   String?
+  convertedOrderId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  assignedTo      User?  @relation("CheckoutLeadAssignedTo", fields: [assignedToId], references: [id])
+  assignedBy      User?  @relation("CheckoutLeadAssignedBy", fields: [assignedById], references: [id])
+  convertedBy     User?  @relation("CheckoutLeadConvertedBy", fields: [convertedById], references: [id])
+
+  @@index([phone])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([lastSeenAt])
 }
 
 model Shipment {
