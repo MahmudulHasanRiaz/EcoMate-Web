@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/api-client'
 
 export interface OrderResponse {
-  id: string; displayId: string; customerId: string; statusId: string;
+  id: string; displayId: string; customerId?: string | null; statusId: string;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
   shippingAddress: any; customerNotes?: string | null; officeNotes?: string | null; timeline: any[];
@@ -10,13 +10,15 @@ export interface OrderResponse {
   trackingUrl?: string | null;
   assignedToId?: string | null; assignedAt?: string | null;
   assignee?: { id: string; firstName: string; lastName: string } | null;
+  guestName?: string | null;
+  guestPhone?: string | null;
   dispatchLogs?: {
     id: string; courier: string; status: string; message?: string | null;
     consignmentId?: string | null; trackingCode?: string | null;
     createdAt: string;
   }[];
   createdAt: string; updatedAt: string;
-  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string };
+  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
   items: { id: string; productId: string; variantId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; images: any; slug?: string } }[];
   payments: { id: string; method: string; amount: number | string; status: string; transactionId?: string | null }[];

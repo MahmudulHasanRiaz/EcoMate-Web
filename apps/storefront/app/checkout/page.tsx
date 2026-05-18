@@ -40,25 +40,25 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity }: any) {
 
 export default function CheckoutPage() {
   const { items, cartTotal, clearCart, updateQuantity, removeFromCart } = useCart();
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const [district, setDistrict] = useState('');
   const [thana, setThana] = useState('');
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/account?redirect=/checkout');
-    }
-  }, [authLoading, user, router]);
-
   const handlePlaceOrder = async () => {
     if (items.length === 0 || submitting) return;
+    if (!user && (!guestName || !guestPhone)) {
+      toast.error('Please enter your name and phone number.');
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -78,13 +78,15 @@ export default function CheckoutPage() {
       });
 
       const order = await createOrder({
-        customerId: user!.id,
+        customerId: user?.id,
         items: orderItems as any,
         shippingCharge: 0,
         shippingAddress: {
           district,
           thana,
         },
+        guestName: user ? undefined : guestName,
+        guestPhone: user ? undefined : guestPhone,
       });
 
       trackEvent('Purchase', { value: cartTotal, currency: 'BDT', content_ids: items.map(i => i.id), num_items: items.reduce((s, i) => s + i.quantity, 0) });
@@ -92,21 +94,15 @@ export default function CheckoutPage() {
       clearCart();
       router.push(`/checkout/thank-you?orderId=${order.id}`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to place order. Please try again.');
+      const message = err?.response?.data?.message || 'Failed to place order. Please try again.';
+      toast.error(message);
+      if (message.includes('no longer exist')) {
+        clearCart();
+      }
     } finally {
       setSubmitting(false);
     }
   };
-
-  if (authLoading) {
-    return (
-      <div className="bg-[#f2f4f8] min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin text-brand-blue" size={32} />
-      </div>
-    );
-  }
-
-  if (!user) return null;
 
   return (
     <div className="bg-[#f2f4f8] min-h-screen pb-20 md:pb-12 font-sans">
@@ -124,16 +120,33 @@ export default function CheckoutPage() {
       <div className="max-w-screen-xl mx-auto px-4 md:py-8">
         {!user && (
           <div className="bg-white rounded-lg border border-gray-100 p-3 md:p-4 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-[14px] md:text-[15px] text-gray-700 font-medium">Have any account? please login or register</p>
+            <p className="text-[14px] md:text-[15px] text-gray-700 font-medium">Have an account? Login for faster checkout</p>
             <div className="flex gap-2 w-full md:w-auto">
-              <button onClick={() => router.push('/account')} className="flex-1 md:flex-none border border-gray-200 text-gray-700 px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-gray-50">Login</button>
-              <button onClick={() => router.push('/account')} className="flex-1 md:flex-none bg-brand-blue text-white px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Register</button>
+              <button onClick={() => router.push('/account?redirect=/checkout')} className="flex-1 md:flex-none border border-gray-200 text-gray-700 px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-gray-50">Login</button>
+              <button onClick={() => router.push('/account?redirect=/checkout')} className="flex-1 md:flex-none bg-brand-blue text-white px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Register</button>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 space-y-6">
+            <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
+              <div className="p-4 md:p-6">
+                <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
+                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Contact Information</h2>
+                </div>
+                {!user && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    <div className="flex">
+                      <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
+                      <input type="tel" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} placeholder="1X XXXX XXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
@@ -186,11 +199,15 @@ export default function CheckoutPage() {
                   <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Shipping Address</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input type="text" placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                  <div className="flex">
-                    <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">88</div>
-                    <input type="tel" placeholder="017********" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                  </div>
+                  {user && (
+                    <>
+                      <input type="text" placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                      <div className="flex">
+                        <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
+                        <input type="tel" placeholder="01X XXXXXXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                      </div>
+                    </>
+                  )}
                   <div className="relative">
                     <select value={district} onChange={(e) => setDistrict(e.target.value)}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue appearance-none bg-[#fcfcfc] text-gray-600 font-medium">

@@ -267,7 +267,7 @@ model OrderStatus {
 model Order {
   id              String    @id @default(uuid())
   displayId       String    @unique
-  customerId      String
+  customerId      String?
   statusId        String
   subtotal        Decimal   @db.Decimal(10, 2)
   shippingCharge  Decimal   @default(0) @db.Decimal(10, 2)
@@ -286,8 +286,10 @@ model Order {
   timeline        Json?     @default("[]")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  guestName       String?
+  guestPhone      String?
 
-  customer User        @relation(fields: [customerId], references: [id])
+  customer User?       @relation(fields: [customerId], references: [id])
   assignee User?        @relation("OrderAssignee", fields: [assignedToId], references: [id])
   status   OrderStatus @relation(fields: [statusId], references: [id])
   items    OrderItem[]

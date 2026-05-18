@@ -85,7 +85,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   displayId: string;
-  customerId: string;
+  customerId?: string;
   customer?: { id: string; firstName: string; lastName: string; phoneNumber?: string };
   statusId: string;
   status?: { id: string; name: string; color: string };
@@ -96,6 +96,8 @@ export interface Order {
   total: number;
   shippingAddress?: any;
   createdAt: string;
+  guestName?: string;
+  guestPhone?: string;
 }
 
 export interface User {

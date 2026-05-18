@@ -448,10 +448,12 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className='text-sm font-medium leading-tight'>{o.customer.firstName} {o.customer.lastName}</div>
+                          <div className='text-sm font-medium leading-tight'>{o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : (o.guestName || 'Guest')}</div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
-                            <a href={`tel:${o.customer.phoneNumber}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{o.customer.phoneNumber}</a>
-                            <button onClick={e => { e.stopPropagation(); copyToClipboard(o.customer.phoneNumber, 'Phone') }} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-2.5 w-2.5' /></button>
+                            <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{o.customer?.phoneNumber || o.guestPhone || '—'}</a>
+                            {(o.customer?.phoneNumber || o.guestPhone) && (
+                              <button onClick={e => { e.stopPropagation(); copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone') }} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-2.5 w-2.5' /></button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -510,7 +512,7 @@ export function Orders() {
                             <DropdownMenuContent align='end'>
                               <DropdownMenuItem asChild><Link to='/op/orders/$id' params={{ id: o.id }}><Eye className='h-4 w-4 mr-2' />View Details</Link></DropdownMenuItem>
                               <DropdownMenuItem onClick={() => copyToClipboard(o.displayId, 'Order ID')}><ClipboardCopy className='h-4 w-4 mr-2' />Copy Order ID</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer.phoneNumber, 'Phone')}><Phone className='h-4 w-4 mr-2' />Copy Phone</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')}><Phone className='h-4 w-4 mr-2' />Copy Phone</DropdownMenuItem>
                               {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')}><MapPin className='h-4 w-4 mr-2' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
                               <DropdownMenuGroup className='px-2 py-1.5 text-xs text-muted-foreground'>
@@ -603,9 +605,9 @@ export function Orders() {
                                     )}
                                   </div>
                                   <div className='rounded-lg border bg-background p-3.5 shadow-sm space-y-2.5'>
-                                    {(addr.name || o.customer.firstName) && (
-                                      <div className='font-medium text-sm'>{addr.name || `${o.customer.firstName} ${o.customer.lastName}`}</div>
-                                    )}
+                                    <div className='font-medium text-sm'>
+                                      {addr.name || (o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : o.guestName || 'Guest')}
+                                    </div>
                                     {(addr.line1 || addr.line2) && (
                                       <div className='text-sm leading-relaxed'>{[addr.line1, addr.line2].filter(Boolean).join(', ')}</div>
                                     )}
@@ -619,12 +621,14 @@ export function Orders() {
                                       <div className='text-sm text-muted-foreground italic'>No address provided</div>
                                     )}
                                     <div className='flex flex-col gap-1.5 pt-1 border-t'>
-                                      <div className='flex items-center gap-2 text-sm'>
-                                        <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-                                        <a href={`tel:${o.customer.phoneNumber}`} className='hover:underline'>{o.customer.phoneNumber}</a>
-                                        <button onClick={() => copyToClipboard(o.customer.phoneNumber)} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-3 w-3' /></button>
-                                      </div>
-                                      {o.customer.email && (
+                                      {(o.customer?.phoneNumber || o.guestPhone) && (
+                                        <div className='flex items-center gap-2 text-sm'>
+                                          <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
+                                          <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline'>{o.customer?.phoneNumber || o.guestPhone}</a>
+                                          <button onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '')} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-3 w-3' /></button>
+                                        </div>
+                                      )}
+                                      {o.customer?.email && (
                                         <div className='flex items-center gap-2 text-sm text-muted-foreground'>
                                           <Mail className='h-3.5 w-3.5 shrink-0' />
                                           <span className='truncate'>{o.customer.email}</span>

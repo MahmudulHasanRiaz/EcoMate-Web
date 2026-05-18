@@ -9,7 +9,7 @@ export interface CreateOrderItem {
 }
 
 export interface CreateOrderData {
-  customerId: string;
+  customerId?: string;
   items: CreateOrderItem[];
   shippingAddress?: Record<string, unknown>;
   customerNotes?: string;
@@ -17,6 +17,8 @@ export interface CreateOrderData {
   discount?: number;
   discountType?: string;
   couponCode?: string;
+  guestName?: string;
+  guestPhone?: string;
 }
 
 export async function createOrder(data: CreateOrderData) {

@@ -17,6 +17,7 @@ import {
   UpdateOrderItemDto,
 } from './dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { Observable, Subject } from 'rxjs';
 
 @Controller('orders')
@@ -50,9 +51,11 @@ export class OrdersController {
     });
   }
 
+  @Public()
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
+  @Public()
   @Post() create(@Body() dto: CreateOrderDto) {
     return this.svc.create(dto);
   }

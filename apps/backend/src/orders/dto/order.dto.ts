@@ -20,7 +20,7 @@ export class OrderItemDto {
 }
 
 export class CreateOrderDto {
-  @IsString() customerId: string;
+  @IsOptional() @IsString() customerId?: string;
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
@@ -31,6 +31,8 @@ export class CreateOrderDto {
   @IsOptional() @IsObject() shippingAddress?: any;
   @IsOptional() @IsString() customerNotes?: string;
   @IsOptional() @IsString() officeNotes?: string;
+  @IsOptional() @IsString() guestName?: string;
+  @IsOptional() @IsString() guestPhone?: string;
 }
 
 export class UpdateOrderStatusDto {

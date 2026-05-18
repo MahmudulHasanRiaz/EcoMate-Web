@@ -375,7 +375,7 @@ function OrderDetailPage() {
           </div>
 
           <div className='space-y-6'>
-            <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Customer</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p className='font-medium'>{order.customer.firstName} {order.customer.lastName}</p><p className='text-muted-foreground'>{order.customer.email}</p><p className='text-muted-foreground'>{order.customer.phoneNumber}</p></CardContent></Card>
+            <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Customer</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p className='font-medium'>{order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : (order.guestName || 'Guest')}</p><p className='text-muted-foreground'>{order.customer?.email || (order.guestPhone ? `Phone: ${order.guestPhone}` : '—')}</p><p className='text-muted-foreground'>{order.customer?.phoneNumber || ''}</p></CardContent></Card>
 
             <Card><CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCustomerInfo(!showCustomerInfo)}><CardTitle className='text-base flex items-center justify-between'><span className='flex items-center gap-1.5'><User className='h-4 w-4' /> History</span>{showCustomerInfo ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}</CardTitle></CardHeader>
               {showCustomerInfo && customerSummary?.customer ? (

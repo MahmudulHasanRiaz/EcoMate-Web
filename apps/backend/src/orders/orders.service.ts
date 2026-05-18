@@ -87,6 +87,8 @@ export class OrdersService {
           },
         },
         { customer: { phoneNumber: { contains: query.search } } },
+        { guestName: { contains: query.search, mode: 'insensitive' } },
+        { guestPhone: { contains: query.search } },
       ];
     }
     if (query.statusId) where.statusId = query.statusId;
@@ -182,10 +184,44 @@ export class OrdersService {
       dto.discount || 0,
     );
 
+    const productIds = dto.items
+      .filter((i) => i.productId && !i.comboId)
+      .map((i) => i.productId!);
+    if (productIds.length > 0) {
+      const existingProducts = await this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingProducts.map((p) => p.id));
+      const missing = productIds.filter((id) => !existingIds.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Some products no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
+        );
+      }
+    }
+
+    const comboIds = dto.items
+      .filter((i) => i.comboId)
+      .map((i) => i.comboId!);
+    if (comboIds.length > 0) {
+      const existingCombos = await this.prisma.combo.findMany({
+        where: { id: { in: comboIds } },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingCombos.map((c) => c.id));
+      const missing = comboIds.filter((id) => !existingIds.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Some combos no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
+        );
+      }
+    }
+
     const order = await this.prisma.order.create({
       data: {
         displayId,
-        customerId: dto.customerId,
+        customerId: dto.customerId ?? null,
         statusId: initialStatus.id,
         subtotal,
         shippingCharge: dto.shippingCharge || 0,
@@ -195,6 +231,8 @@ export class OrdersService {
         shippingAddress: dto.shippingAddress,
         customerNotes: dto.customerNotes,
         officeNotes: dto.officeNotes,
+        guestName: dto.guestName,
+        guestPhone: dto.guestPhone,
         items: {
           create: dto.items.map((i) => ({
             productId: i.productId,
@@ -368,7 +406,7 @@ export class OrdersService {
       });
     }
 
-    if (dto.customerInfo) {
+    if (dto.customerInfo && order.customerId) {
       await this.prisma.user.update({
         where: { id: order.customerId },
         data: dto.customerInfo,
