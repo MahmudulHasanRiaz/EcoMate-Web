@@ -24,12 +24,16 @@ export default function TrackingScripts() {
 
   useEffect(() => {
     if (metaId || tiktokCode) {
+      // যদি অলরেডি স্ক্রিপ্টটি লোড হয়ে থাকে, তবে আর লোড করো না
+      if (document.getElementById("tracking-script")) return;
+
       // গ্লোবাল ভেরিয়েবলে আইডিগুলো রাখছি যেন এক্সটার্নাল ফাইলটি রিড করতে পারে
       (window as any).__META_ID = metaId;
       (window as any).__TIKTOK_CODE = tiktokCode;
 
       // এক্সটার্নাল স্ক্রিপ্ট লোড করো
       const script = document.createElement("script");
+      script.id = "tracking-script";
       script.src = "/scripts/tracking.js";
       script.async = true;
       document.head.appendChild(script);
