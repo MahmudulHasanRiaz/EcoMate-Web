@@ -483,7 +483,7 @@ export function Orders() {
                             <div className='flex items-center gap-1.5'>
                               <Badge variant='outline' className='text-xs capitalize gap-1'><Truck className='h-2.5 w-2.5' /> {o.courierService}</Badge>
                               {o.trackingUrl && (
-                                <button onClick={e => { e.stopPropagation(); window.open(o.trackingUrl, '_blank') }} className='text-muted-foreground hover:text-primary transition-colors' title='Track shipment'>
+                                <button onClick={e => { e.stopPropagation(); window.open(o.trackingUrl || undefined, '_blank') }} className='text-muted-foreground hover:text-primary transition-colors' title='Track shipment'>
                                   <ExternalLink className='h-3 w-3' />
                                 </button>
                               )}
@@ -532,7 +532,7 @@ export function Orders() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')}><Printer className='h-4 w-4 mr-2' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')}><Receipt className='h-4 w-4 mr-2' />Print Invoice</DropdownMenuItem>
-                              {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
+                              {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl || undefined, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -563,7 +563,7 @@ export function Orders() {
                                           <div className='flex-1 min-w-0'>
                                             <div className='text-sm font-medium truncate leading-tight'>
                                               {item.product?.slug ? (
-                                                <Link to='/op/products/$productId' params={{ productId: item.productId }} className='hover:underline' onClick={e => e.stopPropagation()}>{item.product?.name || 'Unknown Product'}</Link>
+                                                <Link to='/op/products' className='hover:underline' onClick={e => e.stopPropagation()}>{item.product?.name || 'Unknown Product'}</Link>
                                               ) : (item.product?.name || 'Unknown Product')}
                                             </div>
                                             <div className='flex items-center gap-2.5 mt-0.5'>
