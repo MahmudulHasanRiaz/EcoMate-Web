@@ -10,6 +10,7 @@ interface TrackEvent {
   userData: {
     email?: string;
     phone?: string;
+    name?: string;
     ip?: string;
     userAgent?: string;
   };

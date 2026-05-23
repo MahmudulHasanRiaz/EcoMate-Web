@@ -10,6 +10,7 @@ export interface TrackingEvent {
   userData?: {
     email?: string;
     phone?: string;
+    name?: string;
     ip?: string;
     userAgent?: string;
   };
