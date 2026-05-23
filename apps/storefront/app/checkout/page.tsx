@@ -88,7 +88,11 @@ export default function CheckoutPage() {
         value, 
         currency: 'BDT', 
         content_ids: items.map(i => i.id), 
-        num_items: items.reduce((s, i) => s + i.quantity, 0) 
+        num_items: items.reduce((s, i) => s + i.quantity, 0),
+        contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })) // কন্টেন্টস অ্যারে
+      }, {
+        phone: user?.phone || '',
+        name: user?.name || ''
       });
       initiatedRef.current = true;
     }
@@ -184,7 +188,8 @@ export default function CheckoutPage() {
         currency: 'BDT', 
         content_ids: items.map(i => i.id), 
         num_items: items.reduce((s, i) => s + i.quantity, 0),
-        order_id: order.id // Order ID যুক্ত করা হলো
+        order_id: order.id,
+        contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })) // কন্টেন্টস অ্যারে
       }, { 
         phone: guestPhone || user?.phone || '', 
         name: guestName || user?.name || '',

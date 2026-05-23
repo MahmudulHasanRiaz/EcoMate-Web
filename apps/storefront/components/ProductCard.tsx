@@ -38,7 +38,12 @@ export default function ProductCard({ product }: ProductCardProps) {
     window.dispatchEvent(new CustomEvent('fly-to-cart', {
       detail: { x, y, image: imageError ? PLACEHOLDER_IMAGE : product.image }
     }));
-    trackEvent('AddToCart', { content_ids: [product.id], value: product.price, currency: 'BDT' });
+    trackEvent('AddToCart', { 
+      content_ids: [product.id], 
+      value: product.price, 
+      currency: 'BDT',
+      contents: [{ id: product.id, quantity: 1, item_price: product.price }]
+    });
     addToCart({
       id: product.id,
       name: product.name,

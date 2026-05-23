@@ -93,6 +93,10 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
   const fbp = getCookie('_fbp');
   const fbc = getCookie('_fbc');
 
+  // টিকটকের জন্য URL এবং Referrer রিড করো
+  const url = typeof window !== 'undefined' ? window.location.href : '';
+  const referrer = typeof document !== 'undefined' ? document.referrer : '';
+
   // Server-side CAPI কল সবসময় যাবে
   fetch(`${API_URL}/tracking/events`, {
     method: 'POST',
@@ -104,7 +108,9 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       userData: {
         ...userData,
         fbp,
-        fbc
+        fbc,
+        url,
+        referrer
       },
     }),
     keepalive: true,

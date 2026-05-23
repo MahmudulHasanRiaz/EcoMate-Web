@@ -48,6 +48,10 @@ export class TikTokEventsService {
         context: {
           ip: event.userData.ip,
           user_agent: event.userData.userAgent,
+          page: {
+            url: (event.userData as any).url || undefined,
+            referrer: (event.userData as any).referrer || undefined,
+          },
           user: {
             email: event.userData.email ? this.hash(event.userData.email) : undefined,
             phone_number: event.userData.phone ? this.hash(event.userData.phone) : undefined,

@@ -164,7 +164,8 @@ export default function ProductPage() {
                   content_ids: [product.id], 
                   value: product.price, 
                   currency: 'BDT',
-                  content_name: product.name
+                  content_name: product.name,
+                  contents: [{ id: product.id, quantity: 1, item_price: product.price }] // কন্টেন্টস অ্যারে
                 });
               } 
             }}
