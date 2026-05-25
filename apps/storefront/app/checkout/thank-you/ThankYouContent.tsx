@@ -9,6 +9,7 @@ import { useCart } from '@/context/CartContext';
 import { getOrder } from '@/lib/api/orders';
 import type { Order } from '@/lib/types';
 import { motion } from "motion/react";
+import { trackEvent } from '@/lib/tracking';
 
 export default function ThankYouContent() {
   const router = useRouter();
@@ -40,6 +41,33 @@ export default function ThankYouContent() {
       .then((res) => {
         setOrder(res);
         clearCart();
+
+        // Fire Purchase tracking event once
+        const sessionKey = `tracked_order_${res.id}`;
+        if (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey)) {
+          const itemsList = res.items || [];
+          const totalValue = res.total || res.subtotal || 0;
+          
+          trackEvent('Purchase', {
+            value: Number(totalValue),
+            currency: 'BDT',
+            content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
+            num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
+            order_id: res.id,
+            contents: itemsList.map((i: any) => ({
+              id: i.productId || i.comboId || '',
+              quantity: i.quantity,
+              item_price: Number(i.price)
+            }))
+          }, {
+            phone: res.shippingAddress?.phone || res.guestPhone || '',
+            name: res.shippingAddress?.name || res.guestName || '',
+            city: res.shippingAddress?.city || '',
+            country: 'BD'
+          });
+          
+          sessionStorage.setItem(sessionKey, 'true');
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
