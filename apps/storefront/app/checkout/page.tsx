@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2 } from 'lucide-react';
+import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
+import { getDistricts, getThanas, getGateways } from '@/lib/api/delivery-areas';
 import { saveCheckoutLead } from '@/lib/api/checkout-leads';
 import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
@@ -17,6 +18,15 @@ function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
   return `${phone}:${itemStr}`.replace(/\s/g, '');
 }
+
+const COD_METHOD = 'cod';
+
+const GATEWAY_LABELS: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
+  bkash: { label: 'bKash', icon: 'bkash', bg: '#e2136e', fg: 'white' },
+  nagad: { label: 'Nagad', icon: 'NAGAD', bg: '#f5821f', fg: 'white' },
+  rocket: { label: 'Rocket', icon: 'Rocket', bg: '#981ceb', fg: 'white' },
+  upay: { label: 'Upay', icon: 'Upay', bg: '#00a651', fg: 'white' },
+};
 
 function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
   const s = currencySymbol || '৳';
@@ -47,6 +57,119 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   );
 }
 
+function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
+  orderId: string;
+  total: number;
+  guestPhone?: string;
+  guestName?: string;
+  onClose: () => void;
+}) {
+  const [gateways, setGateways] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  useEffect(() => {
+    getGateways().then(list => {
+      setGateways(list.filter(g => g.enabled && g.gateway !== COD_METHOD));
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const handleGateway = async (gw: any) => {
+    setProcessing(gw.gateway);
+
+    if (gw.gateway === 'bkash') {
+      try {
+        const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+        const res = await fetch(`${api}/payments/bkash/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: total,
+            orderId,
+            invoiceNo: `INV-${orderId.slice(0, 8)}`,
+          }),
+        });
+        const data = await res.json();
+        if (data.redirectURL) {
+          window.location.href = data.redirectURL;
+        } else if (data.bkashURL) {
+          window.location.href = data.bkashURL;
+        } else {
+          toast.error('Payment initiation failed. Order saved as pending.');
+          onClose();
+        }
+      } catch {
+        toast.error('Payment gateway error. Order saved as pending.');
+        onClose();
+      }
+    } else {
+      toast.info(`${gw.gateway} payment is coming soon. Your order has been saved.`);
+      onClose();
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
+          <Loader2 className="animate-spin mx-auto mb-4 text-brand-blue" size={32} />
+          <p className="text-gray-500">Loading payment options...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-800">Complete Payment</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+              <X size={20} />
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">Pay {(total).toLocaleString('en-US', {minimumFractionDigits: 2})} BDT</p>
+        </div>
+        <div className="p-6 space-y-3">
+          {gateways.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">No online payment gateways available. Your order has been saved as pending.</p>
+          )}
+          {gateways.map(gw => {
+            const meta = GATEWAY_LABELS[gw.gateway] || { label: gw.gateway, icon: gw.gateway.slice(0, 2).toUpperCase(), bg: '#6b7280', fg: 'white' };
+            return (
+              <button
+                key={gw.id}
+                onClick={() => handleGateway(gw)}
+                disabled={processing !== null}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all disabled:opacity-50"
+              >
+                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-sm font-bold" style={{ backgroundColor: meta.bg, color: meta.fg }}>
+                  {meta.icon}
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-bold text-gray-800">{meta.label}</p>
+                  {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}
+                </div>
+                {processing === gw.gateway ? (
+                  <Loader2 className="animate-spin text-brand-blue" size={20} />
+                ) : (
+                  <ChevronRight size={20} className="text-gray-300" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-6 pb-6">
+          <button onClick={onClose} className="w-full py-2.5 text-sm text-gray-500 hover:text-gray-700 font-medium">
+            Pay Later — Order Saved
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CheckoutPage() {
   const { items, cartTotal, clearCart, updateQuantity, removeFromCart } = useCart();
   const { user } = useAuth();
@@ -58,25 +181,54 @@ export default function CheckoutPage() {
     try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
   };
 
+  const [districts, setDistricts] = useState<any[]>([]);
+  const [thanas, setThanas] = useState<any[]>([]);
   const [district, setDistrict] = useState(() => readStorage('checkout_district', ''));
   const [thana, setThana] = useState(() => readStorage('checkout_thana', ''));
+  const [addressLine, setAddressLine] = useState(() => readStorage('checkout_address', ''));
+  const [customerNotes, setCustomerNotes] = useState(() => readStorage('checkout_notes', ''));
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [guestName, setGuestName] = useState(() => readStorage('checkout_guestName', ''));
   const [guestPhone, setGuestPhone] = useState(() => readStorage('checkout_guestPhone', ''));
-  const [paymentMethod, setPaymentMethod] = useState(() => readStorage('checkout_paymentMethod', 'cod'));
+  const [paymentMode, setPaymentMode] = useState(() => readStorage('checkout_paymentMode', 'cod'));
+  const [partialAmount, setPartialAmount] = useState('');
+  const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
 
-  const validPhone = !user ? normalizePhone(guestPhone) : true
-  const showPhoneError = !user && guestPhone.length > 0 && !validPhone
-  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && (!guestPhone || validPhone)))
+  const checkoutCfg = config.checkout;
+  const paymentModes = checkoutCfg?.paymentModes || ['cod', 'full', 'partial'];
+  const availableMode = (mode: string) => paymentModes.includes(mode);
 
-  useEffect(() => { localStorage.setItem('checkout_guestName', guestName) }, [guestName]);
-  useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone) }, [guestPhone]);
-  useEffect(() => { localStorage.setItem('checkout_district', district) }, [district]);
-  useEffect(() => { localStorage.setItem('checkout_thana', thana) }, [thana]);
-  useEffect(() => { localStorage.setItem('checkout_paymentMethod', paymentMethod) }, [paymentMethod]);
+  const districtCharge = district ? (config.districtCharges?.[district] ?? config.delivery.charge) : null;
+  const deliveryCharge = district ? (cartTotal >= config.delivery.freeDeliveryMin ? 0 : (districtCharge ?? 0)) : 0;
+  const totalWithDelivery = cartTotal + deliveryCharge;
+
+  useEffect(() => {
+    getDistricts().then(setDistricts).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (district) {
+      getThanas(district).then(setThanas).catch(() => setThanas([]));
+    } else {
+      setThanas([]);
+    }
+  }, [district]);
+
+  const validPhone = !user ? normalizePhone(guestPhone) : true;
+  const showPhoneError = !user && guestPhone.length > 0 && !validPhone;
+  const phoneOk = !user ? (guestPhone.length === 0 || validPhone) : true;
+  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk));
+
+  useEffect(() => { localStorage.setItem('checkout_guestName', guestName); }, [guestName]);
+  useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone); }, [guestPhone]);
+  useEffect(() => { localStorage.setItem('checkout_district', district); }, [district]);
+  useEffect(() => { localStorage.setItem('checkout_thana', thana); }, [thana]);
+  useEffect(() => { localStorage.setItem('checkout_address', addressLine); }, [addressLine]);
+  useEffect(() => { localStorage.setItem('checkout_notes', customerNotes); }, [customerNotes]);
+  useEffect(() => { localStorage.setItem('checkout_paymentMode', paymentMode); }, [paymentMode]);
 
   const initiatedRef = useRef(false);
 
@@ -87,19 +239,19 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (items.length > 0 && !initiatedRef.current) {
       const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
-      trackEvent('InitiateCheckout', { 
-        value, 
-        currency: 'BDT', 
-        content_ids: items.map(i => i.id), 
+      trackEvent('InitiateCheckout', {
+        value,
+        currency: config.currency.code,
+        content_ids: items.map(i => i.id),
         num_items: items.reduce((s, i) => s + i.quantity, 0),
-        contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })) // কন্টেন্টস অ্যারে
+        contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
       }, {
         phone: user?.phone || '',
-        name: user?.name || ''
+        name: user?.name || '',
       });
       initiatedRef.current = true;
     }
-  }, [items]);
+  }, [items, config.currency.code, user]);
 
   const getLeadData = useCallback(() => {
     const rawPhone = guestPhone || user?.phone || '';
@@ -108,15 +260,15 @@ export default function CheckoutPage() {
     if (!phone || !name || wasSubmitted.current) return null;
     return {
       phone, name,
-      address: { district, thana },
+      address: { district, thana, addressLine },
       items: items.map(i => ({
         id: i.id, name: i.name, price: i.price, quantity: i.quantity,
         image: i.image, isCombo: i.isCombo, comboId: i.comboId,
       })),
-      paymentMethod,
+      paymentMethod: paymentMode,
       fingerprint: simpleFingerprint(phone, items),
     };
-  }, [guestPhone, guestName, items, district, thana, paymentMethod, user]);
+  }, [guestPhone, guestName, items, district, thana, addressLine, paymentMode, user]);
 
   const captureLead = useCallback(() => {
     const data = getLeadData();
@@ -142,55 +294,65 @@ export default function CheckoutPage() {
     };
   }, [getLeadData]);
 
+  const buildOrderPayload = () => {
+    const orderItems = items.map((item) => {
+      if (item.isCombo) {
+        return { comboId: item.comboId, quantity: item.quantity, price: item.price };
+      }
+      return { productId: item.id, quantity: item.quantity, price: item.price };
+    });
+
+    const payload: any = {
+      customerId: user?.id,
+      items: orderItems,
+      shippingCharge: deliveryCharge,
+      shippingAddress: { district, thana, addressLine },
+      guestName: user ? undefined : guestName,
+      guestPhone: user ? undefined : (normalizePhone(guestPhone) || undefined),
+      paymentMode,
+      district: district || undefined,
+      thana: thana || undefined,
+    };
+
+    const isOnlinePayment = paymentMode === 'full' || paymentMode === 'partial';
+    if (paymentMode === 'partial' && partialAmount) {
+      payload.partialAmount = parseFloat(partialAmount) || 0;
+    }
+
+    return { orderItems, payload, isOnlinePayment };
+  };
+
   const handlePlaceOrder = async () => {
     if (items.length === 0 || submitting) return;
     if (!user) {
       if (!guestName) { toast.error('Please enter your name.'); return }
       if (!guestPhone) { toast.error('Please enter your phone number.'); return }
       if (!normalizePhone(guestPhone)) {
-        toast.error('Please enter a valid Bangladeshi phone number (e.g. 01XXXXXXXXX or +8801XXXXXXXXX).')
-        return
+        toast.error('Please enter a valid Bangladeshi phone number (e.g. 01XXXXXXXXX or +8801XXXXXXXXX).');
+        return;
       }
     }
     setSubmitting(true);
 
     try {
-      const orderItems = items.map((item) => {
-        if (item.isCombo) {
-          return {
-            comboId: item.comboId,
-            quantity: item.quantity,
-            price: item.price,
-          };
-        }
-        return {
-          productId: item.id,
-          quantity: item.quantity,
-          price: item.price,
-        };
-      });
+      const { orderItems, payload, isOnlinePayment } = buildOrderPayload();
 
       wasSubmitted.current = true;
 
-      const shippingCharge = cartTotal >= config.delivery.freeDeliveryMin ? 0 : config.delivery.charge;
-      const order = await createOrder({
-        customerId: user?.id,
-        items: orderItems as any,
-        shippingCharge,
-        shippingAddress: {
-          district,
-          thana,
-        },
-        guestName: user ? undefined : guestName,
-        guestPhone: user ? undefined : (normalizePhone(guestPhone) || undefined),
-        paymentMethod: user ? (paymentMethod === 'cod' ? 'cod' : paymentMethod) : paymentMethod,
-      });
-
-
+      payload.paymentMethod = isOnlinePayment ? 'online' : COD_METHOD;
+      const order = await createOrder(payload);
 
       clearCart();
-      try { ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana','checkout_paymentMethod'].forEach(k => localStorage.removeItem(k)) } catch {}
-      router.push(`/checkout/thank-you?orderId=${order.id}`);
+      try {
+        ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
+         'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
+      } catch {}
+
+      if (isOnlinePayment) {
+        setPaymentPopup({ orderId: order.id, total: totalWithDelivery });
+      } else {
+        router.push(`/checkout/thank-you?orderId=${order.id}`);
+      }
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to place order. Please try again.';
       toast.error(message);
@@ -201,6 +363,10 @@ export default function CheckoutPage() {
       setSubmitting(false);
     }
   };
+
+  const handlePayNow = handlePlaceOrder;
+
+  const s = config.currency.symbol || '৳';
 
   return (
     <div className="bg-[#f2f4f8] min-h-screen pb-20 md:pb-12 font-sans">
@@ -228,25 +394,27 @@ export default function CheckoutPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 space-y-6">
+            {/* Contact Information */}
             <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
                   <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Contact Information</h2>
                 </div>
-                  {!user && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                      <div className="flex">
-                        <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
-                        <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
-                          className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
-                      </div>
-                      {showPhoneError && <p className="text-red-500 text-[12px] mt-1.5">Please enter a valid Bangladeshi phone number</p>}
+                {!user && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    <div className="flex">
+                      <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
+                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
+                        className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
                     </div>
-                  )}
+                    {showPhoneError && <p className="text-red-500 text-[12px] mt-1.5">Please enter a valid Bangladeshi phone number</p>}
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* Order Review */}
             <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
@@ -280,11 +448,11 @@ export default function CheckoutPage() {
                             )}
                             <div className="flex items-center justify-between pt-3 border-t border-gray-50">
                               <span className="text-[12px] text-gray-400 font-bold uppercase">Combo Total</span>
-                              <span className="text-[15px] font-black text-brand-blue">{config.currency.symbol}{item.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                              <span className="text-[15px] font-black text-brand-blue">{s}{item.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                             </div>
                           </div>
                         ) : (
-                          <CheckoutItemRow item={item} removeFromCart={removeFromCart} updateQuantity={updateQuantity} currencySymbol={config.currency.symbol} />
+                          <CheckoutItemRow item={item} removeFromCart={removeFromCart} updateQuantity={updateQuantity} currencySymbol={s} />
                         )}
                       </div>
                     ))
@@ -293,74 +461,118 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {/* Shipping Address */}
             <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
                   <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Shipping Address</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {user && (
-                    <>
-                      <input type="text" placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                      <div className="flex">
-                        <div className="border border-gray-200 border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px]">+880</div>
-                        <input type="tel" placeholder="01X XXXXXXXX" className="w-full border border-gray-200 rounded-r-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                      </div>
-                    </>
+                  {checkoutCfg?.districtEnabled !== false && (
+                    <div className="relative">
+                      <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); scheduleLeadCapture(); }}
+                        className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.districtRequired ? 'border-gray-200' : 'border-gray-200'}`}>
+                        <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
+                        {districts.map(d => (
+                          <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
                   )}
-                  <div className="relative">
-                    <select value={district} onChange={(e) => { setDistrict(e.target.value); scheduleLeadCapture(); }}
-                      className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue appearance-none bg-[#fcfcfc] text-gray-600 font-medium">
-                      <option value="" disabled>Select District</option>
-                      <option value="dhaka">Dhaka</option>
-                    </select>
-                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  </div>
-                  <div className="relative">
-                    <select value={thana} onChange={(e) => { setThana(e.target.value); scheduleLeadCapture(); }}
-                      className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue appearance-none bg-[#fcfcfc] text-gray-600 font-medium">
-                      <option value="" disabled>Select Thana (Optional)</option>
-                      <option value="gulshan">Gulshan</option>
-                    </select>
-                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  </div>
+                  {checkoutCfg?.thanaEnabled !== false && district && (
+                    <div className="relative">
+                      <select value={thana} onChange={(e) => { setThana(e.target.value); scheduleLeadCapture(); }}
+                        className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.thanaRequired ? 'border-gray-200' : 'border-gray-200'}`}>
+                        <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
+                        {thanas.map(t => (
+                          <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                  )}
                   <div className="md:col-span-2">
-                    <textarea placeholder="ex: House no. / building / street / area" rows={2}
+                    <textarea value={addressLine} onChange={e => setAddressLine(e.target.value)}
+                      placeholder="ex: House no. / building / street / area" rows={2}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none bg-[#fcfcfc]" />
                   </div>
                 </div>
+                {district && districtCharge !== null && (
+                  <div className="mt-3 text-xs text-gray-400">
+                    Delivery charge for {district}: <span className="font-bold text-gray-600">{s}{districtCharge}</span>
+                    {cartTotal >= config.delivery.freeDeliveryMin && <span className="text-green-600 ml-2">(Free delivery on orders over {s}{config.delivery.freeDeliveryMin})</span>}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
+          {/* Right sidebar */}
           <div className="lg:col-span-5 space-y-6">
+            {/* Payment Mode */}
             <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Payment method</h2>
+                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Payment</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                  {[
-                    { key: 'cod', label: 'Cash On Delivery', icon: <Package2 size={20} className="text-brand-blue" />, bg: 'bg-gray-100' },
-                    { key: 'bkash', label: 'bKash', icon: <span className="text-white font-bold text-[10px]">bkash</span>, bg: 'bg-[#e2136e]' },
-                    { key: 'nagad', label: 'Nagad', icon: <span className="text-white font-bold text-[10px]">NAGAD</span>, bg: 'bg-[#f5821f]' },
-                    { key: 'rocket', label: 'Rocket', icon: <span className="text-white font-bold text-[10px]">Rocket</span>, bg: 'bg-[#981ceb]' },
-                  ].map(pm => (
-                    <div key={pm.key} onClick={() => { setPaymentMethod(pm.key); scheduleLeadCapture(); }}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMethod === pm.key ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+
+                {/* Payment Mode Selection */}
+                <div className="space-y-2 mb-4">
+                  {availableMode('cod') && (
+                    <div onClick={() => setPaymentMode('cod')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'cod' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 ${pm.bg} rounded-md flex items-center justify-center`}>{pm.icon}</div>
-                        <span className="text-[13px] text-gray-800 font-bold">{pm.label}</span>
+                        <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center">
+                          <Banknote size={20} className="text-brand-blue" />
+                        </div>
+                        <span className="text-[13px] text-gray-800 font-bold">Cash On Delivery</span>
                       </div>
-                      {paymentMethod === pm.key && (
-                        <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>
-                      )}
+                      {paymentMode === 'cod' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
                     </div>
-                  ))}
+                  )}
+
+                  {availableMode('full') && (
+                    <div onClick={() => setPaymentMode('full')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'full' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-brand-blue rounded-md flex items-center justify-center">
+                          <CreditCard size={20} className="text-white" />
+                        </div>
+                        <span className="text-[13px] text-gray-800 font-bold">Pay Online (Full)</span>
+                      </div>
+                      {paymentMode === 'full' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
+                    </div>
+                  )}
+
+                  {availableMode('partial') && (
+                    <div onClick={() => setPaymentMode('partial')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'partial' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#f59e0b] rounded-md flex items-center justify-center">
+                          <CreditCard size={20} className="text-white" />
+                        </div>
+                        <span className="text-[13px] text-gray-800 font-bold">Pay Partial Online</span>
+                      </div>
+                      {paymentMode === 'partial' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
+                    </div>
+                  )}
+
+                  {paymentMode === 'partial' && (
+                    <div className="mt-3">
+                      <label className="text-xs text-gray-500 font-medium mb-1 block">Partial Payment Amount ({s})</label>
+                      <input type="number" value={partialAmount} onChange={e => setPartialAmount(e.target.value)}
+                        placeholder="Enter amount to pay now"
+                        max={totalWithDelivery}
+                        className="w-full border border-gray-200 rounded-md px-4 py-2.5 text-[14px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
+                      <p className="text-xs text-gray-400 mt-1">Remaining {s}{Math.max(0, totalWithDelivery - (parseFloat(partialAmount) || 0)).toLocaleString('en-US', {minimumFractionDigits: 2})} will be collected on delivery</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
+            {/* Order Summary */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
               <button onClick={() => setIsCouponExpanded(!isCouponExpanded)}
                 className="w-full p-4 md:p-6 flex justify-between items-center cursor-pointer group text-left outline-none">
@@ -384,29 +596,44 @@ export default function CheckoutPage() {
               <div className="p-4 md:p-6 space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[14px] text-gray-500 font-medium">Sub total</span>
-                  <span className="text-[14px] text-gray-800 font-black">{config.currency.symbol}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
+                  <span className="text-[14px] text-gray-800 font-black">{s}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[14px] text-gray-500 font-medium">Delivery cost</span>
-                  <span className="text-[14px] text-gray-800 font-black">{cartTotal >= config.delivery.freeDeliveryMin ? `${config.currency.symbol}0` : `${config.currency.symbol}${config.delivery.charge.toLocaleString()}`} {config.currency.code}</span>
+                  <span className="text-[14px] text-gray-800 font-black">
+                    {district ? (
+                      deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+                    ) : (
+                      <span className="text-gray-400 italic">Not selected</span>
+                    )}
+                  </span>
                 </div>
+                {paymentMode === 'partial' && partialAmount && parseFloat(partialAmount) > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[14px] text-gray-500 font-medium">Paid Online</span>
+                    <span className="text-[14px] text-green-600 font-black">-{s}{parseFloat(partialAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-4 mt-4 border-t-2 border-dashed border-gray-100">
                   <span className="text-[16px] font-black text-gray-900">Total</span>
-                  <span className="text-[16px] font-black text-gray-900">{config.currency.symbol}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
+                  <span className="text-[16px] font-black text-gray-900">{s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
                 </div>
               </div>
             </div>
 
+            {/* Notes */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-4 border-l-4 border-brand-blue pl-3">
                   <h2 className="text-[15px] font-bold text-gray-800">Special notes <span className="font-normal text-[12px] text-gray-400 ml-1">(Optional)</span></h2>
                 </div>
-                <textarea className="w-full border border-gray-100 rounded-lg px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none h-24 bg-[#fcfcfc]" maxLength={90} />
-                <div className="text-[11px] text-gray-400 mt-1 text-right">0 / 90 characters</div>
+                <textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)}
+                  className="w-full border border-gray-100 rounded-lg px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none h-24 bg-[#fcfcfc]" maxLength={90} />
+                <div className="text-[11px] text-gray-400 mt-1 text-right">{customerNotes.length} / 90 characters</div>
               </div>
             </div>
 
+            {/* Submit */}
             <div className="space-y-4">
               <div className="flex items-start gap-3 px-2">
                 <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
@@ -416,14 +643,35 @@ export default function CheckoutPage() {
                   I have read and agree to the <span className="text-brand-blue font-bold cursor-pointer hover:underline">Terms and Conditions</span>, <span className="text-brand-blue font-bold cursor-pointer hover:underline">Privacy Policy</span> & <span className="text-brand-blue font-bold cursor-pointer hover:underline">Refund and Return Policy</span>.
                 </p>
               </div>
-              <button onClick={handlePlaceOrder} disabled={!canSubmit}
-                className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
-                {submitting ? 'PLACING ORDER...' : 'PLACE ORDER'}
-              </button>
+              {(paymentMode === 'cod') && (
+                <button onClick={handlePlaceOrder} disabled={!canSubmit}
+                  className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
+                  {submitting ? 'PLACING ORDER...' : 'PLACE ORDER'}
+                </button>
+              )}
+              {(paymentMode === 'full' || paymentMode === 'partial') && (
+                <button onClick={handlePayNow} disabled={!canSubmit}
+                  className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-[#f59e0b] hover:bg-[#d97706] shadow-amber-500/20' : 'bg-gray-400 cursor-not-allowed'}`}>
+                  {submitting ? 'PROCESSING...' : `PAY ${s}${(paymentMode === 'partial' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {paymentPopup && (
+        <PaymentPopup
+          orderId={paymentPopup.orderId}
+          total={paymentPopup.total}
+          guestPhone={guestPhone}
+          guestName={guestName}
+          onClose={() => {
+            setPaymentPopup(null);
+            router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&pending=true`);
+          }}
+        />
+      )}
     </div>
   );
 }

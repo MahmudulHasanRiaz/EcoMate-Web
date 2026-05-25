@@ -18,6 +18,7 @@ export interface StorefrontConfig {
   };
   hero: {
     slides: { image: string; link?: string }[];
+    secondaryBanner: string;
   };
   social: {
     facebook: string;
@@ -68,6 +69,14 @@ export interface StorefrontConfig {
     teamSize: string;
     ceoName: string;
   };
+  checkout: {
+    districtEnabled: boolean;
+    thanaEnabled: boolean;
+    districtRequired: boolean;
+    thanaRequired: boolean;
+    paymentModes: string[];
+  };
+  districtCharges: Record<string, number>;
 }
 
 let cachedConfig: StorefrontConfig | null = null;

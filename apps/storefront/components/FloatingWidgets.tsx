@@ -15,27 +15,27 @@ export default function FloatingWidgets() {
   const phoneDigits = config.store.phone.replace(/[^0-9]/g, '');
 
   const chatOptions = [
-    {
+    ...(wa ? [{
       name: "WhatsApp",
       icon: <MessageCircle size={20} />,
       color: "bg-[#25D366]",
-      link: wa ? `https://wa.me/${wa}` : "https://wa.me/8801700000000",
+      link: `https://wa.me/${wa}`,
       delay: 0.1
-    },
-    {
+    }] : []),
+    ...(config.social.facebook ? [{
       name: "Messenger",
       icon: <MessageCircleMore size={20} />,
       color: "bg-[#0084FF]",
-      link: config.social.facebook ? `https://m.me/${config.social.facebook.split('/').pop()}` : "https://m.me/yourpageid",
+      link: `https://m.me/${config.social.facebook.split('/').pop()}`,
       delay: 0.2
-    },
-    {
+    }] : []),
+    ...(phoneDigits ? [{
       name: "Direct Call",
       icon: <Phone size={20} />,
       color: "bg-gray-800",
-      link: phoneDigits ? `tel:+${phoneDigits}` : "tel:+8801700000000",
+      link: `tel:+${phoneDigits}`,
       delay: 0.3
-    }
+    }] : []),
   ];
 
   return (

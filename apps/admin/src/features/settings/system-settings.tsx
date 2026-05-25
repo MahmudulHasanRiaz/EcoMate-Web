@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RefreshCw, Truck, CreditCard, Store, Radio } from 'lucide-react'
 
@@ -11,20 +11,26 @@ const links = [
 ]
 
 export function SystemSettings() {
+  const navigate = useNavigate()
+
+  const handleClick = (to: string) => {
+    navigate({ to })
+  }
+
   return (
     <div>
       <h2 className='text-2xl font-bold tracking-tight mb-6'>System Settings</h2>
       <div className='grid gap-4 md:grid-cols-2'>
         {links.map(l => (
-          <Link key={l.to} to={l.to} className='block'>
-            <Card className='cursor-pointer hover:shadow-md transition-shadow h-full'>
+          <div key={l.to} onClick={() => handleClick(l.to)} className='block cursor-pointer'>
+            <Card className='hover:shadow-md transition-shadow h-full'>
               <CardHeader className='flex flex-row items-center gap-3 pb-2'>
                 <div className='bg-muted p-2 rounded-lg'><l.icon className='h-5 w-5' /></div>
                 <CardTitle className='text-sm'>{l.title}</CardTitle>
               </CardHeader>
               <CardContent><p className='text-xs text-muted-foreground'>{l.desc}</p></CardContent>
             </Card>
-          </Link>
+          </div>
         ))}
       </div>
     </div>

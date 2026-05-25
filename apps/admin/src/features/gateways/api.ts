@@ -6,6 +6,6 @@ export interface GatewayConfig {
 }
 
 export const gatewayApi = {
-  list: () => apiClient.get<GatewayConfig[]>('/gateways'),
+  list: () => apiClient.get<GatewayConfig[]>('/gateways/admin'),
   update: (gateway: string, data: any) => apiClient.put(`/gateways/${gateway}`, data),
 }

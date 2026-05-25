@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { Gift, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getCombos } from '@/lib/api/combos';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Combo } from '@/lib/types';
 
 export default function CombosPage() {
+  const { config } = useStorefrontConfig();
   const router = useRouter();
   const [combos, setCombos] = useState<Combo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,9 +84,9 @@ export default function CombosPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-bold text-brand-blue">৳{combo.price.toLocaleString()}</span>
+                      <span className="text-2xl font-bold text-brand-blue">{config.currency.symbol}{combo.price.toLocaleString()}</span>
                       {combo.originalPrice && combo.originalPrice > combo.price && (
-                        <span className="text-gray-400 line-through text-sm">৳{combo.originalPrice.toLocaleString()}</span>
+                        <span className="text-gray-400 line-through text-sm">{config.currency.symbol}{combo.originalPrice.toLocaleString()}</span>
                       )}
                     </div>
                     <button className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium text-sm hover:bg-brand-blue/90 transition-colors"

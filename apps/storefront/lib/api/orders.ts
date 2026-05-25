@@ -20,6 +20,10 @@ export interface CreateOrderData {
   guestName?: string;
   guestPhone?: string;
   paymentMethod?: string;
+  paymentMode?: string;
+  partialAmount?: number;
+  district?: string;
+  thana?: string;
 }
 
 export async function createOrder(data: CreateOrderData) {

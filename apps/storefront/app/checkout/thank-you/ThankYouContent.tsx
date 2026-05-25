@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag } from 'lucide-react';
+import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTriangle, Clock } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getOrder } from '@/lib/api/orders';
@@ -21,6 +21,7 @@ export default function ThankYouContent() {
   const [loading, setLoading] = useState(true);
 
   const orderId = searchParams.get('orderId');
+  const isPending = searchParams.get('pending') === 'true';
 
   const nn = (v: number | string | undefined | null) => {
     if (v === undefined || v === null) return 0;
@@ -29,6 +30,9 @@ export default function ThankYouContent() {
   };
 
   const fmt = (v: number | string | undefined | null) => nn(v).toFixed(2);
+
+  const shippingAddress = order ? (order as any).shippingAddress || {} : {};
+  const hasDeliveryArea = shippingAddress?.district || shippingAddress?.thana;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -44,12 +48,11 @@ export default function ThankYouContent() {
         setOrder(res);
         clearCart();
 
-        // Fire Purchase tracking event once
         const sessionKey = `tracked_order_${res.id}`;
         if (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey)) {
           const itemsList = res.items || [];
           const totalValue = res.total || res.subtotal || 0;
-          
+
           trackEvent('Purchase', {
             value: Number(totalValue),
             currency: config.currency.code,
@@ -67,18 +70,18 @@ export default function ThankYouContent() {
             city: res.shippingAddress?.city || '',
             country: 'BD'
           });
-          
+
           sessionStorage.setItem(sessionKey, 'true');
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [orderId, clearCart]);
+  }, [orderId, clearCart, config.currency.code]);
 
   if (!orderId) {
     return (
       <div className="bg-[#f2f4f8] min-h-screen flex items-center justify-center p-4">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="bg-white rounded-2xl shadow-sm p-8 text-center max-w-md w-full"
@@ -108,7 +111,6 @@ export default function ThankYouContent() {
 
   return (
     <div className="bg-[#f2f4f8] min-h-screen pb-32 font-sans">
-      {/* Header/Breadcrumb */}
       <div className="bg-white border-b border-gray-100 py-4 md:py-6">
         <div className="max-w-screen-xl mx-auto px-4">
           <nav className="flex items-center justify-center gap-2 text-[11px] md:text-[13px] text-gray-400 font-medium">
@@ -118,31 +120,49 @@ export default function ThankYouContent() {
             <ChevronRight size={14} />
             <button onClick={() => router.push('/checkout')} className="hover:text-brand-blue">Checkout</button>
             <ChevronRight size={14} />
-            <span className="text-gray-600">Order Confirmed</span>
+            <span className="text-gray-600">{isPending ? 'Payment Pending' : 'Order Confirmed'}</span>
           </nav>
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto px-4 mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Main Success Card */}
         <div className="md:col-span-2 space-y-6">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="bg-white rounded-2xl shadow-sm p-6 md:p-8 text-center"
           >
-            <motion.div 
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
-              className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6"
-            >
-              <ShieldCheck size={40} className="text-green-500" />
-            </motion.div>
-
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Order Placed Successfully!</h1>
-            <p className="text-gray-500 mb-6">Thank you for shopping with us. Your order has been received and is being processed.</p>
+            {isPending ? (
+              <>
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
+                  className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6"
+                >
+                  <Clock size={40} className="text-amber-500" />
+                </motion.div>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Order Placed — Payment Pending</h1>
+                <p className="text-gray-500 mb-6">
+                  Your order has been saved. Please complete the payment to confirm your order.
+                  Our team will contact you shortly if you need assistance.
+                </p>
+              </>
+            ) : (
+              <>
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
+                  className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6"
+                >
+                  <ShieldCheck size={40} className="text-green-500" />
+                </motion.div>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Order Placed Successfully!</h1>
+                <p className="text-gray-500 mb-6">Thank you for shopping with us. Your order has been received and is being processed.</p>
+              </>
+            )}
 
             {order && (
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-gray-600 mb-6">
@@ -152,7 +172,9 @@ export default function ThankYouContent() {
                 </div>
                 <div className="bg-gray-50 px-4 py-2 rounded-full border border-gray-100 flex items-center gap-2">
                   <span className="font-medium text-gray-400">Status:</span>
-                  <span className="font-bold text-green-600">Processing</span>
+                  <span className={`font-bold ${isPending ? 'text-amber-500' : 'text-green-600'}`}>
+                    {isPending ? 'Payment Pending' : 'Processing'}
+                  </span>
                 </div>
               </div>
             )}
@@ -167,8 +189,29 @@ export default function ThankYouContent() {
             </div>
           </motion.div>
 
-          {/* What's Next Section */}
-          <motion.div 
+          {/* Delivery Area Warning */}
+          {!hasDeliveryArea && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="bg-amber-50 border border-amber-200 rounded-2xl p-6"
+            >
+              <div className="flex gap-3">
+                <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-amber-800 text-sm">Delivery Area Not Selected</h3>
+                  <p className="text-amber-700 text-[13px] mt-1">
+                    You did not select a delivery district/area. Your bill shows the total without delivery charge.
+                    Our call center will contact you to confirm your delivery area and add the applicable charge.
+                    Please keep your phone handy.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
@@ -204,18 +247,16 @@ export default function ThankYouContent() {
           </motion.div>
         </div>
 
-        {/* Sidebar Summary */}
         <div className="space-y-6">
           {order && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
               className="bg-white rounded-2xl shadow-sm p-6"
             >
               <h2 className="text-base font-bold text-gray-800 mb-4 border-b pb-2">Order Summary</h2>
-              
-              {/* Items */}
+
               {order.items && (
                 <div className="space-y-3 mb-4 max-h-48 overflow-y-auto pr-1">
                   {(order.items as any[]).map((item: any, idx: number) => (
@@ -239,7 +280,6 @@ export default function ThankYouContent() {
                 </div>
               )}
 
-              {/* Breakdown */}
               <div className="border-t pt-3 space-y-2 text-[12px]">
                 <div className="flex justify-between text-gray-500">
                   <span>Subtotal</span>
@@ -247,7 +287,12 @@ export default function ThankYouContent() {
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>Shipping</span>
-                  <span>{config.currency.symbol}{fmt((order as any).shippingCharge)}</span>
+                  <span>
+                    {hasDeliveryArea
+                      ? `${config.currency.symbol}${fmt((order as any).shippingCharge)}`
+                      : <span className="text-amber-500">To be determined</span>
+                    }
+                  </span>
                 </div>
                 {nn((order as any).discount) > 0 && (
                   <div className="flex justify-between text-green-600">
@@ -260,12 +305,25 @@ export default function ThankYouContent() {
                   <span className="text-brand-blue">{config.currency.symbol}{fmt((order as any).total || (order as any).subtotal)}</span>
                 </div>
               </div>
+
+              {(order as any).payments && (order as any).payments.length > 0 && (
+                <div className="border-t mt-4 pt-4">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Payment</h3>
+                  {(order as any).payments.map((p: any, i: number) => (
+                    <div key={i} className="flex justify-between text-[12px]">
+                      <span className="text-gray-500 capitalize">{p.method}</span>
+                      <span className={`font-bold ${p.status === 'verified' ? 'text-green-600' : 'text-amber-500'}`}>
+                        {p.status === 'verified' ? 'Paid' : p.status === 'pending' ? 'Pending' : p.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
 
-          {/* Shipping Info Card */}
-          {order && (order as any).shippingAddress && (
-            <motion.div 
+          {order && shippingAddress && (
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
@@ -273,10 +331,10 @@ export default function ThankYouContent() {
             >
               <h2 className="text-base font-bold text-gray-800 mb-3 border-b pb-2">Shipping Details</h2>
               <div className="text-[13px] text-gray-600 space-y-1">
-                <p className="font-bold text-gray-800">{(order as any).shippingAddress.name || 'Customer'}</p>
-                <p>{(order as any).shippingAddress.address}</p>
-                <p>{(order as any).shippingAddress.city}, {(order as any).shippingAddress.zone}</p>
-                <p className="pt-1 flex items-center gap-1.5"><Truck size={14} className="text-gray-400" /> {(order as any).shippingAddress.phone}</p>
+                <p className="font-bold text-gray-800">{(order as any).guestName || shippingAddress.name || 'Customer'}</p>
+                {shippingAddress.district && <p>District: {shippingAddress.district}{shippingAddress.thana ? `, ${shippingAddress.thana}` : ''}</p>}
+                {shippingAddress.addressLine && <p>{shippingAddress.addressLine}</p>}
+                <p className="pt-1 flex items-center gap-1.5"><Truck size={14} className="text-gray-400" /> {(order as any).guestPhone || shippingAddress.phone}</p>
               </div>
             </motion.div>
           )}

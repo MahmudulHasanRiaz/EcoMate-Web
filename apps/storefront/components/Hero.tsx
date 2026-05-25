@@ -98,8 +98,8 @@ export default function Hero() {
           <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
             <div className="relative w-full h-[400px]">
                <img 
-                 src={imgErrors['banner-sec'] ? PLACEHOLDER_IMAGE : "https://images.unsplash.com/photo-1468495244123-6c6c332eeece?auto=format&fit=crop&q=80&w=800"} 
-                 alt="Banner Secondary"
+                  src={imgErrors['banner-sec'] ? PLACEHOLDER_IMAGE : (config.hero.secondaryBanner || "https://images.unsplash.com/photo-1468495244123-6c6c332eeece?auto=format&fit=crop&q=80&w=800")} 
+                  alt="Banner Secondary"
                  className="w-full h-full object-cover"
                  onError={() => handleImageError('banner-sec')}
                />

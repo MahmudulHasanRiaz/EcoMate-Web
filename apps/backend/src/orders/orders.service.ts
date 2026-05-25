@@ -239,12 +239,18 @@ export class OrdersService {
         discount: dto.discount || 0,
         discountType: dto.discountType || 'flat',
         total,
-        shippingAddress: dto.shippingAddress,
+        shippingAddress: {
+          ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress ? dto.shippingAddress : {}),
+          district: dto.district,
+          thana: dto.thana,
+        },
         customerNotes: dto.customerNotes,
         officeNotes: dto.officeNotes,
         guestName: dto.guestName,
         guestPhone: dto.guestPhone,
         paymentMethod: dto.paymentMethod,
+        paymentMode: dto.paymentMode || 'cod',
+        partialAmount: dto.partialAmount,
         items: {
           create: dto.items.map((i) => ({
             productId: i.productId,
@@ -276,15 +282,15 @@ export class OrdersService {
     });
 
     if (dto.paymentMethod) {
-      const isPgw = dto.paymentMethod === 'bkash_pgw';
+      const paymentAmount = dto.paymentMode === 'partial' && dto.partialAmount
+        ? dto.partialAmount
+        : total;
       await this.prisma.payment.create({
         data: {
           orderId: order.id,
           method: dto.paymentMethod,
-          amount: total,
-          status: isPgw ? 'verified' : 'pending',
-          verifiedBy: isPgw ? 'system' : null,
-          verifiedAt: isPgw ? new Date() : null,
+          amount: paymentAmount,
+          status: 'pending',
         },
       });
     }

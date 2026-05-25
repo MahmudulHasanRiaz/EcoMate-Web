@@ -34,6 +34,12 @@ export class CreateOrderDto {
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
   @IsOptional() @IsString() paymentMethod?: string;
+
+  // Checkout enhancements
+  @IsOptional() @IsIn(['cod', 'full', 'partial']) paymentMode?: string;
+  @IsOptional() @IsNumber() partialAmount?: number;
+  @IsOptional() @IsString() district?: string;
+  @IsOptional() @IsString() thana?: string;
 }
 
 export class UpdateOrderStatusDto {

@@ -51,6 +51,9 @@ async function main() {
     { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 5 },
     { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 6 },
     { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 7 },
+    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 8 },
+    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 9 },
+    { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 10 },
   ];
 
   const orderStatusMap: Record<string, string> = {};
@@ -753,6 +756,41 @@ async function main() {
     });
   }
   console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
+
+  // ── Payment Gateways ──
+  const gateways = [
+    { gateway: 'cod', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
+    { gateway: 'bkash', enabled: false, mode: 'personal', phoneNumber: '01700000000', credentials: {} },
+    { gateway: 'nagad', enabled: false, mode: 'personal', phoneNumber: '01700000001', credentials: {} },
+    { gateway: 'rocket', enabled: false, mode: 'personal', phoneNumber: '01700000002', credentials: {} },
+    { gateway: 'upay', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
+    { gateway: 'cellfin', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
+    { gateway: 'bkash_pgw', enabled: false, mode: 'sandbox', phoneNumber: null, credentials: { appKey: '', appSecret: '', username: '', password: '' } },
+  ];
+  for (const g of gateways) {
+    await prisma.paymentGatewayConfig.upsert({
+      where: { gateway: g.gateway },
+      create: g,
+      update: {},
+    });
+  }
+  console.log(`  ✓ ${gateways.length} payment gateways created`);
+
+  // ── Courier Credentials ──
+  const courierCreds = [
+    { courier: 'steadfast', enabled: false, mode: 'sandbox', apiKey: null, secretKey: null, username: null, password: null, clientId: null, clientSecret: null, storeId: null, webhookSecret: null, credentials: {} },
+    { courier: 'pathao', enabled: false, mode: 'sandbox', apiKey: null, secretKey: null, username: null, password: null, clientId: null, clientSecret: null, storeId: null, webhookSecret: null, credentials: {} },
+    { courier: 'redx', enabled: false, mode: 'sandbox', apiKey: null, secretKey: null, username: null, password: null, clientId: null, clientSecret: null, storeId: null, webhookSecret: null, credentials: {} },
+    { courier: 'carrybee', enabled: false, mode: 'sandbox', apiKey: null, secretKey: null, username: null, password: null, clientId: null, clientSecret: null, storeId: null, webhookSecret: null, credentials: {} },
+  ];
+  for (const c of courierCreds) {
+    await prisma.courierCredentials.upsert({
+      where: { courier: c.courier },
+      create: c,
+      update: {},
+    });
+  }
+  console.log(`  ✓ ${courierCreds.length} courier credentials created`);
 
   // ── System Settings ──
   const systemSettings = [

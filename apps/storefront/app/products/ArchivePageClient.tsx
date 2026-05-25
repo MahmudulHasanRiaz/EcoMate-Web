@@ -18,14 +18,13 @@ export default function ArchivePageClient() {
   const [loading, setLoading] = useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategory || null);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [priceRange, setPriceRange] = useState([0, 50000]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 50000]);
   const [sortBy, setSortBy] = useState('default');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [brandSearch, setBrandSearch] = useState('');
-
-  const brands = ['Bragg', 'DISCOVERY', 'Karkuma', 'Organic', 'Sundarban'];
+  const [brands, setBrands] = useState<string[]>([]);
 
   useEffect(() => {
     getCategories().then(setCategories).catch(() => {});
@@ -42,12 +41,15 @@ export default function ArchivePageClient() {
       perPage: 100
     })
       .then((res) => {
-        let filtered = res.data;
+        const products = res.data;
+        const allTags = [...new Set(products.flatMap((p: any) => p.tags || []))];
+        setBrands(allTags);
+        let filtered = products;
         if (priceRange[1] < 50000) {
           filtered = filtered.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
         }
         if (selectedBrands.length > 0) {
-          filtered = filtered.filter(p => selectedBrands.some(brand => (p.name || '').toLowerCase().includes(brand.toLowerCase())));
+          filtered = filtered.filter(p => selectedBrands.some(brand => (p.tags || []).map((t: string) => t.toLowerCase()).includes(brand.toLowerCase())));
         }
         setProducts(filtered);
       })

@@ -9,7 +9,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AboutPage() {
   let storeName = "Store";
-  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
+  let aboutText = "";
+  let tagline = "";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; tagline = c.store.tagline; aboutText = c.about.text; } catch {}
+
+  const storyParagraphs = aboutText
+    ? aboutText.split('\n').filter(Boolean)
+    : [];
 
   return (
     <div className="bg-white">
@@ -18,16 +24,16 @@ export default async function AboutPage() {
         <div className="absolute inset-0 opacity-40">
           <img 
             src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=2000" 
-            alt="Organic Farm" 
+            alt={storeName}
             className="w-full h-full object-cover"
           />
         </div>
         <div className="relative z-10 text-center px-4">
           <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight uppercase skew-x-[-2deg]">
-            Premium Tech, <span className="text-brand-blue">Premium Experience</span>
+            {storeName}
           </h1>
           <p className="text-gray-300 max-w-2xl mx-auto text-sm md:text-base font-medium">
-            Dedicated to providing the most reliable and innovative solutions to every household in Bangladesh.
+            {tagline || `Dedicated to providing the most reliable and innovative solutions to every household in Bangladesh.`}
           </p>
         </div>
       </section>
@@ -38,18 +44,24 @@ export default async function AboutPage() {
           <div>
             <div className="text-[10px] font-bold tracking-[0.2em] text-brand-blue uppercase mb-4">Our Story</div>
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6 leading-tight">
-              Started with a mission to bring excellence in every interaction.
+              {storyParagraphs[0] || 'Started with a mission to bring excellence in every interaction.'}
             </h2>
             <div className="space-y-4 text-gray-600 leading-relaxed text-[15px]">
-              <p>
-                {storeName} was born from a simple realization: the market lacked high-quality, reliable technology and household solutions. We wanted to bridge the gap between innovation and consumer needs.
-              </p>
-              <p>
-                Our journey began in 2024 with a vision to redefine reliability. Today, we have grown into a multi-vertical platform serving thousands of customers across the nation.
-              </p>
-              <p>
-                Every solution we offer goes through extensive testing. We don&apos;t just provide products; we provide confidence.
-              </p>
+              {storyParagraphs.length > 1 ? storyParagraphs.slice(1).map((p, i) => (
+                <p key={i}>{p}</p>
+              )) : (
+                <>
+                  <p>
+                    {storeName} was born from a simple realization: the market lacked high-quality, reliable technology and household solutions. We wanted to bridge the gap between innovation and consumer needs.
+                  </p>
+                  <p>
+                    Our journey began in 2024 with a vision to redefine reliability. Today, we have grown into a multi-vertical platform serving thousands of customers across the nation.
+                  </p>
+                  <p>
+                    Every solution we offer goes through extensive testing. We don&apos;t just provide products; we provide confidence.
+                  </p>
+                </>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

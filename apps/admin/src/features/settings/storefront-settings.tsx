@@ -3,13 +3,38 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { systemSettingsApi } from './storage-api'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock } from 'lucide-react'
+import { Loader2, Save, Store, Image, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+const bdDistricts = [
+  { name: 'Bagerhat', slug: 'bagerhat' }, { name: 'Bandarban', slug: 'bandarban' }, { name: 'Barguna', slug: 'barguna' },
+  { name: 'Barishal', slug: 'barishal' }, { name: 'Bhola', slug: 'bhola' }, { name: 'Bogura', slug: 'bogura' },
+  { name: 'Brahmanbaria', slug: 'brahmanbaria' }, { name: 'Chandpur', slug: 'chandpur' }, { name: 'Chapainawabganj', slug: 'chapainawabganj' },
+  { name: 'Chattogram', slug: 'chattogram' }, { name: 'Chuadanga', slug: 'chuadanga' }, { name: 'Cox\'s Bazar', slug: 'coxs-bazar' },
+  { name: 'Cumilla', slug: 'cumilla' }, { name: 'Dhaka', slug: 'dhaka' }, { name: 'Dinajpur', slug: 'dinajpur' },
+  { name: 'Faridpur', slug: 'faridpur' }, { name: 'Feni', slug: 'feni' }, { name: 'Gaibandha', slug: 'gaibandha' },
+  { name: 'Gazipur', slug: 'gazipur' }, { name: 'Gopalganj', slug: 'gopalganj' }, { name: 'Habiganj', slug: 'habiganj' },
+  { name: 'Jamalpur', slug: 'jamalpur' }, { name: 'Jashore', slug: 'jashore' }, { name: 'Jhalokati', slug: 'jhalokati' },
+  { name: 'Jhenaidah', slug: 'jhenaidah' }, { name: 'Joypurhat', slug: 'joypurhat' }, { name: 'Khagrachhari', slug: 'khagrachhari' },
+  { name: 'Kushtia', slug: 'kushtia' }, { name: 'Khulna', slug: 'khulna' }, { name: 'Kishoreganj', slug: 'kishoreganj' },
+  { name: 'Lakshmipur', slug: 'lakshmipur' }, { name: 'Lalmonirhat', slug: 'lalmonirhat' }, { name: 'Madaripur', slug: 'madaripur' },
+  { name: 'Magura', slug: 'magura' }, { name: 'Manikganj', slug: 'manikganj' }, { name: 'Meherpur', slug: 'meherpur' },
+  { name: 'Moulvibazar', slug: 'moulvibazar' }, { name: 'Munshiganj', slug: 'munshiganj' }, { name: 'Mymensingh', slug: 'mymensingh' },
+  { name: 'Naogaon', slug: 'naogaon' }, { name: 'Narail', slug: 'narail' }, { name: 'Narayanganj', slug: 'narayanganj' },
+  { name: 'Narsingdi', slug: 'narsingdi' }, { name: 'Natore', slug: 'natore' }, { name: 'Netrokona', slug: 'netrokona' },
+  { name: 'Nilphamari', slug: 'nilphamari' }, { name: 'Noakhali', slug: 'noakhali' }, { name: 'Pabna', slug: 'pabna' },
+  { name: 'Panchagarh', slug: 'panchagarh' }, { name: 'Patuakhali', slug: 'patuakhali' }, { name: 'Pirojpur', slug: 'pirojpur' },
+  { name: 'Rajbari', slug: 'rajbari' }, { name: 'Rajshahi', slug: 'rajshahi' }, { name: 'Rangamati', slug: 'rangamati' },
+  { name: 'Rangpur', slug: 'rangpur' }, { name: 'Satkhira', slug: 'satkhira' }, { name: 'Shariatpur', slug: 'shariatpur' },
+  { name: 'Sherpur', slug: 'sherpur' }, { name: 'Sirajganj', slug: 'sirajganj' }, { name: 'Sunamganj', slug: 'sunamganj' },
+  { name: 'Sylhet', slug: 'sylhet' }, { name: 'Tangail', slug: 'tangail' }, { name: 'Thakurgaon', slug: 'thakurgaon' },
+]
 
 export function StorefrontSettings() {
   const queryClient = useQueryClient()
@@ -49,6 +74,13 @@ export function StorefrontSettings() {
   const [companyCertifications, setCompanyCertifications] = useState('')
   const [companyTeamSize, setCompanyTeamSize] = useState('')
   const [companyCeoName, setCompanyCeoName] = useState('')
+  const [checkoutDistrictEnabled, setCheckoutDistrictEnabled] = useState(true)
+  const [checkoutThanaEnabled, setCheckoutThanaEnabled] = useState(true)
+  const [checkoutDistrictRequired, setCheckoutDistrictRequired] = useState(false)
+  const [checkoutThanaRequired, setCheckoutThanaRequired] = useState(false)
+  const [checkoutPaymentModes, setCheckoutPaymentModes] = useState<string[]>(['cod', 'full', 'partial'])
+  const [districtCharges, setDistrictCharges] = useState<Record<string, string>>({})
+  const [districtSearch, setDistrictSearch] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -83,6 +115,12 @@ export function StorefrontSettings() {
       setCompanyCertifications(settings.company_certifications || '')
       setCompanyTeamSize(settings.company_team_size || '')
       setCompanyCeoName(settings.company_ceo_name || '')
+      setCheckoutDistrictEnabled(settings.checkout_district_enabled !== 'false')
+      setCheckoutThanaEnabled(settings.checkout_thana_enabled !== 'false')
+      setCheckoutDistrictRequired(settings.checkout_district_required === 'true')
+      setCheckoutThanaRequired(settings.checkout_thana_required === 'true')
+      try { setCheckoutPaymentModes(JSON.parse(settings.checkout_payment_modes || '["cod","full","partial"]')); } catch { setCheckoutPaymentModes(['cod', 'full', 'partial']); }
+      try { setDistrictCharges(JSON.parse(settings.district_charges || '{}')); } catch { setDistrictCharges({}); }
     }
   }, [settings])
 
@@ -124,6 +162,12 @@ export function StorefrontSettings() {
       { key: 'company_certifications', value: companyCertifications },
       { key: 'company_team_size', value: companyTeamSize },
       { key: 'company_ceo_name', value: companyCeoName },
+      { key: 'checkout_district_enabled', value: String(checkoutDistrictEnabled) },
+      { key: 'checkout_thana_enabled', value: String(checkoutThanaEnabled) },
+      { key: 'checkout_district_required', value: String(checkoutDistrictRequired) },
+      { key: 'checkout_thana_required', value: String(checkoutThanaRequired) },
+      { key: 'checkout_payment_modes', value: JSON.stringify(checkoutPaymentModes) },
+      { key: 'district_charges', value: JSON.stringify(districtCharges) },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -151,6 +195,8 @@ export function StorefrontSettings() {
           <TabsTrigger value="seo" className='gap-2'><Search className='h-4 w-4' /> SEO</TabsTrigger>
           <TabsTrigger value="footer" className='gap-2'><Layout className='h-4 w-4' /> Footer</TabsTrigger>
           <TabsTrigger value="delivery" className='gap-2'><Truck className='h-4 w-4' /> Delivery</TabsTrigger>
+          <TabsTrigger value="checkout" className='gap-2'><ShoppingCart className='h-4 w-4' /> Checkout</TabsTrigger>
+          <TabsTrigger value="districts" className='gap-2'><MapPin className='h-4 w-4' /> Districts</TabsTrigger>
           <TabsTrigger value="nav" className='gap-2'><List className='h-4 w-4' /> Nav</TabsTrigger>
           <TabsTrigger value="faq" className='gap-2'><HelpCircle className='h-4 w-4' /> FAQ</TabsTrigger>
           <TabsTrigger value="hours" className='gap-2'><Clock className='h-4 w-4' /> Hours</TabsTrigger>
@@ -316,6 +362,121 @@ export function StorefrontSettings() {
                 <Label htmlFor='shipping-info'>Shipping Information</Label>
                 <Textarea id='shipping-info' value={shippingInfo} onChange={e => setShippingInfo(e.target.value)} rows={3} />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="checkout">
+          <Card>
+            <CardHeader><CardTitle>Checkout Configuration</CardTitle><CardDescription>Control the checkout form fields and payment options available to customers.</CardDescription></CardHeader>
+            <CardContent className='space-y-6'>
+              <div className='space-y-4'>
+                <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Delivery Location Fields</h3>
+                <div className='grid gap-4 md:grid-cols-2'>
+                  <div className='flex items-center justify-between p-4 border rounded-lg'>
+                    <div>
+                      <Label className='text-sm font-medium'>District Field</Label>
+                      <p className='text-xs text-muted-foreground mt-1'>Show district dropdown in checkout</p>
+                    </div>
+                    <Switch checked={checkoutDistrictEnabled} onCheckedChange={setCheckoutDistrictEnabled} />
+                  </div>
+                  <div className='flex items-center justify-between p-4 border rounded-lg'>
+                    <div>
+                      <Label className='text-sm font-medium'>Thana/Upazila Field</Label>
+                      <p className='text-xs text-muted-foreground mt-1'>Show thana dropdown in checkout</p>
+                    </div>
+                    <Switch checked={checkoutThanaEnabled} onCheckedChange={setCheckoutThanaEnabled} />
+                  </div>
+                  <div className='flex items-center justify-between p-4 border rounded-lg'>
+                    <div>
+                      <Label className='text-sm font-medium'>District Required</Label>
+                      <p className='text-xs text-muted-foreground mt-1'>Customer must select a district</p>
+                    </div>
+                    <Switch checked={checkoutDistrictRequired} onCheckedChange={setCheckoutDistrictRequired} disabled={!checkoutDistrictEnabled} />
+                  </div>
+                  <div className='flex items-center justify-between p-4 border rounded-lg'>
+                    <div>
+                      <Label className='text-sm font-medium'>Thana/Upazila Required</Label>
+                      <p className='text-xs text-muted-foreground mt-1'>Customer must select a thana</p>
+                    </div>
+                    <Switch checked={checkoutThanaRequired} onCheckedChange={setCheckoutThanaRequired} disabled={!checkoutThanaEnabled} />
+                  </div>
+                </div>
+              </div>
+              <Separator />
+              <div className='space-y-4'>
+                <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Payment Modes</h3>
+                <p className='text-xs text-muted-foreground'>Choose which payment options customers can use during checkout.</p>
+                <div className='flex flex-wrap gap-4'>
+                  <label className='flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors'>
+                    <input type='checkbox' className='h-4 w-4 accent-primary' checked={checkoutPaymentModes.includes('cod')} onChange={e => {
+                      setCheckoutPaymentModes(e.target.checked ? [...checkoutPaymentModes, 'cod'] : checkoutPaymentModes.filter(m => m !== 'cod'))
+                    }} />
+                    <div>
+                      <span className='text-sm font-medium'>Cash on Delivery</span>
+                      <p className='text-xs text-muted-foreground'>Pay when order is delivered</p>
+                    </div>
+                  </label>
+                  <label className='flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors'>
+                    <input type='checkbox' className='h-4 w-4 accent-primary' checked={checkoutPaymentModes.includes('full')} onChange={e => {
+                      setCheckoutPaymentModes(e.target.checked ? [...checkoutPaymentModes, 'full'] : checkoutPaymentModes.filter(m => m !== 'full'))
+                    }} />
+                    <div>
+                      <span className='text-sm font-medium'>Full Payment Online</span>
+                      <p className='text-xs text-muted-foreground'>Pay full amount via online gateway</p>
+                    </div>
+                  </label>
+                  <label className='flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors'>
+                    <input type='checkbox' className='h-4 w-4 accent-primary' checked={checkoutPaymentModes.includes('partial')} onChange={e => {
+                      setCheckoutPaymentModes(e.target.checked ? [...checkoutPaymentModes, 'partial'] : checkoutPaymentModes.filter(m => m !== 'partial'))
+                    }} />
+                    <div>
+                      <span className='text-sm font-medium'>Partial Payment</span>
+                      <p className='text-xs text-muted-foreground'>Pay a partial amount now, rest on delivery</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="districts">
+          <Card>
+            <CardHeader>
+              <CardTitle>District-wise Delivery Charges</CardTitle>
+              <CardDescription>Set custom delivery charges for each district. Leave blank to use the default delivery charge.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
+              <Input
+                placeholder='Search districts...'
+                value={districtSearch}
+                onChange={e => setDistrictSearch(e.target.value)}
+                className='max-w-sm'
+              />
+              <div className='grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-[500px] overflow-y-auto pr-2'>
+                {bdDistricts
+                  .filter(d => d.name.toLowerCase().includes(districtSearch.toLowerCase()))
+                  .map(d => (
+                    <div key={d.slug} className='flex items-center gap-2 p-2 border rounded-lg hover:bg-muted/20'>
+                      <span className='text-xs font-medium w-28 truncate shrink-0' title={d.name}>{d.name}</span>
+                      <div className='flex items-center gap-1'>
+                        <span className='text-xs text-muted-foreground'>৳</span>
+                        <Input
+                          className='h-8 w-20 text-xs'
+                          type='number'
+                          value={districtCharges[d.slug] ?? ''}
+                          onChange={e => setDistrictCharges(prev => ({ ...prev, [d.slug]: e.target.value }))}
+                          placeholder='60'
+                        />
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              <p className='text-xs text-muted-foreground'>
+                Showing {bdDistricts.filter(d => d.name.toLowerCase().includes(districtSearch.toLowerCase())).length} of {bdDistricts.length} districts.
+                Empty fields will use the default delivery charge.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

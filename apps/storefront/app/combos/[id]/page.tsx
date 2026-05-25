@@ -5,9 +5,11 @@ import { Gift, ShoppingBag, Minus, Plus, ChevronRight } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { getCombo } from '@/lib/api/combos';
 import { useCart } from '@/context/CartContext';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Combo } from '@/lib/types';
 
 export default function ComboDetailPage() {
+  const { config } = useStorefrontConfig();
   const params = useParams();
   const router = useRouter();
   const { items, addToCart, updateQuantity, removeFromCart } = useCart();
@@ -98,9 +100,9 @@ export default function ComboDetailPage() {
             {combo.shortDesc && <p className="text-gray-500 mb-4">{combo.shortDesc}</p>}
 
             <div className="flex items-baseline gap-3 mb-6">
-              <span className="text-3xl font-bold text-brand-blue">৳{combo.price.toLocaleString()}</span>
+              <span className="text-3xl font-bold text-brand-blue">{config.currency.symbol}{combo.price.toLocaleString()}</span>
               {combo.originalPrice && combo.originalPrice > combo.price && (
-                <span className="text-gray-400 line-through text-lg">৳{combo.originalPrice.toLocaleString()}</span>
+                <span className="text-gray-400 line-through text-lg">{config.currency.symbol}{combo.originalPrice.toLocaleString()}</span>
               )}
             </div>
 
@@ -163,14 +165,14 @@ export default function ComboDetailPage() {
                 <tr>
                   <td colSpan={3} className="px-4 py-3 text-right text-gray-600">Total Value:</td>
                   <td className="px-4 py-3 text-right">
-                    ৳{combo.originalPrice
+                    {config.currency.symbol}{combo.originalPrice
                       ? combo.originalPrice.toLocaleString()
                       : combo.items.reduce((s, i) => s + (i.price || 0) * i.quantity, 0).toLocaleString()}
                   </td>
                 </tr>
                 <tr>
                   <td colSpan={3} className="px-4 py-3 text-right text-brand-blue">Combo Price:</td>
-                  <td className="px-4 py-3 text-right text-brand-blue font-bold">৳{combo.price.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-brand-blue font-bold">{config.currency.symbol}{combo.price.toLocaleString()}</td>
                 </tr>
               </tfoot>
             </table>

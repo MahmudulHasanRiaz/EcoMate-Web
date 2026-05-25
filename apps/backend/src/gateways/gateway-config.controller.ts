@@ -1,15 +1,40 @@
 import { Controller, Get, Put, Body, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('gateways')
 export class GatewayConfigController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   async findAll() {
-    return this.prisma.paymentGatewayConfig.findMany({
+    const gateways = await this.prisma.paymentGatewayConfig.findMany({
+      where: { enabled: true },
       orderBy: { gateway: 'asc' },
     });
+    return gateways.map(g => ({
+      id: g.id,
+      gateway: g.gateway,
+      enabled: g.enabled,
+      mode: g.mode,
+      phoneNumber: g.phoneNumber,
+    }));
+  }
+
+  @Get('admin')
+  async findAllAdmin() {
+    const gateways = await this.prisma.paymentGatewayConfig.findMany({
+      orderBy: { gateway: 'asc' },
+    });
+    return gateways.map(g => ({
+      id: g.id,
+      gateway: g.gateway,
+      enabled: g.enabled,
+      mode: g.mode,
+      phoneNumber: g.phoneNumber,
+      credentials: g.credentials,
+    }));
   }
 
   @Put(':gateway')

@@ -50,6 +50,7 @@ export class SystemSettingsController {
       },
       hero: {
         slides: heroSlides,
+        secondaryBanner: map['hero_secondary_banner'] || '',
       },
       social: {
         facebook: map['social_facebook'] || '',
@@ -100,6 +101,14 @@ export class SystemSettingsController {
         teamSize: map['company_team_size'] || '',
         ceoName: map['company_ceo_name'] || '',
       },
+      checkout: {
+        districtEnabled: map['checkout_district_enabled'] !== 'false',
+        thanaEnabled: map['checkout_thana_enabled'] !== 'false',
+        districtRequired: map['checkout_district_required'] === 'true',
+        thanaRequired: map['checkout_thana_required'] === 'true',
+        paymentModes: parseJson<string[]>(map['checkout_payment_modes'] || '["cod","full","partial"]', ['cod', 'full', 'partial']),
+      },
+      districtCharges: parseJson<Record<string, number>>(map['district_charges'] || '{}', {}),
     };
   }
 

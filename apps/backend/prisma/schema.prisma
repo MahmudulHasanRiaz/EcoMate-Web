@@ -292,6 +292,8 @@ model Order {
   guestName       String?
   guestPhone      String?
   paymentMethod   String?
+  paymentMode     String?   @default("cod")
+  partialAmount   Decimal?  @db.Decimal(10, 2)
 
   customer User?       @relation(fields: [customerId], references: [id])
   assignee User?        @relation("OrderAssignee", fields: [assignedToId], references: [id])

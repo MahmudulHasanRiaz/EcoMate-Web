@@ -86,7 +86,7 @@ export class BkashPgwService {
         body: JSON.stringify({
           mode: '0011',
           payerReference: orderId,
-          callbackURL: `${callbackBase}/api/payments/bkash/callback`,
+          callbackURL: `${callbackBase}/api/payments/bkash/callback?orderId=${orderId}`,
           amount: String(amount),
           currency: 'BDT',
           intent: 'sale',

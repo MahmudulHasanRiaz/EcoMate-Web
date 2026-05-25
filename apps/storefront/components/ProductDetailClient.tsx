@@ -135,14 +135,17 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
 
           <div className="flex gap-3 mb-8 w-full">
-            <button className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px]">
+            <a href={config.social.whatsapp ? `https://wa.me/${config.social.whatsapp.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}` : '#'}
+              target="_blank" rel="noreferrer"
+              className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!config.social.whatsapp ? 'opacity-50 pointer-events-none' : ''}`}>
               <WhatsAppIcon />
               <span className="truncate">Order On WhatsApp</span>
-            </button>
-            <button className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#2a3c87] hover:bg-[#212f6c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px]">
+            </a>
+            <a href={config.store.phone ? `tel:+${config.store.phone.replace(/[^0-9]/g, '')}` : '#'}
+              className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#2a3c87] hover:bg-[#212f6c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!config.store.phone ? 'opacity-50 pointer-events-none' : ''}`}>
               <Phone size={16} />
               <span className="truncate">Call For Order</span>
-            </button>
+            </a>
           </div>
         </div>
       </div>

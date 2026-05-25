@@ -7,7 +7,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
   currency: { code: "BDT", symbol: "৳" },
   delivery: { charge: 0, freeDeliveryMin: 0 },
-  hero: { slides: [] },
+  hero: { slides: [], secondaryBanner: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "" },
   seo: { title: "", description: "", keywords: "" },
   footer: { description: "", copyright: "" },
@@ -20,6 +20,8 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   faq: { items: [] },
   hours: { label: "", details: [] },
   company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
+  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false, paymentModes: ['cod', 'full', 'partial'] },
+  districtCharges: {},
 };
 
 interface StorefrontConfigContextType {

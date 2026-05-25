@@ -1,11 +1,60 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useCart } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { getProducts } from "@/lib/api/products";
 import { useRouter } from "next/navigation";
+
+function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
+  const [upsells, setUpsells] = useState<any[]>([]);
+  const { addToCart } = useCart();
+  const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
+  const s = currencySymbol;
+
+  useEffect(() => {
+    getProducts({ isFeatured: true, perPage: 6, isActive: true })
+      .then(res => setUpsells(res.data || []))
+      .catch(() => {});
+  }, []);
+
+  if (upsells.length === 0) return null;
+
+  const handleAdd = (p: any) => {
+    addToCart({ id: p.id, name: p.name, price: p.price, originalPrice: p.salePrice || p.originalPrice, image: p.image, quantity: 1, slug: p.slug, category: p.category });
+  };
+
+  return (
+    <div className="px-4 mt-6 mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[16px] font-bold text-gray-800 border-b-2 border-brand-blue pb-1 inline-block">
+          You May Also Like
+        </h3>
+      </div>
+      <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x">
+        {upsells.map((p: any) => (
+          <div key={p.id} className="min-w-[75%] bg-white rounded-xl p-3 flex gap-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100 snap-start">
+            <div className="w-[70px] h-[70px] flex items-center justify-center bg-white flex-shrink-0">
+              <img src={imgErrors[p.id] ? PLACEHOLDER_IMAGE : (p.images?.[0] || p.image)} alt={p.name}
+                className="w-full h-full object-contain"
+                onError={() => setImgErrors(prev => ({ ...prev, [p.id]: true }))} />
+            </div>
+            <div className="flex-1 flex flex-col justify-center min-w-0">
+              <h4 className="text-[12px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">{p.name}</h4>
+              <p className="text-[12px] text-gray-500 mb-2">{s}{p.price?.toLocaleString()}.00</p>
+              <button onClick={() => handleAdd(p)}
+                className="bg-[#ea7024] text-white text-[11px] px-4 py-1.5 rounded-full font-medium hover:bg-[#d66520] transition-colors w-fit">
+                + Add
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function CartDrawer() {
   const { items, updateQuantity, removeFromCart, cartTotal, isCartOpen, setIsCartOpen } = useCart();
@@ -55,12 +104,21 @@ export default function CartDrawer() {
                <div className="w-11 h-11 bg-brand-blue rounded-lg flex items-center justify-center flex-shrink-0">
                   <Gift size={24} className="text-white" strokeWidth={1.5} />
                </div>
-               <div className="flex-1 pr-6">
-                  <p className="text-[14px] text-gray-600 leading-tight mb-1">Get special coupon</p>
-                  <p className="text-[14px] text-gray-800 leading-tight">
-                    Add <span className="font-bold text-brand-blue">{s}3,450</span> more to unlock!
-                  </p>
-               </div>
+                <div className="flex-1 pr-6">
+                   <p className="text-[14px] text-gray-600 leading-tight mb-1">Free delivery</p>
+                   <p className="text-[14px] text-gray-800 leading-tight">
+                     {config.delivery.freeDeliveryMin > 0
+                       ? <>Add <span className="font-bold text-brand-blue">{s}{Math.max(0, config.delivery.freeDeliveryMin - cartTotal).toLocaleString()}</span> more to unlock!</>
+                       : 'Free delivery on all orders'}
+                   </p>
+                </div>
+                <div className="w-12 h-12 rounded-full border-2 border-gray-200 flex items-center justify-center flex-shrink-0">
+                   <span className="text-[10px] font-bold text-gray-400">
+                     {config.delivery.freeDeliveryMin > 0
+                       ? `${Math.min(100, Math.round(cartTotal / config.delivery.freeDeliveryMin * 100))}%`
+                       : 'FREE'}
+                   </span>
+                </div>
              </div>
              {/* Progress bar */}
              <div className="absolute bottom-0 left-0 w-full h-[4px] bg-brand-blue/10">
@@ -137,62 +195,8 @@ export default function CartDrawer() {
             </div>
           )}
 
-          {/* You May Also Like (Mock) */}
-          {items.length > 0 && (
-            <div className="px-4 mt-6 mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[16px] font-bold text-gray-800 border-b-2 border-brand-blue pb-1 inline-block">
-                  You May Also Like
-                </h3>
-                <div className="flex gap-2">
-                  <button className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity">
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x">
-                {/* Dummy Item 1 to show cut-off */}
-                <div className="min-w-[85%] bg-white rounded-xl p-3 flex gap-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100 snap-start">
-                  <div className="w-[80px] h-[80px] flex items-center justify-center bg-white flex-shrink-0">
-                    <img 
-                      src={imgErrors['mock-1'] ? PLACEHOLDER_IMAGE : "https://admin.ghorerbazar.com/public/uploads/all/q33Q5xQzOrp5zR1Gg8f1N8K1L5i23G4KxRQbTGLy.jpg"} 
-                      alt="Natural Honeycomb" 
-                      className="w-[80%] h-[80%] object-contain"
-                      onError={() => handleImageError('mock-1')}
-                    />
-                  </div>
-                  <div className="flex-1 flex flex-col justify-center">
-                     <h4 className="text-[13px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">Natural Honeycomb-2000gm (Briefcase)</h4>
-                     <p className="text-[13px] text-gray-500 mb-2">{s}5,000.00</p>
-                     <div>
-                        <button className="bg-[#ea7024] text-white text-[12px] px-4 py-1 rounded-full font-medium hover:bg-[#d66520] transition-colors">
-                          + Add
-                        </button>
-                     </div>
-                  </div>
-                </div>
-                {/* Dummy Item 2 */}
-                <div className="min-w-[85%] bg-white rounded-xl p-3 flex gap-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100 snap-start">
-                  <div className="w-[80px] h-[80px] flex items-center justify-center bg-white flex-shrink-0">
-                     <div className="text-[10px] text-gray-400">100gm</div>
-                  </div>
-                  <div className="flex-1 flex flex-col justify-center">
-                     <h4 className="text-[13px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">Another Product</h4>
-                     <p className="text-[13px] text-gray-500 mb-2">{s}1,200.00</p>
-                     <div>
-                        <button className="bg-[#ea7024] text-white text-[12px] px-4 py-1 rounded-full font-medium hover:bg-[#d66520] transition-colors">
-                          + Add
-                        </button>
-                     </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* You May Also Like (from footer upsells) */}
+          {items.length > 0 && <UpsellSection currencySymbol={s} />}
         </div>
 
         {/* Footer */}
