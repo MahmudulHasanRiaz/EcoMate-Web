@@ -27,7 +27,7 @@ export function StorefrontSettings() {
   const [currencySymbol, setCurrencySymbol] = useState('৳')
   const [deliveryCharge, setDeliveryCharge] = useState('60')
   const [freeDeliveryMin, setFreeDeliveryMin] = useState('1000')
-  const [heroSlides, setHeroSlides] = useState('')
+  const [heroSlides, setHeroSlides] = useState<{ image: string; link?: string }[]>([])
   const [facebook, setFacebook] = useState('')
   const [instagram, setInstagram] = useState('')
   const [youtube, setYoutube] = useState('')
@@ -40,10 +40,10 @@ export function StorefrontSettings() {
   const [aboutText, setAboutText] = useState('')
   const [shippingInfo, setShippingInfo] = useState('')
   const [paymentInfo, setPaymentInfo] = useState('')
-  const [navigationItems, setNavigationItems] = useState('[]')
-  const [faqItems, setFaqItems] = useState('[]')
+  const [navItems, setNavItems] = useState<{ name: string; href: string }[]>([])
+  const [faqItems, setFaqItems] = useState<{ question: string; answer: string }[]>([])
   const [hoursLabel, setHoursLabel] = useState('')
-  const [hoursDetails, setHoursDetails] = useState('[]')
+  const [hoursDetails, setHoursDetails] = useState<{ day: string; time: string }[]>([])
   const [companyName, setCompanyName] = useState('')
   const [companyRegistration, setCompanyRegistration] = useState('')
   const [companyCertifications, setCompanyCertifications] = useState('')
@@ -61,7 +61,7 @@ export function StorefrontSettings() {
       setCurrencySymbol(settings.currency_symbol || '৳')
       setDeliveryCharge(settings.delivery_charge || '60')
       setFreeDeliveryMin(settings.free_delivery_min || '1000')
-      setHeroSlides(settings.hero_slides || '[]')
+      try { setHeroSlides(JSON.parse(settings.hero_slides || '[]')); } catch { setHeroSlides([]); }
       setFacebook(settings.social_facebook || '')
       setInstagram(settings.social_instagram || '')
       setYoutube(settings.social_youtube || '')
@@ -74,10 +74,10 @@ export function StorefrontSettings() {
       setAboutText(settings.about_us_text || '')
       setShippingInfo(settings.shipping_info || '')
       setPaymentInfo(settings.payment_info || '')
-      setNavigationItems(settings.navigation_items || '[]')
-      setFaqItems(settings.faq_items || '[]')
+      try { setNavItems(JSON.parse(settings.navigation_items || '[]')); } catch { setNavItems([]); }
+      try { setFaqItems(JSON.parse(settings.faq_items || '[]')); } catch { setFaqItems([]); }
       setHoursLabel(settings.hours_label || '')
-      setHoursDetails(settings.hours_details || '[]')
+      try { setHoursDetails(JSON.parse(settings.hours_details || '[]')); } catch { setHoursDetails([]); }
       setCompanyName(settings.company_name || '')
       setCompanyRegistration(settings.company_registration || '')
       setCompanyCertifications(settings.company_certifications || '')
@@ -102,7 +102,7 @@ export function StorefrontSettings() {
       { key: 'currency_symbol', value: currencySymbol },
       { key: 'delivery_charge', value: deliveryCharge },
       { key: 'free_delivery_min', value: freeDeliveryMin },
-      { key: 'hero_slides', value: heroSlides },
+      { key: 'hero_slides', value: JSON.stringify(heroSlides) },
       { key: 'social_facebook', value: facebook },
       { key: 'social_instagram', value: instagram },
       { key: 'social_youtube', value: youtube },
@@ -115,10 +115,10 @@ export function StorefrontSettings() {
       { key: 'about_us_text', value: aboutText },
       { key: 'shipping_info', value: shippingInfo },
       { key: 'payment_info', value: paymentInfo },
-      { key: 'navigation_items', value: navigationItems },
-      { key: 'faq_items', value: faqItems },
+      { key: 'navigation_items', value: JSON.stringify(navItems) },
+      { key: 'faq_items', value: JSON.stringify(faqItems) },
       { key: 'hours_label', value: hoursLabel },
-      { key: 'hours_details', value: hoursDetails },
+      { key: 'hours_details', value: JSON.stringify(hoursDetails) },
       { key: 'company_name', value: companyName },
       { key: 'company_registration', value: companyRegistration },
       { key: 'company_certifications', value: companyCertifications },
@@ -199,17 +199,39 @@ export function StorefrontSettings() {
 
         <TabsContent value="hero">
           <Card>
-            <CardHeader><CardTitle>Hero Banner Slides</CardTitle><CardDescription>Configure the hero slider images and links. Enter as a JSON array.</CardDescription></CardHeader>
-            <CardContent className='space-y-6'>
-              <div className='space-y-2'>
-                <Label htmlFor='hero-slides'>Hero Slides (JSON)</Label>
-                <Textarea id='hero-slides' value={heroSlides} onChange={e => setHeroSlides(e.target.value)} rows={8}
-                  placeholder='[{&quot;image&quot;: &quot;https://...&quot;, &quot;link&quot;: &quot;/products&quot;}]'
-                  className='font-mono text-xs' />
-              </div>
-              <p className='text-sm text-muted-foreground'>
-                Each slide requires an <code>image</code> URL and optional <code>link</code> path. Must be valid JSON array.
-              </p>
+            <CardHeader>
+              <CardTitle>Hero Banner Slides</CardTitle>
+              <CardDescription>Banner images shown on the homepage slider. Add, edit, or remove slides below.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
+              {heroSlides.map((slide, i) => (
+                <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
+                  <div className='flex-1 space-y-3'>
+                    <div className='space-y-2'>
+                      <Label>Image URL</Label>
+                      <Input value={slide.image} onChange={e => {
+                        const next = [...heroSlides];
+                        next[i] = { ...next[i], image: e.target.value };
+                        setHeroSlides(next);
+                      }} placeholder='https://example.com/banner.jpg' />
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>Link (optional)</Label>
+                      <Input value={slide.link || ''} onChange={e => {
+                        const next = [...heroSlides];
+                        next[i] = { ...next[i], link: e.target.value };
+                        setHeroSlides(next);
+                      }} placeholder='/products' />
+                    </div>
+                  </div>
+                  <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setHeroSlides(heroSlides.filter((_, j) => j !== i))}>
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button variant='outline' size='sm' onClick={() => setHeroSlides([...heroSlides, { image: '', link: '' }])}>
+                + Add Slide
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -300,52 +322,123 @@ export function StorefrontSettings() {
 
         <TabsContent value="nav">
           <Card>
-            <CardHeader><CardTitle>Navigation Menu</CardTitle><CardDescription>Header navigation items displayed on desktop. Enter as a JSON array.</CardDescription></CardHeader>
-            <CardContent className='space-y-6'>
-              <div className='space-y-2'>
-                <Label htmlFor='nav-items'>Navigation Items (JSON)</Label>
-                <Textarea id='nav-items' value={navigationItems} onChange={e => setNavigationItems(e.target.value)} rows={10}
-                  placeholder='[{&quot;name&quot;: &quot;New Arrivals&quot;, &quot;href&quot;: &quot;/products?category=new&quot;}, ...]'
-                  className='font-mono text-xs' />
-              </div>
-              <p className='text-sm text-muted-foreground'>
-                Each item needs a <code>name</code> (display text) and <code>href</code> (link path). Must be valid JSON array.
-              </p>
+            <CardHeader>
+              <CardTitle>Navigation Menu</CardTitle>
+              <CardDescription>Header navigation items shown in the top bar. Add, edit, or reorder items below.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
+              {navItems.map((item, i) => (
+                <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
+                  <div className='flex-1 grid grid-cols-1 md:grid-cols-2 gap-3'>
+                    <div className='space-y-2'>
+                      <Label>Label</Label>
+                      <Input value={item.name} onChange={e => {
+                        const next = [...navItems];
+                        next[i] = { ...next[i], name: e.target.value };
+                        setNavItems(next);
+                      }} placeholder='New Arrivals' />
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>Link</Label>
+                      <Input value={item.href} onChange={e => {
+                        const next = [...navItems];
+                        next[i] = { ...next[i], href: e.target.value };
+                        setNavItems(next);
+                      }} placeholder='/products?category=new' />
+                    </div>
+                  </div>
+                  <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setNavItems(navItems.filter((_, j) => j !== i))}>
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button variant='outline' size='sm' onClick={() => setNavItems([...navItems, { name: '', href: '' }])}>
+                + Add Item
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="faq">
           <Card>
-            <CardHeader><CardTitle>FAQ Items</CardTitle><CardDescription>Frequently asked questions displayed on the FAQ page. Enter as a JSON array.</CardDescription></CardHeader>
-            <CardContent className='space-y-6'>
-              <div className='space-y-2'>
-                <Label htmlFor='faq-items'>FAQ Items (JSON)</Label>
-                <Textarea id='faq-items' value={faqItems} onChange={e => setFaqItems(e.target.value)} rows={12}
-                  placeholder='[{&quot;question&quot;: &quot;How do I place an order?&quot;, &quot;answer&quot;: &quot;You can place an order through our website...&quot;}, ...]'
-                  className='font-mono text-xs' />
-              </div>
-              <p className='text-sm text-muted-foreground'>
-                Each item requires a <code>question</code> and <code>answer</code>. Must be valid JSON array.
-              </p>
+            <CardHeader>
+              <CardTitle>FAQ Items</CardTitle>
+              <CardDescription>Frequently asked questions shown on the FAQ page. Add, edit, or remove items below.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
+              {faqItems.map((item, i) => (
+                <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
+                  <div className='flex-1 space-y-3'>
+                    <div className='space-y-2'>
+                      <Label>Question</Label>
+                      <Input value={item.question} onChange={e => {
+                        const next = [...faqItems];
+                        next[i] = { ...next[i], question: e.target.value };
+                        setFaqItems(next);
+                      }} placeholder='How do I place an order?' />
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>Answer</Label>
+                      <Textarea value={item.answer} onChange={e => {
+                        const next = [...faqItems];
+                        next[i] = { ...next[i], answer: e.target.value };
+                        setFaqItems(next);
+                      }} rows={3} placeholder='You can place an order through our website...' />
+                    </div>
+                  </div>
+                  <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setFaqItems(faqItems.filter((_, j) => j !== i))}>
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button variant='outline' size='sm' onClick={() => setFaqItems([...faqItems, { question: '', answer: '' }])}>
+                + Add FAQ
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="hours">
           <Card>
-            <CardHeader><CardTitle>Operating Hours</CardTitle><CardDescription>Store operating hours displayed on support and stores pages.</CardDescription></CardHeader>
-            <CardContent className='space-y-6'>
+            <CardHeader>
+              <CardTitle>Operating Hours</CardTitle>
+              <CardDescription>Store hours displayed on the support and stores pages.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
               <div className='space-y-2'>
-                <Label htmlFor='hours-label'>Hours Summary Label</Label>
+                <Label htmlFor='hours-label'>Hours Summary (shown as text)</Label>
                 <Input id='hours-label' value={hoursLabel} onChange={e => setHoursLabel(e.target.value)} placeholder='Sat-Thu 10AM-10PM, Fri 3PM-10PM' />
               </div>
-              <div className='space-y-2'>
-                <Label htmlFor='hours-details'>Hours Details (JSON)</Label>
-                <Textarea id='hours-details' value={hoursDetails} onChange={e => setHoursDetails(e.target.value)} rows={6}
-                  placeholder='[{&quot;day&quot;: &quot;Saturday - Thursday&quot;, &quot;time&quot;: &quot;10:00 AM - 10:00 PM&quot;}, {&quot;day&quot;: &quot;Friday&quot;, &quot;time&quot;: &quot;3:00 PM - 10:00 PM&quot;}]'
-                  className='font-mono text-xs' />
-              </div>
+              <Separator />
+              <h4 className='text-sm font-medium'>Daily Schedule</h4>
+              {hoursDetails.map((h, i) => (
+                <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
+                  <div className='flex-1 grid grid-cols-1 md:grid-cols-2 gap-3'>
+                    <div className='space-y-2'>
+                      <Label>Day(s)</Label>
+                      <Input value={h.day} onChange={e => {
+                        const next = [...hoursDetails];
+                        next[i] = { ...next[i], day: e.target.value };
+                        setHoursDetails(next);
+                      }} placeholder='Saturday - Thursday' />
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>Time</Label>
+                      <Input value={h.time} onChange={e => {
+                        const next = [...hoursDetails];
+                        next[i] = { ...next[i], time: e.target.value };
+                        setHoursDetails(next);
+                      }} placeholder='10:00 AM - 10:00 PM' />
+                    </div>
+                  </div>
+                  <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setHoursDetails(hoursDetails.filter((_, j) => j !== i))}>
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button variant='outline' size='sm' onClick={() => setHoursDetails([...hoursDetails, { day: '', time: '' }])}>
+                + Add Schedule
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
