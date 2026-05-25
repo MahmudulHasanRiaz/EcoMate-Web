@@ -1,35 +1,15 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Hero from "../components/Hero";
 import CategoryList from "../components/CategoryList";
 import ProductSection from "../components/ProductSection";
 import BrandSection from "../components/BrandSection";
 import ComboDeals from "../components/ComboDeals";
 import Testimonials from "../components/Testimonials";
-import { getProducts } from "@/lib/api/products";
-import type { Product } from "@/lib/types";
+import { getFeaturedProductsServer } from "@/lib/api/products-server";
 
-export default function HomePage() {
-  const [featured, setFeatured] = useState<Product[]>([]);
-  const [firstCategoryProducts, setFirstCategoryProducts] = useState<Product[]>([]);
-  const [secondCategoryProducts, setSecondCategoryProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+export const revalidate = 300;
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      getProducts({ isActive: true, isFeatured: true, perPage: 4 }),
-      getProducts({ isActive: true, perPage: 4, sort: 'createdAt', order: 'desc' }),
-    ])
-      .then(([featuredRes, latestRes]) => {
-        setFeatured(featuredRes.data);
-        setFirstCategoryProducts(featuredRes.data.slice(0, 4));
-        setSecondCategoryProducts(latestRes.data.slice(0, 4));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+export default async function HomePage() {
+  const featured = await getFeaturedProductsServer();
 
   return (
     <>
@@ -37,9 +17,9 @@ export default function HomePage() {
       <CategoryList />
       <ProductSection title="Featured Gadgets" products={featured.slice(0, 4)} />
       <BrandSection />
-      <ProductSection title="Repair Services" products={firstCategoryProducts} />
+      <ProductSection title="New Arrivals" products={featured.slice(0, 4)} />
       <ComboDeals />
-      <ProductSection title="Essential Accessories" products={secondCategoryProducts} />
+      <ProductSection title="Popular Items" products={featured.slice(0, 4)} />
       <Testimonials />
     </>
   );

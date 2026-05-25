@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { ArrowRightLeft, PackageCheck, Truck, ShieldAlert } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Exchange Policy — Fixed Plus",
+  description: "Learn about Fixed Plus easy exchange policy. Hassle-free returns and exchanges within 24 hours of delivery.",
+};
 
 export default function ExchangePolicyPage() {
   return (

@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { Briefcase, MapPin, Clock, DollarSign, ArrowRight } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Careers — Fixed Plus",
+  description: "Join the Fixed Plus team. View current job openings in quality control, logistics, marketing, and customer success.",
+};
 
 export default function CareersPage() {
   const jobs = [

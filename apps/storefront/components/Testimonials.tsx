@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState } from 'react';
+import { useState } from "react";
 
 const TESTIMONIALS = [
   {
@@ -26,11 +27,7 @@ const TESTIMONIALS = [
 const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 export default function Testimonials() {
-  const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
-
-  const handleImageError = (name: string) => {
-    setImgErrors(prev => ({ ...prev, [name]: true }));
-  };
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
   return (
     <section className="py-12 bg-[#fcfcfc]">
@@ -46,7 +43,7 @@ export default function Testimonials() {
                   src={imgErrors[t.name] ? PLACEHOLDER_IMAGE : t.avatar} 
                   alt={t.name} 
                   className="w-10 h-10 rounded-full object-cover border border-gray-100 bg-gray-50"
-                  onError={() => handleImageError(t.name)}
+                  onError={() => setImgErrors(prev => ({ ...prev, [t.name]: true }))}
                 />
                 <div>
                   <h4 className="text-[14px] font-bold text-gray-800">{t.name}</h4>

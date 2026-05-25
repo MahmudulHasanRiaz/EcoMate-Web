@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { Target, Users, ShieldCheck, Heart } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "About Us — Fixed Plus",
+  description: "Learn about Fixed Plus — a technology-driven ecosystem delivering premium tech, reliable household solutions, and innovative services across Bangladesh.",
+};
 
 export default function AboutPage() {
   return (
@@ -85,12 +88,12 @@ export default function AboutPage() {
       {/* CTA */}
       <section className="py-20 text-center px-4">
         <h2 className="text-3xl font-bold mb-8">Want to see our quality yourself?</h2>
-        <button 
-          onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}
-          className="bg-brand-blue text-white px-10 py-4 rounded-full font-bold shadow-xl hover:scale-105 transition-transform"
+        <a 
+          href="#"
+          className="inline-block bg-brand-blue text-white px-10 py-4 rounded-full font-bold shadow-xl hover:scale-105 transition-transform"
         >
           Explore Ecosystem
-        </button>
+        </a>
       </section>
     </div>
   );

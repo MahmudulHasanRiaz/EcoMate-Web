@@ -1,13 +1,16 @@
-"use client";
-
-import React, { useState } from 'react';
+import type { Metadata } from "next";
 import { MapPin, Phone, Clock, Navigation } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Our Stores — Fixed Plus",
+  description: "Visit Fixed Plus flagship store in Dhaka. Find our location, hours, and contact information.",
+};
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
-export default function StoresPage() {
-  const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
+const STORE_IMAGE = "https://images.unsplash.com/photo-1534723452862-4c874018d66d?auto=format&fit=crop&q=80&w=1200";
 
+export default function StoresPage() {
   return (
     <div className="bg-[#fcfcfc] min-h-screen">
       {/* Header */}
@@ -19,14 +22,10 @@ export default function StoresPage() {
            <p className="text-gray-500 max-w-md text-sm md:text-base leading-relaxed">
              Experience the innovation of Fixed Plus in person. Visit our physical store to explore our signature products.
            </p>
-           <a 
-             href="https://maps.app.goo.gl/mT4GwfLr9AE6SFqS8" 
-             target="_blank" 
-             rel="noopener noreferrer"
-             className="flex items-center gap-2 bg-brand-blue text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-brand-blue/20 hover:scale-105 transition-transform whitespace-nowrap"
-           >
-             <MapPin size={18} />
-             View Location
+           <a href="https://maps.app.goo.gl/mT4GwfLr9AE6SFqS8" target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 bg-brand-blue text-white px-6 py-3 rounded-full font-bold text-[14px] hover:bg-brand-blue/90 transition-all shadow-md">
+             <Navigation size={16} />
+             GET DIRECTIONS
            </a>
         </div>
       </div>
@@ -38,52 +37,89 @@ export default function StoresPage() {
           <div className="group bg-white rounded-[40px] overflow-hidden border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-500">
                <div className="relative aspect-[4/3] overflow-hidden">
                   <img 
-                    src={imgErrors['store-1'] ? PLACEHOLDER_IMAGE : "https://images.unsplash.com/photo-1534723452862-4c874018d66d?auto=format&fit=crop&q=80&w=1200"} 
+                    src={STORE_IMAGE}
                     alt="Fixed Plus Warehouse" 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                    onError={() => setImgErrors(prev => ({ ...prev, 'store-1': true }))}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   <a 
                     href="https://maps.app.goo.gl/mT4GwfLr9AE6SFqS8" 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute bottom-6 right-6 w-12 h-12 bg-white rounded-full flex items-center justify-center text-brand-blue shadow-xl translate-y-12 group-hover:translate-y-0 transition-transform"
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-sm rounded-xl p-4 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0"
                   >
-                     <Navigation size={20} fill="currentColor" />
+                    <div className="w-10 h-10 rounded-full bg-brand-blue/10 flex items-center justify-center flex-shrink-0">
+                      <Navigation size={18} className="text-brand-blue" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-[13px] font-bold text-gray-800">Get Directions</p>
+                      <p className="text-[11px] text-gray-500">Fixed Plus Warehouse</p>
+                    </div>
                   </a>
                </div>
-               <div className="p-8">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-6 font-mono tracking-tighter">FIXED PLUS FLAGSHIP STORE</h3>
-                  <div className="space-y-4">
-                     <StoreDetail icon={<MapPin size={16} />} text="Shop 63-64, Block D, Level 6, Bashundhara City Shopping Mall, Dhaka" />
-                     <StoreDetail icon={<Phone size={16} />} text="+880 1700-000000" />
-                     <StoreDetail icon={<Clock size={16} />} text="10:00 AM - 8:00 PM (Closed on Tuesday)" />
-                  </div>
-                  <div className="mt-8 pt-8 border-t border-gray-50">
-                     <a 
-                       href="https://maps.app.goo.gl/mT4GwfLr9AE6SFqS8" 
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       className="w-full text-xs font-black uppercase tracking-widest text-brand-blue hover:tracking-[0.2em] transition-all text-left block"
-                     >
-                        Open In Google Maps —
-                     </a>
-                  </div>
+               <div className="p-6 space-y-5">
+                 <h3 className="text-xl font-bold text-gray-800">Fixed Plus Warehouse &bull; Dhaka</h3>
+                 <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <MapPin size={16} className="text-brand-blue shrink-0 mt-0.5" />
+                      <span className="text-[14px] text-gray-600">Level 6, Block D, Shop 63-64, Bashundhara City Shopping Mall, Dhaka</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone size={16} className="text-brand-blue shrink-0" />
+                      <span className="text-[14px] text-gray-600">+880 1700-000000</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Clock size={16} className="text-brand-blue shrink-0" />
+                      <span className="text-[14px] text-gray-600">Sat - Thu: 9 AM - 9 PM</span>
+                    </div>
+                 </div>
+
+                 <div className="flex gap-3 pt-2">
+                    <a href="tel:+8801700000000" className="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-800 text-[13px] font-bold py-3 rounded-full transition-colors">Call Now</a>
+                    <a href="https://wa.me/8801700000000" target="_blank" rel="noreferrer" className="flex-1 text-center bg-brand-blue hover:bg-brand-blue/90 text-white text-[13px] font-bold py-3 rounded-full transition-colors">WhatsApp</a>
+                 </div>
                </div>
-           </div>
+          </div>
+
+          {/* Second Store */}
+          <div className="group bg-white rounded-[40px] overflow-hidden border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-500">
+               <div className="relative aspect-[4/3] overflow-hidden bg-gray-100 flex items-center justify-center">
+                 <div className="text-center p-8">
+                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-brand-blue/10 flex items-center justify-center">
+                      <MapPin size={36} className="text-brand-blue" />
+                   </div>
+                   <p className="text-gray-400 font-bold text-sm uppercase tracking-wider">Coming Soon</p>
+                 </div>
+               </div>
+               <div className="p-6 space-y-5">
+                 <h3 className="text-xl font-bold text-gray-800">Chittagong Store</h3>
+                 <p className="text-gray-500 text-[14px]">We are expanding! Our second location is coming soon to Chittagong. Stay tuned for updates.</p>
+                 <div className="pt-2">
+                    <span className="inline-block bg-brand-blue/10 text-brand-blue text-[12px] font-bold px-4 py-2 rounded-full">Opening 2025</span>
+                 </div>
+               </div>
+          </div>
+
+          {/* Third Store */}
+          <div className="group bg-white rounded-[40px] overflow-hidden border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-500">
+               <div className="relative aspect-[4/3] overflow-hidden bg-gray-100 flex items-center justify-center">
+                 <div className="text-center p-8">
+                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-brand-blue/10 flex items-center justify-center">
+                      <MapPin size={36} className="text-brand-blue" />
+                   </div>
+                   <p className="text-gray-400 font-bold text-sm uppercase tracking-wider">Coming Soon</p>
+                 </div>
+               </div>
+               <div className="p-6 space-y-5">
+                 <h3 className="text-xl font-bold text-gray-800">Sylhet Store</h3>
+                 <p className="text-gray-500 text-[14px]">We are expanding! Our third location is coming soon to Sylhet. Stay tuned for updates.</p>
+                 <div className="pt-2">
+                    <span className="inline-block bg-brand-blue/10 text-brand-blue text-[12px] font-bold px-4 py-2 rounded-full">Opening 2025</span>
+                 </div>
+               </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function StoreDetail({ icon, text }: { icon: any, text: string }) {
-  return (
-    <div className="flex gap-4 items-start text-gray-500">
-       <div className="mt-1 text-brand-blue">{icon}</div>
-       <span className="text-[14px] leading-relaxed font-medium">{text}</span>
     </div>
   );
 }

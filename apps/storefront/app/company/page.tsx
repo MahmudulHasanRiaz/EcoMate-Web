@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { Building2, Award, Users2, Rocket } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Company — Fixed Plus",
+  description: "Learn about Fixed Plus Limited — our management philosophy, certifications, team, and vision for the future.",
+};
 
 export default function CompanyPage() {
   return (

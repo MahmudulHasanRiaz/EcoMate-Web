@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { ShieldCheck, ArrowRightLeft, RefreshCw, AlertCircle } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Refund Policy — Fixed Plus",
+  description: "Read Fixed Plus refund policy. Learn about eligibility, timelines, and how we handle returns and refunds.",
+};
 
 export default function RefundPolicyPage() {
   return (

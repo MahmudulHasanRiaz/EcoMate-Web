@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { Lock, Eye, FileText, Database } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Privacy Policy — Fixed Plus",
+  description: "Learn how Fixed Plus collects, protects, and handles your personal data with transparency and care.",
+};
 
 export default function PrivacyPolicyPage() {
   return (

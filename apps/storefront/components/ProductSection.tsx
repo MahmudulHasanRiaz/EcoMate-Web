@@ -1,8 +1,5 @@
-"use client";
-
 import type { Product } from "@/lib/types";
 import ProductCard from "./ProductCard";
-import { motion } from "motion/react";
 import Link from "next/link";
 
 interface ProductSectionProps {
@@ -33,15 +30,7 @@ export default function ProductSection({
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {products.map((product) => (
-            <motion.div
-              key={product.id}
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-50px" }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-            >
-              <ProductCard product={product} />
-            </motion.div>
+            <ProductCard key={product.id} product={product} />
           ))}
         </div>
       </div>

@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { FileText, Gavel, Scale, AlertCircle } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Terms & Conditions — Fixed Plus",
+  description: "Read the Terms of Service for using Fixed Plus. Understand your rights and obligations when using our platform.",
+};
 
 export default function TermsConditionsPage() {
   return (

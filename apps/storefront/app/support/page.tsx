@@ -1,7 +1,10 @@
-"use client";
-
-import React from 'react';
+import type { Metadata } from "next";
 import { Phone, Mail, MessageCircle, MapPin, HeadphonesIcon, Clock, MessagesSquare } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: "Support — Fixed Plus",
+  description: "Contact Fixed Plus customer support via phone, WhatsApp, live chat, or email. We are here to help.",
+};
 
 export default function SupportPage() {
   const supportChannels = [
@@ -70,12 +73,6 @@ export default function SupportPage() {
                 ? 'bg-brand-blue text-white border-brand-blue hover:bg-brand-blue/90' 
                 : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'
               }`}
-              onClick={(e) => {
-                if (channel.actionUrl === '#') {
-                  e.preventDefault();
-                  alert(`${channel.title} feature coming soon!`);
-                }
-              }}
             >
               {channel.actionText}
             </a>

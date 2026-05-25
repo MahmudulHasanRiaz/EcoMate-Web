@@ -1,5 +1,4 @@
-"use client";
-
+import type { Metadata } from "next";
 import { MapPin, Truck, CheckCircle } from "lucide-react";
 
 const areas = [
@@ -7,6 +6,11 @@ const areas = [
   { zone: "Outside Dhaka", areas: ["Chittagong City", "Sylhet City", "Rajshahi City", "Khulna City", "Barisal City", "Rangpur City", "Mymensingh City"], charge: "৳100-200", time: "3-5 business days" },
   { zone: "Other Districts", areas: ["All district headquarters across Bangladesh"], charge: "৳150-300", time: "5-7 business days" },
 ];
+
+export const metadata: Metadata = {
+  title: "Delivery Areas — Fixed Plus",
+  description: "Check if Fixed Plus delivers to your area. We deliver across Bangladesh including Dhaka, Chittagong, Sylhet, and all districts.",
+};
 
 export default function DeliveryAreasPage() {
   return (
