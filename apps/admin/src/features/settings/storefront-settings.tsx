@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image, Share2, Search, Layout, Truck, Info } from 'lucide-react'
+import { Loader2, Save, Store, Image, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -40,6 +40,15 @@ export function StorefrontSettings() {
   const [aboutText, setAboutText] = useState('')
   const [shippingInfo, setShippingInfo] = useState('')
   const [paymentInfo, setPaymentInfo] = useState('')
+  const [navigationItems, setNavigationItems] = useState('[]')
+  const [faqItems, setFaqItems] = useState('[]')
+  const [hoursLabel, setHoursLabel] = useState('')
+  const [hoursDetails, setHoursDetails] = useState('[]')
+  const [companyName, setCompanyName] = useState('')
+  const [companyRegistration, setCompanyRegistration] = useState('')
+  const [companyCertifications, setCompanyCertifications] = useState('')
+  const [companyTeamSize, setCompanyTeamSize] = useState('')
+  const [companyCeoName, setCompanyCeoName] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -65,6 +74,15 @@ export function StorefrontSettings() {
       setAboutText(settings.about_us_text || '')
       setShippingInfo(settings.shipping_info || '')
       setPaymentInfo(settings.payment_info || '')
+      setNavigationItems(settings.navigation_items || '[]')
+      setFaqItems(settings.faq_items || '[]')
+      setHoursLabel(settings.hours_label || '')
+      setHoursDetails(settings.hours_details || '[]')
+      setCompanyName(settings.company_name || '')
+      setCompanyRegistration(settings.company_registration || '')
+      setCompanyCertifications(settings.company_certifications || '')
+      setCompanyTeamSize(settings.company_team_size || '')
+      setCompanyCeoName(settings.company_ceo_name || '')
     }
   }, [settings])
 
@@ -97,6 +115,15 @@ export function StorefrontSettings() {
       { key: 'about_us_text', value: aboutText },
       { key: 'shipping_info', value: shippingInfo },
       { key: 'payment_info', value: paymentInfo },
+      { key: 'navigation_items', value: navigationItems },
+      { key: 'faq_items', value: faqItems },
+      { key: 'hours_label', value: hoursLabel },
+      { key: 'hours_details', value: hoursDetails },
+      { key: 'company_name', value: companyName },
+      { key: 'company_registration', value: companyRegistration },
+      { key: 'company_certifications', value: companyCertifications },
+      { key: 'company_team_size', value: companyTeamSize },
+      { key: 'company_ceo_name', value: companyCeoName },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -117,13 +144,16 @@ export function StorefrontSettings() {
       <Separator className='my-6' />
 
       <Tabs defaultValue="store" className='w-full'>
-        <TabsList className='grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 mb-6'>
+        <TabsList className='grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 mb-6'>
           <TabsTrigger value="store" className='gap-2'><Store className='h-4 w-4' /> Store</TabsTrigger>
           <TabsTrigger value="hero" className='gap-2'><Image className='h-4 w-4' /> Hero</TabsTrigger>
           <TabsTrigger value="social" className='gap-2'><Share2 className='h-4 w-4' /> Social</TabsTrigger>
           <TabsTrigger value="seo" className='gap-2'><Search className='h-4 w-4' /> SEO</TabsTrigger>
           <TabsTrigger value="footer" className='gap-2'><Layout className='h-4 w-4' /> Footer</TabsTrigger>
           <TabsTrigger value="delivery" className='gap-2'><Truck className='h-4 w-4' /> Delivery</TabsTrigger>
+          <TabsTrigger value="nav" className='gap-2'><List className='h-4 w-4' /> Nav</TabsTrigger>
+          <TabsTrigger value="faq" className='gap-2'><HelpCircle className='h-4 w-4' /> FAQ</TabsTrigger>
+          <TabsTrigger value="hours" className='gap-2'><Clock className='h-4 w-4' /> Hours</TabsTrigger>
           <TabsTrigger value="misc" className='gap-2'><Info className='h-4 w-4' /> Other</TabsTrigger>
         </TabsList>
 
@@ -268,6 +298,58 @@ export function StorefrontSettings() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="nav">
+          <Card>
+            <CardHeader><CardTitle>Navigation Menu</CardTitle><CardDescription>Header navigation items displayed on desktop. Enter as a JSON array.</CardDescription></CardHeader>
+            <CardContent className='space-y-6'>
+              <div className='space-y-2'>
+                <Label htmlFor='nav-items'>Navigation Items (JSON)</Label>
+                <Textarea id='nav-items' value={navigationItems} onChange={e => setNavigationItems(e.target.value)} rows={10}
+                  placeholder='[{&quot;name&quot;: &quot;New Arrivals&quot;, &quot;href&quot;: &quot;/products?category=new&quot;}, ...]'
+                  className='font-mono text-xs' />
+              </div>
+              <p className='text-sm text-muted-foreground'>
+                Each item needs a <code>name</code> (display text) and <code>href</code> (link path). Must be valid JSON array.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="faq">
+          <Card>
+            <CardHeader><CardTitle>FAQ Items</CardTitle><CardDescription>Frequently asked questions displayed on the FAQ page. Enter as a JSON array.</CardDescription></CardHeader>
+            <CardContent className='space-y-6'>
+              <div className='space-y-2'>
+                <Label htmlFor='faq-items'>FAQ Items (JSON)</Label>
+                <Textarea id='faq-items' value={faqItems} onChange={e => setFaqItems(e.target.value)} rows={12}
+                  placeholder='[{&quot;question&quot;: &quot;How do I place an order?&quot;, &quot;answer&quot;: &quot;You can place an order through our website...&quot;}, ...]'
+                  className='font-mono text-xs' />
+              </div>
+              <p className='text-sm text-muted-foreground'>
+                Each item requires a <code>question</code> and <code>answer</code>. Must be valid JSON array.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="hours">
+          <Card>
+            <CardHeader><CardTitle>Operating Hours</CardTitle><CardDescription>Store operating hours displayed on support and stores pages.</CardDescription></CardHeader>
+            <CardContent className='space-y-6'>
+              <div className='space-y-2'>
+                <Label htmlFor='hours-label'>Hours Summary Label</Label>
+                <Input id='hours-label' value={hoursLabel} onChange={e => setHoursLabel(e.target.value)} placeholder='Sat-Thu 10AM-10PM, Fri 3PM-10PM' />
+              </div>
+              <div className='space-y-2'>
+                <Label htmlFor='hours-details'>Hours Details (JSON)</Label>
+                <Textarea id='hours-details' value={hoursDetails} onChange={e => setHoursDetails(e.target.value)} rows={6}
+                  placeholder='[{&quot;day&quot;: &quot;Saturday - Thursday&quot;, &quot;time&quot;: &quot;10:00 AM - 10:00 PM&quot;}, {&quot;day&quot;: &quot;Friday&quot;, &quot;time&quot;: &quot;3:00 PM - 10:00 PM&quot;}]'
+                  className='font-mono text-xs' />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="misc">
           <Card>
             <CardHeader><CardTitle>Additional Content</CardTitle><CardDescription>About us, payment info, and other storefront content.</CardDescription></CardHeader>
@@ -279,6 +361,30 @@ export function StorefrontSettings() {
               <div className='space-y-2'>
                 <Label htmlFor='payment-info'>Payment Information</Label>
                 <Textarea id='payment-info' value={paymentInfo} onChange={e => setPaymentInfo(e.target.value)} rows={3} />
+              </div>
+              <Separator />
+              <h3 className='text-lg font-semibold'>Company Information</h3>
+              <div className='grid gap-6 md:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='company-name'>Company Name</Label>
+                  <Input id='company-name' value={companyName} onChange={e => setCompanyName(e.target.value)} />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='company-registration'>Registration Number</Label>
+                  <Input id='company-registration' value={companyRegistration} onChange={e => setCompanyRegistration(e.target.value)} />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='company-certifications'>Certifications</Label>
+                  <Input id='company-certifications' value={companyCertifications} onChange={e => setCompanyCertifications(e.target.value)} />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='company-team-size'>Team Size</Label>
+                  <Input id='company-team-size' value={companyTeamSize} onChange={e => setCompanyTeamSize(e.target.value)} />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='company-ceo-name'>CEO/Founder Name</Label>
+                  <Input id='company-ceo-name' value={companyCeoName} onChange={e => setCompanyCeoName(e.target.value)} />
+                </div>
               </div>
             </CardContent>
           </Card>

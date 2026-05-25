@@ -7,13 +7,13 @@ const TESTIMONIALS = [
   {
     name: 'Sultana Yesmin',
     role: 'Housewife',
-    text: 'Thanks Fixed Plus for free Honeyraj. Of course, I got it for being a regular customer.',
+    text: 'Excellent quality products! I received everything on time and well-packaged. Highly recommended.',
     avatar: 'https://i.pravatar.cc/150?u=sultana'
   },
   {
     name: 'Ayesha Khan',
     role: 'Banker',
-    text: '২য় বার Fixed Plus থেকে অর্ডার করলাম। আগের মতো এবারও খাঁটি পণ্য পেয়েছি। ধন্যবাদ ডেলিভারি ম্যানদের। একদম সঠিক সময়ে দিয়ে গিয়েছে।',
+    text: '২য় বার অর্ডার করলাম। আগের মতো এবারও খাঁটি পণ্য পেয়েছি। ধন্যবাদ ডেলিভারি ম্যানদের। একদম সঠিক সময়ে দিয়ে গিয়েছে।',
     avatar: 'https://i.pravatar.cc/150?u=ayesha'
   },
   {

@@ -78,7 +78,7 @@ export default function Footer() {
                 { name: "About us", onClick: () => handleLinkOpen('/about') }, 
                 { name: "Contact us", onClick: () => handleLinkOpen('/support') }, 
                 { name: "Company Information", onClick: () => handleLinkOpen('/company') }, 
-                { name: "Fixed Plus Stores", onClick: () => handleLinkOpen('/stores') }, 
+                { name: `${store.name} Stores`, onClick: () => handleLinkOpen('/stores') }, 
                 { name: "Terms & Conditions", onClick: () => handleLinkOpen('/terms-conditions') }, 
                 { name: "Privacy Policy", onClick: () => handleLinkOpen('/privacy-policy') }, 
                 { name: "Careers", onClick: () => handleLinkOpen('/careers') }

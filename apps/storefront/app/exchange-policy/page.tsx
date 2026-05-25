@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { ArrowRightLeft, PackageCheck, Truck, ShieldAlert } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Exchange Policy — Fixed Plus",
-  description: "Learn about Fixed Plus easy exchange policy. Hassle-free returns and exchanges within 24 hours of delivery.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Exchange Policy", "Learn about {store} easy exchange policy. Hassle-free returns and exchanges within 24 hours of delivery.");
+}
 
-export default function ExchangePolicyPage() {
+export default async function ExchangePolicyPage() {
+  let storeName = "Store";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
+
   return (
     <div className="bg-white min-h-screen">
       {/* Header */}
@@ -50,7 +54,7 @@ export default function ExchangePolicyPage() {
           <div>
             <h2 className="text-3xl font-bold mb-8">Exchange Conditions</h2>
             <div className="space-y-6">
-              <ConditionItem title="Original Packaging" desc="The item must be returned in its original Fixed Plus packaging." />
+              <ConditionItem title="Original Packaging" desc={`The item must be returned in its original ${storeName} packaging.`} />
               <ConditionItem title="Proof of Purchase" desc="A valid order ID or paper invoice must be presented." />
               <ConditionItem title="Non-Food Items" desc="Food items can only be exchanged if damaged; non-food items follow standard rules." />
               <ConditionItem title="Shipping Costs" desc="Standard shipping charges apply for exchanges unless the error was on our part." />

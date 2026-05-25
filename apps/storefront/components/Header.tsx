@@ -7,16 +7,14 @@ import { useCart } from "@/context/CartContext";
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
-const NAV_ITEMS = [
-  "New Arrivals", "Repair Services", "iPhone", "Samsung", "Google Pixel", "Audio Store", 
-  "Gaming", "Smart Home", "Pre-Owned", "Offers", "Accessories", "Support"
-];
+
 
 export default function Header() {
   const { cartCount, setIsCartOpen } = useCart();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = React.useState(false);
   const { config } = useStorefrontConfig();
+  const navItems = config.navigation?.items?.length ? config.navigation.items : [];
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-white/20">
@@ -143,14 +141,13 @@ export default function Header() {
       <div className="hidden md:block bg-[#1a1a1a] text-white border-b border-gray-200">
         <div className="max-w-screen-xl mx-auto px-4 h-10 flex items-center justify-between">
           <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap hide-scrollbar">
-            {NAV_ITEMS.map((item, idx) => (
+            {navItems.map((item, idx) => (
               <button 
                 key={idx} 
-                onClick={() => router.push(`/products?category=${item.toLowerCase().replace(/\s+/g, '-')}`)}
+                onClick={() => router.push(item.href || `/products?category=${item.name.toLowerCase().replace(/\s+/g, '-')}`)}
                 className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide cursor-pointer"
               >
-                {item}
-                {(idx > 1 && idx < NAV_ITEMS.length - 2) && <ChevronDown size={12} />}
+                {item.name}
               </button>
             ))}
           </div>

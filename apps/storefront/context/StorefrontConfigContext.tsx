@@ -16,6 +16,10 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   payment: { info: "" },
   meta: { pixelEnabled: false, pixelId: "" },
   tiktok: { pixelEnabled: false, pixelCode: "" },
+  navigation: { items: [] },
+  faq: { items: [] },
+  hours: { label: "", details: [] },
+  company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
 };
 
 interface StorefrontConfigContextType {

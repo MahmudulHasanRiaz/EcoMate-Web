@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { FileText, Gavel, Scale, AlertCircle } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Terms & Conditions — Fixed Plus",
-  description: "Read the Terms of Service for using Fixed Plus. Understand your rights and obligations when using our platform.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Terms & Conditions", "Read the Terms of Service for using {store}. Understand your rights and obligations when using our platform.");
+}
 
-export default function TermsConditionsPage() {
+export default async function TermsConditionsPage() {
+  let storeName = "Store";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
+
   return (
     <div className="bg-amber-50/30 min-h-screen pb-24">
       {/* Editorial Header */}
@@ -20,7 +24,7 @@ export default function TermsConditionsPage() {
                  <Scale size={14} /> Legal Agreement
                </p>
                <p className="text-gray-500 text-[11px] leading-relaxed italic">
-                 By using Fixed Plus, you agree to follow these rules and regulations which ensure a safe marketplace for everyone.
+                  By using {storeName}, you agree to follow these rules and regulations which ensure a safe marketplace for everyone.
                </p>
             </div>
          </div>

@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { Building2, Award, Users2, Rocket } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Company — Fixed Plus",
-  description: "Learn about Fixed Plus Limited — our management philosophy, certifications, team, and vision for the future.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Company", "Learn about {store} — our management philosophy, certifications, team, and vision for the future.");
+}
 
-export default function CompanyPage() {
+export default async function CompanyPage() {
+  let storeName = "Store";
+  let company = { registration: "C-182394/2021", certifications: "BSTI Certified", teamSize: "150+ Experts", ceoName: "Mahmud Riaz" };
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; company = { ...company, ...c.company }; } catch {}
   return (
     <div className="bg-white min-h-screen">
       {/* Editorial Split Header */}
@@ -14,7 +18,7 @@ export default function CompanyPage() {
         <div className="bg-[#1a1a1a] p-12 md:p-24 flex flex-col justify-center">
            <div className="text-[10px] font-bold text-brand-blue uppercase tracking-[0.4em] mb-12">Established 2024</div>
            <h1 className="text-6xl md:text-[100px] font-black text-white leading-[0.85] tracking-tighter mb-12">
-             FIXED <br /><span className="text-brand-blue">PLUS</span>
+              {storeName.toUpperCase().split(" ")[0]} <br /><span className="text-brand-blue">{storeName.toUpperCase().split(" ").slice(1).join(" ") || "PLUS"}</span>
            </h1>
            <p className="text-gray-400 text-lg max-w-sm border-l-2 border-brand-blue pl-6 leading-relaxed">
              A technology-driven ecosystem dedicated to innovation, efficiency, and sustainability.
@@ -33,24 +37,24 @@ export default function CompanyPage() {
       {/* Corporate Details */}
       <section className="max-w-7xl mx-auto px-4 py-24">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
-           <InfoTile icon={<Building2 />} title="Corporate Name" val="Fixed Plus Limited" />
-           <InfoTile icon={<Rocket />} title="Reg. Number" val="C-182394/2021" />
-           <InfoTile icon={<Award />} title="Certifications" val="BSTI Certified" />
-           <InfoTile icon={<Users2 />} title="Team Size" val="150+ Experts" />
+            <InfoTile icon={<Building2 />} title="Corporate Name" val={storeName + " Limited"} />
+            <InfoTile icon={<Rocket />} title="Reg. Number" val={company.registration} />
+            <InfoTile icon={<Award />} title="Certifications" val={company.certifications} />
+            <InfoTile icon={<Users2 />} title="Team Size" val={company.teamSize} />
         </div>
 
         <div className="mt-32 grid grid-cols-1 lg:grid-cols-12 gap-16">
            <div className="lg:col-span-5">
               <h2 className="text-4xl font-bold tracking-tight mb-8">Management Philosophy</h2>
               <p className="text-gray-600 leading-relaxed mb-6">
-                At Fixed Plus, we believe that transparency is the bedrock of trust. From the early stages of development to the final product delivery, we manage every step with integrity.
+                At {storeName}, we believe that transparency is the bedrock of trust. From the early stages of development to the final product delivery, we manage every step with integrity.
               </p>
               <div className="flex items-center gap-6 mt-12 bg-gray-50 p-6 rounded-2xl border-l-4 border-brand-blue">
                  <div className="shrink-0 w-16 h-16 rounded-full bg-gray-200 overflow-hidden">
                     <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=400" alt="CEO" />
                  </div>
                  <div>
-                    <p className="font-bold text-gray-900">Mahmud Riaz</p>
+                     <p className="font-bold text-gray-900">{company.ceoName || "Mahmud Riaz"}</p>
                     <p className="text-sm text-gray-500">Founder & CEO</p>
                  </div>
               </div>

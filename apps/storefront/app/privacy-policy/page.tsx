@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Lock, Eye, FileText, Database } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy — Fixed Plus",
-  description: "Learn how Fixed Plus collects, protects, and handles your personal data with transparency and care.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Privacy Policy", "Learn how {store} collects, protects, and handles your personal data with transparency and care.");
+}
 
 export default function PrivacyPolicyPage() {
   return (

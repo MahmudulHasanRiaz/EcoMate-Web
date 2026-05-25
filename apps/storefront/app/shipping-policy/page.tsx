@@ -1,12 +1,15 @@
 import { Truck } from "lucide-react";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export default function ShippingPolicyPage() {
+export default async function ShippingPolicyPage() {
+  let storeName = "Store";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   return (
     <div className="max-w-screen-xl mx-auto px-3 md:px-4 py-4 md:py-8">
       <h1 className="text-[18px] md:text-[24px] font-bold text-gray-900 mb-1">Shipping Policy</h1>
       <p className="text-[13px] text-gray-500 mb-6">Last updated: December 2024</p>
       <div className="max-w-3xl space-y-4 text-[13px] text-gray-600">
-        <p>At Fixed Plus, we strive to deliver your orders as quickly and safely as possible.</p>
+        <p>At {storeName}, we strive to deliver your orders as quickly and safely as possible.</p>
         <h3 className="text-[15px] font-semibold text-gray-800">Processing Time</h3>
         <p>Orders are processed within 24 hours of placement (excluding Fridays and public holidays).</p>
         <h3 className="text-[15px] font-semibold text-gray-800">Delivery Timeframes</h3>

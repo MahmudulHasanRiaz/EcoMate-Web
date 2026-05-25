@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { Target, Users, ShieldCheck, Heart } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "About Us — Fixed Plus",
-  description: "Learn about Fixed Plus — a technology-driven ecosystem delivering premium tech, reliable household solutions, and innovative services across Bangladesh.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("About Us", "Learn about {store} — a technology-driven ecosystem delivering premium products and services.");
+}
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  let storeName = "Store";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
+
   return (
     <div className="bg-white">
       {/* Hero Section */}
@@ -38,7 +42,7 @@ export default function AboutPage() {
             </h2>
             <div className="space-y-4 text-gray-600 leading-relaxed text-[15px]">
               <p>
-                Fixed Plus was born from a simple realization: the market lacked high-quality, reliable technology and household solutions. We wanted to bridge the gap between innovation and consumer needs.
+                {storeName} was born from a simple realization: the market lacked high-quality, reliable technology and household solutions. We wanted to bridge the gap between innovation and consumer needs.
               </p>
               <p>
                 Our journey began in 2024 with a vision to redefine reliability. Today, we have grown into a multi-vertical platform serving thousands of customers across the nation.

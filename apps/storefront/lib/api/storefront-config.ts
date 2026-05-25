@@ -51,6 +51,23 @@ export interface StorefrontConfig {
     pixelEnabled: boolean;
     pixelCode: string;
   };
+  navigation: {
+    items: { name: string; href: string }[];
+  };
+  faq: {
+    items: { question: string; answer: string }[];
+  };
+  hours: {
+    label: string;
+    details: { day: string; time: string }[];
+  };
+  company: {
+    name: string;
+    registration: string;
+    certifications: string;
+    teamSize: string;
+    ceoName: string;
+  };
 }
 
 let cachedConfig: StorefrontConfig | null = null;

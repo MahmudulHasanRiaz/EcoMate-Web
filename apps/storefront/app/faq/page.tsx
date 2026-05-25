@@ -1,39 +1,23 @@
 import type { Metadata } from "next";
 import { HelpCircle, ChevronDown } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-const FAQS = [
-  {
-    question: "How do I place an order?",
-    answer: "You can easily place an order through our website by adding items to your cart and proceeding to checkout. Alternatively, you can use our Mobile App or call our customer service center."
-  },
-  {
-    question: "What are the payment methods available?",
-    answer: "We accept multiple payment methods including Cash on Delivery (COD), Mobile Banking (bKash, Nagad, Rocket), and Credit/Debit Cards (Visa, MasterCard)."
-  },
-  {
-    question: "How long does delivery take?",
-    answer: "Inside Dhaka, delivery usually takes 1-2 business days. Outside Dhaka, it may take 3-5 business days depending on the courier service. You can track your order using your order ID."
-  },
-  {
-    question: "What is your return policy?",
-    answer: "We offer a flexible return policy. If you receive a damaged or incorrect product, you can request a return within 3 days of receiving the order. Contact our support team for assistance."
-  },
-  {
-    question: "Are your products authentic?",
-    answer: "Yes, 100% authentic. We carefully source all our products from verified suppliers, farmers, and our own managed manufacturing units to ensure premium quality."
-  },
-  {
-    question: "How can I track my order?",
-    answer: "You can track your order by clicking on the 'Track Order' link in the footer or mobile menu, and entering your order ID or mobile number."
-  }
-];
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("FAQ", "Frequently asked questions about {store} — orders, payment, delivery, returns, and more.");
+}
 
-export const metadata: Metadata = {
-  title: "FAQ — Fixed Plus",
-  description: "Frequently asked questions about Fixed Plus — orders, payment, delivery, returns, and more.",
-};
-
-export default function FaqPage() {
+export default async function FaqPage() {
+  let config;
+  try { config = await getStorefrontConfigServer(); } catch {}
+  const faqs = config?.faq?.items?.length ? config.faq.items : [
+    { question: "How do I place an order?", answer: "You can easily place an order through our website by adding items to your cart and proceeding to checkout." },
+    { question: "What are the payment methods available?", answer: "We accept multiple payment methods including Cash on Delivery (COD), Mobile Banking, and Credit/Debit Cards." },
+    { question: "How long does delivery take?", answer: "Inside Dhaka, delivery usually takes 1-2 business days. Outside Dhaka, it may take 3-5 business days." },
+    { question: "What is your return policy?", answer: "If you receive a damaged or incorrect product, you can request a return within 3 days of receiving the order." },
+    { question: "Are your products authentic?", answer: "Yes, 100% authentic. We carefully source all our products from verified suppliers." },
+    { question: "How can I track my order?", answer: "You can track your order by entering your order ID or mobile number on the Track Order page." },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 md:py-16">
@@ -48,7 +32,7 @@ export default function FaqPage() {
       </div>
 
       <div className="space-y-4">
-        {FAQS.map((faq, index) => (
+        {faqs.map((faq, index) => (
           <details
             key={index}
             className="bg-white border rounded-xl overflow-hidden shadow-sm border-gray-100 [&[open]]:border-brand-blue/30 [&[open]]:shadow-md [&[open]]:shadow-brand-blue/5"

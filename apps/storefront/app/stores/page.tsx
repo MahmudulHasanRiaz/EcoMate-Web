@@ -1,16 +1,25 @@
 import type { Metadata } from "next";
 import { MapPin, Phone, Clock, Navigation } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Our Stores — Fixed Plus",
-  description: "Visit Fixed Plus flagship store in Dhaka. Find our location, hours, and contact information.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Our Stores", "Visit the {store} flagship store in Dhaka. Find our location, hours, and contact information.");
+}
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 const STORE_IMAGE = "https://images.unsplash.com/photo-1534723452862-4c874018d66d?auto=format&fit=crop&q=80&w=1200";
 
-export default function StoresPage() {
+export default async function StoresPage() {
+  let config;
+  try { config = await getStorefrontConfigServer(); } catch {}
+  const s = config?.store;
+  const soc = config?.social;
+  const phoneDigits = s?.phone ? s.phone.replace(/[^0-9]/g, '') : "8801700000000";
+  const address = s?.address || "Level 6, Block D, Shop 63-64, Bashundhara City Shopping Mall, Dhaka";
+  const storeName = s?.name || "Store";
+
   return (
     <div className="bg-[#fcfcfc] min-h-screen">
       {/* Header */}
@@ -20,7 +29,7 @@ export default function StoresPage() {
         </h1>
         <div className="flex flex-col md:flex-row md:items-center gap-6 justify-between border-t border-gray-200 pt-10">
            <p className="text-gray-500 max-w-md text-sm md:text-base leading-relaxed">
-             Experience the innovation of Fixed Plus in person. Visit our physical store to explore our signature products.
+             Experience the innovation of {storeName} in person. Visit our physical store to explore our signature products.
            </p>
            <a href="https://maps.app.goo.gl/mT4GwfLr9AE6SFqS8" target="_blank" rel="noreferrer"
               className="flex items-center gap-2 bg-brand-blue text-white px-6 py-3 rounded-full font-bold text-[14px] hover:bg-brand-blue/90 transition-all shadow-md">
@@ -38,7 +47,7 @@ export default function StoresPage() {
                <div className="relative aspect-[4/3] overflow-hidden">
                   <img 
                     src={STORE_IMAGE}
-                    alt="Fixed Plus Warehouse" 
+                    alt={storeName + " Warehouse"} 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -53,20 +62,20 @@ export default function StoresPage() {
                     </div>
                     <div className="text-left">
                       <p className="text-[13px] font-bold text-gray-800">Get Directions</p>
-                      <p className="text-[11px] text-gray-500">Fixed Plus Warehouse</p>
+                       <p className="text-[11px] text-gray-500">{storeName + " Warehouse"}</p>
                     </div>
                   </a>
                </div>
                <div className="p-6 space-y-5">
-                 <h3 className="text-xl font-bold text-gray-800">Fixed Plus Warehouse &bull; Dhaka</h3>
+                 <h3 className="text-xl font-bold text-gray-800">{storeName} Warehouse &bull; Dhaka</h3>
                  <div className="space-y-3">
                     <div className="flex items-start gap-3">
                       <MapPin size={16} className="text-brand-blue shrink-0 mt-0.5" />
-                      <span className="text-[14px] text-gray-600">Level 6, Block D, Shop 63-64, Bashundhara City Shopping Mall, Dhaka</span>
+                      <span className="text-[14px] text-gray-600">{address}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <Phone size={16} className="text-brand-blue shrink-0" />
-                      <span className="text-[14px] text-gray-600">+880 1700-000000</span>
+                      <span className="text-[14px] text-gray-600">{s?.phone || "+880 1700-000000"}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <Clock size={16} className="text-brand-blue shrink-0" />
@@ -75,8 +84,8 @@ export default function StoresPage() {
                  </div>
 
                  <div className="flex gap-3 pt-2">
-                    <a href="tel:+8801700000000" className="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-800 text-[13px] font-bold py-3 rounded-full transition-colors">Call Now</a>
-                    <a href="https://wa.me/8801700000000" target="_blank" rel="noreferrer" className="flex-1 text-center bg-brand-blue hover:bg-brand-blue/90 text-white text-[13px] font-bold py-3 rounded-full transition-colors">WhatsApp</a>
+                     <a href={`tel:${phoneDigits}`} className="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-800 text-[13px] font-bold py-3 rounded-full transition-colors">Call Now</a>
+                    <a href={`https://wa.me/${phoneDigits}`} target="_blank" rel="noreferrer" className="flex-1 text-center bg-brand-blue hover:bg-brand-blue/90 text-white text-[13px] font-bold py-3 rounded-full transition-colors">WhatsApp</a>
                  </div>
                </div>
           </div>

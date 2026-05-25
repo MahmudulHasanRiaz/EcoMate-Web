@@ -1,19 +1,26 @@
 import type { Metadata } from "next";
 import { Phone, Mail, MessageCircle, MapPin, HeadphonesIcon, Clock, MessagesSquare } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Support — Fixed Plus",
-  description: "Contact Fixed Plus customer support via phone, WhatsApp, live chat, or email. We are here to help.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Support", "Contact {store} customer support via phone, WhatsApp, live chat, or email. We are here to help.");
+}
 
-export default function SupportPage() {
+export default async function SupportPage() {
+  let config;
+  try { config = await getStorefrontConfigServer(); } catch {}
+  const store = config?.store;
+  const social = config?.social;
+
+  const wa = social?.whatsapp ? `https://wa.me/${social.whatsapp.replace(/[^0-9]/g, '')}` : "#";
   const supportChannels = [
     {
       icon: <Phone size={24} />,
       title: "Call Us",
       description: "Speak with our friendly customer service team directly.",
-      actionText: "+880 123 456 7890",
-      actionUrl: "tel:+8801234567890",
+      actionText: store?.phone || "+880 123 456 7890",
+      actionUrl: store?.phone ? `tel:${store.phone.replace(/[^0-9]/g, '')}` : "tel:+8801234567890",
       bgColor: "bg-blue-50",
       iconColor: "text-blue-500"
     },
@@ -22,7 +29,7 @@ export default function SupportPage() {
       title: "WhatsApp Chat",
       description: "Message us on WhatsApp for quick responses and updates.",
       actionText: "Chat on WhatsApp",
-      actionUrl: "#",
+      actionUrl: wa,
       bgColor: "bg-green-50",
       iconColor: "text-green-500"
     },
@@ -39,8 +46,8 @@ export default function SupportPage() {
       icon: <Mail size={24} />,
       title: "Email Support",
       description: "Send us an email anytime and we will get back to you within 24 hours.",
-      actionText: "support@fixedplus.com",
-      actionUrl: "mailto:support@fixedplus.com",
+      actionText: store?.email || "support@fixedplus.com",
+      actionUrl: store?.email ? `mailto:${store.email}` : "mailto:support@fixedplus.com",
       bgColor: "bg-brand-blue/10",
       iconColor: "text-brand-blue"
     }
@@ -87,14 +94,15 @@ export default function SupportPage() {
             Operating Hours
           </h3>
           <ul className="space-y-4 text-gray-600">
-            <li className="flex justify-between items-center pb-4 border-b border-gray-200">
-              <span className="font-semibold">Saturday - Thursday:</span>
-              <span>10:00 AM - 10:00 PM</span>
-            </li>
-            <li className="flex justify-between items-center pb-4 border-b border-gray-200">
-              <span className="font-semibold">Friday:</span>
-              <span>3:00 PM - 10:00 PM</span>
-            </li>
+            {(config?.hours?.details?.length ? config.hours.details : [
+              { day: "Saturday - Thursday", time: "10:00 AM - 10:00 PM" },
+              { day: "Friday", time: "3:00 PM - 10:00 PM" },
+            ]).map((h, i) => (
+              <li key={i} className="flex justify-between items-center pb-4 border-b border-gray-200">
+                <span className="font-semibold">{h.day}:</span>
+                <span>{h.time}</span>
+              </li>
+            ))}
             <li className="flex justify-between items-center text-sm text-gray-500 mt-2">
               <span className="italic">* Live chat and calls are available during operating hours only.</span>
             </li>
@@ -107,10 +115,18 @@ export default function SupportPage() {
             Corporate Office
           </h3>
           <div className="text-gray-600 space-y-2">
-            <p className="font-bold text-gray-800">Fixed Plus Ltd.</p>
-            <p>House: 15, Road: 2, Block: A</p>
-            <p>Mirpur 10, Dhaka - 1216</p>
-            <p>Bangladesh</p>
+            <p className="font-bold text-gray-800">{store?.name || "Store"} Ltd.</p>
+            {store?.address ? (
+              <>
+                {store.address.split(",").map((line, i) => <p key={i}>{line.trim()}</p>)}
+              </>
+            ) : (
+              <>
+                <p>House: 15, Road: 2, Block: A</p>
+                <p>Mirpur 10, Dhaka - 1216</p>
+                <p>Bangladesh</p>
+              </>
+            )}
           </div>
           
           <div className="mt-8">

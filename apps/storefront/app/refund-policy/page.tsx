@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { ShieldCheck, ArrowRightLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: "Refund Policy — Fixed Plus",
-  description: "Read Fixed Plus refund policy. Learn about eligibility, timelines, and how we handle returns and refunds.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Refund Policy", "Read {store} refund policy. Learn about eligibility, timelines, and how we handle returns and refunds.");
+}
 
-export default function RefundPolicyPage() {
+export default async function RefundPolicyPage() {
+  let storeEmail = "support@fixedplus.com";
+  try { const c = await getStorefrontConfigServer(); storeEmail = c.store.email || storeEmail; } catch {}
+
   return (
     <div className="bg-white min-h-screen">
       {/* Header */}
@@ -66,7 +70,7 @@ export default function RefundPolicyPage() {
 
           <div className="pt-12 text-center">
             <p className="text-gray-400 text-sm mb-6 font-mono uppercase tracking-widest">Questions?</p>
-            <a href="mailto:support@fixedplus.com" className="text-brand-blue font-bold text-xl hover:underline">support@fixedplus.com</a>
+            <a href={`mailto:${storeEmail}`} className="text-brand-blue font-bold text-xl hover:underline">{storeEmail}</a>
           </div>
         </div>
       </div>

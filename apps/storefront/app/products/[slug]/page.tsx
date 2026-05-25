@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getProductBySlugServer } from "@/lib/api/products-server";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import ProductDetailClient from "@/components/ProductDetailClient";
 
 export const revalidate = 300;
@@ -8,11 +9,13 @@ export const dynamicParams = true;
 
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await props.params;
+  let storeName = "Store";
+  try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
     const product = await getProductBySlugServer(slug);
     return {
-      title: `${product.name} — Fixed Plus`,
-      description: product.description?.slice(0, 160) || `${product.name} at Fixed Plus`,
+      title: `${product.name} — ${storeName}`,
+      description: product.description?.slice(0, 160) || `${product.name} at ${storeName}`,
       openGraph: {
         title: product.name,
         description: product.description?.slice(0, 160),
@@ -20,7 +23,7 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
       },
     };
   } catch {
-    return { title: "Product Not Found — Fixed Plus" };
+    return { title: `Product Not Found — ${storeName}` };
   }
 }
 

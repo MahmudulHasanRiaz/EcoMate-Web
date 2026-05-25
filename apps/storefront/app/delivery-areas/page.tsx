@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MapPin, Truck, CheckCircle } from "lucide-react";
+import { pageMetadata } from "@/lib/metadata";
 
 const areas = [
   { zone: "Inside Dhaka", areas: ["Gulshan", "Banani", "Uttara", "Mirpur", "Mohammadpur", "Dhanmondi", "Motijheel", "Farmgate", "Bashundhara", "Baridhara"], charge: "Free", time: "24-48 hours" },
@@ -7,10 +8,9 @@ const areas = [
   { zone: "Other Districts", areas: ["All district headquarters across Bangladesh"], charge: "৳150-300", time: "5-7 business days" },
 ];
 
-export const metadata: Metadata = {
-  title: "Delivery Areas — Fixed Plus",
-  description: "Check if Fixed Plus delivers to your area. We deliver across Bangladesh including Dhaka, Chittagong, Sylhet, and all districts.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetadata("Delivery Areas", "Check if {store} delivers to your area. We deliver across Bangladesh including Dhaka, Chittagong, Sylhet, and all districts.");
+}
 
 export default function DeliveryAreasPage() {
   return (

@@ -12,6 +12,7 @@ import MobileMenu from "@/components/MobileMenu";
 import FloatingWidgets from "@/components/FloatingWidgets";
 import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,11 +24,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Fixed Plus - Premium Gadgets & Repair Services in Bangladesh",
-  description:
-    "Shop premium gadgets, expert repair services, and smart home solutions at Fixed Plus. Fast delivery across Bangladesh with genuine products and official warranty.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const config = await getStorefrontConfigServer();
+    return {
+      title: {
+        template: `%s — ${config.store.name}`,
+        default: config.store.name,
+      },
+      description: config.seo.description || `${config.store.name} — premium products and services`,
+    };
+  } catch {
+    return {
+      title: "Store",
+      description: "Premium products and services",
+    };
+  }
+}
 
 export default function RootLayout({
   children,

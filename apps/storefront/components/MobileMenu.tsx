@@ -3,25 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
 import { useRouter } from "next/navigation";
-
-const menuItems = [
-  { name: 'EID 2026', hasArrow: false },
-  { name: 'Offer Zone', hasArrow: false },
-  { name: 'Honey', hasArrow: true },
-  { name: 'Oil & Ghee', hasArrow: false },
-  { name: 'Dates', hasArrow: true },
-  { name: 'Spices', hasArrow: true },
-  { name: 'Nuts & Seeds', hasArrow: true },
-  { name: 'Beverage', hasArrow: true },
-  { name: 'Rice', hasArrow: false },
-  { name: 'Flours & Lentils', hasArrow: true },
-  { name: 'Certified', hasArrow: false },
-  { name: 'Pickle', hasArrow: false },
-];
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
 export default function MobileMenu() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const router = useRouter();
+  const { config } = useStorefrontConfig();
+  const menuItems = config.navigation?.items?.length ? config.navigation.items : [];
 
   useEffect(() => {
     const handleOpen = () => setIsMobileMenuOpen(true);
@@ -81,18 +69,18 @@ export default function MobileMenu() {
         <div className="flex-1 overflow-y-auto pb-8">
            <div className="px-4 mb-6">
              <div className="bg-[#fcfcfc] rounded-[8px] border border-gray-100 overflow-hidden">
-               {menuItems.map((item, index) => (
-                 <button 
-                    key={item.name} 
-                    onClick={() => handleCategoryClick(item.name)}
-                    className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
-                      index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
-                    } hover:bg-gray-50`}
-                 >
-                    <span className="text-[13px] text-gray-700 font-normal">{item.name}</span>
-                    {item.hasArrow && <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />}
-                 </button>
-               ))}
+                {menuItems.map((item, index) => (
+                  <button 
+                     key={item.name || index} 
+                     onClick={() => handleCategoryClick(item.name)}
+                     className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
+                       index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
+                     } hover:bg-gray-50`}
+                  >
+                     <span className="text-[13px] text-gray-700 font-normal">{item.name}</span>
+                     {item.href && <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />}
+                  </button>
+                ))}
              </div>
            </div>
 
