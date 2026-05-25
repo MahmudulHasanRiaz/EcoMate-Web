@@ -3,32 +3,37 @@
 import React, { useState } from "react";
 import { MessageSquare, ShoppingBag, MessageCircle, Phone, X, MessageCircleMore } from "lucide-react";
 import { useCart } from "@/context/CartContext";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { motion, AnimatePresence } from "motion/react";
 
 export default function FloatingWidgets() {
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
+  const { config } = useStorefrontConfig();
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
+
+  const wa = config.social.whatsapp.replace(/[^0-9]/g, '');
+  const phoneDigits = config.store.phone.replace(/[^0-9]/g, '');
+
   const chatOptions = [
     {
       name: "WhatsApp",
       icon: <MessageCircle size={20} />,
       color: "bg-[#25D366]",
-      link: "https://wa.me/8801700000000",
+      link: wa ? `https://wa.me/${wa}` : "https://wa.me/8801700000000",
       delay: 0.1
     },
     {
       name: "Messenger",
       icon: <MessageCircleMore size={20} />,
       color: "bg-[#0084FF]",
-      link: "https://m.me/yourpageid",
+      link: config.social.facebook ? `https://m.me/${config.social.facebook.split('/').pop()}` : "https://m.me/yourpageid",
       delay: 0.2
     },
     {
       name: "Direct Call",
       icon: <Phone size={20} />,
       color: "bg-gray-800",
-      link: "tel:+8801700000000",
+      link: phoneDigits ? `tel:+${phoneDigits}` : "tel:+8801700000000",
       delay: 0.3
     }
   ];
@@ -48,7 +53,7 @@ export default function FloatingWidgets() {
           </div>
         </div>
         <div className="bg-white text-brand-blue w-full text-center py-1.5 text-[11px] font-bold border-t border-brand-blue/10">
-          ৳{cartTotal.toLocaleString()}
+          {config.currency.symbol}{cartTotal.toLocaleString()}
         </div>
       </div>
 

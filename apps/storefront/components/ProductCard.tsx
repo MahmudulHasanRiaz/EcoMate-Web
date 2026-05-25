@@ -4,6 +4,7 @@ import React from 'react';
 import { ShoppingCart } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { trackEvent } from "@/lib/tracking";
@@ -16,6 +17,7 @@ interface ProductCardProps {
 
 export default function ProductCard({ product }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
+  const { config } = useStorefrontConfig();
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
 
@@ -83,9 +85,9 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         <div className="mt-auto space-y-3">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[15px] md:text-[18px] font-black text-brand-blue">৳{product.price.toLocaleString()}</span>
+            <span className="text-[15px] md:text-[18px] font-black text-brand-blue">{config.currency.symbol}{product.price.toLocaleString()}</span>
             {product.originalPrice && (
-              <span className="text-[12px] md:text-[14px] font-medium text-gray-300 line-through">৳{product.originalPrice.toLocaleString()}</span>
+              <span className="text-[12px] md:text-[14px] font-medium text-gray-300 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
             )}
           </div>
 

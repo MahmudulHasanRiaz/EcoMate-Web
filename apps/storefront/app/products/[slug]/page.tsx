@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, Minus, Plus, ShoppingBag, Phone } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useRouter, useParams } from 'next/navigation';
 import { getProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
@@ -22,6 +23,7 @@ export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
+  const { config } = useStorefrontConfig();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -40,7 +42,7 @@ export default function ProductPage() {
           trackEvent('ViewContent', {
             content_ids: [found.id],
             value: found.price,
-            currency: 'BDT',
+            currency: config.currency.code,
             content_name: found.name,
             content_type: 'product'
           });
@@ -131,10 +133,10 @@ export default function ProductPage() {
           <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-3">{product.name}</h1>
 
           <div className="flex items-center gap-3 mb-6">
-            <span className="text-[20px] font-bold text-brand-blue">৳{product.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{product.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
             {product.originalPrice && product.originalPrice > product.price && (
               <>
-                <span className="text-[16px] text-gray-400 line-through">৳{product.originalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                 <div className="bg-[#21bc5c] text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
                   Save {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
                 </div>
@@ -163,7 +165,7 @@ export default function ProductPage() {
                 trackEvent('AddToCart', { 
                   content_ids: [product.id], 
                   value: product.price, 
-                  currency: 'BDT',
+                  currency: config.currency.code,
                   content_name: product.name,
                   contents: [{ id: product.id, quantity: 1, item_price: product.price }] // কন্টেন্টস অ্যারে
                 });

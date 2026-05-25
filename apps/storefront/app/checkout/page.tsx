@@ -5,6 +5,7 @@ import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loade
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
 import { saveCheckoutLead } from '@/lib/api/checkout-leads';
 import { normalizePhone } from '@/lib/phone-utils';
@@ -17,7 +18,8 @@ function simpleFingerprint(phone: string, items: any[]) {
   return `${phone}:${itemStr}`.replace(/\s/g, '');
 }
 
-function CheckoutItemRow({ item, removeFromCart, updateQuantity }: any) {
+function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
+  const s = currencySymbol || '৳';
   return (
     <div className="flex gap-4">
       <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
@@ -37,7 +39,7 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity }: any) {
             <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-8 h-full flex items-center justify-center text-brand-blue hover:bg-gray-100"><Plus size={14} /></button>
           </div>
           <div className="font-black text-[15px] text-gray-800">
-            ৳{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            {s}{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
           </div>
         </div>
       </div>
@@ -48,6 +50,7 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity }: any) {
 export default function CheckoutPage() {
   const { items, cartTotal, clearCart, updateQuantity, removeFromCart } = useCart();
   const { user } = useAuth();
+  const { config } = useStorefrontConfig();
   const router = useRouter();
 
   const readStorage = (key: string, fallback: string) => {
@@ -169,10 +172,11 @@ export default function CheckoutPage() {
 
       wasSubmitted.current = true;
 
+      const shippingCharge = cartTotal >= config.delivery.freeDeliveryMin ? 0 : config.delivery.charge;
       const order = await createOrder({
         customerId: user?.id,
         items: orderItems as any,
-        shippingCharge: 0,
+        shippingCharge,
         shippingAddress: {
           district,
           thana,
@@ -276,11 +280,11 @@ export default function CheckoutPage() {
                             )}
                             <div className="flex items-center justify-between pt-3 border-t border-gray-50">
                               <span className="text-[12px] text-gray-400 font-bold uppercase">Combo Total</span>
-                              <span className="text-[15px] font-black text-brand-blue">৳{item.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                              <span className="text-[15px] font-black text-brand-blue">{config.currency.symbol}{item.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                             </div>
                           </div>
                         ) : (
-                          <CheckoutItemRow item={item} removeFromCart={removeFromCart} updateQuantity={updateQuantity} />
+                          <CheckoutItemRow item={item} removeFromCart={removeFromCart} updateQuantity={updateQuantity} currencySymbol={config.currency.symbol} />
                         )}
                       </div>
                     ))
@@ -380,15 +384,15 @@ export default function CheckoutPage() {
               <div className="p-4 md:p-6 space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[14px] text-gray-500 font-medium">Sub total</span>
-                  <span className="text-[14px] text-gray-800 font-black">{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} BDT</span>
+                  <span className="text-[14px] text-gray-800 font-black">{config.currency.symbol}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[14px] text-gray-500 font-medium">Delivery cost</span>
-                  <span className="text-[14px] text-gray-800 font-black">0 BDT</span>
+                  <span className="text-[14px] text-gray-800 font-black">{cartTotal >= config.delivery.freeDeliveryMin ? `${config.currency.symbol}0` : `${config.currency.symbol}${config.delivery.charge.toLocaleString()}`} {config.currency.code}</span>
                 </div>
                 <div className="flex justify-between items-center pt-4 mt-4 border-t-2 border-dashed border-gray-100">
                   <span className="text-[16px] font-black text-gray-900">Total</span>
-                  <span className="text-[16px] font-black text-gray-900">৳{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} BDT</span>
+                  <span className="text-[16px] font-black text-gray-900">{config.currency.symbol}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
                 </div>
               </div>
             </div>

@@ -45,9 +45,11 @@ export interface StorefrontConfig {
   };
   meta: {
     pixelEnabled: boolean;
+    pixelId: string;
   };
   tiktok: {
     pixelEnabled: boolean;
+    pixelCode: string;
   };
 }
 

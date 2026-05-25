@@ -5,6 +5,7 @@ import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, C
 import { motion } from "motion/react";
 import { useCart } from "@/context/CartContext";
 import { useRouter } from "next/navigation";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
 const NAV_ITEMS = [
   "New Arrivals", "Repair Services", "iPhone", "Samsung", "Google Pixel", "Audio Store", 
@@ -15,6 +16,7 @@ export default function Header() {
   const { cartCount, setIsCartOpen } = useCart();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = React.useState(false);
+  const { config } = useStorefrontConfig();
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-white/20">
@@ -39,7 +41,7 @@ export default function Header() {
               className="flex flex-shrink-0 items-center cursor-pointer"
               onClick={() => router.push('/')}
             >
-              <span className="text-xl font-black text-brand-blue tracking-tight">Fixed Plus</span>
+              <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
             </motion.div>
           </div>
 

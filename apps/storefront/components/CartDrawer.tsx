@@ -3,11 +3,14 @@
 import React, { useState } from 'react';
 import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { useCart } from "@/context/CartContext";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useRouter } from "next/navigation";
 
 export default function CartDrawer() {
   const { items, updateQuantity, removeFromCart, cartTotal, isCartOpen, setIsCartOpen } = useCart();
+  const { config } = useStorefrontConfig();
+  const s = config.currency.symbol;
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
 
@@ -55,7 +58,7 @@ export default function CartDrawer() {
                <div className="flex-1 pr-6">
                   <p className="text-[14px] text-gray-600 leading-tight mb-1">Get special coupon</p>
                   <p className="text-[14px] text-gray-800 leading-tight">
-                    Add <span className="font-bold text-brand-blue">৳3,450</span> more to unlock!
+                    Add <span className="font-bold text-brand-blue">{s}3,450</span> more to unlock!
                   </p>
                </div>
              </div>
@@ -115,10 +118,10 @@ export default function CartDrawer() {
                       </div>
                       
                       <div className="font-sans text-[13px] text-gray-800 whitespace-nowrap hidden sm:block">
-                        &times; ৳{item.price.toLocaleString()}.00 
+                        &times; {s}{item.price.toLocaleString()}.00 
                       </div>
                       <div className="font-sans text-[13px] font-medium text-gray-900 whitespace-nowrap">
-                        = ৳{(item.price * item.quantity).toLocaleString()}.00
+                        = {s}{(item.price * item.quantity).toLocaleString()}.00
                       </div>
                     </div>
                   </div>
@@ -164,7 +167,7 @@ export default function CartDrawer() {
                   </div>
                   <div className="flex-1 flex flex-col justify-center">
                      <h4 className="text-[13px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">Natural Honeycomb-2000gm (Briefcase)</h4>
-                     <p className="text-[13px] text-gray-500 mb-2">৳5,000.00</p>
+                     <p className="text-[13px] text-gray-500 mb-2">{s}5,000.00</p>
                      <div>
                         <button className="bg-[#ea7024] text-white text-[12px] px-4 py-1 rounded-full font-medium hover:bg-[#d66520] transition-colors">
                           + Add
@@ -179,7 +182,7 @@ export default function CartDrawer() {
                   </div>
                   <div className="flex-1 flex flex-col justify-center">
                      <h4 className="text-[13px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">Another Product</h4>
-                     <p className="text-[13px] text-gray-500 mb-2">৳1,200.00</p>
+                     <p className="text-[13px] text-gray-500 mb-2">{s}1,200.00</p>
                      <div>
                         <button className="bg-[#ea7024] text-white text-[12px] px-4 py-1 rounded-full font-medium hover:bg-[#d66520] transition-colors">
                           + Add
@@ -197,7 +200,7 @@ export default function CartDrawer() {
           <div className="p-4 bg-[#f8f9fa] border-t border-gray-100">
             <div className="flex justify-between items-center mb-4 px-1">
               <span className="text-[16px] text-gray-800 font-medium tracking-wide">Total:</span>
-              <span className="text-[18px] font-medium text-gray-900 tracking-wide">৳{cartTotal.toLocaleString()}.00</span>
+              <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{cartTotal.toLocaleString()}.00</span>
             </div>
             
             <button 

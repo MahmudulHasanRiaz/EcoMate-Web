@@ -1,27 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Script from "next/script";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { setPixelIds } from "@/lib/tracking";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
-
 export default function TrackingScripts() {
-  const [metaId, setMetaId] = useState("");
-  const [tiktokCode, setTiktokCode] = useState("");
+  const { config } = useStorefrontConfig();
+  const metaId = config.meta.pixelEnabled ? config.meta.pixelId : "";
+  const tiktokCode = config.tiktok.pixelEnabled ? config.tiktok.pixelCode : "";
 
   useEffect(() => {
-    fetch(`${API_URL}/system-settings/storefront`)
-      .then((r) => r.json())
-      .then((data) => {
-        const mid = data?.meta?.pixelEnabled ? data.meta.pixelId || "" : "";
-        const ttc = data?.tiktok?.pixelEnabled ? data.tiktok.pixelCode || "" : "";
-        setMetaId(mid);
-        setTiktokCode(ttc);
-        setPixelIds(mid, ttc);
-      })
-      .catch(() => {});
-  }, []);
+    setPixelIds(metaId, tiktokCode);
+  }, [metaId, tiktokCode]);
 
   useEffect(() => {
     if (metaId) (window as any).__META_ID = metaId;

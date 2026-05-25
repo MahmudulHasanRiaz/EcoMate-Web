@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getOrder } from '@/lib/api/orders';
 import type { Order } from '@/lib/types';
 import { motion } from "motion/react";
@@ -15,6 +16,7 @@ export default function ThankYouContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { clearCart } = useCart();
+  const { config } = useStorefrontConfig();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,7 +52,7 @@ export default function ThankYouContent() {
           
           trackEvent('Purchase', {
             value: Number(totalValue),
-            currency: 'BDT',
+            currency: config.currency.code,
             content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
             num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
             order_id: res.id,
@@ -230,7 +232,7 @@ export default function ThankYouContent() {
                         <p className="text-[11px] text-gray-400">Qty: {item.quantity}</p>
                       </div>
                       <div className="text-[12px] font-bold text-gray-800">
-                        ৳{fmt(nn(item.price) * item.quantity)}
+                        {config.currency.symbol}{fmt(nn(item.price) * item.quantity)}
                       </div>
                     </div>
                   ))}
@@ -241,21 +243,21 @@ export default function ThankYouContent() {
               <div className="border-t pt-3 space-y-2 text-[12px]">
                 <div className="flex justify-between text-gray-500">
                   <span>Subtotal</span>
-                  <span>৳{fmt(order.subtotal)}</span>
+                  <span>{config.currency.symbol}{fmt(order.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>Shipping</span>
-                  <span>৳{fmt((order as any).shippingCharge)}</span>
+                  <span>{config.currency.symbol}{fmt((order as any).shippingCharge)}</span>
                 </div>
                 {nn((order as any).discount) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
-                    <span>-৳{fmt((order as any).discount)}</span>
+                    <span>-{config.currency.symbol}{fmt((order as any).discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-[14px] text-gray-900 pt-2 border-t mt-2">
                   <span>Total</span>
-                  <span className="text-brand-blue">৳{fmt((order as any).total || (order as any).subtotal)}</span>
+                  <span className="text-brand-blue">{config.currency.symbol}{fmt((order as any).total || (order as any).subtotal)}</span>
                 </div>
               </div>
             </motion.div>

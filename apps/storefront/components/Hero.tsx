@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
-const SLIDES = [
+const FALLBACK_SLIDES = [
   "https://images.unsplash.com/photo-1510557880182-3d4d3cba3f21?auto=format&fit=crop&q=80&w=1600",
   "https://images.unsplash.com/photo-1616348436168-de43ad0db179?auto=format&fit=crop&q=80&w=1600",
   "https://images.unsplash.com/photo-1593642632823-8f785ba67e45?auto=format&fit=crop&q=80&w=1600"
@@ -12,6 +13,11 @@ const SLIDES = [
 const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 export default function Hero() {
+  const { config } = useStorefrontConfig();
+  const slides = config.hero.slides.length > 0
+    ? config.hero.slides.map(s => s.image)
+    : FALLBACK_SLIDES;
+
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -20,11 +26,11 @@ export default function Hero() {
   };
 
   const nextSlide = () => {
-    setCurrentSlide((prev) => (prev === SLIDES.length - 1 ? 0 : prev + 1));
+    setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
   };
 
   const prevSlide = () => {
-    setCurrentSlide((prev) => (prev === 0 ? SLIDES.length - 1 : prev - 1));
+    setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
   };
 
   useEffect(() => {
@@ -32,7 +38,8 @@ export default function Hero() {
       nextSlide();
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides.length]);
 
   return (
     <section className="w-full bg-[#fcfcfc] py-2 md:py-6">
@@ -42,7 +49,7 @@ export default function Hero() {
           {/* Main Banner (col-8) */}
           <div className="md:col-span-8 overflow-hidden rounded-[12px] md:rounded-[20px] shadow-sm bg-white relative group">
             <div className="relative w-full h-[180px] md:h-[400px]">
-              {SLIDES.map((slide, index) => (
+              {slides.map((slide, index) => (
                 <div 
                   key={index} 
                   className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
@@ -77,7 +84,7 @@ export default function Hero() {
 
             {/* Pagination Dots */}
             <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-20">
-              {SLIDES.map((_, index) => (
+              {slides.map((_, index) => (
                 <button
                   key={index}
                   onClick={() => setCurrentSlide(index)}
