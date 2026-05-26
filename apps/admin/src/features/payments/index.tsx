@@ -81,7 +81,7 @@ export function Payments() {
                     <TableCell>
                       <PaymentLogo method={p.method} size='sm' showName={false} />
                     </TableCell>
-                    <TableCell className='font-medium'>${Number(p.amount).toFixed(2)}</TableCell>
+                    <TableCell className='font-medium'>৳{Number(p.amount).toFixed(2)}</TableCell>
                     <TableCell className='font-mono text-xs'>{p.transactionId || '—'}</TableCell>
                     <TableCell>
                       {p.status === 'pending' && <Badge variant='outline' className='text-xs border-yellow-500 text-yellow-600'>Pending</Badge>}
