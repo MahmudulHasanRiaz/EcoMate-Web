@@ -11,6 +11,8 @@ export const apiClient = axios.create({
   },
 })
 
+let refreshPromise: Promise<{ accessToken: string }> | null = null
+
 apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().auth.accessToken
   if (token) {
@@ -27,12 +29,26 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
-      try {
-        const { data } = await axios.post(
+      if (refreshPromise) {
+        try {
+          const { accessToken } = await refreshPromise
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
+          return apiClient(originalRequest)
+        } catch {
+          return Promise.reject(error)
+        }
+      }
+
+      refreshPromise = axios
+        .post<{ accessToken: string }>(
           `${API_BASE_URL}/auth/refresh`,
           {},
           { withCredentials: true },
         )
+        .then((res) => res.data)
+
+      try {
+        const data = await refreshPromise
         useAuthStore.getState().auth.setAccessToken(data.accessToken)
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
         return apiClient(originalRequest)
@@ -40,6 +56,8 @@ apiClient.interceptors.response.use(
         useAuthStore.getState().auth.reset()
         window.location.href = '/admin/sign-in'
         return Promise.reject(refreshError)
+      } finally {
+        refreshPromise = null
       }
     }
 

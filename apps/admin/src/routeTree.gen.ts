@@ -50,6 +50,7 @@ import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
+import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
@@ -293,6 +294,11 @@ const AuthenticatedOpOrdersIdRoute = AuthenticatedOpOrdersIdRouteImport.update({
   path: '/op/orders/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
+  id: '/mon/users/$id',
+  path: '/mon/users/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedOpSettingsPersonalIndexRoute =
   AuthenticatedOpSettingsPersonalIndexRouteImport.update({
     id: '/personal/',
@@ -384,6 +390,7 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
+  '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -438,6 +445,7 @@ export interface FileRoutesByTo {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
+  '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -494,6 +502,7 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
+  '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -550,6 +559,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/mon/'
     | '/op/'
+    | '/mon/users/$id'
     | '/op/orders/$id'
     | '/mon/activity-logs/'
     | '/mon/analytics/'
@@ -604,6 +614,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/mon'
     | '/op'
+    | '/mon/users/$id'
     | '/op/orders/$id'
     | '/mon/activity-logs'
     | '/mon/analytics'
@@ -659,6 +670,7 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
+    | '/_authenticated/mon/users/$id'
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
@@ -999,6 +1011,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/users/$id': {
+      id: '/_authenticated/mon/users/$id'
+      path: '/mon/users/$id'
+      fullPath: '/mon/users/$id'
+      preLoaderRoute: typeof AuthenticatedMonUsersIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/settings/personal/': {
       id: '/_authenticated/op/settings/personal/'
       path: '/personal'
@@ -1160,6 +1179,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
+  AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
@@ -1196,6 +1216,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
+  AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedMonActivityLogsIndexRoute:
     AuthenticatedMonActivityLogsIndexRoute,

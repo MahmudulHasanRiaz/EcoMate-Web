@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
@@ -69,12 +70,13 @@ export function Payments() {
                   <TableHead>Amount</TableHead>
                   <TableHead>TrxID</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Verified By</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={6} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className='text-center py-8'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow>
                 ) : payments.length ? payments.map(p => (
                   <TableRow key={p.id}>
                     <TableCell className='font-mono text-sm'>{p.order.displayId}</TableCell>
@@ -89,17 +91,29 @@ export function Payments() {
                       {p.status === 'rejected' && <Badge variant='destructive' className='text-xs'>Rejected</Badge>}
                     </TableCell>
                     <TableCell>
+                      {p.verifier ? (
+                        <Link
+                          to='/mon/users/$id'
+                          params={{ id: p.verifier.id }}
+                          className='text-xs text-muted-foreground hover:text-brand-blue hover:underline'
+                        >
+                          {p.verifier.firstName} {p.verifier.lastName}
+                        </Link>
+                      ) : (
+                        <span className='text-xs text-muted-foreground'>—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       {p.status === 'pending' && (
                         <div className='flex gap-1'>
                           <Button size='icon' variant='ghost' className='h-7 w-7 text-green-600' onClick={() => verifyMut.mutate({ id: p.id, status: 'verified' })}><Check className='h-4 w-4' /></Button>
                           <Button size='icon' variant='ghost' className='h-7 w-7 text-destructive' onClick={() => verifyMut.mutate({ id: p.id, status: 'rejected' })}><X className='h-4 w-4' /></Button>
                         </div>
                       )}
-                      {p.status !== 'pending' && p.verifier && <span className='text-xs text-muted-foreground'>by {p.verifier.firstName}</span>}
                     </TableCell>
                   </TableRow>
                 )) : (
-                  <TableRow><TableCell colSpan={6} className='text-center py-8 text-muted-foreground'>No payments yet</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className='text-center py-8 text-muted-foreground'>No payments yet</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
