@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote } from 'lucide-react';
+import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -9,6 +9,7 @@ import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
 import { getDistricts, getThanas, getGateways } from '@/lib/api/delivery-areas';
 import { saveCheckoutLead } from '@/lib/api/checkout-leads';
+import { submitPayment } from '@/lib/api/payments';
 import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -66,7 +67,12 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
 }) {
   const [gateways, setGateways] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState<string | null>(null);
+  const [selectedGw, setSelectedGw] = useState<any | null>(null);
+  const [senderPhone, setSenderPhone] = useState(guestPhone || '');
+  const [trxId, setTrxId] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     getGateways().then(list => {
@@ -74,37 +80,60 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  const handleGateway = async (gw: any) => {
-    setProcessing(gw.gateway);
+  const handleSelectGateway = (gw: any) => {
+    if (gw.gateway === 'bkash_pgw') {
+      initiateBkashPgw();
+    } else {
+      setSelectedGw(gw);
+    }
+  };
 
-    if (gw.gateway === 'bkash') {
-      try {
-        const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-        const res = await fetch(`${api}/payments/bkash/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amount: total,
-            orderId,
-            invoiceNo: `INV-${orderId.slice(0, 8)}`,
-          }),
-        });
-        const data = await res.json();
-        if (data.redirectURL) {
-          window.location.href = data.redirectURL;
-        } else if (data.bkashURL) {
-          window.location.href = data.bkashURL;
-        } else {
-          toast.error('Payment initiation failed. Order saved as pending.');
-          onClose();
-        }
-      } catch {
-        toast.error('Payment gateway error. Order saved as pending.');
+  const initiateBkashPgw = async () => {
+    try {
+      const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const res = await fetch(`${api}/payments/bkash/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: total,
+          orderId,
+          invoiceNo: `INV-${orderId.slice(0, 8)}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.redirectURL) {
+        window.location.href = data.redirectURL;
+      } else if (data.bkashURL) {
+        window.location.href = data.bkashURL;
+      } else {
+        toast.error('Payment initiation failed. Order saved as pending.');
         onClose();
       }
-    } else {
-      toast.info(`${gw.gateway} payment is coming soon. Your order has been saved.`);
+    } catch {
+      toast.error('Payment gateway error. Order saved as pending.');
       onClose();
+    }
+  };
+
+  const handleSubmitPayment = async () => {
+    if (!trxId.trim()) {
+      toast.error('Please enter your transaction ID (TrxID).');
+      return;
+    }
+    setSubmittingPayment(true);
+    try {
+      await submitPayment(orderId, {
+        method: selectedGw.gateway,
+        amount: total,
+        transactionId: trxId.trim(),
+        notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
+      });
+      setSubmitted(true);
+      toast.success('Payment info submitted! Awaiting verification.');
+    } catch {
+      toast.error('Failed to submit payment. Please try again.');
+    } finally {
+      setSubmittingPayment(false);
     }
   };
 
@@ -114,6 +143,87 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
         <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
           <Loader2 className="animate-spin mx-auto mb-4 text-brand-blue" size={32} />
           <p className="text-gray-500">Loading payment options...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (submitted) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden p-8 text-center" onClick={e => e.stopPropagation()}>
+          <CheckCircle size={48} className="mx-auto mb-4 text-green-500" />
+          <h3 className="text-lg font-bold text-gray-800 mb-2">Payment Submitted!</h3>
+          <p className="text-sm text-gray-500 mb-6">Your payment info has been received. We will verify it shortly.</p>
+          <button onClick={() => router.push(`/checkout/thank-you?orderId=${orderId}&pending=true`)}
+            className="w-full bg-brand-blue text-white font-bold py-3 rounded-lg hover:bg-brand-blue/90 transition-colors">
+            View Order Status
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedGw) {
+    const meta = GATEWAY_LABELS[selectedGw.gateway] || { label: selectedGw.gateway, icon: selectedGw.gateway.slice(0, 2).toUpperCase(), bg: '#6b7280', fg: 'white' };
+    const modeLabel = selectedGw.mode === 'agent' ? 'Agent' : selectedGw.mode === 'merchant' ? 'Merchant' : 'Personal';
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="p-6 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSelectedGw(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                <ArrowLeft size={20} />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold" style={{ backgroundColor: meta.bg, color: meta.fg }}>
+                  {meta.icon}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">{meta.label}</h3>
+                  <p className="text-xs text-gray-400">{modeLabel} Account</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 space-y-5">
+            <div className="bg-blue-50 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <ExternalLink size={16} className="text-brand-blue" />
+                Send Money to This Number
+              </p>
+              <p className="text-2xl font-black text-center text-brand-blue tracking-wide">
+                {selectedGw.phoneNumber || 'Not set'}
+              </p>
+              <p className="text-xs text-gray-500 text-center">
+                Amount: <span className="font-bold text-gray-800">BDT {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Your Phone Number (Sent From)</label>
+                <input type="tel" value={senderPhone} onChange={e => setSenderPhone(e.target.value)}
+                  placeholder="01XXXXXXXXX"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 text-[14px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider">Transaction ID (TrxID)</label>
+                <input type="text" value={trxId} onChange={e => setTrxId(e.target.value)}
+                  placeholder="e.g. TrxID8A7B3C"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 text-[14px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
+              </div>
+            </div>
+
+            <button onClick={handleSubmitPayment} disabled={submittingPayment}
+              className={`w-full text-white font-bold py-3.5 rounded-lg text-[15px] transition-all active:scale-[0.98] ${submittingPayment ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-blue hover:bg-brand-blue/90 shadow-lg shadow-brand-blue/20'}`}>
+              {submittingPayment ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'I Have Sent the Money'}
+            </button>
+
+            <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+              After sending the money, enter your TrxID above and click submit. Our team will verify your payment within 24 hours.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -140,9 +250,8 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
             return (
               <button
                 key={gw.id}
-                onClick={() => handleGateway(gw)}
-                disabled={processing !== null}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all disabled:opacity-50"
+                onClick={() => handleSelectGateway(gw)}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
               >
                 <div className="w-12 h-12 rounded-lg flex items-center justify-center text-sm font-bold" style={{ backgroundColor: meta.bg, color: meta.fg }}>
                   {meta.icon}
@@ -151,11 +260,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
                   <p className="font-bold text-gray-800">{meta.label}</p>
                   {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}
                 </div>
-                {processing === gw.gateway ? (
-                  <Loader2 className="animate-spin text-brand-blue" size={20} />
-                ) : (
-                  <ChevronRight size={20} className="text-gray-300" />
-                )}
+                <ChevronRight size={20} className="text-gray-300" />
               </button>
             );
           })}

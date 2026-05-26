@@ -40,6 +40,22 @@ export class PaymentsService {
 
   async create(orderId: string, dto: CreatePaymentDto) {
     await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    const existing = await this.prisma.payment.findFirst({
+      where: { orderId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      return this.prisma.payment.update({
+        where: { id: existing.id },
+        data: {
+          method: dto.method,
+          amount: dto.amount,
+          transactionId: dto.transactionId,
+          screenshot: dto.screenshot,
+          notes: dto.notes,
+        },
+      });
+    }
     return this.prisma.payment.create({
       data: {
         orderId,

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('payments')
 export class PaymentsController {
@@ -24,6 +25,7 @@ export class PaymentsController {
     });
   }
 
+  @Public()
   @Post(':orderId')
   create(@Param('orderId') orderId: string, @Body() dto: CreatePaymentDto) {
     return this.svc.create(orderId, dto);
