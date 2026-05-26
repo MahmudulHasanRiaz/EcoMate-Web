@@ -9,7 +9,7 @@ export function normalizePhone(input: string): string | null {
   } else if (cleaned.startsWith('8801') && cleaned.length === 13) {
     digits = cleaned
   } else if (cleaned.startsWith('01') && cleaned.length === 11) {
-    digits = '880' + cleaned
+    digits = '880' + cleaned.slice(1)
   } else if (cleaned.startsWith('1') && cleaned.length === 10) {
     digits = '880' + cleaned
   } else {

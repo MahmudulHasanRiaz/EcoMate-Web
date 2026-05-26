@@ -183,19 +183,29 @@ export default function CheckoutPage() {
 
   const [districts, setDistricts] = useState<any[]>([]);
   const [thanas, setThanas] = useState<any[]>([]);
-  const [district, setDistrict] = useState(() => readStorage('checkout_district', ''));
-  const [thana, setThana] = useState(() => readStorage('checkout_thana', ''));
-  const [addressLine, setAddressLine] = useState(() => readStorage('checkout_address', ''));
-  const [customerNotes, setCustomerNotes] = useState(() => readStorage('checkout_notes', ''));
+  const [district, setDistrict] = useState('');
+  const [thana, setThana] = useState('');
+  const [addressLine, setAddressLine] = useState('');
+  const [customerNotes, setCustomerNotes] = useState('');
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [guestName, setGuestName] = useState(() => readStorage('checkout_guestName', ''));
-  const [guestPhone, setGuestPhone] = useState(() => readStorage('checkout_guestPhone', ''));
-  const [paymentMode, setPaymentMode] = useState(() => readStorage('checkout_paymentMode', 'cod'));
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [paymentMode, setPaymentMode] = useState('cod');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
+
+  useEffect(() => {
+    setDistrict(readStorage('checkout_district', ''));
+    setThana(readStorage('checkout_thana', ''));
+    setAddressLine(readStorage('checkout_address', ''));
+    setCustomerNotes(readStorage('checkout_notes', ''));
+    setGuestName(readStorage('checkout_guestName', ''));
+    setGuestPhone(readStorage('checkout_guestPhone', ''));
+    setPaymentMode(readStorage('checkout_paymentMode', 'cod'));
+  }, []);
 
   const checkoutCfg = config.checkout;
   const paymentModes = checkoutCfg?.paymentModes || ['cod', 'full', 'partial'];
