@@ -5,7 +5,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'placehold.co' },
+      { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'https', hostname: 'cdn.example.com' },
       { protocol: 'http', hostname: 'localhost', port: '4000' },
+      { protocol: 'https', hostname: 'mac.riaz.com.bd' },
+      { protocol: 'http', hostname: 'mac.riaz.com.bd' },
     ],
   },
   async rewrites() {

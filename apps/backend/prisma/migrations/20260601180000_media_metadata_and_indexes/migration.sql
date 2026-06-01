@@ -1,10 +1,13 @@
 -- AlterTable: extend Media with metadata used by the unified Media Library.
-ALTER TABLE "Media"
-  ADD COLUMN IF NOT EXISTS "hash"      TEXT,
-  ADD COLUMN IF NOT EXISTS "alt"       TEXT,
-  ADD COLUMN IF NOT EXISTS "width"     INTEGER,
-  ADD COLUMN IF NOT EXISTS "height"    INTEGER,
-  ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;
+-- NOTE: statements are split because Postgres' prepared-statement protocol
+-- rejects multi-command `$executeRaw` calls; each ALTER runs separately so
+-- `prisma migrate deploy` succeeds without manual intervention.
+
+ALTER TABLE "Media" ADD COLUMN IF NOT EXISTS "hash"      TEXT;
+ALTER TABLE "Media" ADD COLUMN IF NOT EXISTS "alt"       TEXT;
+ALTER TABLE "Media" ADD COLUMN IF NOT EXISTS "width"     INTEGER;
+ALTER TABLE "Media" ADD COLUMN IF NOT EXISTS "height"    INTEGER;
+ALTER TABLE "Media" ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;
 
 -- Unique hash for content-deduplication (sha256 of binary).
 CREATE UNIQUE INDEX IF NOT EXISTS "Media_hash_key" ON "Media"("hash");
