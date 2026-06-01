@@ -77,3 +77,10 @@ export class GenerateVariantsDto {
   @IsOptional() @IsNumber() defaultPrice?: number;
   @IsOptional() @IsInt() defaultStock?: number;
 }
+
+export class UpdateVariantDto {
+  @IsOptional() @IsString() sku?: string;
+  @IsOptional() @IsNumber() price?: number;
+  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsString() image?: string | null;
+}

@@ -2,29 +2,28 @@
 "use client";
 
 import { useState } from "react";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 const TESTIMONIALS = [
   {
     name: 'Sultana Yesmin',
     role: 'Housewife',
     text: 'Excellent quality products! I received everything on time and well-packaged. Highly recommended.',
-    avatar: 'https://i.pravatar.cc/150?u=sultana'
+    avatar: PLACEHOLDER_IMAGE
   },
   {
     name: 'Ayesha Khan',
     role: 'Banker',
     text: '২য় বার অর্ডার করলাম। আগের মতো এবারও খাঁটি পণ্য পেয়েছি। ধন্যবাদ ডেলিভারি ম্যানদের। একদম সঠিক সময়ে দিয়ে গিয়েছে।',
-    avatar: 'https://i.pravatar.cc/150?u=ayesha'
+    avatar: PLACEHOLDER_IMAGE
   },
   {
     name: 'Fariha Akter Tumpa',
     role: 'Entrepreneur',
     text: 'এই খাঁটি মধুর জন্য আপনাদের অনেক অনেক ধন্যবাদ। খুব ভালো ছিল।',
-    avatar: 'https://i.pravatar.cc/150?u=fariha'
+    avatar: PLACEHOLDER_IMAGE
   }
 ];
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 export default function Testimonials() {
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});

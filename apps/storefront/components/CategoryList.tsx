@@ -4,10 +4,9 @@ import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getCategories } from '@/lib/api/products';
-import type { Category } from '@/lib/types';
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { getCategories } from "@/lib/api/products";
+import type { Category } from "@/lib/types";
 
 export default function CategoryList() {
   const router = useRouter();

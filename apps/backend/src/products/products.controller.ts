@@ -13,6 +13,7 @@ import {
   CreateProductDto,
   UpdateProductDto,
   GenerateVariantsDto,
+  UpdateVariantDto,
 } from './dto/product.dto';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -62,5 +63,13 @@ export class ProductsController {
   @Post(':id/variants/generate')
   generateVariants(@Param('id') id: string, @Body() dto: GenerateVariantsDto) {
     return this.svc.generateVariants(id, dto);
+  }
+  @Put(':id/variants/:variantId')
+  updateVariant(
+    @Param('id') id: string,
+    @Param('variantId') variantId: string,
+    @Body() dto: UpdateVariantDto,
+  ) {
+    return this.svc.updateVariant(id, variantId, dto);
   }
 }

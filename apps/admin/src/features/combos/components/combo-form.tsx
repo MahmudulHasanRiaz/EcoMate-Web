@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Search, Gift, Loader2 } from 'lucide-react'
-import { PLACEHOLDER_IMAGE } from '@/lib/utils'
+import { X, Plus, Search, Gift, Loader2, Image as ImageIcon } from 'lucide-react'
+import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
 import { combosApi, type ComboResponse } from '../api'
 import { productsApi } from '@/features/products/api'
 import { categoriesApi } from '@/features/categories/api'
@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MediaPicker } from '@/components/media-picker'
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ComboResponse; mode: 'add' | 'edit' }
 
@@ -46,6 +47,8 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [salePrice, setSalePrice] = useState('')
   const [image, setImage] = useState('')
   const [images, setImages] = useState<string[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerMulti, setPickerMulti] = useState(false)
   const [categoryId, setCategoryId] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
@@ -222,8 +225,42 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 </select>
               </div>
               <div className='space-y-2'>
-                <Label>Featured Image URL</Label>
-                <Input value={image} onChange={e => setImage(e.target.value)} placeholder='https://...' />
+                <Label>Featured Image</Label>
+                <div className='flex items-center gap-2'>
+                  <div className='h-12 w-12 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center'>
+                    {image
+                      ? <img src={mediaUrl(image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      : <ImageIcon className='h-5 w-5 text-muted-foreground' />}
+                  </div>
+                  <Button type='button' variant='outline' size='sm' onClick={() => { setPickerMulti(false); setPickerOpen(true) }}>
+                    {image ? 'Change' : 'Choose'} image
+                  </Button>
+                  {image && (
+                    <Button type='button' variant='ghost' size='icon' className='h-8 w-8' onClick={() => setImage('')}>
+                      <X className='h-4 w-4' />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className='space-y-2'>
+              <Label>Gallery</Label>
+              <div className='flex flex-wrap items-center gap-2'>
+                {images.map((u, i) => (
+                  <div key={i} className='relative h-16 w-16 rounded border overflow-hidden group'>
+                    <img src={mediaUrl(u)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                    <button
+                      type='button'
+                      onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
+                      className='absolute top-0 right-0 bg-background/80 rounded-bl p-0.5 opacity-0 group-hover:opacity-100'
+                    >
+                      <X className='h-3 w-3 text-destructive' />
+                    </button>
+                  </div>
+                ))}
+                <Button type='button' variant='outline' size='sm' onClick={() => { setPickerMulti(true); setPickerOpen(true) }}>
+                  <Plus className='h-4 w-4 mr-1' /> Add images
+                </Button>
               </div>
             </div>
             <div className='flex items-center gap-4'>
@@ -376,6 +413,22 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
             {isEdit ? 'Update Combo' : 'Create Combo'}
           </Button>
         </div>
+
+        <MediaPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          selected={pickerMulti ? images : image ? [image] : []}
+          multiple={pickerMulti}
+          onSelect={(urls) => {
+            if (pickerMulti) {
+              const set = new Set([...images, ...urls])
+              setImages(Array.from(set))
+            } else {
+              setImage(urls[urls.length - 1] || '')
+            }
+            setPickerOpen(false)
+          }}
+        />
       </DialogContent>
     </Dialog>
   )

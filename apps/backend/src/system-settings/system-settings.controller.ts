@@ -1,16 +1,26 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { MediaService } from '../media/media.service';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+
+interface HeroSlide {
+  image: string;
+  link?: string;
+  alt?: string;
+}
 
 @Controller('system-settings')
 export class SystemSettingsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly media: MediaService,
   ) {}
 
   @Get()
+  @Roles('superadmin', 'admin', 'manager')
   async getAll() {
     const settings = await this.prisma.systemSetting.findMany();
     const map: Record<string, string> = {};
@@ -29,7 +39,7 @@ export class SystemSettingsController {
       try { return JSON.parse(val); } catch { return fallback; }
     };
 
-    let heroSlides: { image: string; link?: string }[] = [];
+    let heroSlides: HeroSlide[] = [];
     try { heroSlides = JSON.parse(map['hero_slides'] || '[]'); } catch { heroSlides = []; }
 
     return {
@@ -51,6 +61,7 @@ export class SystemSettingsController {
       hero: {
         slides: heroSlides,
         secondaryBanner: map['hero_secondary_banner'] || '',
+        secondaryBannerAlt: map['hero_secondary_banner_alt'] || '',
       },
       social: {
         facebook: map['social_facebook'] || '',
@@ -113,17 +124,58 @@ export class SystemSettingsController {
   }
 
   @Get('storage')
+  @Roles('superadmin', 'admin')
   async getStorageConfig() {
     return this.storage.getConfig();
   }
 
   @Post(':key')
+  @Roles('superadmin', 'admin', 'manager')
   async set(@Param('key') key: string, @Body() body: { value: string }) {
+    let value = body.value ?? '';
+
+    // Library-sync any media URLs embedded in the setting being written.
+    if (key === 'hero_slides') {
+      let slides: HeroSlide[] = [];
+      try {
+        slides = JSON.parse(value);
+        if (!Array.isArray(slides)) slides = [];
+      } catch {
+        slides = [];
+      }
+      const urls = slides.map((s) => s?.image).filter((u): u is string => !!u);
+      if (urls.length) {
+        const synced = await this.media.syncEntityImages(
+          'storefront',
+          'hero_slides',
+          urls,
+        );
+        let idx = 0;
+        slides = slides.map((s) =>
+          s?.image ? { ...s, image: synced[idx++] || s.image } : s,
+        );
+      } else {
+        await this.media.detachAll('storefront', 'hero_slides');
+      }
+      value = JSON.stringify(slides);
+    } else if (key === 'hero_secondary_banner') {
+      if (value) {
+        const [synced] = await this.media.syncEntityImages(
+          'storefront',
+          'hero_secondary_banner',
+          [value],
+        );
+        if (synced) value = synced;
+      } else {
+        await this.media.detachAll('storefront', 'hero_secondary_banner');
+      }
+    }
+
     await this.prisma.systemSetting.upsert({
       where: { key },
-      create: { key, value: body.value },
-      update: { value: body.value },
+      create: { key, value },
+      update: { value },
     });
-    return { key, value: body.value };
+    return { key, value };
   }
 }

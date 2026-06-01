@@ -407,10 +407,18 @@ model Media {
   url        String
   mimeType   String
   size       Int
+  hash       String?
+  alt        String?
+  width      Int?
+  height     Int?
+  sourceUrl  String?
   uploadedBy String?
   createdAt  DateTime @default(now())
 
   attachments MediaAttachment[]
+
+  @@unique([hash])
+  @@index([url])
 }
 
 model MediaAttachment {
@@ -423,6 +431,7 @@ model MediaAttachment {
   media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
 
   @@unique([mediaId, entityType, entityId])
+  @@index([entityType, entityId])
 }
 
 enum CourierService {

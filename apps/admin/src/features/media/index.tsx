@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search, Link2, ExternalLink } from 'lucide-react'
+import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search, Link2, ExternalLink, RefreshCw } from 'lucide-react'
 import { PLACEHOLDER_IMAGE } from '@/lib/utils'
 import { mediaApi, uploadApi, mediaUrl, type MediaResponse } from './api'
 import { Header } from '@/components/layout/header'
@@ -15,6 +15,13 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Link } from '@tanstack/react-router'
 
+type PendingUpload = {
+  id: string
+  name: string
+  status: 'uploading' | 'done' | 'error'
+  error?: string
+}
+
 export function Media() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -25,6 +32,12 @@ export function Media() {
   const [copied, setCopied] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MediaResponse | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+  const [urlBusy, setUrlBusy] = useState(false)
+  const [pending, setPending] = useState<PendingUpload[]>([])
+  const dropRef = useRef<HTMLDivElement | null>(null)
+  const fileInputId = useRef(`media-input-${Math.random().toString(36).slice(2)}`)
 
   const { data: attachDetails } = useQuery({
     queryKey: ['media', 'attachments', selected?.id],
@@ -40,23 +53,130 @@ export function Media() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => mediaApi.delete(id),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['media'] }); setDeleteTarget(null); toast.success('Deleted'); },
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err as Error)?.message
+      toast.error(message || 'Delete failed')
+    },
   })
 
-  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files; if (!files?.length) return;
-    for (let i = 0; i < files.length; i++) {
-      try {
-        await uploadApi.file(files[i]);
-      } catch { toast.error(`Failed: ${files[i].name}`); }
+  const migrateMut = useMutation({
+    mutationFn: () => mediaApi.migrateOrphans().then(r => r.data),
+    onSuccess: (d) => {
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+      toast.success(`Scanned ${d.scanned} · migrated ${d.migrated} · failed ${d.failed}`)
+    },
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err as Error)?.message
+      toast.error(message || 'Migration failed')
+    },
+  })
+
+  const ingestFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return
+      const entries: PendingUpload[] = files.map((f) => ({
+        id: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`,
+        name: f.name,
+        status: 'uploading' as const,
+      }))
+      setPending((prev) => [...prev, ...entries])
+      await Promise.all(
+        files.map(async (file, i) => {
+          const entry = entries[i]
+          try {
+            await uploadApi.file(file)
+            setPending((prev) =>
+              prev.map((p) => (p.id === entry.id ? { ...p, status: 'done' } : p)),
+            )
+          } catch (err: unknown) {
+            const message =
+              (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+              (err as Error)?.message
+            setPending((prev) =>
+              prev.map((p) =>
+                p.id === entry.id ? { ...p, status: 'error', error: message || 'Failed' } : p,
+              ),
+            )
+          }
+        }),
+      )
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+      window.setTimeout(() => {
+        setPending((prev) => prev.filter((p) => p.status === 'uploading'))
+      }, 1500)
+    },
+    [queryClient],
+  )
+
+  const handleInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (!files?.length) return
+      await ingestFiles(Array.from(files))
+      e.target.value = ''
+    },
+    [ingestFiles],
+  )
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragActive(true)
+  }
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    if (e.currentTarget === dropRef.current) setDragActive(false)
+  }
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragActive(false)
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length) await ingestFiles(files)
+  }
+
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const files: File[] = []
+      for (const it of items) {
+        if (it.kind === 'file') {
+          const f = it.getAsFile()
+          if (f) files.push(f)
+        }
+      }
+      if (files.length) await ingestFiles(files)
+    },
+    [ingestFiles],
+  )
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [handlePaste])
+
+  const handleUrlImport = async () => {
+    const url = urlInput.trim()
+    if (!url) return
+    setUrlBusy(true)
+    try {
+      await uploadApi.fromUrl(url)
+      toast.success('Imported to library')
+      setUrlInput('')
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err as Error)?.message
+      toast.error(message || 'Import failed')
+    } finally {
+      setUrlBusy(false)
     }
-    queryClient.invalidateQueries({ queryKey: ['media'] });
-    toast.success(`${files.length} file(s) uploaded`);
-    e.target.value = '';
-  }, [queryClient])
+  }
 
   const copyUrl = (url: string, id: string) => {
-    navigator.clipboard.writeText(mediaUrl(url));
-    setCopied(id); setTimeout(() => setCopied(null), 2000);
+    navigator.clipboard.writeText(mediaUrl(url))
+    setCopied(id); setTimeout(() => setCopied(null), 2000)
   }
 
   const formatSize = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -78,12 +198,12 @@ export function Media() {
         <ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-4'>
-        <div className='flex items-end justify-between gap-2'>
+        <div className='flex items-end justify-between gap-2 flex-wrap'>
           <div>
             <h2 className='text-2xl font-bold tracking-tight'>Media Gallery</h2>
             <p className='text-muted-foreground'>{data?.meta?.total || 0} files</p>
           </div>
-          <div className='flex items-center gap-2'>
+          <div className='flex items-center gap-2 flex-wrap'>
             <div className='flex gap-1 border rounded-md p-0.5'>
               {[{ label: 'All', value: '' }, { label: 'Images', value: 'image' }, { label: 'Videos', value: 'video' }].map(f => (
                 <Button key={f.value} variant={typeFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setTypeFilter(f.value)}>
@@ -98,67 +218,142 @@ export function Media() {
                 </Button>
               ))}
             </div>
-            <label className='cursor-pointer'>
-              <Button asChild><span><Upload className='h-4 w-4 mr-1' />Upload</span></Button>
-              <input type='file' accept='image/*,video/*' multiple onChange={handleUpload} className='hidden' />
+            <div className='flex items-center gap-1'>
+              <div className='relative'>
+                <Link2 className='absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground' />
+                <Input
+                  placeholder='Import URL...'
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleUrlImport()
+                    }
+                  }}
+                  className='pl-8 h-8 text-sm w-52'
+                  disabled={urlBusy}
+                />
+              </div>
+              <Button variant='outline' size='sm' onClick={handleUrlImport} disabled={!urlInput.trim() || urlBusy}>
+                {urlBusy ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : 'Fetch'}
+              </Button>
+            </div>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => migrateMut.mutate()}
+              disabled={migrateMut.isPending}
+            >
+              {migrateMut.isPending ? <Loader2 className='h-3.5 w-3.5 mr-1 animate-spin' /> : <RefreshCw className='h-3.5 w-3.5 mr-1' />}
+              Migrate Orphans
+            </Button>
+            <label htmlFor={fileInputId.current} className='cursor-pointer'>
+              <Button asChild size='sm'>
+                <span>
+                  <Upload className='h-4 w-4 mr-1' />
+                  Upload
+                </span>
+              </Button>
+              <input
+                id={fileInputId.current}
+                type='file'
+                accept='image/*,video/*'
+                multiple
+                onChange={handleInputChange}
+                className='hidden'
+              />
             </label>
           </div>
         </div>
 
-        {isLoading ? (
-          <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8 text-muted-foreground' /></div>
-        ) : data?.data?.length ? (
-          <>
-            <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2'>
-              {data.data.map(m => (
-                <div
-                  key={m.id}
-                  className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
-                  onClick={() => {
-                    if (selected?.id === m.id) { setSelected(null); setDetailOpen(false); }
-                    else { setSelected(m); setDetailOpen(true); }
-                  }}
-                >
-                  {m.mimeType.startsWith('image/') ? (
-                    <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
-                  ) : (
-                    <div className='w-full h-full flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
-                  )}
-                  <div className='absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors' />
-                  {(m._count?.attachments ?? 0) > 0 && (
-                    <Badge className='absolute bottom-1 left-1 text-xs bg-primary/80'>{m._count?.attachments}</Badge>
-                  )}
-                  {selected?.id === m.id && (
-                    <div className='absolute top-1 right-1'>
-                      <Button variant='secondary' size='icon' className='h-6 w-6 rounded-full' onClick={(e) => { e.stopPropagation(); deleteMut.mutate(m.id); }}>
-                        <Trash2 className='h-3 w-3 text-destructive' />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+        <div
+          ref={dropRef}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`relative flex-1 rounded-lg border-2 border-dashed transition-colors ${
+            dragActive ? 'border-primary bg-primary/5' : 'border-transparent'
+          }`}
+        >
+          {dragActive && (
+            <div className='pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center bg-primary/10 text-primary rounded-lg'>
+              <Upload className='h-10 w-10 mb-2' />
+              <p className='font-medium'>Drop files to add to library</p>
             </div>
+          )}
 
-            {data.meta.totalPages > 1 && (
-              <div className='flex items-center justify-between pt-2'>
-                <span className='text-sm text-muted-foreground'>Page {page} of {data.meta.totalPages}</span>
-                <div className='flex gap-2'>
-                  <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-                  <Button variant='outline' size='sm' disabled={page >= data.meta.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          {isLoading ? (
+            <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8 text-muted-foreground' /></div>
+          ) : data?.data?.length || pending.length ? (
+            <>
+              {pending.length > 0 && (
+                <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
+                  {pending.map((p) => (
+                    <div
+                      key={p.id}
+                      className='relative aspect-square rounded-lg border bg-muted/30 flex flex-col items-center justify-center text-xs gap-1 p-2 text-center'
+                    >
+                      {p.status === 'uploading' ? (
+                        <Loader2 className='animate-spin h-5 w-5 text-primary' />
+                      ) : p.status === 'error' ? (
+                        <X className='h-5 w-5 text-destructive' />
+                      ) : (
+                        <Check className='h-5 w-5 text-emerald-500' />
+                      )}
+                      <p className='line-clamp-2 break-all'>{p.name}</p>
+                      {p.error && <p className='text-destructive text-[10px]'>{p.error}</p>}
+                    </div>
+                  ))}
                 </div>
+              )}
+              <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
+                {(data?.data || []).map(m => (
+                  <div
+                    key={m.id}
+                    className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
+                    onClick={() => {
+                      if (selected?.id === m.id) { setSelected(null); setDetailOpen(false); }
+                      else { setSelected(m); setDetailOpen(true); }
+                    }}
+                  >
+                    {m.mimeType.startsWith('image/') ? (
+                      <img src={mediaUrl(m.url)} alt={m.alt || m.filename} className='w-full h-full object-cover' loading='lazy' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                    ) : (
+                      <div className='w-full h-full flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
+                    )}
+                    <div className='absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors' />
+                    {(m._count?.attachments ?? 0) > 0 && (
+                      <Badge className='absolute bottom-1 left-1 text-xs bg-primary/80'>{m._count?.attachments}</Badge>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </>
-        ) : (
-          <div className='flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-lg'>
-            <ImageIcon className='h-12 w-12 text-muted-foreground mb-3' />
-            <p className='text-muted-foreground'>No media files yet</p>
-            <label className='cursor-pointer mt-3'>
-              <Button variant='outline' asChild><span><Upload className='h-4 w-4 mr-1' />Upload Files</span></Button>
-              <input type='file' accept='image/*,video/*' multiple onChange={handleUpload} className='hidden' />
-            </label>
-          </div>
-        )}
+
+              {data?.meta?.totalPages > 1 && (
+                <div className='flex items-center justify-between pt-2 px-1'>
+                  <span className='text-sm text-muted-foreground'>Page {page} of {data.meta.totalPages}</span>
+                  <div className='flex gap-2'>
+                    <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+                    <Button variant='outline' size='sm' disabled={page >= data.meta.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className='flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-lg'>
+              <ImageIcon className='h-12 w-12 text-muted-foreground mb-3' />
+              <p className='text-muted-foreground'>No media files yet</p>
+              <p className='text-xs text-muted-foreground mt-1'>Drop files, paste from clipboard, or fetch a URL</p>
+              <label className='cursor-pointer mt-3'>
+                <Button variant='outline' asChild>
+                  <span><Upload className='h-4 w-4 mr-1' />Upload Files</span>
+                </Button>
+                <input type='file' accept='image/*,video/*' multiple onChange={handleInputChange} className='hidden' />
+              </label>
+            </div>
+          )}
+        </div>
 
         {selected && (
           <>
@@ -173,7 +368,7 @@ export function Media() {
 
                 <div className='shrink-0'>
                   {selected.mimeType.startsWith('image/') ? (
-                    <img src={mediaUrl(selected.url)} alt='' className='h-20 w-20 rounded-lg object-cover border' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                    <img src={mediaUrl(selected.url)} alt={selected.alt || selected.filename} className='h-20 w-20 rounded-lg object-cover border' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                   ) : (
                     <div className='h-20 w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
                   )}

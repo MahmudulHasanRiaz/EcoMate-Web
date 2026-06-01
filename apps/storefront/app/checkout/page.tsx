@@ -34,8 +34,8 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   return (
     <div className="flex gap-4">
       <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
-        <img src={item.image || 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'} alt={item.name} className="w-full h-full object-contain"
-          onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'; }} />
+        <img src={item.image || '/placeholder.svg'} alt={item.name} className="w-full h-full object-contain"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }} />
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-start mb-2 pr-1">

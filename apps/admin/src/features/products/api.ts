@@ -28,6 +28,8 @@ export const productsApi = {
   delete: (id: string) => apiClient.delete(`/products/${id}`),
   generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultStock?: number }) =>
     apiClient.post<ProductResponse>(`/products/${id}/variants/generate`, data),
+  updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; stock?: number; image?: string | null }) =>
+    apiClient.put<ProductVariantResponse>(`/products/${id}/variants/${variantId}`, data),
 }
 
 export const uploadApi = {

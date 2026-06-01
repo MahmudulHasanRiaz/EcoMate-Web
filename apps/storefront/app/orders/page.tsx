@@ -9,7 +9,6 @@ export default function OrdersPage() {
   const router = useRouter();
   const [orderNumber, setOrderNumber] = useState('');
   const [isSearched, setIsSearched] = useState(false);
-  const [imgError, setImgError] = useState(false);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,10 +164,9 @@ export default function OrdersPage() {
                 <div className="flex items-center gap-3 p-3 bg-[#f8f9fa] rounded-xl border border-gray-50">
                   <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
                     <img 
-                      src={imgError ? "https://placehold.co/100x100/f8f9fa/a0aec0?text=Support" : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop"} 
+                      src="/placeholder.svg" 
                       alt="Support" 
                       className="w-full h-full object-cover" 
-                      onError={() => setImgError(true)}
                     />
                   </div>
                   <div>

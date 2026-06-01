@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Building2, Award, Users2, Rocket } from 'lucide-react';
 import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 export async function generateMetadata(): Promise<Metadata> {
   return pageMetadata("Company", "Learn about {store} — our management philosophy, certifications, team, and vision for the future.");
@@ -26,7 +27,7 @@ export default async function CompanyPage() {
         </div>
         <div className="relative overflow-hidden hidden lg:block">
            <img 
-             src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2000" 
+             src={PLACEHOLDER_IMAGE}
              className="w-full h-full object-cover" 
              alt="Office" 
            />
@@ -51,7 +52,7 @@ export default async function CompanyPage() {
               </p>
               <div className="flex items-center gap-6 mt-12 bg-gray-50 p-6 rounded-2xl border-l-4 border-brand-blue">
                  <div className="shrink-0 w-16 h-16 rounded-full bg-gray-200 overflow-hidden">
-                    <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=400" alt="CEO" />
+                    <img src={PLACEHOLDER_IMAGE} alt="CEO" />
                  </div>
                  <div>
                      <p className="font-bold text-gray-900">{company.ceoName || "Mahmud Riaz"}</p>

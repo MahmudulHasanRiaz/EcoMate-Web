@@ -2,14 +2,13 @@
 
 import React from 'react';
 import { ShoppingCart } from "lucide-react";
+import { motion } from 'motion/react';
+import { useRouter } from 'next/navigation';
 import type { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { motion } from "motion/react";
-import { useRouter } from "next/navigation";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { trackEvent } from "@/lib/tracking";
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 interface ProductCardProps {
   product: Product;

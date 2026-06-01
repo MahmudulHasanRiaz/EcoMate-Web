@@ -2,14 +2,11 @@ import type { Metadata } from "next";
 import { MapPin, Phone, Clock, Navigation } from 'lucide-react';
 import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 export async function generateMetadata(): Promise<Metadata> {
   return pageMetadata("Our Stores", "Visit the {store} flagship store in Dhaka. Find our location, hours, and contact information.");
 }
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
-
-const STORE_IMAGE = "https://images.unsplash.com/photo-1534723452862-4c874018d66d?auto=format&fit=crop&q=80&w=1200";
 
 export default async function StoresPage() {
   let config;
@@ -46,7 +43,7 @@ export default async function StoresPage() {
           <div className="group bg-white rounded-[40px] overflow-hidden border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-500">
                <div className="relative aspect-[4/3] overflow-hidden">
                   <img 
-                    src={STORE_IMAGE}
+                    src={PLACEHOLDER_IMAGE}
                     alt={storeName + " Warehouse"} 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />

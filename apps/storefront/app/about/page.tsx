@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Target, Users, ShieldCheck, Heart } from 'lucide-react';
 import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 export async function generateMetadata(): Promise<Metadata> {
   return pageMetadata("About Us", "Learn about {store} — a technology-driven ecosystem delivering premium products and services.");
@@ -23,7 +24,7 @@ export default async function AboutPage() {
       <section className="relative h-[40vh] md:h-[50vh] flex items-center justify-center bg-[#1a1a1a] overflow-hidden">
         <div className="absolute inset-0 opacity-40">
           <img 
-            src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=2000" 
+            src={PLACEHOLDER_IMAGE}
             alt={storeName}
             className="w-full h-full object-cover"
           />
@@ -66,10 +67,10 @@ export default async function AboutPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl skew-y-2">
-              <img src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=800" alt="Tech Repair" className="w-full h-full object-cover" />
+              <img src={PLACEHOLDER_IMAGE} alt="Tech Repair" className="w-full h-full object-cover" />
             </div>
             <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl -skew-y-2 translate-y-12">
-              <img src="https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800" alt="Gadgets" className="w-full h-full object-cover" />
+              <img src={PLACEHOLDER_IMAGE} alt="Gadgets" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>

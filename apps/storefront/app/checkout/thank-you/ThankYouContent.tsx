@@ -264,7 +264,7 @@ export default function ThankYouContent() {
                       <div className="w-10 h-10 bg-gray-50 rounded border flex items-center justify-center shrink-0">
                         {item.product?.images?.[0] ? (
                           <img src={item.product.images[0]} alt="" className="w-full h-full object-cover rounded"
-                            onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'; }} />
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }} />
                         ) : (
                           <Package size={16} className="text-gray-300" />
                         )}

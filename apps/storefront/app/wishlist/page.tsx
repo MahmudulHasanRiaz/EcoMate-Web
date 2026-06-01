@@ -6,8 +6,7 @@ import { useCart } from '@/context/CartContext';
 import { getFeaturedProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
 import { useRouter } from 'next/navigation';
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 export default function WishlistPage() {
   const { addToCart } = useCart();

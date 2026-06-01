@@ -5,8 +5,7 @@ import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { getCombos } from '@/lib/api/combos';
 import type { Combo } from '@/lib/types';
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 export default function ComboDeals() {
   const router = useRouter();

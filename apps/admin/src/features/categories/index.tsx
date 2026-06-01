@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ChevronRight, Image as ImageIcon, X } from 'lucide-react'
 import { categoriesApi, type CategoryResponse } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { MediaPicker } from '@/components/media-picker'
+import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
 
 export function Categories() {
   const queryClient = useQueryClient()
@@ -25,11 +27,12 @@ export function Categories() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<CategoryResponse | null>(null)
-  const [form, setForm] = useState({ name: '', slug: '', parentId: '' })
+  const [form, setForm] = useState({ name: '', slug: '', parentId: '', image: '' })
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const createMut = useMutation({
     mutationFn: categoriesApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); setShowCreate(false); setForm({ name: '', slug: '', parentId: '' }); toast.success('Created') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); setShowCreate(false); setForm({ name: '', slug: '', parentId: '', image: '' }); toast.success('Created') },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -46,13 +49,18 @@ export function Categories() {
 
   const openEdit = (cat: CategoryResponse) => {
     setEditing(cat)
-    setForm({ name: cat.name, slug: cat.slug, parentId: cat.parentId || '' })
+    setForm({ name: cat.name, slug: cat.slug, parentId: cat.parentId || '', image: cat.image || '' })
   }
 
   const renderCategory = (cat: CategoryResponse, depth = 0) => (
     <div key={cat.id}>
       <div className={`flex items-center gap-3 py-2.5 px-3 rounded-md hover:bg-muted/50 group ${depth > 0 ? 'ml-6 border-l-2 pl-4' : ''}`}>
         {cat.children && cat.children.length > 0 && <ChevronRight className='h-4 w-4 text-muted-foreground' />}
+        {cat.image ? (
+          <img src={mediaUrl(cat.image)} alt='' className='h-8 w-8 rounded object-cover border shrink-0' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+        ) : (
+          <div className='h-8 w-8 rounded bg-muted border shrink-0 flex items-center justify-center'><ImageIcon className='h-4 w-4 text-muted-foreground' /></div>
+        )}
         <span className='flex-1 font-medium'>{cat.name}</span>
         <Badge variant='outline' className='text-xs'>{cat.slug}</Badge>
         {cat._count && <span className='text-xs text-muted-foreground'>{cat._count.products} products</span>}
@@ -105,16 +113,45 @@ export function Categories() {
                   {(Array.isArray(categories) ? categories : []).map((c: CategoryResponse) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
+              <div className='space-y-2'>
+                <Label>Image</Label>
+                <div className='flex items-center gap-2'>
+                  <div className='h-14 w-14 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
+                    {form.image
+                      ? <img src={mediaUrl(form.image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      : <ImageIcon className='h-5 w-5 text-muted-foreground' />}
+                  </div>
+                  <Button type='button' variant='outline' size='sm' onClick={() => setPickerOpen(true)}>
+                    {form.image ? 'Change' : 'Choose'} image
+                  </Button>
+                  {form.image && (
+                    <Button type='button' variant='ghost' size='icon' onClick={() => setForm({ ...form, image: '' })}>
+                      <X className='h-4 w-4' />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
             <DialogFooter>
               <Button variant='outline' onClick={() => { setShowCreate(false); setEditing(null); }}>Cancel</Button>
               <Button onClick={() => {
-                const data = { name: form.name, slug: form.slug, parentId: form.parentId || undefined };
+                const data = { name: form.name, slug: form.slug, parentId: form.parentId || undefined, image: form.image || undefined };
                 editing ? updateMut.mutate({ id: editing.id, data }) : createMut.mutate(data as any);
               }} disabled={!form.name || !form.slug}>{editing ? 'Save' : 'Create'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <MediaPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          selected={form.image ? [form.image] : []}
+          multiple={false}
+          onSelect={(urls) => {
+            setForm((prev) => ({ ...prev, image: urls[urls.length - 1] || '' }))
+            setPickerOpen(false)
+          }}
+        />
       </Main>
     </>
   )

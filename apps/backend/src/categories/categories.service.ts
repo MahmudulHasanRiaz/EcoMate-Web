@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaService,
+  ) {}
 
   async findAll() {
     return this.prisma.category.findMany({
@@ -36,7 +40,22 @@ export class CategoriesService {
     });
     if (existing) throw new ConflictException('Slug already exists');
 
-    return this.prisma.category.create({ data: dto as any });
+    const created = await this.prisma.category.create({ data: dto as any });
+
+    if (dto.image) {
+      const [resolved] = await this.media.syncEntityImages(
+        'category',
+        created.id,
+        [dto.image],
+      );
+      if (resolved && resolved !== dto.image) {
+        return this.prisma.category.update({
+          where: { id: created.id },
+          data: { image: resolved },
+        });
+      }
+    }
+    return created;
   }
 
   async update(id: string, dto: UpdateCategoryDto) {
@@ -50,7 +69,24 @@ export class CategoriesService {
       if (exist) throw new ConflictException('Slug already exists');
     }
 
-    return this.prisma.category.update({ where: { id }, data: dto as any });
+    const updated = await this.prisma.category.update({
+      where: { id },
+      data: dto as any,
+    });
+
+    if (dto.image !== undefined) {
+      const urls = dto.image ? [dto.image] : [];
+      const synced = await this.media.syncEntityImages('category', id, urls);
+      const next = synced[0] ?? null;
+      if (next !== updated.image) {
+        return this.prisma.category.update({
+          where: { id },
+          data: { image: next },
+        });
+      }
+    }
+
+    return updated;
   }
 
   async remove(id: string) {
@@ -61,6 +97,7 @@ export class CategoriesService {
       where: { parentId: id },
       data: { parentId: null },
     });
+    await this.media.detachAll('category', id);
     await this.prisma.category.delete({ where: { id } });
     return { message: 'Category deleted' };
   }

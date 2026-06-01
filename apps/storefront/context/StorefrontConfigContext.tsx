@@ -7,7 +7,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
   currency: { code: "BDT", symbol: "৳" },
   delivery: { charge: 0, freeDeliveryMin: 0 },
-  hero: { slides: [], secondaryBanner: '' },
+  hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "" },
   seo: { title: "", description: "", keywords: "" },
   footer: { description: "", copyright: "" },
@@ -24,6 +24,14 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   districtCharges: {},
 };
 
+function getBootstrappedConfig(): StorefrontConfig | undefined {
+  try {
+    const el = document.getElementById('__INITIAL_CONFIG__');
+    if (el?.textContent) return JSON.parse(el.textContent);
+  } catch {}
+  return undefined;
+}
+
 interface StorefrontConfigContextType {
   config: StorefrontConfig;
   isLoading: boolean;
@@ -36,9 +44,11 @@ const StorefrontConfigContext = createContext<StorefrontConfigContextType>({
   refresh: () => {},
 });
 
-export function StorefrontConfigProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<StorefrontConfig>(DEFAULT_CONFIG);
-  const [isLoading, setIsLoading] = useState(true);
+export function StorefrontConfigProvider({ children, initialConfig }: { children: ReactNode; initialConfig?: StorefrontConfig }) {
+  const [config, setConfig] = useState<StorefrontConfig>(
+    initialConfig || getBootstrappedConfig() || DEFAULT_CONFIG
+  );
+  const [isLoading, setIsLoading] = useState(false);
 
   const refresh = useCallback(() => {
     setIsLoading(true);
@@ -47,10 +57,6 @@ export function StorefrontConfigProvider({ children }: { children: ReactNode }) 
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   return (
     <StorefrontConfigContext.Provider value={{ config, isLoading, refresh }}>

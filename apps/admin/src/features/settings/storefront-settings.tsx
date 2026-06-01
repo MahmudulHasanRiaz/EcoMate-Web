@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin } from 'lucide-react'
+import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MediaPicker } from '@/components/media-picker'
+import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
 
 const bdDistricts = [
   { name: 'Bagerhat', slug: 'bagerhat' }, { name: 'Bandarban', slug: 'bandarban' }, { name: 'Barguna', slug: 'barguna' },
@@ -52,7 +54,12 @@ export function StorefrontSettings() {
   const [currencySymbol, setCurrencySymbol] = useState('৳')
   const [deliveryCharge, setDeliveryCharge] = useState('60')
   const [freeDeliveryMin, setFreeDeliveryMin] = useState('1000')
-  const [heroSlides, setHeroSlides] = useState<{ image: string; link?: string }[]>([])
+  const [heroSlides, setHeroSlides] = useState<{ image: string; link?: string; alt?: string }[]>([])
+  const [secondaryBanner, setSecondaryBanner] = useState('')
+  const [secondaryBannerAlt, setSecondaryBannerAlt] = useState('')
+  const [slidePickerOpen, setSlidePickerOpen] = useState(false)
+  const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null)
+  const [secondaryPickerOpen, setSecondaryPickerOpen] = useState(false)
   const [facebook, setFacebook] = useState('')
   const [instagram, setInstagram] = useState('')
   const [youtube, setYoutube] = useState('')
@@ -94,6 +101,8 @@ export function StorefrontSettings() {
       setDeliveryCharge(settings.delivery_charge || '60')
       setFreeDeliveryMin(settings.free_delivery_min || '1000')
       try { setHeroSlides(JSON.parse(settings.hero_slides || '[]')); } catch { setHeroSlides([]); }
+      setSecondaryBanner(settings.hero_secondary_banner || '')
+      setSecondaryBannerAlt(settings.hero_secondary_banner_alt || '')
       setFacebook(settings.social_facebook || '')
       setInstagram(settings.social_instagram || '')
       setYoutube(settings.social_youtube || '')
@@ -141,6 +150,8 @@ export function StorefrontSettings() {
       { key: 'delivery_charge', value: deliveryCharge },
       { key: 'free_delivery_min', value: freeDeliveryMin },
       { key: 'hero_slides', value: JSON.stringify(heroSlides) },
+      { key: 'hero_secondary_banner', value: secondaryBanner },
+      { key: 'hero_secondary_banner_alt', value: secondaryBannerAlt },
       { key: 'social_facebook', value: facebook },
       { key: 'social_instagram', value: instagram },
       { key: 'social_youtube', value: youtube },
@@ -244,42 +255,100 @@ export function StorefrontSettings() {
         </TabsContent>
 
         <TabsContent value="hero">
-          <Card>
-            <CardHeader>
-              <CardTitle>Hero Banner Slides</CardTitle>
-              <CardDescription>Banner images shown on the homepage slider. Add, edit, or remove slides below.</CardDescription>
-            </CardHeader>
-            <CardContent className='space-y-4'>
-              {heroSlides.map((slide, i) => (
-                <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
-                  <div className='flex-1 space-y-3'>
-                    <div className='space-y-2'>
-                      <Label>Image URL</Label>
-                      <Input value={slide.image} onChange={e => {
-                        const next = [...heroSlides];
-                        next[i] = { ...next[i], image: e.target.value };
-                        setHeroSlides(next);
-                      }} placeholder='https://example.com/banner.jpg' />
+          <div className='space-y-4'>
+            <Card>
+              <CardHeader>
+                <CardTitle>Hero Banner Slides</CardTitle>
+                <CardDescription>Banner images shown on the homepage slider. Add, edit, or remove slides below.</CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-4'>
+                {heroSlides.map((slide, i) => (
+                  <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
+                    <div className='h-20 w-32 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
+                      {slide.image
+                        ? <img src={mediaUrl(slide.image)} alt={slide.alt || ''} className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                        : <ImageIcon className='h-6 w-6 text-muted-foreground' />}
                     </div>
-                    <div className='space-y-2'>
-                      <Label>Link (optional)</Label>
-                      <Input value={slide.link || ''} onChange={e => {
-                        const next = [...heroSlides];
-                        next[i] = { ...next[i], link: e.target.value };
-                        setHeroSlides(next);
-                      }} placeholder='/products' />
+                    <div className='flex-1 space-y-3'>
+                      <div className='space-y-2'>
+                        <Label>Image</Label>
+                        <div className='flex gap-2'>
+                          <Input value={slide.image} onChange={e => {
+                            const next = [...heroSlides];
+                            next[i] = { ...next[i], image: e.target.value };
+                            setHeroSlides(next);
+                          }} placeholder='https://example.com/banner.jpg' />
+                          <Button type='button' variant='outline' size='sm' onClick={() => { setActiveSlideIndex(i); setSlidePickerOpen(true) }}>
+                            Pick
+                          </Button>
+                        </div>
+                      </div>
+                      <div className='grid grid-cols-2 gap-3'>
+                        <div className='space-y-2'>
+                          <Label>Link (optional)</Label>
+                          <Input value={slide.link || ''} onChange={e => {
+                            const next = [...heroSlides];
+                            next[i] = { ...next[i], link: e.target.value };
+                            setHeroSlides(next);
+                          }} placeholder='/products' />
+                        </div>
+                        <div className='space-y-2'>
+                          <Label>Alt text</Label>
+                          <Input value={slide.alt || ''} onChange={e => {
+                            const next = [...heroSlides];
+                            next[i] = { ...next[i], alt: e.target.value };
+                            setHeroSlides(next);
+                          }} placeholder='Slide description' />
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setHeroSlides(heroSlides.filter((_, j) => j !== i))}>
+                      <X className='h-4 w-4' />
+                    </Button>
+                  </div>
+                ))}
+                <Button variant='outline' size='sm' onClick={() => setHeroSlides([...heroSlides, { image: '', link: '', alt: '' }])}>
+                  <Plus className='h-4 w-4 mr-1' /> Add Slide
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Secondary Banner</CardTitle>
+                <CardDescription>Single static banner displayed below the hero slider.</CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-4'>
+                <div className='flex items-start gap-3'>
+                  <div className='h-32 w-full max-w-md rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
+                    {secondaryBanner
+                      ? <img src={mediaUrl(secondaryBanner)} alt={secondaryBannerAlt || ''} className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      : <ImageIcon className='h-8 w-8 text-muted-foreground' />}
+                  </div>
+                </div>
+                <div className='grid gap-3 md:grid-cols-2 max-w-2xl'>
+                  <div className='space-y-2'>
+                    <Label>Image URL</Label>
+                    <div className='flex gap-2'>
+                      <Input value={secondaryBanner} onChange={e => setSecondaryBanner(e.target.value)} placeholder='https://example.com/banner.jpg' />
+                      <Button type='button' variant='outline' size='sm' onClick={() => setSecondaryPickerOpen(true)}>
+                        Pick
+                      </Button>
+                      {secondaryBanner && (
+                        <Button type='button' variant='ghost' size='icon' onClick={() => setSecondaryBanner('')}>
+                          <X className='h-4 w-4' />
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <Button variant='ghost' size='icon' className='mt-6 shrink-0 text-destructive' onClick={() => setHeroSlides(heroSlides.filter((_, j) => j !== i))}>
-                    ✕
-                  </Button>
+                  <div className='space-y-2'>
+                    <Label>Alt text</Label>
+                    <Input value={secondaryBannerAlt} onChange={e => setSecondaryBannerAlt(e.target.value)} placeholder='Banner description' />
+                  </div>
                 </div>
-              ))}
-              <Button variant='outline' size='sm' onClick={() => setHeroSlides([...heroSlides, { image: '', link: '' }])}>
-                + Add Slide
-              </Button>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="social">
@@ -654,6 +723,32 @@ export function StorefrontSettings() {
           Save Changes
         </Button>
       </div>
+
+      <MediaPicker
+        open={slidePickerOpen && activeSlideIndex !== null}
+        onOpenChange={(v) => { setSlidePickerOpen(v); if (!v) setActiveSlideIndex(null) }}
+        selected={activeSlideIndex !== null && heroSlides[activeSlideIndex]?.image ? [heroSlides[activeSlideIndex].image] : []}
+        multiple={false}
+        onSelect={(urls) => {
+          if (activeSlideIndex === null) return
+          const url = urls[urls.length - 1] || ''
+          const next = [...heroSlides]
+          next[activeSlideIndex] = { ...next[activeSlideIndex], image: url }
+          setHeroSlides(next)
+          setSlidePickerOpen(false)
+          setActiveSlideIndex(null)
+        }}
+      />
+      <MediaPicker
+        open={secondaryPickerOpen}
+        onOpenChange={setSecondaryPickerOpen}
+        selected={secondaryBanner ? [secondaryBanner] : []}
+        multiple={false}
+        onSelect={(urls) => {
+          setSecondaryBanner(urls[urls.length - 1] || '')
+          setSecondaryPickerOpen(false)
+        }}
+      />
     </div>
   )
 }

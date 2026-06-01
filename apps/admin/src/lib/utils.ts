@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
-export const PLACEHOLDER_IMAGE = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'
+export const PLACEHOLDER_IMAGE = 'https://placehold.co/200x200/f0f4ff/3b82f6?text=No+Image'
 
 /** Base URL for API calls — derived from VITE_API_URL or falls back to localhost */
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
@@ -17,6 +17,12 @@ export function appUrl(url: string): string {
   const origin = API_BASE.replace(/\/api\/?$/, '')
   return `${origin}${url}`
 }
+
+/**
+ * Alias for appUrl — used in media-library UIs to make it explicit that
+ * the URL points at a media asset.
+ */
+export const mediaUrl = appUrl
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

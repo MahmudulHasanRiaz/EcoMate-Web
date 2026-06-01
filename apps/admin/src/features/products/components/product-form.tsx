@@ -1,10 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Upload, Plus, Loader2, Package } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon } from 'lucide-react'
 import { PLACEHOLDER_IMAGE, appUrl } from '@/lib/utils'
 import { productsApi, type ProductResponse } from '../api'
-import { uploadApi } from '@/features/media/api'
 import { MediaPicker } from '@/components/media-picker'
 
 const imgUrl = appUrl
@@ -56,6 +55,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const [uploading, setUploading] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [variantPickerOpen, setVariantPickerOpen] = useState(false)
+  const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
 
   const prevRowId = useRef<string | undefined>(undefined)
 
@@ -101,17 +102,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setSelectedAttrs([]); setVariantPrice(''); setVariantStock('0');
   }
 
-  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setUploading(true);
-    try {
-      const res = await uploadApi.file(file);
-      setImages(prev => [...prev, res.data.url]);
-    } catch { toast.error('Upload failed'); }
-    setUploading(false);
-    e.target.value = '';
-  }, [])
-
   const createMut = useMutation({
     mutationFn: productsApi.create,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); onOpenChange(false); reset(); toast.success('Product created'); },
@@ -127,6 +117,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const genVariantMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.generateVariants(id, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Variants generated'); },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
+  const updateVariantMut = useMutation({
+    mutationFn: ({ id, variantId, data }: { id: string; variantId: string; data: { image?: string | null } }) =>
+      productsApi.updateVariant(id, variantId, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Variant updated'); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -278,14 +275,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             <TabsContent value='images' className='mt-0 space-y-4'>
               <div className='flex items-center gap-4'>
                 <Button variant='outline' size='sm' onClick={() => setGalleryOpen(true)}>
-                  <Upload className='h-4 w-4 mr-1' /> Browse Gallery
+                  <ImageIcon className='h-4 w-4 mr-1' /> Browse Library
                 </Button>
-                <label className='cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 border rounded-md hover:bg-muted text-sm'>
-                  <Upload className='h-4 w-4' />
-                  {uploading ? 'Uploading...' : 'Upload New'}
-                  <input type='file' accept='image/*' onChange={handleUpload} className='hidden' disabled={uploading} />
-                </label>
-                <span className='text-xs text-muted-foreground'>{images.length} image(s) selected</span>
+                <span className='text-xs text-muted-foreground'>
+                  {images.length} image(s) — drag, paste, or fetch a URL from the picker
+                </span>
               </div>
               <div className='grid grid-cols-4 gap-3'>
                 {images.map((url, i) => (
@@ -301,7 +295,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   <div className='col-span-4 flex flex-col items-center justify-center py-8 text-muted-foreground border-2 border-dashed rounded-lg'>
                     <Package className='h-8 w-8 mb-2' />
                     <p className='text-sm'>No images selected</p>
-                    <Button variant='outline' size='sm' className='mt-2' onClick={() => setGalleryOpen(true)}>Browse Gallery</Button>
+                    <Button variant='outline' size='sm' className='mt-2' onClick={() => setGalleryOpen(true)}>Browse Library</Button>
                   </div>
                 )}
               </div>
@@ -349,22 +343,70 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   <h3 className='font-medium mb-2'>Existing Variants ({currentRow.variants.length})</h3>
                   <div className='border rounded-md divide-y'>
                     {currentRow.variants.map(v => (
-                      <div key={v.id} className='p-3 flex items-center justify-between text-sm'>
-                        <div>
-                          <p className='font-medium'>{v.sku}</p>
-                          <p className='text-muted-foreground text-xs'>
-                            {v.attributeValues?.map(av => av.attributeValue.value).join(' / ')}
-                          </p>
+                      <div key={v.id} className='p-3 flex items-center justify-between gap-3 text-sm'>
+                        <div className='flex items-center gap-3 flex-1 min-w-0'>
+                          <div className='h-10 w-10 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center'>
+                            {v.image
+                              ? <img src={imgUrl(v.image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                              : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
+                          </div>
+                          <div className='min-w-0'>
+                            <p className='font-medium truncate'>{v.sku}</p>
+                            <p className='text-muted-foreground text-xs truncate'>
+                              {v.attributeValues?.map(av => av.attributeValue.value).join(' / ')}
+                            </p>
+                          </div>
                         </div>
-                        <div className='flex items-center gap-4'>
+                        <div className='flex items-center gap-2 shrink-0'>
                           <span>${Number(v.price || 0).toFixed(2)}</span>
                           <Badge variant='outline'>Stock: {v.stock}</Badge>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                          >
+                            {v.image ? 'Change' : 'Add'} image
+                          </Button>
+                          {v.image && (
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='icon'
+                              className='h-7 w-7'
+                              onClick={() => currentRow && updateVariantMut.mutate({ id: currentRow.id, variantId: v.id, data: { image: null } })}
+                            >
+                              <X className='h-3.5 w-3.5 text-destructive' />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              <MediaPicker
+                open={variantPickerOpen}
+                onOpenChange={(v) => { setVariantPickerOpen(v); if (!v) setActiveVariantId(null) }}
+                selected={
+                  activeVariantId
+                    ? [currentRow?.variants.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
+                    : []
+                }
+                multiple={false}
+                onSelect={(urls) => {
+                  if (activeVariantId && currentRow) {
+                    updateVariantMut.mutate({
+                      id: currentRow.id,
+                      variantId: activeVariantId,
+                      data: { image: urls[urls.length - 1] || null },
+                    })
+                  }
+                  setVariantPickerOpen(false)
+                  setActiveVariantId(null)
+                }}
+              />
             </TabsContent>
 
             <TabsContent value='seo' className='mt-0 space-y-4'>

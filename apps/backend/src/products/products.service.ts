@@ -2,13 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateProductDto,
   UpdateProductDto,
   GenerateVariantsDto,
+  UpdateVariantDto,
 } from './dto/product.dto';
 import { MediaService } from '../media/media.service';
 
@@ -107,7 +107,7 @@ export class ProductsService {
         lowStockQty: dto.lowStockQty,
         categoryId: dto.categoryId,
         tags: dto.tags as any,
-        images: dto.images as any,
+        images: (dto.images || []) as any,
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
@@ -142,14 +142,25 @@ export class ProductsService {
       },
     });
 
-    if (dto.images) {
-      const ids = dto.images.map((url) => url.split('/').pop()).filter(Boolean);
-      for (const fname of ids) {
-        const media = await this.prisma.media.findFirst({
-          where: { filename: fname },
+    if (dto.images?.length) {
+      const synced = await this.media.syncEntityImages(
+        'product',
+        product.id,
+        dto.images,
+      );
+      if (JSON.stringify(synced) !== JSON.stringify(dto.images)) {
+        await this.prisma.product.update({
+          where: { id: product.id },
+          data: { images: synced as any },
         });
-        if (media) {
-          await this.media.attach(media.id, 'product', product.id);
+        product.images = synced as any;
+      }
+    }
+
+    if (dto.variants?.length) {
+      for (const variant of product.variants) {
+        if (variant.image) {
+          await this.media.syncEntityImages('variant', variant.id, [variant.image]);
         }
       }
     }
@@ -168,7 +179,7 @@ export class ProductsService {
     }
     const data: any = { ...dto };
     if (dto.tags) data.tags = dto.tags as any;
-    if (dto.images) data.images = dto.images as any;
+    if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
     delete data.variants;
     delete data.attributes;
@@ -180,16 +191,17 @@ export class ProductsService {
     });
 
     if (dto.images !== undefined) {
-      const ids = (dto.images || [])
-        .map((url: string) => url.split('/').pop())
-        .filter(Boolean);
-      for (const fname of ids) {
-        const media = await this.prisma.media.findFirst({
-          where: { filename: fname },
+      const synced = await this.media.syncEntityImages(
+        'product',
+        id,
+        dto.images || [],
+      );
+      if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
+        await this.prisma.product.update({
+          where: { id },
+          data: { images: synced as any },
         });
-        if (media) {
-          await this.media.attach(media.id, 'product', id);
-        }
+        product.images = synced as any;
       }
     }
 
@@ -198,6 +210,14 @@ export class ProductsService {
 
   async remove(id: string) {
     await this.prisma.product.findUniqueOrThrow({ where: { id } });
+    const variants = await this.prisma.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true },
+    });
+    for (const v of variants) {
+      await this.media.detachAll('variant', v.id);
+    }
+    await this.media.detachAll('product', id);
     await this.prisma.product.delete({ where: { id } });
     return { message: 'Product deleted' };
   }
@@ -256,5 +276,25 @@ export class ProductsService {
       (acc, curr) => acc.flatMap((a) => curr.map((b) => [...a, b])),
       [[]] as any[][],
     );
+  }
+
+  async updateVariant(productId: string, variantId: string, dto: UpdateVariantDto) {
+    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!variant || variant.productId !== productId) {
+      throw new NotFoundException('Variant not found');
+    }
+    const data: any = {}
+    if (dto.sku !== undefined) data.sku = dto.sku;
+    if (dto.price !== undefined) data.price = dto.price;
+    if (dto.stock !== undefined) data.stock = dto.stock;
+    if (dto.image !== undefined) data.image = dto.image;
+    const updated = await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data,
+    });
+    if (dto.image !== undefined) {
+      await this.media.syncEntityImages('variant', variantId, dto.image ? [dto.image] : []);
+    }
+    return updated;
   }
 }

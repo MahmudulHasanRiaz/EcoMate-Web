@@ -13,6 +13,7 @@ import FloatingWidgets from "@/components/FloatingWidgets";
 import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import type { StorefrontConfig } from "@/lib/api/storefront-config";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,20 +43,28 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  let initialConfig: StorefrontConfig | undefined;
+  try {
+    initialConfig = await getStorefrontConfigServer();
+  } catch {}
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
+        {initialConfig ? (
+          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
+        ) : null}
         <AuthProvider>
           <CartProvider>
-            <StorefrontConfigProvider>
+            <StorefrontConfigProvider initialConfig={initialConfig}>
             <TrackingScripts />
             <Header />
             <CartDrawer />

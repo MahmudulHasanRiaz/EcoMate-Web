@@ -3,11 +3,13 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Param,
   Query,
   Body,
 } from '@nestjs/common';
 import { MediaService } from './media.service';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('media')
 export class MediaController {
@@ -40,12 +42,23 @@ export class MediaController {
     return this.svc.getAttachments(id);
   }
 
+  @Patch(':id')
+  @Roles('superadmin', 'admin', 'manager')
+  updateMeta(
+    @Param('id') id: string,
+    @Body() dto: { alt?: string },
+  ) {
+    return this.svc.updateMeta(id, dto);
+  }
+
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.svc.remove(id);
+  @Roles('superadmin', 'admin', 'manager')
+  remove(@Param('id') id: string, @Query('force') force?: string) {
+    return this.svc.remove(id, force === 'true' || force === '1');
   }
 
   @Post(':id/attach')
+  @Roles('superadmin', 'admin', 'manager')
   attach(
     @Param('id') id: string,
     @Body() dto: { entityType: string; entityId: string },
@@ -54,10 +67,17 @@ export class MediaController {
   }
 
   @Post(':id/detach')
+  @Roles('superadmin', 'admin', 'manager')
   detach(
     @Param('id') id: string,
     @Body() dto: { entityType: string; entityId: string },
   ) {
     return this.svc.detach(id, dto.entityType, dto.entityId);
+  }
+
+  @Post('migrate-orphans')
+  @Roles('superadmin', 'admin')
+  migrate() {
+    return this.svc.migrateOrphans();
   }
 }

@@ -17,8 +17,9 @@ export interface StorefrontConfig {
     freeDeliveryMin: number;
   };
   hero: {
-    slides: { image: string; link?: string }[];
+    slides: { image: string; link?: string; alt?: string }[];
     secondaryBanner: string;
+    secondaryBannerAlt: string;
   };
   social: {
     facebook: string;

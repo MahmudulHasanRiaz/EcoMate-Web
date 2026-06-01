@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, Minus, Plus, ShoppingBag, Phone } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
-import { useRouter } from 'next/navigation';
-import type { Product } from '@/lib/types';
-import { trackEvent } from '@/lib/tracking';
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import type { Product } from "@/lib/types";
+import { trackEvent } from "@/lib/tracking";
 
 function WhatsAppIcon() {
   return (

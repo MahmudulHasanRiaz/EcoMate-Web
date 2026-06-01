@@ -78,32 +78,86 @@ export class StorageService {
     return this.s3Client!;
   }
 
+  async resolveFilename(desired: string): Promise<string> {
+    const ext = extname(desired);
+    let base = desired.replace(ext, '')
+      .replace(/[^a-zA-Z0-9_. -]/g, '')
+      .trim()
+      .slice(0, 100)
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+    if (!base) base = 'file';
+    let candidate = base + ext;
+    let counter = 1;
+    while (await this.prisma.media.findFirst({ where: { filename: candidate } })) {
+      candidate = `${base}-${counter}${ext}`;
+      counter++;
+    }
+    return candidate;
+  }
+
   async upload(
     file: Express.Multer.File,
+    filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
     const ext = extname(file.originalname).toLowerCase();
-    const filename = `${uuid()}${ext}`;
+    const name = filename
+      ? await this.resolveFilename(filename + ext)
+      : `${uuid()}${ext}`;
 
     if (config.provider === 'r2' && config.r2Bucket) {
       const client = this.getS3Client(config);
       const cmd = new PutObjectCommand({
         Bucket: config.r2Bucket,
-        Key: filename,
+        Key: name,
         Body: file.buffer,
         ContentType: file.mimetype,
       });
       await client.send(cmd);
       const baseUrl = config.r2PublicUrl || config.r2Endpoint;
-      const url = `${baseUrl?.replace(/\/$/, '')}/${filename}`;
-      return { url, filename, size: file.size };
+      const url = `${baseUrl?.replace(/\/$/, '')}/${name}`;
+      return { url, filename: name, size: file.size };
     }
 
     const uploadDir = join(process.cwd(), 'uploads');
     if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
-    const filepath = join(uploadDir, filename);
+    const filepath = join(uploadDir, name);
     await writeFile(filepath, file.buffer);
-    return { url: `/uploads/${filename}`, filename, size: file.size };
+    return { url: `/uploads/${name}`, filename: name, size: file.size };
+  }
+
+  async uploadFromBuffer(
+    buffer: Buffer,
+    originalname: string,
+    mimeType: string,
+    filename?: string,
+  ): Promise<{ url: string; filename: string; size: number }> {
+    const config = await this.getConfig();
+    const ext = extname(originalname).toLowerCase();
+    const name = filename
+      ? await this.resolveFilename(filename + ext)
+      : `${uuid()}${ext}`;
+
+    if (config.provider === 'r2' && config.r2Bucket) {
+      const client = this.getS3Client(config);
+      const cmd = new PutObjectCommand({
+        Bucket: config.r2Bucket,
+        Key: name,
+        Body: buffer,
+        ContentType: mimeType,
+      });
+      await client.send(cmd);
+      const baseUrl = config.r2PublicUrl || config.r2Endpoint;
+      const url = `${baseUrl?.replace(/\/$/, '')}/${name}`;
+      return { url, filename: name, size: buffer.length };
+    }
+
+    const uploadDir = join(process.cwd(), 'uploads');
+    if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
+    const filepath = join(uploadDir, name);
+    await writeFile(filepath, buffer);
+    return { url: `/uploads/${name}`, filename: name, size: buffer.length };
   }
 
   async delete(filename: string): Promise<void> {

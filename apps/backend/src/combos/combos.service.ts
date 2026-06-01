@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateComboDto, UpdateComboDto } from './dto/combos.dto';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class CombosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaService,
+  ) {}
 
   async findAll(query: {
     page?: number;
@@ -91,7 +95,7 @@ export class CombosService {
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         image: dto.image,
-        images: dto.images as any,
+        images: (dto.images || []) as any,
         categoryId: dto.categoryId,
         tags: dto.tags as any,
         seoMeta: dto.seoMeta,
@@ -121,6 +125,26 @@ export class CombosService {
       },
     });
 
+    const allUrls = [
+      ...(dto.image ? [dto.image] : []),
+      ...((dto.images || []) as string[]),
+    ];
+    if (allUrls.length) {
+      const synced = await this.media.syncEntityImages('combo', combo.id, allUrls);
+      const [featured, ...rest] = synced;
+      if (
+        featured !== dto.image ||
+        JSON.stringify(rest) !== JSON.stringify(dto.images || [])
+      ) {
+        await this.prisma.combo.update({
+          where: { id: combo.id },
+          data: { image: featured || null, images: rest as any },
+        });
+        combo.image = featured || null;
+        combo.images = rest as any;
+      }
+    }
+
     return combo;
   }
 
@@ -137,12 +161,12 @@ export class CombosService {
     delete data.items;
 
     if (dto.tags) data.tags = dto.tags as any;
-    if (dto.images) data.images = dto.images as any;
+    if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
     if (dto.startDate) data.startDate = new Date(dto.startDate);
     if (dto.endDate) data.endDate = new Date(dto.endDate);
 
-    const updated = await this.prisma.combo.update({
+    await this.prisma.combo.update({
       where: { id },
       data,
       include: { category: true },
@@ -161,11 +185,27 @@ export class CombosService {
       });
     }
 
+    if (dto.image !== undefined || dto.images !== undefined) {
+      const featured = dto.image !== undefined ? dto.image : combo.image;
+      const gallery =
+        dto.images !== undefined
+          ? (dto.images as string[])
+          : (combo.images as string[] | null) || [];
+      const allUrls = [...(featured ? [featured] : []), ...gallery];
+      const synced = await this.media.syncEntityImages('combo', id, allUrls);
+      const [newFeatured, ...rest] = synced;
+      await this.prisma.combo.update({
+        where: { id },
+        data: { image: newFeatured || null, images: rest as any },
+      });
+    }
+
     return this.findOne(id);
   }
 
   async remove(id: string) {
     await this.prisma.combo.findUniqueOrThrow({ where: { id } });
+    await this.media.detachAll('combo', id);
     await this.prisma.combo.delete({ where: { id } });
     return { message: 'Combo deleted' };
   }

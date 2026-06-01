@@ -1,15 +1,14 @@
 "use client";
 
 import { useState } from 'react';
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 const BRANDS = [
-  { name: 'Apple', logo: 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg' },
-  { name: 'Samsung', logo: 'https://upload.wikimedia.org/wikipedia/commons/2/24/Samsung_Logo.svg' },
-  { name: 'Google', logo: 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg' },
-  { name: 'Sony', logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Sony_logo.svg' }
+  { name: 'Apple', logo: PLACEHOLDER_IMAGE },
+  { name: 'Samsung', logo: PLACEHOLDER_IMAGE },
+  { name: 'Google', logo: PLACEHOLDER_IMAGE },
+  { name: 'Sony', logo: PLACEHOLDER_IMAGE }
 ];
-
-const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
 
 export default function BrandSection() {
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
