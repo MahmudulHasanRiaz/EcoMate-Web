@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { CustomersService } from '../customers/customers.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -19,6 +20,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tracking: TrackingService,
+    private readonly customersService: CustomersService,
   ) {}
 
   private transformOrder(order: any) {
@@ -227,6 +229,14 @@ export class OrdersService {
         );
       }
       dto.guestPhone = normalized;
+    }
+
+    if (dto.guestPhone && dto.guestName && !dto.customerId) {
+      const customer = await this.customersService.findOrCreateCustomer(
+        dto.guestPhone,
+        dto.guestName,
+      );
+      dto.customerId = customer.id;
     }
 
     const order = await this.prisma.order.create({

@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CustomersService } from '../customers/customers.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 
 @Injectable()
 export class CheckoutLeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly customersService: CustomersService,
+  ) {}
 
   async findAll(query: {
     page?: number;
@@ -185,15 +189,22 @@ export class CheckoutLeadsService {
     });
     const userName = userData ? `${userData.firstName} ${userData.lastName}`.trim() : userId;
 
+    const guestName = overrides?.guestName ?? lead.name;
+    let resolvedCustomerId: string | null = null;
+    if (guestPhone && guestName) {
+      const customer = await this.customersService.findOrCreateCustomer(guestPhone, guestName);
+      resolvedCustomerId = customer.id;
+    }
+
     const order = await this.prisma.order.create({
       data: {
         displayId,
-        customerId: null,
+        customerId: resolvedCustomerId,
         statusId: initialStatus.id,
         subtotal: 0,
         total: 0,
         shippingAddress: overrides?.shippingAddress ?? (lead.address as any),
-        guestName: overrides?.guestName ?? lead.name,
+        guestName,
         guestPhone,
         paymentMethod: overrides?.paymentMethod ?? lead.paymentMethod,
         items: {
