@@ -34,6 +34,7 @@ export class CreateOrderDto {
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
   @IsOptional() @IsString() paymentMethod?: string;
+  @IsOptional() @IsString() couponCode?: string;
 
   // Checkout enhancements
   @IsOptional() @IsIn(['cod', 'full', 'partial']) paymentMode?: string;

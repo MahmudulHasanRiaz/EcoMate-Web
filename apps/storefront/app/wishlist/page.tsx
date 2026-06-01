@@ -7,10 +7,13 @@ import { getFeaturedProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 
+const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+
 export default function WishlistPage() {
   const { addToCart } = useCart();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getFeaturedProducts().then(setProducts).catch(() => {});
@@ -45,7 +48,8 @@ export default function WishlistPage() {
               <div key={product.id} className="group bg-white rounded-[32px] overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500 border border-gray-100 flex flex-col relative"
                 onClick={() => router.push(`/products/${product.slug || product.id}`)}>
                 <div className="relative aspect-square overflow-hidden bg-gray-50">
-                  <img src={product.image || undefined} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                  <img src={imgErrors[product.id] ? PLACEHOLDER_IMAGE : (product.image || PLACEHOLDER_IMAGE)} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    onError={() => setImgErrors(prev => ({ ...prev, [product.id]: true }))} />
                   {product.saveAmount && product.saveAmount > 0 && (
                     <div className="absolute top-4 left-4 bg-black text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full">
                       -{Math.round((product.saveAmount / (product.originalPrice || product.price)) * 100)}%

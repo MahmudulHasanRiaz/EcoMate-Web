@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Search, Gift, Loader2 } from 'lucide-react'
+import { PLACEHOLDER_IMAGE } from '@/lib/utils'
 import { combosApi, type ComboResponse } from '../api'
 import { productsApi } from '@/features/products/api'
 import { categoriesApi } from '@/features/categories/api'
@@ -290,7 +291,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 {items.map((item, index) => (
                   <div key={index} className='flex items-center gap-3 p-3'>
                     {item.productImage
-                      ? <img src={item.productImage} alt='' className='w-10 h-10 rounded border object-cover' />
+                      ? <img src={item.productImage} alt='' className='w-10 h-10 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                       : <div className='w-10 h-10 rounded border bg-muted flex items-center justify-center'><Gift className='h-4 w-4' /></div>}
                     <div className='flex-1 min-w-0'>
                       <p className='text-sm font-medium truncate'>{item.productName}</p>

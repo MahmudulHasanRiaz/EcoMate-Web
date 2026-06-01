@@ -6,9 +6,12 @@ import { useRouter } from 'next/navigation';
 import { getCombos } from '@/lib/api/combos';
 import type { Combo } from '@/lib/types';
 
+const PLACEHOLDER_IMAGE = "https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image";
+
 export default function ComboDeals() {
   const router = useRouter();
   const [combos, setCombos] = useState<Combo[]>([]);
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getCombos({ isActive: true, perPage: 5 }).then(res => setCombos(res.data)).catch(() => {});
@@ -53,7 +56,8 @@ export default function ComboDeals() {
                   onClick={() => router.push(`/combos/${combo.id}`)}>
                   <div className="relative aspect-square p-1 bg-[#fcfcfc]">
                     <motion.img whileHover={{ scale: 1.05 }}
-                      src={combo.image || undefined} alt={combo.name} className="w-full h-full object-contain" />
+                      src={imgErrors[combo.id] ? PLACEHOLDER_IMAGE : (combo.image || PLACEHOLDER_IMAGE)} alt={combo.name} className="w-full h-full object-contain"
+                      onError={() => setImgErrors(prev => ({ ...prev, [combo.id]: true }))} />
                     {savings && (
                       <div className="absolute top-3 left-3 bg-[#2ecc71] text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">Save {savings}</div>
                     )}

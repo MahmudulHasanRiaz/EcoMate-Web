@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search, Link2, ExternalLink } from 'lucide-react'
+import { PLACEHOLDER_IMAGE } from '@/lib/utils'
 import { mediaApi, uploadApi, mediaUrl, type MediaResponse } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -119,7 +120,7 @@ export function Media() {
                   }}
                 >
                   {m.mimeType.startsWith('image/') ? (
-                    <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' />
+                    <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                   ) : (
                     <div className='w-full h-full flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
                   )}
@@ -172,7 +173,7 @@ export function Media() {
 
                 <div className='shrink-0'>
                   {selected.mimeType.startsWith('image/') ? (
-                    <img src={mediaUrl(selected.url)} alt='' className='h-20 w-20 rounded-lg object-cover border' />
+                    <img src={mediaUrl(selected.url)} alt='' className='h-20 w-20 rounded-lg object-cover border' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                   ) : (
                     <div className='h-20 w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
                   )}

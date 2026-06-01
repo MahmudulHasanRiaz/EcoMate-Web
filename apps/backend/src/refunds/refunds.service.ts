@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -15,7 +16,10 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 @Injectable()
 export class RefundsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventoryService: InventoryService,
+  ) {}
 
   async findAll(query: {
     page?: number;
@@ -91,7 +95,7 @@ export class RefundsService {
       );
     }
 
-    return this.prisma.refund.update({
+    const updated = await this.prisma.refund.update({
       where: { id },
       data: {
         status: dto.status,
@@ -100,9 +104,110 @@ export class RefundsService {
         notes: dto.notes ?? refund.notes,
       },
       include: {
-        order: { select: { displayId: true } },
+        order: { select: { id: true, displayId: true } },
         processor: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    if (dto.status === 'completed') {
+      await this.restockOrderItems(updated.order.id, processedBy);
+    }
+
+    return updated;
+  }
+
+  private async restockOrderItems(orderId: string, performedBy: string) {
+    const orderItems = await this.prisma.orderItem.findMany({
+      where: { orderId },
+    });
+
+    for (const item of orderItems) {
+      if (item.comboId) {
+        const combo = await this.prisma.combo.findUnique({
+          where: { id: item.comboId },
+          include: { items: true },
+        });
+        if (!combo) continue;
+
+        if (combo.manageStock) {
+          await this.prisma.combo.update({
+            where: { id: item.comboId },
+            data: { stock: { increment: item.quantity } },
+          });
+          await this.prisma.inventoryLog.create({
+            data: {
+              comboId: item.comboId,
+              quantity: item.quantity,
+              type: 'refund_restock',
+              reason: `Refund restock for order ${orderId}`,
+              performedBy,
+              createdAt: new Date(),
+            },
+          });
+        }
+
+        for (const ci of combo.items) {
+          const qty = ci.quantity * item.quantity;
+          if (ci.variantId) {
+            await this.prisma.productVariant.update({
+              where: { id: ci.variantId },
+              data: { stock: { increment: qty } },
+            });
+          }
+          const product = await this.prisma.product.findUnique({
+            where: { id: ci.productId },
+            select: { manageStock: true },
+          });
+          if (product?.manageStock) {
+            await this.prisma.product.update({
+              where: { id: ci.productId },
+              data: { stock: { increment: qty } },
+            });
+          }
+          await this.prisma.inventoryLog.create({
+            data: {
+              productId: ci.productId,
+              variantId: ci.variantId,
+              comboId: item.comboId,
+              quantity: qty,
+              type: 'refund_restock',
+              reason: `Refund restock for order ${orderId}`,
+              performedBy,
+              createdAt: new Date(),
+            },
+          });
+        }
+      } else {
+        if (item.variantId) {
+          await this.prisma.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+        const product = item.productId
+          ? await this.prisma.product.findUnique({
+              where: { id: item.productId },
+              select: { manageStock: true, type: true },
+            })
+          : null;
+        if (product && product.manageStock && (!item.variantId || product.type === 'simple')) {
+          await this.prisma.product.update({
+            where: { id: item.productId! },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+        await this.prisma.inventoryLog.create({
+          data: {
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            type: 'refund_restock',
+            reason: `Refund restock for order ${orderId}`,
+            performedBy,
+            createdAt: new Date(),
+          },
+        });
+      }
+    }
   }
 }

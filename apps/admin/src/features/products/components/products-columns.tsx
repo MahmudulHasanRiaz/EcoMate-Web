@@ -2,13 +2,10 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Pencil, Trash2, Package } from 'lucide-react'
+import { PLACEHOLDER_IMAGE, appUrl } from '@/lib/utils'
 import { type ProductResponse } from '../api'
 
-function imgUrl(url: string): string {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  return `http://localhost:4000${url}`
-}
+const imgUrl = appUrl
 
 export function productsColumns(
   onEdit: (row: ProductResponse) => void,
@@ -21,7 +18,7 @@ export function productsColumns(
       cell: ({ row }) => {
         const img = Array.isArray(row.original.images) ? row.original.images[0] : null
         return img
-          ? <img src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' />
+          ? <img src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
           : <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
       },
       enableSorting: false,
@@ -53,10 +50,10 @@ export function productsColumns(
           <div>
             {sp !== null && sp < bp ? (
               <>
-                <span className='line-through text-muted-foreground text-xs'>${bp.toFixed(2)}</span>
-                <span className='text-green-600 font-medium ml-1'>${sp.toFixed(2)}</span>
+                <span className='line-through text-muted-foreground text-xs'>৳{bp.toFixed(2)}</span>
+                <span className='text-green-600 font-medium ml-1'>৳{sp.toFixed(2)}</span>
               </>
-            ) : <span className='font-medium'>${bp.toFixed(2)}</span>}
+            ) : <span className='font-medium'>৳{bp.toFixed(2)}</span>}
           </div>
         )
       },

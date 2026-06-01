@@ -1,6 +1,23 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
+export const PLACEHOLDER_IMAGE = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'
+
+/** Base URL for API calls — derived from VITE_API_URL or falls back to localhost */
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+
+/**
+ * Resolves a relative URL (e.g. /uploads/foo.jpg) to an absolute URL using
+ * the API base. If the url is already absolute it is returned as-is.
+ */
+export function appUrl(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  // Strip trailing /api from the base to get the server origin
+  const origin = API_BASE.replace(/\/api\/?$/, '')
+  return `${origin}${url}`
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }

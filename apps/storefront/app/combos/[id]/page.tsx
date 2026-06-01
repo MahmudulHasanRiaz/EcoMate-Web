@@ -85,7 +85,8 @@ export default function ComboDetailPage() {
           <div className="md:w-1/2">
             <div className="bg-gray-50 rounded-xl overflow-hidden relative">
               {combo.image ? (
-                <img src={combo.image} alt={combo.name} className="w-full h-72 md:h-96 object-cover" />
+                <img src={combo.image} alt={combo.name} className="w-full h-72 md:h-96 object-cover"
+                  onError={(e) => { e.currentTarget.src = 'https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image'; }} />
               ) : (
                 <div className="w-full h-72 md:h-96 flex items-center justify-center"><Gift className="w-20 h-20 text-gray-300" /></div>
               )}
@@ -150,7 +151,14 @@ export default function ComboDetailPage() {
                     <td className="px-4 py-3 text-sm text-gray-500">{i + 1}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        {item.productImage && <img src={item.productImage} alt="" className="w-10 h-10 rounded object-cover" />}
+                        {item.productImage ? (
+                          <img src={item.productImage} alt="" className="w-10 h-10 rounded object-cover"
+                            onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'; }} />
+                        ) : (
+                          <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center">
+                            <Gift size={18} className="text-gray-300" />
+                          </div>
+                        )}
                         <span className="font-medium text-gray-800">{item.productName}</span>
                       </div>
                     </td>

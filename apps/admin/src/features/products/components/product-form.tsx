@@ -2,15 +2,12 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Upload, Plus, Loader2, Package } from 'lucide-react'
+import { PLACEHOLDER_IMAGE, appUrl } from '@/lib/utils'
 import { productsApi, type ProductResponse } from '../api'
 import { uploadApi } from '@/features/media/api'
 import { MediaPicker } from '@/components/media-picker'
 
-function imgUrl(url: string): string {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  return `http://localhost:4000${url}`
-}
+const imgUrl = appUrl
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { Button } from '@/components/ui/button'
@@ -293,7 +290,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
               <div className='grid grid-cols-4 gap-3'>
                 {images.map((url, i) => (
                   <div key={i} className='relative group border rounded-lg overflow-hidden bg-muted/30'>
-                    <img src={imgUrl(url)} alt='' className='w-full h-32 object-cover' />
+                    <img src={imgUrl(url)} alt='' className='w-full h-32 object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                     <button onClick={() => removeImage(url)} className='absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity'>
                       <X className='h-3 w-3' />
                     </button>

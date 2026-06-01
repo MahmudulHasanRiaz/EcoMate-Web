@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Check, Loader2, ImageIcon, Film, Search } from 'lucide-react'
+import { PLACEHOLDER_IMAGE } from '@/lib/utils'
 import { mediaApi, uploadApi, mediaUrl, type MediaResponse } from '@/features/media/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,7 +79,7 @@ export function MediaPicker({ open, onOpenChange, selected, onSelect, multiple =
                     onClick={() => toggle(m.url)}
                   >
                     {m.mimeType.startsWith('image/') ? (
-                      <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' />
+                      <img src={mediaUrl(m.url)} alt={m.filename} className='w-full h-full object-cover' loading='lazy' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
                     ) : (
                       <div className='w-full h-full flex items-center justify-center'><Film className='h-6 w-6 text-muted-foreground' /></div>
                     )}

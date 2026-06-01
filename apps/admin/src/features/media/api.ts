@@ -24,8 +24,4 @@ export const uploadApi = {
   },
 }
 
-export function mediaUrl(url: string): string {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  return `http://localhost:4000${url}`
-}
+export { appUrl as mediaUrl } from '@/lib/utils'

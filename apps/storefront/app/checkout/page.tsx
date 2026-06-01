@@ -34,7 +34,8 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   return (
     <div className="flex gap-4">
       <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
-        <img src={item.image || undefined} alt={item.name} className="w-full h-full object-contain" />
+        <img src={item.image || 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'} alt={item.name} className="w-full h-full object-contain"
+          onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image'; }} />
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-start mb-2 pr-1">
@@ -299,6 +300,10 @@ export default function CheckoutPage() {
   const [paymentMode, setPaymentMode] = useState('cod');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
 
@@ -434,7 +439,41 @@ export default function CheckoutPage() {
       payload.partialAmount = parseFloat(partialAmount) || 0;
     }
 
+    if (appliedCoupon?.valid) {
+      payload.couponCode = appliedCoupon.coupon.code;
+    }
+
     return { orderItems, payload, isOnlinePayment };
+  };
+
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError('');
+    setAppliedCoupon(null);
+    try {
+      const { validateCoupon } = await import('@/lib/api/orders');
+      const result = await validateCoupon(code);
+      if (result?.valid) {
+        setAppliedCoupon(result);
+        toast.success(`Coupon "${code}" applied!`);
+      } else {
+        setCouponError(result?.message || 'Invalid coupon');
+        toast.error(result?.message || 'Invalid coupon');
+      }
+    } catch {
+      setCouponError('Failed to validate coupon');
+      toast.error('Failed to validate coupon');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponError('');
   };
 
   const handlePlaceOrder = async () => {
@@ -699,11 +738,28 @@ export default function CheckoutPage() {
               <AnimatePresence>
                 {isCouponExpanded && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden bg-[#fcfcfc]">
-                    <div className="p-4 md:p-6 pt-0 md:pt-0">
-                      <div className="flex gap-2">
-                        <input type="text" placeholder="Enter Coupon" className="flex-1 border border-gray-200 rounded-md px-4 py-2 text-[14px] outline-none focus:border-brand-blue bg-white" />
-                        <button className="bg-brand-blue text-white px-4 py-2 rounded-md text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Apply</button>
-                      </div>
+                    <div className="p-4 md:p-6 pt-0 md:pt-0 space-y-3">
+                      {appliedCoupon?.valid ? (
+                        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md px-4 py-2.5">
+                          <div>
+                            <span className="text-sm font-bold text-green-700">{appliedCoupon.coupon.code}</span>
+                            <span className="text-xs text-green-600 ml-2">
+                              ({appliedCoupon.coupon.type === 'percentage' ? `${appliedCoupon.coupon.value}% off` : `${s}${appliedCoupon.coupon.value} off`})
+                            </span>
+                          </div>
+                          <button onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700 text-sm font-bold">Remove</button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input type="text" value={couponInput} onChange={e => setCouponInput(e.target.value)}
+                            placeholder="Enter Coupon" className="flex-1 border border-gray-200 rounded-md px-4 py-2 text-[14px] outline-none focus:border-brand-blue bg-white" />
+                          <button onClick={handleApplyCoupon} disabled={couponLoading}
+                            className="bg-brand-blue text-white px-4 py-2 rounded-md text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90 disabled:opacity-50">
+                            {couponLoading ? '...' : 'Apply'}
+                          </button>
+                        </div>
+                      )}
+                      {couponError && <p className="text-red-500 text-xs">{couponError}</p>}
                     </div>
                   </motion.div>
                 )}

@@ -46,7 +46,8 @@ export async function getOrder(id: string) {
 }
 
 export async function validateCoupon(code: string) {
-  const { data } = await apiClient.get("/coupons");
-  const list = Array.isArray(data) ? data : data.data || [];
-  return list.find((c: { code: string }) => c.code === code);
+  const { data } = await apiClient.get("/coupons/validate", {
+    params: { code },
+  });
+  return data;
 }

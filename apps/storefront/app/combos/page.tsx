@@ -55,7 +55,8 @@ export default function CombosPage() {
               <div className="flex flex-col md:flex-row">
                 <div className="md:w-72 h-48 md:h-auto bg-gray-100 relative overflow-hidden flex-shrink-0">
                   {combo.image ? (
-                    <img src={combo.image} alt={combo.name} className="w-full h-full object-cover" />
+                    <img src={combo.image} alt={combo.name} className="w-full h-full object-cover"
+                      onError={(e) => { e.currentTarget.src = 'https://placehold.co/600x600/f8f9fa/a0aec0?text=No+Image'; }} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <Gift className="w-16 h-16 text-gray-300" />

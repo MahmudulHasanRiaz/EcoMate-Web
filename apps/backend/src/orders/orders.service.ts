@@ -56,9 +56,13 @@ export class OrdersService {
     items: { price: number; quantity: number }[],
     shipping: number,
     discount: number,
+    discountType = 'flat',
   ) {
     const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-    return { subtotal, total: Math.max(0, subtotal + shipping - discount) };
+    const effectiveDiscount = discountType === 'percentage'
+      ? subtotal * (discount / 100)
+      : discount;
+    return { subtotal, total: Math.max(0, subtotal + shipping - effectiveDiscount) };
   }
 
   async findAll(query: {
@@ -185,6 +189,7 @@ export class OrdersService {
       dto.items,
       dto.shippingCharge || 0,
       dto.discount || 0,
+      dto.discountType,
     );
 
     const productIds = dto.items
@@ -237,6 +242,34 @@ export class OrdersService {
         dto.guestName,
       );
       dto.customerId = customer.id;
+    }
+
+    let couponCode: string | null = null;
+    if (dto.couponCode) {
+      const coupon = await this.prisma.coupon.findUnique({
+        where: { code: dto.couponCode },
+      });
+      if (!coupon || !coupon.isActive) {
+        throw new BadRequestException('Invalid or inactive coupon code');
+      }
+      if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+        throw new BadRequestException('Coupon usage limit reached');
+      }
+      if (coupon.expiresAt && new Date() > coupon.expiresAt) {
+        throw new BadRequestException('Coupon has expired');
+      }
+      if (coupon.startsAt && new Date() < coupon.startsAt) {
+        throw new BadRequestException('Coupon is not yet active');
+      }
+      if (
+        coupon.minOrderValue &&
+        Number(subtotal) < Number(coupon.minOrderValue)
+      ) {
+        throw new BadRequestException(
+          `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
+        );
+      }
+      couponCode = coupon.code;
     }
 
     const order = await this.prisma.order.create({
@@ -327,69 +360,14 @@ export class OrdersService {
       },
     }).catch(() => {});
 
-    for (const item of dto.items) {
-      await this.prisma.inventoryLog.create({
-        data: {
-          productId: item.productId,
-          variantId: item.variantId,
-          comboId: item.comboId,
-          quantity: -item.quantity,
-          type: 'order_placed',
-          reason: `Order ${displayId}`,
-          createdAt: new Date(),
-        },
+    if (couponCode) {
+      await this.prisma.coupon.update({
+        where: { code: couponCode },
+        data: { usedCount: { increment: 1 } },
       });
-
-      if (item.comboId) {
-        const combo = await this.prisma.combo.findUnique({
-          where: { id: item.comboId },
-          include: { items: true },
-        });
-        if (combo && combo.manageStock) {
-          await this.prisma.combo.update({
-            where: { id: item.comboId },
-            data: { stock: { decrement: item.quantity } },
-          });
-        }
-        if (combo) {
-          for (const ci of combo.items) {
-            const qty = ci.quantity * item.quantity;
-            if (ci.variantId) {
-              await this.prisma.productVariant.update({
-                where: { id: ci.variantId },
-                data: { stock: { decrement: qty } },
-              });
-            }
-            await this.prisma.product.update({
-              where: { id: ci.productId },
-              data: { stock: { decrement: qty } },
-            });
-            await this.prisma.inventoryLog.create({
-              data: {
-                productId: ci.productId,
-                variantId: ci.variantId,
-                comboId: item.comboId,
-                quantity: -qty,
-                type: 'combo_order',
-                reason: `Combo in Order ${displayId}`,
-                createdAt: new Date(),
-              },
-            });
-          }
-        }
-      } else {
-        if (item.variantId) {
-          await this.prisma.productVariant.update({
-            where: { id: item.variantId },
-            data: { stock: { decrement: item.quantity } },
-          });
-        }
-        await this.prisma.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
-      }
     }
+
+    await this.deductStock(dto.items, displayId);
 
     return order;
   }
@@ -491,10 +469,12 @@ export class OrdersService {
         : Number(order.shippingCharge);
     const discount =
       data.discount !== undefined ? data.discount : Number(order.discount);
+    const discountType = dto.discountType || order.discountType || 'flat';
     const { subtotal, total } = this.recalculate(
       currentItems,
       shipping,
       discount,
+      discountType,
     );
     data.subtotal = subtotal;
     data.total = total;
@@ -645,6 +625,7 @@ export class OrdersService {
       items,
       Number(order.shippingCharge),
       Number(order.discount),
+      order.discountType || 'flat',
     );
     return this.prisma.order.update({
       where: { id: orderId },
@@ -676,6 +657,7 @@ export class OrdersService {
       remaining,
       Number(order.shippingCharge),
       Number(order.discount),
+      order.discountType || 'flat',
     );
     return this.prisma.order.update({
       where: { id: orderId },
@@ -718,15 +700,39 @@ export class OrdersService {
   }
 
   async bulkStatusChange(ids: string[], statusId: string) {
-    const status = await this.prisma.orderStatus.findUnique({
+    const targetStatus = await this.prisma.orderStatus.findUnique({
       where: { id: statusId },
     });
-    if (!status) throw new BadRequestException('Status not found');
-    await this.prisma.order.updateMany({
+    if (!targetStatus) throw new BadRequestException('Status not found');
+
+    const orders = await this.prisma.order.findMany({
       where: { id: { in: ids } },
-      data: { statusId },
+      select: { id: true, statusId: true, status: { select: { nextStatuses: true } } },
     });
-    return { updated: ids.length, status: status.name };
+
+    const validIds: string[] = [];
+    const skipped: string[] = [];
+    for (const order of orders) {
+      const allowed = (order.status.nextStatuses as string[]) || [];
+      if (allowed.includes(statusId)) {
+        validIds.push(order.id);
+      } else {
+        skipped.push(order.id);
+      }
+    }
+
+    if (validIds.length > 0) {
+      await this.prisma.order.updateMany({
+        where: { id: { in: validIds } },
+        data: { statusId },
+      });
+    }
+
+    return {
+      updated: validIds.length,
+      skipped: skipped.length,
+      status: targetStatus.name,
+    };
   }
 
   async bulkDispatch(courier: string, ids: string[], _userId: string) {
@@ -753,5 +759,137 @@ export class OrdersService {
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: { firstName: 'asc' },
     });
+  }
+
+  private async deductStock(
+    items: { productId?: string; variantId?: string; comboId?: string; quantity: number }[],
+    displayId: string,
+  ) {
+    const productIds = items
+      .filter((i) => i.productId && !i.comboId)
+      .map((i) => i.productId!);
+    const products = productIds.length > 0
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds }, manageStock: true },
+          select: { id: true, type: true, stock: true, manageStock: true },
+        })
+      : [];
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const variantIds = items
+      .filter((i) => i.variantId && !i.comboId)
+      .map((i) => i.variantId!);
+    const variants = variantIds.length > 0
+      ? await this.prisma.productVariant.findMany({
+          where: { id: { in: variantIds }, product: { manageStock: true } },
+          select: { id: true, stock: true, productId: true },
+        })
+      : [];
+    const variantMap = new Map(variants.map((v) => [v.id, v]));
+
+    for (const item of items) {
+      if (item.comboId) {
+        const combo = await this.prisma.combo.findUnique({
+          where: { id: item.comboId },
+          include: { items: true },
+        });
+        if (!combo) continue;
+        if (combo.manageStock && combo.stock < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for combo "${combo.name}". Available: ${combo.stock}, requested: ${item.quantity}.`,
+          );
+        }
+        for (const ci of combo.items) {
+          const qty = ci.quantity * item.quantity;
+          if (ci.variantId) {
+            const v = variants.find((vv) => vv.id === ci.variantId);
+            if (v && v.stock < qty) {
+              throw new BadRequestException(
+                `Insufficient stock for variant of product "${ci.productId}". Available: ${v.stock}, requested: ${qty}.`,
+              );
+            }
+            await this.prisma.productVariant.update({
+              where: { id: ci.variantId },
+              data: { stock: { decrement: qty } },
+            });
+          }
+          const p = products.find((pp) => pp.id === ci.productId);
+          if (p && p.manageStock && p.stock < qty) {
+            throw new BadRequestException(
+              `Insufficient stock for product "${ci.productId}". Available: ${p.stock}, requested: ${qty}.`,
+            );
+          }
+          if (p && p.manageStock) {
+            await this.prisma.product.update({
+              where: { id: ci.productId },
+              data: { stock: { decrement: qty } },
+            });
+          }
+          await this.prisma.inventoryLog.create({
+            data: {
+              productId: ci.productId,
+              variantId: ci.variantId,
+              comboId: item.comboId,
+              quantity: -qty,
+              type: 'combo_order',
+              reason: `Combo in Order ${displayId}`,
+              createdAt: new Date(),
+            },
+          });
+        }
+        if (combo.manageStock) {
+          await this.prisma.combo.update({
+            where: { id: item.comboId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+        await this.prisma.inventoryLog.create({
+          data: {
+            comboId: item.comboId,
+            quantity: -item.quantity,
+            type: 'order_placed',
+            reason: `Order ${displayId}`,
+            createdAt: new Date(),
+          },
+        });
+      } else {
+        const variant = item.variantId ? variantMap.get(item.variantId) : null;
+        if (variant && variant.stock < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for product variant. Available: ${variant.stock}, requested: ${item.quantity}.`,
+          );
+        }
+        if (item.variantId) {
+          await this.prisma.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+
+        const product = item.productId ? productMap.get(item.productId) : null;
+        if (product && product.manageStock && (!item.variantId || product.type === 'simple') && product.stock < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for product "${item.productId}". Available: ${product.stock}, requested: ${item.quantity}.`,
+          );
+        }
+        if (product && product.manageStock && (!item.variantId || product.type === 'simple')) {
+          await this.prisma.product.update({
+            where: { id: item.productId! },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+
+        await this.prisma.inventoryLog.create({
+          data: {
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: -item.quantity,
+            type: 'order_placed',
+            reason: `Order ${displayId}`,
+            createdAt: new Date(),
+          },
+        });
+      }
+    }
   }
 }
