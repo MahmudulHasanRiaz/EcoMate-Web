@@ -9,6 +9,11 @@ import { playwright } from '@vitest/browser-playwright'
 // https://vite.dev/config/
 export default defineConfig({
   base: '/admin/',
+  server: {
+    proxy: {
+      '/uploads': 'http://localhost:4000',
+    },
+  },
   plugins: [
     tanstackRouter({
       target: 'react',

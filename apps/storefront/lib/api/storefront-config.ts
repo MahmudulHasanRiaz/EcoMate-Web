@@ -1,5 +1,12 @@
 import apiClient from "../api-client";
 
+export interface StoreSystem {
+  id: string;
+  name: string;
+  logo: string;
+  display: 'name' | 'logo' | 'name+logo';
+}
+
 export interface StorefrontConfig {
   store: {
     name: string;
@@ -8,6 +15,7 @@ export interface StorefrontConfig {
     phone: string;
     address: string;
   };
+  systems: StoreSystem[];
   currency: {
     code: string;
     symbol: string;

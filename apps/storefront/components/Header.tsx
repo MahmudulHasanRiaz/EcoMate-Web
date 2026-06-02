@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useCart } from "@/context/CartContext";
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { StoreBrand } from "./StoreBrand";
 
 
 
@@ -39,7 +40,7 @@ export default function Header() {
               className="flex flex-shrink-0 items-center cursor-pointer"
               onClick={() => router.push('/')}
             >
-              <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
+              <StoreBrand />
             </motion.div>
           </div>
 

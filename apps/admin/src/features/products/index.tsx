@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
-import { Plus } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Plus, Upload } from 'lucide-react'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -46,9 +47,14 @@ export function Products() {
             <h2 className='text-2xl font-bold tracking-tight'>Products</h2>
             <p className='text-muted-foreground'>Manage products, inventory, and variants.</p>
           </div>
-          <Button onClick={() => { setFormMode('add'); setEditRow(undefined); setFormOpen(true); }}>
-            <Plus className='h-4 w-4 mr-1' /> Add Product
-          </Button>
+          <div className='flex items-center gap-2'>
+            <Button variant='outline' asChild>
+              <Link to='/op/import-products'><Upload className='h-4 w-4 mr-1' /> Import</Link>
+            </Button>
+            <Button onClick={() => { setFormMode('add'); setEditRow(undefined); setFormOpen(true); }}>
+              <Plus className='h-4 w-4 mr-1' /> Add Product
+            </Button>
+          </div>
         </div>
         <ProductsTable
           data={data?.data || []}

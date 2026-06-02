@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard, Radio, Upload,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard, Radio,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -49,7 +49,6 @@ export const sidebarData: SidebarData = {
     ]},
     { title: 'Content', panel: 'operational', items: [
       { title: 'Media Gallery', url: '/op/media', icon: Monitor },
-      { title: 'Import Products', url: '/op/import-products', icon: Upload },
     ]},
     { title: 'Communications', panel: 'operational', items: [
       { title: 'Chats', url: '/op/chats', icon: RefreshCw }, // Placeholder Icon

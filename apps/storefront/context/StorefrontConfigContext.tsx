@@ -5,6 +5,7 @@ import { getStorefrontConfig, StorefrontConfig } from "@/lib/api/storefront-conf
 
 const DEFAULT_CONFIG: StorefrontConfig = {
   store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
+  systems: [],
   currency: { code: "BDT", symbol: "৳" },
   delivery: { charge: 0, freeDeliveryMin: 0 },
   hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus } from 'lucide-react'
+import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus, Palette, GripVertical } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaPicker } from '@/components/media-picker'
@@ -89,6 +89,9 @@ export function StorefrontSettings() {
   const [checkoutPaymentModes, setCheckoutPaymentModes] = useState<string[]>(['cod', 'full', 'partial'])
   const [districtCharges, setDistrictCharges] = useState<Record<string, string>>({})
   const [districtSearch, setDistrictSearch] = useState('')
+  const [storeSystems, setStoreSystems] = useState<{ id: string; name: string; logo: string; display: 'name' | 'logo' | 'name+logo' }[]>([])
+  const [systemPickerOpen, setSystemPickerOpen] = useState(false)
+  const [activeSystemIdx, setActiveSystemIdx] = useState<number | null>(null)
 
   useEffect(() => {
     if (settings) {
@@ -131,6 +134,7 @@ export function StorefrontSettings() {
       setCheckoutThanaRequired(settings.checkout_thana_required === 'true')
       try { setCheckoutPaymentModes(JSON.parse(settings.checkout_payment_modes || '["cod","full","partial"]')); } catch { setCheckoutPaymentModes(['cod', 'full', 'partial']); }
       try { setDistrictCharges(JSON.parse(settings.district_charges || '{}')); } catch { setDistrictCharges({}); }
+      try { setStoreSystems(JSON.parse(settings.store_systems || '[]')); } catch { setStoreSystems([]); }
     }
   }, [settings])
 
@@ -174,6 +178,7 @@ export function StorefrontSettings() {
       { key: 'company_certifications', value: companyCertifications },
       { key: 'company_team_size', value: companyTeamSize },
       { key: 'company_ceo_name', value: companyCeoName },
+      { key: 'store_systems', value: JSON.stringify(storeSystems) },
       { key: 'checkout_district_enabled', value: String(checkoutDistrictEnabled) },
       { key: 'checkout_thana_enabled', value: String(checkoutThanaEnabled) },
       { key: 'checkout_district_required', value: String(checkoutDistrictRequired) },
@@ -202,7 +207,7 @@ export function StorefrontSettings() {
       <Tabs defaultValue="store" className='w-full'>
         <TabsList className='grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 mb-6'>
           <TabsTrigger value="store" className='gap-2'><Store className='h-4 w-4' /> Store</TabsTrigger>
-          <TabsTrigger value="hero" className='gap-2'><Image className='h-4 w-4' /> Hero</TabsTrigger>
+          <TabsTrigger value="hero" className='gap-2'><ImageIcon className='h-4 w-4' /> Hero</TabsTrigger>
           <TabsTrigger value="social" className='gap-2'><Share2 className='h-4 w-4' /> Social</TabsTrigger>
           <TabsTrigger value="seo" className='gap-2'><Search className='h-4 w-4' /> SEO</TabsTrigger>
           <TabsTrigger value="footer" className='gap-2'><Layout className='h-4 w-4' /> Footer</TabsTrigger>
@@ -212,6 +217,7 @@ export function StorefrontSettings() {
           <TabsTrigger value="nav" className='gap-2'><List className='h-4 w-4' /> Nav</TabsTrigger>
           <TabsTrigger value="faq" className='gap-2'><HelpCircle className='h-4 w-4' /> FAQ</TabsTrigger>
           <TabsTrigger value="hours" className='gap-2'><Clock className='h-4 w-4' /> Hours</TabsTrigger>
+          <TabsTrigger value="brands" className='gap-2'><Palette className='h-4 w-4' /> Brands</TabsTrigger>
           <TabsTrigger value="misc" className='gap-2'><Info className='h-4 w-4' /> Other</TabsTrigger>
         </TabsList>
 
@@ -713,7 +719,107 @@ export function StorefrontSettings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="brands">
+          <Card>
+            <CardHeader>
+              <CardTitle>Store Brands / Systems</CardTitle>
+              <CardDescription>Manage brand systems shown in the storefront header and footer. Each system can display a name, logo, or both.</CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-4'>
+              {storeSystems.map((sys, idx) => (
+                <div key={sys.id} className='flex items-start gap-3 rounded-lg border p-4 bg-muted/10'>
+                  <div className='flex items-center gap-3 flex-1 flex-wrap'>
+                    <div className='w-10 h-10 rounded border bg-background flex items-center justify-center overflow-hidden shrink-0'>
+                      {sys.logo ? (
+                        <SafeImage src={sys.logo} alt='' className='w-full h-full object-contain' />
+                      ) : (
+                        <Palette className='h-5 w-5 text-muted-foreground' />
+                      )}
+                    </div>
+                    <div className='space-y-1.5 min-w-0 flex-1'>
+                      <Input
+                        value={sys.name}
+                        onChange={e => {
+                          const next = [...storeSystems]
+                          next[idx] = { ...next[idx], name: e.target.value }
+                          setStoreSystems(next)
+                        }}
+                        placeholder='System name'
+                        className='h-8 text-sm'
+                      />
+                      <div className='flex items-center gap-2 flex-wrap'>
+                        <select
+                          value={sys.display}
+                          onChange={e => {
+                            const next = [...storeSystems]
+                            next[idx] = { ...next[idx], display: e.target.value as 'name' | 'logo' | 'name+logo' }
+                            setStoreSystems(next)
+                          }}
+                          className='h-8 rounded-md border border-input bg-background px-2 text-xs'
+                        >
+                          <option value='name'>Name only</option>
+                          <option value='logo'>Logo only</option>
+                          <option value='name+logo'>Name + Logo</option>
+                        </select>
+                        <Button
+                          variant='outline' size='sm' className='h-8 text-xs'
+                          onClick={() => {
+                            setActiveSystemIdx(idx)
+                            setSystemPickerOpen(true)
+                          }}
+                        >
+                          {sys.logo ? 'Change Logo' : 'Add Logo'}
+                        </Button>
+                        {sys.logo && (
+                          <Button
+                            variant='ghost' size='sm' className='h-8 text-xs text-muted-foreground'
+                            onClick={() => {
+                              const next = [...storeSystems]
+                              next[idx] = { ...next[idx], logo: '' }
+                              setStoreSystems(next)
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant='ghost' size='icon' className='h-8 w-8 shrink-0 text-destructive'
+                      onClick={() => setStoreSystems(storeSystems.filter((_, i) => i !== idx))}
+                    >
+                      <X className='h-4 w-4' />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <Button
+                variant='outline' size='sm' className='mt-2'
+                onClick={() => setStoreSystems([...storeSystems, { id: crypto.randomUUID(), name: '', logo: '', display: 'name' }])}
+              >
+                <Plus className='h-4 w-4 mr-1' /> Add System
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <MediaPicker
+        open={systemPickerOpen && activeSystemIdx !== null}
+        onOpenChange={(v) => { setSystemPickerOpen(v); if (!v) setActiveSystemIdx(null) }}
+        selected={activeSystemIdx !== null && storeSystems[activeSystemIdx]?.logo ? [storeSystems[activeSystemIdx].logo] : []}
+        multiple={false}
+        onSelect={(urls) => {
+          if (activeSystemIdx === null) return
+          const url = urls[urls.length - 1] || ''
+          const next = [...storeSystems]
+          next[activeSystemIdx] = { ...next[activeSystemIdx], logo: url }
+          setStoreSystems(next)
+          setSystemPickerOpen(false)
+          setActiveSystemIdx(null)
+        }}
+      />
 
       <div className='flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-dashed border-muted-foreground/20'>
         <div className='text-sm text-muted-foreground'>

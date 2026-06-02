@@ -4,6 +4,7 @@ import React from 'react';
 import { Send, MapPin, Phone, Mail } from 'lucide-react';
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { StoreBrand } from "./StoreBrand";
 
 export default function Footer() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function Footer() {
           {/* Brand Info */}
           <div className="md:col-span-2">
             <div className="flex items-center gap-2 mb-6">
-              <span className="text-xl font-black text-brand-blue tracking-tight">{store.name}</span>
+              <StoreBrand />
             </div>
             <p className="text-[13px] text-gray-500 leading-relaxed mb-6 max-w-sm">
               {footerConfig.description || `${store.name} — delivering quality products and service.`}

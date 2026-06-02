@@ -11,6 +11,13 @@ interface HeroSlide {
   alt?: string;
 }
 
+interface StoreSystem {
+  id: string;
+  name: string;
+  logo: string;
+  display: 'name' | 'logo' | 'name+logo';
+}
+
 @Controller('system-settings')
 export class SystemSettingsController {
   constructor(
@@ -42,6 +49,8 @@ export class SystemSettingsController {
     let heroSlides: HeroSlide[] = [];
     try { heroSlides = JSON.parse(map['hero_slides'] || '[]'); } catch { heroSlides = []; }
 
+    const systems = parseJson<StoreSystem[]>(map['store_systems'] || '[]', []);
+
     return {
       store: {
         name: map['store_name'] || 'EcoMate',
@@ -50,6 +59,7 @@ export class SystemSettingsController {
         phone: map['store_phone'] || '',
         address: map['store_address'] || '',
       },
+      systems,
       currency: {
         code: map['currency'] || 'BDT',
         symbol: map['currency_symbol'] || '৳',
@@ -169,6 +179,29 @@ export class SystemSettingsController {
       } else {
         await this.media.detachAll('storefront', 'hero_secondary_banner');
       }
+    } else if (key === 'store_systems') {
+      let systems: StoreSystem[] = [];
+      try {
+        systems = JSON.parse(value);
+        if (!Array.isArray(systems)) systems = [];
+      } catch {
+        systems = [];
+      }
+      const urls = systems.map((s) => s?.logo).filter((u): u is string => !!u);
+      if (urls.length) {
+        const synced = await this.media.syncEntityImages(
+          'storefront',
+          'store_systems',
+          urls,
+        );
+        let idx = 0;
+        systems = systems.map((s) =>
+          s?.logo ? { ...s, logo: synced[idx++] || s.logo } : s,
+        );
+      } else {
+        await this.media.detachAll('storefront', 'store_systems');
+      }
+      value = JSON.stringify(systems);
     }
 
     await this.prisma.systemSetting.upsert({
