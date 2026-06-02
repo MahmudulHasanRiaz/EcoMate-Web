@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { SafeImage } from '@/components/safe-image'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -389,7 +390,7 @@ export function IncompleteLeads() {
                                       {l.items.map((item: any, idx: number) => (
                                         <div key={idx} className='flex items-center gap-3 rounded-lg border bg-background px-3 py-2 shadow-sm'>
                                           {item.image ? (
-                                            <img src={item.image} alt={item.name} className='h-10 w-10 rounded-md object-cover border shrink-0' onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image' }} />
+                                            <SafeImage src={item.image} alt={item.name} className='h-10 w-10 rounded-md object-cover border shrink-0' />
                                           ) : (
                                             <div className='h-10 w-10 rounded-md border bg-muted/50 flex items-center justify-center shrink-0'>
                                               <Package className='h-4 w-4 text-muted-foreground/60' />
@@ -566,7 +567,7 @@ export function IncompleteLeads() {
                   {editForm.items.map((item: any, idx: number) => (
                     <div key={idx} className='flex items-center gap-2 rounded-lg border bg-background p-2'>
                       {item.image ? (
-                        <img src={item.image} alt='' className='h-10 w-10 rounded object-cover shrink-0' onError={(e) => { e.currentTarget.src = 'https://placehold.co/200x200/f8f9fa/a0aec0?text=No+Image' }} />
+                        <SafeImage src={item.image} alt='' className='h-10 w-10 rounded object-cover shrink-0' />
                       ) : (
                         <div className='h-10 w-10 rounded border bg-muted/30 flex items-center justify-center shrink-0'>
                           <Package className='h-4 w-4 text-muted-foreground/60' />

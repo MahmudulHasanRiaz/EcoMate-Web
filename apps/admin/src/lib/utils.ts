@@ -1,7 +1,21 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
-export const PLACEHOLDER_IMAGE = 'https://placehold.co/200x200/f0f4ff/3b82f6?text=No+Image'
+const _PH = (s: string) => s.replace(/\s+/g, ' ')
+export const PLACEHOLDER_IMAGE =
+  'data:image/svg+xml;charset=UTF-8,' +
+  encodeURIComponent(
+    _PH(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+      <rect width="400" height="400" fill="#f0f4ff"/>
+      <g transform="translate(200,160)">
+        <rect x="-24" y="-18" width="48" height="36" rx="4" fill="#93c5fd" opacity="0.5"/>
+        <circle cx="8" cy="-4" r="8" fill="#93c5fd" opacity="0.5"/>
+        <rect x="-20" y="6" width="40" height="20" rx="2" fill="#93c5fd" opacity="0.5"/>
+      </g>
+      <text x="200" y="230" font-family="system-ui,sans-serif" font-size="14" fill="#3b82f6"
+            text-anchor="middle" font-weight="500">No Image</text>
+    </svg>`),
+  )
 
 /** Base URL for API calls — derived from VITE_API_URL or falls back to localhost */
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'

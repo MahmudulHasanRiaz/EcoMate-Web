@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Search, Gift, Loader2, Image as ImageIcon } from 'lucide-react'
-import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
+import { mediaUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 import { combosApi, type ComboResponse } from '../api'
 import { productsApi } from '@/features/products/api'
 import { categoriesApi } from '@/features/categories/api'
@@ -229,7 +230,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 <div className='flex items-center gap-2'>
                   <div className='h-12 w-12 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center'>
                     {image
-                      ? <img src={mediaUrl(image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      ? <SafeImage src={mediaUrl(image)} alt='' className='h-full w-full object-cover' />
                       : <ImageIcon className='h-5 w-5 text-muted-foreground' />}
                   </div>
                   <Button type='button' variant='outline' size='sm' onClick={() => { setPickerMulti(false); setPickerOpen(true) }}>
@@ -248,7 +249,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
               <div className='flex flex-wrap items-center gap-2'>
                 {images.map((u, i) => (
                   <div key={i} className='relative h-16 w-16 rounded border overflow-hidden group'>
-                    <img src={mediaUrl(u)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                    <SafeImage src={mediaUrl(u)} alt='' className='h-full w-full object-cover' />
                     <button
                       type='button'
                       onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
@@ -328,7 +329,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 {items.map((item, index) => (
                   <div key={index} className='flex items-center gap-3 p-3'>
                     {item.productImage
-                      ? <img src={item.productImage} alt='' className='w-10 h-10 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      ? <SafeImage src={item.productImage} alt='' className='w-10 h-10 rounded border object-cover' />
                       : <div className='w-10 h-10 rounded border bg-muted flex items-center justify-center'><Gift className='h-4 w-4' /></div>}
                     <div className='flex-1 min-w-0'>
                       <p className='text-sm font-medium truncate'>{item.productName}</p>

@@ -12,7 +12,8 @@ import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaPicker } from '@/components/media-picker'
-import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
+import { mediaUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 
 const bdDistricts = [
   { name: 'Bagerhat', slug: 'bagerhat' }, { name: 'Bandarban', slug: 'bandarban' }, { name: 'Barguna', slug: 'barguna' },
@@ -266,7 +267,7 @@ export function StorefrontSettings() {
                   <div key={i} className='flex items-start gap-3 p-4 border rounded-lg bg-muted/30'>
                     <div className='h-20 w-32 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
                       {slide.image
-                        ? <img src={mediaUrl(slide.image)} alt={slide.alt || ''} className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                        ? <SafeImage src={mediaUrl(slide.image)} alt={slide.alt || ''} className='h-full w-full object-cover' />
                         : <ImageIcon className='h-6 w-6 text-muted-foreground' />}
                     </div>
                     <div className='flex-1 space-y-3'>
@@ -322,7 +323,7 @@ export function StorefrontSettings() {
                 <div className='flex items-start gap-3'>
                   <div className='h-32 w-full max-w-md rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
                     {secondaryBanner
-                      ? <img src={mediaUrl(secondaryBanner)} alt={secondaryBannerAlt || ''} className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      ? <SafeImage src={mediaUrl(secondaryBanner)} alt={secondaryBannerAlt || ''} className='h-full w-full object-cover' />
                       : <ImageIcon className='h-8 w-8 text-muted-foreground' />}
                   </div>
                 </div>

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Loader2, Package, Image as ImageIcon } from 'lucide-react'
-import { PLACEHOLDER_IMAGE, appUrl } from '@/lib/utils'
+import { appUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { MediaPicker } from '@/components/media-picker'
 
@@ -284,7 +285,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
               <div className='grid grid-cols-4 gap-3'>
                 {images.map((url, i) => (
                   <div key={i} className='relative group border rounded-lg overflow-hidden bg-muted/30'>
-                    <img src={imgUrl(url)} alt='' className='w-full h-32 object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                    <SafeImage src={imgUrl(url)} alt='' className='w-full h-32 object-cover' />
                     <button onClick={() => removeImage(url)} className='absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity'>
                       <X className='h-3 w-3' />
                     </button>
@@ -347,7 +348,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                         <div className='flex items-center gap-3 flex-1 min-w-0'>
                           <div className='h-10 w-10 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center'>
                             {v.image
-                              ? <img src={imgUrl(v.image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                              ? <SafeImage src={imgUrl(v.image)} alt='' className='h-full w-full object-cover' />
                               : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
                           </div>
                           <div className='min-w-0'>

@@ -2,7 +2,8 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Pencil, Trash2, Gift } from 'lucide-react'
-import { PLACEHOLDER_IMAGE, appUrl } from '@/lib/utils'
+import { appUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 import { type ComboResponse } from '../api'
 
 const imgUrl = appUrl
@@ -18,7 +19,7 @@ export function combosColumns(
       cell: ({ row }) => {
         const img = row.original.image || (Array.isArray(row.original.images) ? row.original.images[0] : null)
         return img
-          ? <img src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+          ? <SafeImage src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' />
           : <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'><Gift className='h-4 w-4 text-muted-foreground' /></div>
       },
       enableSorting: false,

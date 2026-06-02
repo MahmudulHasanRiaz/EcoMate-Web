@@ -16,7 +16,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { MediaPicker } from '@/components/media-picker'
-import { PLACEHOLDER_IMAGE, mediaUrl } from '@/lib/utils'
+import { mediaUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 
 export function Categories() {
   const queryClient = useQueryClient()
@@ -57,7 +58,7 @@ export function Categories() {
       <div className={`flex items-center gap-3 py-2.5 px-3 rounded-md hover:bg-muted/50 group ${depth > 0 ? 'ml-6 border-l-2 pl-4' : ''}`}>
         {cat.children && cat.children.length > 0 && <ChevronRight className='h-4 w-4 text-muted-foreground' />}
         {cat.image ? (
-          <img src={mediaUrl(cat.image)} alt='' className='h-8 w-8 rounded object-cover border shrink-0' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+          <SafeImage src={mediaUrl(cat.image)} alt='' className='h-8 w-8 rounded object-cover border shrink-0' />
         ) : (
           <div className='h-8 w-8 rounded bg-muted border shrink-0 flex items-center justify-center'><ImageIcon className='h-4 w-4 text-muted-foreground' /></div>
         )}
@@ -118,7 +119,7 @@ export function Categories() {
                 <div className='flex items-center gap-2'>
                   <div className='h-14 w-14 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
                     {form.image
-                      ? <img src={mediaUrl(form.image)} alt='' className='h-full w-full object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      ? <SafeImage src={mediaUrl(form.image)} alt='' className='h-full w-full object-cover' />
                       : <ImageIcon className='h-5 w-5 text-muted-foreground' />}
                   </div>
                   <Button type='button' variant='outline' size='sm' onClick={() => setPickerOpen(true)}>

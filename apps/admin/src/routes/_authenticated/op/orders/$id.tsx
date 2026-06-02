@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { PLACEHOLDER_IMAGE } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
@@ -212,7 +212,7 @@ function OrderDetailPage() {
                   <TableBody>
                     {(editing ? orderItems : order.items)?.map((item: any, index: number) => (
                       <TableRow key={item.id || index}>
-                        <TableCell><div className='flex items-center gap-3'>{item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? <img src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product?.name}</span></div></TableCell>
+                        <TableCell><div className='flex items-center gap-3'>{item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product?.name}</span></div></TableCell>
                         <TableCell className='text-right text-sm'>
                           {editing ? (
                             <Input type='number' value={item.price} onChange={e => {
@@ -297,7 +297,7 @@ function OrderDetailPage() {
                                         className='flex items-center gap-2 p-2 cursor-pointer'
                                       >
                                         {p.images && Array.isArray(p.images) && p.images[0] ? (
-                                          <img src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                                          <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' />
                                         ) : (
                                           <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
                                         )}
@@ -494,7 +494,7 @@ function OrderDetailPage() {
                 }}>
                   <div className='flex items-center gap-2'>
                     {v.image ? (
-                      <img src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }} />
+                      <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' />
                     ) : (
                       <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
                     )}

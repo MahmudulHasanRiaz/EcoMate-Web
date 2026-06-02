@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Upload, Check, Loader2, ImageIcon, Film, Search, Link2, X } from 'lucide-react'
-import { PLACEHOLDER_IMAGE } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
 import {
   mediaApi,
   uploadApi,
@@ -357,14 +357,10 @@ export function MediaPicker({
                     onClick={() => toggle(m.url)}
                   >
                     {m.mimeType.startsWith('image/') ? (
-                      <img
+                      <SafeImage
                         src={mediaUrl(m.url)}
                         alt={m.alt || m.filename}
                         className='w-full h-full object-cover'
-                        loading='lazy'
-                        onError={(e) => {
-                          ;(e.currentTarget as HTMLImageElement).src = PLACEHOLDER_IMAGE
-                        }}
                       />
                     ) : (
                       <div className='w-full h-full flex items-center justify-center'>

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
@@ -45,13 +44,11 @@ export default function Hero() {
                 const isActive = index === currentSlide;
                 const href = (slide as { link?: string }).link;
                 const inner = (
-                  <Image
+                  <img
                     src={slide.image || PLACEHOLDER_IMAGE}
                     alt={slide.alt || `Promotional banner ${index + 1}`}
-                    fill
-                    sizes="(min-width: 768px) 60vw, 100vw"
-                    className="object-cover"
-                    priority={index === 0}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}
                   />
                 );
                 return (
@@ -105,12 +102,11 @@ export default function Hero() {
           {/* Secondary Banner (col-4) */}
           <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
             <div className="relative w-full h-[400px]">
-              <Image
+              <img
                 src={config.hero.secondaryBanner || PLACEHOLDER_IMAGE}
                 alt={config.hero.secondaryBannerAlt || 'Featured banner'}
-                fill
-                sizes="33vw"
-                className="object-cover"
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}
               />
             </div>
           </div>

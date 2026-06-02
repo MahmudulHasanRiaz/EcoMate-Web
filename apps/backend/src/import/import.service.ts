@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import * as Papa from 'papaparse';
-import slugify from '../import/utils/slugify';
+import slugify from './utils/slugify';
 import {
   WooCommerceCsvRow,
   ParsedCategory,
@@ -14,17 +14,14 @@ import {
   ImportSummary,
 } from './types/woocommerce-csv.types';
 
-interface ProcessedRow {
+interface CsvRowWithMeta {
   rowNumber: number;
   data: WooCommerceCsvRow;
-  errors: ImportError[];
 }
 
-interface ImportProgress {
-  total: number;
-  processed: number;
-  summary: ImportSummary;
-  errors: ImportError[];
+interface ResolvedAttrs {
+  name: string;
+  values: Array<{ id: string; value: string }>;
 }
 
 @Injectable()
@@ -57,79 +54,80 @@ export class ImportService {
       throw new BadRequestException(`CSV parse error: ${msg}`);
     }
 
-    const rows = parsed.data.filter((r) => r.SKU?.trim());
+    const rows: CsvRowWithMeta[] = parsed.data
+      .map((data, i) => ({ rowNumber: i + 2, data }))
+      .filter((r) => r.data.SKU?.trim());
+
     if (rows.length === 0) {
       throw new BadRequestException('No rows with SKU found in CSV');
     }
 
-    const progress: ImportProgress = {
-      total: rows.length,
-      processed: 0,
-      summary: {
-        productsCreated: 0,
-        productsUpdated: 0,
-        productsSkipped: 0,
-        categoriesCreated: 0,
-        categoriesReused: 0,
-        tagsCreated: 0,
-        tagsReused: 0,
-        attributesImported: 0,
-        variantsImported: 0,
-        imagesDownloaded: 0,
-        imagesImported: 0,
-        imagesReused: 0,
-        imagesFailed: 0,
-        errors: 0,
-      },
-      errors: [],
+    const summary: ImportSummary = {
+      productsCreated: 0,
+      productsUpdated: 0,
+      productsSkipped: 0,
+      categoriesCreated: 0,
+      categoriesReused: 0,
+      tagsCreated: 0,
+      tagsReused: 0,
+      attributesImported: 0,
+      variantsImported: 0,
+      imagesDownloaded: 0,
+      imagesImported: 0,
+      imagesReused: 0,
+      imagesFailed: 0,
+      errors: 0,
     };
+
+    const allErrors: ImportError[] = [];
 
     const groups = this.groupByParent(rows);
 
-    for (const [parentSku, group] of Object.entries(groups)) {
-      if (dryRun) {
-        progress.processed += group.length;
-        continue;
-      }
+    for (const [groupKey, group] of Object.entries(groups)) {
+      if (!groupKey) continue;
+      if (dryRun) continue;
 
       try {
-        await this.processProductGroup(parentSku, group, mode, progress);
+        await this.processProductGroup(groupKey, group, mode, summary, allErrors);
       } catch (err) {
         const msg = (err as Error).message;
-        this.logger.error(`Failed processing group SKU=${parentSku}: ${msg}`);
-        progress.errors.push({
+        this.logger.error(`Group processing failed for ${groupKey}: ${msg}`);
+        allErrors.push({
           rowNumber: group[0].rowNumber,
-          sku: parentSku,
+          sku: groupKey,
           errorType: 'GROUP_PROCESSING_FAILED',
           message: msg,
         });
-        progress.summary.errors++;
+        summary.errors++;
       }
     }
 
-    progress.summary.imagesDownloaded = progress.summary.imagesImported + progress.summary.imagesReused;
+    summary.imagesDownloaded = summary.imagesImported + summary.imagesReused;
 
-    return {
-      summary: progress.summary,
-      errors: progress.errors,
-    };
+    return { summary, errors: allErrors };
   }
 
-  private groupByParent(
-    rows: ProcessedRow[],
-  ): Record<string, ProcessedRow[]> {
-    const groups: Record<string, ProcessedRow[]> = {};
+  private groupByParent(rows: CsvRowWithMeta[]): Record<string, CsvRowWithMeta[]> {
+    const idToSku: Record<string, string> = {};
+    for (const row of rows) {
+      const csvId = row.data.ID?.trim();
+      const sku = row.data.SKU!.trim();
+      if (csvId && sku) {
+        idToSku[csvId] = sku;
+      }
+    }
+
+    const groups: Record<string, CsvRowWithMeta[]> = {};
 
     for (const row of rows) {
-      const sku = row.data.SKU?.trim() || '';
+      const sku = row.data.SKU!.trim();
       const type = (row.data.Type || 'simple').toLowerCase().trim();
-      const parentSku = row.data.Parent?.trim() || '';
+      const parentVal = row.data.Parent?.trim() || '';
 
-      if (!sku) continue;
-
-      if (type === 'variation' && parentSku) {
-        if (!groups[parentSku]) groups[parentSku] = [];
-        groups[parentSku].push(row);
+      if (type === 'variation' && parentVal) {
+        const resolvedParentSku = idToSku[parentVal] || parentVal;
+        if (!groups[resolvedParentSku]) groups[resolvedParentSku] = [];
+        groups[resolvedParentSku].push(row);
       } else {
         if (!groups[sku]) groups[sku] = [];
         groups[sku].push(row);
@@ -140,52 +138,53 @@ export class ImportService {
   }
 
   private async processProductGroup(
-    sku: string,
-    rows: ProcessedRow[],
+    groupKey: string,
+    rows: CsvRowWithMeta[],
     mode: 'create' | 'update',
-    progress: ImportProgress,
+    summary: ImportSummary,
+    errors: ImportError[],
   ): Promise<void> {
     const parentRow = rows.find(
       (r) => (r.data.Type || 'simple').toLowerCase() !== 'variation',
     ) || rows[0];
+
     const variationRows = rows.filter(
       (r) => (r.data.Type || 'simple').toLowerCase() === 'variation',
     );
 
+    const parentSku = parentRow.data.SKU!.trim();
+
     const existingProduct = await this.prisma.product.findFirst({
-      where: { sku },
-      include: { variants: true },
+      where: { sku: parentSku },
     });
 
     if (existingProduct && mode === 'create') {
-      this.logger.log(`Skipping existing SKU: ${sku} (create mode)`);
-      progress.summary.productsSkipped++;
+      this.logger.log(`Skipping existing SKU: ${parentSku} (create mode)`);
+      summary.productsSkipped++;
       return;
     }
 
+    let productId: string;
+
     if (existingProduct) {
-      await this.updateProduct(existingProduct.id, parentRow, mode, progress);
+      await this.updateProduct(existingProduct.id, parentRow, summary, errors);
+      productId = existingProduct.id;
     } else {
-      await this.createProduct(parentRow, progress);
+      productId = await this.createProduct(parentRow, summary, errors);
     }
 
-    if (variationRows.length > 0) {
-      const product = await this.prisma.product.findFirst({
-        where: { sku },
-      });
-      if (product) {
-        for (const vRow of variationRows) {
-          await this.processVariation(product.id, vRow, mode, progress);
-        }
-      }
+    for (const vRow of variationRows) {
+      await this.processVariation(productId, parentSku, vRow, mode, summary, errors);
     }
   }
 
   private async createProduct(
-    row: ProcessedRow,
-    progress: ImportProgress,
+    row: CsvRowWithMeta,
+    summary: ImportSummary,
+    errors: ImportError[],
   ): Promise<string> {
     const data = row.data;
+    const sku = data.SKU!.trim();
     const type = (data.Type || 'simple').toLowerCase().trim();
     const isVariable = type === 'variable' || type === 'variable-subscription';
 
@@ -194,59 +193,59 @@ export class ImportService {
     const images = this.parseImages(data.Images);
     const seoMeta = this.buildSeoMeta(data);
 
-    const categoryId = await this.resolveCategories(
-      categories,
-      progress,
-    );
+    const categoryId = await this.resolveCategories(categories, summary);
 
-    const resolvedTags = await this.resolveTags(tags, progress);
+    const name = data.Name?.trim() || sku;
+    const slug = data.Slug?.trim() || await this.uniqueSlug(slugify(name));
 
-    const slug = data.Slug?.trim() || slugify(data.Name || sku);
-
-    const basePrice = this.parseFloat(data['Regular price']) || 0;
-    const salePrice = this.parseFloat(data['Sale price']);
-
-    const manageStock = this.parseBool(data['In stock?'], data.Stock);
-    const stock = manageStock ? this.parseInt(data.Stock) || 0 : 0;
+    const basePrice = this.parsePrice(data['Regular price']) ?? 0;
+    const salePrice = this.parsePrice(data['Sale price']);
+    const manageStock = this.parseManageStock(data);
+    const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
     const isFeatured = data['Is featured?'] === '1';
+    const isActive = data.Published !== '0' && data.Published !== '-1';
 
     const attrs = this.extractAttributes(data);
-    const resolvedAttrs = await this.resolveAttributes(attrs, progress);
+    const resolvedAttrs = attrs.length > 0
+      ? await this.resolveAttributes(attrs, summary)
+      : [];
+
+    if (!isVariable && resolvedAttrs.length > 0) {
+      seoMeta.attributes = resolvedAttrs.map((a) => ({
+        name: a.name,
+        values: a.values.map((v) => v.value),
+      }));
+    }
 
     const product = await this.prisma.product.create({
       data: {
-        name: data.Name?.trim() || sku,
+        name,
         slug,
         sku,
         type: isVariable ? 'variable' : 'simple',
-        description: data.Description?.trim() || undefined,
-        shortDesc: data['Short description']?.trim() || undefined,
+        description: data.Description?.trim() || null,
+        shortDesc: data['Short description']?.trim() || null,
         basePrice,
-        salePrice: salePrice || undefined,
+        salePrice: salePrice ?? undefined,
         stock,
-        categoryId: categoryId || undefined,
-        tags: resolvedTags as any,
+        categoryId: categoryId ?? undefined,
+        tags: tags as any,
         images: [] as any,
         seoMeta: seoMeta as any,
         isFeatured,
-        isActive: data.Published !== '0' && data.Published !== '-1',
+        isActive,
         manageStock,
       },
     });
 
     if (images.length > 0) {
-      await this.processProductImages(product.id, images, progress);
+      await this.processProductImages(product.id, images, summary, errors);
     }
 
-    progress.summary.productsCreated++;
-
-    if (categoryId && categories.length > 0) {
-      const usedCount = categories.length -
-        (categories[0] ? (await this.categoryExists(categories[0].slug) ? 1 : 0) : 0);
-    }
+    summary.productsCreated++;
 
     if (isVariable && resolvedAttrs.length > 0) {
-      await this.attachAttributesToProduct(product.id, resolvedAttrs);
+      await this.generateVariantCombinations(product.id, resolvedAttrs);
     }
 
     return product.id;
@@ -254,9 +253,9 @@ export class ImportService {
 
   private async updateProduct(
     productId: string,
-    row: ProcessedRow,
-    mode: 'create' | 'update',
-    progress: ImportProgress,
+    row: CsvRowWithMeta,
+    summary: ImportSummary,
+    errors: ImportError[],
   ): Promise<void> {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
@@ -264,44 +263,48 @@ export class ImportService {
     const images = this.parseImages(data.Images);
     const seoMeta = this.buildSeoMeta(data);
 
-    const categoryId = await this.resolveCategories(categories, progress);
-    const resolvedTags = await this.resolveTags(tags, progress);
-    const basePrice = this.parseFloat(data['Regular price']) || 0;
-    const salePrice = this.parseFloat(data['Sale price']);
-    const manageStock = this.parseBool(data['In stock?'], data.Stock);
-    const stock = manageStock ? this.parseInt(data.Stock) || 0 : 0;
+    const categoryId = await this.resolveCategories(categories, summary);
+    const basePrice = this.parsePrice(data['Regular price']) ?? 0;
+    const salePrice = this.parsePrice(data['Sale price']);
+    const manageStock = this.parseManageStock(data);
+    const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
     const isFeatured = data['Is featured?'] === '1';
+    const isActive = data.Published !== '0' && data.Published !== '-1';
+
+    const updateData: Record<string, unknown> = {};
+
+    if (data.Name?.trim()) updateData.name = data.Name.trim();
+    if (data.Description?.trim() !== undefined) updateData.description = data.Description.trim() || null;
+    if (data['Short description']?.trim() !== undefined) updateData.shortDesc = data['Short description'].trim() || null;
+    updateData.basePrice = basePrice;
+    updateData.salePrice = salePrice ?? null;
+    updateData.stock = stock;
+    updateData.categoryId = categoryId ?? null;
+    updateData.tags = tags as any;
+    updateData.seoMeta = seoMeta as any;
+    updateData.isFeatured = isFeatured;
+    updateData.isActive = isActive;
+    updateData.manageStock = manageStock;
 
     await this.prisma.product.update({
       where: { id: productId },
-      data: {
-        name: data.Name?.trim(),
-        description: data.Description?.trim() || undefined,
-        shortDesc: data['Short description']?.trim() || undefined,
-        basePrice,
-        salePrice: salePrice || undefined,
-        stock,
-        categoryId: categoryId || undefined,
-        tags: resolvedTags as any,
-        seoMeta: seoMeta as any,
-        isFeatured,
-        isActive: data.Published !== '0' && data.Published !== '-1',
-        manageStock,
-      },
+      data: updateData,
     });
 
     if (images.length > 0) {
-      await this.processProductImages(productId, images, progress);
+      await this.processProductImages(productId, images, summary, errors);
     }
 
-    progress.summary.productsUpdated++;
+    summary.productsUpdated++;
   }
 
   private async processVariation(
     productId: string,
-    row: ProcessedRow,
+    parentSku: string,
+    row: CsvRowWithMeta,
     mode: 'create' | 'update',
-    progress: ImportProgress,
+    summary: ImportSummary,
+    errors: ImportError[],
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
@@ -312,32 +315,39 @@ export class ImportService {
     });
 
     if (existing && mode === 'create') {
-      progress.summary.productsSkipped++;
+      summary.productsSkipped++;
       return;
     }
 
-    const price = this.parseFloat(data['Regular price']);
-    const stock = this.parseInt(data.Stock) || 0;
-    const image = this.parseImages(data.Images)[0] || undefined;
+    const price = this.parsePrice(data['Regular price']);
+    const stock = this.parseInt(data.Stock) ?? 0;
+    const images = this.parseImages(data.Images);
+    const mainImage = images[0];
 
     const varAttrs = this.extractVariationAttributes(data);
-    const resolvedVarAttrs = await this.resolveAttributes(varAttrs, progress);
+    const resolvedVarAttrs = varAttrs.length > 0
+      ? await this.resolveAttributes(varAttrs, summary)
+      : [];
 
     if (existing) {
+      const updateData: Record<string, unknown> = {};
+      if (price !== undefined) updateData.price = price;
+      updateData.stock = stock;
+      if (mainImage) updateData.image = mainImage;
+
       await this.prisma.productVariant.update({
         where: { id: existing.id },
-        data: {
-          price: price || undefined,
-          stock,
-          image: image || undefined,
-        },
+        data: updateData,
       });
 
-      if (image) {
-        await this.media.syncEntityImages('variant', existing.id, [image]);
+      if (mainImage) {
+        const ingested = await this.ingestImage(mainImage, summary, errors);
+        if (ingested) {
+          await this.media.syncEntityImages('variant', existing.id, [ingested]);
+        }
       }
 
-      progress.summary.productsUpdated++;
+      summary.productsUpdated++;
       return;
     }
 
@@ -345,9 +355,9 @@ export class ImportService {
       data: {
         productId,
         sku: varSku,
-        price: price || undefined,
+        price: price ?? undefined,
         stock,
-        image: image || undefined,
+        image: mainImage || undefined,
         attributeValues: resolvedVarAttrs.length > 0
           ? {
               create: resolvedVarAttrs.flatMap((attr) =>
@@ -360,34 +370,28 @@ export class ImportService {
       },
     });
 
-    if (image) {
-      await this.media.syncEntityImages('variant', variant.id, [image]);
+    if (mainImage) {
+      const ingested = await this.ingestImage(mainImage, summary, errors);
+      if (ingested) {
+        await this.media.syncEntityImages('variant', variant.id, [ingested]);
+      }
     }
 
-    progress.summary.variantsImported++;
+    summary.variantsImported++;
   }
 
   private async processProductImages(
     productId: string,
     urls: string[],
-    progress: ImportProgress,
+    summary: ImportSummary,
+    errors: ImportError[],
   ): Promise<void> {
     const resolved: string[] = [];
+
     for (const url of urls) {
-      try {
-        const result = await this.media.ingestFromUrl(url.trim());
-        resolved.push(result.url);
-        progress.summary.imagesImported++;
-      } catch (err) {
-        this.logger.warn(`Image import failed for ${url}: ${(err as Error).message}`);
-        progress.summary.imagesFailed++;
-        progress.errors.push({
-          rowNumber: 0,
-          sku: '',
-          errorType: 'IMAGE_DOWNLOAD_FAILED',
-          message: `${url}: ${(err as Error).message}`,
-        });
-        progress.summary.errors++;
+      const ingested = await this.ingestImage(url, summary, errors);
+      if (ingested) {
+        resolved.push(ingested);
       }
     }
 
@@ -400,40 +404,68 @@ export class ImportService {
     }
   }
 
+  private async ingestImage(
+    url: string,
+    summary: ImportSummary,
+    errors: ImportError[],
+  ): Promise<string | null> {
+    const trimmed = url.trim();
+    if (!trimmed) return null;
+
+    const existing = await this.prisma.media.findFirst({
+      where: { sourceUrl: trimmed },
+      select: { url: true },
+    });
+
+    if (existing) {
+      summary.imagesReused++;
+      return existing.url;
+    }
+
+    try {
+      const result = await this.media.ingestFromUrl(trimmed);
+      summary.imagesImported++;
+      return result.url;
+    } catch (err) {
+      this.logger.warn(`Image failed for ${url}: ${(err as Error).message}`);
+      summary.imagesFailed++;
+      return null;
+    }
+  }
+
   private parseCategories(value?: string): ParsedCategory[] {
     if (!value?.trim()) return [];
-    const parts = value.split('|').map((s) => s.trim()).filter(Boolean);
-    return parts.map((part) => {
-      const segments = part.split('>').map((s) => s.trim()).filter(Boolean);
-      const name = segments[segments.length - 1];
-      return {
-        name,
-        slug: slugify(name),
-        path: part,
-      };
-    });
+    return value
+      .split('|')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const segments = part.split('>').map((s) => s.trim()).filter(Boolean);
+        const name = segments[segments.length - 1] || part;
+        return { name, slug: slugify(name), path: part };
+      });
   }
 
   private async resolveCategories(
     categories: ParsedCategory[],
-    progress: ImportSummary,
+    summary: ImportSummary,
   ): Promise<string | null> {
     if (categories.length === 0) return null;
 
     const first = categories[0];
     const segments = first.path.split('>').map((s) => s.trim()).filter(Boolean);
-
     let parentId: string | null = null;
-    let lastCategoryId: string | null = null;
+    let lastId: string | null = null;
 
     for (const seg of segments) {
       const slug = slugify(seg);
-
       let cat = await this.prisma.category.findFirst({
-        where: { slug, parentId: parentId },
+        where: { slug, parentId },
       });
 
-      if (!cat) {
+      if (cat) {
+        summary.categoriesReused++;
+      } else {
         cat = await this.prisma.category.create({
           data: {
             name: seg,
@@ -443,42 +475,24 @@ export class ImportService {
             isActive: true,
           },
         });
-        progress.categoriesCreated++;
+        summary.categoriesCreated++;
       }
 
-      lastCategoryId = cat.id;
+      lastId = cat.id;
       parentId = cat.id;
     }
 
-    return lastCategoryId;
-  }
-
-  private async categoryExists(slug: string): Promise<boolean> {
-    const cat = await this.prisma.category.findFirst({ where: { slug } });
-    return !!cat;
+    return lastId;
   }
 
   private parseTags(value?: string): string[] {
     if (!value?.trim()) return [];
-    return value
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  private async resolveTags(
-    tags: string[],
-    progress: ImportSummary,
-  ): Promise<string[]> {
-    return tags;
+    return value.split(',').map((s) => s.trim()).filter(Boolean);
   }
 
   private parseImages(value?: string): string[] {
     if (!value?.trim()) return [];
-    return value
-      .split('|')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return value.split('|').map((s) => s.trim()).filter(Boolean);
   }
 
   private extractAttributes(data: WooCommerceCsvRow): Array<{
@@ -494,24 +508,27 @@ export class ImportService {
       global: boolean;
     }> = [];
 
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 20; i++) {
       const nameKey = `Attribute ${i} name`;
       const valuesKey = `Attribute ${i} value(s)`;
       const visibleKey = `Attribute ${i} visible`;
       const globalKey = `Attribute ${i} global`;
 
       const name = data[nameKey]?.trim();
-      const valuesStr = data[valuesKey]?.trim();
-      if (!name || !valuesStr) continue;
+      if (!name) continue;
 
-      const values = valuesStr.split('|').map((v) => v.trim()).filter(Boolean);
+      const values = (data[valuesKey] || '')
+        .split('|')
+        .map((v) => v.trim())
+        .filter(Boolean);
+
       if (values.length === 0) continue;
 
       attrs.push({
         name,
         values,
         visible: data[visibleKey] === '1',
-        global: data[globalKey] === '1' || !data[globalKey],
+        global: data[globalKey] === '1' || data[globalKey] === undefined,
       });
     }
 
@@ -531,21 +548,18 @@ export class ImportService {
       global: boolean;
     }> = [];
 
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 5; i++) {
       const nameKey = `Attribute ${i} name`;
       const valuesKey = `Attribute ${i} value(s)`;
-      const visibleKey = `Attribute ${i} visible`;
 
       const name = data[nameKey]?.trim();
-      const valuesStr = data[valuesKey]?.trim();
-      if (!name || !valuesStr) continue;
-      const values = valuesStr.split('|').map((v) => v.trim()).filter(Boolean);
-      if (values.length === 0) continue;
+      const value = data[valuesKey]?.trim();
+      if (!name || !value) continue;
 
       attrs.push({
         name,
-        values,
-        visible: data[visibleKey] === '1',
+        values: [value],
+        visible: true,
         global: true,
       });
     }
@@ -554,28 +568,14 @@ export class ImportService {
   }
 
   private async resolveAttributes(
-    attrs: Array<{
-      name: string;
-      values: string[];
-      visible: boolean;
-      global: boolean;
-    }>,
-    progress: ImportSummary,
-  ): Promise<
-    Array<{
-      name: string;
-      values: Array<{ id: string; value: string }>;
-    }>
-  > {
-    const result: Array<{
-      name: string;
-      values: Array<{ id: string; value: string }>;
-    }> = [];
+    attrs: Array<{ name: string; values: string[]; visible: boolean; global: boolean }>,
+    summary: ImportSummary,
+  ): Promise<ResolvedAttrs[]> {
+    const result: ResolvedAttrs[] = [];
 
     for (const attr of attrs) {
-      const attrName =
-        attr.name.startsWith('pa_') ? attr.name.slice(3) : attr.name;
-      const normalizedName = attrName
+      const cleanName = attr.name.startsWith('pa_') ? attr.name.slice(3) : attr.name;
+      const normalizedName = cleanName
         .replace(/[-_]+/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase())
         .trim();
@@ -590,81 +590,75 @@ export class ImportService {
           data: { name: normalizedName },
           include: { values: true },
         });
-        progress.attributesImported++;
+        summary.attributesImported++;
       }
 
       const resolvedValues: Array<{ id: string; value: string }> = [];
-      for (const v of attr.values) {
-        const normalizedValue = v.trim();
+
+      for (const rawVal of attr.values) {
+        const v = rawVal.trim();
+        if (!v) continue;
+
         let av = attribute.values.find(
-          (av) => av.value.toLowerCase() === normalizedValue.toLowerCase(),
+          (av) => av.value.toLowerCase() === v.toLowerCase(),
         );
+
         if (!av) {
           av = await this.prisma.attributeValue.create({
             data: {
-              value: normalizedValue,
+              value: v,
               sortOrder: attribute.values.length + resolvedValues.length,
               attributeId: attribute.id,
             },
           });
         }
+
         resolvedValues.push({ id: av.id, value: av.value });
       }
 
-      result.push({
-        name: normalizedName,
-        values: resolvedValues,
-      });
+      if (resolvedValues.length > 0) {
+        result.push({ name: normalizedName, values: resolvedValues });
+      }
     }
 
     return result;
   }
 
-  private async attachAttributesToProduct(
+  private async generateVariantCombinations(
     productId: string,
-    attrs: Array<{
-      name: string;
-      values: Array<{ id: string; value: string }>;
-    }>,
+    resolvedAttrs: ResolvedAttrs[],
   ): Promise<void> {
-    const existingVariants = await this.prisma.productVariant.findMany({
-      where: { productId },
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { sku: true, basePrice: true },
     });
 
-    if (existingVariants.length === 0) {
-      const attributeIds = attrs.map((a) => {
-        return a.values.map((v) => v.id).filter((id, i, arr) => arr.indexOf(id) === i);
-      }).flat();
+    const valuesArrays = resolvedAttrs.map((a) => a.values);
+    const combinations = this.cartesian(valuesArrays);
 
-      if (attributeIds.length > 0) {
-        const product = await this.prisma.product.findUnique({
-          where: { id: productId },
-          select: { sku: true, basePrice: true },
-        });
+    for (const combo of combinations) {
+      const suffix = combo.map((v) => v.value).join(' / ');
+      const varSku = `${product?.sku || 'PRD'}-${suffix
+        .replace(/\s+/g, '-')
+        .replace(/\//g, '_')
+        .toUpperCase()}`;
 
-        const combinations = this.cartesian(attrs.map((a) => a.values));
-        for (const combo of combinations) {
-          const valuesStr = combo.map((v) => v.value).join(' / ');
-          const varSku = `${product?.sku || 'PRD'}-${valuesStr.replace(/\s+/g, '-').replace(/\//g, '_').toUpperCase()}`;
-
-          await this.prisma.productVariant.create({
-            data: {
-              productId,
-              sku: varSku,
-              price: product?.basePrice || undefined,
-              stock: 0,
-              attributeValues: {
-                create: combo.map((v) => ({
-                  attributeValueId: v.id,
-                })),
-              },
-            },
-          });
-        }
-      }
+      await this.prisma.productVariant.create({
+        data: {
+          productId,
+          sku: varSku,
+          price: product?.basePrice ?? undefined,
+          stock: 0,
+          attributeValues: {
+            create: combo.map((v) => ({
+              attributeValueId: v.id,
+            })),
+          },
+        },
+      });
     }
 
-    if (existingVariants.length > 0 || attrs.some((a) => a.values.length > 0)) {
+    if (combinations.length > 0) {
       await this.prisma.product.update({
         where: { id: productId },
         data: { type: 'variable' },
@@ -672,23 +666,25 @@ export class ImportService {
     }
   }
 
-  private cartesian<T>(arrays: T[][]): T[][] {
-    if (arrays.length === 0) return [];
-    return arrays.reduce(
-      (acc, curr) => acc.flatMap((a) => curr.map((b) => [...a, b])),
-      [[]] as T[][],
-    );
+  private async uniqueSlug(base: string): Promise<string> {
+    let slug = base;
+    let counter = 1;
+    while (await this.prisma.product.findUnique({ where: { slug } })) {
+      slug = `${base}-${counter}`;
+      counter++;
+    }
+    return slug;
   }
 
   private buildSeoMeta(data: WooCommerceCsvRow): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
 
-    const inStock = data['In stock?']?.trim();
-    if (inStock === '1') meta.stockStatus = 'instock';
-    else if (inStock === '0') meta.stockStatus = 'outofstock';
+    const stockStatusRaw = data['In stock?']?.trim();
+    if (stockStatusRaw === '1') meta.stockStatus = 'instock';
+    else if (stockStatusRaw === '0') meta.stockStatus = 'outofstock';
 
     const backorders = data['Backorders allowed?']?.trim();
-    if (backorders !== undefined && backorders !== '') {
+    if (backorders) {
       if (backorders === '0') meta.backorders = 'no';
       else if (backorders === '1') meta.backorders = 'yes';
       else if (backorders === 'notify') meta.backorders = 'notify';
@@ -716,16 +712,6 @@ export class ImportService {
     const visibility = data['Visibility in catalog']?.trim();
     if (visibility) meta.visibility = visibility;
 
-    const categories = data.Categories?.trim();
-    if (categories) {
-      const parsed = this.parseCategories(categories);
-      meta.allCategories = parsed.map((c) => ({
-        name: c.name,
-        slug: c.slug,
-        path: c.path,
-      }));
-    }
-
     const purchaseNote = data['Purchase note']?.trim();
     if (purchaseNote) meta.purchaseNote = purchaseNote;
 
@@ -735,30 +721,48 @@ export class ImportService {
     const salePriceEnd = data['Date sale price ends']?.trim();
     if (salePriceEnd) meta.salePriceEnd = salePriceEnd;
 
+    if (data.Categories?.trim()) {
+      const parsed = this.parseCategories(data.Categories);
+      meta.allCategories = parsed.map((c) => ({
+        name: c.name,
+        slug: c.slug,
+        path: c.path,
+      }));
+    }
+
     return meta;
   }
 
-  private parseFloat(val?: string): number | undefined {
-    if (val === undefined || val === null || val.trim() === '') return undefined;
+  private parseManageStock(data: WooCommerceCsvRow): boolean {
+    const manageStockCol = data['Manage stock?'];
+    const stockQty = data.Stock?.trim();
+
+    if (manageStockCol !== undefined) {
+      return manageStockCol === '1' || manageStockCol.toLowerCase() === 'yes';
+    }
+
+    return !!stockQty;
+  }
+
+  private parsePrice(val?: string): number | undefined {
+    if (!val || val.trim() === '') return undefined;
     const cleaned = val.trim().replace(/[^0-9.-]/g, '');
     const n = parseFloat(cleaned);
     return isNaN(n) ? undefined : n;
   }
 
   private parseInt(val?: string): number | undefined {
-    if (val === undefined || val === null || val.trim() === '') return undefined;
+    if (!val || val.trim() === '') return undefined;
     const cleaned = val.trim().replace(/[^0-9-]/g, '');
     const n = parseInt(cleaned, 10);
     return isNaN(n) ? undefined : n;
   }
 
-  private parseBool(inStock?: string, stockQty?: string): boolean {
-    if (stockQty !== undefined && stockQty.trim() !== '') {
-      return true;
-    }
-    if (inStock !== undefined && inStock.trim() !== '') {
-      return true;
-    }
-    return false;
+  private cartesian<T>(arrays: T[][]): T[][] {
+    if (arrays.length === 0) return [];
+    return arrays.reduce(
+      (acc, curr) => acc.flatMap((a) => curr.map((b) => [...a, b])),
+      [[]] as T[][],
+    );
   }
 }

@@ -36,6 +36,7 @@ import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
 import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
 import { Route as AuthenticatedOpInventoryIndexRouteImport } from './routes/_authenticated/op/inventory/index'
+import { Route as AuthenticatedOpImportProductsIndexRouteImport } from './routes/_authenticated/op/import-products/index'
 import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_authenticated/op/help-center/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
@@ -209,6 +210,12 @@ const AuthenticatedOpInventoryIndexRoute =
   AuthenticatedOpInventoryIndexRouteImport.update({
     id: '/op/inventory/',
     path: '/op/inventory/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpImportProductsIndexRoute =
+  AuthenticatedOpImportProductsIndexRouteImport.update({
+    id: '/op/import-products/',
+    path: '/op/import-products/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpHelpCenterIndexRoute =
@@ -405,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
+  '/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
@@ -460,6 +468,7 @@ export interface FileRoutesByTo {
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
   '/op/help-center': typeof AuthenticatedOpHelpCenterIndexRoute
+  '/op/import-products': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory': typeof AuthenticatedOpInventoryIndexRoute
   '/op/media': typeof AuthenticatedOpMediaIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
@@ -517,6 +526,7 @@ export interface FileRoutesById {
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/_authenticated/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
+  '/_authenticated/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/_authenticated/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
@@ -574,6 +584,7 @@ export interface FileRouteTypes {
     | '/op/coupons/'
     | '/op/customers/'
     | '/op/help-center/'
+    | '/op/import-products/'
     | '/op/inventory/'
     | '/op/media/'
     | '/op/orders/'
@@ -629,6 +640,7 @@ export interface FileRouteTypes {
     | '/op/coupons'
     | '/op/customers'
     | '/op/help-center'
+    | '/op/import-products'
     | '/op/inventory'
     | '/op/media'
     | '/op/orders'
@@ -685,6 +697,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
     | '/_authenticated/op/help-center/'
+    | '/_authenticated/op/import-products/'
     | '/_authenticated/op/inventory/'
     | '/_authenticated/op/media/'
     | '/_authenticated/op/orders/'
@@ -911,6 +924,13 @@ declare module '@tanstack/react-router' {
       path: '/op/inventory'
       fullPath: '/op/inventory/'
       preLoaderRoute: typeof AuthenticatedOpInventoryIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/import-products/': {
+      id: '/_authenticated/op/import-products/'
+      path: '/op/import-products'
+      fullPath: '/op/import-products/'
+      preLoaderRoute: typeof AuthenticatedOpImportProductsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/help-center/': {
@@ -1194,6 +1214,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
   AuthenticatedOpHelpCenterIndexRoute: typeof AuthenticatedOpHelpCenterIndexRoute
+  AuthenticatedOpImportProductsIndexRoute: typeof AuthenticatedOpImportProductsIndexRoute
   AuthenticatedOpInventoryIndexRoute: typeof AuthenticatedOpInventoryIndexRoute
   AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
@@ -1232,6 +1253,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
   AuthenticatedOpHelpCenterIndexRoute: AuthenticatedOpHelpCenterIndexRoute,
+  AuthenticatedOpImportProductsIndexRoute:
+    AuthenticatedOpImportProductsIndexRoute,
   AuthenticatedOpInventoryIndexRoute: AuthenticatedOpInventoryIndexRoute,
   AuthenticatedOpMediaIndexRoute: AuthenticatedOpMediaIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
