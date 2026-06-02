@@ -1,3 +1,24 @@
+export interface VariantAttribute {
+  id: string;
+  value: string;
+  attribute: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface Variant {
+  id: string;
+  sku: string;
+  price: number;
+  stock: number;
+  image?: string;
+  isActive: boolean;
+  attributeValues: {
+    attributeValue: VariantAttribute;
+  }[];
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -22,6 +43,7 @@ export interface Product {
   tags?: string[];
   isActive?: boolean;
   manageStock?: boolean;
+  variants?: Variant[];
 }
 
 export interface Category {
@@ -122,4 +144,6 @@ export interface CartItem {
   isCombo?: boolean;
   comboId?: string;
   comboItems?: ComboItemDetails[];
+  variantId?: string;
+  variantLabel?: string;
 }

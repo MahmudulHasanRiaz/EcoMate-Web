@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
-import type { Product } from "@/lib/types";
+import type { Product, Variant } from "@/lib/types";
 import { trackEvent } from "@/lib/tracking";
+import { VariantSelector } from "./VariantSelector";
 
 function WhatsAppIcon() {
   return (
@@ -17,27 +18,57 @@ function WhatsAppIcon() {
   );
 }
 
+function cartItemKey(productId: string, variantId?: string) {
+  return variantId ? `${productId}::${variantId}` : productId;
+}
+
 export default function ProductDetailClient({ product }: { product: Product }) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<{ [key: number]: boolean }>({});
+  const [selectedVariant, setSelectedVariant] = useState<Variant | null>(null);
+
+  const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
+
+  const activeVariants = product.variants?.filter((v) => v.isActive && v.stock > 0) || [];
+
+  useEffect(() => {
+    if (isVariable && !selectedVariant && activeVariants.length > 0) {
+      setSelectedVariant(activeVariants[0]);
+    }
+  }, [isVariable, selectedVariant, activeVariants]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
     trackEvent('ViewContent', {
       content_ids: [product.id],
-      value: product.price,
+      value: selectedVariant?.price ?? product.price,
       currency: config.currency.code,
       content_name: product.name,
       content_type: 'product',
     });
   }, []);
 
-  const itemGallery = [product.image, product.image];
+  const variantLabel = selectedVariant
+    ? selectedVariant.attributeValues.map((av) => av.attributeValue.value).join(' / ')
+    : undefined;
 
-  const cartItem = items.find((item) => item.id === product.id);
+  const displayPrice = selectedVariant?.price ?? product.price;
+  const displayOriginalPrice = product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined;
+  const displayImage = selectedVariant?.image || product.image;
+  const displayStock = selectedVariant?.stock ?? product.stock;
+
+  const itemGallery = isVariable
+    ? [displayImage, ...(product.images?.slice(1) || [])]
+    : [product.image, ...(product.images?.slice(1) || [])];
+
+  const itemKey = cartItemKey(product.id, selectedVariant?.id);
+  const cartItem = items.find((item) => {
+    if (selectedVariant) return item.variantId === selectedVariant.id && item.id === product.id;
+    return item.id === product.id;
+  });
   const inCart = !!cartItem;
   const quantity = cartItem?.quantity || 1;
 
@@ -89,24 +120,32 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-3">{product.name}</h1>
 
           <div className="flex items-center gap-3 mb-6">
-            <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{product.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-            {product.originalPrice && product.originalPrice > product.price && (
+            <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{displayPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            {displayOriginalPrice && displayOriginalPrice > displayPrice && (
               <>
-                <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{displayOriginalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                 <div className="bg-[#21bc5c] text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
-                  Save {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
+                  Save {Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)}%
                 </div>
               </>
             )}
           </div>
 
+          {isVariable && product.variants && (
+            <VariantSelector
+              variants={product.variants}
+              selectedVariant={selectedVariant}
+              onSelect={setSelectedVariant}
+            />
+          )}
+
           <div className="flex items-center gap-6 mb-6">
             <span className="text-[16px] text-gray-800">Quantity:</span>
             <div className="flex items-center h-[38px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
-              <button onClick={() => inCart ? updateQuantity(product.id, quantity - 1) : null}
+              <button onClick={() => inCart ? updateQuantity(itemKey, quantity - 1) : null}
                 className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={18} /></button>
               <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : 1}</div>
-              <button onClick={() => inCart ? updateQuantity(product.id, quantity + 1) : null}
+              <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : null}
                 className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={18} /></button>
             </div>
           </div>
@@ -114,15 +153,25 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <div className="flex gap-3 mb-4 w-full">
             <button onClick={() => { 
               if (inCart) {
-                updateQuantity(product.id, 0);
+                updateQuantity(itemKey, 0);
               } else {
-                addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 });
+                addToCart({ 
+                  id: product.id, 
+                  name: product.name, 
+                  price: displayPrice, 
+                  originalPrice: displayOriginalPrice, 
+                  image: displayImage, 
+                  quantity: 1,
+                  variantId: selectedVariant?.id,
+                  variantLabel,
+                  stock: displayStock,
+                });
                 trackEvent('AddToCart', { 
                   content_ids: [product.id], 
-                  value: product.price, 
+                  value: displayPrice, 
                   currency: config.currency.code,
                   content_name: product.name,
-                  contents: [{ id: product.id, quantity: 1, item_price: product.price }],
+                  contents: [{ id: product.id, quantity: 1, item_price: displayPrice }],
                 });
               } 
             }}
@@ -134,7 +183,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
 
           <div className="flex gap-3 mb-8 w-full">
-            <a href={config.social.whatsapp ? `https://wa.me/${config.social.whatsapp.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}` : '#'}
+            <a href={config.social.whatsapp ? `https://wa.me/${config.social.whatsapp.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#'}
               target="_blank" rel="noreferrer"
               className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!config.social.whatsapp ? 'opacity-50 pointer-events-none' : ''}`}>
               <WhatsAppIcon />
@@ -148,6 +197,19 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
         </div>
       </div>
+
+      {product.shortDesc && (
+        <div className="px-4 max-w-screen-xl mx-auto mb-6">
+          <p className="text-[14px] text-gray-600 leading-relaxed">{product.shortDesc}</p>
+        </div>
+      )}
+
+      {product.description && (
+        <div className="px-4 max-w-screen-xl mx-auto mb-8">
+          <h3 className="text-[16px] font-semibold text-gray-800 mb-3 border-b border-gray-100 pb-2">Description</h3>
+          <div className="text-[14px] text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</div>
+        </div>
+      )}
     </div>
   );
 }

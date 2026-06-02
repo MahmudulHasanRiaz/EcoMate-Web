@@ -15,6 +15,8 @@ export interface CartItem {
   isCombo?: boolean;
   comboId?: string;
   comboItems?: { productId: string; productName: string; quantity: number; price?: number }[];
+  variantId?: string;
+  variantLabel?: string;
 }
 
 interface CartContextType {
@@ -59,26 +61,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (loaded) saveCart(items);
   }, [items, loaded]);
 
+  function itemKey(item: { id: string; variantId?: string }) {
+    return item.variantId ? `${item.id}::${item.variantId}` : item.id;
+  }
+
   const addToCart = (product: CartItem) => {
     setItems((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
+      const key = itemKey(product);
+      const existing = prev.find((item) => itemKey(item) === key);
       if (existing) {
         return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          itemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
       return [...prev, { ...product, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== productId));
+  const removeFromCart = (productKey: string) => {
+    setItems((prev) => prev.filter((item) => itemKey(item) !== productKey));
   };
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) { removeFromCart(productId); return; }
+  const updateQuantity = (productKey: string, quantity: number) => {
+    if (quantity <= 0) { removeFromCart(productKey); return; }
     setItems((prev) =>
-      prev.map((item) => item.id === productId ? { ...item, quantity } : item)
+      prev.map((item) => itemKey(item) === productKey ? { ...item, quantity } : item)
     );
   };
 

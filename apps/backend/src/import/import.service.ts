@@ -427,8 +427,15 @@ export class ImportService {
       summary.imagesImported++;
       return result.url;
     } catch (err) {
-      this.logger.warn(`Image failed for ${url}: ${(err as Error).message}`);
+      const msg = `Image failed: ${(err as Error).message}`;
+      this.logger.warn(`${msg} — ${url}`);
       summary.imagesFailed++;
+      errors.push({
+        rowNumber: 0,
+        sku: url,
+        errorType: 'IMAGE_DOWNLOAD_FAILED',
+        message: `${msg}: ${url}`,
+      });
       return null;
     }
   }

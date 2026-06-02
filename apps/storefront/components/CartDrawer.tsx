@@ -63,6 +63,9 @@ export default function CartDrawer() {
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
 
+  const itemKey = (item: { id: string; variantId?: string }) =>
+    item.variantId ? `${item.id}::${item.variantId}` : item.id;
+
   const handleImageError = (id: string) => {
     setImgErrors(prev => ({ ...prev, [id]: true }));
   };
@@ -138,14 +141,16 @@ export default function CartDrawer() {
             </div>
           ) : (
             <div className="space-y-4 px-4 z-10 mb-8">
-              {items.map((item) => (
-                <div key={item.id} className="bg-white rounded-xl p-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 relative flex gap-3">
+              {items.map((item) => {
+                const key = itemKey(item);
+                return (
+                <div key={key} className="bg-white rounded-xl p-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 relative flex gap-3">
                   <div className="w-[60px] h-[60px] md:w-[70px] md:h-[70px] bg-white rounded-lg border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">
                     <img 
-                      src={imgErrors[item.id] ? PLACEHOLDER_IMAGE : (item.image || PLACEHOLDER_IMAGE)} 
+                      src={imgErrors[key] ? PLACEHOLDER_IMAGE : (item.image || PLACEHOLDER_IMAGE)} 
                       alt={item.name} 
                       className="w-full h-full object-contain" 
-                      onError={() => handleImageError(item.id)}
+                      onError={() => handleImageError(key)}
                     />
                   </div>
                   
@@ -153,13 +158,16 @@ export default function CartDrawer() {
                     <div className="flex items-start justify-between gap-2 pr-6">
                        <h4 className="text-[14px] font-medium text-gray-800 line-clamp-1 leading-tight mb-2">
                          {item.name}
+                         {item.variantLabel && (
+                           <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
+                         )}
                        </h4>
                     </div>
                     
                     <div className="flex items-center gap-2 mt-auto">
                       <div className="flex items-center h-7 rounded-sm border border-gray-200 bg-white">
                         <button 
-                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          onClick={() => updateQuantity(key, item.quantity - 1)}
                           className="w-7 h-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors text-lg"
                         >
                           -
@@ -168,7 +176,7 @@ export default function CartDrawer() {
                           {item.quantity}
                         </div>
                         <button 
-                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          onClick={() => updateQuantity(key, item.quantity + 1)}
                           className="w-7 h-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors text-lg"
                         >
                           +
@@ -185,13 +193,14 @@ export default function CartDrawer() {
                   </div>
 
                   <button 
-                    onClick={() => removeFromCart(item.id)}
+                    onClick={() => removeFromCart(key)}
                     className="absolute top-2.5 right-2.5 text-gray-500 hover:text-gray-800 transition-colors p-1"
                   >
                     <X size={18} strokeWidth={1.5} />
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

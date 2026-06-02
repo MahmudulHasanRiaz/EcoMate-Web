@@ -419,7 +419,7 @@ export default function CheckoutPage() {
       if (item.isCombo) {
         return { comboId: item.comboId, quantity: item.quantity, price: item.price };
       }
-      return { productId: item.id, quantity: item.quantity, price: item.price };
+      return { productId: item.id, variantId: item.variantId, quantity: item.quantity, price: item.price };
     });
 
     const payload: any = {

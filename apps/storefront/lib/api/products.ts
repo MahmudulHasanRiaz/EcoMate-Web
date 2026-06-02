@@ -1,5 +1,5 @@
 import apiClient from "../api-client";
-import type { Product, Category } from "../types";
+import type { Product, Variant, Category } from "../types";
 
 export interface ProductsResponse {
   data: Product[];
@@ -11,6 +11,22 @@ function transformBackendProduct(raw: any): Product {
   const salePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
   const rawImages = Array.isArray(raw.images) ? raw.images : [];
   const firstImage = rawImages.length > 0 ? rawImages[0] : null;
+
+  const variants: Variant[] = (raw.variants || [])
+    .filter((v: any) =>
+      !v.attributeValues?.some((av: any) =>
+        av.attributeValue?.value?.includes(', ')
+      )
+    )
+    .map((v: any) => ({
+      id: v.id,
+      sku: v.sku,
+      price: Number(v.price) || 0,
+      stock: v.stock ?? 0,
+      image: v.image || undefined,
+      isActive: v.isActive !== false,
+      attributeValues: v.attributeValues || [],
+    }));
 
   return {
     id: raw.id,
@@ -35,6 +51,7 @@ function transformBackendProduct(raw: any): Product {
     tags: raw.tags || [],
     isActive: raw.isActive,
     manageStock: raw.manageStock,
+    variants: variants.length > 0 ? variants : undefined,
   };
 }
 
