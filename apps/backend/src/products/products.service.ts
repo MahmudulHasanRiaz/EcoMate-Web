@@ -212,6 +212,8 @@ export class ProductsService {
 
   async remove(id: string) {
     await this.prisma.product.findUniqueOrThrow({ where: { id } });
+    // Delete combo items referencing this product (FK constraint)
+    await this.prisma.comboItem.deleteMany({ where: { productId: id } });
     const variants = await this.prisma.productVariant.findMany({
       where: { productId: id },
       select: { id: true },

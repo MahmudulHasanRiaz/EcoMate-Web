@@ -31,6 +31,7 @@ export function Products() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => productsApi.delete(id),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); setDeleteTarget(null); toast.success('Product deleted'); },
+    onError: (err: any) => { toast.error(err?.response?.data?.message || err?.message || 'Failed to delete product'); },
   })
 
   return (
@@ -73,9 +74,10 @@ export function Products() {
         open={!!deleteTarget}
         onOpenChange={() => setDeleteTarget(null)}
         title='Delete Product'
-        desc={`Are you sure you want to delete "${deleteTarget?.name}"?`}
+        desc={`Are you sure you want to delete "${deleteTarget?.name}"? This will also remove it from any combos.`}
         confirmText='Delete'
         destructive
+        isLoading={deleteMut.isPending}
         handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
     </>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Loader2, Package, Image as ImageIcon } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
@@ -54,7 +54,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [variantPrice, setVariantPrice] = useState('')
   const [variantStock, setVariantStock] = useState('0')
 
-  const [uploading, setUploading] = useState(false)
+  const [uploading] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [variantPickerOpen, setVariantPickerOpen] = useState(false)
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
@@ -122,7 +122,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   })
 
   const updateVariantMut = useMutation({
-    mutationFn: ({ id, variantId, data }: { id: string; variantId: string; data: { image?: string | null } }) =>
+    mutationFn: ({ id, variantId, data }: { id: string; variantId: string; data: any }) =>
       productsApi.updateVariant(id, variantId, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Variant updated'); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
@@ -144,26 +144,25 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const handleGenerateVariants = () => {
     if (!currentRow || selectedAttrs.length === 0) return
-    genVariantMut.mutate({ id: currentRow.id, data: { attributeIds: selectedAttrs, defaultPrice: parseFloat(variantPrice) || undefined, defaultStock: parseInt(variantStock) || 0 } })
+    genVariantMut.mutate({
+      id: currentRow.id,
+      data: {
+        attributeIds: selectedAttrs,
+        defaultPrice: parseFloat(variantPrice) || (basePrice ? parseFloat(basePrice) : undefined),
+        defaultStock: parseInt(variantStock) || (manageStock ? parseInt(stock) || 0 : 10),
+      },
+    })
   }
 
   const removeImage = (url: string) => setImages(prev => prev.filter(i => i !== url))
 
+  const variantList = currentRow?.variants || []
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
-      <DialogContent className='max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0'>
-        <DialogHeader className='px-6 pt-6 pb-2 flex flex-row items-center justify-between'>
+      <DialogContent className='max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0'>
+        <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
-          <div className='flex items-center gap-2'>
-            <select
-              value={type}
-              onChange={e => setType(e.target.value)}
-              className='text-sm border rounded-md px-3 py-1.5 bg-background'
-            >
-              <option value='simple'>Simple Product</option>
-              <option value='variable'>Variable Product</option>
-            </select>
-          </div>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
@@ -175,41 +174,46 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
           </TabsList>
 
           <div className='flex-1 overflow-y-auto px-6 py-4'>
-            <TabsContent value='general' className='mt-0 space-y-4'>
+            <TabsContent value='general' className='mt-0 space-y-6'>
+              {/* Product Type */}
+              <div className='grid grid-cols-3 gap-4'>
+                <div className='space-y-1.5'>
+                  <Label>Product Type</Label>
+                  <select
+                    value={type}
+                    onChange={e => setType(e.target.value)}
+                    className='w-full rounded-md border px-3 py-2 text-sm bg-background'
+                  >
+                    <option value='simple'>Simple Product</option>
+                    <option value='variable'>Variable Product</option>
+                  </select>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Status</Label>
+                  <div className='flex items-center gap-3 h-10'>
+                    <Switch checked={isActive} onCheckedChange={setIsActive} />
+                    <Label className='font-normal'>{isActive ? 'Active' : 'Draft'}</Label>
+                    <span className='text-muted-foreground mx-2'>|</span>
+                    <Switch checked={isFeatured} onCheckedChange={setIsFeatured} />
+                    <Label className='font-normal'>{isFeatured ? 'Featured' : 'Regular'}</Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Basic Info */}
+              <div className='space-y-1.5'>
+                <Label className='text-base font-semibold'>Basic Information</Label>
+              </div>
               <div className='grid grid-cols-2 gap-4'>
                 <div className='space-y-1.5'>
-                  <Label>Name *</Label>
+                  <Label>Product Name *</Label>
                   <Input value={name} onChange={e => { setName(e.target.value); if (!isEdit) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' />
                 </div>
                 <div className='space-y-1.5'>
-                  <Label>Slug *</Label>
+                  <Label>Slug</Label>
                   <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder='product-slug' />
                 </div>
               </div>
-              <div className='space-y-1.5'>
-                <Label>Short Description</Label>
-                <Textarea value={shortDesc} onChange={e => setShortDesc(e.target.value)} rows={2} placeholder='Brief excerpt...' />
-              </div>
-              <div className='space-y-1.5'>
-                <Label>Description</Label>
-                <Textarea value={desc} onChange={e => setDesc(e.target.value)} rows={5} placeholder='Full product description...' />
-              </div>
-
-              <div className='grid grid-cols-3 gap-4'>
-                <div className='space-y-1.5'>
-                  <Label>Regular Price *</Label>
-                  <Input type='number' step='0.01' value={basePrice} onChange={e => setBasePrice(e.target.value)} placeholder='0.00' />
-                </div>
-                <div className='space-y-1.5'>
-                  <Label>Sale Price</Label>
-                  <Input type='number' step='0.01' value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder='0.00' />
-                </div>
-                <div className='space-y-1.5'>
-                  <Label>SKU</Label>
-                  <Input value={sku} onChange={e => setSku(e.target.value)} placeholder='PRD-001' />
-                </div>
-              </div>
-
               <div className='grid grid-cols-2 gap-4'>
                 <div className='space-y-1.5'>
                   <Label>Category</Label>
@@ -219,15 +223,48 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </select>
                 </div>
                 <div className='space-y-1.5'>
+                  <Label>SKU</Label>
+                  <Input value={sku} onChange={e => setSku(e.target.value)} placeholder='PRD-001' />
+                </div>
+              </div>
+              <div className='space-y-1.5'>
+                <Label>Short Description</Label>
+                <Textarea value={shortDesc} onChange={e => setShortDesc(e.target.value)} rows={2} placeholder='Brief excerpt...' />
+              </div>
+              <div className='space-y-1.5'>
+                <Label>Description</Label>
+                <Textarea value={desc} onChange={e => setDesc(e.target.value)} rows={8} placeholder='Full product description...' />
+              </div>
+
+              {/* Pricing */}
+              <div className='space-y-1.5'>
+                <Label className='text-base font-semibold'>Pricing</Label>
+              </div>
+              <div className='grid grid-cols-3 gap-4'>
+                <div className='space-y-1.5'>
+                  <Label>Regular Price *</Label>
+                  <Input type='number' step='0.01' value={basePrice} onChange={e => setBasePrice(e.target.value)} placeholder='0.00' />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Sale Price</Label>
+                  <Input type='number' step='0.01' value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder='0.00' />
+                </div>
+              </div>
+
+              {/* Inventory */}
+              <div className='space-y-1.5'>
+                <Label className='text-base font-semibold'>Inventory</Label>
+              </div>
+              <div className='grid grid-cols-2 gap-4'>
+                <div className='space-y-1.5'>
                   <div className='flex items-center gap-3 pt-1'>
                     <Switch checked={manageStock} onCheckedChange={setManageStock} />
                     <Label>Manage Stock</Label>
                   </div>
                 </div>
               </div>
-
               {manageStock ? (
-                <div className='grid grid-cols-2 gap-4'>
+                <div className='grid grid-cols-3 gap-4'>
                   <div className='space-y-1.5'>
                     <Label>Stock Quantity</Label>
                     <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
@@ -238,7 +275,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </div>
                 </div>
               ) : (
-                <div className='flex items-center gap-3 pt-1'>
+                <div className='flex items-center gap-3'>
                   <Label>Stock Status:</Label>
                   <div className='flex gap-1 border rounded-md p-0.5'>
                     <Button
@@ -260,17 +297,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </div>
                 </div>
               )}
-
-              <div className='flex gap-6 pt-2'>
-                <div className='flex items-center gap-2'>
-                  <Switch checked={isActive} onCheckedChange={setIsActive} />
-                  <Label>Active</Label>
-                </div>
-                <div className='flex items-center gap-2'>
-                  <Switch checked={isFeatured} onCheckedChange={setIsFeatured} />
-                  <Label>Featured</Label>
-                </div>
-              </div>
             </TabsContent>
 
             <TabsContent value='images' className='mt-0 space-y-4'>
@@ -279,7 +305,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   <ImageIcon className='h-4 w-4 mr-1' /> Browse Library
                 </Button>
                 <span className='text-xs text-muted-foreground'>
-                  {images.length} image(s) — drag, paste, or fetch a URL from the picker
+                  {images.length} image(s) — first image is Featured
                 </span>
               </div>
               <div className='grid grid-cols-4 gap-3'>
@@ -309,79 +335,68 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             </TabsContent>
 
             <TabsContent value='variants' className='mt-0 space-y-4'>
-              <div className='p-4 border rounded-lg bg-muted/20'>
-                <h3 className='font-medium mb-3'>Select Attributes for Variants</h3>
-                <div className='flex flex-wrap gap-2 mb-4'>
-                  {(attrs || []).map((attr: any) => (
-                    <Badge
-                      key={attr.id}
-                      variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}
-                      className='cursor-pointer'
-                      onClick={() => setSelectedAttrs(prev => prev.includes(attr.id) ? prev.filter(a => a !== attr.id) : [...prev, attr.id])}
-                    >
-                      {attr.name}
-                    </Badge>
-                  ))}
-                </div>
-                <div className='grid grid-cols-2 gap-4 mb-3'>
-                  <div className='space-y-1.5'>
-                    <Label>Default Price</Label>
-                    <Input type='number' step='0.01' value={variantPrice} onChange={e => setVariantPrice(e.target.value)} placeholder={basePrice || '0.00'} />
-                  </div>
-                  <div className='space-y-1.5'>
-                    <Label>Default Stock</Label>
-                    <Input type='number' value={variantStock} onChange={e => setVariantStock(e.target.value)} placeholder='0' />
+              <div className='p-4 border rounded-lg bg-muted/20 space-y-4'>
+                <div>
+                  <h3 className='font-medium mb-3'>1. Select Attributes</h3>
+                  <p className='text-xs text-muted-foreground mb-3'>Choose attributes to generate variant combinations from.</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {(attrs || []).map((attr: any) => (
+                      <Badge
+                        key={attr.id}
+                        variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}
+                        className='cursor-pointer text-sm px-3 py-1.5'
+                        onClick={() => setSelectedAttrs(prev => prev.includes(attr.id) ? prev.filter(a => a !== attr.id) : [...prev, attr.id])}
+                      >
+                        {attr.name}
+                      </Badge>
+                    ))}
                   </div>
                 </div>
-                <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='sm'>
-                  {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-1' /> : <Plus className='h-4 w-4 mr-1' />}
-                  Generate Variants
-                </Button>
+
+                <div>
+                  <h3 className='font-medium mb-3'>2. Set Default Values</h3>
+                  <p className='text-xs text-muted-foreground mb-3'>Defaults are inherited from parent product. You can change individual variants later.</p>
+                  <div className='grid grid-cols-2 gap-4 max-w-md'>
+                    <div className='space-y-1.5'>
+                      <Label>Default Price</Label>
+                      <Input type='number' step='0.01' value={variantPrice} onChange={e => setVariantPrice(e.target.value)} placeholder={basePrice || '0.00'} />
+                    </div>
+                    <div className='space-y-1.5'>
+                      <Label>Default Stock</Label>
+                      <Input type='number' value={variantStock} onChange={e => setVariantStock(e.target.value)} placeholder={manageStock ? stock : '10'} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className='flex items-center gap-3'>
+                  <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
+                    {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                    Generate Variants
+                  </Button>
+                  <span className='text-xs text-muted-foreground'>
+                    {selectedAttrs.length > 0
+                      ? `Generates all combinations of selected attributes`
+                      : 'Select attributes first'}
+                  </span>
+                </div>
               </div>
 
-              {currentRow?.variants && currentRow.variants.length > 0 && (
-                <div>
-                  <h3 className='font-medium mb-2'>Existing Variants ({currentRow.variants.length})</h3>
-                  <div className='border rounded-md divide-y'>
-                    {currentRow.variants.map(v => (
-                      <div key={v.id} className='p-3 flex items-center justify-between gap-3 text-sm'>
-                        <div className='flex items-center gap-3 flex-1 min-w-0'>
-                          <div className='h-10 w-10 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center'>
-                            {v.image
-                              ? <SafeImage src={imgUrl(v.image)} alt='' className='h-full w-full object-cover' />
-                              : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
-                          </div>
-                          <div className='min-w-0'>
-                            <p className='font-medium truncate'>{v.sku}</p>
-                            <p className='text-muted-foreground text-xs truncate'>
-                              {v.attributeValues?.map(av => av.attributeValue.value).join(' / ')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className='flex items-center gap-2 shrink-0'>
-                          <span>${Number(v.price || 0).toFixed(2)}</span>
-                          <Badge variant='outline'>Stock: {v.stock}</Badge>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            size='sm'
-                            onClick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
-                          >
-                            {v.image ? 'Change' : 'Add'} image
-                          </Button>
-                          {v.image && (
-                            <Button
-                              type='button'
-                              variant='ghost'
-                              size='icon'
-                              className='h-7 w-7'
-                              onClick={() => currentRow && updateVariantMut.mutate({ id: currentRow.id, variantId: v.id, data: { image: null } })}
-                            >
-                              <X className='h-3.5 w-3.5 text-destructive' />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
+              {variantList.length > 0 && (
+                <div className='border rounded-lg overflow-hidden'>
+                  <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
+                    <h3 className='font-medium'>Variants ({variantList.length})</h3>
+                    <span className='text-xs text-muted-foreground'>Click values to edit inline</span>
+                  </div>
+                  <div className='divide-y'>
+                    {variantList.map(v => (
+                      <VariantRow
+                        key={v.id}
+                        variant={v}
+                        productId={currentRow!.id}
+                        onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
+                        onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                        currencySymbol='৳'
+                      />
                     ))}
                   </div>
                 </div>
@@ -392,7 +407,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                 onOpenChange={(v) => { setVariantPickerOpen(v); if (!v) setActiveVariantId(null) }}
                 selected={
                   activeVariantId
-                    ? [currentRow?.variants.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
+                    ? [variantList.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
                     : []
                 }
                 multiple={false}
@@ -417,7 +432,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
               </div>
               <div className='space-y-1.5'>
                 <Label>Meta Description</Label>
-                <Textarea value={seoDesc} onChange={e => setSeoDesc(e.target.value)} rows={2} placeholder='Meta description (max 160 chars)...' />
+                <Textarea value={seoDesc} onChange={e => setSeoDesc(e.target.value)} rows={3} placeholder='Meta description (max 160 chars)...' />
+                <span className='text-xs text-muted-foreground'>{seoDesc.length}/160</span>
               </div>
               <div className='space-y-1.5'>
                 <Label>Keywords</Label>
@@ -436,5 +452,97 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function VariantRow({
+  variant,
+  productId,
+  onUpdate,
+  onImagePick,
+  currencySymbol,
+}: {
+  variant: ProductResponse['variants'][number]
+  productId: string
+  onUpdate: (data: any) => void
+  onImagePick: () => void
+  currencySymbol: string
+}) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  const startEdit = (field: string, current: any) => {
+    setEditing(field)
+    setEditValue(String(current ?? ''))
+  }
+
+  const saveEdit = () => {
+    if (!editing) return
+    const field = editing as 'price' | 'stock' | 'sku'
+    const parsed = field === 'price' ? parseFloat(editValue) : field === 'stock' ? parseInt(editValue) : editValue
+    onUpdate({ [field]: parsed })
+    setEditing(null)
+  }
+
+  const cancelEdit = () => setEditing(null)
+
+  return (
+    <div className='p-3 flex items-center gap-3 text-sm hover:bg-muted/10 transition-colors'>
+      <div className='h-12 w-12 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center cursor-pointer' onClick={onImagePick}>
+        {variant.image
+          ? <SafeImage src={imgUrl(variant.image)} alt='' className='h-full w-full object-cover' />
+          : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
+      </div>
+      <div className='flex-1 min-w-0 grid grid-cols-4 gap-3 items-center'>
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Attribute</p>
+          <p className='truncate'>{variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>
+        </div>
+
+        {/* SKU */}
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>SKU</p>
+          {editing === 'sku' ? (
+            <div className='flex items-center gap-1'>
+              <Input value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+            </div>
+          ) : (
+            <button onClick={() => startEdit('sku', variant.sku)} className='flex items-center gap-1 group'>
+              <span className='text-xs'>{variant.sku}</span>
+              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
+            </button>
+          )}
+        </div>
+
+        {/* Price */}
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Price</p>
+          {editing === 'price' ? (
+            <div className='flex items-center gap-1'>
+              <span className='text-xs text-muted-foreground'>{currencySymbol}</span>
+              <Input type='number' step='0.01' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-24' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+            </div>
+          ) : (
+            <button onClick={() => startEdit('price', variant.price)} className='flex items-center gap-1 group'>
+              <span>{currencySymbol}{Number(variant.price || 0).toFixed(2)}</span>
+              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
+            </button>
+          )}
+        </div>
+
+        {/* Stock */}
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
+          {editing === 'stock' ? (
+            <Input type='number' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-20' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+          ) : (
+            <button onClick={() => startEdit('stock', variant.stock)} className='flex items-center gap-1 group'>
+              <Badge variant='outline' className='text-xs'>{variant.stock}</Badge>
+              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
