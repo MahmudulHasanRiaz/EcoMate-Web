@@ -1,11 +1,12 @@
 "use client";
 
 import React from 'react';
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Heart } from "lucide-react";
 import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import type { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { trackEvent } from "@/lib/tracking";
@@ -17,6 +18,7 @@ interface ProductCardProps {
 export default function ProductCard({ product }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
+  const { isWishlisted, toggle } = useWishlist();
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
 
@@ -80,6 +82,15 @@ export default function ProductCard({ product }: ProductCardProps) {
           whileHover={{ scale: 1.05 }} transition={{ duration: 0.4, ease: "easeOut" }}
           src={imageSrc} alt={product.name} className="w-full h-full object-contain"
           onError={() => setImageError(true)} />
+        <button
+          onClick={(e) => { e.stopPropagation(); toggle(product.id); }}
+          className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
+            isWishlisted(product.id)
+              ? 'bg-red-500 text-white shadow-md'
+              : 'bg-white/80 text-gray-400 hover:text-red-500 hover:bg-white'
+          }`}>
+          <Heart size={16} className={isWishlisted(product.id) ? 'fill-white' : ''} />
+        </button>
       </div>
 
       <div className="p-2 md:p-3 flex flex-col flex-1 bg-white">

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { WishlistProvider } from "@/context/WishlistContext";
 import { StorefrontConfigProvider } from "@/context/StorefrontConfigContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -64,6 +65,7 @@ export default async function RootLayout({
         ) : null}
         <AuthProvider>
           <CartProvider>
+            <WishlistProvider>
             <StorefrontConfigProvider initialConfig={initialConfig}>
             <TrackingScripts />
             <Header />
@@ -75,6 +77,7 @@ export default async function RootLayout({
             <FloatingWidgets />
             <FlyCartLayer />
             </StorefrontConfigProvider>
+            </WishlistProvider>
           </CartProvider>
         </AuthProvider>
       </body>

@@ -82,6 +82,7 @@ export async function getProducts(params?: {
   categoryId?: string;
   isActive?: boolean;
   isFeatured?: boolean;
+  ids?: string;
   sort?: string;
   order?: string;
 }): Promise<ProductsResponse> {

@@ -100,9 +100,6 @@ export default function CartDrawer() {
         <div className="flex-1 overflow-y-auto pb-24 bg-[#fafafa]">
           {/* Promo Banner */}
             <div className="m-4 mb-6 rounded-[12px] border border-brand-blue/10 bg-brand-blue/5 relative overflow-hidden shadow-sm">
-             <button className="absolute top-2 right-2 text-gray-400 p-1 hover:text-gray-600 transition-colors">
-               <X size={16} strokeWidth={2} />
-             </button>
              <div className="flex items-center gap-3 p-3">
                <div className="w-11 h-11 bg-brand-blue rounded-lg flex items-center justify-center flex-shrink-0">
                   <Gift size={24} className="text-white" strokeWidth={1.5} />

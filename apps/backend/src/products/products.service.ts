@@ -27,6 +27,7 @@ export class ProductsService {
     categoryId?: string;
     isActive?: boolean;
     isFeatured?: boolean;
+    ids?: string[];
     sort?: string;
     order?: string;
   }) {
@@ -44,6 +45,7 @@ export class ProductsService {
     if (query.type) where.type = query.type;
     if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
+    if (query.ids?.length) where.id = { in: query.ids };
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,

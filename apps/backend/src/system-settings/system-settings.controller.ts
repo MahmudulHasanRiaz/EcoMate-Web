@@ -79,6 +79,10 @@ export class SystemSettingsController {
         youtube: map['social_youtube'] || '',
         whatsapp: map['social_whatsapp'] || '',
       },
+      order: {
+        whatsapp: map['order_whatsapp'] || '',
+        callNumber: map['order_call_number'] || '',
+      },
       seo: {
         title: map['seo_title'] || '',
         description: map['seo_description'] || '',

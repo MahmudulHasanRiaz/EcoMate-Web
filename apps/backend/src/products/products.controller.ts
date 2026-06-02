@@ -31,6 +31,7 @@ export class ProductsController {
     @Query('categoryId') categoryId?: string,
     @Query('isActive') isActive?: string,
     @Query('isFeatured') isFeatured?: string,
+    @Query('ids') ids?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
   ) {
@@ -42,6 +43,7 @@ export class ProductsController {
       categoryId,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
+      ids: ids ? ids.split(',').filter(Boolean) : undefined,
       sort,
       order,
     });

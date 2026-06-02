@@ -4,6 +4,7 @@ import React from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
@@ -12,6 +13,7 @@ import { StoreBrand } from "./StoreBrand";
 
 export default function Header() {
   const { cartCount, setIsCartOpen } = useCart();
+  const { user } = useAuth();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = React.useState(false);
   const { config } = useStorefrontConfig();
@@ -72,12 +74,21 @@ export default function Header() {
               hideOnMobile 
               onClick={() => router.push('/orders')}
             />
-            <HeaderAction 
-              icon={<User size={22} />} 
-              label="Sign In" 
-              hideOnMobile 
-              onClick={() => router.push('/account')}
-            />
+            {user ? (
+              <HeaderAction 
+                icon={<div className="w-6 h-6 bg-brand-blue/20 text-brand-blue rounded-full flex items-center justify-center text-[11px] font-bold">{user.name[0].toUpperCase()}</div>} 
+                label={user.name.split(' ')[0]}
+                hideOnMobile
+                onClick={() => router.push('/account')}
+              />
+            ) : (
+              <HeaderAction 
+                icon={<User size={22} />} 
+                label="Sign In" 
+                hideOnMobile 
+                onClick={() => router.push('/account')}
+              />
+            )}
             <HeaderAction 
               icon={<Heart size={22} />} 
               label="Wishlist" 

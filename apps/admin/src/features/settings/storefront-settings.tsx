@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus, Palette, GripVertical } from 'lucide-react'
+import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus, Palette, GripVertical, Phone } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaPicker } from '@/components/media-picker'
@@ -65,6 +65,8 @@ export function StorefrontSettings() {
   const [instagram, setInstagram] = useState('')
   const [youtube, setYoutube] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
+  const [orderWhatsapp, setOrderWhatsapp] = useState('')
+  const [orderCallNumber, setOrderCallNumber] = useState('')
   const [seoTitle, setSeoTitle] = useState('')
   const [seoDescription, setSeoDescription] = useState('')
   const [seoKeywords, setSeoKeywords] = useState('')
@@ -111,6 +113,8 @@ export function StorefrontSettings() {
       setInstagram(settings.social_instagram || '')
       setYoutube(settings.social_youtube || '')
       setWhatsapp(settings.social_whatsapp || '')
+      setOrderWhatsapp(settings.order_whatsapp || '')
+      setOrderCallNumber(settings.order_call_number || '')
       setSeoTitle(settings.seo_title || '')
       setSeoDescription(settings.seo_description || '')
       setSeoKeywords(settings.seo_keywords || '')
@@ -161,6 +165,8 @@ export function StorefrontSettings() {
       { key: 'social_instagram', value: instagram },
       { key: 'social_youtube', value: youtube },
       { key: 'social_whatsapp', value: whatsapp },
+      { key: 'order_whatsapp', value: orderWhatsapp },
+      { key: 'order_call_number', value: orderCallNumber },
       { key: 'seo_title', value: seoTitle },
       { key: 'seo_description', value: seoDescription },
       { key: 'seo_keywords', value: seoKeywords },
@@ -218,6 +224,7 @@ export function StorefrontSettings() {
           <TabsTrigger value="faq" className='gap-2'><HelpCircle className='h-4 w-4' /> FAQ</TabsTrigger>
           <TabsTrigger value="hours" className='gap-2'><Clock className='h-4 w-4' /> Hours</TabsTrigger>
           <TabsTrigger value="brands" className='gap-2'><Palette className='h-4 w-4' /> Brands</TabsTrigger>
+          <TabsTrigger value="order" className='gap-2'><Phone className='h-4 w-4' /> Order</TabsTrigger>
           <TabsTrigger value="misc" className='gap-2'><Info className='h-4 w-4' /> Other</TabsTrigger>
         </TabsList>
 
@@ -676,6 +683,26 @@ export function StorefrontSettings() {
               <Button variant='outline' size='sm' onClick={() => setHoursDetails([...hoursDetails, { day: '', time: '' }])}>
                 + Add Schedule
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="order">
+          <Card>
+            <CardHeader><CardTitle>Order Contact Settings</CardTitle><CardDescription>Phone numbers and WhatsApp configuration for order-related customer contact. Leave blank to use default store contact info.</CardDescription></CardHeader>
+            <CardContent className='space-y-6'>
+              <div className='grid gap-6 md:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='order-whatsapp'>Order WhatsApp Number</Label>
+                  <Input id='order-whatsapp' value={orderWhatsapp} onChange={e => setOrderWhatsapp(e.target.value)} placeholder='+8801700000000' />
+                  <p className='text-xs text-muted-foreground'>Used for "Order on WhatsApp" button on product pages</p>
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='order-call-number'>Call for Order Number</Label>
+                  <Input id='order-call-number' value={orderCallNumber} onChange={e => setOrderCallNumber(e.target.value)} placeholder='+8801700000000' />
+                  <p className='text-xs text-muted-foreground'>Used for "Call for Order" button on product pages</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

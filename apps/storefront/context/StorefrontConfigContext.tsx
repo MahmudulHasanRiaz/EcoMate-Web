@@ -10,6 +10,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   delivery: { charge: 0, freeDeliveryMin: 0 },
   hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "" },
+  order: { whatsapp: "", callNumber: "" },
   seo: { title: "", description: "", keywords: "" },
   footer: { description: "", copyright: "" },
   about: { text: "" },

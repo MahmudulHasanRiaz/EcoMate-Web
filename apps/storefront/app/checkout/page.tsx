@@ -39,7 +39,12 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-start mb-2 pr-1">
-          <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug max-w-[240px]">{item.name}</h3>
+          <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug max-w-[240px]">
+            {item.name}
+            {item.variantLabel && (
+              <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
+            )}
+          </h3>
           <button onClick={() => removeFromCart(item.id)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
             <X size={18} />
           </button>

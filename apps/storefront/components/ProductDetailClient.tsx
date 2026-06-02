@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronLeft, Minus, Plus, ShoppingBag, Phone } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Minus, Plus, ShoppingBag, Phone, Heart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import type { Product, Variant } from "@/lib/types";
@@ -26,6 +27,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
+  const { isWishlisted, toggle } = useWishlist();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<{ [key: number]: boolean }>({});
   const [selectedVariant, setSelectedVariant] = useState<Variant | null>(null);
@@ -117,7 +119,17 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         </div>
 
         <div className="flex flex-col md:w-1/2 pt-2 md:pt-0">
-          <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-3">{product.name}</h1>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-3">{product.name}</h1>
+            <button onClick={() => toggle(product.id)}
+              className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                isWishlisted(product.id)
+                  ? 'bg-red-50 text-red-500'
+                  : 'bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500'
+              }`}>
+              <Heart size={20} className={isWishlisted(product.id) ? 'fill-red-500' : ''} />
+            </button>
+          </div>
 
           <div className="flex items-center gap-3 mb-6">
             <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{displayPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
@@ -179,21 +191,45 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               <ShoppingBag size={16} />
               {inCart ? 'REMOVE FROM CART' : 'ADD TO CART'}
             </button>
-            <button className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#0c2423] hover:bg-[#071716] text-white font-medium flex items-center justify-center transition-colors uppercase text-[13px] md:text-[14px]">BUY NOW</button>
+            <button onClick={() => {
+              addToCart({ 
+                id: product.id, 
+                name: product.name, 
+                price: displayPrice, 
+                originalPrice: displayOriginalPrice, 
+                image: displayImage, 
+                quantity: 1,
+                variantId: selectedVariant?.id,
+                variantLabel,
+                stock: displayStock,
+              });
+              router.push('/checkout');
+            }}
+              className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#0c2423] hover:bg-[#071716] text-white font-medium flex items-center justify-center transition-colors uppercase text-[13px] md:text-[14px]">BUY NOW</button>
           </div>
 
           <div className="flex gap-3 mb-8 w-full">
-            <a href={config.social.whatsapp ? `https://wa.me/${config.social.whatsapp.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#'}
-              target="_blank" rel="noreferrer"
-              className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!config.social.whatsapp ? 'opacity-50 pointer-events-none' : ''}`}>
-              <WhatsAppIcon />
-              <span className="truncate">Order On WhatsApp</span>
-            </a>
-            <a href={config.store.phone ? `tel:+${config.store.phone.replace(/[^0-9]/g, '')}` : '#'}
-              className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#2a3c87] hover:bg-[#212f6c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!config.store.phone ? 'opacity-50 pointer-events-none' : ''}`}>
-              <Phone size={16} />
-              <span className="truncate">Call For Order</span>
-            </a>
+            {(() => {
+              const waNumber = config.order?.whatsapp || config.social.whatsapp;
+              const callNumber = config.order?.callNumber || config.store.phone;
+              const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#';
+              const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
+              return (
+                <>
+                  <a href={waHref}
+                    target="_blank" rel="noreferrer"
+                    className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <WhatsAppIcon />
+                    <span className="truncate">Order On WhatsApp</span>
+                  </a>
+                  <a href={callHref}
+                    className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#2a3c87] hover:bg-[#212f6c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!callNumber ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <Phone size={16} />
+                    <span className="truncate">Call For Order</span>
+                  </a>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -207,7 +243,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       {product.description && (
         <div className="px-4 max-w-screen-xl mx-auto mb-8">
           <h3 className="text-[16px] font-semibold text-gray-800 mb-3 border-b border-gray-100 pb-2">Description</h3>
-          <div className="text-[14px] text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</div>
+          <div className="text-[14px] text-gray-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: product.description }} />
         </div>
       )}
     </div>

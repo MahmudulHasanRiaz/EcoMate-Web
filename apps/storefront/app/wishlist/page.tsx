@@ -3,25 +3,40 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ShoppingCart, Trash2, ArrowRight } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
-import { getFeaturedProducts } from '@/lib/api/products';
+import { useWishlist } from '@/context/WishlistContext';
+import { getProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 export default function WishlistPage() {
   const { addToCart } = useCart();
+  const { ids, remove } = useWishlist();
+  const { config } = useStorefrontConfig();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getFeaturedProducts().then(setProducts).catch(() => {});
-  }, []);
+    if (ids.length === 0) {
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
+    getProducts({ ids: ids.join(','), perPage: 50 })
+      .then(res => setProducts(res.data || []))
+      .catch(() => setProducts([]))
+      .finally(() => setLoading(false));
+  }, [ids]);
 
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
     addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 });
   };
+
+  const s = config.currency.symbol;
 
   return (
     <div className="bg-[#fcfcfc] min-h-screen pb-20">
@@ -30,9 +45,9 @@ export default function WishlistPage() {
           <div>
             <div className="flex items-center gap-3 mb-2 underline decoration-brand-blue decoration-4 underline-offset-8">
               <Heart size={32} className="text-brand-blue fill-brand-blue/10" />
-              <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase">Featured Items</h1>
+              <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase">My Wishlist</h1>
             </div>
-            <p className="text-gray-500 font-medium text-sm md:text-base mt-6">Curated picks just for you. Prices and availability are subject to change.</p>
+            <p className="text-gray-500 font-medium text-sm md:text-base mt-6">{ids.length} items saved. Prices and availability are subject to change.</p>
           </div>
           <button onClick={() => router.push('/')} className="hidden md:flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-brand-blue transition-colors">
             Back to Shopping <ArrowRight size={14} />
@@ -41,7 +56,9 @@ export default function WishlistPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4">
-        {products.length > 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-gray-400 font-medium">Loading...</div>
+        ) : products.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {products.map((product) => (
               <div key={product.id} className="group bg-white rounded-[32px] overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500 border border-gray-100 flex flex-col relative"
@@ -56,13 +73,13 @@ export default function WishlistPage() {
                   )}
                   <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                   <button className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md text-red-500 rounded-full shadow-lg flex items-center justify-center translate-x-12 group-hover:translate-x-0 transition-transform duration-500 hover:bg-red-500 hover:text-white"
-                    onClick={(e) => e.stopPropagation()}><Trash2 size={18} /></button>
+                    onClick={(e) => { e.stopPropagation(); remove(product.id); }}><Trash2 size={18} /></button>
                 </div>
                 <div className="p-6 flex flex-col flex-1">
                   <h3 className="font-bold text-gray-900 leading-tight text-lg mb-4 line-clamp-2 min-h-[3rem] group-hover:text-brand-blue transition-colors">{product.name}</h3>
                   <div className="flex items-center gap-3 mb-6 mt-auto">
-                    <span className="text-brand-blue font-black text-2xl">৳{product.price}</span>
-                    {product.originalPrice && <span className="text-gray-300 text-sm line-through font-medium">৳{product.originalPrice}</span>}
+                    <span className="text-brand-blue font-black text-2xl">{s}{product.price}</span>
+                    {product.originalPrice && <span className="text-gray-300 text-sm line-through font-medium">{s}{product.originalPrice}</span>}
                   </div>
                   <button onClick={(e) => handleAddToCart(e, product)}
                     className="w-full py-4 bg-gray-900 text-white rounded-2xl text-sm font-bold hover:bg-brand-blue transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-gray-200">
@@ -78,7 +95,7 @@ export default function WishlistPage() {
             <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-8">
               <Heart size={48} className="text-gray-200" />
             </div>
-            <h3 className="text-3xl font-black text-gray-900 mb-4 tracking-tight uppercase">No items yet</h3>
+            <h3 className="text-3xl font-black text-gray-900 mb-4 tracking-tight uppercase">Your wishlist is empty</h3>
             <p className="text-gray-500 mb-10 leading-relaxed font-medium">Curate your perfect tech setup. Add items you love to find them later.</p>
             <button onClick={() => router.push('/')} className="bg-brand-blue hover:bg-black text-white px-12 py-4 rounded-full font-bold transition-all shadow-xl shadow-brand-blue/20 uppercase text-xs tracking-widest">Start Curating</button>
           </div>

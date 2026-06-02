@@ -35,6 +35,10 @@ export interface StorefrontConfig {
     youtube: string;
     whatsapp: string;
   };
+  order: {
+    whatsapp: string;
+    callNumber: string;
+  };
   seo: {
     title: string;
     description: string;
