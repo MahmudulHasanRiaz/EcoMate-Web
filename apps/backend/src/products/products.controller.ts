@@ -53,6 +53,12 @@ export class ProductsController {
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
+  @Post('bulk/delete') bulkRemove(@Body() body: { ids: string[] }) {
+    return this.svc.bulkRemove(body.ids);
+  }
+  @Post('bulk/update') bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
+    return this.svc.bulkUpdate(body.ids, body.data);
+  }
   @Post() create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);
   }

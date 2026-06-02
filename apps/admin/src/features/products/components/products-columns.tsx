@@ -2,6 +2,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Pencil, Trash2, Package } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { type ProductResponse } from '../api'
@@ -13,6 +14,26 @@ export function productsColumns(
   onDelete: (row: ProductResponse) => void,
 ): ColumnDef<ProductResponse>[] {
   return [
+    {
+      id: 'select',
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected()}
+          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
+          aria-label='Select all'
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(v) => row.toggleSelected(!!v)}
+          aria-label='Select row'
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+      size: 40,
+    },
     {
       id: 'image',
       header: '',

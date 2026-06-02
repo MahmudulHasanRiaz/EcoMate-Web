@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
-import { Plus, Upload } from 'lucide-react'
+import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -25,6 +25,8 @@ export function Products() {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add')
   const [editRow, setEditRow] = useState<ProductResponse | undefined>()
   const [deleteTarget, setDeleteTarget] = useState<ProductResponse | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null)
 
   const { data, isLoading } = useProductsQuery({ page: pagination.pageIndex + 1, perPage: pagination.pageSize })
 
@@ -33,6 +35,36 @@ export function Products() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); setDeleteTarget(null); toast.success('Product deleted'); },
     onError: (err: any) => { toast.error(err?.response?.data?.message || err?.message || 'Failed to delete product'); },
   })
+
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: string[]) => productsApi.bulkDelete(ids),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setBulkAction(null); setSelectedIds([]);
+      toast.success(`${res.success} product(s) deleted${res.failed ? `, ${res.failed} failed` : ''}`);
+      if (res.errors?.length) console.error('Bulk delete errors:', res.errors);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Bulk delete failed'),
+  })
+
+  const bulkUpdateMut = useMutation({
+    mutationFn: ({ ids, data }: { ids: string[]; data: any }) => productsApi.bulkUpdate(ids, data),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setBulkAction(null); setSelectedIds([]);
+      toast.success(`${res.success} product(s) updated${res.failed ? `, ${res.failed} failed` : ''}`);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Bulk update failed'),
+  })
+
+  const handleBulkAction = () => {
+    if (!bulkAction || selectedIds.length === 0) return
+    if (bulkAction === 'delete') bulkDeleteMut.mutate(selectedIds)
+    else if (bulkAction === 'activate') bulkUpdateMut.mutate({ ids: selectedIds, data: { isActive: true } })
+    else if (bulkAction === 'deactivate') bulkUpdateMut.mutate({ ids: selectedIds, data: { isActive: false } })
+  }
+
+  const isBulkPending = bulkDeleteMut.isPending || bulkUpdateMut.isPending
 
   return (
     <>
@@ -57,6 +89,44 @@ export function Products() {
             </Button>
           </div>
         </div>
+
+        {/* Bulk Action Bar */}
+        {selectedIds.length > 0 && (
+          <div className='flex items-center gap-3 px-4 py-2.5 bg-muted/50 border rounded-md'>
+            <span className='text-sm font-medium'>{selectedIds.length} selected</span>
+            <div className='flex items-center gap-2 ml-auto'>
+              <Button
+                variant='outline' size='sm'
+                onClick={() => setBulkAction('activate')}
+                disabled={isBulkPending}
+              >
+                <CheckCircle className='h-4 w-4 mr-1.5 text-green-600' />
+                Activate
+              </Button>
+              <Button
+                variant='outline' size='sm'
+                onClick={() => setBulkAction('deactivate')}
+                disabled={isBulkPending}
+              >
+                <XCircle className='h-4 w-4 mr-1.5 text-amber-600' />
+                Deactivate
+              </Button>
+              <Button
+                variant='outline' size='sm'
+                className='text-destructive hover:text-destructive'
+                onClick={() => setBulkAction('delete')}
+                disabled={isBulkPending}
+              >
+                <Trash2 className='h-4 w-4 mr-1.5' />
+                Delete
+              </Button>
+              <Button variant='ghost' size='sm' onClick={() => setSelectedIds([])} disabled={isBulkPending}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ProductsTable
           data={data?.data || []}
           pageCount={data?.meta?.totalPages || 0}
@@ -65,6 +135,8 @@ export function Products() {
           isLoading={isLoading}
           onEdit={(row) => { setEditRow(row); setFormMode('edit'); setFormOpen(true); }}
           onDelete={(row) => setDeleteTarget(row)}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       </Main>
 
@@ -79,6 +151,21 @@ export function Products() {
         destructive
         isLoading={deleteMut.isPending}
         handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={!!bulkAction}
+        onOpenChange={() => setBulkAction(null)}
+        title={
+          bulkAction === 'delete' ? 'Delete Selected Products' :
+          bulkAction === 'activate' ? 'Activate Selected Products' :
+          'Deactivate Selected Products'
+        }
+        desc={`Are you sure you want to ${bulkAction === 'delete' ? 'delete' : bulkAction === 'activate' ? 'activate' : 'deactivate'} ${selectedIds.length} product(s)?`}
+        confirmText={bulkAction === 'delete' ? 'Delete' : bulkAction === 'activate' ? 'Activate' : 'Deactivate'}
+        destructive={bulkAction === 'delete'}
+        isLoading={isBulkPending}
+        handleConfirm={handleBulkAction}
       />
     </>
   )

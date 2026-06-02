@@ -26,6 +26,8 @@ export const productsApi = {
   create: (data: any) => apiClient.post<ProductResponse>('/products', data),
   update: (id: string, data: any) => apiClient.put<ProductResponse>(`/products/${id}`, data),
   delete: (id: string) => apiClient.delete(`/products/${id}`),
+  bulkDelete: (ids: string[]) => apiClient.post('/products/bulk/delete', { ids }),
+  bulkUpdate: (ids: string[], data: any) => apiClient.post('/products/bulk/update', { ids, data }),
   generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultStock?: number }) =>
     apiClient.post<ProductResponse>(`/products/${id}/variants/generate`, data),
   updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; stock?: number; image?: string | null }) =>

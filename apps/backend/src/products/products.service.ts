@@ -212,7 +212,6 @@ export class ProductsService {
 
   async remove(id: string) {
     await this.prisma.product.findUniqueOrThrow({ where: { id } });
-    // Delete combo items referencing this product (FK constraint)
     await this.prisma.comboItem.deleteMany({ where: { productId: id } });
     const variants = await this.prisma.productVariant.findMany({
       where: { productId: id },
@@ -224,6 +223,35 @@ export class ProductsService {
     await this.media.detachAll('product', id);
     await this.prisma.product.delete({ where: { id } });
     return { message: 'Product deleted' };
+  }
+
+  async bulkRemove(ids: string[]) {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+    for (const id of ids) {
+      try {
+        await this.remove(id);
+        results.success++;
+      } catch (e: any) {
+        results.failed++;
+        results.errors.push(`${id}: ${e.message}`);
+      }
+    }
+    return results;
+  }
+
+  async bulkUpdate(ids: string[], data: UpdateProductDto) {
+    const { variants, attributes, ...clean } = data as any;
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+    for (const id of ids) {
+      try {
+        await this.prisma.product.update({ where: { id }, data: clean });
+        results.success++;
+      } catch (e: any) {
+        results.failed++;
+        results.errors.push(`${id}: ${e.message}`);
+      }
+    }
+    return results;
   }
 
   async generateVariants(productId: string, dto: GenerateVariantsDto) {

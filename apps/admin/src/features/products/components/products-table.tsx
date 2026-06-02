@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { type SortingState, type VisibilityState, type PaginationState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
+import { type SortingState, type VisibilityState, type PaginationState, type RowSelectionState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DataTablePagination } from '@/components/data-table'
@@ -10,16 +10,29 @@ type Props = {
   data: ProductResponse[]; pageCount: number; pagination: PaginationState;
   onPaginationChange: (p: PaginationState) => void; isLoading?: boolean;
   onEdit: (row: ProductResponse) => void; onDelete: (row: ProductResponse) => void;
+  selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
 }
 
-export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete }: Props) {
+export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, selectedIds, onSelectionChange }: Props) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>(() => {
+    const sel: RowSelectionState = {};
+    selectedIds.forEach(id => { sel[id] = true });
+    return sel;
+  })
 
   const columns = productsColumns(onEdit, onDelete)
 
   const table = useReactTable({
-    data, columns, pageCount, state: { sorting, pagination, columnVisibility },
+    data, columns, pageCount, state: { sorting, pagination, columnVisibility, rowSelection },
+    enableRowSelection: true,
+    getRowId: (row) => row.id,
+    onRowSelectionChange: (updater) => {
+      const newState = typeof updater === 'function' ? updater(rowSelection) : updater;
+      setRowSelection(newState);
+      onSelectionChange(Object.keys(newState).filter(k => newState[k]));
+    },
     manualPagination: true, onPaginationChange: (updater) => {
       const newState = typeof updater === 'function' ? updater(pagination) : updater;
       onPaginationChange(newState);
@@ -47,7 +60,7 @@ export function ProductsTable({ data, pageCount, pagination, onPaginationChange,
               <TableRow><TableCell colSpan={10} className='h-24 text-center'>Loading...</TableCell></TableRow>
             ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map(row => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
                   {row.getVisibleCells().map(cell => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
