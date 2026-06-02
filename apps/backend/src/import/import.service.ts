@@ -499,7 +499,11 @@ export class ImportService {
 
   private parseImages(value?: string): string[] {
     if (!value?.trim()) return [];
-    return value.split('|').map((s) => s.trim()).filter(Boolean);
+    // WooCommerce exports use | or , as image separators
+    return value
+      .split(/[|,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
   private extractAttributes(data: WooCommerceCsvRow): Array<{

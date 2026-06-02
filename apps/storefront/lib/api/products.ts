@@ -7,10 +7,11 @@ export interface ProductsResponse {
 }
 
 function transformBackendProduct(raw: any): Product {
-  const basePrice = Number(raw.basePrice);
-  const salePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
+  const rawBasePrice = Number(raw.basePrice);
+  const rawSalePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
   const rawImages = Array.isArray(raw.images) ? raw.images : [];
   const firstImage = rawImages.length > 0 ? rawImages[0] : null;
+  const isVar = (raw.type || 'simple') === 'variable';
 
   const variants: Variant[] = (raw.variants || [])
     .filter((v: any) =>
@@ -28,20 +29,39 @@ function transformBackendProduct(raw: any): Product {
       attributeValues: v.attributeValues || [],
     }));
 
+  let displayPrice: number;
+  let displayOriginalPrice: number | undefined;
+  let displaySalePrice: number | undefined;
+  let displayBasePrice: number;
+
+  if (isVar && variants.length > 0) {
+    const prices = variants.filter((v) => v.price > 0).map((v) => v.price);
+    const minPrice = prices.length > 0 ? Math.min(...prices) : rawBasePrice;
+    displayPrice = minPrice;
+    displayBasePrice = minPrice;
+    displaySalePrice = undefined;
+    displayOriginalPrice = undefined;
+  } else {
+    displayPrice = rawSalePrice || rawBasePrice;
+    displayBasePrice = rawBasePrice;
+    displaySalePrice = rawSalePrice;
+    displayOriginalPrice = rawSalePrice && rawSalePrice < rawBasePrice ? rawBasePrice : undefined;
+  }
+
   return {
     id: raw.id,
     name: raw.name,
     slug: raw.slug,
-    price: salePrice || basePrice,
-    basePrice,
-    originalPrice: salePrice && salePrice < basePrice ? basePrice : undefined,
-    salePrice,
+    price: displayPrice,
+    basePrice: displayBasePrice,
+    originalPrice: displayOriginalPrice,
+    salePrice: displaySalePrice,
     image: firstImage,
     images: rawImages,
     category: raw.category?.name || "",
     categoryId: raw.categoryId || undefined,
-    badge: raw.isFeatured ? "Featured" : raw.salePrice ? "Sale" : undefined,
-    saveAmount: salePrice && salePrice < basePrice ? basePrice - salePrice : undefined,
+    badge: raw.isFeatured ? "Featured" : displaySalePrice ? "Sale" : undefined,
+    saveAmount: displayOriginalPrice ? displayOriginalPrice - displayPrice : undefined,
     isFeatured: raw.isFeatured,
     description: raw.description || "",
     shortDesc: raw.shortDesc || "",

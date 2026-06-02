@@ -20,11 +20,17 @@ export default function ProductCard({ product }: ProductCardProps) {
   const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
 
+  const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
+
   const cartItem = items.find((item) => item.id === product.id);
-  const inCart = !!cartItem;
+  const inCart = !!cartItem && !isVar;
   const quantity = cartItem?.quantity || 0;
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (isVar) {
+      router.push(linkUrl);
+      return;
+    }
     const img = document.getElementById(`img-${product.id}`);
     let x = 0, y = 0;
     if (img) {
@@ -84,6 +90,7 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         <div className="mt-auto space-y-3">
           <div className="flex items-center gap-1.5 flex-wrap">
+            {isVar && <span className="text-[11px] text-gray-500 font-medium">From</span>}
             <span className="text-[15px] md:text-[18px] font-black text-brand-blue">{config.currency.symbol}{product.price.toLocaleString()}</span>
             {product.originalPrice && (
               <span className="text-[12px] md:text-[14px] font-medium text-gray-300 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
@@ -102,7 +109,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             <button onClick={handleAddToCart}
               className="w-full h-[34px] md:h-[40px] bg-white text-brand-blue font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all group/btn">
               <ShoppingCart size={16} strokeWidth={2.5} className="group-hover/btn:scale-110 transition-transform" />
-              ADD TO CART
+              {isVar ? 'VIEW OPTIONS' : 'ADD TO CART'}
             </button>
           )}
         </div>
