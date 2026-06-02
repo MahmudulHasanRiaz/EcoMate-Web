@@ -383,147 +383,159 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             </TabsContent>
 
             <TabsContent value='variants' className='mt-0 space-y-6'>
-              <div className='bg-muted/20 rounded-lg p-5 space-y-5'>
-                <div>
-                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 1: Select Attributes & Values</h3>
-                  <p className='text-xs text-muted-foreground mb-4'>Choose attributes and pick specific values for variant generation.</p>
-                  <div className='space-y-3'>
-                    {(attrs || []).map((attr: any) => (
-                      <div key={attr.id} className='border rounded-lg overflow-hidden'>
-                        <button
-                          type='button'
-                          onClick={() => toggleAttr(attr.id)}
-                          className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors ${
-                            selectedAttrs.includes(attr.id) ? 'bg-primary/10 text-primary' : 'hover:bg-muted/30'
-                          }`}
-                        >
-                          <span>{attr.name}</span>
-                          <Badge variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}>
-                            {selectedAttrs.includes(attr.id) ? (selectedValues[attr.id]?.length || attr.values?.length || 0) + ' selected' : 'Click to select'}
-                          </Badge>
-                        </button>
-                        {selectedAttrs.includes(attr.id) && (
-                          <div className='px-4 pb-3 pt-2 space-y-2'>
-                            <div className='flex flex-wrap gap-1.5'>
-                              {(attr.values || []).map((v: any) => (
-                                <Badge
-                                  key={v.id}
-                                  variant={(selectedValues[attr.id] || []).includes(v.id) ? 'default' : 'outline'}
-                                  className='cursor-pointer text-xs'
-                                  onClick={() => toggleValue(attr.id, v.id)}
-                                >
-                                  {(selectedValues[attr.id] || []).includes(v.id) ? <Check className='h-3 w-3 mr-1' /> : null}
-                                  {v.value}
-                                </Badge>
-                              ))}
-                              {(attr.values || []).length === 0 && (
-                                <p className='text-xs text-muted-foreground italic'>No values yet. Add one below.</p>
-                              )}
-                            </div>
-                            <div className='flex items-center gap-2'>
-                              <Input
-                                value={newValueInput[attr.id] || ''}
-                                onChange={e => setNewValueInput(prev => ({ ...prev, [attr.id]: e.target.value }))}
-                                placeholder='Add new value...'
-                                className='h-7 text-xs py-0 px-2'
-                              />
-                              <Button
-                                variant='ghost'
-                                size='sm'
-                                className='h-7 text-xs'
-                                disabled={!newValueInput[attr.id]?.trim() || addAttrValueMut.isPending}
-                                onClick={() => {
-                                  const val = newValueInput[attr.id]?.trim()
-                                  if (val) addAttrValueMut.mutate({ attributeId: attr.id, value: val })
-                                }}
-                              >
-                                {addAttrValueMut.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : <Plus className='h-3 w-3' />}
-                                Add
-                              </Button>
-                            </div>
+              {!currentRow ? (
+                <div className='bg-muted/20 rounded-lg p-8 text-center space-y-3'>
+                  <Package className='h-10 w-10 text-muted-foreground mx-auto' />
+                  <div>
+                    <h3 className='font-medium'>Create the product first</h3>
+                    <p className='text-sm text-muted-foreground'>Fill in the General tab and save the product, then come back to configure its variants.</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className='bg-muted/20 rounded-lg p-5 space-y-5'>
+                    <div>
+                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 1: Select Attributes & Values</h3>
+                      <p className='text-xs text-muted-foreground mb-4'>Choose attributes and pick specific values for variant generation.</p>
+                      <div className='space-y-3'>
+                        {(attrs || []).map((attr: any) => (
+                          <div key={attr.id} className='border rounded-lg overflow-hidden'>
+                            <button
+                              type='button'
+                              onClick={() => toggleAttr(attr.id)}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors ${
+                                selectedAttrs.includes(attr.id) ? 'bg-primary/10 text-primary' : 'hover:bg-muted/30'
+                              }`}
+                            >
+                              <span>{attr.name}</span>
+                              <Badge variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}>
+                                {selectedAttrs.includes(attr.id) ? (selectedValues[attr.id]?.length || attr.values?.length || 0) + ' selected' : 'Click to select'}
+                              </Badge>
+                            </button>
+                            {selectedAttrs.includes(attr.id) && (
+                              <div className='px-4 pb-3 pt-2 space-y-2'>
+                                <div className='flex flex-wrap gap-1.5'>
+                                  {(attr.values || []).map((v: any) => (
+                                    <Badge
+                                      key={v.id}
+                                      variant={(selectedValues[attr.id] || []).includes(v.id) ? 'default' : 'outline'}
+                                      className='cursor-pointer text-xs'
+                                      onClick={() => toggleValue(attr.id, v.id)}
+                                    >
+                                      {(selectedValues[attr.id] || []).includes(v.id) ? <Check className='h-3 w-3 mr-1' /> : null}
+                                      {v.value}
+                                    </Badge>
+                                  ))}
+                                  {(attr.values || []).length === 0 && (
+                                    <p className='text-xs text-muted-foreground italic'>No values yet. Add one below.</p>
+                                  )}
+                                </div>
+                                <div className='flex items-center gap-2'>
+                                  <Input
+                                    value={newValueInput[attr.id] || ''}
+                                    onChange={e => setNewValueInput(prev => ({ ...prev, [attr.id]: e.target.value }))}
+                                    placeholder='Add new value...'
+                                    className='h-7 text-xs py-0 px-2'
+                                  />
+                                  <Button
+                                    variant='ghost'
+                                    size='sm'
+                                    className='h-7 text-xs'
+                                    disabled={!newValueInput[attr.id]?.trim() || addAttrValueMut.isPending}
+                                    onClick={() => {
+                                      const val = newValueInput[attr.id]?.trim()
+                                      if (val) addAttrValueMut.mutate({ attributeId: attr.id, value: val })
+                                    }}
+                                  >
+                                    {addAttrValueMut.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : <Plus className='h-3 w-3' />}
+                                    Add
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        ))}
+                        {(!attrs || attrs.length === 0) && (
+                          <p className='text-xs text-muted-foreground italic'>No attributes found. Create attributes first from the Attributes section.</p>
                         )}
                       </div>
-                    ))}
-                    {(!attrs || attrs.length === 0) && (
-                      <p className='text-xs text-muted-foreground italic'>No attributes found. Create attributes first from the Attributes section.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className='border-t pt-5'>
-                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 2: Set Default Values</h3>
-                  <p className='text-xs text-muted-foreground mb-4'>Leave blank to inherit from parent product. You can edit individual variants later.</p>
-                  <div className='grid grid-cols-3 gap-6 max-w-2xl'>
-                    <div className='space-y-1.5'>
-                      <Label>Default Price</Label>
-                      <Input type='number' step='0.01' value={variantPrice} onChange={e => setVariantPrice(e.target.value)} placeholder={basePrice || '0.00'} />
                     </div>
-                    <div className='space-y-1.5'>
-                      <Label>Default Stock</Label>
-                      <Input type='number' value={variantStock} onChange={e => setVariantStock(e.target.value)} placeholder={manageStock ? stock : '10'} />
+
+                    <div className='border-t pt-5'>
+                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 2: Set Default Values</h3>
+                      <p className='text-xs text-muted-foreground mb-4'>Leave blank to inherit from parent product. You can edit individual variants later.</p>
+                      <div className='grid grid-cols-3 gap-6 max-w-2xl'>
+                        <div className='space-y-1.5'>
+                          <Label>Default Price</Label>
+                          <Input type='number' step='0.01' value={variantPrice} onChange={e => setVariantPrice(e.target.value)} placeholder={basePrice || '0.00'} />
+                        </div>
+                        <div className='space-y-1.5'>
+                          <Label>Default Stock</Label>
+                          <Input type='number' value={variantStock} onChange={e => setVariantStock(e.target.value)} placeholder={manageStock ? stock : '10'} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className='border-t pt-5'>
+                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 3: Generate</h3>
+                      <div className='flex items-center gap-4 mt-3'>
+                        <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
+                          {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                          Generate Variants
+                        </Button>
+                        <span className='text-xs text-muted-foreground'>
+                          {selectedAttrs.length > 0
+                            ? `Generates all combinations of selected attributes`
+                            : 'Select attributes first'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className='border-t pt-5'>
-                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 3: Generate</h3>
-                  <div className='flex items-center gap-4 mt-3'>
-                    <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
-                      {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
-                      Generate Variants
-                    </Button>
-                    <span className='text-xs text-muted-foreground'>
-                      {selectedAttrs.length > 0
-                        ? `Generates all combinations of selected attributes`
-                        : 'Select attributes first'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                  {variantList.length > 0 && (
+                    <div className='border rounded-lg overflow-hidden'>
+                      <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
+                        <h3 className='font-medium'>Variants ({variantList.length})</h3>
+                        <span className='text-xs text-muted-foreground'>Click values to edit inline</span>
+                      </div>
+                      <div className='divide-y'>
+                        {variantList.map(v => (
+                          <VariantRow
+                            key={v.id}
+                            variant={v}
+                            productId={currentRow!.id}
+                            onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
+                            onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                            currencySymbol='৳'
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-              {variantList.length > 0 && (
-                <div className='border rounded-lg overflow-hidden'>
-                  <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
-                    <h3 className='font-medium'>Variants ({variantList.length})</h3>
-                    <span className='text-xs text-muted-foreground'>Click values to edit inline</span>
-                  </div>
-                  <div className='divide-y'>
-                    {variantList.map(v => (
-                      <VariantRow
-                        key={v.id}
-                        variant={v}
-                        productId={currentRow!.id}
-                        onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
-                        onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
-                        currencySymbol='৳'
-                      />
-                    ))}
-                  </div>
-                </div>
+                  <MediaPicker
+                    open={variantPickerOpen}
+                    onOpenChange={(v) => { setVariantPickerOpen(v); if (!v) setActiveVariantId(null) }}
+                    selected={
+                      activeVariantId
+                        ? [variantList.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
+                        : []
+                    }
+                    multiple={false}
+                    onSelect={(urls) => {
+                      if (activeVariantId && currentRow) {
+                        updateVariantMut.mutate({
+                          id: currentRow.id,
+                          variantId: activeVariantId,
+                          data: { image: urls[urls.length - 1] || null },
+                        })
+                      }
+                      setVariantPickerOpen(false)
+                      setActiveVariantId(null)
+                    }}
+                  />
+                </>
               )}
-
-              <MediaPicker
-                open={variantPickerOpen}
-                onOpenChange={(v) => { setVariantPickerOpen(v); if (!v) setActiveVariantId(null) }}
-                selected={
-                  activeVariantId
-                    ? [variantList.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
-                    : []
-                }
-                multiple={false}
-                onSelect={(urls) => {
-                  if (activeVariantId && currentRow) {
-                    updateVariantMut.mutate({
-                      id: currentRow.id,
-                      variantId: activeVariantId,
-                      data: { image: urls[urls.length - 1] || null },
-                    })
-                  }
-                  setVariantPickerOpen(false)
-                  setActiveVariantId(null)
-                }}
-              />
             </TabsContent>
 
             <TabsContent value='seo' className='mt-0 space-y-6'>
