@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
@@ -52,6 +52,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [seoKeywords, setSeoKeywords] = useState('')
 
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
+  const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
+  const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
   const [variantPrice, setVariantPrice] = useState('')
   const [variantStock, setVariantStock] = useState('0')
 
@@ -92,8 +94,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryId(''); setIsActive(true); setIsFeatured(false);
-      setManageStock(false); setImages([]); setTags(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-      setSelectedAttrs([]); setVariantPrice(''); setVariantStock('0');
+      setManageStock(false); setImages([]); setTags('');       setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setVariantPrice(''); setVariantStock('0');
     }
     setTab('general')
   }, [open, currentRow, isEdit])
@@ -102,7 +104,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryId(''); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-    setSelectedAttrs([]); setVariantPrice(''); setVariantStock('0');
+    setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setVariantPrice(''); setVariantStock('0');
   }
 
   const createMut = useMutation({
@@ -130,6 +132,17 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
+  const addAttrValueMut = useMutation({
+    mutationFn: ({ attributeId, value }: { attributeId: string; value: string }) =>
+      attributesApi.addValue(attributeId, { value }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['attributes'] })
+      toast.success('Value added')
+      setNewValueInput(prev => ({ ...prev, [vars.attributeId]: '' }))
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
   const handleSave = () => {
     const payload: any = {
       name, slug: slug || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
@@ -144,12 +157,36 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     else createMut.mutate(payload)
   }
 
+  const toggleAttr = (id: string) => {
+    setSelectedAttrs(prev => {
+      if (prev.includes(id)) {
+        setSelectedValues(v => { const { [id]: _, ...rest } = v; return rest })
+        return prev.filter(a => a !== id)
+      }
+      return [...prev, id]
+    })
+  }
+
+  const toggleValue = (attrId: string, valueId: string) => {
+    setSelectedValues(prev => {
+      const current = prev[attrId] || []
+      const updated = current.includes(valueId) ? current.filter(v => v !== valueId) : [...current, valueId]
+      if (updated.length === 0) {
+        const { [attrId]: _, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [attrId]: updated }
+    })
+  }
+
   const handleGenerateVariants = () => {
     if (!currentRow || selectedAttrs.length === 0) return
+    const allValueIds = Object.values(selectedValues).flat()
     genVariantMut.mutate({
       id: currentRow.id,
       data: {
         attributeIds: selectedAttrs,
+        attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
         defaultPrice: parseFloat(variantPrice) || (basePrice ? parseFloat(basePrice) : undefined),
         defaultStock: parseInt(variantStock) || (manageStock ? parseInt(stock) || 0 : 10),
       },
@@ -348,18 +385,65 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             <TabsContent value='variants' className='mt-0 space-y-6'>
               <div className='bg-muted/20 rounded-lg p-5 space-y-5'>
                 <div>
-                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 1: Select Attributes</h3>
-                  <p className='text-xs text-muted-foreground mb-4'>Choose attributes to generate variant combinations from.</p>
-                  <div className='flex flex-wrap gap-2'>
+                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 1: Select Attributes & Values</h3>
+                  <p className='text-xs text-muted-foreground mb-4'>Choose attributes and pick specific values for variant generation.</p>
+                  <div className='space-y-3'>
                     {(attrs || []).map((attr: any) => (
-                      <Badge
-                        key={attr.id}
-                        variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}
-                        className='cursor-pointer text-sm px-3 py-1.5'
-                        onClick={() => setSelectedAttrs(prev => prev.includes(attr.id) ? prev.filter(a => a !== attr.id) : [...prev, attr.id])}
-                      >
-                        {attr.name}
-                      </Badge>
+                      <div key={attr.id} className='border rounded-lg overflow-hidden'>
+                        <button
+                          type='button'
+                          onClick={() => toggleAttr(attr.id)}
+                          className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors ${
+                            selectedAttrs.includes(attr.id) ? 'bg-primary/10 text-primary' : 'hover:bg-muted/30'
+                          }`}
+                        >
+                          <span>{attr.name}</span>
+                          <Badge variant={selectedAttrs.includes(attr.id) ? 'default' : 'outline'}>
+                            {selectedAttrs.includes(attr.id) ? (selectedValues[attr.id]?.length || attr.values?.length || 0) + ' selected' : 'Click to select'}
+                          </Badge>
+                        </button>
+                        {selectedAttrs.includes(attr.id) && (
+                          <div className='px-4 pb-3 pt-2 space-y-2'>
+                            <div className='flex flex-wrap gap-1.5'>
+                              {(attr.values || []).map((v: any) => (
+                                <Badge
+                                  key={v.id}
+                                  variant={(selectedValues[attr.id] || []).includes(v.id) ? 'default' : 'outline'}
+                                  className='cursor-pointer text-xs'
+                                  onClick={() => toggleValue(attr.id, v.id)}
+                                >
+                                  {(selectedValues[attr.id] || []).includes(v.id) ? <Check className='h-3 w-3 mr-1' /> : null}
+                                  {v.value}
+                                </Badge>
+                              ))}
+                              {(attr.values || []).length === 0 && (
+                                <p className='text-xs text-muted-foreground italic'>No values yet. Add one below.</p>
+                              )}
+                            </div>
+                            <div className='flex items-center gap-2'>
+                              <Input
+                                value={newValueInput[attr.id] || ''}
+                                onChange={e => setNewValueInput(prev => ({ ...prev, [attr.id]: e.target.value }))}
+                                placeholder='Add new value...'
+                                className='h-7 text-xs py-0 px-2'
+                              />
+                              <Button
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 text-xs'
+                                disabled={!newValueInput[attr.id]?.trim() || addAttrValueMut.isPending}
+                                onClick={() => {
+                                  const val = newValueInput[attr.id]?.trim()
+                                  if (val) addAttrValueMut.mutate({ attributeId: attr.id, value: val })
+                                }}
+                              >
+                                {addAttrValueMut.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : <Plus className='h-3 w-3' />}
+                                Add
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))}
                     {(!attrs || attrs.length === 0) && (
                       <p className='text-xs text-muted-foreground italic'>No attributes found. Create attributes first from the Attributes section.</p>

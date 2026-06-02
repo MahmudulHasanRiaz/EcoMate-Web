@@ -74,6 +74,7 @@ export class UpdateProductDto {
 
 export class GenerateVariantsDto {
   @IsArray() @IsString({ each: true }) attributeIds: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) attributeValueIds?: string[];
   @IsOptional() @IsNumber() defaultPrice?: number;
   @IsOptional() @IsInt() defaultStock?: number;
 }

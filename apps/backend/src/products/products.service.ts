@@ -261,8 +261,12 @@ export class ProductsService {
     await this.prisma.productVariant.deleteMany({ where: { productId } });
 
     const attributeIds = dto.attributeIds;
+    const valueWhere: any = { attributeId: { in: attributeIds } };
+    if (dto.attributeValueIds?.length) {
+      valueWhere.id = { in: dto.attributeValueIds };
+    }
     const attributeValues = await this.prisma.attributeValue.findMany({
-      where: { attributeId: { in: attributeIds } },
+      where: valueWhere,
       include: { attribute: true },
     });
 
