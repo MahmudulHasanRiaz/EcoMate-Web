@@ -1,12 +1,73 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Gift, ShoppingBag, Minus, Plus, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Gift, ShoppingBag, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { getCombo } from '@/lib/api/combos';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
-import type { Combo } from '@/lib/types';
+import type { Combo, ComboItemDetails, Variant } from '@/lib/types';
+
+interface UniqueAttr {
+  name: string;
+  attrId: string;
+  values: { value: string; variantIds: string[] }[];
+}
+
+function getUniqueAttrs(variants: Variant[]): UniqueAttr[] {
+  const activeVariants = variants.filter((v) => v.isActive);
+  const attrMap = new Map<string, UniqueAttr>();
+  for (const v of activeVariants) {
+    for (const av of v.attributeValues) {
+      const attr = av.attributeValue.attribute;
+      const val = av.attributeValue.value;
+      if (!attrMap.has(attr.id)) {
+        attrMap.set(attr.id, { name: attr.name, attrId: attr.id, values: [] });
+      }
+      const entry = attrMap.get(attr.id)!;
+      const existing = entry.values.find((ev) => ev.value === val);
+      if (existing) {
+        existing.variantIds.push(v.id);
+      } else {
+        entry.values.push({ value: val, variantIds: [v.id] });
+      }
+    }
+  }
+  return Array.from(attrMap.values());
+}
+
+function findVariantByAttrs(variants: Variant[], attrSelections: Record<string, string>): Variant | null {
+  const active = variants.filter((v) => v.isActive);
+  if (Object.keys(attrSelections).length === 0) return null;
+  if (attrSelections['_auto']) {
+    return active.find((v) => v.id === attrSelections['_auto']) || null;
+  }
+  return active.find((v) =>
+    Object.entries(attrSelections).every(([attrId, value]) =>
+      v.attributeValues.some((av) => av.attributeValue.attribute.id === attrId && av.attributeValue.value === value)
+    )
+  ) || null;
+}
+
+function stableStringify(obj: Record<string, string>): string {
+  return JSON.stringify(Object.keys(obj).sort().reduce((acc, k) => {
+    acc[k] = obj[k];
+    return acc;
+  }, {} as Record<string, string>));
+}
+
+function getCartItemKey(comboId: string, selections: Record<string, string>) {
+  const base = `combo-${comboId}`;
+  const selKeys = Object.keys(selections);
+  if (selKeys.length > 0) {
+    return `${base}::sel::${stableStringify(selections)}`;
+  }
+  return base;
+}
+
+interface ItemSelections {
+  [productId: string]: Record<string, string>;
+}
 
 export default function ComboDetailPage() {
   const { config } = useStorefrontConfig();
@@ -15,12 +76,166 @@ export default function ComboDetailPage() {
   const { items, addToCart, updateQuantity, removeFromCart } = useCart();
   const [combo, setCombo] = useState<Combo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [itemSelections, setItemSelections] = useState<ItemSelections>({});
 
   useEffect(() => {
     if (params.id) {
-      getCombo(params.id as string).then(setCombo).catch(() => setCombo(null)).finally(() => setLoading(false));
+      getCombo(params.id as string).then((data) => {
+        setCombo(data);
+        const initial: ItemSelections = {};
+        for (const item of data.items) {
+          if (item.productType === 'variable' && !item.variantId && item.variants?.length) {
+            initial[item.productId] = {};
+          }
+        }
+        setItemSelections(initial);
+      }).catch(() => setCombo(null)).finally(() => setLoading(false));
     }
   }, [params.id]);
+
+  const flexibleItems = useMemo(() => {
+    if (!combo) return [];
+    return combo.items.filter((item) => item.productType === 'variable' && !item.variantId);
+  }, [combo]);
+
+  const flexibleItemsWithActiveVariants = useMemo(() => {
+    return flexibleItems.filter((item) => item.variants?.some((v) => v.isActive));
+  }, [flexibleItems]);
+
+  const effectiveSelections = useMemo(() => {
+    const sel: Record<string, string> = {};
+    for (const [productId, attrs] of Object.entries(itemSelections)) {
+      const item = combo?.items.find((i) => i.productId === productId);
+      if (!item?.variants) continue;
+      const variant = findVariantByAttrs(item.variants, attrs);
+      if (variant) sel[productId] = variant.id;
+    }
+    return sel;
+  }, [itemSelections, combo]);
+
+  const allFlexibleReady = flexibleItemsWithActiveVariants.length === 0 || Object.keys(effectiveSelections).length === flexibleItemsWithActiveVariants.length;
+
+  function handleAttrChange(productId: string, attrId: string, value: string) {
+    setItemSelections((prev) => ({
+      ...prev,
+      [productId]: { ...(prev[productId] || {}), [attrId]: value },
+    }));
+  }
+
+  function renderVariantSelector(item: ComboItemDetails) {
+    if (!item.variants?.length) return null;
+    const activeVariants = item.variants.filter((v) => v.isActive);
+    if (activeVariants.length === 0) {
+      return (
+        <div className="mt-2 text-xs text-red-500 flex items-center gap-1">
+          <AlertTriangle size={12} />No variants available for this product
+        </div>
+      );
+    }
+    const uniqueAttrs = getUniqueAttrs(item.variants);
+    const currentSelections = itemSelections[item.productId] || {};
+    const selectedVariant = findVariantByAttrs(item.variants, currentSelections);
+    const hasAttrs = uniqueAttrs.length > 0;
+
+    if (!hasAttrs && activeVariants.length === 1) {
+      return (
+        <div className="mt-2">
+          <button
+            onClick={() => handleAttrChange(item.productId, '_auto', activeVariants[0].id)}
+            className="text-xs text-brand-blue font-medium hover:underline"
+          >
+            Select ({activeVariants[0].sku || config.currency.symbol + activeVariants[0].price.toLocaleString()})
+          </button>
+          {selectedVariant && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+              <span className="text-green-600 font-medium">Selected:</span>
+              <span>{config.currency.symbol}{selectedVariant.price.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-2 space-y-2">
+        {uniqueAttrs.map((attr) => {
+          const attrsSoFar = { ...currentSelections };
+          delete attrsSoFar[attr.attrId];
+          const matchedVariantIds = new Set(
+            (Object.keys(attrsSoFar).length > 0
+              ? activeVariants.filter((v) =>
+                  Object.entries(attrsSoFar).every(([aid, aval]) =>
+                    v.attributeValues.some((avv) => avv.attributeValue.attribute.id === aid && avv.attributeValue.value === aval)
+                  )
+                )
+              : activeVariants
+            ).map((v) => v.id)
+          );
+          const availableValues = attr.values.filter((v) =>
+            v.variantIds.some((vid) => matchedVariantIds.has(vid))
+          );
+
+          return (
+            <div key={attr.attrId} className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 w-16 shrink-0">{attr.name}:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {availableValues.map((v) => {
+                  const isSelected = currentSelections[attr.attrId] === v.value;
+                  return (
+                    <button
+                      key={v.value}
+                      onClick={() => handleAttrChange(item.productId, attr.attrId, v.value)}
+                      className={`min-w-[32px] h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${
+                        isSelected
+                          ? 'bg-brand-blue text-white border-brand-blue'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-brand-blue hover:text-brand-blue'
+                      }`}
+                    >
+                      {v.value}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {selectedVariant && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+            <span className="text-green-600 font-medium">Selected:</span>
+            <span>{config.currency.symbol}{selectedVariant.price.toLocaleString()}</span>
+            {selectedVariant.stock <= 0 && (
+              <span className="text-red-500 flex items-center gap-1"><AlertTriangle size={12} />Out of stock</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const savings = combo?.originalPrice && combo.originalPrice > combo.price
+    ? Math.round(((combo.originalPrice - combo.price) / combo.originalPrice) * 100)
+    : 0;
+
+  const comboCartKey = combo ? getCartItemKey(combo.id, effectiveSelections) : '';
+  const cartItem = combo ? items.find((item) => getCartItemKey(combo.id, item.comboSelections || {}) === comboCartKey) : null;
+  const inCart = !!cartItem;
+  const quantity = cartItem?.quantity || 1;
+
+  function handleAddToCart() {
+    if (!combo) return;
+    addToCart({
+      id: comboCartKey,
+      name: combo.name,
+      price: combo.price,
+      originalPrice: combo.originalPrice,
+      image: combo.image || '',
+      quantity: 1,
+      isCombo: true,
+      comboId: combo.id,
+      comboItems: combo.items,
+      comboSelections: effectiveSelections,
+    });
+  }
 
   if (loading) {
     return (
@@ -44,30 +259,6 @@ export default function ComboDetailPage() {
         </div>
       </div>
     );
-  }
-
-  const savings = combo.originalPrice && combo.originalPrice > combo.price
-    ? Math.round(((combo.originalPrice - combo.price) / combo.originalPrice) * 100)
-    : 0;
-
-  const comboCartId = `combo-${combo.id}`;
-  const cartItem = items.find(item => item.id === comboCartId);
-  const inCart = !!cartItem;
-  const quantity = cartItem?.quantity || 1;
-
-  function handleAddToCart() {
-    if (!combo) return;
-    addToCart({
-      id: comboCartId,
-      name: combo.name,
-      price: combo.price,
-      originalPrice: combo.originalPrice,
-      image: combo.image || '',
-      quantity: 1,
-      isCombo: true,
-      comboId: combo.id,
-      comboItems: combo.items,
-    });
   }
 
   return (
@@ -110,18 +301,27 @@ export default function ComboDetailPage() {
             <div className="flex items-center gap-6 mb-6">
               <span className="text-gray-700">Quantity:</span>
               <div className="flex items-center h-[38px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
-                <button onClick={() => inCart ? updateQuantity(comboCartId, quantity - 1) : null}
+                <button onClick={() => inCart ? updateQuantity(comboCartKey, quantity - 1) : null}
                   className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={18} /></button>
                 <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : 1}</div>
-                <button onClick={() => inCart ? updateQuantity(comboCartId, quantity + 1) : null}
+                <button onClick={() => inCart ? updateQuantity(comboCartKey, quantity + 1) : null}
                   className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={18} /></button>
               </div>
             </div>
 
-            <button onClick={inCart ? () => removeFromCart(comboCartId) : handleAddToCart}
-              className="w-full h-12 rounded-lg bg-brand-blue hover:bg-brand-blue/90 text-white font-medium flex items-center justify-center gap-2 transition-colors text-sm">
+            <button
+              onClick={inCart ? () => removeFromCart(comboCartKey) : handleAddToCart}
+              disabled={!inCart && !allFlexibleReady}
+              className={`w-full h-12 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors text-sm ${
+                inCart
+                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : !allFlexibleReady
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-brand-blue hover:bg-brand-blue/90 text-white'
+              }`}
+            >
               <ShoppingBag size={18} />
-              {inCart ? 'REMOVE FROM CART' : 'ADD COMBO TO CART'}
+              {inCart ? 'REMOVE FROM CART' : !allFlexibleReady ? 'SELECT VARIANT(S)' : 'ADD COMBO TO CART'}
             </button>
           </div>
         </div>
@@ -146,7 +346,16 @@ export default function ComboDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {combo.items.map((item, i) => (
+                {combo.items.map((item, i) => {
+                  const isFlexible = item.productType === 'variable' && !item.variantId;
+                  const selectedVariant = isFlexible
+                    ? findVariantByAttrs(item.variants || [], itemSelections[item.productId] || {})
+                    : null;
+                  const displayPrice = isFlexible
+                    ? (selectedVariant ? selectedVariant.price : undefined)
+                    : item.price;
+
+                  return (
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-500">{i + 1}</td>
                     <td className="px-4 py-3">
@@ -159,15 +368,19 @@ export default function ComboDetailPage() {
                             <Gift size={18} className="text-gray-300" />
                           </div>
                         )}
-                        <span className="font-medium text-gray-800">{item.productName}</span>
+                        <div>
+                          <span className="font-medium text-gray-800">{item.productName}</span>
+                          {isFlexible && renderVariantSelector(item)}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center text-sm">{item.quantity}</td>
                     <td className="px-4 py-3 text-right text-sm">
-                      {item.price ? `৳${item.price.toLocaleString()}` : '—'}
+                      {displayPrice ? `${config.currency.symbol}${displayPrice.toLocaleString()}` : '—'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot className="bg-gray-50 font-medium">
                 <tr>
@@ -175,7 +388,12 @@ export default function ComboDetailPage() {
                   <td className="px-4 py-3 text-right">
                     {config.currency.symbol}{combo.originalPrice
                       ? combo.originalPrice.toLocaleString()
-                      : combo.items.reduce((s, i) => s + (i.price || 0) * i.quantity, 0).toLocaleString()}
+                      : combo.items.reduce((s, i) => {
+                          const isFlex = i.productType === 'variable' && !i.variantId;
+                          const sv = isFlex ? findVariantByAttrs(i.variants || [], itemSelections[i.productId] || {}) : null;
+                          const p = isFlex ? (sv ? sv.price : undefined) : i.price;
+                          return s + (p || 0) * i.quantity;
+                        }, 0).toLocaleString()}
                   </td>
                 </tr>
                 <tr>

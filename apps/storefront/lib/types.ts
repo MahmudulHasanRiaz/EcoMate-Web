@@ -61,10 +61,30 @@ export interface ComboItemDetails {
   productId: string;
   productName: string;
   productImage?: string;
+  productType?: string;
   variantId?: string;
   variantLabel?: string;
   quantity: number;
   price?: number;
+  variants?: Variant[];
+}
+
+export interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  originalPrice?: number;
+  image: string;
+  quantity: number;
+  category?: string;
+  slug?: string;
+  stock?: number;
+  isCombo?: boolean;
+  comboId?: string;
+  comboItems?: ComboItemDetails[];
+  comboSelections?: Record<string, string>;
+  variantId?: string;
+  variantLabel?: string;
 }
 
 export interface Combo {

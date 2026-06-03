@@ -422,7 +422,7 @@ export default function CheckoutPage() {
   const buildOrderPayload = () => {
     const orderItems = items.map((item) => {
       if (item.isCombo) {
-        return { comboId: item.comboId, quantity: item.quantity, price: item.price };
+        return { comboId: item.comboId, comboSelection: item.comboSelections, quantity: item.quantity, price: item.price };
       }
       return { productId: item.id, variantId: item.variantId, quantity: item.quantity, price: item.price };
     });

@@ -4,6 +4,7 @@ export interface CreateOrderItem {
   productId?: string;
   variantId?: string;
   comboId?: string;
+  comboSelection?: Record<string, string>;
   quantity: number;
   price: number;
 }

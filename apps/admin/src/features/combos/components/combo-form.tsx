@@ -23,8 +23,15 @@ type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: C
 
 interface ComboItemForm {
   productId: string; productName: string; productImage?: string;
+  productType?: 'simple' | 'variable';
   variantId?: string; variantLabel?: string;
+  flexibleMode?: boolean;
   quantity: number; price?: number;
+  attrSelections?: Record<string, string>;
+  variants?: Array<{
+    id: string; sku: string; price?: number | string | null;
+    attributeValues: Array<{ attributeValue: { id: string; value: string; attribute: { id: string; name: string } } }>;
+  }>;
 }
 
 export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
@@ -163,6 +170,9 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
       productId: product.id,
       productName: product.name,
       productImage: Array.isArray(product.images) ? product.images[0] : '',
+      productType: isVar ? 'variable' : 'simple',
+      variants: isVar ? (product.variants || []) : undefined,
+      flexibleMode: isVar,  // default to flexible for variable products
       quantity: 1,
       price: isFinite(price) ? price : 0,
     }])
@@ -179,6 +189,55 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   function updateItemPrice(index: number, price: number) {
     setItems(prev => prev.map((item, i) => i === index ? { ...item, price } : item))
+  }
+
+  function setItemFlexible(index: number, flexible: boolean) {
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, flexibleMode: flexible, variantId: flexible ? undefined : item.variantId, variantLabel: flexible ? undefined : item.variantLabel, attrSelections: flexible ? undefined : item.attrSelections } : item))
+  }
+
+  function setItemVariant(index: number, variantId: string, label: string) {
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, variantId, variantLabel: label, flexibleMode: false } : item))
+  }
+
+  function setItemAttrSelection(index: number, attrName: string, value: string) {
+    setItems(prev => prev.map((item, i) => {
+      if (i !== index) return item
+      const next = { ...(item.attrSelections || {}), [attrName]: value }
+      const attrs = getUniqueAttrs(item)
+      const variant = findVariantByAttrs(item, next)
+      const allSelected = Object.keys(next).length === attrs.length
+      return {
+        ...item,
+        attrSelections: next,
+        variantId: variant && allSelected ? variant.id : undefined,
+        variantLabel: variant && allSelected ? variant.label : undefined,
+        flexibleMode: false,
+      }
+    }))
+  }
+
+  function findVariantByAttrs(item: ComboItemForm, selections: Record<string, string>): { id: string; label: string } | null {
+    if (!item.variants) return null
+    for (const v of item.variants) {
+      const matches = v.attributeValues.every(av =>
+        selections[av.attributeValue.attribute.name] === av.attributeValue.value
+      )
+      if (matches) return { id: v.id, label: v.attributeValues.map(av => av.attributeValue.value).join(' / ') }
+    }
+    return null
+  }
+
+  function getUniqueAttrs(item: ComboItemForm): Array<{ name: string; values: string[] }> {
+    if (!item.variants) return []
+    const attrMap = new Map<string, Set<string>>()
+    for (const v of item.variants) {
+      for (const av of v.attributeValues) {
+        const name = av.attributeValue.attribute.name
+        if (!attrMap.has(name)) attrMap.set(name, new Set())
+        attrMap.get(name)!.add(av.attributeValue.value)
+      }
+    }
+    return Array.from(attrMap.entries()).map(([name, values]) => ({ name, values: Array.from(values) }))
   }
 
   function addTag() {
@@ -362,29 +421,88 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
               <div className='border rounded-md divide-y'>
                 {items.map((item, index) => {
                   const img = item.productImage
+                  const isVar = item.productType === 'variable'
+                  const attrs = isVar ? getUniqueAttrs(item) : []
+                  const selections = item.attrSelections || {}
+
                   return (
-                    <div key={index} className='flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors'>
-                      {img
-                        ? <SafeImage src={mediaUrl(img)} alt='' className='w-12 h-12 rounded border object-cover shrink-0' />
-                        : <div className='w-12 h-12 rounded border bg-muted flex items-center justify-center shrink-0'><Gift className='h-4 w-4 text-muted-foreground' /></div>}
-                      <div className='flex-1 min-w-0'>
-                        <p className='text-sm font-medium truncate'>{item.productName}</p>
-                        {item.variantLabel && <p className='text-xs text-muted-foreground'>{item.variantLabel}</p>}
-                      </div>
-                      <div className='flex items-center gap-2 shrink-0'>
-                        <div className='flex items-center gap-1 border rounded-md'>
-                          <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity - 1)} disabled={item.quantity <= 1}>−</Button>
-                          <span className='w-8 text-center text-sm tabular-nums'>{item.quantity}</span>
-                          <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity + 1)}>+</Button>
+                    <div key={index} className='p-3 space-y-2 hover:bg-muted/30 transition-colors'>
+                      <div className='flex items-center gap-3'>
+                        {img
+                          ? <SafeImage src={mediaUrl(img)} alt='' className='w-12 h-12 rounded border object-cover shrink-0' />
+                          : <div className='w-12 h-12 rounded border bg-muted flex items-center justify-center shrink-0'><Gift className='h-4 w-4 text-muted-foreground' /></div>}
+                        <div className='flex-1 min-w-0'>
+                          <p className='text-sm font-medium truncate'>{item.productName}</p>
+                          {item.variantLabel && <p className='text-xs text-muted-foreground'>{item.variantLabel}</p>}
                         </div>
-                        <div className='flex items-center gap-1'>
-                          <span className='text-xs text-muted-foreground'>৳</span>
-                          <Input type='number' className='w-20 h-8 text-xs' value={item.price ?? ''} onChange={e => updateItemPrice(index, parseFloat(e.target.value) || 0)} placeholder='0' />
+                        <div className='flex items-center gap-2 shrink-0'>
+                          <div className='flex items-center gap-1 border rounded-md'>
+                            <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity - 1)} disabled={item.quantity <= 1}>−</Button>
+                            <span className='w-8 text-center text-sm tabular-nums'>{item.quantity}</span>
+                            <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity + 1)}>+</Button>
+                          </div>
+                          <div className='flex items-center gap-1'>
+                            <span className='text-xs text-muted-foreground'>৳</span>
+                            <Input type='number' className='w-20 h-8 text-xs' value={item.price ?? ''} onChange={e => updateItemPrice(index, parseFloat(e.target.value) || 0)} placeholder='0' />
+                          </div>
+                          <Button type='button' variant='ghost' size='icon' className='h-8 w-8 text-muted-foreground hover:text-destructive' onClick={() => removeItem(index)}>
+                            <X className='h-4 w-4' />
+                          </Button>
                         </div>
-                        <Button type='button' variant='ghost' size='icon' className='h-8 w-8 text-muted-foreground hover:text-destructive' onClick={() => removeItem(index)}>
-                          <X className='h-4 w-4' />
-                        </Button>
                       </div>
+
+                      {isVar && (
+                        <div className='ml-[60px] space-y-2'>
+                          <div className='flex items-center gap-2'>
+                            <span className='text-xs font-medium text-muted-foreground'>Variant:</span>
+                            <div className='flex gap-1 border rounded-md p-0.5'>
+                              <Button
+                                type='button'
+                                variant={!item.flexibleMode ? 'default' : 'ghost'}
+                                size='sm'
+                                className='h-7 text-xs'
+                                onClick={() => setItemFlexible(index, false)}
+                              >
+                                Fixed Variant
+                              </Button>
+                              <Button
+                                type='button'
+                                variant={item.flexibleMode ? 'default' : 'ghost'}
+                                size='sm'
+                                className='h-7 text-xs'
+                                onClick={() => setItemFlexible(index, true)}
+                              >
+                                Flexible
+                              </Button>
+                            </div>
+                          </div>
+
+                          {item.flexibleMode ? (
+                            <p className='text-xs text-muted-foreground'>All available variants will be unlocked for the customer.</p>
+                          ) : (
+                            <div className='flex flex-wrap gap-2'>
+                              {attrs.map((attr, ai) => (
+                                <select
+                                  key={ai}
+                                  value={selections[attr.name] || ''}
+                                  onChange={e => setItemAttrSelection(index, attr.name, e.target.value)}
+                                  className='h-8 rounded-md border border-input bg-background px-2 text-xs'
+                                >
+                                  <option value=''>Select {attr.name}</option>
+                                  {attr.values.map(v => (
+                                    <option key={v} value={v}>{v}</option>
+                                  ))}
+                                </select>
+                              ))}
+                              {item.variantId && item.variantLabel && (
+                                <Badge variant='outline' className='text-xs gap-1'>
+                                  {item.variantLabel}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

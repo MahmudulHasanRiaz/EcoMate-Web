@@ -11,10 +11,31 @@ function transformBackendCombo(raw: any): Combo {
     productId: i.productId,
     productName: i.product?.name || "Unknown",
     productImage: Array.isArray(i.product?.images) ? i.product.images[0] : i.product?.images || "",
+    productType: i.product?.type,
     variantId: i.variantId || undefined,
     variantLabel: i.variant?.sku || "",
     quantity: i.quantity,
     price: i.price ? Number(i.price) : undefined,
+    variants: i.product?.variants
+      ? i.product.variants.map((v: any) => ({
+          id: v.id,
+          sku: v.sku,
+          price: Number(v.price),
+          stock: v.stock,
+          image: v.image || "",
+          isActive: v.isActive ?? true,
+          attributeValues: v.attributeValues?.map((av: any) => ({
+            attributeValue: {
+              id: av.attributeValue.id,
+              value: av.attributeValue.value,
+              attribute: {
+                id: av.attributeValue.attribute.id,
+                name: av.attributeValue.attribute.name,
+              },
+            },
+          })) || [],
+        }))
+      : undefined,
   }));
 
   const basePrice = Number(raw.basePrice);

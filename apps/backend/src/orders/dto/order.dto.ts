@@ -15,6 +15,7 @@ export class OrderItemDto {
   @IsOptional() @IsString() productId?: string;
   @IsOptional() @IsString() variantId?: string;
   @IsOptional() @IsString() comboId?: string;
+  @IsOptional() @IsObject() comboSelection?: Record<string, string>;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
 }

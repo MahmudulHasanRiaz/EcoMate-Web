@@ -15,6 +15,7 @@ export interface CartItem {
   isCombo?: boolean;
   comboId?: string;
   comboItems?: { productId: string; productName: string; quantity: number; price?: number }[];
+  comboSelections?: Record<string, string>;
   variantId?: string;
   variantLabel?: string;
 }
@@ -61,17 +62,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (loaded) saveCart(items);
   }, [items, loaded]);
 
-  function itemKey(item: { id: string; variantId?: string }) {
+  function stableStringify(obj: Record<string, string>): string {
+    return JSON.stringify(Object.keys(obj).sort().reduce((acc, k) => {
+      acc[k] = obj[k];
+      return acc;
+    }, {} as Record<string, string>));
+  }
+
+  function getItemKey(item: { id: string; variantId?: string; comboSelections?: Record<string, string> }) {
+    if (item.comboSelections && Object.keys(item.comboSelections).length > 0) {
+      return `${item.id}::sel::${stableStringify(item.comboSelections)}`;
+    }
     return item.variantId ? `${item.id}::${item.variantId}` : item.id;
   }
 
   const addToCart = (product: CartItem) => {
     setItems((prev) => {
-      const key = itemKey(product);
-      const existing = prev.find((item) => itemKey(item) === key);
+      const key = getItemKey(product);
+      const existing = prev.find((item) => getItemKey(item) === key);
       if (existing) {
         return prev.map((item) =>
-          itemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
+          getItemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
       return [...prev, { ...product, quantity: 1 }];
@@ -79,13 +90,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromCart = (productKey: string) => {
-    setItems((prev) => prev.filter((item) => itemKey(item) !== productKey));
+    setItems((prev) => prev.filter((item) => getItemKey(item) !== productKey));
   };
 
   const updateQuantity = (productKey: string, quantity: number) => {
     if (quantity <= 0) { removeFromCart(productKey); return; }
     setItems((prev) =>
-      prev.map((item) => itemKey(item) === productKey ? { ...item, quantity } : item)
+      prev.map((item) => getItemKey(item) === productKey ? { ...item, quantity } : item)
     );
   };
 

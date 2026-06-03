@@ -45,7 +45,7 @@ export class CombosService {
           category: { select: { id: true, name: true } },
           items: {
             include: {
-              product: { select: { id: true, name: true, slug: true, images: true, basePrice: true } },
+              product: { select: { id: true, name: true, slug: true, images: true, basePrice: true, type: true } },
               variant: { select: { id: true, sku: true, price: true } },
             },
           },
@@ -68,7 +68,24 @@ export class CombosService {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, slug: true, sku: true, basePrice: true, salePrice: true, stock: true, images: true },
+              select: {
+                id: true, name: true, slug: true, sku: true,
+                basePrice: true, salePrice: true, stock: true,
+                images: true, type: true,
+              },
+              include: {
+                variants: {
+                  include: {
+                    attributeValues: {
+                      include: {
+                        attributeValue: {
+                          include: { attribute: { select: { id: true, name: true } } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
             variant: {
               select: { id: true, sku: true, price: true, stock: true },

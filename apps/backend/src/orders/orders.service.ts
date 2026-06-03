@@ -299,6 +299,7 @@ export class OrdersService {
             productId: i.productId,
             variantId: i.variantId,
             comboId: i.comboId,
+            comboSelection: i.comboSelection || undefined,
             quantity: i.quantity,
             price: i.price,
           })),
@@ -762,26 +763,33 @@ export class OrdersService {
   }
 
   private async deductStock(
-    items: { productId?: string; variantId?: string; comboId?: string; quantity: number }[],
+    items: {
+      productId?: string;
+      variantId?: string;
+      comboId?: string;
+      comboSelection?: Record<string, string>;
+      quantity: number;
+    }[],
     displayId: string,
   ) {
-    const productIds = items
+    const standaloneProductIds = items
       .filter((i) => i.productId && !i.comboId)
       .map((i) => i.productId!);
-    const products = productIds.length > 0
+    const standaloneVariantIds = items
+      .filter((i) => i.variantId && !i.comboId)
+      .map((i) => i.variantId!);
+
+    let products = standaloneProductIds.length > 0
       ? await this.prisma.product.findMany({
-          where: { id: { in: productIds }, manageStock: true },
+          where: { id: { in: standaloneProductIds }, manageStock: true },
           select: { id: true, type: true, stock: true, manageStock: true },
         })
       : [];
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    const variantIds = items
-      .filter((i) => i.variantId && !i.comboId)
-      .map((i) => i.variantId!);
-    const variants = variantIds.length > 0
+    let variants = standaloneVariantIds.length > 0
       ? await this.prisma.productVariant.findMany({
-          where: { id: { in: variantIds }, product: { manageStock: true } },
+          where: { id: { in: standaloneVariantIds }, product: { manageStock: true } },
           select: { id: true, stock: true, productId: true },
         })
       : [];
@@ -801,19 +809,38 @@ export class OrdersService {
         }
         for (const ci of combo.items) {
           const qty = ci.quantity * item.quantity;
-          if (ci.variantId) {
-            const v = variants.find((vv) => vv.id === ci.variantId);
+          const effectiveVariantId = ci.variantId
+            || (item.comboSelection?.[ci.productId]) // flexible variant choice
+            || null;
+
+          if (effectiveVariantId) {
+            if (!variantMap.has(effectiveVariantId)) {
+              const v = await this.prisma.productVariant.findUnique({
+                where: { id: effectiveVariantId },
+                select: { id: true, stock: true, productId: true },
+              });
+              if (v) variantMap.set(v.id, v);
+            }
+            const v = variantMap.get(effectiveVariantId);
             if (v && v.stock < qty) {
               throw new BadRequestException(
                 `Insufficient stock for variant of product "${ci.productId}". Available: ${v.stock}, requested: ${qty}.`,
               );
             }
             await this.prisma.productVariant.update({
-              where: { id: ci.variantId },
+              where: { id: effectiveVariantId },
               data: { stock: { decrement: qty } },
             });
           }
-          const p = products.find((pp) => pp.id === ci.productId);
+
+          if (!productMap.has(ci.productId)) {
+            const p = await this.prisma.product.findUnique({
+              where: { id: ci.productId },
+              select: { id: true, type: true, stock: true, manageStock: true },
+            });
+            if (p) productMap.set(p.id, p);
+          }
+          const p = productMap.get(ci.productId);
           if (p && p.manageStock && p.stock < qty) {
             throw new BadRequestException(
               `Insufficient stock for product "${ci.productId}". Available: ${p.stock}, requested: ${qty}.`,
@@ -828,7 +855,7 @@ export class OrdersService {
           await this.prisma.inventoryLog.create({
             data: {
               productId: ci.productId,
-              variantId: ci.variantId,
+              variantId: effectiveVariantId,
               comboId: item.comboId,
               quantity: -qty,
               type: 'combo_order',
