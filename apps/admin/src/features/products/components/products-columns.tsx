@@ -88,11 +88,17 @@ export function productsColumns(
       accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.stock, 0) : row.stock,
       cell: ({ row, getValue }) => {
         const s = getValue<number>()
+        const stockStatus = row.original.seoMeta?.stockStatus as string | undefined
         const label = row.original.manageStock
           ? `${s}`
-          : s <= 0 ? 'Out of Stock' : 'In Stock'
+          : stockStatus === 'instock'
+            ? 'In Stock'
+            : 'Out of Stock'
+        const variant = row.original.manageStock
+          ? s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'
+          : stockStatus === 'instock' ? 'outline' : 'destructive'
         return (
-          <Badge variant={s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'} className='text-xs'>
+          <Badge variant={variant as 'destructive' | 'default' | 'outline'} className='text-xs'>
             {label}
           </Badge>
         )

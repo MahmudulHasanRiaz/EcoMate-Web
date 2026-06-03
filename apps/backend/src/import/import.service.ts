@@ -191,7 +191,6 @@ export class ImportService {
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
     const images = this.parseImages(data.Images);
-    const seoMeta = this.buildSeoMeta(data);
 
     const categoryId = await this.resolveCategories(categories, summary);
 
@@ -201,6 +200,7 @@ export class ImportService {
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const manageStock = this.parseManageStock(data);
+    const seoMeta = this.buildSeoMeta(data, manageStock);
     const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
     const isFeatured = data['Is featured?'] === '1';
     const isActive = data.Published !== '0' && data.Published !== '-1';
@@ -261,12 +261,12 @@ export class ImportService {
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
     const images = this.parseImages(data.Images);
-    const seoMeta = this.buildSeoMeta(data);
 
     const categoryId = await this.resolveCategories(categories, summary);
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const manageStock = this.parseManageStock(data);
+    const seoMeta = this.buildSeoMeta(data, manageStock);
     const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
     const isFeatured = data['Is featured?'] === '1';
     const isActive = data.Published !== '0' && data.Published !== '-1';
@@ -687,12 +687,15 @@ export class ImportService {
     return slug;
   }
 
-  private buildSeoMeta(data: WooCommerceCsvRow): Record<string, unknown> {
+  private buildSeoMeta(data: WooCommerceCsvRow, manageStock: boolean): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
 
-    const stockStatusRaw = data['In stock?']?.trim();
-    if (stockStatusRaw === '1') meta.stockStatus = 'instock';
-    else if (stockStatusRaw === '0') meta.stockStatus = 'outofstock';
+    // WooCommerce behavior: stock_status only used when not managing stock
+    if (!manageStock) {
+      const stockStatusRaw = data['In stock?']?.trim();
+      if (stockStatusRaw === '1') meta.stockStatus = 'instock';
+      else if (stockStatusRaw === '0') meta.stockStatus = 'outofstock';
+    }
 
     const backorders = data['Backorders allowed?']?.trim();
     if (backorders) {
