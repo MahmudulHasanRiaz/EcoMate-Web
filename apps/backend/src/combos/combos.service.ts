@@ -118,8 +118,6 @@ export class CombosService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        manageStock: dto.manageStock || false,
-        stock: dto.stock || 0,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         items: {
@@ -176,6 +174,8 @@ export class CombosService {
 
     const data: any = { ...dto };
     delete data.items;
+    delete data.manageStock;
+    delete data.stock;
 
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;

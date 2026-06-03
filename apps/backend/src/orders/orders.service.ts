@@ -802,11 +802,6 @@ export class OrdersService {
           include: { items: true },
         });
         if (!combo) continue;
-        if (combo.manageStock && combo.stock < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient stock for combo "${combo.name}". Available: ${combo.stock}, requested: ${item.quantity}.`,
-          );
-        }
         for (const ci of combo.items) {
           const qty = ci.quantity * item.quantity;
           const effectiveVariantId = ci.variantId
@@ -864,21 +859,6 @@ export class OrdersService {
             },
           });
         }
-        if (combo.manageStock) {
-          await this.prisma.combo.update({
-            where: { id: item.comboId },
-            data: { stock: { decrement: item.quantity } },
-          });
-        }
-        await this.prisma.inventoryLog.create({
-          data: {
-            comboId: item.comboId,
-            quantity: -item.quantity,
-            type: 'order_placed',
-            reason: `Order ${displayId}`,
-            createdAt: new Date(),
-          },
-        });
       } else {
         const variant = item.variantId ? variantMap.get(item.variantId) : null;
         if (variant && variant.stock < item.quantity) {

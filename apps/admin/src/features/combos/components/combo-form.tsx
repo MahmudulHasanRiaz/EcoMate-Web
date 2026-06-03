@@ -60,8 +60,6 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [categoryId, setCategoryId] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
-  const [manageStock, setManageStock] = useState(false)
-  const [stock, setStock] = useState('0')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [seoTitle, setSeoTitle] = useState('')
@@ -93,8 +91,6 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
       setCategoryId(currentRow.categoryId || '')
       setIsActive(currentRow.isActive)
       setIsFeatured(currentRow.isFeatured)
-      setManageStock(currentRow.manageStock)
-      setStock(String(currentRow.stock ?? 0))
       setTags(Array.isArray(currentRow.tags) ? currentRow.tags : [])
       const seo = (currentRow.seoMeta || {}) as any
       setSeoTitle(seo.title || '')
@@ -114,7 +110,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
       setName(''); setSlug(''); setDesc(''); setShortDesc('')
       setBasePrice(''); setSalePrice(''); setImage(''); setImages([])
       setCategoryId(''); setIsActive(true); setIsFeatured(false)
-      setManageStock(false); setStock('0'); setTags([]); setTagInput('')
+      setTags([]); setTagInput('')
       setSeoTitle(''); setSeoDesc(''); setSeoKeywords('')
       setStartDate(''); setEndDate(''); setItems([])
     }
@@ -141,7 +137,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
       salePrice: salePrice ? parseFloat(salePrice) : undefined,
       image, images, categoryId: categoryId || undefined,
       tags, seoMeta: { title: seoTitle, description: seoDesc, keywords: seoKeywords },
-      isActive, isFeatured, manageStock, stock: parseInt(stock) || 0,
+      isActive, isFeatured,
       startDate: startDate || undefined, endDate: endDate || undefined,
       items: items.map(i => ({
         productId: i.productId,
@@ -521,16 +517,6 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 <Input type='number' value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder='0.00' />
               </div>
             </div>
-            <div className='flex items-center gap-2'>
-              <Switch id='manageStock' checked={manageStock} onCheckedChange={setManageStock} />
-              <Label htmlFor='manageStock'>Track Stock for this Combo</Label>
-            </div>
-            {manageStock && (
-              <div className='space-y-2'>
-                <Label>Stock Quantity</Label>
-                <Input type='number' value={stock} onChange={e => setStock(e.target.value)} />
-              </div>
-            )}
             {items.length > 0 && (
               <div className='border rounded-md p-3 bg-muted/50'>
                 <p className='text-sm font-medium mb-2'>Component Items Total</p>

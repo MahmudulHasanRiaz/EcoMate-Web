@@ -62,12 +62,10 @@ export function combosColumns(
     {
       id: 'stock',
       header: 'Stock',
-      accessorFn: (row) => row.manageStock ? row.stock : null,
-      cell: ({ getValue }) => {
-        const s = getValue<number | null>()
-        if (s === null) return <span className='text-sm text-muted-foreground'>Unmanaged</span>
-        return <Badge variant={s <= 0 ? 'destructive' : 'outline'}>{s}</Badge>
-      },
+      accessorFn: () => 'computed',
+      cell: () => (
+        <span className='text-xs text-muted-foreground italic'>From items</span>
+      ),
     },
     {
       id: 'category',
