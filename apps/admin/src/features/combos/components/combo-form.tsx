@@ -155,12 +155,16 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
       toast.error('Product already added to combo')
       return
     }
+    const isVar = product.type === 'variable'
+    const price = isVar && Array.isArray(product.variants) && product.variants.length > 0
+      ? Math.min(...product.variants.map((v: any) => parseFloat(String(v.price ?? 0))).filter((v: number) => v > 0))
+      : (product.salePrice ? Number(product.salePrice) : Number(product.basePrice))
     setItems(prev => [...prev, {
       productId: product.id,
       productName: product.name,
       productImage: Array.isArray(product.images) ? product.images[0] : '',
       quantity: 1,
-      price: product.salePrice ? Number(product.salePrice) : Number(product.basePrice),
+      price: isFinite(price) ? price : 0,
     }])
     setProductSearch('')
   }
@@ -186,19 +190,21 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-w-3xl max-h-[90vh] overflow-y-auto'>
-        <DialogHeader>
+      <DialogContent className='!max-w-6xl max-h-[95vh] overflow-hidden flex flex-col p-0'>
+        <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? 'Edit Combo' : 'Create Combo'}</DialogTitle>
         </DialogHeader>
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className='grid grid-cols-4'>
-            <TabsTrigger value='general'>General</TabsTrigger>
-            <TabsTrigger value='items'>Items ({items.length})</TabsTrigger>
-            <TabsTrigger value='pricing'>Pricing</TabsTrigger>
-            <TabsTrigger value='meta'>Meta</TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={setTab} className='flex-1 overflow-hidden flex flex-col'>
+          <div className='px-6'>
+            <TabsList className='grid grid-cols-4'>
+              <TabsTrigger value='general'>General</TabsTrigger>
+              <TabsTrigger value='items'>Items ({items.length})</TabsTrigger>
+              <TabsTrigger value='pricing'>Pricing</TabsTrigger>
+              <TabsTrigger value='meta'>Meta</TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value='general' className='space-y-4 mt-4'>
+          <TabsContent value='general' className='flex-1 overflow-y-auto px-6 pb-4 space-y-4 mt-4'>
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>
                 <Label>Name *</Label>
@@ -298,7 +304,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
             </div>
           </TabsContent>
 
-          <TabsContent value='items' className='mt-4 space-y-4'>
+          <TabsContent value='items' className='flex-1 overflow-y-auto px-6 pb-4 space-y-4 mt-4'>
             <div className='space-y-2'>
               <Label>Search Products to Add</Label>
               <div className='relative'>
@@ -306,15 +312,43 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
                 <Input className='pl-8' value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder='Search by product name...' />
               </div>
               {productSearch.length >= 2 && searchResults?.data && (
-                <div className='border rounded-md max-h-40 overflow-y-auto'>
-                  {searchResults.data.map((p: any) => (
-                    <div key={p.id} className='flex items-center gap-2 p-2 hover:bg-muted cursor-pointer' onClick={() => addItem(p)}>
-                      <Gift className='h-4 w-4 text-muted-foreground' />
-                      <span className='text-sm flex-1'>{p.name}</span>
-                      <span className='text-xs text-muted-foreground'>৳{p.salePrice || p.basePrice}</span>
-                      <Plus className='h-3.5 w-3.5' />
-                    </div>
-                  ))}
+                <div className='border rounded-md max-h-60 overflow-y-auto divide-y'>
+                  {searchResults.data.map((p: any) => {
+                    const img = Array.isArray(p.images) ? p.images[0] : null
+                    const isVar = p.type === 'variable'
+                    const price = isVar && Array.isArray(p.variants)
+                      ? Math.min(...p.variants.map((v: any) => parseFloat(String(v.price ?? 0))).filter((v: number) => v > 0), Infinity)
+                      : parseFloat(String(p.salePrice ?? p.basePrice ?? 0))
+                    return (
+                      <div key={p.id} className='flex items-center gap-3 p-2.5 hover:bg-muted cursor-pointer transition-colors' onClick={() => addItem(p)}>
+                        {img
+                          ? <SafeImage src={mediaUrl(img)} alt='' className='w-10 h-10 rounded border object-cover shrink-0' />
+                          : <div className='w-10 h-10 rounded border bg-muted flex items-center justify-center shrink-0'><Gift className='h-4 w-4 text-muted-foreground' /></div>}
+                        <div className='flex-1 min-w-0'>
+                          <p className='text-sm font-medium truncate'>{p.name}</p>
+                          <p className='text-xs text-muted-foreground truncate'>{p.sku || '—'}</p>
+                        </div>
+                        <span className='text-sm font-medium shrink-0'>
+                          {isVar && Array.isArray(p.variants) && p.variants.length > 0
+                            ? (() => {
+                                const prices = p.variants.map((v: any) => parseFloat(String(v.price ?? 0))).filter((v: number) => v > 0)
+                                if (prices.length === 0) return <span className='text-muted-foreground'>—</span>
+                                const min = Math.min(...prices)
+                                const max = Math.max(...prices)
+                                return <>৳{min.toFixed(2)}{min !== max ? ` – ৳${max.toFixed(2)}` : ''}</>
+                              })()
+                            : <>৳{price.toFixed(2)}</>
+                          }
+                        </span>
+                        <Button type='button' variant='ghost' size='icon' className='h-7 w-7 shrink-0'>
+                          <Plus className='h-4 w-4' />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                  {searchResults.data.length === 0 && (
+                    <p className='p-3 text-sm text-muted-foreground text-center'>No products found</p>
+                  )}
                 </div>
               )}
             </div>
@@ -322,37 +356,43 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
             {items.length === 0 ? (
               <div className='text-center py-8 text-muted-foreground'>
                 <Gift className='h-8 w-8 mx-auto mb-2 opacity-50' />
-                <p>No items added yet. Search and add products above.</p>
+                <p className='text-sm'>No items added yet. Search and add products above.</p>
               </div>
             ) : (
               <div className='border rounded-md divide-y'>
-                {items.map((item, index) => (
-                  <div key={index} className='flex items-center gap-3 p-3'>
-                    {item.productImage
-                      ? <SafeImage src={item.productImage} alt='' className='w-10 h-10 rounded border object-cover' />
-                      : <div className='w-10 h-10 rounded border bg-muted flex items-center justify-center'><Gift className='h-4 w-4' /></div>}
-                    <div className='flex-1 min-w-0'>
-                      <p className='text-sm font-medium truncate'>{item.productName}</p>
-                      {item.variantLabel && <p className='text-xs text-muted-foreground'>{item.variantLabel}</p>}
-                    </div>
-                    <div className='flex items-center gap-2'>
-                      <div className='flex items-center gap-1'>
-                        <Button type='button' variant='outline' size='icon' className='h-7 w-7' onClick={() => updateItemQty(index, item.quantity - 1)}>-</Button>
-                        <span className='w-8 text-center text-sm'>{item.quantity}</span>
-                        <Button type='button' variant='outline' size='icon' className='h-7 w-7' onClick={() => updateItemQty(index, item.quantity + 1)}>+</Button>
+                {items.map((item, index) => {
+                  const img = item.productImage
+                  return (
+                    <div key={index} className='flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors'>
+                      {img
+                        ? <SafeImage src={mediaUrl(img)} alt='' className='w-12 h-12 rounded border object-cover shrink-0' />
+                        : <div className='w-12 h-12 rounded border bg-muted flex items-center justify-center shrink-0'><Gift className='h-4 w-4 text-muted-foreground' /></div>}
+                      <div className='flex-1 min-w-0'>
+                        <p className='text-sm font-medium truncate'>{item.productName}</p>
+                        {item.variantLabel && <p className='text-xs text-muted-foreground'>{item.variantLabel}</p>}
                       </div>
-                      <Input type='number' className='w-20 h-8 text-xs' value={item.price || ''} onChange={e => updateItemPrice(index, parseFloat(e.target.value) || 0)} placeholder='Price' />
-                      <Button type='button' variant='ghost' size='icon' className='h-7 w-7' onClick={() => removeItem(index)}>
-                        <X className='h-4 w-4 text-destructive' />
-                      </Button>
+                      <div className='flex items-center gap-2 shrink-0'>
+                        <div className='flex items-center gap-1 border rounded-md'>
+                          <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity - 1)} disabled={item.quantity <= 1}>−</Button>
+                          <span className='w-8 text-center text-sm tabular-nums'>{item.quantity}</span>
+                          <Button type='button' variant='ghost' size='icon' className='h-8 w-8 rounded-none' onClick={() => updateItemQty(index, item.quantity + 1)}>+</Button>
+                        </div>
+                        <div className='flex items-center gap-1'>
+                          <span className='text-xs text-muted-foreground'>৳</span>
+                          <Input type='number' className='w-20 h-8 text-xs' value={item.price ?? ''} onChange={e => updateItemPrice(index, parseFloat(e.target.value) || 0)} placeholder='0' />
+                        </div>
+                        <Button type='button' variant='ghost' size='icon' className='h-8 w-8 text-muted-foreground hover:text-destructive' onClick={() => removeItem(index)}>
+                          <X className='h-4 w-4' />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value='pricing' className='space-y-4 mt-4'>
+          <TabsContent value='pricing' className='flex-1 overflow-y-auto px-6 pb-4 space-y-4 mt-4'>
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>
                 <Label>Base Price (৳) *</Label>
@@ -391,7 +431,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
             )}
           </TabsContent>
 
-          <TabsContent value='meta' className='space-y-4 mt-4'>
+          <TabsContent value='meta' className='flex-1 overflow-y-auto px-6 pb-4 space-y-4 mt-4'>
             <div className='space-y-2'>
               <Label>SEO Title</Label>
               <Input value={seoTitle} onChange={e => setSeoTitle(e.target.value)} placeholder='Meta title' />
@@ -407,7 +447,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
           </TabsContent>
         </Tabs>
 
-        <div className='flex justify-end gap-2 pt-4 border-t'>
+        <div className='flex justify-end gap-2 px-6 py-4 border-t shrink-0'>
           <Button variant='outline' onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={!name || !basePrice || items.length === 0 || saving}>
             {saving && <Loader2 className='h-4 w-4 mr-1 animate-spin' />}
