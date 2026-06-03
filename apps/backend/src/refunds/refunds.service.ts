@@ -129,28 +129,15 @@ export class RefundsService {
         });
         if (!combo) continue;
 
-        if (combo.manageStock) {
-          await this.prisma.combo.update({
-            where: { id: item.comboId },
-            data: { stock: { increment: item.quantity } },
-          });
-          await this.prisma.inventoryLog.create({
-            data: {
-              comboId: item.comboId,
-              quantity: item.quantity,
-              type: 'refund_restock',
-              reason: `Refund restock for order ${orderId}`,
-              performedBy,
-              createdAt: new Date(),
-            },
-          });
-        }
-
         for (const ci of combo.items) {
           const qty = ci.quantity * item.quantity;
-          if (ci.variantId) {
+          const effectiveVariantId = ci.variantId
+            || ((item.comboSelection as Record<string, string> | null)?.[ci.productId])
+            || null;
+
+          if (effectiveVariantId) {
             await this.prisma.productVariant.update({
-              where: { id: ci.variantId },
+              where: { id: effectiveVariantId },
               data: { stock: { increment: qty } },
             });
           }
@@ -167,7 +154,7 @@ export class RefundsService {
           await this.prisma.inventoryLog.create({
             data: {
               productId: ci.productId,
-              variantId: ci.variantId,
+              variantId: effectiveVariantId,
               comboId: item.comboId,
               quantity: qty,
               type: 'refund_restock',

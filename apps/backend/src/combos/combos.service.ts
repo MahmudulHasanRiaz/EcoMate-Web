@@ -174,8 +174,6 @@ export class CombosService {
 
     const data: any = { ...dto };
     delete data.items;
-    delete data.manageStock;
-    delete data.stock;
 
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;

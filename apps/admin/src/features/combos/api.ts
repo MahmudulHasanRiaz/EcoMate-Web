@@ -14,7 +14,6 @@ export interface ComboResponse {
   image?: string | null; images: any; categoryId?: string | null;
   tags: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean;
-  manageStock: boolean; stock: number;
   startDate?: string | null; endDate?: string | null;
   createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;

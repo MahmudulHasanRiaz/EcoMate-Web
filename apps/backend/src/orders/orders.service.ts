@@ -215,7 +215,7 @@ export class OrdersService {
     if (comboIds.length > 0) {
       const existingCombos = await this.prisma.combo.findMany({
         where: { id: { in: comboIds } },
-        select: { id: true },
+        select: { id: true, name: true, items: { select: { productId: true, variantId: true } } },
       });
       const existingIds = new Set(existingCombos.map((c) => c.id));
       const missing = comboIds.filter((id) => !existingIds.has(id));
@@ -223,6 +223,18 @@ export class OrdersService {
         throw new BadRequestException(
           `Some combos no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
         );
+      }
+      const comboMap = new Map(existingCombos.map((c) => [c.id, c]));
+      for (const ci of dto.items.filter((i) => i.comboId)) {
+        if (!ci.comboSelection) continue;
+        const combo = comboMap.get(ci.comboId!)!;
+        for (const sub of combo.items) {
+          if (!sub.variantId && !ci.comboSelection[sub.productId]) {
+            throw new BadRequestException(
+              `Product "${sub.productId}" in combo "${combo.name}" requires a variant selection.`,
+            );
+          }
+        }
       }
     }
 

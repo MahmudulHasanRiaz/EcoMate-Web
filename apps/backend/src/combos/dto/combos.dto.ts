@@ -80,14 +80,6 @@ export class CreateComboDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsBoolean()
-  manageStock?: boolean;
-
-  @IsOptional()
-  @IsInt()
-  stock?: number;
-
-  @IsOptional()
   @IsString()
   startDate?: string;
 
@@ -174,14 +166,6 @@ export class UpdateComboDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  manageStock?: boolean;
-
-  @IsOptional()
-  @IsInt()
-  stock?: number;
 
   @IsOptional()
   @IsString()

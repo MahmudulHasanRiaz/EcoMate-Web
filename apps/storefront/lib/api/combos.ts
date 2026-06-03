@@ -62,8 +62,6 @@ function transformBackendCombo(raw: any): Combo {
     category: raw.category || undefined,
     isActive: raw.isActive,
     isFeatured: raw.isFeatured,
-    manageStock: raw.manageStock,
-    stock: raw.stock,
     tags: raw.tags || [],
     seoMeta: raw.seoMeta,
     startDate: raw.startDate,

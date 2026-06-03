@@ -105,8 +105,6 @@ export interface Combo {
   category?: { id: string; name: string } | null;
   isActive?: boolean;
   isFeatured?: boolean;
-  manageStock?: boolean;
-  stock?: number;
   tags?: string[];
   seoMeta?: any;
   startDate?: string | null;
