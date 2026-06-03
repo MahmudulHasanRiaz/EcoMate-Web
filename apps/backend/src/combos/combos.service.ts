@@ -72,14 +72,17 @@ export class CombosService {
                 id: true, name: true, slug: true, sku: true,
                 basePrice: true, salePrice: true, stock: true,
                 images: true, type: true,
-              },
-              include: {
                 variants: {
-                  include: {
+                  select: {
+                    id: true, sku: true, price: true, stock: true,
+                    image: true, isActive: true,
                     attributeValues: {
-                      include: {
+                      select: {
                         attributeValue: {
-                          include: { attribute: { select: { id: true, name: true } } },
+                          select: {
+                            id: true, value: true,
+                            attribute: { select: { id: true, name: true } },
+                          },
                         },
                       },
                     },
@@ -94,7 +97,6 @@ export class CombosService {
         },
       },
     });
-
     if (!combo) throw new NotFoundException('Combo not found');
     return combo;
   }
