@@ -1,6 +1,7 @@
 import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Pencil, Trash2, Package } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { appUrl } from '@/lib/utils'
@@ -12,6 +13,7 @@ const imgUrl = appUrl
 export function productsColumns(
   onEdit: (row: ProductResponse) => void,
   onDelete: (row: ProductResponse) => void,
+  onToggleActive?: (row: ProductResponse, active: boolean) => void,
 ): ColumnDef<ProductResponse>[] {
   return [
     {
@@ -97,15 +99,17 @@ export function productsColumns(
       },
     },
     {
-      id: 'category',
-      header: 'Category',
-      accessorFn: (row) => row.category?.name || '—',
-      cell: ({ getValue }) => <span className='text-sm text-muted-foreground'>{getValue<string>()}</span>,
-    },
-    {
-      accessorKey: 'isActive',
-      header: 'Status',
-      cell: ({ getValue }) => getValue() ? <Badge className='bg-green-500 text-xs'>Active</Badge> : <Badge variant='secondary' className='text-xs'>Draft</Badge>,
+      id: 'active',
+      header: 'Active',
+      cell: ({ row }) => (
+        <div className='flex justify-center'>
+          <Switch
+            checked={row.original.isActive}
+            onCheckedChange={(v) => onToggleActive?.(row.original, v)}
+          />
+        </div>
+      ),
+      enableSorting: false,
     },
     {
       id: 'actions',

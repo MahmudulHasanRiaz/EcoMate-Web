@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
 import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button'
 import { useProductsQuery } from './hooks'
 import { ProductsTable } from './components/products-table'
 import { ProductForm } from './components/product-form'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { productsApi } from './api'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { type ProductResponse } from './api'
+import { categoriesApi } from '@/features/categories/api'
+import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 
 export function Products() {
   const queryClient = useQueryClient()
@@ -27,8 +29,30 @@ export function Products() {
   const [deleteTarget, setDeleteTarget] = useState<ProductResponse | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null)
+  const [filterCategoryId, setFilterCategoryId] = useState<string[]>([])
 
-  const { data, isLoading } = useProductsQuery({ page: pagination.pageIndex + 1, perPage: pagination.pageSize })
+  const { data: allCats } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : []),
+  })
+
+  const categoryFilterOptions = useMemo(() => {
+    const flatten = (items: any[], depth: number): MultiSearchableOption[] => {
+      const result: MultiSearchableOption[] = []
+      for (const c of items) {
+        result.push({ id: c.id, label: c.name, depth })
+        if (c.children?.length) result.push(...flatten(c.children, depth + 1))
+      }
+      return result
+    }
+    return flatten(allCats || [], 0)
+  }, [allCats])
+
+  const { data, isLoading } = useProductsQuery({
+    page: pagination.pageIndex + 1,
+    perPage: pagination.pageSize,
+    categoryId: filterCategoryId[0] || undefined,
+  })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => productsApi.delete(id),
@@ -64,6 +88,13 @@ export function Products() {
     else if (bulkAction === 'deactivate') bulkUpdateMut.mutate({ ids: selectedIds, data: { isActive: false } })
   }
 
+  const toggleActiveMut = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      productsApi.update(id, { isActive }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
+  })
+
   const isBulkPending = bulkDeleteMut.isPending || bulkUpdateMut.isPending
 
   return (
@@ -88,6 +119,24 @@ export function Products() {
               <Plus className='h-4 w-4 mr-1' /> Add Product
             </Button>
           </div>
+        </div>
+
+        {/* Filters */}
+        <div className='flex items-center gap-4'>
+          <div className='w-72'>
+            <MultiSearchableSelect
+              options={categoryFilterOptions}
+              value={filterCategoryId}
+              onChange={setFilterCategoryId}
+              placeholder='Filter by category...'
+              searchPlaceholder='Search categories...'
+            />
+          </div>
+          {filterCategoryId.length > 0 && (
+            <Button variant='ghost' size='sm' onClick={() => setFilterCategoryId([])}>
+              Clear filter
+            </Button>
+          )}
         </div>
 
         {/* Bulk Action Bar */}
@@ -135,6 +184,7 @@ export function Products() {
           isLoading={isLoading}
           onEdit={(row) => { setEditRow(row); setFormMode('edit'); setFormOpen(true); }}
           onDelete={(row) => setDeleteTarget(row)}
+          onToggleActive={(row, active) => toggleActiveMut.mutate({ id: row.id, isActive: active })}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
         />

@@ -18,10 +18,16 @@ export const sidebarData: SidebarData = {
       { title: 'Tasks', url: '/op/tasks', icon: ListTodo },
     ]},
     { title: 'Catalog', panel: 'operational', items: [
-      { title: 'Products', url: '/op/products', icon: Package },
-      { title: 'Combos', url: '/op/combos', icon: Gift },
-      { title: 'Categories', url: '/op/categories', icon: Package },
-      { title: 'Attributes', url: '/op/attributes', icon: Palette },
+      {
+        title: 'Products',
+        icon: Package,
+        items: [
+          { title: 'All Products', url: '/op/products' },
+          { title: 'Combos', url: '/op/combos', icon: Gift },
+          { title: 'Categories', url: '/op/categories' },
+          { title: 'Attributes', url: '/op/attributes', icon: Palette },
+        ],
+      },
       { title: 'Inventory', url: '/op/inventory', icon: AlertTriangle },
     ]},
     { title: 'Sales', panel: 'operational', items: [

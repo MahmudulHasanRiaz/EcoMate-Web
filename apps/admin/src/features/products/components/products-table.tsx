@@ -10,10 +10,11 @@ type Props = {
   data: ProductResponse[]; pageCount: number; pagination: PaginationState;
   onPaginationChange: (p: PaginationState) => void; isLoading?: boolean;
   onEdit: (row: ProductResponse) => void; onDelete: (row: ProductResponse) => void;
+  onToggleActive?: (row: ProductResponse, active: boolean) => void;
   selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
 }
 
-export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, selectedIds, onSelectionChange }: Props) {
+export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, selectedIds, onSelectionChange }: Props) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(() => {
@@ -22,7 +23,7 @@ export function ProductsTable({ data, pageCount, pagination, onPaginationChange,
     return sel;
   })
 
-  const columns = productsColumns(onEdit, onDelete)
+  const columns = productsColumns(onEdit, onDelete, onToggleActive)
 
   const table = useReactTable({
     data, columns, pageCount, state: { sorting, pagination, columnVisibility, rowSelection },
