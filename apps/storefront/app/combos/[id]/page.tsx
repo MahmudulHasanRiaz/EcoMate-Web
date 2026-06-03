@@ -98,8 +98,8 @@ export default function ComboDetailPage() {
     return combo.items.filter((item) => item.productType === 'variable' && !item.variantId);
   }, [combo]);
 
-  const flexibleItemsWithActiveVariants = useMemo(() => {
-    return flexibleItems.filter((item) => item.variants?.some((v) => v.isActive));
+  const flexibleItemsWithStock = useMemo(() => {
+    return flexibleItems.filter((item) => item.variants?.some((v) => v.isActive && v.stock > 0));
   }, [flexibleItems]);
 
   const effectiveSelections = useMemo(() => {
@@ -113,7 +113,17 @@ export default function ComboDetailPage() {
     return sel;
   }, [itemSelections, combo]);
 
-  const allFlexibleReady = flexibleItemsWithActiveVariants.length === 0 || Object.keys(effectiveSelections).length === flexibleItemsWithActiveVariants.length;
+  const allFlexibleReady = flexibleItemsWithStock.length === 0 || Object.keys(effectiveSelections).length === flexibleItemsWithStock.length;
+
+  const hasOOSSelection = useMemo(() => {
+    if (!combo) return false;
+    for (const [productId, variantId] of Object.entries(effectiveSelections)) {
+      const item = combo.items.find((i) => i.productId === productId);
+      const variant = item?.variants?.find((v) => v.id === variantId);
+      if (!variant || variant.stock <= 0) return true;
+    }
+    return false;
+  }, [effectiveSelections, combo]);
 
   function handleAttrChange(productId: string, attrId: string, value: string) {
     setItemSelections((prev) => ({
@@ -125,6 +135,9 @@ export default function ComboDetailPage() {
   function renderVariantSelector(item: ComboItemDetails) {
     if (!item.variants?.length) return null;
     const activeVariants = item.variants.filter((v) => v.isActive);
+    const inStockVariants = activeVariants.filter((v) => v.stock > 0);
+    const hasInStockOption = inStockVariants.length > 0;
+
     if (activeVariants.length === 0) {
       return (
         <div className="mt-2 text-xs text-red-500 flex items-center gap-1">
@@ -132,19 +145,29 @@ export default function ComboDetailPage() {
         </div>
       );
     }
-    const uniqueAttrs = getUniqueAttrs(item.variants);
+
+    if (!hasInStockOption) {
+      return (
+        <div className="mt-2 text-xs text-red-500 flex items-center gap-1">
+          <AlertTriangle size={12} />All variants are out of stock
+        </div>
+      );
+    }
+
+    const displayVariants = inStockVariants;
+    const uniqueAttrs = getUniqueAttrs(displayVariants);
     const currentSelections = itemSelections[item.productId] || {};
-    const selectedVariant = findVariantByAttrs(item.variants, currentSelections);
+    const selectedVariant = findVariantByAttrs(displayVariants, currentSelections);
     const hasAttrs = uniqueAttrs.length > 0;
 
-    if (!hasAttrs && activeVariants.length === 1) {
+    if (!hasAttrs && displayVariants.length === 1) {
       return (
         <div className="mt-2">
           <button
-            onClick={() => handleAttrChange(item.productId, '_auto', activeVariants[0].id)}
+            onClick={() => handleAttrChange(item.productId, '_auto', displayVariants[0].id)}
             className="text-xs text-brand-blue font-medium hover:underline"
           >
-            Select ({activeVariants[0].sku || config.currency.symbol + activeVariants[0].price.toLocaleString()})
+            Select ({displayVariants[0].sku || config.currency.symbol + displayVariants[0].price.toLocaleString()})
           </button>
           {selectedVariant && (
             <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
@@ -163,12 +186,12 @@ export default function ComboDetailPage() {
           delete attrsSoFar[attr.attrId];
           const matchedVariantIds = new Set(
             (Object.keys(attrsSoFar).length > 0
-              ? activeVariants.filter((v) =>
+              ? displayVariants.filter((v) =>
                   Object.entries(attrsSoFar).every(([aid, aval]) =>
                     v.attributeValues.some((avv) => avv.attributeValue.attribute.id === aid && avv.attributeValue.value === aval)
                   )
                 )
-              : activeVariants
+              : displayVariants
             ).map((v) => v.id)
           );
           const availableValues = attr.values.filter((v) =>
@@ -203,9 +226,6 @@ export default function ComboDetailPage() {
           <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
             <span className="text-green-600 font-medium">Selected:</span>
             <span>{config.currency.symbol}{selectedVariant.price.toLocaleString()}</span>
-            {selectedVariant.stock <= 0 && (
-              <span className="text-red-500 flex items-center gap-1"><AlertTriangle size={12} />Out of stock</span>
-            )}
           </div>
         )}
       </div>
@@ -222,7 +242,7 @@ export default function ComboDetailPage() {
   const quantity = cartItem?.quantity || 1;
 
   function handleAddToCart() {
-    if (!combo) return;
+    if (!combo || !allFlexibleReady || hasOOSSelection) return;
     addToCart({
       id: comboCartKey,
       name: combo.name,
@@ -311,17 +331,19 @@ export default function ComboDetailPage() {
 
             <button
               onClick={inCart ? () => removeFromCart(comboCartKey) : handleAddToCart}
-              disabled={!inCart && !allFlexibleReady}
+              disabled={!inCart && (!allFlexibleReady || hasOOSSelection)}
               className={`w-full h-12 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors text-sm ${
                 inCart
                   ? 'bg-red-500 hover:bg-red-600 text-white'
                   : !allFlexibleReady
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : hasOOSSelection
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-brand-blue hover:bg-brand-blue/90 text-white'
               }`}
             >
               <ShoppingBag size={18} />
-              {inCart ? 'REMOVE FROM CART' : !allFlexibleReady ? 'SELECT VARIANT(S)' : 'ADD COMBO TO CART'}
+              {inCart ? 'REMOVE FROM CART' : !allFlexibleReady ? 'SELECT VARIANT(S)' : hasOOSSelection ? 'OUT OF STOCK' : 'ADD COMBO TO CART'}
             </button>
           </div>
         </div>
