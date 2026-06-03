@@ -107,7 +107,7 @@ export class ProductsService {
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         sku: dto.sku,
-        stock: dto.stock || 0,
+        stock: dto.type === 'variable' ? 0 : (dto.stock || 0),
         lowStockQty: dto.lowStockQty,
         categoryId: dto.categoryId,
         productCategories: dto.categoryIds
@@ -118,7 +118,7 @@ export class ProductsService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        manageStock: dto.manageStock || false,
+        manageStock: dto.type === 'variable' ? false : (dto.manageStock || false),
         variants: dto.variants
           ? {
               create: dto.variants.map((v) => ({
@@ -192,6 +192,11 @@ export class ProductsService {
     delete data.variants;
     delete data.attributes;
     delete data.categoryIds;
+
+    if (p.type === 'variable') {
+      delete data.stock;
+      delete data.manageStock;
+    }
 
     if (dto.categoryIds) {
       await this.prisma.productCategory.deleteMany({ where: { productId: id } });
@@ -318,7 +323,7 @@ export class ProductsService {
     if (variants.length > 0) {
       await this.prisma.product.update({
         where: { id: productId },
-        data: { type: 'variable' },
+        data: { type: 'variable', stock: 0, manageStock: false },
       });
     }
 

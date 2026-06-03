@@ -199,9 +199,20 @@ export class ImportService {
 
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
-    const manageStock = this.parseManageStock(data);
-    const seoMeta = this.buildSeoMeta(data, manageStock);
-    const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
+    const parsedStock = this.parseInt(data.Stock);
+    const manageStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const stock = manageStock ? parsedStock : 0;
+    const seoMeta = this.buildSeoMeta(data);
+
+    // WooCommerce-compatible stock status
+    if (parsedStock !== undefined && parsedStock <= 0) {
+      seoMeta.stockStatus = 'outofstock';
+    } else if (parsedStock === undefined) {
+      const raw = data['In stock?']?.trim();
+      if (raw === '1') seoMeta.stockStatus = 'instock';
+      else if (raw === '0') seoMeta.stockStatus = 'outofstock';
+    }
+
     const isFeatured = data['Is featured?'] === '1';
     const isActive = data.Published !== '0' && data.Published !== '-1';
 
@@ -265,9 +276,22 @@ export class ImportService {
     const categoryId = await this.resolveCategories(categories, summary);
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
-    const manageStock = this.parseManageStock(data);
-    const seoMeta = this.buildSeoMeta(data, manageStock);
-    const stock = manageStock ? (this.parseInt(data.Stock) ?? 0) : 0;
+    const parsedStock = this.parseInt(data.Stock);
+    const type = (data.Type || 'simple').toLowerCase().trim();
+    const isVariable = type === 'variable' || type === 'variable-subscription';
+    const manageStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const stock = manageStock ? parsedStock : 0;
+    const seoMeta = this.buildSeoMeta(data);
+
+    // WooCommerce-compatible stock status
+    if (parsedStock !== undefined && parsedStock <= 0) {
+      seoMeta.stockStatus = 'outofstock';
+    } else if (parsedStock === undefined) {
+      const raw = data['In stock?']?.trim();
+      if (raw === '1') seoMeta.stockStatus = 'instock';
+      else if (raw === '0') seoMeta.stockStatus = 'outofstock';
+    }
+
     const isFeatured = data['Is featured?'] === '1';
     const isActive = data.Published !== '0' && data.Published !== '-1';
 
@@ -687,15 +711,8 @@ export class ImportService {
     return slug;
   }
 
-  private buildSeoMeta(data: WooCommerceCsvRow, manageStock: boolean): Record<string, unknown> {
+  private buildSeoMeta(data: WooCommerceCsvRow): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
-
-    // WooCommerce behavior: stock_status only used when not managing stock
-    if (!manageStock) {
-      const stockStatusRaw = data['In stock?']?.trim();
-      if (stockStatusRaw === '1') meta.stockStatus = 'instock';
-      else if (stockStatusRaw === '0') meta.stockStatus = 'outofstock';
-    }
 
     const backorders = data['Backorders allowed?']?.trim();
     if (backorders) {

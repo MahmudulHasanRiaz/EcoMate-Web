@@ -111,6 +111,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setTab('general')
   }, [open, currentRow, isEdit])
 
+  useEffect(() => {
+    if (type === 'variable') {
+      setStock('0')
+      setManageStock(false)
+    }
+  }, [type])
+
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
@@ -162,9 +169,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       sku: sku || undefined, type,
       categoryId: categoryIds[0] || undefined,
       categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
-      stock: parseInt(stock) || 0, lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
-      images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured, manageStock,
+      lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
+      images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
+    }
+    if (type !== 'variable') {
+      payload.stock = parseInt(stock) || 0
+      payload.manageStock = manageStock
     }
     if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
     else createMut.mutate(payload)
@@ -319,43 +330,49 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
               {/* Inventory */}
               <section className='bg-muted/20 rounded-lg p-5 space-y-4'>
                 <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Inventory</h3>
-                <div className='flex items-center gap-3'>
-                  <Switch checked={manageStock} onCheckedChange={setManageStock} />
-                  <Label>Manage Stock</Label>
-                </div>
-                {manageStock ? (
-                  <div className='grid grid-cols-3 gap-6'>
-                    <div className='space-y-1.5'>
-                      <Label>Stock Quantity</Label>
-                      <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
-                    </div>
-                    <div className='space-y-1.5'>
-                      <Label>Low Stock Alert</Label>
-                      <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
-                    </div>
-                  </div>
+                {type === 'variable' ? (
+                  <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
                 ) : (
-                  <div className='flex items-center gap-3'>
-                    <Label>Stock Status:</Label>
-                    <div className='flex gap-1 border rounded-md p-0.5'>
-                      <Button
-                        variant={parseInt(stock) > 0 ? 'default' : 'ghost'}
-                        size='sm'
-                        className='h-7 text-xs'
-                        onClick={() => setStock('10')}
-                      >
-                        In Stock
-                      </Button>
-                      <Button
-                        variant={parseInt(stock) <= 0 ? 'default' : 'ghost'}
-                        size='sm'
-                        className='h-7 text-xs'
-                        onClick={() => setStock('0')}
-                      >
-                        Out of Stock
-                      </Button>
+                  <>
+                    <div className='flex items-center gap-3'>
+                      <Switch checked={manageStock} onCheckedChange={setManageStock} />
+                      <Label>Manage Stock</Label>
                     </div>
-                  </div>
+                    {manageStock ? (
+                      <div className='grid grid-cols-3 gap-6'>
+                        <div className='space-y-1.5'>
+                          <Label>Stock Quantity</Label>
+                          <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
+                        </div>
+                        <div className='space-y-1.5'>
+                          <Label>Low Stock Alert</Label>
+                          <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className='flex items-center gap-3'>
+                        <Label>Stock Status:</Label>
+                        <div className='flex gap-1 border rounded-md p-0.5'>
+                          <Button
+                            variant={parseInt(stock) > 0 ? 'default' : 'ghost'}
+                            size='sm'
+                            className='h-7 text-xs'
+                            onClick={() => setStock('10')}
+                          >
+                            In Stock
+                          </Button>
+                          <Button
+                            variant={parseInt(stock) <= 0 ? 'default' : 'ghost'}
+                            size='sm'
+                            className='h-7 text-xs'
+                            onClick={() => setStock('0')}
+                          >
+                            Out of Stock
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
             </TabsContent>

@@ -7,7 +7,7 @@ export class InventoryService {
 
   async lowStock() {
     const products = await this.prisma.product.findMany({
-      where: { manageStock: true, isActive: true },
+      where: { manageStock: true, isActive: true, type: { not: 'variable' } },
       select: { id: true, name: true, slug: true, stock: true, lowStockQty: true, sku: true },
     });
     const lowStock = products.filter((p) => p.stock <= (p.lowStockQty || 5));

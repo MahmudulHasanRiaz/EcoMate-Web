@@ -66,8 +66,23 @@ export function productsColumns(
     {
       id: 'price',
       header: 'Price',
-      accessorFn: (row) => parseFloat(String(row.basePrice)),
+      accessorFn: (row) => row.type === 'variable'
+        ? 0
+        : parseFloat(String(row.basePrice)),
       cell: ({ row }) => {
+        if (row.original.type === 'variable') {
+          const prices = row.original.variants
+            .map(v => parseFloat(String(v.price ?? 0)))
+            .filter(p => p > 0)
+          if (prices.length === 0) return <span className='text-muted-foreground'>—</span>
+          const min = Math.min(...prices)
+          const max = Math.max(...prices)
+          return (
+            <span className='font-medium'>
+              ৳{min.toFixed(2)}{min !== max ? ` – ৳${max.toFixed(2)}` : ''}
+            </span>
+          )
+        }
         const bp = parseFloat(String(row.original.basePrice))
         const sp = row.original.salePrice ? parseFloat(String(row.original.salePrice)) : null
         return (
@@ -89,12 +104,9 @@ export function productsColumns(
       cell: ({ row, getValue }) => {
         const s = getValue<number>()
         const stockStatus = row.original.seoMeta?.stockStatus as string | undefined
-        const label = row.original.manageStock
-          ? `${s}`
-          : stockStatus === 'instock'
-            ? 'In Stock'
-            : 'Out of Stock'
-        const variant = row.original.manageStock
+        const showNumeric = row.original.type === 'variable' || row.original.manageStock
+        const label = showNumeric ? `${s}` : stockStatus === 'instock' ? 'In Stock' : 'Out of Stock'
+        const variant = showNumeric
           ? s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'
           : stockStatus === 'instock' ? 'outline' : 'destructive'
         return (
