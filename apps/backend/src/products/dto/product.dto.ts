@@ -39,6 +39,7 @@ export class CreateProductDto {
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsArray() images?: string[];
   @IsOptional() @IsObject() seoMeta?: any;
@@ -64,6 +65,7 @@ export class UpdateProductDto {
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string | null;
+  @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsArray() images?: string[];
   @IsOptional() @IsObject() seoMeta?: any;

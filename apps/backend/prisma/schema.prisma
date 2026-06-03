@@ -132,10 +132,21 @@ model Category {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children Category[] @relation("CategoryTree")
-  products Product[]
-  combos   Combo[]
+  parent      Category?          @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[]          @relation("CategoryTree")
+  products    Product[]           @relation("ProductCategory")
+  productCategories ProductCategory[]
+  combos      Combo[]
+}
+
+model ProductCategory {
+  productId  String
+  categoryId String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
 }
 
 model Attribute {
@@ -177,7 +188,8 @@ model Product {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  category   Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category   Category?          @relation("ProductCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  productCategories ProductCategory[]
   variants   ProductVariant[]
   orderItems OrderItem[]
   comboItems ComboItem[]

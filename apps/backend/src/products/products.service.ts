@@ -54,6 +54,7 @@ export class ProductsService {
         orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
         include: {
           category: { select: { id: true, name: true } },
+          productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
           variants: {
             include: {
               attributeValues: {
@@ -76,6 +77,7 @@ export class ProductsService {
       where: { id },
       include: {
         category: true,
+        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
         variants: {
           include: {
             attributeValues: {
@@ -108,6 +110,9 @@ export class ProductsService {
         stock: dto.stock || 0,
         lowStockQty: dto.lowStockQty,
         categoryId: dto.categoryId,
+        productCategories: dto.categoryIds
+          ? { create: dto.categoryIds.map((cid) => ({ categoryId: cid })) }
+          : undefined,
         tags: dto.tags as any,
         images: (dto.images || []) as any,
         seoMeta: dto.seoMeta,
@@ -134,6 +139,7 @@ export class ProductsService {
       },
       include: {
         category: true,
+        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
         variants: {
           include: {
             attributeValues: {
@@ -185,11 +191,23 @@ export class ProductsService {
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
     delete data.variants;
     delete data.attributes;
+    delete data.categoryIds;
+
+    if (dto.categoryIds) {
+      await this.prisma.productCategory.deleteMany({ where: { productId: id } });
+      await this.prisma.productCategory.createMany({
+        data: dto.categoryIds.map((cid) => ({ productId: id, categoryId: cid })),
+      });
+    }
 
     const product = await this.prisma.product.update({
       where: { id },
       data,
-      include: { category: true, variants: true },
+      include: {
+        category: true,
+        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
+        variants: true,
+      },
     });
 
     if (dto.images !== undefined) {

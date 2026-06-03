@@ -6,6 +6,7 @@ import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { MediaPicker } from '@/components/media-picker'
+import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 
 const imgUrl = appUrl
 import { attributesApi } from '@/features/attributes/api'
@@ -31,6 +32,18 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : []) })
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
 
+  const categoryOptions = React.useMemo(() => {
+    const flatten = (items: any[], depth: number): MultiSearchableOption[] => {
+      const result: MultiSearchableOption[] = []
+      for (const c of items) {
+        result.push({ id: c.id, label: c.name, depth })
+        if (c.children?.length) result.push(...flatten(c.children, depth + 1))
+      }
+      return result
+    }
+    return flatten(cats || [], 0)
+  }, [cats])
+
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [type, setType] = useState<string>('simple')
@@ -41,7 +54,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [sku, setSku] = useState('')
   const [stock, setStock] = useState('0')
   const [lowStockQty, setLowStockQty] = useState('')
-  const [categoryId, setCategoryId] = useState('')
+  const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
   const [manageStock, setManageStock] = useState(false)
@@ -54,8 +67,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
   const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
-  const [variantPrice, setVariantPrice] = useState('')
-  const [variantStock, setVariantStock] = useState('0')
 
   const [uploading] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -82,7 +93,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSku(currentRow.sku || '')
       setStock(String(currentRow.stock ?? 0))
       setLowStockQty(currentRow.lowStockQty != null ? String(currentRow.lowStockQty) : '')
-      setCategoryId(currentRow.categoryId || '')
+      setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || [])
       setIsActive(currentRow.isActive ?? true)
       setIsFeatured(currentRow.isFeatured ?? false)
       setManageStock(currentRow.manageStock ?? false)
@@ -93,18 +104,18 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
-      setSku(''); setStock('0'); setLowStockQty(''); setCategoryId(''); setIsActive(true); setIsFeatured(false);
+      setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
       setManageStock(false); setImages([]); setTags('');       setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setVariantPrice(''); setVariantStock('0');
+      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
     setTab('general')
   }, [open, currentRow, isEdit])
 
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
-    setSku(''); setStock('0'); setLowStockQty(''); setCategoryId(''); setIsActive(true); setIsFeatured(false);
+    setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-    setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setVariantPrice(''); setVariantStock('0');
+    setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const createMut = useMutation({
@@ -148,7 +159,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       name, slug: slug || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
       description: desc || undefined, shortDesc: shortDesc || undefined,
       basePrice: parseFloat(basePrice) || 0, salePrice: salePrice ? parseFloat(salePrice) : undefined,
-      sku: sku || undefined, type, categoryId: categoryId || undefined,
+      sku: sku || undefined, type,
+      categoryId: categoryIds[0] || undefined,
+      categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       stock: parseInt(stock) || 0, lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
       images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured, manageStock,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
@@ -187,8 +200,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       data: {
         attributeIds: selectedAttrs,
         attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
-        defaultPrice: parseFloat(variantPrice) || (basePrice ? parseFloat(basePrice) : undefined),
-        defaultStock: parseInt(variantStock) || (manageStock ? parseInt(stock) || 0 : 10),
+        defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
+        defaultStock: manageStock ? (parseInt(stock) || 0) : 10,
       },
     })
   }
@@ -260,11 +273,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                 </div>
                 <div className='grid grid-cols-3 gap-6'>
                   <div className='space-y-1.5'>
-                    <Label>Category</Label>
-                    <select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                      <option value=''>None</option>
-                      {(cats || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <Label>Categories</Label>
+                    <MultiSearchableSelect
+                      options={categoryOptions}
+                      value={categoryIds}
+                      onChange={setCategoryIds}
+                      placeholder='Search categories...'
+                      searchPlaceholder='Type to search...'
+                    />
                   </div>
                   <div className='space-y-1.5'>
                     <Label>SKU</Label>
@@ -462,22 +478,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                     </div>
 
                     <div className='border-t pt-5'>
-                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 2: Set Default Values</h3>
-                      <p className='text-xs text-muted-foreground mb-4'>Leave blank to inherit from parent product. You can edit individual variants later.</p>
-                      <div className='grid grid-cols-3 gap-6 max-w-2xl'>
-                        <div className='space-y-1.5'>
-                          <Label>Default Price</Label>
-                          <Input type='number' step='0.01' value={variantPrice} onChange={e => setVariantPrice(e.target.value)} placeholder={basePrice || '0.00'} />
-                        </div>
-                        <div className='space-y-1.5'>
-                          <Label>Default Stock</Label>
-                          <Input type='number' value={variantStock} onChange={e => setVariantStock(e.target.value)} placeholder={manageStock ? stock : '10'} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className='border-t pt-5'>
-                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 3: Generate</h3>
+                      <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 2: Generate</h3>
                       <div className='flex items-center gap-4 mt-3'>
                         <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
                           {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
