@@ -7,6 +7,7 @@ import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
 
 // Devtools are heavy (Recharts + devtools UI). Load them on demand in dev mode only.
+/*
 const ReactQueryDevtools =
   import.meta.env.MODE === 'development'
     ? lazy(() =>
@@ -34,6 +35,7 @@ function Devtools() {
     </Suspense>
   )
 }
+*/
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient
@@ -44,7 +46,7 @@ export const Route = createRootRouteWithContext<{
         <div className="no-print">
           <NavigationProgress />
           <Toaster duration={5000} />
-          <Devtools />
+          {/* <Devtools /> */}
         </div>
         <Outlet />
       </>
