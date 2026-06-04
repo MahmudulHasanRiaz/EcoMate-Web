@@ -73,9 +73,40 @@ const queryClient = new QueryClient({
 const router = createRouter({
   routeTree,
   context: { queryClient },
+  // 'intent' = preload when user hovers/focuses a link. Previously this
+  // caused many modulepreload links to be added to the initial HTML, which
+  // slowed first paint on slow connections. Keep intent for in-app links but
+  // don't preload on render.
   defaultPreload: 'intent',
-  defaultPreloadStaleTime: 0,
+  defaultPreloadStaleTime: 30_000,
   basepath: '/admin',
+  // Shown while route component chunks load on navigation.
+  defaultPendingComponent: () => (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(255,255,255,0.7)',
+        backdropFilter: 'blur(2px)',
+        zIndex: 50,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          border: '3px solid #e2e8f0',
+          borderTopColor: '#2563eb',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }}
+      />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  ),
 })
 
 // Register the router instance for type safety
@@ -83,6 +114,18 @@ declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
   }
+}
+
+// Remove the boot skeleton the moment React commits the first paint.
+// This way the skeleton is replaced by real UI, not just hidden.
+function dismissBootSkeleton() {
+  const boot = document.getElementById('app-boot')
+  if (!boot) return
+  boot.classList.add('app-boot--hidden')
+  // Remove from DOM after the CSS transition completes.
+  setTimeout(() => {
+    if (boot.parentNode) boot.parentNode.removeChild(boot)
+  }, 250)
 }
 
 // Render the app
@@ -102,4 +145,10 @@ if (!rootElement.innerHTML) {
       </QueryClientProvider>
     </StrictMode>
   )
+  // The boot skeleton lives as a child of #root; React replaces it.
+  // We listen for the first commit and fade it out cleanly.
+  // requestAnimationFrame ensures the first paint has happened.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(dismissBootSkeleton)
+  })
 }

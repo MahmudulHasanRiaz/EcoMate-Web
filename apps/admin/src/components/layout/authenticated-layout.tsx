@@ -26,7 +26,30 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   }, [accessToken, navigate])
 
   if (!accessToken) {
-    return null
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#f8fafc',
+        }}
+      >
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            border: '3px solid #e2e8f0',
+            borderTopColor: '#2563eb',
+            borderRadius: '50%',
+            animation: 'auth-spin 0.8s linear infinite',
+          }}
+        />
+        <style>{`@keyframes auth-spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
   }
 
   return (

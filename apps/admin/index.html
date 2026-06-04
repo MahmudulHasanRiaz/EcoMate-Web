@@ -31,86 +31,155 @@
     <!-- Primary Meta Tags (overridden at runtime from /system-settings/branding) -->
     <title>Admin</title>
     <meta name="title" content="Admin" />
-    <meta
-      name="description"
-      content="Admin Dashboard."
-    />
+    <meta name="description" content="Admin Dashboard." />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Admin" />
-    <meta
-      property="og:description"
-      content="Admin Dashboard."
-    />
+    <meta property="og:description" content="Admin Dashboard." />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
     <meta property="twitter:title" content="Admin" />
-    <meta
-      property="twitter:description"
-      content="Admin Dashboard."
-    />
-
-    <!-- font family -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Manrope:wght@200..800&display=swap"
-      rel="stylesheet"
-    />
+    <meta property="twitter:description" content="Admin Dashboard." />
 
     <meta name="theme-color" content="#fff" />
 
-    <script>
-      (function () {
-        try {
-          var apiBase = (function () {
-            if (window.__API_URL__) return window.__API_URL__;
-            // Mirror the api-client resolution: same-origin in prod, localhost in dev.
-            if (location.hostname.indexOf('localhost') === -1) return '/api';
-            return 'http://localhost:4000/api';
-          })();
-          fetch(apiBase + '/system-settings/branding', { credentials: 'include' })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (data) {
-              if (!data) return;
-              if (data.adminTitle) {
-                document.title = data.adminTitle;
-                var t = document.querySelector('meta[name="title"]');
-                if (t) t.setAttribute('content', data.adminTitle);
-                var og = document.querySelector('meta[property="og:title"]');
-                if (og) og.setAttribute('content', data.adminTitle);
-                var tw = document.querySelector('meta[property="twitter:title"]');
-                if (tw) tw.setAttribute('content', data.adminTitle);
-              }
-              if (data.adminFavicon) {
-                var href = data.adminFavicon;
-                document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
-                  l.setAttribute('href', href);
-                });
-                var d = document.createElement('link');
-                d.setAttribute('rel', 'icon');
-                d.setAttribute('href', href);
-                document.head.appendChild(d);
-              }
-              if (data.adminTagline) {
-                var desc = document.querySelector('meta[name="description"]');
-                if (desc) desc.setAttribute('content', data.adminTagline);
-                var ogd = document.querySelector('meta[property="og:description"]');
-                if (ogd) ogd.setAttribute('content', data.adminTagline);
-                var twd = document.querySelector('meta[property="twitter:description"]');
-                if (twd) twd.setAttribute('content', data.adminTagline);
-              }
-            })
-            .catch(function () { /* keep defaults */ });
-        } catch (_) { /* keep defaults */ }
-      })();
-    </script>
+    <!--
+      Font loading: completely non-blocking.
+      Trick: the stylesheet is loaded with media="print" which is non-blocking,
+      then swapped to media="all" once it loads (or via the load event).
+      The onload handler does the swap; the <noscript> fallback is for users without JS.
+      `display=swap` means text is shown with a fallback font immediately.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Manrope:wght@200..800&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Manrope:wght@200..800&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Manrope:wght@200..800&display=swap"
+      />
+    </noscript>
+
+    <!--
+      Initial loading skeleton — shown instantly while JS bundles load.
+      Removed automatically once React mounts and renders into #root.
+    -->
+    <style>
+      html, body { margin: 0; padding: 0; background: #f8fafc; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+      #root:empty::before { content: ''; }
+      .app-boot {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        z-index: 9999; transition: opacity 200ms ease;
+      }
+      .app-boot__inner { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+      .app-boot__logo {
+        width: 48px; height: 48px; border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+      }
+      .app-boot__logo svg { width: 24px; height: 24px; color: #fff; }
+      .app-boot__bar { width: 140px; height: 3px; background: #e2e8f0; border-radius: 999px; overflow: hidden; position: relative; }
+      .app-boot__bar::after {
+        content: ''; position: absolute; inset: 0; width: 35%;
+        background: linear-gradient(90deg, transparent, #2563eb, transparent);
+        animation: app-boot-slide 1.2s ease-in-out infinite;
+      }
+      .app-boot__label { font-size: 12px; color: #64748b; font-weight: 500; letter-spacing: 0.02em; }
+      @keyframes app-boot-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(385%); } }
+      .dark .app-boot { background: linear-gradient(180deg, #0f172a 0%, #020617 100%); color: #e2e8f0; }
+      .dark .app-boot__bar { background: #1e293b; }
+      .app-boot--hidden { opacity: 0; pointer-events: none; }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Boot skeleton: visible until React mounts. Removed by main.tsx boot script. -->
+      <div class="app-boot" id="app-boot">
+        <div class="app-boot__inner">
+          <div class="app-boot__logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
+            </svg>
+          </div>
+          <div class="app-boot__bar" role="progressbar" aria-label="Loading"></div>
+          <div class="app-boot__label">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Branding override: deferred so it never blocks the first paint.
+      Runs after the browser is idle (or after a 2s fallback timeout).
+      Safe to fail — it only updates document.title, favicon, and meta tags.
+    -->
+    <script>
+      (function () {
+        var run = function () {
+          try {
+            var apiBase = (function () {
+              if (window.__API_URL__) return window.__API_URL__;
+              if (location.hostname.indexOf('localhost') === -1) return '/api';
+              return 'http://localhost:4000/api';
+            })();
+            fetch(apiBase + '/system-settings/branding', { credentials: 'include', cache: 'no-store' })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (data) {
+                if (!data) return;
+                if (data.adminTitle) {
+                  document.title = data.adminTitle;
+                  var t = document.querySelector('meta[name="title"]');
+                  if (t) t.setAttribute('content', data.adminTitle);
+                  var og = document.querySelector('meta[property="og:title"]');
+                  if (og) og.setAttribute('content', data.adminTitle);
+                  var tw = document.querySelector('meta[property="twitter:title"]');
+                  if (tw) tw.setAttribute('content', data.adminTitle);
+                }
+                if (data.adminFavicon) {
+                  var href = data.adminFavicon;
+                  document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
+                    l.setAttribute('href', href);
+                  });
+                  var d = document.createElement('link');
+                  d.setAttribute('rel', 'icon');
+                  d.setAttribute('href', href);
+                  document.head.appendChild(d);
+                }
+                if (data.adminTagline) {
+                  var desc = document.querySelector('meta[name="description"]');
+                  if (desc) desc.setAttribute('content', data.adminTagline);
+                  var ogd = document.querySelector('meta[property="og:description"]');
+                  if (ogd) ogd.setAttribute('content', data.adminTagline);
+                  var twd = document.querySelector('meta[property="twitter:description"]');
+                  if (twd) twd.setAttribute('content', data.adminTagline);
+                }
+              })
+              .catch(function () { /* keep defaults */ });
+          } catch (_) { /* keep defaults */ }
+        };
+        // Defer until the browser is idle. 2s fallback in case rIC is unavailable or slow.
+        if ('requestIdleCallback' in window) {
+          window.requestIdleCallback(run, { timeout: 2000 });
+        } else {
+          setTimeout(run, 200);
+        }
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
