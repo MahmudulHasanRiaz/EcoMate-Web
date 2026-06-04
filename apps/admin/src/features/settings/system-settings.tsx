@@ -32,7 +32,7 @@ export function SystemSettings() {
                 <div className='bg-muted p-2 rounded-lg'><l.icon className='h-5 w-5' /></div>
                 <CardTitle className='text-sm'>{l.title}</CardTitle>
               </CardHeader>
-              <CardContent><p className='text-xs text-muted-foreground'>{l.desc}</p></CardContent>
+              <CardContent><p className='text-xs text-muted-foreground dark:text-slate-300'>{l.desc}</p></CardContent>
             </Card>
           </div>
         ))}
