@@ -179,7 +179,7 @@ export default function ComboDetailPage() {
     }
 
     return (
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-1">
         {uniqueAttrs.map((attr) => {
           const attrsSoFar = { ...currentSelections };
           delete attrsSoFar[attr.attrId];
@@ -197,32 +197,25 @@ export default function ComboDetailPage() {
             v.variantIds.some((vid) => matchedVariantIds.has(vid))
           );
 
+          const selectedVal = currentSelections[attr.attrId] || '';
           return (
             <div key={attr.attrId} className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-16 shrink-0">{attr.name}:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {availableValues.map((v) => {
-                  const isSelected = currentSelections[attr.attrId] === v.value;
-                  return (
-                    <button
-                      key={v.value}
-                      onClick={() => handleAttrChange(item.productId, attr.attrId, v.value)}
-                      className={`min-w-[32px] h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${
-                        isSelected
-                          ? 'bg-brand-blue text-white border-brand-blue'
-                          : 'bg-white text-gray-700 border-gray-300 hover:border-brand-blue hover:text-brand-blue'
-                      }`}
-                    >
-                      {v.value}
-                    </button>
-                  );
-                })}
-              </div>
+              <span className="text-xs text-gray-500 w-14 shrink-0">{attr.name}:</span>
+              <select
+                value={selectedVal}
+                onChange={(e) => handleAttrChange(item.productId, attr.attrId, e.target.value)}
+                className="flex-1 h-7 text-xs rounded-md border border-gray-300 bg-white px-2 text-gray-700 focus:outline-none focus:border-brand-blue appearance-none"
+              >
+                <option value="">&mdash;</option>
+                {availableValues.map((v) => (
+                  <option key={v.value} value={v.value}>{v.value}</option>
+                ))}
+              </select>
             </div>
           );
         })}
         {selectedVariant && (
-          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+          <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
             <span className="text-green-600 font-medium">Selected:</span>
             <span>{config.currency.symbol}{selectedVariant.price.toLocaleString()}</span>
           </div>
@@ -242,6 +235,16 @@ export default function ComboDetailPage() {
 
   function handleAddToCart() {
     if (!combo || !allFlexibleReady || hasOOSSelection) return;
+    const selectionLabels: Record<string, string> = {};
+    for (const [productId, variantId] of Object.entries(effectiveSelections)) {
+      const item = combo.items.find((i) => i.productId === productId);
+      const variant = item?.variants?.find((v) => v.id === variantId);
+      if (variant) {
+        selectionLabels[productId] = variant.attributeValues
+          .map((av) => av.attributeValue.value)
+          .join(' / ');
+      }
+    }
     addToCart({
       id: combo.id,
       name: combo.name,
@@ -253,6 +256,7 @@ export default function ComboDetailPage() {
       comboId: combo.id,
       comboItems: combo.items,
       comboSelections: effectiveSelections,
+      comboSelectionLabels: selectionLabels,
     });
   }
 

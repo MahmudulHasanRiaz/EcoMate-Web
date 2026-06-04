@@ -30,6 +30,7 @@ export class CombosService {
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
+        { items: { some: { product: { name: { contains: query.search, mode: 'insensitive' } } } } },
       ];
     }
     if (query.categoryId) where.categoryId = query.categoryId;

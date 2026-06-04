@@ -40,12 +40,17 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-start mb-2 pr-1">
-          <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug max-w-[240px]">
-            {item.name}
+          <div className="min-w-0">
+            <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug break-words">
+              {item.name}
+            </h3>
             {item.variantLabel && (
               <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
             )}
-          </h3>
+            {item.variantId && !item.variantLabel && (
+              <span className="block text-[11px] text-gray-400 font-normal mt-0.5">Variant selected</span>
+            )}
+          </div>
           <button onClick={() => removeFromCart(key)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
             <X size={18} />
           </button>
@@ -595,15 +600,18 @@ export default function CheckoutPage() {
                               <button onClick={() => removeFromCart(getItemKey(item))} className="text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-colors"><X size={18} /></button>
                             </div>
                             {item.comboItems && (
-                              <div className="space-y-3">
-                                {item.comboItems.map((sub: any, idx: number) => (
-                                  <div key={idx} className="flex items-center justify-between text-[13px] pl-4">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-gray-600 font-medium">{sub.productName} <span className="text-gray-400 ml-1">&times; {sub.quantity}</span></span>
+                              <div className="space-y-2">
+                                {item.comboItems.map((sub: any, idx: number) => {
+                                  const selLabel = item.comboSelectionLabels?.[sub.productId];
+                                  return (
+                                    <div key={idx} className="flex items-baseline text-[13px] pl-4 gap-2">
+                                      <span className="text-gray-600 font-medium break-words">{sub.productName}</span>
+                                      <span className="text-gray-400 shrink-0">&times;{sub.quantity}</span>
+                                      {selLabel && <span className="text-brand-blue shrink-0">({selLabel})</span>}
+                                      {idx === 0 && <span className="text-[#2ecc71] font-bold shrink-0 ml-auto">Included</span>}
                                     </div>
-                                    {idx === 0 && <span className="text-[#2ecc71] font-bold">Included</span>}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                             <div className="flex items-center justify-between pt-3 border-t border-gray-50">

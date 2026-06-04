@@ -148,17 +148,33 @@ export default function CartDrawer() {
                     />
                   </div>
                   
-                  <div className="flex-1 flex flex-col justify-center">
-                    <div className="flex items-start justify-between gap-2 pr-6">
-                       <h4 className="text-[14px] font-medium text-gray-800 line-clamp-1 leading-tight mb-2">
-                         {item.name}
-                         {item.variantLabel && (
-                           <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
-                         )}
-                       </h4>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 mt-auto">
+                   <div className="flex-1 overflow-hidden">
+                      <div className="flex items-start justify-between gap-2 pr-6">
+                        <div className="min-w-0">
+                          <h4 className="text-[14px] font-medium text-gray-800 leading-tight break-words">
+                            {item.name}
+                          </h4>
+                          {(item.variantLabel || item.variantId) && (
+                            <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel || 'Variant selected'}</span>
+                          )}
+                          {item.isCombo && item.comboItems && (
+                            <div className="space-y-0.5 mt-1">
+                              {item.comboItems.map((sub: any, idx: number) => {
+                                const selLabel = item.comboSelectionLabels?.[sub.productId];
+                                return (
+                                  <div key={idx} className="flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
+                                    <span className="text-gray-600">{sub.productName}</span>
+                                    <span className="text-gray-400">&times;{sub.quantity}</span>
+                                    {selLabel && <span className="text-brand-blue">({selLabel})</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                     
+                     <div className="flex items-center gap-2 mt-2">
                       <div className="flex items-center h-7 rounded-sm border border-gray-200 bg-white">
                         <button 
                           onClick={() => updateQuantity(key, item.quantity - 1)}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Gift, Clock } from 'lucide-react';
+import { Gift, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getCombos } from '@/lib/api/combos';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
@@ -12,10 +12,12 @@ export default function CombosPage() {
   const router = useRouter();
   const [combos, setCombos] = useState<Combo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    getCombos({ isActive: true }).then(res => setCombos(res.data)).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    getCombos({ isActive: true, search: searchQuery || undefined }).then(res => setCombos(res.data)).catch(() => {}).finally(() => setLoading(false));
+  }, [searchQuery]);
 
   if (loading) {
     return (
@@ -38,6 +40,17 @@ export default function CombosPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 -mt-8 space-y-6">
+        <div className="relative">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search combos..."
+            className="w-full h-11 pl-10 pr-4 text-sm rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue/20 transition-colors"
+          />
+        </div>
+
         {combos.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center shadow-sm">
             <Gift className="w-16 h-16 mx-auto mb-4 text-gray-300" />

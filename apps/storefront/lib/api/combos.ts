@@ -72,6 +72,7 @@ function transformBackendCombo(raw: any): Combo {
 export async function getCombos(params?: {
   page?: number;
   perPage?: number;
+  search?: string;
   isActive?: boolean;
   isFeatured?: boolean;
 }): Promise<CombosResponse> {

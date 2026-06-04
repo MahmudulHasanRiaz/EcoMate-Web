@@ -16,6 +16,7 @@ export interface CartItem {
   comboId?: string;
   comboItems?: { productId: string; productName: string; quantity: number; price?: number }[];
   comboSelections?: Record<string, string>;
+  comboSelectionLabels?: Record<string, string>;
   variantId?: string;
   variantLabel?: string;
 }
