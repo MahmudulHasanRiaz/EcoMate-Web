@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useCart } from '@/context/CartContext';
+import { useCart, getItemKey } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
@@ -31,6 +31,7 @@ const GATEWAY_LABELS: Record<string, { label: string; icon: string; bg: string; 
 
 function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
   const s = currencySymbol || '৳';
+  const key = getItemKey(item);
   return (
     <div className="flex gap-4">
       <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
@@ -45,15 +46,15 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
               <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
             )}
           </h3>
-          <button onClick={() => removeFromCart(item.id)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
+          <button onClick={() => removeFromCart(key)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
             <X size={18} />
           </button>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center h-8 md:h-9 border border-gray-200 rounded-md bg-[#f8f9fa] overflow-hidden">
-            <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="w-8 h-full flex items-center justify-center text-gray-500 hover:bg-gray-100"><Minus size={14} /></button>
+            <button onClick={() => updateQuantity(key, item.quantity - 1)} className="w-8 h-full flex items-center justify-center text-gray-500 hover:bg-gray-100"><Minus size={14} /></button>
             <span className="w-10 h-full flex items-center justify-center border-x border-gray-200 bg-white text-[13px] font-black text-gray-800">{item.quantity}</span>
-            <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-8 h-full flex items-center justify-center text-brand-blue hover:bg-gray-100"><Plus size={14} /></button>
+            <button onClick={() => updateQuantity(key, item.quantity + 1)} className="w-8 h-full flex items-center justify-center text-brand-blue hover:bg-gray-100"><Plus size={14} /></button>
           </div>
           <div className="font-black text-[15px] text-gray-800">
             {s}{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
@@ -591,7 +592,7 @@ export default function CheckoutPage() {
                               <div className="flex items-center gap-2 bg-brand-blue/5 px-2 py-1 rounded">
                                 <span className="text-[14px] font-bold text-gray-800">{item.name}</span>
                               </div>
-                              <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-colors"><X size={18} /></button>
+                              <button onClick={() => removeFromCart(getItemKey(item))} className="text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-colors"><X size={18} /></button>
                             </div>
                             {item.comboItems && (
                               <div className="space-y-3">

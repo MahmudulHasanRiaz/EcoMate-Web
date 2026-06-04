@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
-import { useCart } from "@/context/CartContext";
+import { useCart, getItemKey } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getProducts } from "@/lib/api/products";
@@ -62,9 +62,6 @@ export default function CartDrawer() {
   const s = config.currency.symbol;
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
-
-  const itemKey = (item: { id: string; variantId?: string }) =>
-    item.variantId ? `${item.id}::${item.variantId}` : item.id;
 
   const handleImageError = (id: string) => {
     setImgErrors(prev => ({ ...prev, [id]: true }));
@@ -139,7 +136,7 @@ export default function CartDrawer() {
           ) : (
             <div className="space-y-4 px-4 z-10 mb-8">
               {items.map((item) => {
-                const key = itemKey(item);
+                const key = getItemKey(item);
                 return (
                 <div key={key} className="bg-white rounded-xl p-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 relative flex gap-3">
                   <div className="w-[60px] h-[60px] md:w-[70px] md:h-[70px] bg-white rounded-lg border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">

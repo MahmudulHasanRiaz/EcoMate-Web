@@ -57,12 +57,11 @@ function stableStringify(obj: Record<string, string>): string {
 }
 
 function getCartItemKey(comboId: string, selections: Record<string, string>) {
-  const base = `combo-${comboId}`;
   const selKeys = Object.keys(selections);
   if (selKeys.length > 0) {
-    return `${base}::sel::${stableStringify(selections)}`;
+    return `${comboId}::sel::${stableStringify(selections)}`;
   }
-  return base;
+  return comboId;
 }
 
 interface ItemSelections {
@@ -244,7 +243,7 @@ export default function ComboDetailPage() {
   function handleAddToCart() {
     if (!combo || !allFlexibleReady || hasOOSSelection) return;
     addToCart({
-      id: comboCartKey,
+      id: combo.id,
       name: combo.name,
       price: combo.price,
       originalPrice: combo.originalPrice,

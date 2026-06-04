@@ -48,6 +48,20 @@ function saveCart(items: CartItem[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
+export function stableStringify(obj: Record<string, string>): string {
+  return JSON.stringify(Object.keys(obj).sort().reduce((acc, k) => {
+    acc[k] = obj[k];
+    return acc;
+  }, {} as Record<string, string>));
+}
+
+export function getItemKey(item: { id: string; variantId?: string; comboSelections?: Record<string, string> }) {
+  if (item.comboSelections && Object.keys(item.comboSelections).length > 0) {
+    return `${item.id}::sel::${stableStringify(item.comboSelections)}`;
+  }
+  return item.variantId ? `${item.id}::${item.variantId}` : item.id;
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -61,20 +75,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loaded) saveCart(items);
   }, [items, loaded]);
-
-  function stableStringify(obj: Record<string, string>): string {
-    return JSON.stringify(Object.keys(obj).sort().reduce((acc, k) => {
-      acc[k] = obj[k];
-      return acc;
-    }, {} as Record<string, string>));
-  }
-
-  function getItemKey(item: { id: string; variantId?: string; comboSelections?: Record<string, string> }) {
-    if (item.comboSelections && Object.keys(item.comboSelections).length > 0) {
-      return `${item.id}::sel::${stableStringify(item.comboSelections)}`;
-    }
-    return item.variantId ? `${item.id}::${item.variantId}` : item.id;
-  }
 
   const addToCart = (product: CartItem) => {
     setItems((prev) => {
