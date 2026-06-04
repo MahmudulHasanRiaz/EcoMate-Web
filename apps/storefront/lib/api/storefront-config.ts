@@ -1,4 +1,5 @@
 import apiClient from "../api-client";
+import type { CatalogImageRatio } from "../utils/image-ratio";
 
 export interface StoreSystem {
   id: string;
@@ -98,6 +99,7 @@ export interface StorefrontConfig {
     paymentModes: string[];
   };
   districtCharges: Record<string, number>;
+  catalogImageRatio?: CatalogImageRatio;
 }
 
 let cachedConfig: StorefrontConfig | null = null;

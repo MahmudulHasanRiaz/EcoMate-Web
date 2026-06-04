@@ -83,3 +83,7 @@ export class VerifyPaymentDto {
   @IsString() status: string;
   @IsOptional() @IsString() notes?: string;
 }
+
+export class CancelOrderDto {
+  @IsString() token: string;
+}

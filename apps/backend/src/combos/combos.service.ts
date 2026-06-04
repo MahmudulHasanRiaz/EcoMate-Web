@@ -14,19 +14,12 @@ export class CombosService {
     private readonly media: MediaService,
   ) {}
 
-  async findAll(query: {
-    page?: number;
-    perPage?: number;
+  private buildWhere(query: {
     search?: string;
     categoryId?: string;
     isActive?: boolean;
-    sort?: string;
-    order?: string;
   }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 10;
     const where: any = {};
-
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -35,29 +28,116 @@ export class CombosService {
     }
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.isActive !== undefined) where.isActive = query.isActive;
+    return where;
+  }
 
+  private decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
+    try {
+      const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+      const [iso, id] = raw.split('|');
+      if (!iso || !id) return null;
+      const createdAt = new Date(iso);
+      if (isNaN(createdAt.getTime())) return null;
+      return { createdAt, id };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeCursor(createdAt: Date, id: string): string {
+    return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64url');
+  }
+
+  private readonly comboInclude = {
+    category: { select: { id: true, name: true } },
+    items: {
+      include: {
+        product: { select: { id: true, name: true, slug: true, images: true, basePrice: true, type: true } },
+        variant: { select: { id: true, sku: true, price: true } },
+      },
+    },
+  };
+
+  async findAll(query: {
+    page?: number;
+    perPage?: number;
+    search?: string;
+    categoryId?: string;
+    isActive?: boolean;
+    sort?: string;
+    order?: string;
+    cursor?: string;
+  }) {
+    const page = query.page || 1;
+    const perPage = query.perPage || 12;
+    const where = this.buildWhere(query);
     const [data, total] = await Promise.all([
       this.prisma.combo.findMany({
         where,
         skip: (page - 1) * perPage,
         take: perPage,
         orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
-        include: {
-          category: { select: { id: true, name: true } },
-          items: {
-            include: {
-              product: { select: { id: true, name: true, slug: true, images: true, basePrice: true, type: true } },
-              variant: { select: { id: true, sku: true, price: true } },
-            },
-          },
-        },
+        include: this.comboInclude,
       }),
       this.prisma.combo.count({ where }),
     ]);
 
     return {
       data,
-      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+      meta: {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage),
+        nextCursor: null,
+        hasMore: false,
+      },
+    };
+  }
+
+  async findAllCursor(query: {
+    cursor?: string;
+    perPage?: number;
+    search?: string;
+    categoryId?: string;
+    isActive?: boolean;
+  }) {
+    const perPage = query.perPage || 12;
+    const where: any = { ...this.buildWhere(query) };
+    if (query.cursor) {
+      const decoded = this.decodeCursor(query.cursor);
+      if (decoded) {
+        where.OR = [
+          { createdAt: { lt: decoded.createdAt } },
+          {
+            createdAt: decoded.createdAt,
+            id: { lt: decoded.id },
+          },
+        ];
+      }
+    }
+    const [data, total] = await Promise.all([
+      this.prisma.combo.findMany({
+        where,
+        take: perPage,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: this.comboInclude,
+      }),
+      this.prisma.combo.count({
+        where: this.buildWhere(query),
+      }),
+    ]);
+    const hasMore = data.length === perPage;
+    const last = data[data.length - 1];
+    const nextCursor = hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
+    return {
+      data,
+      meta: {
+        total,
+        perPage,
+        nextCursor,
+        hasMore,
+      },
     };
   }
 

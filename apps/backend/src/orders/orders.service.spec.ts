@@ -36,6 +36,7 @@ describe('OrdersService', () => {
     discount: 50,
     discountType: 'flat',
     total: 2050,
+    viewToken: 'mock-view-token',
     shippingAddress: { address: '123 Test St', city: 'Test City' },
     customerNotes: null,
     officeNotes: null,
@@ -185,15 +186,23 @@ describe('OrdersService', () => {
   });
 
   describe('findOne', () => {
-    it('should return an order by id', async () => {
+    it('should return an order by id when a matching token is provided', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
-      const result = await service.findOne('order-id-1');
+      const result = await service.findOne('order-id-1', { token: 'mock-view-token' });
 
       expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-id-1' } }),
       );
       expect(result).toEqual(mockOrder);
+    });
+
+    it('should throw NotFoundException for non-guest order without matching token', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      await expect(service.findOne('order-id-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw NotFoundException if order not found', async () => {

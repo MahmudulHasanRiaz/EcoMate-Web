@@ -26,10 +26,20 @@ export class CombosController {
     @Query('isActive') isActive?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('cursor') cursor?: string,
   ) {
+    if (cursor) {
+      return this.combosService.findAllCursor({
+        cursor,
+        perPage: perPage ? parseInt(perPage) : undefined,
+        search,
+        categoryId,
+        isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      });
+    }
     return this.combosService.findAll({
       page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 10,
+      perPage: perPage ? parseInt(perPage) : 12,
       search,
       categoryId,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,

@@ -34,7 +34,20 @@ export class ProductsController {
     @Query('ids') ids?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('cursor') cursor?: string,
   ) {
+    if (cursor) {
+      return this.svc.findAllCursor({
+        cursor,
+        perPage: perPage ? parseInt(perPage) : undefined,
+        search,
+        type,
+        categoryId,
+        isActive: isActive !== undefined ? isActive === 'true' : undefined,
+        isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
+        ids: ids ? ids.split(',').filter(Boolean) : undefined,
+      });
+    }
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
       perPage: perPage ? parseInt(perPage) : undefined,

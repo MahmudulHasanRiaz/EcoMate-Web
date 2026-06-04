@@ -187,6 +187,94 @@ describe('ProductsService', () => {
     });
   });
 
+  describe('findAllCursor', () => {
+    const makeProduct = (id: string, iso: string) => ({
+      ...mockProduct,
+      id,
+      createdAt: new Date(iso),
+    });
+
+    it('returns a stable order and includes cursor meta', async () => {
+      const rows = [
+        makeProduct('p-3', '2025-01-03T00:00:00Z'),
+        makeProduct('p-2', '2025-01-02T00:00:00Z'),
+        makeProduct('p-1', '2025-01-01T00:00:00Z'),
+      ];
+      (prisma.product.findMany as jest.Mock).mockResolvedValue(rows);
+      (prisma.product.count as jest.Mock).mockResolvedValue(100);
+
+      const result = await service.findAllCursor({ perPage: 3 });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 3,
+        }),
+      );
+      expect(result.data).toHaveLength(3);
+      expect(result.meta.hasMore).toBe(true);
+      expect(result.meta.nextCursor).toBeTruthy();
+      expect(result.meta.perPage).toBe(3);
+      expect(result.meta.total).toBe(100);
+    });
+
+    it('signals hasMore=false and nextCursor=null when last page is partial', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        makeProduct('p-1', '2025-01-01T00:00:00Z'),
+      ]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findAllCursor({ perPage: 5 });
+
+      expect(result.meta.hasMore).toBe(false);
+      expect(result.meta.nextCursor).toBeNull();
+    });
+
+    it('decodes cursor and applies keyset filter to query', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      const cursor = Buffer.from('2025-01-02T00:00:00.000Z|p-2', 'utf8').toString('base64url');
+      await service.findAllCursor({ perPage: 5, cursor });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { createdAt: { lt: new Date('2025-01-02T00:00:00.000Z') } },
+              {
+                createdAt: new Date('2025-01-02T00:00:00.000Z'),
+                id: { lt: 'p-2' },
+              },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('ignores malformed cursor and proceeds as first page', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      const result = await service.findAllCursor({ perPage: 5, cursor: 'not-a-real-cursor' });
+
+      expect(result.data).toHaveLength(0);
+      const callArg = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+      expect(callArg.where?.OR).toBeUndefined();
+    });
+
+    it('uses default perPage of 24 when not provided', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAllCursor({});
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 24 }),
+      );
+    });
+  });
+
   describe('findOne', () => {
     it('should return a product by id', async () => {
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);

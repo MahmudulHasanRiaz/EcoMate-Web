@@ -15,6 +15,7 @@ import {
   UpdateOrderStatusDto,
   UpdateOrderDto,
   UpdateOrderItemDto,
+  CancelOrderDto,
 } from './dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -52,13 +53,38 @@ export class OrdersController {
   }
 
   @Public()
-  @Get(':id') findOne(@Param('id') id: string) {
-    return this.svc.findOne(id);
-  }
-  @Public()
   @Post() create(@Body() dto: CreateOrderDto) {
     return this.svc.create(dto);
   }
+
+  @Public()
+  @Post('backfill-view-tokens')
+  backfillViewTokens() {
+    return this.svc.backfillViewTokens();
+  }
+
+  @Public()
+  @Get(':id') findOne(
+    @Param('id') id: string,
+    @Query('t') token?: string,
+  ) {
+    return this.svc.findOne(id, { token });
+  }
+
+  @Public()
+  @Post(':id/cancel')
+  cancelByCustomer(
+    @Param('id') id: string,
+    @Body() dto: CancelOrderDto,
+  ) {
+    return this.svc.cancelByCustomer(id, dto.token);
+  }
+
+  @Post(':id/rotate-view-token')
+  rotateViewToken(@Param('id') id: string) {
+    return this.svc.rotateViewToken(id);
+  }
+
   @Put(':id') updateOrder(
     @Param('id') id: string,
     @Body() dto: UpdateOrderDto,

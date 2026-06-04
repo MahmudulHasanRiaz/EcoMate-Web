@@ -2,7 +2,9 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
@@ -772,6 +774,69 @@ export class OrdersService {
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: { firstName: 'asc' },
     });
+  }
+
+  async rotateViewToken(orderId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    const viewToken = randomUUID();
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { viewToken },
+      select: { id: true, viewToken: true, displayId: true },
+    });
+    return updated;
+  }
+
+  async cancelByCustomer(orderId: string, token: string) {
+    if (!token) throw new ForbiddenException('View token is required');
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order || order.viewToken !== token) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.status.name !== 'Pending') {
+      throw new BadRequestException(
+        `Order in "${order.status.name}" status cannot be cancelled`,
+      );
+    }
+    const cancelled = await this.prisma.orderStatus.findFirst({
+      where: { name: 'Cancelled' },
+    });
+    if (!cancelled) {
+      throw new BadRequestException('Cancelled status not configured');
+    }
+    const timeline = [
+      ...((order.timeline as any[]) || []),
+      {
+        status: 'Cancelled',
+        timestamp: new Date().toISOString(),
+        note: 'Cancelled by customer',
+      },
+    ];
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { statusId: cancelled.id, timeline: timeline as any },
+      include: { status: true },
+    });
+  }
+
+  async backfillViewTokens() {
+    const orders = await this.prisma.order.findMany({
+      where: { viewToken: null },
+      select: { id: true },
+    });
+    let updated = 0;
+    for (const o of orders) {
+      await this.prisma.order.update({
+        where: { id: o.id },
+        data: { viewToken: randomUUID() },
+      });
+      updated += 1;
+    }
+    return { updated, total: orders.length };
   }
 
   private async deductStock(

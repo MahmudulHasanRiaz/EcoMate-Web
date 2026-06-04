@@ -25,6 +25,9 @@ export class BkashPgwController {
     const storefrontUrl = process.env['STOREFRONT_URL'] || 'http://localhost:3000';
     const orderId = queryOrderId || '';
 
+    let resolvedOrderId = orderId;
+    let viewToken: string | null = null;
+
     if (status === 'success' && paymentID) {
       try {
         const { token } = await this.bkash.grantToken();
@@ -40,9 +43,16 @@ export class BkashPgwController {
                 verifiedAt: new Date(),
               },
             });
+            resolvedOrderId = result.payerReference;
           }
+          const orderRow = await this.prisma.order.findUnique({
+            where: { id: resolvedOrderId },
+            select: { viewToken: true },
+          });
+          viewToken = orderRow?.viewToken ?? null;
+          const tokenQuery = viewToken ? `&t=${viewToken}` : '';
           res.redirect(
-            `${storefrontUrl}/checkout/thank-you?orderId=${result.payerReference || orderId}`,
+            `${storefrontUrl}/checkout/thank-you?orderId=${resolvedOrderId || orderId}${tokenQuery}`,
           );
           return;
         }
@@ -50,6 +60,11 @@ export class BkashPgwController {
         /* fall through */
       }
     }
-    res.redirect(`${storefrontUrl}/checkout/thank-you?orderId=${orderId}&pending=true`);
+    const orderRow = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { viewToken: true },
+    });
+    const tokenQuery = orderRow?.viewToken ? `&t=${orderRow.viewToken}` : '';
+    res.redirect(`${storefrontUrl}/checkout/thank-you?orderId=${orderId}&pending=true${tokenQuery}`);
   }
 }
