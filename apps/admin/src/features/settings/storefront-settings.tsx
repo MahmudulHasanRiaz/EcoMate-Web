@@ -65,6 +65,7 @@ export function StorefrontSettings() {
   const [instagram, setInstagram] = useState('')
   const [youtube, setYoutube] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
+  const [messengerUsername, setMessengerUsername] = useState('')
   const [orderWhatsapp, setOrderWhatsapp] = useState('')
   const [orderCallNumber, setOrderCallNumber] = useState('')
   const [seoTitle, setSeoTitle] = useState('')
@@ -113,6 +114,7 @@ export function StorefrontSettings() {
       setInstagram(settings.social_instagram || '')
       setYoutube(settings.social_youtube || '')
       setWhatsapp(settings.social_whatsapp || '')
+      setMessengerUsername(settings.social_messenger_username || '')
       setOrderWhatsapp(settings.order_whatsapp || '')
       setOrderCallNumber(settings.order_call_number || '')
       setSeoTitle(settings.seo_title || '')
@@ -165,6 +167,7 @@ export function StorefrontSettings() {
       { key: 'social_instagram', value: instagram },
       { key: 'social_youtube', value: youtube },
       { key: 'social_whatsapp', value: whatsapp },
+      { key: 'social_messenger_username', value: messengerUsername },
       { key: 'order_whatsapp', value: orderWhatsapp },
       { key: 'order_call_number', value: orderCallNumber },
       { key: 'seo_title', value: seoTitle },
@@ -385,6 +388,11 @@ export function StorefrontSettings() {
                 <div className='space-y-2'>
                   <Label htmlFor='social-whatsapp'>WhatsApp Number</Label>
                   <Input id='social-whatsapp' value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder='+8801700000000' />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='social-messenger'>Messenger Username</Label>
+                  <Input id='social-messenger' value={messengerUsername} onChange={e => setMessengerUsername(e.target.value)} placeholder='ecopage.bd' />
+                  <p className='text-xs text-muted-foreground'>Your Facebook page username (the part after facebook.com/ in the URL).</p>
                 </div>
               </div>
             </CardContent>

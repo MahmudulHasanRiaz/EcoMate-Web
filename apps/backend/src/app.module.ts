@@ -31,6 +31,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { CheckoutLeadsModule } from './checkout-leads/checkout-leads.module';
 import { DeliveryAreasModule } from './delivery-areas/delivery-areas.module';
 import { ImportModule } from './import/import.module';
+import { CmsPagesModule } from './cms-pages/cms-pages.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -65,6 +66,7 @@ import { RolesGuard } from './auth/roles.guard';
     CheckoutLeadsModule,
     DeliveryAreasModule,
     ImportModule,
+    CmsPagesModule,
   ],
   controllers: [OrderStatusController],
   providers: [

@@ -29,12 +29,31 @@ const geistMono = Geist_Mono({
 export async function generateMetadata(): Promise<Metadata> {
   try {
     const config = await getStorefrontConfigServer();
+    const faviconUrl = config.branding?.storefrontFavicon || "";
     return {
       title: {
         template: `%s — ${config.store.name}`,
         default: config.store.name,
       },
       description: config.seo.description || `${config.store.name} — premium products and services`,
+      keywords: config.seo.keywords || undefined,
+      icons: faviconUrl
+        ? {
+            icon: [{ url: faviconUrl }],
+          }
+        : undefined,
+      openGraph: {
+        title: config.seo.title || config.store.name,
+        description: config.seo.description || undefined,
+        images: config.branding?.storefrontOgImage ? [config.branding.storefrontOgImage] : undefined,
+        type: "website",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: config.seo.title || config.store.name,
+        description: config.seo.description || undefined,
+        images: config.branding?.storefrontOgImage ? [config.branding.storefrontOgImage] : undefined,
+      },
     };
   } catch {
     return {

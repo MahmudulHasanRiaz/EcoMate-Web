@@ -59,9 +59,11 @@ import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsPagesIndexRouteImport } from './routes/_authenticated/mon/settings/pages/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
+import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
 
@@ -348,6 +350,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
     path: '/storage/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsPagesIndexRoute =
+  AuthenticatedMonSettingsPagesIndexRouteImport.update({
+    id: '/pages/',
+    path: '/pages/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsOrderStatusesIndexRoute =
   AuthenticatedMonSettingsOrderStatusesIndexRouteImport.update({
     id: '/order-statuses/',
@@ -364,6 +372,12 @@ const AuthenticatedMonSettingsCourierIndexRoute =
   AuthenticatedMonSettingsCourierIndexRouteImport.update({
     id: '/courier/',
     path: '/courier/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsBrandingIndexRoute =
+  AuthenticatedMonSettingsBrandingIndexRouteImport.update({
+    id: '/branding/',
+    path: '/branding/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedOpPrintStickerIdRoute =
@@ -424,9 +438,11 @@ export interface FileRoutesByFullPath {
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -480,9 +496,11 @@ export interface FileRoutesByTo {
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/pages': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -538,9 +556,11 @@ export interface FileRoutesById {
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/_authenticated/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -596,9 +616,11 @@ export interface FileRouteTypes {
     | '/op/transactions/'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/settings/branding/'
     | '/mon/settings/courier/'
     | '/mon/settings/gateways/'
     | '/mon/settings/order-statuses/'
+    | '/mon/settings/pages/'
     | '/mon/settings/storage/'
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
@@ -652,9 +674,11 @@ export interface FileRouteTypes {
     | '/op/transactions'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/settings/branding'
     | '/mon/settings/courier'
     | '/mon/settings/gateways'
     | '/mon/settings/order-statuses'
+    | '/mon/settings/pages'
     | '/mon/settings/storage'
     | '/mon/settings/storefront'
     | '/mon/settings/system'
@@ -709,9 +733,11 @@ export interface FileRouteTypes {
     | '/_authenticated/op/transactions/'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
+    | '/_authenticated/mon/settings/branding/'
     | '/_authenticated/mon/settings/courier/'
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/order-statuses/'
+    | '/_authenticated/mon/settings/pages/'
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
@@ -1087,6 +1113,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/pages/': {
+      id: '/_authenticated/mon/settings/pages/'
+      path: '/pages'
+      fullPath: '/mon/settings/pages/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsPagesIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/order-statuses/': {
       id: '/_authenticated/mon/settings/order-statuses/'
       path: '/order-statuses'
@@ -1108,6 +1141,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsCourierIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/branding/': {
+      id: '/_authenticated/mon/settings/branding/'
+      path: '/branding'
+      fullPath: '/mon/settings/branding/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsBrandingIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/op/print/sticker/$id': {
       id: '/_authenticated/op/print/sticker/$id'
       path: '/sticker/$id'
@@ -1126,9 +1166,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedMonSettingsRouteRouteChildren {
+  AuthenticatedMonSettingsBrandingIndexRoute: typeof AuthenticatedMonSettingsBrandingIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  AuthenticatedMonSettingsPagesIndexRoute: typeof AuthenticatedMonSettingsPagesIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -1137,12 +1179,16 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
 
 const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteRouteChildren =
   {
+    AuthenticatedMonSettingsBrandingIndexRoute:
+      AuthenticatedMonSettingsBrandingIndexRoute,
     AuthenticatedMonSettingsCourierIndexRoute:
       AuthenticatedMonSettingsCourierIndexRoute,
     AuthenticatedMonSettingsGatewaysIndexRoute:
       AuthenticatedMonSettingsGatewaysIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
+    AuthenticatedMonSettingsPagesIndexRoute:
+      AuthenticatedMonSettingsPagesIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:

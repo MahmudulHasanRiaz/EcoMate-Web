@@ -28,38 +28,28 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary Meta Tags -->
-    <title>Shadcn Admin</title>
-    <meta name="title" content="Shadcn Admin" />
+    <!-- Primary Meta Tags (overridden at runtime from /system-settings/branding) -->
+    <title>Admin</title>
+    <meta name="title" content="Admin" />
     <meta
       name="description"
-      content="Admin Dashboard UI built with Shadcn and Vite."
+      content="Admin Dashboard."
     />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://shadcn-admin.netlify.app" />
-    <meta property="og:title" content="Shadcn Admin" />
+    <meta property="og:title" content="Admin" />
     <meta
       property="og:description"
-      content="Admin Dashboard UI built with Shadcn and Vite."
-    />
-    <meta
-      property="og:image"
-      content="https://shadcn-admin.netlify.app/images/shadcn-admin.png"
+      content="Admin Dashboard."
     />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://shadcn-admin.netlify.app" />
-    <meta property="twitter:title" content="Shadcn Admin" />
+    <meta property="twitter:title" content="Admin" />
     <meta
       property="twitter:description"
-      content="Admin Dashboard UI built with Shadcn and Vite."
-    />
-    <meta
-      property="twitter:image"
-      content="https://shadcn-admin.netlify.app/images/shadcn-admin.png"
+      content="Admin Dashboard."
     />
 
     <!-- font family -->
@@ -71,6 +61,52 @@
     />
 
     <meta name="theme-color" content="#fff" />
+
+    <script>
+      (function () {
+        try {
+          var apiBase = (function () {
+            if (window.__API_URL__) return window.__API_URL__;
+            // Mirror the api-client resolution: same-origin in prod, localhost in dev.
+            if (location.hostname.indexOf('localhost') === -1) return '/api';
+            return 'http://localhost:4000/api';
+          })();
+          fetch(apiBase + '/system-settings/branding', { credentials: 'include' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data) return;
+              if (data.adminTitle) {
+                document.title = data.adminTitle;
+                var t = document.querySelector('meta[name="title"]');
+                if (t) t.setAttribute('content', data.adminTitle);
+                var og = document.querySelector('meta[property="og:title"]');
+                if (og) og.setAttribute('content', data.adminTitle);
+                var tw = document.querySelector('meta[property="twitter:title"]');
+                if (tw) tw.setAttribute('content', data.adminTitle);
+              }
+              if (data.adminFavicon) {
+                var href = data.adminFavicon;
+                document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
+                  l.setAttribute('href', href);
+                });
+                var d = document.createElement('link');
+                d.setAttribute('rel', 'icon');
+                d.setAttribute('href', href);
+                document.head.appendChild(d);
+              }
+              if (data.adminTagline) {
+                var desc = document.querySelector('meta[name="description"]');
+                if (desc) desc.setAttribute('content', data.adminTagline);
+                var ogd = document.querySelector('meta[property="og:description"]');
+                if (ogd) ogd.setAttribute('content', data.adminTagline);
+                var twd = document.querySelector('meta[property="twitter:description"]');
+                if (twd) twd.setAttribute('content', data.adminTagline);
+              }
+            })
+            .catch(function () { /* keep defaults */ });
+        } catch (_) { /* keep defaults */ }
+      })();
+    </script>
   </head>
 
   <body>

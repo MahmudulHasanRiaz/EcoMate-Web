@@ -34,10 +34,18 @@ export interface StorefrontConfig {
     instagram: string;
     youtube: string;
     whatsapp: string;
+    messengerUsername: string;
   };
   order: {
     whatsapp: string;
     callNumber: string;
+  };
+  branding: {
+    storefrontFavicon: string;
+    storefrontOgImage: string;
+    adminTitle: string;
+    adminFavicon: string;
+    adminTagline: string;
   };
   seo: {
     title: string;

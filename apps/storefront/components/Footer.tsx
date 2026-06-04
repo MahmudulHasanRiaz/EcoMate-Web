@@ -2,14 +2,17 @@
 
 import React from 'react';
 import { Send, MapPin, Phone, Mail } from 'lucide-react';
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { useCmsFooterPages } from "@/lib/hooks/useCmsFooterPages";
 import { StoreBrand } from "./StoreBrand";
 
 export default function Footer() {
   const router = useRouter();
   const { config } = useStorefrontConfig();
   const { store, social, footer: footerConfig } = config;
+  const cmsPages = useCmsFooterPages();
 
   const handleLinkOpen = (path: string) => {
     window.scrollTo(0, 0);
@@ -73,17 +76,21 @@ export default function Footer() {
 
           {/* Columns */}
           <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-3 gap-8 md:gap-4">
-            <FooterColumn 
-              title="Information" 
+            <FooterColumn
+              title="Information"
               links={[
-                { name: "About us", onClick: () => handleLinkOpen('/about') }, 
-                { name: "Contact us", onClick: () => handleLinkOpen('/support') }, 
-                { name: "Company Information", onClick: () => handleLinkOpen('/company') }, 
-                { name: `${store.name} Stores`, onClick: () => handleLinkOpen('/stores') }, 
-                { name: "Terms & Conditions", onClick: () => handleLinkOpen('/terms-conditions') }, 
-                { name: "Privacy Policy", onClick: () => handleLinkOpen('/privacy-policy') }, 
-                { name: "Careers", onClick: () => handleLinkOpen('/careers') }
-              ]} 
+                { name: "About us", onClick: () => handleLinkOpen('/about') },
+                { name: "Contact us", onClick: () => handleLinkOpen('/support') },
+                { name: "Company Information", onClick: () => handleLinkOpen('/company') },
+                { name: `${store.name} Stores`, onClick: () => handleLinkOpen('/stores') },
+                { name: "Terms & Conditions", onClick: () => handleLinkOpen('/terms-conditions') },
+                { name: "Privacy Policy", onClick: () => handleLinkOpen('/privacy-policy') },
+                { name: "Careers", onClick: () => handleLinkOpen('/careers') },
+                ...cmsPages.map((p) => ({
+                  name: p.title,
+                  href: `/pages/${p.slug}`,
+                })),
+              ]}
             />
             <FooterColumn title="Shop By" links={["iPhone", "Samsung", "Google Pixel", "Accessories", "Smart Watches", "Audio Gadgets", "MacBook"]} />
             <FooterColumn 
@@ -164,13 +171,23 @@ export default function Footer() {
   );
 }
 
-function FooterColumn({ title, links }: { title: string, links: (string | { name: string, onClick?: () => void })[] }) {
+function FooterColumn({ title, links }: { title: string, links: (string | { name: string, onClick?: () => void, href?: string })[] }) {
   return (
     <div>
       <h4 className="font-bold text-[14px] text-gray-800 mb-4">{title}</h4>
       <ul className="space-y-2.5">
         {links.map((link, idx) => {
           const name = typeof link === 'string' ? link : link.name;
+          const href = typeof link === 'string' ? undefined : link.href;
+          if (href) {
+            return (
+              <li key={idx}>
+                <Link href={href} className="text-[12px] text-gray-500 hover:text-brand-blue transition-colors text-left">
+                  {name}
+                </Link>
+              </li>
+            );
+          }
           const onClick = typeof link === 'string' ? () => alert(name + ' page coming soon!') : (link.onClick || (() => alert(name + ' page coming soon!')));
           return (
             <li key={idx}>

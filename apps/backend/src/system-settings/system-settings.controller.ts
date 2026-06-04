@@ -36,6 +36,39 @@ export class SystemSettingsController {
   }
 
   @Public()
+  @Get('branding')
+  async getPublicBranding() {
+    const settings = await this.prisma.systemSetting.findMany({
+      where: {
+        key: {
+          in: [
+            'store_name',
+            'admin_title',
+            'admin_favicon',
+            'admin_tagline',
+            'storefront_favicon',
+            'storefront_og_image',
+            'seo_title',
+            'seo_description',
+          ],
+        },
+      },
+    });
+    const map: Record<string, string> = {};
+    for (const s of settings) map[s.key] = s.value;
+    return {
+      storeName: map['store_name'] || '',
+      adminTitle: map['admin_title'] || '',
+      adminFavicon: map['admin_favicon'] || '',
+      adminTagline: map['admin_tagline'] || 'Admin Dashboard',
+      storefrontFavicon: map['storefront_favicon'] || '',
+      storefrontOgImage: map['storefront_og_image'] || '',
+      seoTitle: map['seo_title'] || '',
+      seoDescription: map['seo_description'] || '',
+    };
+  }
+
+  @Public()
   @Get('storefront')
   async getStorefrontConfig() {
     const settings = await this.prisma.systemSetting.findMany();
@@ -78,10 +111,18 @@ export class SystemSettingsController {
         instagram: map['social_instagram'] || '',
         youtube: map['social_youtube'] || '',
         whatsapp: map['social_whatsapp'] || '',
+        messengerUsername: map['social_messenger_username'] || '',
       },
       order: {
         whatsapp: map['order_whatsapp'] || '',
         callNumber: map['order_call_number'] || '',
+      },
+      branding: {
+        storefrontFavicon: map['storefront_favicon'] || '',
+        storefrontOgImage: map['storefront_og_image'] || '',
+        adminTitle: map['admin_title'] || '',
+        adminFavicon: map['admin_favicon'] || '',
+        adminTagline: map['admin_tagline'] || '',
       },
       seo: {
         title: map['seo_title'] || '',

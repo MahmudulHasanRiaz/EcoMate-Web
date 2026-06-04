@@ -22,11 +22,11 @@ export default function FloatingWidgets() {
       link: `https://wa.me/${wa}`,
       delay: 0.1
     }] : []),
-    ...(config.social.facebook ? [{
+    ...(config.social.messengerUsername ? [{
       name: "Messenger",
       icon: <MessageCircleMore size={20} />,
       color: "bg-[#0084FF]",
-      link: `https://m.me/${config.social.facebook.split('/').pop()}`,
+      link: `https://m.me/${config.social.messengerUsername.replace(/^@/, '').replace(/^https?:\/\/(www\.)?m\.me\//, '').replace(/\/$/, '')}`,
       delay: 0.2
     }] : []),
     ...(phoneDigits ? [{
