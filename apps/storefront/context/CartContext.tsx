@@ -2,6 +2,11 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+export interface VariantAttribute {
+  name: string;
+  value: string;
+}
+
 export interface CartItem {
   id: string;
   name: string;
@@ -17,8 +22,10 @@ export interface CartItem {
   comboItems?: { productId: string; productName: string; quantity: number; price?: number }[];
   comboSelections?: Record<string, string>;
   comboSelectionLabels?: Record<string, string>;
+  comboSelectionAttributes?: Record<string, VariantAttribute[]>;
   variantId?: string;
   variantLabel?: string;
+  variantAttributes?: VariantAttribute[];
 }
 
 interface CartContextType {

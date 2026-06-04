@@ -2,11 +2,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
-import { useCart, getItemKey } from "@/context/CartContext";
+import { useCart, getItemKey, VariantAttribute } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getProducts } from "@/lib/api/products";
 import { useRouter } from "next/navigation";
+
+/**
+ * Render attribute selections as "Size: M, Color: Red" for the cart drawer.
+ * Prefers the rich variantAttributes array; falls back to variantLabel for
+ * legacy cart items stored before this format was introduced.
+ */
+function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: string): string | null {
+  if (attrs && attrs.length > 0) {
+    return attrs.map((a) => `${a.name}: ${a.value}`).join(', ');
+  }
+  if (fallback && fallback.trim()) return fallback;
+  return null;
+}
 
 function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
   const [upsells, setUpsells] = useState<any[]>([]);
@@ -154,18 +167,35 @@ export default function CartDrawer() {
                           <h4 className="text-[14px] font-medium text-gray-800 leading-tight break-words">
                             {item.name}
                           </h4>
-                          {(item.variantLabel || item.variantId) && (
-                            <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel || 'Variant selected'}</span>
-                          )}
+                          {(() => {
+                            const attrText = formatAttributes(item.variantAttributes, item.variantLabel);
+                            if (attrText) {
+                              return (
+                                <span className="block text-[11px] text-gray-500 font-normal mt-0.5">
+                                  {attrText}
+                                </span>
+                              );
+                            }
+                            if (item.variantId) {
+                              return (
+                                <span className="block text-[11px] text-gray-400 font-normal mt-0.5">
+                                  Variant selected
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                           {item.isCombo && item.comboItems && (
                             <div className="space-y-0.5 mt-1">
                               {item.comboItems.map((sub: any, idx: number) => {
+                                const selAttrs = item.comboSelectionAttributes?.[sub.productId];
                                 const selLabel = item.comboSelectionLabels?.[sub.productId];
+                                const subAttrText = formatAttributes(selAttrs, selLabel);
                                 return (
                                   <div key={idx} className="flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
                                     <span className="text-gray-600">{sub.productName}</span>
                                     <span className="text-gray-400">&times;{sub.quantity}</span>
-                                    {selLabel && <span className="text-brand-blue">({selLabel})</span>}
+                                    {subAttrText && <span className="text-brand-blue">({subAttrText})</span>}
                                   </div>
                                 );
                               })}

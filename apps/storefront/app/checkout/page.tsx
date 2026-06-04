@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useCart, getItemKey } from '@/context/CartContext';
+import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
@@ -21,6 +21,14 @@ function simpleFingerprint(phone: string, items: any[]) {
 }
 
 const COD_METHOD = 'cod';
+
+function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: string): string | null {
+  if (attrs && attrs.length > 0) {
+    return attrs.map((a) => `${a.name}: ${a.value}`).join(', ');
+  }
+  if (fallback && fallback.trim()) return fallback;
+  return null;
+}
 
 const GATEWAY_LABELS: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
   bkash: { label: 'bKash', icon: 'bkash', bg: '#e2136e', fg: 'white' },
@@ -44,12 +52,22 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
             <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug break-words">
               {item.name}
             </h3>
-            {item.variantLabel && (
-              <span className="block text-[11px] text-gray-500 font-normal mt-0.5">{item.variantLabel}</span>
-            )}
-            {item.variantId && !item.variantLabel && (
-              <span className="block text-[11px] text-gray-400 font-normal mt-0.5">Variant selected</span>
-            )}
+            {(() => {
+              const attrText = formatAttributes(item.variantAttributes, item.variantLabel);
+              if (attrText) {
+                return (
+                  <span className="block text-[11px] text-gray-500 font-normal mt-0.5">
+                    {attrText}
+                  </span>
+                );
+              }
+              if (item.variantId) {
+                return (
+                  <span className="block text-[11px] text-gray-400 font-normal mt-0.5">Variant selected</span>
+                );
+              }
+              return null;
+            })()}
           </div>
           <button onClick={() => removeFromCart(key)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
             <X size={18} />
@@ -602,12 +620,14 @@ export default function CheckoutPage() {
                             {item.comboItems && (
                               <div className="space-y-2">
                                 {item.comboItems.map((sub: any, idx: number) => {
+                                  const selAttrs = item.comboSelectionAttributes?.[sub.productId];
                                   const selLabel = item.comboSelectionLabels?.[sub.productId];
+                                  const subAttrText = formatAttributes(selAttrs, selLabel);
                                   return (
                                     <div key={idx} className="flex items-baseline text-[13px] pl-4 gap-2">
                                       <span className="text-gray-600 font-medium break-words">{sub.productName}</span>
                                       <span className="text-gray-400 shrink-0">&times;{sub.quantity}</span>
-                                      {selLabel && <span className="text-brand-blue shrink-0">({selLabel})</span>}
+                                      {subAttrText && <span className="text-brand-blue shrink-0">({subAttrText})</span>}
                                       {idx === 0 && <span className="text-[#2ecc71] font-bold shrink-0 ml-auto">Included</span>}
                                     </div>
                                   );

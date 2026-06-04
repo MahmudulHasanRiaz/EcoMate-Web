@@ -57,6 +57,13 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     ? selectedVariant.attributeValues.map((av) => av.attributeValue.value).join(' / ')
     : undefined;
 
+  const variantAttributes = selectedVariant
+    ? selectedVariant.attributeValues.map((av) => ({
+        name: av.attributeValue.attribute.name,
+        value: av.attributeValue.value,
+      }))
+    : undefined;
+
   const displayPrice = selectedVariant?.price ?? product.price;
   const displayOriginalPrice = product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined;
   const displayImage = selectedVariant?.image || product.image;
@@ -167,18 +174,19 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               if (inCart) {
                 updateQuantity(itemKey, 0);
               } else {
-                addToCart({ 
-                  id: product.id, 
-                  name: product.name, 
-                  price: displayPrice, 
-                  originalPrice: displayOriginalPrice, 
-                  image: displayImage, 
+                addToCart({
+                  id: product.id,
+                  name: product.name,
+                  price: displayPrice,
+                  originalPrice: displayOriginalPrice,
+                  image: displayImage,
                   quantity: 1,
                   variantId: selectedVariant?.id,
                   variantLabel,
+                  variantAttributes,
                   stock: displayStock,
                 });
-                trackEvent('AddToCart', { 
+                trackEvent('AddToCart', {
                   content_ids: [product.id], 
                   value: displayPrice, 
                   currency: config.currency.code,
@@ -192,15 +200,16 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               {inCart ? 'REMOVE FROM CART' : 'ADD TO CART'}
             </button>
             <button onClick={() => {
-              addToCart({ 
-                id: product.id, 
-                name: product.name, 
-                price: displayPrice, 
-                originalPrice: displayOriginalPrice, 
-                image: displayImage, 
+              addToCart({
+                id: product.id,
+                name: product.name,
+                price: displayPrice,
+                originalPrice: displayOriginalPrice,
+                image: displayImage,
                 quantity: 1,
                 variantId: selectedVariant?.id,
                 variantLabel,
+                variantAttributes,
                 stock: displayStock,
               });
               router.push('/checkout');

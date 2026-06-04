@@ -236,6 +236,7 @@ export default function ComboDetailPage() {
   function handleAddToCart() {
     if (!combo || !allFlexibleReady || hasOOSSelection) return;
     const selectionLabels: Record<string, string> = {};
+    const selectionAttributes: Record<string, { name: string; value: string }[]> = {};
     for (const [productId, variantId] of Object.entries(effectiveSelections)) {
       const item = combo.items.find((i) => i.productId === productId);
       const variant = item?.variants?.find((v) => v.id === variantId);
@@ -243,6 +244,10 @@ export default function ComboDetailPage() {
         selectionLabels[productId] = variant.attributeValues
           .map((av) => av.attributeValue.value)
           .join(' / ');
+        selectionAttributes[productId] = variant.attributeValues.map((av) => ({
+          name: av.attributeValue.attribute.name,
+          value: av.attributeValue.value,
+        }));
       }
     }
     addToCart({
@@ -257,6 +262,7 @@ export default function ComboDetailPage() {
       comboItems: combo.items,
       comboSelections: effectiveSelections,
       comboSelectionLabels: selectionLabels,
+      comboSelectionAttributes: selectionAttributes,
     });
   }
 
