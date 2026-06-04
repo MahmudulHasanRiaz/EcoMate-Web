@@ -2,20 +2,22 @@
 
 import React from 'react';
 import { ShoppingCart, Heart } from "lucide-react";
-import { motion } from 'motion/react';
+import Image from "next/image";
 import { useRouter } from 'next/navigation';
 import type { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { PLACEHOLDER_IMAGE, PRODUCT_BLUR_DATA_URL } from "@/lib/constants";
 import { trackEvent } from "@/lib/tracking";
+import { getAspectStyle } from "@/lib/utils/image-ratio";
 
 interface ProductCardProps {
   product: Product;
+  index?: number;
 }
 
-export default function ProductCard({ product }: ProductCardProps) {
+export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
@@ -27,6 +29,7 @@ export default function ProductCard({ product }: ProductCardProps) {
   const cartItem = items.find((item) => item.id === product.id);
   const inCart = !!cartItem && !isVar;
   const quantity = cartItem?.quantity || 0;
+  const isPriority = index < 6;
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isVar) {
@@ -67,6 +70,8 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   const imageSrc = imageError || !product.image ? PLACEHOLDER_IMAGE : product.image;
   const linkUrl = product.slug ? `/products/${product.slug}` : `/products/${product.id}`;
+  const useUnoptimized = imageError || imageSrc === PLACEHOLDER_IMAGE;
+  const aspect = getAspectStyle(config.catalogImageRatio);
 
   return (
     <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all">
@@ -76,12 +81,25 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
       )}
 
-      <div className="relative w-full aspect-square bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden"
+      <div className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden`}
+        style={'style' in aspect ? aspect.style : undefined}
         onClick={() => router.push(linkUrl)}>
-        <motion.img id={`img-${product.id}`}
-          whileHover={{ scale: 1.05 }} transition={{ duration: 0.4, ease: "easeOut" }}
-          src={imageSrc} alt={product.name} className="w-full h-full object-contain"
-          onError={() => setImageError(true)} />
+        <Image
+          id={`img-${product.id}`}
+          src={imageSrc}
+          alt={product.name}
+          fill
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          priority={isPriority}
+          fetchPriority={isPriority ? "high" : "auto"}
+          loading={isPriority ? "eager" : "lazy"}
+          decoding="async"
+          placeholder={useUnoptimized ? "empty" : "blur"}
+          blurDataURL={PRODUCT_BLUR_DATA_URL}
+          className="object-contain transition-transform duration-500 group-hover:scale-105"
+          onError={() => setImageError(true)}
+          unoptimized={useUnoptimized}
+        />
         <button
           onClick={(e) => { e.stopPropagation(); toggle(product.id); }}
           className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${

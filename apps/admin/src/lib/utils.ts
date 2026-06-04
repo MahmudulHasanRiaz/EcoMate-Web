@@ -44,6 +44,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Base URL for the customer-facing storefront. */
+export const STOREFRONT_URL =
+  import.meta.env.VITE_STOREFRONT_URL || 'http://localhost:3000'
+
+export function getStorefrontUrl(): string {
+  return STOREFRONT_URL.replace(/\/+$/, '')
+}
+
+export function buildThankYouUrl(
+  orderId: string,
+  token?: string | null,
+): string {
+  const base = `${getStorefrontUrl()}/checkout/thank-you`
+  if (!token) return `${base}?orderId=${encodeURIComponent(orderId)}`
+  return `${base}?orderId=${encodeURIComponent(orderId)}&t=${encodeURIComponent(token)}`
+}
+
 export function sleep(ms: number = 1000) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }

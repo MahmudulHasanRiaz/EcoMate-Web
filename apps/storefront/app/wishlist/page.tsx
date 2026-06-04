@@ -9,6 +9,7 @@ import type { Product } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
+import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 
 export default function WishlistPage() {
   const { addToCart } = useCart();
@@ -18,6 +19,7 @@ export default function WishlistPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const aspect = useCatalogImageStyle('product');
 
   useEffect(() => {
     if (ids.length === 0) {
@@ -63,7 +65,8 @@ export default function WishlistPage() {
             {products.map((product) => (
               <div key={product.id} className="group bg-white rounded-[32px] overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500 border border-gray-100 flex flex-col relative"
                 onClick={() => router.push(`/products/${product.slug || product.id}`)}>
-                <div className="relative aspect-square overflow-hidden bg-gray-50">
+                <div className={`relative ${aspect.className} overflow-hidden bg-gray-50`}
+                  style={'style' in aspect ? aspect.style : undefined}>
                   <img src={imgErrors[product.id] ? PLACEHOLDER_IMAGE : (product.image || PLACEHOLDER_IMAGE)} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     onError={() => setImgErrors(prev => ({ ...prev, [product.id]: true }))} />
                   {product.saveAmount && product.saveAmount > 0 && (

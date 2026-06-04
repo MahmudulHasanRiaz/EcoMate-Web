@@ -1,9 +1,43 @@
 import { serverFetch } from "../api-server";
 import type { Product, Variant, Category } from "../types";
 
-export interface ProductsResponse {
+export interface ServerProductsResponse {
   data: Product[];
-  meta: { total: number; page: number; perPage: number; totalPages: number };
+  meta: {
+    total: number;
+    perPage: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+}
+
+export interface FetchProductsServerOpts {
+  cursor?: string;
+  perPage?: number;
+  search?: string;
+  type?: string;
+  categoryId?: string;
+  isActive?: boolean;
+  isFeatured?: boolean;
+  ids?: string;
+  sort?: string;
+  order?: string;
+}
+
+function buildQuery(params: FetchProductsServerOpts): string {
+  const sp = new URLSearchParams();
+  if (params.cursor) sp.set("cursor", params.cursor);
+  if (params.perPage) sp.set("perPage", String(params.perPage));
+  if (params.search) sp.set("search", params.search);
+  if (params.type) sp.set("type", params.type);
+  if (params.categoryId) sp.set("categoryId", params.categoryId);
+  if (params.isActive !== undefined) sp.set("isActive", String(params.isActive));
+  if (params.isFeatured !== undefined) sp.set("isFeatured", String(params.isFeatured));
+  if (params.ids) sp.set("ids", params.ids);
+  if (params.sort) sp.set("sort", params.sort);
+  if (params.order) sp.set("order", params.order);
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
 }
 
 function transformBackendProduct(raw: any): Product {
@@ -75,52 +109,45 @@ function transformBackendProduct(raw: any): Product {
   };
 }
 
-export async function getProductsServer(params?: {
-  page?: number;
-  perPage?: number;
-  search?: string;
-  categoryId?: string;
-  isActive?: boolean;
-  isFeatured?: boolean;
-  sort?: string;
-  order?: string;
-}): Promise<ProductsResponse> {
-  const qs = new URLSearchParams();
-  if (params?.page) qs.set("page", String(params.page));
-  if (params?.perPage) qs.set("perPage", String(params.perPage));
-  if (params?.search) qs.set("search", params.search);
-  if (params?.categoryId) qs.set("categoryId", params.categoryId);
-  if (params?.isActive !== undefined) qs.set("isActive", String(params.isActive));
-  if (params?.isFeatured !== undefined) qs.set("isFeatured", String(params.isFeatured));
-  if (params?.sort) qs.set("sort", params.sort);
-  if (params?.order) qs.set("order", params.order);
-  const q = qs.toString();
-  const data = await serverFetch<any>(`/products${q ? `?${q}` : ""}`, { revalidate: 300 });
+export async function fetchProductsServer(
+  opts: FetchProductsServerOpts = {},
+): Promise<ServerProductsResponse> {
+  const url = `/products${buildQuery(opts)}`;
+  const data = await serverFetch<any>(url, { revalidate: 60 });
   return {
     data: (data.data || []).map(transformBackendProduct),
-    meta: data.meta,
+    meta: {
+      total: data.meta?.total ?? 0,
+      perPage: data.meta?.perPage ?? opts.perPage ?? 24,
+      nextCursor: data.meta?.nextCursor ?? null,
+      hasMore: Boolean(data.meta?.hasMore),
+    },
   };
-}
-
-export async function getFeaturedProductsServer(): Promise<Product[]> {
-  const { data } = await getProductsServer({
-    isActive: true,
-    isFeatured: true,
-    perPage: 50,
-  });
-  return data;
-}
-
-export async function getProductBySlugServer(slug: string): Promise<Product> {
-  const { data } = await getProductsServer({ search: slug, perPage: 1 });
-  const found = data.find((p: any) => p.slug === slug);
-  if (found) return found;
-
-  const byId = await serverFetch<any>(`/products/${slug}`);
-  return transformBackendProduct(byId);
 }
 
 export async function getCategoriesServer(): Promise<Category[]> {
   const data = await serverFetch<any>("/categories", { revalidate: 300 });
   return Array.isArray(data) ? data : data.data || [];
+}
+
+export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]> {
+  const res = await fetchProductsServer({
+    isActive: true,
+    isFeatured: true,
+    perPage,
+  });
+  return res.data;
+}
+
+export async function getProductBySlugServer(slug: string): Promise<Product | null> {
+  const res = await fetchProductsServer({ search: slug, perPage: 1 });
+  const found = res.data.find((p) => p.slug === slug);
+  if (found) return found;
+
+  try {
+    const byId = await serverFetch<any>(`/products/${slug}`, { revalidate: 60 });
+    return byId?.id ? transformBackendProduct(byId) : null;
+  } catch {
+    return null;
+  }
 }

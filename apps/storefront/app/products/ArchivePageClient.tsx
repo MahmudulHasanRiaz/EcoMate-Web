@@ -1,69 +1,131 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getProducts, getCategories } from '@/lib/api/products';
+import { getProducts } from '@/lib/api/products';
+import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
 import type { Product, Category } from '@/lib/types';
 
-export default function ArchivePageClient() {
+export interface ArchivePageClientProps {
+  initialItems: Product[];
+  initialCursor: string | null;
+  initialHasMore: boolean;
+  categories: Category[];
+  filters: { search?: string; category?: string; sort?: string; page?: string };
+}
+
+const PAGE_SIZE = 24;
+
+function SkeletonCard() {
+  return (
+    <div className="bg-gray-100 rounded-lg animate-pulse aspect-square" />
+  );
+}
+
+export default function ArchivePageClient({
+  initialItems,
+  initialCursor,
+  initialHasMore,
+  categories,
+  filters,
+}: ArchivePageClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialSearch = searchParams.get('search') || '';
-  const initialCategory = searchParams.get('category') || '';
+  const initialSearch = filters.search || '';
+  const initialCategory = filters.category || '';
+  const initialSort = filters.sort || 'default';
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategory || null);
-  const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 50000]);
-  const [sortBy, setSortBy] = useState('default');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [brandSearch, setBrandSearch] = useState('');
-  const [brands, setBrands] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = React.useState(initialSearch);
+  const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(initialCategory || null);
+  const [sortBy, setSortBy] = React.useState(initialSort);
+  const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
+  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
+  const [selectedBrands, setSelectedBrands] = React.useState<string[]>([]);
+  const [brandSearch, setBrandSearch] = React.useState('');
+  const [priceRange, setPriceRange] = React.useState<[number, number]>([0, 50000]);
 
-  useEffect(() => {
-    getCategories().then(setCategories).catch(() => {});
-  }, []);
+  const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
+    useInfiniteScroll<Product>({
+      initialItems,
+      initialCursor,
+      initialHasMore,
+      pageSize: PAGE_SIZE,
+      fetchPage: async (cursor, signal) => {
+        const res = await getProducts({
+          isActive: true,
+          search: filters.search || undefined,
+          categoryId: filters.category || undefined,
+          sort:
+            sortBy === 'price-low' || sortBy === 'price-high' ? 'basePrice' : undefined,
+          order: sortBy === 'price-low' ? 'asc' : sortBy === 'price-high' ? 'desc' : undefined,
+          perPage: PAGE_SIZE,
+          cursor: cursor ?? undefined,
+          signal,
+        });
+        return {
+          items: res.data,
+          nextCursor: res.meta.nextCursor ?? null,
+          hasMore: res.meta.hasMore,
+        };
+      },
+      getId: (p) => p.id,
+    });
 
-  useEffect(() => {
-    setLoading(true);
-    getProducts({
-      isActive: true,
-      search: searchQuery || undefined,
-      categoryId: selectedCategoryId || undefined,
-      sort: sortBy === 'price-low' ? 'basePrice' : sortBy === 'price-high' ? 'basePrice' : undefined,
-      order: sortBy === 'price-low' ? 'asc' : sortBy === 'price-high' ? 'desc' : undefined,
-      perPage: 100
-    })
-      .then((res) => {
-        const products = res.data;
-        const allTags = [...new Set(products.flatMap((p: any) => p.tags || []))];
-        setBrands(allTags);
-        let filtered = products;
-        if (priceRange[1] < 50000) {
-          filtered = filtered.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
-        }
-        if (selectedBrands.length > 0) {
-          filtered = filtered.filter(p => selectedBrands.some(brand => (p.tags || []).map((t: string) => t.toLowerCase()).includes(brand.toLowerCase())));
-        }
-        setProducts(filtered);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [selectedCategoryId, sortBy, searchQuery, selectedBrands]);
+  const brandOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of items) {
+      for (const tag of p.tags || []) set.add(tag);
+    }
+    return Array.from(set).sort();
+  }, [items]);
+
+  const visibleItems = useMemo(() => {
+    return items.filter((p) => {
+      if (priceRange[1] < 50000 && (p.price < priceRange[0] || p.price > priceRange[1])) return false;
+      if (selectedBrands.length > 0) {
+        const productBrands = (p.tags || []).map((t) => t.toLowerCase());
+        if (!selectedBrands.some((b) => productBrands.includes(b.toLowerCase()))) return false;
+      }
+      return true;
+    });
+  }, [items, priceRange, selectedBrands]);
+
+  const applyFilters = (next: { search?: string; category?: string; sort?: string }) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (next.search !== undefined) {
+      if (next.search) params.set('search', next.search);
+      else params.delete('search');
+    }
+    if (next.category !== undefined) {
+      if (next.category) params.set('category', next.category);
+      else params.delete('category');
+    }
+    if (next.sort !== undefined) {
+      if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
+      else params.delete('sort');
+    }
+    const qs = params.toString();
+    router.push(`/products${qs ? `?${qs}` : ''}`);
+  };
 
   const toggleBrand = (brand: string) => {
-    setSelectedBrands(prev =>
-      prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
+    setSelectedBrands((prev) =>
+      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
     );
   };
 
-  const currentCategoryName = categories.find(c => c.id === selectedCategoryId)?.name || 'Products';
+  const clearAll = () => {
+    setPriceRange([0, 50000]);
+    setSelectedCategoryId(null);
+    setSearchQuery('');
+    setSelectedBrands([]);
+    router.push('/products');
+  };
+
+  const currentCategoryName =
+    categories.find((c) => c.id === selectedCategoryId)?.name || 'Products';
 
   return (
     <div className="bg-white min-h-screen pb-20 font-sans">
@@ -86,19 +148,19 @@ export default function ArchivePageClient() {
           <div className="flex-1 hidden md:block"></div>
           <div className="flex items-center gap-2">
             <div className="relative flex-shrink-0">
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="appearance-none bg-white border border-gray-200 rounded-[4px] px-3 py-1.5 md:px-4 md:py-2 pr-8 text-[12px] md:text-[13px] text-gray-600 outline-none focus:border-brand-blue transition-all cursor-pointer">
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setSortBy(next);
+                  applyFilters({ sort: next });
+                }}
+                className="appearance-none bg-white border border-gray-200 rounded-[4px] px-3 py-1.5 md:px-4 md:py-2 pr-8 text-[12px] md:text-[13px] text-gray-600 outline-none focus:border-brand-blue transition-all cursor-pointer"
+              >
                 <option value="default">Default Sorting</option>
                 <option value="price-low">Price: Low to High</option>
                 <option value="price-high">Price: High to Low</option>
                 <option value="newest">Newest Arrival</option>
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-            </div>
-            <div className="relative flex-shrink-0">
-              <select className="appearance-none bg-white border border-gray-200 rounded-[4px] px-3 py-1.5 md:px-4 md:py-2 pr-8 text-[12px] md:text-[13px] text-gray-600 outline-none focus:border-brand-blue transition-all cursor-pointer">
-                <option value="default">Default</option>
-                <option value="12">12 Items</option>
-                <option value="24">24 Items</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
             </div>
@@ -115,7 +177,7 @@ export default function ArchivePageClient() {
               <div className="flex items-center justify-between">
                 <h3 className="text-[16px] font-bold text-gray-800 uppercase tracking-widest">Filters</h3>
                 <div className="flex items-center gap-4">
-                  <button onClick={() => { setPriceRange([0, 50000]); setSelectedCategoryId(null); setSearchQuery(''); setSelectedBrands([]); }} className="text-[12px] font-bold text-gray-400 hover:text-brand-blue uppercase tracking-wider transition-colors">Clear All</button>
+                  <button onClick={clearAll} className="text-[12px] font-bold text-gray-400 hover:text-brand-blue uppercase tracking-wider transition-colors">Clear All</button>
                   <button onClick={() => setIsFilterOpen(false)} className="md:hidden text-gray-400 hover:text-gray-800"><X size={20} /></button>
                 </div>
               </div>
@@ -127,7 +189,16 @@ export default function ArchivePageClient() {
                   </h4>
                   <div className="relative">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search products..." className="w-full bg-gray-50 border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') applyFilters({ search: searchQuery });
+                      }}
+                      placeholder="Search products..."
+                      className="w-full bg-gray-50 border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors"
+                    />
                   </div>
                 </div>
 
@@ -139,7 +210,16 @@ export default function ArchivePageClient() {
                     {categories.map((cat) => (
                       <label key={cat.id} className="flex items-center justify-between cursor-pointer group">
                         <div className="flex items-center gap-3">
-                          <input type="radio" name="category" checked={selectedCategoryId === cat.id} onChange={() => setSelectedCategoryId(cat.id)} className="w-3.5 h-3.5 text-brand-blue border-gray-300 focus:ring-brand-blue" />
+                          <input
+                            type="radio"
+                            name="category"
+                            checked={selectedCategoryId === cat.id}
+                            onChange={() => {
+                              setSelectedCategoryId(cat.id);
+                              applyFilters({ category: cat.id });
+                            }}
+                            className="w-3.5 h-3.5 text-brand-blue border-gray-300 focus:ring-brand-blue"
+                          />
                           <span className={`text-[13px] transition-colors ${selectedCategoryId === cat.id ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{cat.name}</span>
                         </div>
                       </label>
@@ -176,7 +256,7 @@ export default function ArchivePageClient() {
                     <input type="text" value={brandSearch} onChange={(e) => setBrandSearch(e.target.value)} placeholder="Search brands..." className="w-full bg-[#f8f9fa] border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors" />
                   </div>
                   <div className="space-y-3 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
-                    {brands.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase())).map((brand) => (
+                    {brandOptions.filter((b) => b.toLowerCase().includes(brandSearch.toLowerCase())).map((brand) => (
                       <label key={brand} className="flex items-center justify-between cursor-pointer group">
                         <div className="flex items-center gap-3">
                           <div className="relative flex items-center justify-center">
@@ -204,24 +284,61 @@ export default function ArchivePageClient() {
           </aside>
 
           <main className="flex-1">
-            {loading ? (
-              <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-3">
-                {[1,2,3,4,5,6].map(i => (
-                  <div key={i} className="bg-gray-100 rounded-lg animate-pulse h-72" />
-                ))}
+            {visibleItems.length === 0 && !isLoading ? (
+              <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300"><Search size={40} /></div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">No Products Found</h3>
+                <p className="text-gray-500">Try adjusting your filters or search criteria.</p>
+                <button onClick={clearAll} className="mt-6 text-brand-blue font-bold uppercase text-[13px] hover:underline">Clear All Filters</button>
               </div>
             ) : (
               <div className={`grid gap-3 md:gap-4 ${viewMode === 'grid' ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
-                {products.length > 0 ? products.map(product => (
-                  <ProductCard key={product.id} product={product} />
-                )) : (
-                  <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-gray-200">
-                    <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300"><Search size={40} /></div>
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">No Products Found</h3>
-                    <p className="text-gray-500">Try adjusting your filters or search criteria.</p>
-                    <button onClick={() => { setPriceRange([0, 50000]); setSelectedCategoryId(null); setSearchQuery(''); setSelectedBrands([]); }} className="mt-6 text-brand-blue font-bold uppercase text-[13px] hover:underline">Clear All Filters</button>
-                  </div>
-                )}
+                {visibleItems.map((product, index) => (
+                  <ProductCard key={product.id} product={product} index={index} />
+                ))}
+              </div>
+            )}
+
+            {isLoading && (
+              <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-3 mt-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonCard key={`skel-${i}`} />
+                ))}
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 flex flex-col items-center gap-3 text-center">
+                <AlertCircle className="w-8 h-8 text-red-500" />
+                <p className="text-gray-700">Couldn&rsquo;t load more products.</p>
+                <button onClick={retry} className="bg-brand-blue text-white px-5 py-2 rounded-lg font-bold text-sm hover:bg-brand-blue/90 transition-colors">
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {hasMore && !error && !isLoading && requiresManualLoad && (
+              <div className="flex justify-center mt-6">
+                <button onClick={loadMore} className="bg-white border border-brand-blue text-brand-blue px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-brand-blue/5 transition-colors">
+                  Load more
+                </button>
+              </div>
+            )}
+
+            {hasMore && !error && !isLoading && !requiresManualLoad && (
+              <div ref={sentinelRef} aria-hidden="true" className="h-1 w-full" />
+            )}
+
+            {isLoading && !requiresManualLoad && (
+              <div className="mt-4 flex items-center justify-center gap-2 text-gray-500 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading more products…
+              </div>
+            )}
+
+            {!hasMore && visibleItems.length > 0 && (
+              <div className="mt-6 flex flex-col items-center text-center text-gray-400 text-sm">
+                <span>You&rsquo;ve reached the end.</span>
               </div>
             )}
           </main>

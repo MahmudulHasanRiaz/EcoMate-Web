@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
+import { CustomerViewCard } from '@/features/orders/customer-view-card'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -376,6 +377,8 @@ function OrderDetailPage() {
           </div>
 
           <div className='space-y-6'>
+            <CustomerViewCard order={order} />
+
             <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Customer</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p className='font-medium'>{order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : (order.guestName || 'Guest')}</p><p className='text-muted-foreground'>{order.customer?.email || (order.guestPhone ? `Phone: ${order.guestPhone}` : '—')}</p><p className='text-muted-foreground'>{order.customer?.phoneNumber || ''}</p></CardContent></Card>
 
             <Card><CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCustomerInfo(!showCustomerInfo)}><CardTitle className='text-base flex items-center justify-between'><span className='flex items-center gap-1.5'><User className='h-4 w-4' /> History</span>{showCustomerInfo ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}</CardTitle></CardHeader>

@@ -306,6 +306,7 @@ model Order {
   paymentMethod   String?
   paymentMode     String?   @default("cod")
   partialAmount   Decimal?  @db.Decimal(10, 2)
+  viewToken       String?   @unique
 
   customer User?       @relation(fields: [customerId], references: [id])
   assignee User?        @relation("OrderAssignee", fields: [assignedToId], references: [id])

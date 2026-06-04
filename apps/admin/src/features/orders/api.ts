@@ -12,6 +12,10 @@ export interface OrderResponse {
   assignee?: { id: string; firstName: string; lastName: string } | null;
   guestName?: string | null;
   guestPhone?: string | null;
+  viewToken?: string | null;
+  paymentMethod?: string | null;
+  paymentMode?: string | null;
+  partialAmount?: number | string | null;
   dispatchLogs?: {
     id: string; courier: string; status: string; message?: string | null;
     consignmentId?: string | null; trackingCode?: string | null;
@@ -37,6 +41,8 @@ export const ordersApi = {
   addItem: (orderId: string, data: { productId: string; quantity: number; price: number; variantId?: string }) => apiClient.post(`/orders/${orderId}/items`, data),
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
   bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
+  rotateViewToken: (orderId: string) => apiClient.post<{ id: string; viewToken: string; displayId: string }>(`/orders/${orderId}/rotate-view-token`),
+  backfillViewTokens: () => apiClient.post<{ updated: number; total: number }>('/orders/backfill-view-tokens'),
 }
 
 export { appUrl as mediaUrl } from '@/lib/utils'

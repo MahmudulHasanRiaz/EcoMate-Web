@@ -3,7 +3,14 @@ import type { Product, Variant, Category } from "../types";
 
 export interface ProductsResponse {
   data: Product[];
-  meta: { total: number; page: number; perPage: number; totalPages: number };
+  meta: {
+    total: number;
+    page: number;
+    perPage: number;
+    totalPages: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
 }
 
 function transformBackendProduct(raw: any): Product {
@@ -85,6 +92,8 @@ export async function getProducts(params?: {
   ids?: string;
   sort?: string;
   order?: string;
+  cursor?: string;
+  signal?: AbortSignal;
 }): Promise<ProductsResponse> {
   const { data } = await apiClient.get("/products", { params });
   return {

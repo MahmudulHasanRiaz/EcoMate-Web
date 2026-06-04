@@ -13,6 +13,7 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
   try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
     const product = await getProductBySlugServer(slug);
+    if (!product) return { title: `Product Not Found — ${storeName}` };
     return {
       title: `${product.name} — ${storeName}`,
       description: product.description?.slice(0, 160) || `${product.name} at ${storeName}`,
@@ -48,6 +49,7 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
   const { slug } = await props.params;
   try {
     const product = await getProductBySlugServer(slug);
+    if (!product) return <ProductNotFound />;
     return <ProductDetailClient product={product} />;
   } catch {
     return <ProductNotFound />;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
@@ -16,6 +16,120 @@ interface StoreSystem {
   name: string;
   logo: string;
   display: 'name' | 'logo' | 'name+logo';
+}
+
+type CatalogImageRatioPreset = 'square' | '4-3' | '3-4' | '16-9';
+type CatalogImageRatioScope = 'all' | 'product' | 'combo';
+type CatalogImageRatioMode = 'preset' | 'custom';
+
+interface CatalogImageRatio {
+  mode: CatalogImageRatioMode;
+  preset?: CatalogImageRatioPreset;
+  custom?: { width: number; height: number };
+  scope: CatalogImageRatioScope;
+}
+
+const DEFAULT_CATALOG_IMAGE_RATIO: CatalogImageRatio = {
+  mode: 'preset',
+  preset: 'square',
+  scope: 'all',
+};
+
+function parseCatalogImageRatio(raw: string | undefined | null): CatalogImageRatio {
+  if (!raw) return { ...DEFAULT_CATALOG_IMAGE_RATIO };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ...DEFAULT_CATALOG_IMAGE_RATIO };
+  }
+  if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_CATALOG_IMAGE_RATIO };
+
+  const obj = parsed as Record<string, unknown>;
+  const scope: CatalogImageRatioScope =
+    obj['scope'] === 'product' || obj['scope'] === 'combo' || obj['scope'] === 'all'
+      ? (obj['scope'] as CatalogImageRatioScope)
+      : 'all';
+
+  if (obj['mode'] === 'custom' && obj['custom'] && typeof obj['custom'] === 'object') {
+    const custom = obj['custom'] as Record<string, unknown>;
+    const w = Number(custom['width']);
+    const h = Number(custom['height']);
+    if (
+      Number.isInteger(w) &&
+      Number.isInteger(h) &&
+      w > 0 &&
+      h > 0 &&
+      w <= 999 &&
+      h <= 999
+    ) {
+      return { mode: 'custom', custom: { width: w, height: h }, scope };
+    }
+    return { ...DEFAULT_CATALOG_IMAGE_RATIO, scope };
+  }
+
+  if (obj['mode'] === 'preset') {
+    const preset: CatalogImageRatioPreset =
+      obj['preset'] === 'square' ||
+      obj['preset'] === '4-3' ||
+      obj['preset'] === '3-4' ||
+      obj['preset'] === '16-9'
+        ? (obj['preset'] as CatalogImageRatioPreset)
+        : 'square';
+    return { mode: 'preset', preset, scope };
+  }
+
+  return { ...DEFAULT_CATALOG_IMAGE_RATIO, scope };
+}
+
+function validateCatalogImageRatio(raw: string): CatalogImageRatio {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new BadRequestException('catalogImageRatio must be valid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new BadRequestException('catalogImageRatio must be an object');
+  }
+  const obj = parsed as Record<string, unknown>;
+  const scope: CatalogImageRatioScope =
+    obj['scope'] === 'product' || obj['scope'] === 'combo' || obj['scope'] === 'all'
+      ? (obj['scope'] as CatalogImageRatioScope)
+      : 'all';
+
+  if (obj['mode'] === 'custom') {
+    if (!obj['custom'] || typeof obj['custom'] !== 'object') {
+      throw new BadRequestException('catalogImageRatio custom requires width and height');
+    }
+    const custom = obj['custom'] as Record<string, unknown>;
+    const w = Number(custom['width']);
+    const h = Number(custom['height']);
+    if (
+      !Number.isInteger(w) ||
+      !Number.isInteger(h) ||
+      w < 1 ||
+      h < 1 ||
+      w > 999 ||
+      h > 999
+    ) {
+      throw new BadRequestException('catalogImageRatio custom width and height must be integers between 1 and 999');
+    }
+    return { mode: 'custom', custom: { width: w, height: h }, scope };
+  }
+
+  if (obj['mode'] === 'preset') {
+    const preset: CatalogImageRatioPreset =
+      obj['preset'] === 'square' ||
+      obj['preset'] === '4-3' ||
+      obj['preset'] === '3-4' ||
+      obj['preset'] === '16-9'
+        ? (obj['preset'] as CatalogImageRatioPreset)
+        : 'square';
+    return { mode: 'preset', preset, scope };
+  }
+
+  throw new BadRequestException('catalogImageRatio mode must be "preset" or "custom"');
 }
 
 @Controller('system-settings')
@@ -175,6 +289,7 @@ export class SystemSettingsController {
         paymentModes: parseJson<string[]>(map['checkout_payment_modes'] || '["cod","full","partial"]', ['cod', 'full', 'partial']),
       },
       districtCharges: parseJson<Record<string, number>>(map['district_charges'] || '{}', {}),
+      catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
     };
   }
 
@@ -247,6 +362,8 @@ export class SystemSettingsController {
         await this.media.detachAll('storefront', 'store_systems');
       }
       value = JSON.stringify(systems);
+    } else if (key === 'catalogImageRatio') {
+      value = JSON.stringify(validateCatalogImageRatio(value));
     }
 
     await this.prisma.systemSetting.upsert({

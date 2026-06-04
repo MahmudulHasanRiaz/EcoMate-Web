@@ -1,16 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { getCombos } from '@/lib/api/combos';
 import type { Combo } from '@/lib/types';
-import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { PLACEHOLDER_IMAGE, COMBO_BLUR_DATA_URL } from "@/lib/constants";
+import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 
 export default function ComboDeals() {
   const router = useRouter();
   const [combos, setCombos] = useState<Combo[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const aspect = useCatalogImageStyle('combo');
 
   useEffect(() => {
     getCombos({ isActive: true, perPage: 5 }).then(res => setCombos(res.data)).catch(() => {});
@@ -43,24 +45,40 @@ export default function ComboDeals() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-5">
-            {combos.map((combo) => {
+            {combos.map((combo, index) => {
               const savings = combo.originalPrice && combo.originalPrice > combo.price
                 ? Math.round(((combo.originalPrice - combo.price) / combo.originalPrice) * 100) + '%'
                 : combo.discount || '';
 
+              const isPriority = index < 6;
+              const imageSrc = imgErrors[combo.id] ? PLACEHOLDER_IMAGE : (combo.image || PLACEHOLDER_IMAGE);
+              const useUnoptimized = imgErrors[combo.id] || imageSrc === PLACEHOLDER_IMAGE;
+
               return (
-                <motion.div key={combo.id} initial={{ opacity: 0, y: 15 }}
-                  whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
+                <div key={combo.id}
                   className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm group hover:shadow-xl transition-all duration-300 flex flex-col cursor-pointer"
                   onClick={() => router.push(`/combos/${combo.id}`)}>
-                  <div className="relative aspect-square p-1 bg-[#fcfcfc]">
-                    <motion.img whileHover={{ scale: 1.05 }}
-                      src={imgErrors[combo.id] ? PLACEHOLDER_IMAGE : (combo.image || PLACEHOLDER_IMAGE)} alt={combo.name} className="w-full h-full object-contain"
-                      onError={() => setImgErrors(prev => ({ ...prev, [combo.id]: true }))} />
+                  <div className={`relative ${aspect.className} p-1 bg-[#fcfcfc]`}
+                    style={'style' in aspect ? aspect.style : undefined}>
+                    <Image
+                      src={imageSrc}
+                      alt={combo.name}
+                      fill
+                      sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                      priority={isPriority}
+                      fetchPriority={isPriority ? "high" : "auto"}
+                      loading={isPriority ? "eager" : "lazy"}
+                      decoding="async"
+                      placeholder={useUnoptimized ? "empty" : "blur"}
+                      blurDataURL={COMBO_BLUR_DATA_URL}
+                      className="object-contain transition-transform duration-500 group-hover:scale-105"
+                      onError={() => setImgErrors(prev => ({ ...prev, [combo.id]: true }))}
+                      unoptimized={useUnoptimized}
+                    />
                     {savings && (
-                      <div className="absolute top-3 left-3 bg-[#2ecc71] text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">Save {savings}</div>
+                      <div className="absolute top-3 left-3 bg-[#2ecc71] text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm z-10">Save {savings}</div>
                     )}
-                    <div className="absolute top-3 right-3 bg-brand-blue text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm uppercase tracking-wider">Combo</div>
+                    <div className="absolute top-3 right-3 bg-brand-blue text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm uppercase tracking-wider z-10">Combo</div>
                   </div>
                   <div className="p-4 flex flex-col flex-1">
                     <h4 className="text-[14px] md:text-[15px] font-bold text-gray-800 mb-2 line-clamp-1 group-hover:text-brand-blue transition-colors">{combo.name}</h4>
@@ -73,7 +91,7 @@ export default function ComboDeals() {
                       View Details
                     </button>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>

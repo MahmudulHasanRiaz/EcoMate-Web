@@ -1,10 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { RefreshCw, Truck, CreditCard, Store, Radio, Palette, FileText } from 'lucide-react'
+import { RefreshCw, Truck, CreditCard, Store, Radio, Palette, FileText, Monitor } from 'lucide-react'
 
 const links = [
   { title: 'Branding', desc: 'Title, favicon, and identity for admin & storefront', icon: Palette, to: '/mon/settings/branding' },
   { title: 'Storefront', desc: 'Store content, social, SEO, footer, hero, delivery', icon: Store, to: '/mon/settings/storefront' },
+  { title: 'Display', desc: 'Catalog image ratio presets, custom dimensions, scope', icon: Monitor, to: '/mon/settings/display' },
   { title: 'Pages', desc: 'Terms, Privacy, Refund & other CMS pages', icon: FileText, to: '/mon/settings/pages' },
   { title: 'Order Statuses', desc: 'Customize order lifecycle transitions', icon: RefreshCw, to: '/mon/settings/order-statuses' },
   { title: 'Courier', desc: 'Configure Steadfast, Pathao, RedX, Hoorin', icon: Truck, to: '/mon/settings/courier' },

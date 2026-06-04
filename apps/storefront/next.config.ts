@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
       { protocol: 'http', hostname: 'localhost', port: '4000' },
       { protocol: 'https', hostname: 'mac.riaz.com.bd' },
       { protocol: 'http', hostname: 'mac.riaz.com.bd' },
+      { protocol: 'https', hostname: '**.r2.dev' },
+      { protocol: 'https', hostname: '**.amazonaws.com' },
+      { protocol: 'https', hostname: '**.cloudfront.net' },
     ],
   },
   async rewrites() {

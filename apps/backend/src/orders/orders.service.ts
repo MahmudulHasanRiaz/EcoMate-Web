@@ -144,7 +144,7 @@ export class OrdersService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, opts: { token?: string } = {}) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -176,6 +176,9 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException('Order not found');
+    if (!opts.token || order.viewToken !== opts.token) {
+      throw new NotFoundException('Order not found');
+    }
     return this.transformOrder(order);
   }
 
@@ -296,6 +299,7 @@ export class OrdersService {
         discount: dto.discount || 0,
         discountType: dto.discountType || 'flat',
         total,
+        viewToken: randomUUID(),
         shippingAddress: {
           ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress ? dto.shippingAddress : {}),
           district: dto.district,

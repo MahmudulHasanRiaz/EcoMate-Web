@@ -3,7 +3,14 @@ import type { Combo } from "../types";
 
 export interface CombosResponse {
   data: Combo[];
-  meta: { total: number; page: number; perPage: number; totalPages: number };
+  meta: {
+    total: number;
+    page: number;
+    perPage: number;
+    totalPages: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
 }
 
 function transformBackendCombo(raw: any): Combo {
@@ -75,6 +82,8 @@ export async function getCombos(params?: {
   search?: string;
   isActive?: boolean;
   isFeatured?: boolean;
+  cursor?: string;
+  signal?: AbortSignal;
 }): Promise<CombosResponse> {
   const { data } = await apiClient.get("/combos", { params });
   return {
