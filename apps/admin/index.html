@@ -107,20 +107,20 @@
   </head>
 
   <body>
-    <div id="root">
-      <!-- Boot skeleton: visible until React mounts. Removed by main.tsx boot script. -->
-      <div class="app-boot" id="app-boot">
-        <div class="app-boot__inner">
-          <div class="app-boot__logo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
-            </svg>
-          </div>
-          <div class="app-boot__bar" role="progressbar" aria-label="Loading"></div>
-          <div class="app-boot__label">Loading…</div>
+    <!-- Boot skeleton: visible until React mounts. Removed by main.tsx boot script. -->
+    <div class="app-boot" id="app-boot">
+      <div class="app-boot__inner">
+        <div class="app-boot__logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
+          </svg>
         </div>
+        <div class="app-boot__bar" role="progressbar" aria-label="Loading"></div>
+        <div class="app-boot__label">Loading…</div>
       </div>
     </div>
+
+    <div id="root"></div>
 
     <!--
       Branding override: deferred so it never blocks the first paint.
