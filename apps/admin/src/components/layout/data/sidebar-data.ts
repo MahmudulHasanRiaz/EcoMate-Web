@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard, Radio,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -68,13 +68,12 @@ export const sidebarData: SidebarData = {
     { title: 'Administration', panel: 'monitoring', items: [
       { title: 'User Management', url: '/mon/users', icon: Users },
       { title: 'Activity Logs', url: '/mon/activity-logs', icon: ListTodo },
-      { title: 'Tracking', url: '/mon/settings/tracking', icon: Radio },
     ]},
 
     // ===== SHARED FOOTER (Moved below) =====
     { title: 'Secondary', items: [
       { title: 'Settings', url: '/op/settings/personal', icon: Settings, panel: 'operational' },
-      { title: 'Settings', url: '/mon/settings/system', icon: Settings, panel: 'monitoring' },
+      { title: 'Settings', url: '/mon/settings/general', icon: Settings, panel: 'monitoring' },
       { title: 'Help Center', url: '/op/help-center', icon: HelpCircle, panel: 'operational' },
       { title: 'Help Center', url: '/mon/help-center', icon: HelpCircle, panel: 'monitoring' },
     ]},
