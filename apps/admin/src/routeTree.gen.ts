@@ -59,6 +59,7 @@ import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsPagesIndexRouteImport } from './routes/_authenticated/mon/settings/pages/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
@@ -351,6 +352,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
     path: '/storage/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsShippingIndexRoute =
+  AuthenticatedMonSettingsShippingIndexRouteImport.update({
+    id: '/shipping/',
+    path: '/shipping/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsPagesIndexRoute =
   AuthenticatedMonSettingsPagesIndexRouteImport.update({
     id: '/pages/',
@@ -451,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
+  '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -510,6 +518,7 @@ export interface FileRoutesByTo {
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/pages': typeof AuthenticatedMonSettingsPagesIndexRoute
+  '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -571,6 +580,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
+  '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -632,6 +642,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/pages/'
+    | '/mon/settings/shipping/'
     | '/mon/settings/storage/'
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
@@ -691,6 +702,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways'
     | '/mon/settings/order-statuses'
     | '/mon/settings/pages'
+    | '/mon/settings/shipping'
     | '/mon/settings/storage'
     | '/mon/settings/storefront'
     | '/mon/settings/system'
@@ -751,6 +763,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/pages/'
+    | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
@@ -1126,6 +1139,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/shipping/': {
+      id: '/_authenticated/mon/settings/shipping/'
+      path: '/shipping'
+      fullPath: '/mon/settings/shipping/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsShippingIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/pages/': {
       id: '/_authenticated/mon/settings/pages/'
       path: '/pages'
@@ -1192,6 +1212,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsPagesIndexRoute: typeof AuthenticatedMonSettingsPagesIndexRoute
+  AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -1212,6 +1233,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
     AuthenticatedMonSettingsPagesIndexRoute:
       AuthenticatedMonSettingsPagesIndexRoute,
+    AuthenticatedMonSettingsShippingIndexRoute:
+      AuthenticatedMonSettingsShippingIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:

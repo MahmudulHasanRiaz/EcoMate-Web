@@ -6,3 +6,4 @@ dist
 .vite
 *.log
 .draft/
+env-backup
