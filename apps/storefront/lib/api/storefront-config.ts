@@ -99,6 +99,9 @@ export interface StorefrontConfig {
     paymentModes: string[];
   };
   districtCharges: Record<string, number>;
+  shippingMode: 'options' | 'auto_district';
+  shippingOptions: { id: string; name: string; amount: number; sortOrder: number }[];
+  shippingZones: { id: string; type: 'custom_amount' | 'no_delivery'; amount: number | null; districts: string[]; label: string | null }[];
   catalogImageRatio?: CatalogImageRatio;
 }
 

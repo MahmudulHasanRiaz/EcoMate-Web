@@ -25,6 +25,9 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
   checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false, paymentModes: ['cod', 'full', 'partial'] },
   districtCharges: {},
+  shippingMode: 'options',
+  shippingOptions: [],
+  shippingZones: [],
 };
 
 function getBootstrappedConfig(): StorefrontConfig | undefined {
