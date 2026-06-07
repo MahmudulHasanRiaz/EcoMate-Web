@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
+import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -329,6 +329,7 @@ export default function CheckoutPage() {
   const [paymentMode, setPaymentMode] = useState('cod');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
+  const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
@@ -350,8 +351,30 @@ export default function CheckoutPage() {
   const paymentModes = checkoutCfg?.paymentModes || ['cod', 'full', 'partial'];
   const availableMode = (mode: string) => paymentModes.includes(mode);
 
-  const districtCharge = district ? (config.districtCharges?.[district] ?? config.delivery.charge) : null;
-  const deliveryCharge = district ? (cartTotal >= config.delivery.freeDeliveryMin ? 0 : (districtCharge ?? 0)) : 0;
+  let deliveryCharge = 0;
+  let noDeliveryError = '';
+
+  if (config.shippingMode === 'options') {
+    if (selectedShippingOptionId) {
+      const opt = config.shippingOptions?.find(o => o.id === selectedShippingOptionId);
+      deliveryCharge = opt?.amount ?? 0;
+    }
+  } else {
+    if (district) {
+      const zoneGroup = config.shippingZones?.find(z => z.districts.includes(district));
+      if (zoneGroup?.type === 'no_delivery') {
+        noDeliveryError = 'এই এলাকায় ডেলিভারি সম্ভব না';
+        deliveryCharge = 0;
+      } else if (zoneGroup?.type === 'custom_amount') {
+        deliveryCharge = zoneGroup.amount ?? config.delivery.charge;
+      } else {
+        deliveryCharge = config.delivery.charge;
+      }
+      if (cartTotal >= config.delivery.freeDeliveryMin) {
+        deliveryCharge = 0;
+      }
+    }
+  }
   const totalWithDelivery = cartTotal + deliveryCharge;
 
   useEffect(() => {
@@ -369,7 +392,7 @@ export default function CheckoutPage() {
   const validPhone = !user ? normalizePhone(guestPhone) : true;
   const showPhoneError = !user && guestPhone.length > 0 && !validPhone;
   const phoneOk = !user ? (guestPhone.length === 0 || validPhone) : true;
-  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk));
+  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk)) && !noDeliveryError;
 
   useEffect(() => { localStorage.setItem('checkout_guestName', guestName); }, [guestName]);
   useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone); }, [guestPhone]);
@@ -461,6 +484,7 @@ export default function CheckoutPage() {
       paymentMode,
       district: district || undefined,
       thana: thana || undefined,
+      selectedShippingOptionId: config.shippingMode === 'options' ? (selectedShippingOptionId || null) : undefined,
     };
 
     const isOnlinePayment = paymentMode === 'full' || paymentMode === 'partial';
@@ -686,10 +710,30 @@ export default function CheckoutPage() {
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none bg-[#fcfcfc]" />
                   </div>
                 </div>
-                {district && districtCharge !== null && (
+                {config.shippingMode === 'options' && config.shippingOptions?.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <label className="text-sm font-bold text-gray-700">Delivery Option</label>
+                    {config.shippingOptions.map(opt => (
+                      <label key={opt.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${selectedShippingOptionId === opt.id ? 'border-brand-blue bg-brand-blue/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <div className="flex items-center gap-3">
+                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => setSelectedShippingOptionId(opt.id)} className="accent-brand-blue" />
+                          <span className="text-sm font-medium text-gray-800">{opt.name}</span>
+                        </div>
+                        <span className="text-sm font-bold text-gray-800">{s}{opt.amount}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {config.shippingMode !== 'options' && district && deliveryCharge > 0 && !noDeliveryError && (
                   <div className="mt-3 text-xs text-gray-400">
-                    Delivery charge for {district}: <span className="font-bold text-gray-600">{s}{districtCharge}</span>
+                    Delivery charge for {district}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
                     {cartTotal >= config.delivery.freeDeliveryMin && <span className="text-green-600 ml-2">(Free delivery on orders over {s}{config.delivery.freeDeliveryMin})</span>}
+                  </div>
+                )}
+                {noDeliveryError && (
+                  <div className="mt-2 flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-sm">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>{noDeliveryError}</span>
                   </div>
                 )}
               </div>
@@ -806,10 +850,18 @@ export default function CheckoutPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-[14px] text-gray-500 font-medium">Delivery cost</span>
                   <span className="text-[14px] text-gray-800 font-black">
-                    {district ? (
-                      deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+                    {config.shippingMode === 'options' ? (
+                      selectedShippingOptionId ? (
+                        deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+                      ) : (
+                        <span className="text-gray-400 italic">Select option</span>
+                      )
                     ) : (
-                      <span className="text-gray-400 italic">Not selected</span>
+                      district ? (
+                        deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+                      ) : (
+                        <span className="text-gray-400 italic">Not selected</span>
+                      )
                     )}
                   </span>
                 </div>
