@@ -1,10 +1,11 @@
 import {
   Store, Palette, ImageIcon, Layout, List, HelpCircle, Clock, Info,
-  Search, Share2, ShoppingCart, Phone,
+  Search, Share2, ShoppingCart, Phone, Settings,
   type LucideIcon,
 } from 'lucide-react'
 
 export type SectionId =
+  | 'general'
   | 'identity-store'
   | 'identity-brands'
   | 'visuals-hero'
@@ -75,6 +76,17 @@ export const CATEGORIES: CategoryMeta[] = [
 ]
 
 export const SECTIONS: Record<SectionId, SectionMeta> = {
+  'general': {
+    id: 'general',
+    categoryId: 'identity',
+    title: 'General',
+    description: 'General system-level configuration for your application.',
+    icon: Settings,
+    fields: [
+      'app_name', 'app_url', 'default_timezone', 'default_locale',
+      'maintenance_mode', 'admin_email', 'pagination_default',
+    ],
+  },
   'identity-store': {
     id: 'identity-store',
     categoryId: 'identity',
