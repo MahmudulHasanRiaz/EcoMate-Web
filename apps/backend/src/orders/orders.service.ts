@@ -144,7 +144,7 @@ export class OrdersService {
     };
   }
 
-  async findOne(id: string, opts: { token?: string } = {}) {
+  async findOne(id: string, opts: { token?: string; userId?: string } = {}) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -176,7 +176,7 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException('Order not found');
-    if (!opts.token || order.viewToken !== opts.token) {
+    if (!opts.userId && (!opts.token || order.viewToken !== opts.token)) {
       throw new NotFoundException('Order not found');
     }
     return this.transformOrder(order);
