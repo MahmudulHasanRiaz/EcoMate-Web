@@ -66,8 +66,8 @@ export class OrdersController {
   @Public()
   @Get(':id') findOne(
     @Param('id') id: string,
+    @CurrentUser() user: { userId: string } | null | undefined,
     @Query('t') token?: string,
-    @CurrentUser() user: { userId: string } | null,
   ) {
     return this.svc.findOne(id, { token, userId: user?.userId });
   }
