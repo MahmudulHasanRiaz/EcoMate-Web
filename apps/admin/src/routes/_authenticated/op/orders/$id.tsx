@@ -39,6 +39,7 @@ function OrderDetailPage() {
 
   const [editing, setEditing] = useState(false)
   const [shippingCharge, setShippingCharge] = useState('')
+  const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
   const [discount, setDiscount] = useState('')
   const [discountType, setDiscountType] = useState('flat')
   const [customerNotes, setCustomerNotes] = useState('')
@@ -68,6 +69,20 @@ function OrderDetailPage() {
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]), enabled: showDispatchDialog })
   const activeCouriers = (Array.isArray(courierCreds) ? courierCreds : []).filter((c: any) => c.enabled)
 
+  const { data: shippingOptions } = useQuery({
+    queryKey: ['shipping-options'],
+    queryFn: () => apiClient.get('/shipping/options').then(r => (r.data as any[]).filter((o: any) => o.isActive)),
+    enabled: editing,
+  })
+
+  const { data: sysSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => apiClient.get('/system-settings').then(r => r.data),
+    enabled: editing,
+  })
+
+  const shippingMode = sysSettings?.['shipping_mode'] || 'auto_district'
+
   const dispatchMut = useMutation({
     mutationFn: ({ courier, orderId }: { courier: string; orderId: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId] }),
     onSuccess: (res) => {
@@ -87,6 +102,7 @@ function OrderDetailPage() {
   useEffect(() => {
     if (order) {
       setShippingCharge(String(nn(order.shippingCharge)))
+      setSelectedShippingOptionId(order.selectedShippingOptionId || '')
       setDiscount(String(nn(order.discount)))
       setDiscountType(order.discountType || 'flat')
       setCustomerNotes(order.customerNotes || '')
@@ -143,6 +159,7 @@ function OrderDetailPage() {
       id,
       data: {
         shippingCharge: parseFloat(shippingCharge) || 0,
+        selectedShippingOptionId: selectedShippingOptionId || null,
         discount: parseFloat(discount) || 0,
         discountType,
         customerNotes: customerNotes || null,
@@ -396,7 +413,40 @@ function OrderDetailPage() {
             {editing ? (
               <Card><CardHeader className='pb-2'><CardTitle className='text-base flex items-center justify-between'>Edit <Button size='sm' onClick={handleSaveEdit}><Save className='h-3.5 w-3.5 mr-1' />Save</Button></CardTitle></CardHeader>
                 <CardContent className='space-y-3'>
-                  <div className='grid grid-cols-2 gap-3'><div><Label className='text-xs'>Shipping</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div><div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div></div>
+                  <div>
+                    {shippingMode === 'options' && shippingOptions?.length > 0 ? (
+                      <div className="space-y-2">
+                        <Label className='text-xs'>Shipping Option</Label>
+                        <select
+                          className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm'
+                          value={selectedShippingOptionId}
+                          onChange={e => {
+                            const optId = e.target.value
+                            setSelectedShippingOptionId(optId)
+                            const opt = (shippingOptions as any[]).find(o => o.id === optId)
+                            if (opt) setShippingCharge(String(opt.amount))
+                          }}
+                        >
+                          <option value=''>Select option...</option>
+                          {(shippingOptions as any[]).map((o: any) => (
+                            <option key={o.id} value={o.id}>৳{o.amount} — {o.name}</option>
+                          ))}
+                        </select>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                          <div><Label className='text-xs'>Amount (override)</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div>
+                          <div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div>
+                        </div>
+                        {selectedShippingOptionId && order.shippingChargeOverridden && (
+                          <p className="text-xs text-amber-600 mt-1">Amount was manually overridden</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className='grid grid-cols-2 gap-3'>
+                        <div><Label className='text-xs'>Shipping</Label><Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} /></div>
+                        <div><Label className='text-xs'>Discount</Label><Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} /></div>
+                      </div>
+                    )}
+                  </div>
                   <div className='flex gap-1 border rounded-md p-0.5 w-fit'><Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}><DollarSign className='h-3 w-3 mr-1' />Flat</Button><Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}><Percent className='h-3 w-3 mr-1' />%</Button></div>
                   <div className='bg-muted/50 rounded-lg p-3 space-y-1.5 text-sm'><div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(itemSubtotal)}</span></div><div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span></div>{rawDiscount > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${rawDiscount}%)` : ''}</span><span>-৳{fmt(effectiveDiscount)}</span></div>}<div className='flex justify-between font-bold text-base pt-1.5 border-t'><span>Total</span><span>৳{fmt(calculatedTotal)}</span></div></div>
                   
