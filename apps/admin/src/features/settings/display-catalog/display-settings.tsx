@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { systemSettingsApi } from './storage-api'
+import { systemSettingsApi } from '../storage-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -78,14 +78,10 @@ function ratioToAspect(ratio: CatalogImageRatio): string {
     return `${ratio.custom.width} / ${ratio.custom.height}`
   }
   switch (ratio.preset) {
-    case '4-3':
-      return '4 / 3'
-    case '3-4':
-      return '3 / 4'
-    case '16-9':
-      return '16 / 9'
-    default:
-      return '1 / 1'
+    case '4-3': return '4 / 3'
+    case '3-4': return '3 / 4'
+    case '16-9': return '16 / 9'
+    default: return '1 / 1'
   }
 }
 
@@ -137,22 +133,15 @@ export function DisplaySettings() {
 
   const previewRatio = useMemo<CatalogImageRatio>(() => {
     if (mode === 'custom') {
-      return {
-        mode: 'custom',
-        custom: { width: customWidth, height: customHeight },
-        scope,
-      }
+      return { mode: 'custom', custom: { width: customWidth, height: customHeight }, scope }
     }
     return { mode: 'preset', preset, scope }
   }, [mode, preset, customWidth, customHeight, scope])
 
   const customValid =
-    Number.isInteger(customWidth) &&
-    Number.isInteger(customHeight) &&
-    customWidth >= 1 &&
-    customHeight >= 1 &&
-    customWidth <= 999 &&
-    customHeight <= 999
+    Number.isInteger(customWidth) && Number.isInteger(customHeight) &&
+    customWidth >= 1 && customHeight >= 1 &&
+    customWidth <= 999 && customHeight <= 999
 
   const handleSave = () => {
     if (mode === 'custom' && !customValid) {
@@ -193,9 +182,7 @@ export function DisplaySettings() {
             <ImageIcon className='h-5 w-5 text-primary' />
             <div>
               <CardTitle>Catalog Image Ratio</CardTitle>
-              <CardDescription>
-                Pick a preset or define a custom width-to-height ratio for catalog cards.
-              </CardDescription>
+              <CardDescription>Pick a preset or define a custom width-to-height ratio for catalog cards.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -204,25 +191,16 @@ export function DisplaySettings() {
             <RadioGroup
               value={mode === 'custom' ? 'custom' : preset}
               onValueChange={(v) => {
-                if (v === 'custom') {
-                  setMode('custom')
-                } else {
-                  setMode('preset')
-                  setPreset(v as Preset)
-                }
+                if (v === 'custom') { setMode('custom') }
+                else { setMode('preset'); setPreset(v as Preset) }
               }}
               className='space-y-3'
             >
               {PRESET_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className='flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'
-                >
+                <label key={opt.value} className='flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'>
                   <RadioGroupItem value={opt.value} id={`preset-${opt.value}`} className='mt-0.5' />
                   <div className='flex-1'>
-                    <Label htmlFor={`preset-${opt.value}`} className='text-sm font-semibold cursor-pointer'>
-                      {opt.label}
-                    </Label>
+                    <Label htmlFor={`preset-${opt.value}`} className='text-sm font-semibold cursor-pointer'>{opt.label}</Label>
                     <p className='text-xs text-muted-foreground mt-0.5'>{opt.description}</p>
                   </div>
                 </label>
@@ -230,38 +208,18 @@ export function DisplaySettings() {
               <label className='flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'>
                 <RadioGroupItem value='custom' id='preset-custom' className='mt-0.5' />
                 <div className='flex-1 space-y-2'>
-                  <Label htmlFor='preset-custom' className='text-sm font-semibold cursor-pointer'>
-                    Custom
-                  </Label>
+                  <Label htmlFor='preset-custom' className='text-sm font-semibold cursor-pointer'>Custom</Label>
                   <p className='text-xs text-muted-foreground'>Any positive integer ratio up to 999.</p>
                   {mode === 'custom' && (
                     <div className='flex items-center gap-2 pt-1'>
                       <div className='space-y-1'>
                         <Label htmlFor='custom-width' className='text-xs'>Width</Label>
-                        <Input
-                          id='custom-width'
-                          type='number'
-                          min={1}
-                          max={999}
-                          step={1}
-                          value={customWidth}
-                          onChange={(e) => setCustomWidth(Math.floor(Number(e.target.value) || 0))}
-                          className='w-20'
-                        />
+                        <Input id='custom-width' type='number' min={1} max={999} step={1} value={customWidth} onChange={(e) => setCustomWidth(Math.floor(Number(e.target.value) || 0))} className='w-20' />
                       </div>
                       <span className='text-muted-foreground font-bold mt-6'>/</span>
                       <div className='space-y-1'>
                         <Label htmlFor='custom-height' className='text-xs'>Height</Label>
-                        <Input
-                          id='custom-height'
-                          type='number'
-                          min={1}
-                          max={999}
-                          step={1}
-                          value={customHeight}
-                          onChange={(e) => setCustomHeight(Math.floor(Number(e.target.value) || 0))}
-                          className='w-20'
-                        />
+                        <Input id='custom-height' type='number' min={1} max={999} step={1} value={customHeight} onChange={(e) => setCustomHeight(Math.floor(Number(e.target.value) || 0))} className='w-20' />
                       </div>
                     </div>
                   )}
@@ -271,9 +229,7 @@ export function DisplaySettings() {
 
             <div className='rounded-lg border bg-muted/20 p-4'>
               <div className='flex items-center justify-between mb-3'>
-                <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
-                  Live preview
-                </span>
+                <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>Live preview</span>
                 <span className='text-xs text-muted-foreground'>{ratioToAspect(previewRatio)}</span>
               </div>
               <div className='flex items-end gap-3'>
@@ -289,21 +245,12 @@ export function DisplaySettings() {
 
           <div>
             <div className='text-sm font-semibold mb-3'>Apply to</div>
-            <RadioGroup
-              value={scope}
-              onValueChange={(v) => setScope(v as Scope)}
-              className='grid gap-3 md:grid-cols-3'
-            >
+            <RadioGroup value={scope} onValueChange={(v) => setScope(v as Scope)} className='grid gap-3 md:grid-cols-3'>
               {SCOPE_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className='flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'
-                >
+                <label key={opt.value} className='flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'>
                   <RadioGroupItem value={opt.value} id={`scope-${opt.value}`} className='mt-0.5' />
                   <div className='flex-1'>
-                    <Label htmlFor={`scope-${opt.value}`} className='text-sm font-semibold cursor-pointer'>
-                      {opt.label}
-                    </Label>
+                    <Label htmlFor={`scope-${opt.value}`} className='text-sm font-semibold cursor-pointer'>{opt.label}</Label>
                     <p className='text-xs text-muted-foreground mt-0.5'>{opt.description}</p>
                   </div>
                 </label>
@@ -314,15 +261,8 @@ export function DisplaySettings() {
       </Card>
 
       <div className='flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-dashed border-muted-foreground/20'>
-        <div className='text-sm text-muted-foreground'>
-          Changes apply on the next storefront page load (or after the 5-minute config revalidate).
-        </div>
-        <Button
-          onClick={handleSave}
-          size='lg'
-          className='px-8 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]'
-          disabled={setMut.isPending || (mode === 'custom' && !customValid)}
-        >
+        <div className='text-sm text-muted-foreground'>Changes apply on the next storefront page load (or after the 5-minute config revalidate).</div>
+        <Button onClick={handleSave} size='lg' className='px-8 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]' disabled={setMut.isPending || (mode === 'custom' && !customValid)}>
           {setMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Save className='h-4 w-4 mr-2' />}
           Save Display
         </Button>
