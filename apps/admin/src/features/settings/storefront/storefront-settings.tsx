@@ -94,6 +94,29 @@ export function StorefrontSettings() {
       </div>
       <Separator className='my-6' />
 
+      <div className='flex lg:hidden overflow-x-auto gap-2 pb-2 -mx-1 px-1 no-scrollbar snap-x snap-mandatory'>
+        {allSections.map(section => {
+          const Icon = section.icon
+          const isActive = section.id === activeSectionId
+          const isDirty = dirtySectionIds.has(section.id)
+          return (
+            <button
+              key={section.id}
+              onClick={() => handleSectionClick(section.id)}
+              className={`snap-start shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                isActive
+                  ? 'bg-foreground text-background border-foreground'
+                  : 'border-border/60 text-foreground/70 hover:text-foreground hover:bg-muted/30'
+              }`}
+            >
+              <Icon className='h-3 w-3' />
+              <span>{section.title}</span>
+              {isDirty && <span className='w-1 h-1 rounded-full bg-current' />}
+            </button>
+          )
+        })}
+      </div>
+
       <div className='flex flex-col gap-6 lg:flex-row lg:gap-8'>
         <aside className='w-full shrink-0 lg:w-64 lg:sticky lg:top-0 lg:self-start'>
           <CategorySidebar
