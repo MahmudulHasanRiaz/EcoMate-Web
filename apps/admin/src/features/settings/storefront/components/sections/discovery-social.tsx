@@ -3,21 +3,17 @@ import { Field } from '@/features/settings/storefront/components/field'
 import { getSectionById } from '@/features/settings/storefront/lib/categories'
 import type { SectionId } from '@/features/settings/storefront/lib/categories'
 import { FIELD_SCHEMAS } from '@/features/settings/storefront/lib/field-schemas'
-import { useStorefrontSettings } from '@/features/settings/storefront/hooks/use-storefront-settings'
+import type { UseStorefrontSettingsReturn } from '@/features/settings/storefront/hooks/use-storefront-settings'
 
 const SECTION_ID: SectionId = 'discovery-social'
 
 const sectionMeta = getSectionById(SECTION_ID)
 
-export function DiscoverySocialSection() {
-  const { values, setValue, saveSection, resetSection, isSectionDirty, dirtyKeysInSection, isSaving, lastSavedMap } = useStorefrontSettings()
+interface Props { hook: UseStorefrontSettingsReturn }
 
-  const handleFieldChange = (key: string, value: unknown) => {
-    setValue(key as keyof typeof values, value as string)
-  }
-
+export function DiscoverySocialSection({ hook }: Props) {
   const lastSavedAt = sectionMeta.fields.reduce<Date | null>((acc, key) => {
-    const t = lastSavedMap[key]
+    const t = hook.lastSavedMap[key]
     return t && (!acc || t > acc) ? t : acc
   }, null)
 
@@ -26,12 +22,12 @@ export function DiscoverySocialSection() {
       id={SECTION_ID}
       title={sectionMeta.title}
       description={sectionMeta.description}
-      isDirty={isSectionDirty(SECTION_ID)}
-      isSaving={isSaving}
-      dirtyCount={dirtyKeysInSection(SECTION_ID).length}
+      isDirty={hook.isSectionDirty(SECTION_ID)}
+      isSaving={hook.isSaving}
+      dirtyCount={hook.dirtyKeysInSection(SECTION_ID).length}
       lastSavedAt={lastSavedAt}
-      onSave={() => saveSection(SECTION_ID)}
-      onReset={() => resetSection(SECTION_ID)}
+      onSave={() => hook.saveSection(SECTION_ID)}
+      onReset={() => hook.resetSection(SECTION_ID)}
     >
       {sectionMeta.fields.map(fieldKey => {
         const schema = FIELD_SCHEMAS[fieldKey]
@@ -54,8 +50,8 @@ export function DiscoverySocialSection() {
             key={fieldKey}
             fieldKey={fieldKey}
             schema={schema}
-            value={values[fieldKey]}
-            onChange={(v) => handleFieldChange(fieldKey, v)}
+            value={hook.values[fieldKey]}
+            onChange={(v) => hook.setValue(fieldKey, v as string)}
           />
         )
       })}
