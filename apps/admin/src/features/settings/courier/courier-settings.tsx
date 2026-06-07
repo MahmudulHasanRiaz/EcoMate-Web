@@ -18,7 +18,13 @@ const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
 }
 
-const webhookBase = 'http://localhost:4000/api/webhooks/courier'
+const webhookBase = (() => {
+  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/webhooks/courier`
+  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    return `${window.location.origin}/api/webhooks/courier`
+  }
+  return 'http://localhost:4000/api/webhooks/courier'
+})()
 
 const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),

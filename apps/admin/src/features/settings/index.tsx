@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio } from 'lucide-react'
+import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -18,15 +18,6 @@ export function Settings() {
       groupLabel: 'Profile',
       items: [
         { title: 'Profile', href: '/op/settings/personal', icon: <UserCog size={18} /> },
-        { title: 'Account', href: '/op/settings/account', icon: <Wrench size={18} /> },
-      ],
-    },
-    {
-      groupLabel: 'Preferences',
-      items: [
-        { title: 'Appearance', href: '/op/settings/appearance', icon: <Palette size={18} /> },
-        { title: 'Notifications', href: '/op/settings/notifications', icon: <Bell size={18} /> },
-        { title: 'Display', href: '/op/settings/display', icon: <Monitor size={18} /> },
       ],
     },
   ]

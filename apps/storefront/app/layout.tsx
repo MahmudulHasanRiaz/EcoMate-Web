@@ -15,6 +15,8 @@ import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
+import { getFooterCmsPages } from "@/lib/api/cms-pages";
+import type { CmsPageSummary } from "@/lib/api/cms-pages";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -69,8 +71,10 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let initialConfig: StorefrontConfig | undefined;
+  let footerCmsPages: CmsPageSummary[] = [];
   try {
     initialConfig = await getStorefrontConfigServer();
+    footerCmsPages = await getFooterCmsPages();
   } catch {}
 
   return (
@@ -91,7 +95,7 @@ export default async function RootLayout({
             <CartDrawer />
             <MobileMenu />
             <main className="flex-1 pb-24 md:pb-0">{children}</main>
-            <Footer />
+            <Footer cmsPages={footerCmsPages} />
             <BottomNav />
             <FloatingWidgets />
             <FlyCartLayer />

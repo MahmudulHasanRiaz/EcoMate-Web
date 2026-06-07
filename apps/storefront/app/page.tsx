@@ -4,12 +4,16 @@ import ProductSection from "../components/ProductSection";
 import BrandSection from "../components/BrandSection";
 import ComboDeals from "../components/ComboDeals";
 import Testimonials from "../components/Testimonials";
-import { getFeaturedProductsServer } from "@/lib/api/products-server";
+import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer } from "@/lib/api/products-server";
 
 export const revalidate = 300;
 
 export default async function HomePage() {
-  const featured = await getFeaturedProductsServer();
+  const [featured, newArrivals, popular] = await Promise.all([
+    getFeaturedProductsServer(),
+    getNewArrivalsServer(),
+    getPopularItemsServer(),
+  ]);
 
   return (
     <>
@@ -17,9 +21,9 @@ export default async function HomePage() {
       <CategoryList />
       <ProductSection title="Featured Gadgets" products={featured.slice(0, 4)} />
       <BrandSection />
-      <ProductSection title="New Arrivals" products={featured.slice(0, 4)} />
+      <ProductSection title="New Arrivals" products={newArrivals.slice(0, 4)} />
       <ComboDeals />
-      <ProductSection title="Popular Items" products={featured.slice(0, 4)} />
+      <ProductSection title="Popular Items" products={popular.slice(0, 4)} />
       <Testimonials />
     </>
   );

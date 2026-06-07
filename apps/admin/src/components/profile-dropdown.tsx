@@ -30,7 +30,7 @@ export function ProfileDropdown() {
         <DropdownMenuTrigger asChild>
           <Button variant='ghost' className='relative h-8 w-8 rounded-full'>
             <Avatar className='h-8 w-8'>
-              <AvatarImage src='/avatars/01.png' alt={displayName} />
+              <AvatarImage src='/avatars/avatar.svg' alt={displayName} />
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
           </Button>
@@ -47,7 +47,7 @@ export function ProfileDropdown() {
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-                  <Link to={isMon ? '/mon/settings/system' : '/op/settings/personal'}>
+                  <Link to={isMon ? '/mon/settings/general' : '/op/settings/personal'}>
                     {isMon ? 'System Settings' : 'Profile'}
                   </Link>
                 </DropdownMenuItem>

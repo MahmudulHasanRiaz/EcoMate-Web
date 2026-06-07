@@ -10,6 +10,24 @@ import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
 import { existsSync } from 'fs';
 
+const MIME_EXT_MAP: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/svg+xml': '.svg',
+  'image/avif': '.avif',
+  'application/pdf': '.pdf',
+  'text/plain': '.txt',
+  'text/html': '.html',
+  'text/csv': '.csv',
+  'application/json': '.json',
+  'application/zip': '.zip',
+  'application/gzip': '.gz',
+  'video/mp4': '.mp4',
+  'audio/mpeg': '.mp3',
+};
+
 export interface StorageConfig {
   provider: 'local' | 'r2';
   r2Endpoint?: string;
@@ -101,7 +119,8 @@ export class StorageService {
     filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
-    const ext = extname(file.originalname).toLowerCase();
+    let ext = extname(file.originalname).toLowerCase();
+    if (!ext) ext = MIME_EXT_MAP[file.mimetype] || '';
     const name = filename
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;
@@ -134,7 +153,8 @@ export class StorageService {
     filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
-    const ext = extname(originalname).toLowerCase();
+    let ext = extname(originalname).toLowerCase();
+    if (!ext) ext = MIME_EXT_MAP[mimeType] || '';
     const name = filename
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;

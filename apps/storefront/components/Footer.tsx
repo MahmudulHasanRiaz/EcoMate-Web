@@ -1,24 +1,16 @@
 "use client";
 
 import React from 'react';
-import { Send, MapPin, Phone, Mail } from 'lucide-react';
+import { MapPin, Phone, Mail } from 'lucide-react';
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { useCmsFooterPages } from "@/lib/hooks/useCmsFooterPages";
 import { StoreBrand } from "./StoreBrand";
+import type { CmsPageSummary } from "@/lib/api/cms-pages";
 
-export default function Footer() {
-  const router = useRouter();
+export default function Footer({ cmsPages = [] }: { cmsPages?: CmsPageSummary[] }) {
   const { config } = useStorefrontConfig();
   const { store, social, footer: footerConfig } = config;
-  const cmsPages = useCmsFooterPages();
 
-  const handleLinkOpen = (path: string) => {
-    window.scrollTo(0, 0);
-    router.push(path);
-  };
-  
   return (
     <footer className="bg-white pt-16 pb-20 md:pb-8 border-t border-gray-100">
       <div className="max-w-7xl mx-auto px-4">
@@ -79,13 +71,13 @@ export default function Footer() {
             <FooterColumn
               title="Information"
               links={[
-                { name: "About us", onClick: () => handleLinkOpen('/about') },
-                { name: "Contact us", onClick: () => handleLinkOpen('/support') },
-                { name: "Company Information", onClick: () => handleLinkOpen('/company') },
-                { name: `${store.name} Stores`, onClick: () => handleLinkOpen('/stores') },
-                { name: "Terms & Conditions", onClick: () => handleLinkOpen('/terms-conditions') },
-                { name: "Privacy Policy", onClick: () => handleLinkOpen('/privacy-policy') },
-                { name: "Careers", onClick: () => handleLinkOpen('/careers') },
+                { name: "About us", href: '/about' },
+                { name: "Contact us", href: '/support' },
+                { name: "Company Information", href: '/company' },
+                { name: `${store.name} Stores`, href: '/stores' },
+                { name: "Terms & Conditions", href: '/terms-conditions' },
+                { name: "Privacy Policy", href: '/privacy-policy' },
+                { name: "Careers", href: '/careers' },
                 ...cmsPages.map((p) => ({
                   name: p.title,
                   href: `/pages/${p.slug}`,
@@ -96,20 +88,20 @@ export default function Footer() {
             <FooterColumn 
               title="Support" 
               links={[
-                { name: "Support Center", onClick: () => handleLinkOpen('/support') }, 
+                { name: "Support Center", href: '/support' }, 
                 { name: "How to Order" }, 
-                { name: "Order Tracking", onClick: () => handleLinkOpen('/orders') }, 
+                { name: "Order Tracking", href: '/orders' }, 
                 { name: "Payment" }, 
                 { name: "Shipping" }, 
-                { name: "FAQ", onClick: () => handleLinkOpen('/faq') }
+                { name: "FAQ", href: '/faq' }
               ]} 
             />
             <FooterColumn 
               title="Consumer Policy" 
               links={[
                 "Happy Return", 
-                { name: "Refund Policy", onClick: () => handleLinkOpen('/refund-policy') }, 
-                { name: "Exchange", onClick: () => handleLinkOpen('/exchange-policy') }, 
+                { name: "Refund Policy", href: '/refund-policy' }, 
+                { name: "Exchange", href: '/exchange-policy' }, 
                 "Cancellation", 
                 "Pre-Order", 
                 "Extra Discount"
@@ -171,7 +163,7 @@ export default function Footer() {
   );
 }
 
-function FooterColumn({ title, links }: { title: string, links: (string | { name: string, onClick?: () => void, href?: string })[] }) {
+function FooterColumn({ title, links }: { title: string, links: (string | { name: string, href?: string })[] }) {
   return (
     <div>
       <h4 className="font-bold text-[14px] text-gray-800 mb-4">{title}</h4>
@@ -188,10 +180,9 @@ function FooterColumn({ title, links }: { title: string, links: (string | { name
               </li>
             );
           }
-          const onClick = typeof link === 'string' ? () => alert(name + ' page coming soon!') : (link.onClick || (() => alert(name + ' page coming soon!')));
           return (
             <li key={idx}>
-              <button onClick={onClick} className="text-[12px] text-gray-500 hover:text-brand-blue transition-colors text-left">{name}</button>
+              <span className="text-[12px] text-gray-500">{name}</span>
             </li>
           );
         })}

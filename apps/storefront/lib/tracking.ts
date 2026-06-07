@@ -23,38 +23,39 @@ let _metaId = '';
 let _tiktokCode = '';
 let _eventQueue: { event: EventName; data?: Record<string, any>; eventId: string }[] = [];
 
+const debug = process.env.NODE_ENV !== 'production'
+  ? (...args: unknown[]) => console.log('[TRACKING]', ...args)
+  : () => {};
+
 export function setPixelIds(metaId: string, tiktokCode: string) {
   _metaId = metaId;
   _tiktokCode = tiktokCode;
-  // আইডি সেট হওয়ার পর একবার কিউ ফ্লাশ করার চেষ্টা করি
   flushQueue();
 }
 
 export function flushQueue() {
   if (typeof window === 'undefined') return;
-  
+
   const fbq = window.fbq;
   const ttq = window.ttq;
 
-  console.log('[TRACKING] flushQueue called. Status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq, queueLength: _eventQueue.length });
+  debug('flushQueue called. Status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq, queueLength: _eventQueue.length });
 
-  // যদি আইডিই না থাকে অথবা স্ক্রিপ্ট এখনো লোড না হয়, তাহলে পরে হবে
   if (!_metaId && !_tiktokCode) return;
   if ((_metaId && !fbq) && (_tiktokCode && !ttq)) return;
 
   if (_eventQueue.length > 0) {
     _eventQueue.forEach(({ event, data, eventId }) => {
       if (fbq && _metaId) {
-        console.log('[TRACKING] Flushing queued Meta event:', event, data);
+        debug('Flushing queued Meta event:', event, data);
         fbq('track', event, data, { eventID: eventId });
       }
       if (ttq && _tiktokCode) {
         const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
-        console.log('[TRACKING] Flushing queued TikTok event:', tiktokEvent, data);
+        debug('Flushing queued TikTok event:', tiktokEvent, data);
         ttq.track(tiktokEvent, data, { event_id: eventId });
       }
     });
-    // কিউ ক্লিয়ার করে দাও
     _eventQueue = [];
   }
 }
@@ -73,31 +74,29 @@ function getCookie(name: string): string {
 }
 
 export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string }) {
-  console.log('[TRACKING] trackEvent called:', { event, data, userData });
+  debug('trackEvent called:', { event, data, userData });
   if (typeof window === 'undefined') return;
 
   const eventId = generateEventId();
   const fbq = window.fbq;
   const ttq = window.ttq;
 
-  console.log('[TRACKING] Pixel IDs and script status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq });
+  debug('Pixel IDs and script status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq });
 
-  // স্ক্রিপ্ট রেডি না থাকলে কিউতে রাখো
   if (!_metaId && !_tiktokCode) {
-    console.log('[TRACKING] Queuing event (no IDs yet):', event);
+    debug('Queuing event (no IDs yet):', event);
     _eventQueue.push({ event, data, eventId });
   } else if ((_metaId && !fbq) || (_tiktokCode && !ttq)) {
-    console.log('[TRACKING] Queuing event (scripts not fully loaded yet):', event);
+    debug('Queuing event (scripts not fully loaded yet):', event);
     _eventQueue.push({ event, data, eventId });
   } else {
-    // স্ক্রিপ্ট রেডি থাকলে সরাসরি ফায়ার করো
     if (fbq && _metaId) {
-      console.log('[TRACKING] Firing Meta Pixel event:', event, data, { eventID: eventId });
+      debug('Firing Meta Pixel event:', event, data, { eventID: eventId });
       fbq('track', event, data, { eventID: eventId });
     }
     if (ttq && _tiktokCode) {
       const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
-      console.log('[TRACKING] Firing TikTok Pixel event:', tiktokEvent, data, { event_id: eventId });
+      debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: eventId });
       ttq.track(tiktokEvent, data, { event_id: eventId });
     }
   }

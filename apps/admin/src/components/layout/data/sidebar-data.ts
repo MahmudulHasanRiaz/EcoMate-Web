@@ -6,7 +6,7 @@ import {
 import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
-  user: { name: 'Admin', email: 'admin@ecomate.com', avatar: '/avatars/shadcn.jpg' },
+  user: { name: 'Admin', email: 'admin@ecomate.com', avatar: '/avatars/avatar.svg' },
   teams: [
     { name: 'Operational', logo: Package, plan: 'Day-to-Day Operations' },
     { name: 'Admin', logo: ShieldCheck, plan: 'Monitoring & Settings' },

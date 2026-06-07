@@ -139,6 +139,27 @@ export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]
   return res.data;
 }
 
+export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
+  const res = await fetchProductsServer({
+    isActive: true,
+    isFeatured: true,
+    perPage,
+    sort: 'createdAt',
+    order: 'desc',
+  });
+  return res.data;
+}
+
+export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
+  const res = await fetchProductsServer({
+    isActive: true,
+    perPage,
+    sort: 'createdAt',
+    order: 'desc',
+  });
+  return res.data;
+}
+
 export async function getProductBySlugServer(slug: string): Promise<Product | null> {
   const res = await fetchProductsServer({ search: slug, perPage: 1 });
   const found = res.data.find((p) => p.slug === slug);
