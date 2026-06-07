@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package } from 'lucide-react'
+import { Monitor, Bell, Palette, Wrench, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -13,25 +13,64 @@ export function Settings() {
   const { pathname } = useLocation()
   const isMon = pathname.includes('/mon/')
 
-  const opNavItems = [
-    { title: 'Profile', href: '/op/settings/personal', icon: <UserCog size={18} /> },
-    { title: 'Account', href: '/op/settings/account', icon: <Wrench size={18} /> },
-    { title: 'Appearance', href: '/op/settings/appearance', icon: <Palette size={18} /> },
-    { title: 'Notifications', href: '/op/settings/notifications', icon: <Bell size={18} /> },
-    { title: 'Display', href: '/op/settings/display', icon: <Monitor size={18} /> },
+  const opNavGroups = [
+    {
+      groupLabel: 'Profile',
+      items: [
+        { title: 'Profile', href: '/op/settings/personal', icon: <UserCog size={18} /> },
+        { title: 'Account', href: '/op/settings/account', icon: <Wrench size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'Preferences',
+      items: [
+        { title: 'Appearance', href: '/op/settings/appearance', icon: <Palette size={18} /> },
+        { title: 'Notifications', href: '/op/settings/notifications', icon: <Bell size={18} /> },
+        { title: 'Display', href: '/op/settings/display', icon: <Monitor size={18} /> },
+      ],
+    },
   ]
 
-  const monNavItems = [
-    { title: 'System', href: '/mon/settings/system', icon: <SettingsIcon size={18} /> },
-    { title: 'Storefront', href: '/mon/settings/storefront', icon: <Store size={18} /> },
-    { title: 'Gateways', href: '/mon/settings/gateways', icon: <CreditCard size={18} /> },
-    { title: 'Storage', href: '/mon/settings/storage', icon: <HardDrive size={18} /> },
-    { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },
-    { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
-    { title: 'Order Statuses', href: '/mon/settings/order-statuses', icon: <RefreshCw size={18} /> },
+  const monNavGroups = [
+    {
+      groupLabel: 'General',
+      items: [
+        { title: 'System Settings', href: '/mon/settings/general', icon: <SettingsIcon size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'Storefront',
+      items: [
+        { title: 'Storefront', href: '/mon/settings/storefront', icon: <Store size={18} /> },
+        { title: 'Branding & Identity', href: '/mon/settings/branding', icon: <Palette size={18} /> },
+        { title: 'Catalog Display', href: '/mon/settings/display', icon: <Monitor size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'Integrations',
+      items: [
+        { title: 'Payment Gateways', href: '/mon/settings/gateways', icon: <CreditCard size={18} /> },
+        { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },
+        { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
+        { title: 'Tracking & Analytics', href: '/mon/settings/tracking', icon: <Radio size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'Content',
+      items: [
+        { title: 'CMS Pages', href: '/mon/settings/pages', icon: <FileText size={18} /> },
+        { title: 'Storage', href: '/mon/settings/storage', icon: <HardDrive size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'System',
+      items: [
+        { title: 'Order Statuses', href: '/mon/settings/order-statuses', icon: <RefreshCw size={18} /> },
+      ],
+    },
   ]
 
-  const items = isMon ? monNavItems : opNavItems
+  const navGroups = isMon ? monNavGroups : opNavGroups
 
   return (
     <>
@@ -44,19 +83,17 @@ export function Settings() {
 
       <Main fixed>
         <div className='space-y-0.5'>
-          <h1 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            {isMon ? 'System Configuration' : 'Settings'}
-          </h1>
+          <h1 className='text-2xl font-bold tracking-tight md:text-3xl'>Settings</h1>
           <p className='text-muted-foreground'>
-            {isMon 
-              ? 'Manage system-level configurations and third-party integrations.' 
+            {isMon
+              ? 'Configure system-level settings, storefront appearance, and third-party integrations.'
               : 'Manage your account settings and preferences.'}
           </p>
         </div>
         <Separator className='my-4 lg:my-6' />
         <div className='flex flex-1 flex-col space-y-2 overflow-hidden md:space-y-2 lg:flex-row lg:space-y-0 lg:space-x-12'>
           <aside className='top-0 lg:sticky lg:w-1/5'>
-            <SidebarNav items={items} />
+            <SidebarNav groups={navGroups} />
           </aside>
           <div className='flex w-full overflow-y-auto p-1 pr-4'>
             <Outlet />
