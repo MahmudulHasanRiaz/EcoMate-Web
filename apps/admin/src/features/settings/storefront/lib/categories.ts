@@ -1,0 +1,224 @@
+import {
+  Store, Palette, ImageIcon, Layout, List, HelpCircle, Clock, Info,
+  Search, Share2, ShoppingCart, Phone,
+  type LucideIcon,
+} from 'lucide-react'
+
+export type SectionId =
+  | 'identity-store'
+  | 'identity-brands'
+  | 'visuals-hero'
+  | 'visuals-footer'
+  | 'content-navigation'
+  | 'content-faq'
+  | 'content-hours'
+  | 'content-about'
+  | 'discovery-seo'
+  | 'discovery-social'
+  | 'commerce-checkout'
+  | 'commerce-order'
+
+export interface SectionMeta {
+  id: SectionId
+  categoryId: CategoryId
+  title: string
+  description: string
+  icon: LucideIcon
+  fields: string[]
+}
+
+export type CategoryId =
+  | 'identity'
+  | 'visuals'
+  | 'content'
+  | 'discovery'
+  | 'commerce'
+
+export interface CategoryMeta {
+  id: CategoryId
+  label: string
+  description: string
+  sections: SectionId[]
+}
+
+export const CATEGORIES: CategoryMeta[] = [
+  {
+    id: 'identity',
+    label: 'Identity',
+    description: 'Brand basics: name, contact, currency',
+    sections: ['identity-store', 'identity-brands'],
+  },
+  {
+    id: 'visuals',
+    label: 'Visuals',
+    description: 'Hero banner, footer appearance',
+    sections: ['visuals-hero', 'visuals-footer'],
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    description: 'Navigation, FAQ, hours, about page',
+    sections: ['content-navigation', 'content-faq', 'content-hours', 'content-about'],
+  },
+  {
+    id: 'discovery',
+    label: 'Discovery',
+    description: 'SEO defaults and social media links',
+    sections: ['discovery-seo', 'discovery-social'],
+  },
+  {
+    id: 'commerce',
+    label: 'Commerce',
+    description: 'Checkout form fields and order contact',
+    sections: ['commerce-checkout', 'commerce-order'],
+  },
+]
+
+export const SECTIONS: Record<SectionId, SectionMeta> = {
+  'identity-store': {
+    id: 'identity-store',
+    categoryId: 'identity',
+    title: 'Store Identity',
+    description: 'Basic information that appears across your storefront.',
+    icon: Store,
+    fields: [
+      'store_name', 'store_tagline', 'store_email', 'store_phone',
+      'store_address', 'currency', 'currency_symbol',
+    ],
+  },
+  'identity-brands': {
+    id: 'identity-brands',
+    categoryId: 'identity',
+    title: 'Brands & Systems',
+    description: 'Manage brand systems shown in the storefront header and footer.',
+    icon: Palette,
+    fields: ['store_systems'],
+  },
+  'visuals-hero': {
+    id: 'visuals-hero',
+    categoryId: 'visuals',
+    title: 'Hero Banner',
+    description: 'Slider images and secondary banner on the homepage.',
+    icon: ImageIcon,
+    fields: ['hero_slides', 'hero_secondary_banner', 'hero_secondary_banner_alt'],
+  },
+  'visuals-footer': {
+    id: 'visuals-footer',
+    categoryId: 'visuals',
+    title: 'Footer Content',
+    description: 'Text and copyright shown in the storefront footer.',
+    icon: Layout,
+    fields: ['footer_description', 'footer_copyright'],
+  },
+  'content-navigation': {
+    id: 'content-navigation',
+    categoryId: 'content',
+    title: 'Navigation Menu',
+    description: 'Header navigation items shown in the top bar.',
+    icon: List,
+    fields: ['navigation_items'],
+  },
+  'content-faq': {
+    id: 'content-faq',
+    categoryId: 'content',
+    title: 'FAQ Items',
+    description: 'Frequently asked questions on the FAQ page.',
+    icon: HelpCircle,
+    fields: ['faq_items'],
+  },
+  'content-hours': {
+    id: 'content-hours',
+    categoryId: 'content',
+    title: 'Operating Hours',
+    description: 'Store hours displayed on support and stores pages.',
+    icon: Clock,
+    fields: ['hours_label', 'hours_details'],
+  },
+  'content-about': {
+    id: 'content-about',
+    categoryId: 'content',
+    title: 'About & Company',
+    description: 'About-us text, payment & shipping policy, company information.',
+    icon: Info,
+    fields: [
+      'about_us_text', 'payment_info', 'shipping_info',
+      'company_name', 'company_registration', 'company_certifications',
+      'company_team_size', 'company_ceo_name',
+    ],
+  },
+  'discovery-seo': {
+    id: 'discovery-seo',
+    categoryId: 'discovery',
+    title: 'SEO Defaults',
+    description: 'Default meta tags for search engine optimization.',
+    icon: Search,
+    fields: ['seo_title', 'seo_description', 'seo_keywords'],
+  },
+  'discovery-social': {
+    id: 'discovery-social',
+    categoryId: 'discovery',
+    title: 'Social Links',
+    description: 'Social media URLs and messaging usernames.',
+    icon: Share2,
+    fields: [
+      'social_facebook', 'social_instagram', 'social_youtube',
+      'social_whatsapp', 'social_messenger_username',
+    ],
+  },
+  'commerce-checkout': {
+    id: 'commerce-checkout',
+    categoryId: 'commerce',
+    title: 'Checkout Configuration',
+    description: 'Form fields and payment options available to customers.',
+    icon: ShoppingCart,
+    fields: [
+      'checkout_district_enabled', 'checkout_thana_enabled',
+      'checkout_district_required', 'checkout_thana_required',
+      'checkout_payment_modes',
+    ],
+  },
+  'commerce-order': {
+    id: 'commerce-order',
+    categoryId: 'commerce',
+    title: 'Order Contact',
+    description: 'WhatsApp and phone for order-related customer contact.',
+    icon: Phone,
+    fields: ['order_whatsapp', 'order_call_number'],
+  },
+}
+
+export function getSectionById(id: SectionId): SectionMeta {
+  const section = SECTIONS[id]
+  if (!section) throw new Error(`Unknown section id: ${id}`)
+  return section
+}
+
+export function getFieldsInSection(id: SectionId): string[] {
+  return SECTIONS[id]?.fields ?? []
+}
+
+export function getAllFieldKeys(): string[] {
+  return Object.values(SECTIONS).flatMap(s => s.fields)
+}
+
+export function getSectionForField(key: string): SectionMeta | null {
+  for (const section of Object.values(SECTIONS)) {
+    if (section.fields.includes(key)) return section
+  }
+  return null
+}
+
+export function getCategoryById(id: CategoryId): CategoryMeta {
+  const cat = CATEGORIES.find(c => c.id === id)
+  if (!cat) throw new Error(`Unknown category id: ${id}`)
+  return cat
+}
+
+export function getSectionsInCategory(id: CategoryId): SectionMeta[] {
+  const cat = getCategoryById(id)
+  return cat.sections.map(getSectionById)
+}
+
+export function getAllSections(): SectionMeta[] {
+  return Object.values(SECTIONS)
+}
