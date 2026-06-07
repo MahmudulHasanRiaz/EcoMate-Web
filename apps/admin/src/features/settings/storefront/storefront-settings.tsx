@@ -88,14 +88,14 @@ export function StorefrontSettings() {
   }
 
   return (
-    <div className='space-y-4 w-full'>
-      <div>
-        <h2 className='text-lg font-bold tracking-tight'>Storefront Settings</h2>
-        <p className='text-xs text-muted-foreground'>
+    <div className='space-y-6 w-full pb-8'>
+      <div className='space-y-0.5'>
+        <h2 className='text-2xl font-bold tracking-tight'>Storefront Settings</h2>
+        <p className='text-muted-foreground'>
           Configure how your storefront looks and behaves. Changes are saved per section.
         </p>
       </div>
-      <Separator />
+      <Separator className='my-6' />
 
       <div className='flex lg:hidden overflow-x-auto gap-2 pb-2 -mx-1 px-1 no-scrollbar snap-x snap-mandatory'>
         {allSections.map(section => {
@@ -120,7 +120,7 @@ export function StorefrontSettings() {
         })}
       </div>
 
-      <div className='flex flex-col gap-4 lg:flex-row lg:gap-4'>
+      <div className='flex flex-col gap-6 lg:flex-row lg:gap-8'>
         <aside className='hidden lg:block w-full shrink-0 lg:w-64 lg:sticky lg:top-0 lg:self-start'>
           <CategorySidebar
             categories={CATEGORIES}
@@ -132,7 +132,7 @@ export function StorefrontSettings() {
           />
         </aside>
 
-        <div className='flex-1 min-w-0 space-y-3'>
+        <div className='flex-1 min-w-0 space-y-8'>
           <IdentityStoreSection hook={hook} />
           <IdentityBrandsSection hook={hook} />
           <VisualsHeroSection hook={hook} />

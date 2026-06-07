@@ -28,7 +28,7 @@ export function SaveBar({ isDirty, isSaving, dirtyCount, lastSavedAt, onSave, on
     : `${dirtyCount} unsaved change${dirtyCount !== 1 ? 's' : ''}`
 
   return (
-    <div className='border-t border-border/40 pt-3 mt-3 flex items-center justify-between'>
+    <div className='border-t border-border/40 pt-4 mt-6 flex items-center justify-between'>
       <span className='text-xs text-muted-foreground'>{metaText}</span>
       <div className='flex items-center gap-2'>
         <Button

@@ -97,7 +97,7 @@ export function GeneralSettings() {
   }
 
   return (
-    <div className='space-y-4'>
+    <div className='space-y-6'>
       <SectionShell
         id='general'
         title='System Settings'
