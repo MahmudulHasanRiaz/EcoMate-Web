@@ -27,12 +27,12 @@ export function SystemSettings() {
       <div className='grid gap-4 md:grid-cols-2'>
         {links.map(l => (
           <div key={l.to} onClick={() => handleClick(l.to)} className='block cursor-pointer'>
-            <Card className='hover:shadow-md transition-shadow h-full dark:bg-slate-800 dark:border-slate-700'>
+            <Card className='hover:shadow-md transition-shadow h-full'>
               <CardHeader className='flex flex-row items-center gap-3 pb-2'>
-                <div className='bg-muted dark:bg-slate-700 p-2 rounded-lg'><l.icon className='h-5 w-5 dark:text-white' /></div>
-                <CardTitle className='text-sm dark:text-white'>{l.title}</CardTitle>
+                <div className='bg-muted p-2 rounded-lg'><l.icon className='h-5 w-5' /></div>
+                <CardTitle className='text-sm'>{l.title}</CardTitle>
               </CardHeader>
-              <CardContent><p className='text-xs text-muted-foreground dark:text-slate-300'>{l.desc}</p></CardContent>
+              <CardContent><p className='text-xs text-muted-foreground'>{l.desc}</p></CardContent>
             </Card>
           </div>
         ))}
