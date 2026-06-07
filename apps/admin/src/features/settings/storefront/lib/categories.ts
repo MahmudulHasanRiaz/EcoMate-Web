@@ -18,6 +18,7 @@ export type SectionId =
   | 'discovery-social'
   | 'commerce-checkout'
   | 'commerce-order'
+  | 'catalog-display'
 
 export interface SectionMeta {
   id: SectionId
@@ -71,7 +72,7 @@ export const CATEGORIES: CategoryMeta[] = [
     id: 'commerce',
     label: 'Commerce',
     description: 'Checkout form fields and order contact',
-    sections: ['commerce-checkout', 'commerce-order'],
+    sections: ['commerce-checkout', 'commerce-order', 'catalog-display'],
   },
 ]
 
@@ -196,6 +197,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     description: 'WhatsApp and phone for order-related customer contact.',
     icon: Phone,
     fields: ['order_whatsapp', 'order_call_number'],
+  },
+  'catalog-display': {
+    id: 'catalog-display',
+    categoryId: 'commerce',
+    title: 'Catalog Display',
+    description: 'Image ratio and display settings for product and combo cards.',
+    icon: ImageIcon,
+    fields: ['catalogImageRatio'],
   },
 }
 

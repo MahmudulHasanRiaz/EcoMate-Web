@@ -41,9 +41,8 @@ export function Settings() {
     {
       groupLabel: 'Storefront',
       items: [
-        { title: 'Storefront', href: '/mon/settings/storefront', icon: <Store size={18} /> },
-        { title: 'Branding & Identity', href: '/mon/settings/branding', icon: <Palette size={18} /> },
-        { title: 'Catalog Display', href: '/mon/settings/display', icon: <Monitor size={18} /> },
+      { title: 'Storefront', href: '/mon/settings/storefront', icon: <Store size={18} /> },
+      { title: 'Branding & Identity', href: '/mon/settings/branding', icon: <Palette size={18} /> },
       ],
     },
     {

@@ -60,4 +60,5 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   checkout_district_required:    { label: 'District Required', type: 'switch', hint: 'Customer must select a district', },
   checkout_thana_required:       { label: 'Thana/Upazila Required', type: 'switch', hint: 'Customer must select a thana' },
   checkout_payment_modes:        { label: 'Payment Modes', type: 'payment-modes' },
+  catalogImageRatio:             { label: 'Catalog Image Ratio', type: 'text', hint: 'JSON — managed via Catalog Display section' },
 }

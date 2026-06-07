@@ -64,7 +64,6 @@ import { Route as AuthenticatedMonSettingsPagesIndexRouteImport } from './routes
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
-import { Route as AuthenticatedMonSettingsDisplayIndexRouteImport } from './routes/_authenticated/mon/settings/display/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
@@ -383,12 +382,6 @@ const AuthenticatedMonSettingsGatewaysIndexRoute =
     path: '/gateways/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedMonSettingsDisplayIndexRoute =
-  AuthenticatedMonSettingsDisplayIndexRouteImport.update({
-    id: '/display/',
-    path: '/display/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
 const AuthenticatedMonSettingsCourierIndexRoute =
   AuthenticatedMonSettingsCourierIndexRouteImport.update({
     id: '/courier/',
@@ -461,7 +454,6 @@ export interface FileRoutesByFullPath {
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
-  '/mon/settings/display/': typeof AuthenticatedMonSettingsDisplayIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -522,7 +514,6 @@ export interface FileRoutesByTo {
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
-  '/mon/settings/display': typeof AuthenticatedMonSettingsDisplayIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -585,7 +576,6 @@ export interface FileRoutesById {
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
-  '/_authenticated/mon/settings/display/': typeof AuthenticatedMonSettingsDisplayIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -648,7 +638,6 @@ export interface FileRouteTypes {
     | '/op/print/sticker/$id'
     | '/mon/settings/branding/'
     | '/mon/settings/courier/'
-    | '/mon/settings/display/'
     | '/mon/settings/gateways/'
     | '/mon/settings/general/'
     | '/mon/settings/order-statuses/'
@@ -709,7 +698,6 @@ export interface FileRouteTypes {
     | '/op/print/sticker/$id'
     | '/mon/settings/branding'
     | '/mon/settings/courier'
-    | '/mon/settings/display'
     | '/mon/settings/gateways'
     | '/mon/settings/general'
     | '/mon/settings/order-statuses'
@@ -771,7 +759,6 @@ export interface FileRouteTypes {
     | '/_authenticated/op/print/sticker/$id'
     | '/_authenticated/mon/settings/branding/'
     | '/_authenticated/mon/settings/courier/'
-    | '/_authenticated/mon/settings/display/'
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/order-statuses/'
@@ -1187,13 +1174,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsGatewaysIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/mon/settings/display/': {
-      id: '/_authenticated/mon/settings/display/'
-      path: '/display'
-      fullPath: '/mon/settings/display/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsDisplayIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
     '/_authenticated/mon/settings/courier/': {
       id: '/_authenticated/mon/settings/courier/'
       path: '/courier'
@@ -1228,7 +1208,6 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsBrandingIndexRoute: typeof AuthenticatedMonSettingsBrandingIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
-  AuthenticatedMonSettingsDisplayIndexRoute: typeof AuthenticatedMonSettingsDisplayIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -1246,8 +1225,6 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsBrandingIndexRoute,
     AuthenticatedMonSettingsCourierIndexRoute:
       AuthenticatedMonSettingsCourierIndexRoute,
-    AuthenticatedMonSettingsDisplayIndexRoute:
-      AuthenticatedMonSettingsDisplayIndexRoute,
     AuthenticatedMonSettingsGatewaysIndexRoute:
       AuthenticatedMonSettingsGatewaysIndexRoute,
     AuthenticatedMonSettingsGeneralIndexRoute:
