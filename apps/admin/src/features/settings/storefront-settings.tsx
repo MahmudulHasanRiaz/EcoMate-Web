@@ -8,36 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus, Palette, GripVertical, Phone } from 'lucide-react'
+import { Loader2, Save, Store, Image as ImageIcon, Share2, Search, Layout, Truck, Info, List, HelpCircle, Clock, ShoppingCart, MapPin, X, Plus, Palette, Phone } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaPicker } from '@/components/media-picker'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
-
-const bdDistricts = [
-  { name: 'Bagerhat', slug: 'bagerhat' }, { name: 'Bandarban', slug: 'bandarban' }, { name: 'Barguna', slug: 'barguna' },
-  { name: 'Barishal', slug: 'barishal' }, { name: 'Bhola', slug: 'bhola' }, { name: 'Bogura', slug: 'bogura' },
-  { name: 'Brahmanbaria', slug: 'brahmanbaria' }, { name: 'Chandpur', slug: 'chandpur' }, { name: 'Chapainawabganj', slug: 'chapainawabganj' },
-  { name: 'Chattogram', slug: 'chattogram' }, { name: 'Chuadanga', slug: 'chuadanga' }, { name: 'Cox\'s Bazar', slug: 'coxs-bazar' },
-  { name: 'Cumilla', slug: 'cumilla' }, { name: 'Dhaka', slug: 'dhaka' }, { name: 'Dinajpur', slug: 'dinajpur' },
-  { name: 'Faridpur', slug: 'faridpur' }, { name: 'Feni', slug: 'feni' }, { name: 'Gaibandha', slug: 'gaibandha' },
-  { name: 'Gazipur', slug: 'gazipur' }, { name: 'Gopalganj', slug: 'gopalganj' }, { name: 'Habiganj', slug: 'habiganj' },
-  { name: 'Jamalpur', slug: 'jamalpur' }, { name: 'Jashore', slug: 'jashore' }, { name: 'Jhalokati', slug: 'jhalokati' },
-  { name: 'Jhenaidah', slug: 'jhenaidah' }, { name: 'Joypurhat', slug: 'joypurhat' }, { name: 'Khagrachhari', slug: 'khagrachhari' },
-  { name: 'Kushtia', slug: 'kushtia' }, { name: 'Khulna', slug: 'khulna' }, { name: 'Kishoreganj', slug: 'kishoreganj' },
-  { name: 'Lakshmipur', slug: 'lakshmipur' }, { name: 'Lalmonirhat', slug: 'lalmonirhat' }, { name: 'Madaripur', slug: 'madaripur' },
-  { name: 'Magura', slug: 'magura' }, { name: 'Manikganj', slug: 'manikganj' }, { name: 'Meherpur', slug: 'meherpur' },
-  { name: 'Moulvibazar', slug: 'moulvibazar' }, { name: 'Munshiganj', slug: 'munshiganj' }, { name: 'Mymensingh', slug: 'mymensingh' },
-  { name: 'Naogaon', slug: 'naogaon' }, { name: 'Narail', slug: 'narail' }, { name: 'Narayanganj', slug: 'narayanganj' },
-  { name: 'Narsingdi', slug: 'narsingdi' }, { name: 'Natore', slug: 'natore' }, { name: 'Netrokona', slug: 'netrokona' },
-  { name: 'Nilphamari', slug: 'nilphamari' }, { name: 'Noakhali', slug: 'noakhali' }, { name: 'Pabna', slug: 'pabna' },
-  { name: 'Panchagarh', slug: 'panchagarh' }, { name: 'Patuakhali', slug: 'patuakhali' }, { name: 'Pirojpur', slug: 'pirojpur' },
-  { name: 'Rajbari', slug: 'rajbari' }, { name: 'Rajshahi', slug: 'rajshahi' }, { name: 'Rangamati', slug: 'rangamati' },
-  { name: 'Rangpur', slug: 'rangpur' }, { name: 'Satkhira', slug: 'satkhira' }, { name: 'Shariatpur', slug: 'shariatpur' },
-  { name: 'Sherpur', slug: 'sherpur' }, { name: 'Sirajganj', slug: 'sirajganj' }, { name: 'Sunamganj', slug: 'sunamganj' },
-  { name: 'Sylhet', slug: 'sylhet' }, { name: 'Tangail', slug: 'tangail' }, { name: 'Thakurgaon', slug: 'thakurgaon' },
-]
 
 export function StorefrontSettings() {
   const queryClient = useQueryClient()
@@ -53,8 +29,7 @@ export function StorefrontSettings() {
   const [storeAddress, setStoreAddress] = useState('')
   const [currency, setCurrency] = useState('BDT')
   const [currencySymbol, setCurrencySymbol] = useState('৳')
-  const [deliveryCharge, setDeliveryCharge] = useState('60')
-  const [freeDeliveryMin, setFreeDeliveryMin] = useState('1000')
+
   const [heroSlides, setHeroSlides] = useState<{ image: string; link?: string; alt?: string }[]>([])
   const [secondaryBanner, setSecondaryBanner] = useState('')
   const [secondaryBannerAlt, setSecondaryBannerAlt] = useState('')
@@ -90,8 +65,7 @@ export function StorefrontSettings() {
   const [checkoutDistrictRequired, setCheckoutDistrictRequired] = useState(false)
   const [checkoutThanaRequired, setCheckoutThanaRequired] = useState(false)
   const [checkoutPaymentModes, setCheckoutPaymentModes] = useState<string[]>(['cod', 'full', 'partial'])
-  const [districtCharges, setDistrictCharges] = useState<Record<string, string>>({})
-  const [districtSearch, setDistrictSearch] = useState('')
+
   const [storeSystems, setStoreSystems] = useState<{ id: string; name: string; logo: string; display: 'name' | 'logo' | 'name+logo' }[]>([])
   const [systemPickerOpen, setSystemPickerOpen] = useState(false)
   const [activeSystemIdx, setActiveSystemIdx] = useState<number | null>(null)
@@ -105,8 +79,6 @@ export function StorefrontSettings() {
       setStoreAddress(settings.store_address || '')
       setCurrency(settings.currency || 'BDT')
       setCurrencySymbol(settings.currency_symbol || '৳')
-      setDeliveryCharge(settings.delivery_charge || '60')
-      setFreeDeliveryMin(settings.free_delivery_min || '1000')
       try { setHeroSlides(JSON.parse(settings.hero_slides || '[]')); } catch { setHeroSlides([]); }
       setSecondaryBanner(settings.hero_secondary_banner || '')
       setSecondaryBannerAlt(settings.hero_secondary_banner_alt || '')
@@ -139,7 +111,6 @@ export function StorefrontSettings() {
       setCheckoutDistrictRequired(settings.checkout_district_required === 'true')
       setCheckoutThanaRequired(settings.checkout_thana_required === 'true')
       try { setCheckoutPaymentModes(JSON.parse(settings.checkout_payment_modes || '["cod","full","partial"]')); } catch { setCheckoutPaymentModes(['cod', 'full', 'partial']); }
-      try { setDistrictCharges(JSON.parse(settings.district_charges || '{}')); } catch { setDistrictCharges({}); }
       try { setStoreSystems(JSON.parse(settings.store_systems || '[]')); } catch { setStoreSystems([]); }
     }
   }, [settings])
@@ -158,8 +129,6 @@ export function StorefrontSettings() {
       { key: 'store_address', value: storeAddress },
       { key: 'currency', value: currency },
       { key: 'currency_symbol', value: currencySymbol },
-      { key: 'delivery_charge', value: deliveryCharge },
-      { key: 'free_delivery_min', value: freeDeliveryMin },
       { key: 'hero_slides', value: JSON.stringify(heroSlides) },
       { key: 'hero_secondary_banner', value: secondaryBanner },
       { key: 'hero_secondary_banner_alt', value: secondaryBannerAlt },
@@ -193,7 +162,6 @@ export function StorefrontSettings() {
       { key: 'checkout_district_required', value: String(checkoutDistrictRequired) },
       { key: 'checkout_thana_required', value: String(checkoutThanaRequired) },
       { key: 'checkout_payment_modes', value: JSON.stringify(checkoutPaymentModes) },
-      { key: 'district_charges', value: JSON.stringify(districtCharges) },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -220,7 +188,7 @@ export function StorefrontSettings() {
           <TabsTrigger value="social" className='gap-2'><Share2 className='h-4 w-4' /> Social</TabsTrigger>
           <TabsTrigger value="seo" className='gap-2'><Search className='h-4 w-4' /> SEO</TabsTrigger>
           <TabsTrigger value="footer" className='gap-2'><Layout className='h-4 w-4' /> Footer</TabsTrigger>
-          <TabsTrigger value="delivery" className='gap-2'><Truck className='h-4 w-4' /> Delivery</TabsTrigger>
+          <TabsTrigger value="delivery" className='gap-2'><Truck className='h-4 w-4' /> Shipping</TabsTrigger>
           <TabsTrigger value="checkout" className='gap-2'><ShoppingCart className='h-4 w-4' /> Checkout</TabsTrigger>
           <TabsTrigger value="districts" className='gap-2'><MapPin className='h-4 w-4' /> Districts</TabsTrigger>
           <TabsTrigger value="nav" className='gap-2'><List className='h-4 w-4' /> Nav</TabsTrigger>
@@ -437,20 +405,18 @@ export function StorefrontSettings() {
 
         <TabsContent value="delivery">
           <Card>
-            <CardHeader><CardTitle>Delivery Settings</CardTitle><CardDescription>Shipping and delivery configuration.</CardDescription></CardHeader>
-            <CardContent className='space-y-6'>
-              <div className='grid gap-6 md:grid-cols-2'>
-                <div className='space-y-2'>
-                  <Label htmlFor='delivery-charge'>Delivery Charge</Label>
-                  <Input id='delivery-charge' type='number' value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} />
-                </div>
-                <div className='space-y-2'>
-                  <Label htmlFor='free-delivery-min'>Free Delivery Minimum (subtotal)</Label>
-                  <Input id='free-delivery-min' type='number' value={freeDeliveryMin} onChange={e => setFreeDeliveryMin(e.target.value)} />
+            <CardHeader><CardTitle>Delivery Settings — Moved</CardTitle></CardHeader>
+            <CardContent className='space-y-4'>
+              <div className='flex items-start gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg'>
+                <Truck className='h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0' />
+                <div>
+                  <p className='text-sm font-medium text-amber-800'>Shipping configuration has moved</p>
+                  <p className='text-sm text-amber-700 mt-1'>Delivery charge and free delivery minimum settings are now configured in the new <strong>Shipping Settings</strong> page (General tab).</p>
+                  <a href='/mon/settings/shipping/' className='inline-flex items-center gap-1 text-sm text-amber-800 font-medium underline mt-2 hover:text-amber-900'>Go to Shipping Settings →</a>
                 </div>
               </div>
               <div className='space-y-2'>
-                <Label htmlFor='shipping-info'>Shipping Information</Label>
+                <Label htmlFor='shipping-info'>Shipping Information (policy text)</Label>
                 <Textarea id='shipping-info' value={shippingInfo} onChange={e => setShippingInfo(e.target.value)} rows={3} />
               </div>
             </CardContent>
@@ -534,40 +500,19 @@ export function StorefrontSettings() {
 
         <TabsContent value="districts">
           <Card>
-            <CardHeader>
-              <CardTitle>District-wise Delivery Charges</CardTitle>
-              <CardDescription>Set custom delivery charges for each district. Leave blank to use the default delivery charge.</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>District-wise Delivery Charges — Moved</CardTitle></CardHeader>
             <CardContent className='space-y-4'>
-              <Input
-                placeholder='Search districts...'
-                value={districtSearch}
-                onChange={e => setDistrictSearch(e.target.value)}
-                className='max-w-sm'
-              />
-              <div className='grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-[500px] overflow-y-auto pr-2'>
-                {bdDistricts
-                  .filter(d => d.name.toLowerCase().includes(districtSearch.toLowerCase()))
-                  .map(d => (
-                    <div key={d.slug} className='flex items-center gap-2 p-2 border rounded-lg hover:bg-muted/20'>
-                      <span className='text-xs font-medium w-28 truncate shrink-0' title={d.name}>{d.name}</span>
-                      <div className='flex items-center gap-1'>
-                        <span className='text-xs text-muted-foreground'>৳</span>
-                        <Input
-                          className='h-8 w-20 text-xs'
-                          type='number'
-                          value={districtCharges[d.slug] ?? ''}
-                          onChange={e => setDistrictCharges(prev => ({ ...prev, [d.slug]: e.target.value }))}
-                          placeholder='60'
-                        />
-                      </div>
-                    </div>
-                  ))}
+              <div className='flex items-start gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg'>
+                <MapPin className='h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0' />
+                <div>
+                  <p className='text-sm font-medium text-amber-800'>District charge configuration has moved</p>
+                  <p className='text-sm text-amber-700 mt-1'>
+                    Per-district delivery charges are now configured in the new <strong>Shipping Settings</strong> page (Zone Groups tab).
+                    Set a default Bangladesh-wide charge and define exception zones instead of configuring all 64 districts individually.
+                  </p>
+                  <a href='/mon/settings/shipping/' className='inline-flex items-center gap-1 text-sm text-amber-800 font-medium underline mt-2 hover:text-amber-900'>Go to Shipping Settings →</a>
+                </div>
               </div>
-              <p className='text-xs text-muted-foreground'>
-                Showing {bdDistricts.filter(d => d.name.toLowerCase().includes(districtSearch.toLowerCase())).length} of {bdDistricts.length} districts.
-                Empty fields will use the default delivery charge.
-              </p>
             </CardContent>
           </Card>
         </TabsContent>
