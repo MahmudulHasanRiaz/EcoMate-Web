@@ -30,6 +30,7 @@ import { CombosModule } from './combos/combos.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CheckoutLeadsModule } from './checkout-leads/checkout-leads.module';
 import { DeliveryAreasModule } from './delivery-areas/delivery-areas.module';
+import { ShippingModule } from './shipping/shipping.module';
 import { ImportModule } from './import/import.module';
 import { CmsPagesModule } from './cms-pages/cms-pages.module';
 import { JwtAuthGuard } from './auth/auth.guard';
@@ -65,6 +66,7 @@ import { RolesGuard } from './auth/roles.guard';
     TrackingModule,
     CheckoutLeadsModule,
     DeliveryAreasModule,
+    ShippingModule,
     ImportModule,
     CmsPagesModule,
   ],
