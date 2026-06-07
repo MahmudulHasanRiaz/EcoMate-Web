@@ -198,6 +198,30 @@ export class SystemSettingsController {
 
     const systems = parseJson<StoreSystem[]>(map['store_systems'] || '[]', []);
 
+    // Shipping mode
+    const shippingMode = map['shipping_mode'] || 'auto_district';
+
+    // Get active shipping options
+    let shippingOptions: { id: string; name: string; amount: number; sortOrder: number }[] = [];
+    try {
+      const opts = await this.prisma.shippingOption.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, name: true, amount: true, sortOrder: true },
+      });
+      shippingOptions = opts.map(o => ({ ...o, amount: Number(o.amount) }));
+    } catch {}
+
+    // Get active zone groups
+    let shippingZones: { id: string; type: string; amount: number | null; districts: string[]; label: string | null }[] = [];
+    try {
+      const zones = await this.prisma.shippingZoneGroup.findMany({
+        where: { isActive: true },
+        select: { id: true, type: true, amount: true, districts: true, label: true },
+      });
+      shippingZones = zones.map(z => ({ ...z, amount: z.amount ? Number(z.amount) : null, districts: z.districts as string[] }));
+    } catch {}
+
     return {
       store: {
         name: map['store_name'] || 'EcoMate',
@@ -288,6 +312,9 @@ export class SystemSettingsController {
         thanaRequired: map['checkout_thana_required'] === 'true',
         paymentModes: parseJson<string[]>(map['checkout_payment_modes'] || '["cod","full","partial"]', ['cod', 'full', 'partial']),
       },
+      shippingMode,
+      shippingOptions,
+      shippingZones,
       districtCharges: parseJson<Record<string, number>>(map['district_charges'] || '{}', {}),
       catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
     };
