@@ -31,14 +31,14 @@ export function SectionShell({
   return (
     <div
       data-section-id={id}
-      className='border border-border/60 rounded-xl bg-card p-6 scroll-mt-4'
+      className='border border-border/60 rounded-xl bg-card p-4 scroll-mt-4'
     >
-      <div className='flex items-center gap-2 mb-1'>
-        <h3 className='text-base font-medium text-foreground'>{title}</h3>
+      <div className='flex items-center gap-2 mb-0.5'>
+        <h3 className='text-sm font-medium text-foreground'>{title}</h3>
         <DirtyDot isDirty={isDirty} isSaving={isSaving} />
       </div>
-      <p className='text-sm text-muted-foreground mb-4'>{description}</p>
-      <div className='border-t border-border/40 pt-4 space-y-4'>
+      <p className='text-xs text-muted-foreground mb-3'>{description}</p>
+      <div className='border-t border-border/40 pt-3 space-y-3'>
         {children}
       </div>
       <SaveBar
