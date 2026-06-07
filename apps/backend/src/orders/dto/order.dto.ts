@@ -27,6 +27,7 @@ export class CreateOrderDto {
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
   @IsOptional() @IsNumber() shippingCharge?: number;
+  @IsOptional() @IsString() selectedShippingOptionId?: string;
   @IsOptional() @IsNumber() discount?: number;
   @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
   @IsOptional() @IsObject() shippingAddress?: any;
@@ -51,6 +52,7 @@ export class UpdateOrderStatusDto {
 
 export class UpdateOrderDto {
   @IsOptional() @IsNumber() shippingCharge?: number;
+  @IsOptional() @IsString() selectedShippingOptionId?: string;
   @IsOptional() @IsNumber() discount?: number;
   @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
   @IsOptional() @IsObject() shippingAddress?: any;

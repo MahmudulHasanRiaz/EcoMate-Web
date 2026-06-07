@@ -296,6 +296,7 @@ export class OrdersService {
         statusId: initialStatus.id,
         subtotal,
         shippingCharge: dto.shippingCharge || 0,
+        selectedShippingOptionId: dto.selectedShippingOptionId || null,
         discount: dto.discount || 0,
         discountType: dto.discountType || 'flat',
         total,
@@ -402,18 +403,20 @@ export class OrdersService {
 
     const timeline = [...((order.timeline as any[]) || [])];
     const now = new Date().toISOString();
+    const data: any = {};
 
     if (
       dto.shippingCharge !== undefined &&
       Number(dto.shippingCharge) !== Number(order.shippingCharge)
     ) {
+      data.shippingChargeOverridden = true;
       timeline.push({
         type: 'shipping',
         visibility: 'public',
         timestamp: now,
         oldValue: Number(order.shippingCharge),
         newValue: Number(dto.shippingCharge),
-        note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}`,
+        note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}${dto.selectedShippingOptionId ? ' (option changed)' : ' (override)'}`,
       });
     }
 
@@ -464,10 +467,11 @@ export class OrdersService {
       });
     }
 
-    const data: any = {};
     data.timeline = timeline;
     if (dto.shippingCharge !== undefined)
       data.shippingCharge = dto.shippingCharge;
+    if (dto.selectedShippingOptionId !== undefined)
+      data.selectedShippingOptionId = dto.selectedShippingOptionId || null;
     if (dto.discount !== undefined) data.discount = dto.discount;
     if (dto.discountType !== undefined) data.discountType = dto.discountType;
     if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes;
