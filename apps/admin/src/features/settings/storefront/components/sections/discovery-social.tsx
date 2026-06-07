@@ -50,7 +50,7 @@ export function DiscoverySocialSection({ hook }: Props) {
             key={fieldKey}
             fieldKey={fieldKey}
             schema={schema}
-            value={hook.values[fieldKey]}
+            value={hook.values[fieldKey] ?? ''}
             onChange={(v) => hook.setValue(fieldKey, v as string)}
           />
         )

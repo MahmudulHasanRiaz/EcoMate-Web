@@ -2,6 +2,8 @@ import { SectionShell } from '@/features/settings/storefront/components/section-
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SafeImage } from '@/components/safe-image'
+import { mediaUrl } from '@/lib/utils'
 import { Palette, Plus, X } from 'lucide-react'
 import type { UseStorefrontSettingsReturn } from '@/features/settings/storefront/hooks/use-storefront-settings'
 
@@ -38,7 +40,7 @@ export function IdentityBrandsSection({ hook }: Props) {
             <div className='flex items-center gap-3 flex-1 flex-wrap'>
               <div className='w-10 h-10 rounded border bg-background flex items-center justify-center overflow-hidden shrink-0'>
                 {sys.logo ? (
-                  <img src={sys.logo} alt='' className='w-full h-full object-contain' />
+                  <SafeImage src={mediaUrl(sys.logo)} alt='' className='w-full h-full object-contain' />
                 ) : (
                   <Palette className='h-5 w-5 text-muted-foreground' />
                 )}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useBlocker } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -23,13 +24,12 @@ import {
   getAllSections,
   type SectionId,
 } from '@/features/settings/storefront/lib/categories'
+import { Button } from '@/components/ui/button'
 
 export function StorefrontSettings() {
   const hook = useStorefrontSettings()
   const palette = useCommandPalette()
   const [activeSectionId, setActiveSectionId] = useState<SectionId>('identity-store')
-  const [blockerOpen, setBlockerOpen] = useState(false)
-  const [pendingProceed, setPendingProceed] = useState(false)
 
   const allSections = useMemo(() => getAllSections(), [])
 
@@ -47,7 +47,7 @@ export function StorefrontSettings() {
           }
         }
       },
-      { rootMargin: '-10% 0px -60% 0px', threshold: 0.1 }
+      { rootMargin: '-10% 0px -60% 0px', threshold: 0.4 }
     )
 
     sectionElements.forEach(el => observer.observe(el))
@@ -58,16 +58,18 @@ export function StorefrontSettings() {
     return new Set(allSections.filter(s => hook.isSectionDirty(s.id)).map(s => s.id))
   }, [allSections, hook])
 
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (dirtySectionIds.size > 0) {
-        e.preventDefault()
-        e.returnValue = ''
-      }
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirtySectionIds.size])
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirtySectionIds.size > 0,
+    enableBeforeUnload: true,
+  })
+
+  const handleBlockerProceed = () => {
+    blocker.proceed?.()
+  }
+
+  const handleBlockerReset = () => {
+    blocker.reset?.()
+  }
 
   const handleSectionClick = (sectionId: SectionId) => {
     const el = document.querySelector(`[data-section-id="${sectionId}"]`)
@@ -118,7 +120,7 @@ export function StorefrontSettings() {
       </div>
 
       <div className='flex flex-col gap-6 lg:flex-row lg:gap-8'>
-        <aside className='w-full shrink-0 lg:w-64 lg:sticky lg:top-0 lg:self-start'>
+        <aside className='hidden lg:block w-full shrink-0 lg:w-64 lg:sticky lg:top-0 lg:self-start'>
           <CategorySidebar
             categories={CATEGORIES}
             sections={SECTIONS}
@@ -152,23 +154,31 @@ export function StorefrontSettings() {
       />
 
       <ConfirmDialog
-        open={blockerOpen}
-        onOpenChange={(v) => { setBlockerOpen(v); if (!v) setPendingProceed(false) }}
+        open={blocker.status === 'blocked'}
+        onOpenChange={(v) => { if (!v) handleBlockerReset() }}
         title='Unsaved Changes'
-        desc='You have unsaved changes in one or more sections.'
+        desc='You have unsaved changes in one or more sections. What would you like to do?'
         confirmText='Discard & Leave'
         destructive
-        handleConfirm={() => {
-          if (pendingProceed) {
-            setBlockerOpen(false)
-            setPendingProceed(false)
-          }
-        }}
+        handleConfirm={handleBlockerProceed}
       >
         <div className='flex flex-wrap gap-2 py-2'>
           <span className='text-xs text-muted-foreground'>
             {dirtySectionIds.size} section{dirtySectionIds.size > 1 ? 's' : ''} with unsaved changes.
           </span>
+          <Button
+            variant='outline'
+            size='sm'
+            className='w-full mt-2'
+            onClick={() => {
+              for (const id of dirtySectionIds) {
+                hook.saveSection(id as SectionId)
+              }
+              handleBlockerProceed()
+            }}
+          >
+            Save all sections &amp; leave
+          </Button>
         </div>
       </ConfirmDialog>
     </div>

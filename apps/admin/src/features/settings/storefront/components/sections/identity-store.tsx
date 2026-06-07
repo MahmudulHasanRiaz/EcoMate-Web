@@ -33,7 +33,7 @@ export function IdentityStoreSection({ hook }: Props) {
         const schema = FIELD_SCHEMAS[fieldKey]
         if (!schema) return null
 
-        if (schema.type === 'image' || schema.type === 'array') {
+        if (schema.type === 'image' || schema.type.startsWith('array-')) {
           return (
             <div key={fieldKey} className='space-y-1.5'>
               <label className='text-sm font-medium'>{schema.label}</label>
@@ -50,7 +50,7 @@ export function IdentityStoreSection({ hook }: Props) {
             key={fieldKey}
             fieldKey={fieldKey}
             schema={schema}
-            value={hook.values[fieldKey]}
+            value={hook.values[fieldKey] ?? ''}
             onChange={(v) => hook.setValue(fieldKey, v as string)}
           />
         )

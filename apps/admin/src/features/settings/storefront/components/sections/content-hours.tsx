@@ -10,7 +10,7 @@ import type { UseStorefrontSettingsReturn } from '@/features/settings/storefront
 interface Props { hook: UseStorefrontSettingsReturn }
 
 interface DaySchedule {
-  day: string; open: string; close: string; closed: boolean
+  day: string; open: string; close: string
 }
 
 export function ContentHoursSection({ hook }: Props) {
@@ -62,7 +62,7 @@ export function ContentHoursSection({ hook }: Props) {
             </Button>
           </div>
         ))}
-        <Button variant='outline' size='sm' onClick={() => setHoursDetails([...hoursDetails, { day: '', open: '', close: '', closed: false }])}>
+        <Button variant='outline' size='sm' onClick={() => setHoursDetails([...hoursDetails, { day: '', open: '', close: '' }])}>
           <Plus className='h-4 w-4 mr-1' /> Add Day
         </Button>
       </div>
