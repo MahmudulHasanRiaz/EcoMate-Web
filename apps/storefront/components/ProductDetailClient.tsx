@@ -10,6 +10,7 @@ import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import type { Product, Variant } from "@/lib/types";
 import { trackEvent } from "@/lib/tracking";
 import { VariantSelector } from "./VariantSelector";
+import DOMPurify from 'isomorphic-dompurify';
 
 function WhatsAppIcon() {
   return (
@@ -252,7 +253,12 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       {product.description && (
         <div className="px-4 max-w-screen-xl mx-auto mb-8">
           <h3 className="text-[16px] font-semibold text-gray-800 mb-3 border-b border-gray-100 pb-2">Description</h3>
-          <div className="text-[14px] text-gray-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: product.description.replace(/\\n/g, '<br>').replace(/##/g, '') }} />
+          <div className="text-[14px] text-gray-600 leading-relaxed" dangerouslySetInnerHTML={{
+            __html: DOMPurify.sanitize(product.description.replace(/\\n/g, '<br>').replace(/##/g, ''), {
+              ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+              ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
+            })
+          }} />
         </div>
       )}
     </div>
