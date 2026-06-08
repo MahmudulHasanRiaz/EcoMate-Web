@@ -151,7 +151,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
         </CardHeader>
         <CardContent>
           <div className='text-2xl font-bold'>
-            ${orderSummary?.totalSpent?.toFixed(2) ?? '0.00'}
+            ৳{orderSummary?.totalSpent?.toFixed(2) ?? '0.00'}
           </div>
         </CardContent>
       </Card>
@@ -210,7 +210,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
                           {order.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>${order.total.toFixed(2)}</TableCell>
+                      <TableCell>৳{order.total.toFixed(2)}</TableCell>
                       <TableCell className='text-nowrap'>
                         {format(new Date(order.createdAt), 'MMM d, yyyy')}
                       </TableCell>

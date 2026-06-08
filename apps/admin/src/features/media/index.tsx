@@ -106,8 +106,8 @@ export function Media() {
       )
       queryClient.invalidateQueries({ queryKey: ['media'] })
       window.setTimeout(() => {
-        setPending((prev) => prev.filter((p) => p.status === 'uploading'))
-      }, 1500)
+        setPending((prev) => prev.filter((p) => p.status === 'uploading' || p.status === 'error'))
+      }, 5000)
     },
     [queryClient],
   )

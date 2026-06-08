@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
 import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
@@ -7,11 +8,13 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { Skeleton } from '@/components/ui/skeleton'
 import { SidebarNav } from './components/sidebar-nav'
 
 export function Settings() {
   const { pathname } = useLocation()
   const isMon = pathname.includes('/mon/')
+  const [isLoading] = useState(false)
 
   const opNavGroups = [
     {
@@ -61,6 +64,17 @@ export function Settings() {
   ]
 
   const navGroups = isMon ? monNavGroups : opNavGroups
+
+  if (isLoading) {
+    return (
+      <Main>
+        <div className='p-6 space-y-4'>
+          <Skeleton className='h-8 w-48' />
+          <Skeleton className='h-96 w-full rounded-lg' />
+        </div>
+      </Main>
+    )
+  }
 
   return (
     <>
