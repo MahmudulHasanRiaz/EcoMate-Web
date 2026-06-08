@@ -23,7 +23,7 @@ export function Categories() {
   const queryClient = useQueryClient()
   const { data: categories, isLoading } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => categoriesApi.list().then(r => r.data),
+    queryFn: () => categoriesApi.list().then(r => r.data.data || []),
   })
 
   const [showCreate, setShowCreate] = useState(false)
