@@ -5,9 +5,18 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import type { AnalyticsData } from '../api'
 import { AnalyticsChart } from './analytics-chart'
 
-export function Analytics() {
+interface AnalyticsProps {
+  data?: AnalyticsData
+}
+
+function formatNumber(n: number) {
+  return new Intl.NumberFormat('en-US').format(n)
+}
+
+export function Analytics({ data }: AnalyticsProps) {
   return (
     <div className='space-y-4'>
       <Card>
@@ -38,8 +47,12 @@ export function Analytics() {
             </svg>
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>1,248</div>
-            <p className='text-xs text-muted-foreground'>+12.4% vs last week</p>
+            <div className='text-2xl font-bold'>
+              {data ? formatNumber(data.totalClicks) : '-'}
+            </div>
+            <p className='text-xs text-muted-foreground'>
+              {data ? `${formatNumber(data.totalClicks)} total clicks` : 'No data'}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -62,8 +75,12 @@ export function Analytics() {
             </svg>
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>832</div>
-            <p className='text-xs text-muted-foreground'>+5.8% vs last week</p>
+            <div className='text-2xl font-bold'>
+              {data ? formatNumber(data.uniqueVisitors) : '-'}
+            </div>
+            <p className='text-xs text-muted-foreground'>
+              {data ? `${formatNumber(data.uniqueVisitors)} unique visitors` : 'No data'}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -83,8 +100,12 @@ export function Analytics() {
             </svg>
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>42%</div>
-            <p className='text-xs text-muted-foreground'>-3.2% vs last week</p>
+            <div className='text-2xl font-bold'>
+              {data ? data.bounceRate : '-'}
+            </div>
+            <p className='text-xs text-muted-foreground'>
+              {data ? `Bounce rate ${data.bounceRate}` : 'No data'}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -105,8 +126,10 @@ export function Analytics() {
             </svg>
           </CardHeader>
           <CardContent>
-            <div className='text-2xl font-bold'>3m 24s</div>
-            <p className='text-xs text-muted-foreground'>+18s vs last week</p>
+            <div className='text-2xl font-bold'>--</div>
+            <p className='text-xs text-muted-foreground'>
+              Requires analytics integration
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -118,12 +141,7 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <SimpleBarList
-              items={[
-                { name: 'Direct', value: 512 },
-                { name: 'Product Hunt', value: 238 },
-                { name: 'Twitter', value: 174 },
-                { name: 'Blog', value: 104 },
-              ]}
+              items={[]}
               barClass='bg-primary'
               valueFormatter={(n) => `${n}`}
             />
@@ -136,11 +154,7 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <SimpleBarList
-              items={[
-                { name: 'Desktop', value: 74 },
-                { name: 'Mobile', value: 22 },
-                { name: 'Tablet', value: 4 },
-              ]}
+              items={[]}
               barClass='bg-muted-foreground'
               valueFormatter={(n) => `${n}%`}
             />

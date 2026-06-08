@@ -1,44 +1,10 @@
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
-const data = [
-  {
-    name: 'Mon',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Tue',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Wed',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Thu',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Fri',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Sat',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-  {
-    name: 'Sun',
-    clicks: Math.floor(Math.random() * 900) + 100,
-    uniques: Math.floor(Math.random() * 700) + 80,
-  },
-]
+interface AnalyticsChartProps {
+  data?: { name: string; clicks: number; uniques: number }[]
+}
 
-export function AnalyticsChart() {
+export function AnalyticsChart({ data = [] }: AnalyticsChartProps) {
   return (
     <ResponsiveContainer width='100%' height={300}>
       <AreaChart data={data}>

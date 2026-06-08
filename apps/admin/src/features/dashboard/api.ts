@@ -1,46 +1,28 @@
 import { apiClient } from '@/lib/api-client'
 
+export interface RecentOrder {
+  id: string
+  displayId: string
+  total: number
+  status: string
+  itemCount: number
+  createdAt: string
+}
+
 export interface DashboardStats {
-  overview: {
-    totalRevenue: number
-    subscriptions: number
-    sales: number
-    activeNow: number
-  }
-  users: {
-    total: number
-    active: number
-    byRole: { role: string; _count: number }[]
-  }
-  tasks: {
-    total: number
-    completed: number
-    byStatus: { status: string; _count: number }[]
-  }
-  recentUsers: {
-    id: string
-    firstName: string
-    lastName: string
-    email: string
-    createdAt: string
-  }[]
-  recentTasks: {
-    id: string
-    title: string
-    status: string
-    priority: string
-    createdAt: string
-  }[]
+  totalRevenue: number
+  totalOrders: number
+  totalCustomers: number
+  totalProducts: number
+  recentOrders: RecentOrder[]
 }
 
 export interface AnalyticsData {
+  ordersLast30Days: number
+  revenueLast30Days: number
   totalClicks: number
   uniqueVisitors: number
   bounceRate: string
-  avgSession: string
-  totalUsers: number
-  referrers: { name: string; value: number }[]
-  devices: { name: string; value: number }[]
 }
 
 export const dashboardApi = {

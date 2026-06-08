@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,11 +15,35 @@ import { TopNav } from '@/components/layout/top-nav'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { dashboardApi } from './api'
 import { Analytics } from './components/analytics'
 import { Overview } from './components/overview'
 import { RecentSales } from './components/recent-sales'
 
+function formatCurrency(n: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+
+function formatNumber(n: number) {
+  return new Intl.NumberFormat('en-US').format(n)
+}
+
 export function Dashboard() {
+  const { data: stats } = useQuery({
+    queryKey: ['dashboard-stats'],
+    queryFn: () => dashboardApi.getStats().then((r) => r.data),
+  })
+
+  const { data: analytics } = useQuery({
+    queryKey: ['dashboard-analytics'],
+    queryFn: () => dashboardApi.getAnalytics().then((r) => r.data),
+  })
+
   return (
     <>
       {/* ===== Top Heading ===== */}
@@ -76,16 +101,18 @@ export function Dashboard() {
                   </svg>
                 </CardHeader>
                 <CardContent>
-                  <div className='text-2xl font-bold'>$45,231.89</div>
+                  <div className='text-2xl font-bold'>
+                    {stats ? formatCurrency(stats.totalRevenue) : '-'}
+                  </div>
                   <p className='text-xs text-muted-foreground'>
-                    +20.1% from last month
+                    Total revenue across all orders
                   </p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                   <CardTitle className='text-sm font-medium'>
-                    Subscriptions
+                    Total Orders
                   </CardTitle>
                   <svg
                     xmlns='http://www.w3.org/2000/svg'
@@ -103,15 +130,19 @@ export function Dashboard() {
                   </svg>
                 </CardHeader>
                 <CardContent>
-                  <div className='text-2xl font-bold'>+2350</div>
+                  <div className='text-2xl font-bold'>
+                    {stats ? formatNumber(stats.totalOrders) : '-'}
+                  </div>
                   <p className='text-xs text-muted-foreground'>
-                    +180.1% from last month
+                    Total orders placed
                   </p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-                  <CardTitle className='text-sm font-medium'>Sales</CardTitle>
+                  <CardTitle className='text-sm font-medium'>
+                    Total Customers
+                  </CardTitle>
                   <svg
                     xmlns='http://www.w3.org/2000/svg'
                     viewBox='0 0 24 24'
@@ -127,16 +158,18 @@ export function Dashboard() {
                   </svg>
                 </CardHeader>
                 <CardContent>
-                  <div className='text-2xl font-bold'>+12,234</div>
+                  <div className='text-2xl font-bold'>
+                    {stats ? formatNumber(stats.totalCustomers) : '-'}
+                  </div>
                   <p className='text-xs text-muted-foreground'>
-                    +19% from last month
+                    Registered customers
                   </p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                   <CardTitle className='text-sm font-medium'>
-                    Active Now
+                    Total Products
                   </CardTitle>
                   <svg
                     xmlns='http://www.w3.org/2000/svg'
@@ -152,9 +185,11 @@ export function Dashboard() {
                   </svg>
                 </CardHeader>
                 <CardContent>
-                  <div className='text-2xl font-bold'>+573</div>
+                  <div className='text-2xl font-bold'>
+                    {stats ? formatNumber(stats.totalProducts) : '-'}
+                  </div>
                   <p className='text-xs text-muted-foreground'>
-                    +201 since last hour
+                    Active products
                   </p>
                 </CardContent>
               </Card>
@@ -172,17 +207,19 @@ export function Dashboard() {
                 <CardHeader>
                   <CardTitle>Recent Sales</CardTitle>
                   <CardDescription>
-                    You made 265 sales this month.
+                    {stats
+                      ? `${formatNumber(stats.totalOrders)} orders total`
+                      : 'Loading...'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <RecentSales />
+                  <RecentSales orders={stats?.recentOrders ?? []} />
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
           <TabsContent value='analytics' className='space-y-4'>
-            <Analytics />
+            <Analytics data={analytics} />
           </TabsContent>
         </Tabs>
       </Main>

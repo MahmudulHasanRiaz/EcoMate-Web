@@ -1,83 +1,48 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import type { RecentOrder } from '../api'
 
-export function RecentSales() {
+function formatCurrency(n: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+
+interface RecentSalesProps {
+  orders: RecentOrder[]
+}
+
+export function RecentSales({ orders }: RecentSalesProps) {
+  if (orders.length === 0) {
+    return (
+      <div className='py-8 text-center text-sm text-muted-foreground'>
+        No recent orders
+      </div>
+    )
+  }
+
   return (
     <div className='space-y-8'>
-      <div className='flex items-center gap-4'>
-        <Avatar className='h-9 w-9'>
-          <AvatarImage src='/avatars/avatar.svg' alt='Avatar' />
-          <AvatarFallback>OM</AvatarFallback>
-        </Avatar>
-        <div className='flex flex-1 flex-wrap items-center justify-between'>
-          <div className='space-y-1'>
-            <p className='text-sm leading-none font-medium'>Olivia Martin</p>
-            <p className='text-sm text-muted-foreground'>
-              olivia.martin@email.com
-            </p>
+      {orders.map((order) => (
+        <div key={order.id} className='flex items-center gap-4'>
+          <div className='flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs font-medium'>
+            #{order.displayId.slice(-2)}
           </div>
-          <div className='font-medium'>+$1,999.00</div>
-        </div>
-      </div>
-      <div className='flex items-center gap-4'>
-        <Avatar className='flex h-9 w-9 items-center justify-center space-y-0 border'>
-          <AvatarImage src='/avatars/avatar.svg' alt='Avatar' />
-          <AvatarFallback>JL</AvatarFallback>
-        </Avatar>
-        <div className='flex flex-1 flex-wrap items-center justify-between'>
-          <div className='space-y-1'>
-            <p className='text-sm leading-none font-medium'>Jackson Lee</p>
-            <p className='text-sm text-muted-foreground'>
-              jackson.lee@email.com
-            </p>
+          <div className='flex flex-1 flex-wrap items-center justify-between'>
+            <div className='space-y-1'>
+              <p className='text-sm leading-none font-medium'>
+                #{order.displayId}
+              </p>
+              <p className='text-sm text-muted-foreground'>
+                {order.itemCount} item{order.itemCount !== 1 ? 's' : ''} &middot;{' '}
+                {order.status}
+              </p>
+            </div>
+            <div className='font-medium'>{formatCurrency(order.total)}</div>
           </div>
-          <div className='font-medium'>+$39.00</div>
         </div>
-      </div>
-      <div className='flex items-center gap-4'>
-        <Avatar className='h-9 w-9'>
-          <AvatarImage src='/avatars/avatar.svg' alt='Avatar' />
-          <AvatarFallback>IN</AvatarFallback>
-        </Avatar>
-        <div className='flex flex-1 flex-wrap items-center justify-between'>
-          <div className='space-y-1'>
-            <p className='text-sm leading-none font-medium'>Isabella Nguyen</p>
-            <p className='text-sm text-muted-foreground'>
-              isabella.nguyen@email.com
-            </p>
-          </div>
-          <div className='font-medium'>+$299.00</div>
-        </div>
-      </div>
-
-      <div className='flex items-center gap-4'>
-        <Avatar className='h-9 w-9'>
-          <AvatarImage src='/avatars/avatar.svg' alt='Avatar' />
-          <AvatarFallback>WK</AvatarFallback>
-        </Avatar>
-        <div className='flex flex-1 flex-wrap items-center justify-between'>
-          <div className='space-y-1'>
-            <p className='text-sm leading-none font-medium'>William Kim</p>
-            <p className='text-sm text-muted-foreground'>will@email.com</p>
-          </div>
-          <div className='font-medium'>+$99.00</div>
-        </div>
-      </div>
-
-      <div className='flex items-center gap-4'>
-        <Avatar className='h-9 w-9'>
-          <AvatarImage src='/avatars/avatar.svg' alt='Avatar' />
-          <AvatarFallback>SD</AvatarFallback>
-        </Avatar>
-        <div className='flex flex-1 flex-wrap items-center justify-between'>
-          <div className='space-y-1'>
-            <p className='text-sm leading-none font-medium'>Sofia Davis</p>
-            <p className='text-sm text-muted-foreground'>
-              sofia.davis@email.com
-            </p>
-          </div>
-          <div className='font-medium'>+$39.00</div>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }

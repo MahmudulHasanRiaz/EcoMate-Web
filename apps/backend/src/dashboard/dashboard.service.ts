@@ -6,87 +6,58 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getStats() {
-    const [totalUsers, activeUsers, totalTasks, completedTasks, totalRevenue] =
-      await Promise.all([
-        this.prisma.user.count(),
-        this.prisma.user.count({ where: { status: 'active' } }),
-        this.prisma.task.count(),
-        this.prisma.task.count({ where: { status: 'done' } }),
-        45231.89, // Placeholder - will be replaced with real data
-      ]);
-
-    const recentUsers = await this.prisma.user.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        createdAt: true,
-      },
-    });
-
-    const recentTasks = await this.prisma.task.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        status: true,
-        priority: true,
-        createdAt: true,
-      },
-    });
-
-    const tasksByStatus = await this.prisma.task.groupBy({
-      by: ['status'],
-      _count: true,
-    });
-
-    const usersByRole = await this.prisma.user.groupBy({
-      by: ['role'],
-      _count: true,
-    });
+    const [
+      totalOrders,
+      revenueAgg,
+      totalCustomers,
+      totalProducts,
+      recentOrders,
+    ] = await Promise.all([
+      this.prisma.order.count(),
+      this.prisma.payment.aggregate({ _sum: { amount: true } }),
+      this.prisma.user.count({ where: { role: 'customer' } }),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.prisma.order.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { status: true, _count: { select: { items: true } } },
+      }),
+    ]);
 
     return {
-      overview: {
-        totalRevenue,
-        subscriptions: activeUsers,
-        sales: completedTasks,
-        activeNow: activeUsers,
-      },
-      users: { total: totalUsers, active: activeUsers, byRole: usersByRole },
-      tasks: {
-        total: totalTasks,
-        completed: completedTasks,
-        byStatus: tasksByStatus,
-      },
-      recentUsers,
-      recentTasks,
+      totalRevenue: Number(revenueAgg._sum.amount || 0),
+      totalOrders,
+      totalCustomers,
+      totalProducts,
+      recentOrders: recentOrders.map((o) => ({
+        id: o.id,
+        displayId: o.displayId,
+        total: Number(o.total),
+        status: o.status.name,
+        itemCount: o._count.items,
+        createdAt: o.createdAt,
+      })),
     };
   }
 
   async getAnalytics() {
-    const totalUsers = await this.prisma.user.count();
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [ordersLast30Days, revenueLast30Days] = await Promise.all([
+      this.prisma.order.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { createdAt: { gte: thirtyDaysAgo } },
+      }),
+    ]);
 
     return {
-      totalClicks: 1248,
-      uniqueVisitors: 832,
-      bounceRate: '42%',
-      avgSession: '3m 24s',
-      totalUsers,
-      referrers: [
-        { name: 'Direct', value: 512 },
-        { name: 'Product Hunt', value: 238 },
-        { name: 'Twitter', value: 174 },
-        { name: 'Blog', value: 104 },
-      ],
-      devices: [
-        { name: 'Desktop', value: 74 },
-        { name: 'Mobile', value: 22 },
-        { name: 'Tablet', value: 4 },
-      ],
+      ordersLast30Days,
+      revenueLast30Days: Number(revenueLast30Days._sum.amount || 0),
+      totalClicks: 0,
+      uniqueVisitors: 0,
+      bounceRate: '0%',
     };
   }
 }
