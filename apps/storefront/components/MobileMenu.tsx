@@ -22,8 +22,8 @@ export default function MobileMenu() {
     };
   }, []);
 
-  const handleCategoryClick = (category: string) => {
-    router.push(`/products?category=${category.toLowerCase()}`);
+  const handleCategoryClick = (href: string) => {
+    if (href) router.push(href);
     setIsMobileMenuOpen(false);
   };
 
@@ -72,7 +72,7 @@ export default function MobileMenu() {
                 {menuItems.map((item, index) => (
                   <button 
                      key={item.name || index} 
-                     onClick={() => handleCategoryClick(item.name)}
+                     onClick={() => handleCategoryClick(item.href)}
                      className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
                        index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
                      } hover:bg-gray-50`}

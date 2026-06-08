@@ -156,7 +156,7 @@ export default function Header() {
             {navItems.map((item, idx) => (
               <button 
                 key={idx} 
-                onClick={() => router.push(item.href || `/products?category=${item.name.toLowerCase().replace(/\s+/g, '-')}`)}
+                onClick={() => { if (item.href) router.push(item.href); }}
                 className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide cursor-pointer"
               >
                 {item.name}
