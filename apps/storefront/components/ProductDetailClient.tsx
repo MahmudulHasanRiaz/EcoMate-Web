@@ -277,8 +277,6 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const handleStickyBuyNow = handleBuyNow
-
   const [shareUrl, setShareUrl] = useState('');
   const shareText = encodeURIComponent(`Check out ${product.name}`);
   useEffect(() => { setShareUrl(encodeURIComponent(window.location.href)); }, []);
@@ -291,7 +289,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (
-    <div className="bg-white min-h-screen pb-28 md:pb-12">
+    <div className="bg-white min-h-screen pb-28 md:pb-12 overflow-x-hidden">
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pricePop {
           0% { transform: scale(1); }
@@ -566,28 +564,29 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
       <SizeChartModal open={sizeChartOpen} onClose={() => setSizeChartOpen(false)} sizeChart={sizeChartData} />
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] pb-safe md:hidden">
-        <div className="flex items-center gap-2 px-3 py-2.5 max-w-screen-xl mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-safe md:hidden">
+        <div className="flex items-stretch gap-1.5 px-3 py-2 max-w-screen-xl mx-auto">
           <a href={callHref}
-            className={`w-[42px] h-[42px] flex items-center justify-center rounded-full border-2 border-gray-200 text-gray-400 hover:text-brand-blue hover:border-brand-blue transition-colors flex-shrink-0 ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}
+            className={`w-[50px] flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:text-brand-blue hover:border-brand-blue transition-all active:scale-95 flex-shrink-0 ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}
             aria-label="Call to order"
           >
-            <Phone size={16} />
+            <Phone size={20} strokeWidth={2} />
           </a>
 
           <a href={waHref}
             target="_blank" rel="noreferrer"
-            className={`flex-1 h-[42px] rounded-md flex items-center justify-center gap-2 text-white text-[13px] font-medium transition-colors ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-lg text-white text-[14px] font-semibold transition-all active:scale-[0.98] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}
             style={{ backgroundColor: '#25D366' }}
           >
             <WhatsAppIcon />
-            <span className="truncate">Order on WhatsApp</span>
+            <span>WhatsApp</span>
           </a>
 
-          <button onClick={handleStickyBuyNow}
-            className="flex-[2] h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-bold flex items-center justify-center gap-1 hover:bg-brand-blue-dark transition-colors"
+          <button onClick={handleBuyNow}
+            className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark"
           >
-            Buy Now
+            <ShoppingBag size={16} strokeWidth={2.5} />
+            <span>Buy Now</span>
           </button>
         </div>
       </div>

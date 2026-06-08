@@ -44,15 +44,16 @@ export default function FloatingWidgets() {
       <div 
         id="floating-cart"
         onClick={() => setIsCartOpen(true)}
+        suppressHydrationWarning
         className={`fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-brand-blue text-white rounded-l shadow-[-2px_0_10px_rgba(0,0,0,0.1)] flex flex-col items-center cursor-pointer hover:bg-brand-blue/90 overflow-hidden transition-all duration-300 ease-in-out ${cartCount > 0 ? 'translate-x-0 opacity-100 ease-out' : 'translate-x-[120%] opacity-0 ease-in pointer-events-none'}`}
       >
         <div className="flex flex-col items-center justify-center w-16 px-1 py-2">
           <ShoppingBag size={20} className="mb-0.5" strokeWidth={2} />
-          <div className="text-[10px] font-medium leading-tight text-center tracking-wide">
+          <div className="text-[10px] font-medium leading-tight text-center tracking-wide" suppressHydrationWarning>
             {cartCount} Items
           </div>
         </div>
-        <div className="bg-white text-brand-blue w-full text-center py-1.5 text-[11px] font-bold border-t border-brand-blue/10">
+        <div className="bg-white text-brand-blue w-full text-center py-1.5 text-[11px] font-bold border-t border-brand-blue/10" suppressHydrationWarning>
           {config.currency.symbol}{cartTotal.toLocaleString()}
         </div>
       </div>
