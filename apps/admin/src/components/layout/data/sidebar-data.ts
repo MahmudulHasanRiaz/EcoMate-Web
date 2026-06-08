@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, CreditCard,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -44,21 +44,15 @@ export const sidebarData: SidebarData = {
     ]},
     { title: 'Marketing', panel: 'operational', items: [
       { title: 'Coupons', url: '/op/coupons', icon: Percent },
-      { title: 'Campaigns', url: '/op/campaigns', icon: Monitor }, // Placeholder URL
     ]},
     { title: 'Finance', panel: 'operational', items: [
       { title: 'Payments', url: '/op/payments', icon: Coins },
-      { title: 'Transactions', url: '/op/transactions', icon: CreditCard }, // Placeholder URL
     ]},
     { title: 'Logistics', panel: 'operational', items: [
       { title: 'Shipments', url: '/op/shipments', icon: Truck },
     ]},
     { title: 'Content', panel: 'operational', items: [
       { title: 'Media Gallery', url: '/op/media', icon: Monitor },
-    ]},
-    { title: 'Communications', panel: 'operational', items: [
-      { title: 'Chats', url: '/op/chats', icon: RefreshCw }, // Placeholder Icon
-      { title: 'Apps', url: '/op/apps', icon: Package },
     ]},
     // ===== MONITORING / ADMIN PANEL =====
     { title: 'Overview', panel: 'monitoring', items: [
@@ -67,7 +61,6 @@ export const sidebarData: SidebarData = {
     ]},
     { title: 'Administration', panel: 'monitoring', items: [
       { title: 'User Management', url: '/mon/users', icon: Users },
-      { title: 'Activity Logs', url: '/mon/activity-logs', icon: ListTodo },
     ]},
 
     // ===== SHARED FOOTER (Moved below) =====
