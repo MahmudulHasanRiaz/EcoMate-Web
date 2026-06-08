@@ -121,7 +121,7 @@ function OrderDetailPage() {
   useEffect(() => {
     if (editing) {
       apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
-      apiClient.get('/products').then(r => setAllProducts(r.data?.data || r.data || [])).catch(() => {})
+      apiClient.get('/products').then(r => setAllProducts(r.data?.data || r.data || [])).catch(() => toast.error('Failed to load products'))
     }
   }, [editing])
 

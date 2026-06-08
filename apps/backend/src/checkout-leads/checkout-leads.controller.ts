@@ -4,12 +4,14 @@ import {
 import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 
 @Controller('checkout-leads')
 export class CheckoutLeadsController {
   constructor(private readonly svc: CheckoutLeadsService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -27,11 +29,13 @@ export class CheckoutLeadsController {
     });
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('summary')
   summary() {
     return this.svc.getSummary();
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -47,6 +51,7 @@ export class CheckoutLeadsController {
     return this.svc.upsert(dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,
@@ -56,6 +61,7 @@ export class CheckoutLeadsController {
     return this.svc.updateStatus(id, status, user?.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Patch(':id/assign')
   assign(
     @Param('id') id: string,
@@ -65,6 +71,7 @@ export class CheckoutLeadsController {
     return this.svc.assign(id, assignedToId, user.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/convert')
   convert(
     @Param('id') id: string,
@@ -74,6 +81,7 @@ export class CheckoutLeadsController {
     return this.svc.convertToOrder(id, user.userId, dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/assign')
   bulkAssign(
     @Body('ids') ids: string[],
@@ -83,6 +91,7 @@ export class CheckoutLeadsController {
     return this.svc.bulkAssign(ids, assignedToId, user.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/status')
   bulkStatus(@Body('ids') ids: string[], @Body('status') status: string) {
     return this.svc.bulkStatus(ids, status);

@@ -3,11 +3,13 @@ import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly svc: PaymentsService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -31,6 +33,7 @@ export class PaymentsController {
     return this.svc.create(orderId, dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id/verify')
   verify(
     @Param('id') id: string,

@@ -29,6 +29,8 @@ import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authent
 import { Route as AuthenticatedMonSettingsRouteRouteImport } from './routes/_authenticated/mon/settings/route'
 import { Route as AuthenticatedOpTransactionsIndexRouteImport } from './routes/_authenticated/op/transactions/index'
 import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authenticated/op/tasks/index'
+import { Route as AuthenticatedOpTagsIndexRouteImport } from './routes/_authenticated/op/tags/index'
+import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_authenticated/op/size-charts/index'
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
@@ -172,6 +174,18 @@ const AuthenticatedOpTasksIndexRoute =
   AuthenticatedOpTasksIndexRouteImport.update({
     id: '/op/tasks/',
     path: '/op/tasks/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpTagsIndexRoute =
+  AuthenticatedOpTagsIndexRouteImport.update({
+    id: '/op/tags/',
+    path: '/op/tags/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpSizeChartsIndexRoute =
+  AuthenticatedOpSizeChartsIndexRouteImport.update({
+    id: '/op/size-charts/',
+    path: '/op/size-charts/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpShipmentsIndexRoute =
@@ -448,6 +462,8 @@ export interface FileRoutesByFullPath {
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
+  '/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -508,6 +524,8 @@ export interface FileRoutesByTo {
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
   '/op/refunds': typeof AuthenticatedOpRefundsIndexRoute
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
+  '/op/size-charts': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/op/tags': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -570,6 +588,8 @@ export interface FileRoutesById {
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/_authenticated/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
+  '/_authenticated/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -632,6 +652,8 @@ export interface FileRouteTypes {
     | '/op/products/'
     | '/op/refunds/'
     | '/op/shipments/'
+    | '/op/size-charts/'
+    | '/op/tags/'
     | '/op/tasks/'
     | '/op/transactions/'
     | '/op/print/invoice/$id'
@@ -692,6 +714,8 @@ export interface FileRouteTypes {
     | '/op/products'
     | '/op/refunds'
     | '/op/shipments'
+    | '/op/size-charts'
+    | '/op/tags'
     | '/op/tasks'
     | '/op/transactions'
     | '/op/print/invoice/$id'
@@ -753,6 +777,8 @@ export interface FileRouteTypes {
     | '/_authenticated/op/products/'
     | '/_authenticated/op/refunds/'
     | '/_authenticated/op/shipments/'
+    | '/_authenticated/op/size-charts/'
+    | '/_authenticated/op/tags/'
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
     | '/_authenticated/op/print/invoice/$id'
@@ -927,6 +953,20 @@ declare module '@tanstack/react-router' {
       path: '/op/tasks'
       fullPath: '/op/tasks/'
       preLoaderRoute: typeof AuthenticatedOpTasksIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/tags/': {
+      id: '/_authenticated/op/tags/'
+      path: '/op/tags'
+      fullPath: '/op/tags/'
+      preLoaderRoute: typeof AuthenticatedOpTagsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/size-charts/': {
+      id: '/_authenticated/op/size-charts/'
+      path: '/op/size-charts'
+      fullPath: '/op/size-charts/'
+      preLoaderRoute: typeof AuthenticatedOpSizeChartsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/shipments/': {
@@ -1314,6 +1354,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
   AuthenticatedOpRefundsIndexRoute: typeof AuthenticatedOpRefundsIndexRoute
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
+  AuthenticatedOpSizeChartsIndexRoute: typeof AuthenticatedOpSizeChartsIndexRoute
+  AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
@@ -1354,6 +1396,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
   AuthenticatedOpRefundsIndexRoute: AuthenticatedOpRefundsIndexRoute,
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
+  AuthenticatedOpSizeChartsIndexRoute: AuthenticatedOpSizeChartsIndexRoute,
+  AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:

@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNumber,
   IsArray,
+  IsUUID,
   ValidateNested,
   MinLength,
   IsObject,
@@ -46,6 +47,7 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() manageStock?: boolean;
+  @IsOptional() @IsUUID() sizeChartId?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -72,6 +74,7 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() manageStock?: boolean;
+  @IsOptional() @IsUUID() sizeChartId?: string | null;
 }
 
 export class GenerateVariantsDto {

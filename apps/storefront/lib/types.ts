@@ -131,15 +131,6 @@ export interface Order {
   guestPhone?: string;
 }
 
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  role: "customer" | "admin";
-  createdAt?: string;
-}
-
 export interface CartItem {
   id: string;
   name: string;
@@ -153,6 +144,10 @@ export interface CartItem {
   isCombo?: boolean;
   comboId?: string;
   comboItems?: ComboItemDetails[];
+  comboSelections?: Record<string, string>;
+  comboSelectionLabels?: Record<string, string>;
+  comboSelectionAttributes?: Record<string, { name: string; value: string }[]>;
   variantId?: string;
   variantLabel?: string;
+  variantAttributes?: { name: string; value: string }[];
 }

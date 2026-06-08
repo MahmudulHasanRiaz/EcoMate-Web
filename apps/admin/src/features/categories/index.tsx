@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2, ChevronRight, Image as ImageIcon, X } from 'lucide-react'
+import { apiClient } from '@/lib/api-client'
 import { categoriesApi, type CategoryResponse } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -23,17 +24,19 @@ export function Categories() {
   const queryClient = useQueryClient()
   const { data: categories, isLoading } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => categoriesApi.list().then(r => r.data.data || []),
+    queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : r.data?.data || []),
   })
+
+  const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
 
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<CategoryResponse | null>(null)
-  const [form, setForm] = useState({ name: '', slug: '', parentId: '', image: '' })
+  const [form, setForm] = useState({ name: '', slug: '', parentId: '', image: '', sizeChartId: '' })
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const createMut = useMutation({
     mutationFn: categoriesApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); setShowCreate(false); setForm({ name: '', slug: '', parentId: '', image: '' }); toast.success('Created') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); setShowCreate(false); setForm({ name: '', slug: '', parentId: '', image: '', sizeChartId: '' }); toast.success('Created') },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -50,7 +53,7 @@ export function Categories() {
 
   const openEdit = (cat: CategoryResponse) => {
     setEditing(cat)
-    setForm({ name: cat.name, slug: cat.slug, parentId: cat.parentId || '', image: cat.image || '' })
+    setForm({ name: cat.name, slug: cat.slug, parentId: cat.parentId || '', image: cat.image || '', sizeChartId: (cat as any).sizeChartId || '' })
   }
 
   const renderCategory = (cat: CategoryResponse, depth = 0) => (
@@ -132,11 +135,20 @@ export function Categories() {
                   )}
                 </div>
               </div>
+              <div className='space-y-1.5'>
+                <Label>Size Chart</Label>
+                <select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={form.sizeChartId} onChange={e => setForm({ ...form, sizeChartId: e.target.value })}>
+                  <option value=''>None</option>
+                  {(Array.isArray(sizeCharts) ? sizeCharts : (sizeCharts as any)?.data || []).map((sc: any) => (
+                    <option key={sc.id} value={sc.id}>{sc.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <DialogFooter>
               <Button variant='outline' onClick={() => { setShowCreate(false); setEditing(null); }}>Cancel</Button>
               <Button onClick={() => {
-                const data = { name: form.name, slug: form.slug, parentId: form.parentId || undefined, image: form.image || undefined };
+                const data = { name: form.name, slug: form.slug, parentId: form.parentId || undefined, image: form.image || undefined, sizeChartId: form.sizeChartId || undefined };
                 editing ? updateMut.mutate({ id: editing.id, data }) : createMut.mutate(data as any);
               }} disabled={!form.name || !form.slug}>{editing ? 'Save' : 'Create'}</Button>
             </DialogFooter>

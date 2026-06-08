@@ -1,31 +1,11 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { CartItem } from "@/lib/types";
 
 export interface VariantAttribute {
   name: string;
   value: string;
-}
-
-export interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  image: string;
-  quantity: number;
-  category?: string;
-  slug?: string;
-  stock?: number;
-  isCombo?: boolean;
-  comboId?: string;
-  comboItems?: { productId: string; productName: string; quantity: number; price?: number }[];
-  comboSelections?: Record<string, string>;
-  comboSelectionLabels?: Record<string, string>;
-  comboSelectionAttributes?: Record<string, VariantAttribute[]>;
-  variantId?: string;
-  variantLabel?: string;
-  variantAttributes?: VariantAttribute[];
 }
 
 interface CartContextType {

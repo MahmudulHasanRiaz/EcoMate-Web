@@ -13,6 +13,7 @@ interface GeneralValues {
   maintenance_mode: string
   admin_email: string
   pagination_default: string
+  size_chart_enabled: string
 }
 
 const DEFAULT_VALUES: GeneralValues = {
@@ -23,6 +24,7 @@ const DEFAULT_VALUES: GeneralValues = {
   maintenance_mode: 'false',
   admin_email: '',
   pagination_default: '20',
+  size_chart_enabled: 'false',
 }
 
 export function GeneralSettings() {
@@ -42,11 +44,14 @@ export function GeneralSettings() {
         maintenance_mode: data.maintenance_mode ?? 'false',
         admin_email: data.admin_email ?? '',
         pagination_default: data.pagination_default ?? '20',
+        size_chart_enabled: data.size_chart_enabled ?? 'false',
       }
       setValues(extracted)
       setOriginalValues(extracted)
       setIsLoading(false)
-    }).catch(() => {
+    }).catch(e => {
+      console.error('Failed to load settings', e)
+      toast.error('Failed to load settings')
       setIsLoading(false)
     })
   }, [])
@@ -94,6 +99,7 @@ export function GeneralSettings() {
     maintenance_mode: { label: 'Maintenance Mode', type: 'switch', hint: 'Enable maintenance mode for the storefront' },
     admin_email: { label: 'Admin Email', type: 'email', placeholder: 'admin@example.com' },
     pagination_default: { label: 'Default Pagination', type: 'text', placeholder: '20' },
+    size_chart_enabled: { label: 'Size Chart', type: 'switch', hint: 'Enable size chart feature on the storefront' },
   }
 
   return (

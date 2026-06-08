@@ -4,6 +4,7 @@ import { StickerTemplate } from '@/features/print/sticker-template'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Printer, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_authenticated/op/print/sticker/$id')({
   component: StickerPage,
@@ -21,6 +22,8 @@ function StickerPage() {
         printed.current = true
         setTimeout(() => window.print(), 300)
       }
+    }).catch(() => {
+      toast.error('Failed to load order')
     })
   }, [id])
 

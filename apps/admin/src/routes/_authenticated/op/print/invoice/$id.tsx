@@ -4,6 +4,7 @@ import { InvoiceTemplate } from '@/features/print/invoice-template'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Printer, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_authenticated/op/print/invoice/$id')({
   component: InvoicePage,
@@ -21,6 +22,8 @@ function InvoicePage() {
         printed.current = true
         setTimeout(() => window.print(), 300)
       }
+    }).catch(() => {
+      toast.error('Failed to load order')
     })
   }, [id])
 

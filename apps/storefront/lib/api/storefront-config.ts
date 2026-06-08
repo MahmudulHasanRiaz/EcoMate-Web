@@ -103,6 +103,9 @@ export interface StorefrontConfig {
   shippingOptions: { id: string; name: string; amount: number; sortOrder: number }[];
   shippingZones: { id: string; type: 'custom_amount' | 'no_delivery'; amount: number | null; districts: string[]; label: string | null }[];
   catalogImageRatio?: CatalogImageRatio;
+  features: {
+    sizeChart: boolean;
+  };
 }
 
 let cachedConfig: StorefrontConfig | null = null;

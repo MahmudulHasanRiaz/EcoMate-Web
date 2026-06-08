@@ -190,6 +190,7 @@ export class ImportService {
 
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
+    const tagIds = tags.length > 0 ? await this.resolveTags(tags, summary) : [];
     const images = this.parseImages(data.Images);
 
     const categoryId = await this.resolveCategories(categories, summary);
@@ -241,6 +242,9 @@ export class ImportService {
         stock,
         categoryId: categoryId ?? undefined,
         tags: tags as any,
+        productTags: tagIds.length > 0
+          ? { create: tagIds.map(id => ({ tagId: id })) }
+          : undefined,
         images: [] as any,
         seoMeta: seoMeta as any,
         isFeatured,
@@ -271,6 +275,7 @@ export class ImportService {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
+    const tagIds = tags.length > 0 ? await this.resolveTags(tags, summary) : [];
     const images = this.parseImages(data.Images);
 
     const categoryId = await this.resolveCategories(categories, summary);
@@ -305,6 +310,9 @@ export class ImportService {
     updateData.stock = stock;
     updateData.categoryId = categoryId ?? null;
     updateData.tags = tags as any;
+    updateData.productTags = tagIds.length > 0
+      ? { deleteMany: {}, create: tagIds.map(id => ({ tagId: id })) }
+      : { deleteMany: {} };
     updateData.seoMeta = seoMeta as any;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
@@ -514,6 +522,28 @@ export class ImportService {
     }
 
     return lastId;
+  }
+
+  private async resolveTags(
+    tagNames: string[],
+    summary: ImportSummary,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    for (const name of tagNames) {
+      const slug = slugify(name);
+      const existing = await this.prisma.tag.findUnique({ where: { slug } });
+      if (existing) {
+        summary.tagsReused++;
+        ids.push(existing.id);
+      } else {
+        const created = await this.prisma.tag.create({
+          data: { name, slug, productCount: 1 },
+        });
+        summary.tagsCreated++;
+        ids.push(created.id);
+      }
+    }
+    return ids;
   }
 
   private parseTags(value?: string): string[] {

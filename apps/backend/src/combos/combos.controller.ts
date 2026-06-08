@@ -11,6 +11,7 @@ import {
 import { CombosService } from './combos.service';
 import { CreateComboDto, UpdateComboDto } from './dto/combos.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('combos')
 export class CombosController {
@@ -54,16 +55,19 @@ export class CombosController {
     return this.combosService.findOne(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post()
   async create(@Body() dto: CreateComboDto) {
     return this.combosService.create(dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateComboDto) {
     return this.combosService.update(id, dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.combosService.remove(id);

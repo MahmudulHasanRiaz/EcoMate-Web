@@ -5,6 +5,7 @@ import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check } from 'lu
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
+import { apiClient } from '@/lib/api-client'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 
@@ -31,6 +32,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => r.data?.data || []) })
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
+  const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
+  const { data: allTags } = useQuery({ queryKey: ['tags'], queryFn: () => apiClient.get('/tags').then(r => r.data) })
 
   const categoryOptions = React.useMemo(() => {
     const flatten = (items: any[], depth: number): MultiSearchableOption[] => {
@@ -60,10 +63,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [manageStock, setManageStock] = useState(false)
   const [images, setImages] = useState<string[]>([])
   const [tags, setTags] = useState<string>('')
+  const [sizeChartId, setSizeChartId] = useState<string>('')
+  const [categoryDefaultChart, setCategoryDefaultChart] = useState<{ id: string; name: string | null } | null>(null)
   const [seoTitle, setSeoTitle] = useState('')
   const [seoDesc, setSeoDesc] = useState('')
   const [seoKeywords, setSeoKeywords] = useState('')
 
+  const [tagInput, setTagInput] = useState('')
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
   const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
@@ -99,13 +105,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setManageStock(currentRow.manageStock ?? false)
       setImages(Array.isArray(currentRow.images) ? currentRow.images : [])
       setTags(Array.isArray(currentRow.tags) ? currentRow.tags.join(', ') : '')
+      setSizeChartId((currentRow as any).sizeChartId || '')
       setSeoTitle((currentRow.seoMeta as any)?.title || '')
       setSeoDesc((currentRow.seoMeta as any)?.description || '')
       setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
-      setManageStock(false); setImages([]); setTags('');       setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+      setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
       setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
     setTab('general')
@@ -118,10 +125,28 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     }
   }, [type])
 
+  useEffect(() => {
+    if (categoryIds.length > 0 && categoryIds[0]) {
+      apiClient.get(`/categories/${categoryIds[0]}`).then(r => {
+        const cat = r.data as any
+        const chartId = cat?.sizeChartId || null
+        if (chartId) {
+          const charts = Array.isArray(sizeCharts) ? sizeCharts : (sizeCharts as any)?.data || []
+          const chart = charts.find((sc: any) => sc.id === chartId)
+          setCategoryDefaultChart({ id: chartId, name: chart?.name || null })
+        } else {
+          setCategoryDefaultChart(null)
+        }
+      }).catch(() => setCategoryDefaultChart(null))
+    } else {
+      setCategoryDefaultChart(null)
+    }
+  }, [categoryIds, sizeCharts])
+
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
-    setManageStock(false); setImages([]); setTags(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+    setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
@@ -170,6 +195,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       categoryId: categoryIds[0] || undefined,
       categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
+      sizeChartId: sizeChartId || undefined,
       images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
     }
@@ -282,7 +308,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                     <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder='product-slug' />
                   </div>
                 </div>
-                <div className='grid grid-cols-3 gap-6'>
+                <div className='grid grid-cols-4 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Categories</Label>
                     <MultiSearchableSelect
@@ -299,7 +325,95 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Tags</Label>
-                    <Input value={tags} onChange={e => setTags(e.target.value)} placeholder='summer, sale, new' />
+                    <div className='flex flex-wrap gap-1.5 min-h-[36px] p-1.5 border rounded-md'>
+                      {tags ? tags.split(',').map(t => t.trim()).filter(Boolean).map(t => (
+                        <Badge key={t} variant='secondary' className='gap-1 cursor-pointer' onClick={() => {
+                          const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
+                          setTags(arr.filter(x => x !== t).join(', '))
+                        }}>
+                          {t} <X className='h-3 w-3' />
+                        </Badge>
+                      )) : <span className='text-xs text-muted-foreground px-1'>Click below to add tags</span>}
+                    </div>
+                    <div className='flex flex-wrap gap-1.5'>
+                      {(Array.isArray(allTags) ? allTags : (allTags as any)?.data || []).map((tag: any) => {
+                        const tagName = tag.name
+                        const isSelected = tags.split(',').map(t => t.trim()).filter(Boolean).includes(tagName)
+                        return (
+                          <Badge
+                            key={tag.id}
+                            variant={isSelected ? 'default' : 'outline'}
+                            className='cursor-pointer text-xs'
+                            onClick={() => {
+                              const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
+                              if (isSelected) {
+                                setTags(arr.filter(x => x !== tagName).join(', '))
+                              } else {
+                                setTags([...arr, tagName].join(', '))
+                              }
+                            }}
+                          >
+                            {tagName} ({tag._count?.products ?? tag.productCount ?? 0})
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <Input
+                        value={tagInput}
+                        onChange={e => setTagInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && tagInput.trim()) {
+                            e.preventDefault()
+                            const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
+                            if (!arr.includes(tagInput.trim())) {
+                              setTags([...arr, tagInput.trim()].join(', '))
+                            }
+                            setTagInput('')
+                          }
+                        }}
+                        placeholder='Type tag name and press Enter...'
+                        className='h-7 text-xs'
+                      />
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className='h-7 text-xs shrink-0'
+                        disabled={!tagInput.trim()}
+                        onClick={() => {
+                          const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
+                          if (!arr.includes(tagInput.trim())) {
+                            setTags([...arr, tagInput.trim()].join(', '))
+                          }
+                          setTagInput('')
+                        }}
+                      >
+                        <Plus className='h-3 w-3 mr-1' /> Add
+                      </Button>
+                    </div>
+                  </div>
+                  <div className='space-y-1.5'>
+                    <Label>Size Chart</Label>
+                    <select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={sizeChartId} onChange={e => setSizeChartId(e.target.value)}>
+                      <option value=''>
+                        {categoryDefaultChart?.id ? 'None (use default)' : 'None'}
+                      </option>
+                      {(Array.isArray(sizeCharts) ? sizeCharts : (sizeCharts as any)?.data || []).map((sc: any) => (
+                        <option key={sc.id} value={sc.id}>
+                          {sc.id === categoryDefaultChart?.id ? `${sc.name} (default)` : sc.name}
+                        </option>
+                      ))}
+                    </select>
+                    {categoryDefaultChart?.id && (
+                      <p className='text-xs text-muted-foreground mt-1'>
+                        Default from{' '}
+                        {(() => {
+                          const c = Array.isArray(cats) ? cats.find((c: any) => c.id === categoryIds[0]) : null
+                          return c?.name || 'selected category'
+                        })()}
+                        : {categoryDefaultChart.name}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className='space-y-1.5'>

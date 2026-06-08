@@ -12,12 +12,34 @@ import {
 } from './dto/product.dto';
 import { MediaService } from '../media/media.service';
 
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
   ) {}
+
+  private async syncTags(tagNames: string[], productId: string): Promise<void> {
+    if (!tagNames?.length) return;
+    for (const name of tagNames) {
+      const slug = slugify(name);
+      let tag = await this.prisma.tag.findUnique({ where: { slug } });
+      if (tag) {
+        await this.prisma.tag.update({ where: { id: tag.id }, data: { productCount: { increment: 1 } } });
+      } else {
+        tag = await this.prisma.tag.create({ data: { name, slug, productCount: 1 } });
+      }
+      await this.prisma.productTag.upsert({
+        where: { productId_tagId: { productId, tagId: tag.id } },
+        update: {},
+        create: { productId, tagId: tag.id },
+      });
+    }
+  }
 
   private buildWhere(query: {
     search?: string;
@@ -225,6 +247,7 @@ export class ProductsService {
         productCategories: dto.categoryIds
           ? { create: dto.categoryIds.map((cid) => ({ categoryId: cid })) }
           : undefined,
+        sizeChartId: dto.sizeChartId,
         tags: dto.tags as any,
         images: (dto.images || []) as any,
         seoMeta: dto.seoMeta,
@@ -261,6 +284,10 @@ export class ProductsService {
         },
       },
     });
+
+    if (dto.tags?.length) {
+      await this.syncTags(dto.tags, product.id);
+    }
 
     if (dto.images?.length) {
       const synced = await this.media.syncEntityImages(
@@ -326,6 +353,10 @@ export class ProductsService {
         variants: true,
       },
     });
+
+    if (dto.tags?.length) {
+      await this.syncTags(dto.tags, id);
+    }
 
     if (dto.images !== undefined) {
       const synced = await this.media.syncEntityImages(

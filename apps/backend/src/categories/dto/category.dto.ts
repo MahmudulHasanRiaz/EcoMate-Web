@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsInt,
   IsObject,
+  IsUUID,
   Min,
   MinLength,
 } from 'class-validator';
@@ -41,6 +42,10 @@ export class CreateCategoryDto {
   @IsInt()
   @Min(0)
   menuSortOrder?: number;
+
+  @IsOptional()
+  @IsUUID()
+  sizeChartId?: string;
 }
 
 export class UpdateCategoryDto {
@@ -77,4 +82,8 @@ export class UpdateCategoryDto {
   @IsInt()
   @Min(0)
   menuSortOrder?: number;
+
+  @IsOptional()
+  @IsUUID()
+  sizeChartId?: string | null;
 }

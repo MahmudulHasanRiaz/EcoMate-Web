@@ -21,6 +21,7 @@ import {
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -61,7 +62,7 @@ export class OrdersController {
     return this.svc.create(dto);
   }
 
-  @Public()
+  @Roles('superadmin', 'admin')
   @Post('backfill-view-tokens')
   backfillViewTokens() {
     return this.svc.backfillViewTokens();
@@ -91,11 +92,13 @@ export class OrdersController {
     return this.svc.cancelByCustomer(id, dto.token);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/rotate-view-token')
   rotateViewToken(@Param('id') id: string) {
     return this.svc.rotateViewToken(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id') updateOrder(
     @Param('id') id: string,
     @Body() dto: UpdateOrderDto,
@@ -103,6 +106,7 @@ export class OrdersController {
     return this.svc.updateOrder(id, dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id/status')
   updateStatus(
     @Param('id') id: string,
@@ -112,18 +116,21 @@ export class OrdersController {
     return this.svc.updateStatus(id, dto, user.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/items') addItem(
     @Param('id') id: string,
     @Body() dto: UpdateOrderItemDto,
   ) {
     return this.svc.addItem(id, dto);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Delete(':id/items/:itemId') removeItem(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
   ) {
     return this.svc.removeItem(id, itemId);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/note') addNote(
     @Param('id') id: string,
     @Body() dto: { note: string; visibility: 'public' | 'private' },
@@ -132,26 +139,31 @@ export class OrdersController {
     return this.svc.addNote(id, dto.note, dto.visibility, user.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk') async bulkOrders(@Body() dto: { ids: string[] }) {
     const orders = await this.svc.bulkOrders(dto.ids || []);
     return { orders };
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/status') async bulkStatus(
     @Body() dto: { ids: string[]; statusId: string },
   ) {
     return this.svc.bulkStatusChange(dto.ids, dto.statusId);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/dispatch') async bulkDispatch(
     @Body() dto: { ids: string[]; courier: string },
     @CurrentUser() user: { userId: string },
   ) {
     return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/assign') async bulkAssign(
     @Body() dto: { ids: string[]; assignedToId: string | null },
   ) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Get('staff/list') async staffList() {
     return this.svc.getStaff();
   }

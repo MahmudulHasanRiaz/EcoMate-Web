@@ -33,7 +33,9 @@ import { CheckoutLeadsModule } from './checkout-leads/checkout-leads.module';
 import { DeliveryAreasModule } from './delivery-areas/delivery-areas.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { ImportModule } from './import/import.module';
+import { SizeChartsModule } from './size-charts/size-charts.module';
 import { CmsPagesModule } from './cms-pages/cms-pages.module';
+import { TagsModule } from './tags/tags.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -70,7 +72,9 @@ import { RolesGuard } from './auth/roles.guard';
     DeliveryAreasModule,
     ShippingModule,
     ImportModule,
+    SizeChartsModule,
     CmsPagesModule,
+    TagsModule,
   ],
   controllers: [OrderStatusController],
   providers: [

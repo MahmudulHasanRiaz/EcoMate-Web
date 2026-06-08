@@ -15,6 +15,7 @@ import { TopNav } from '@/components/layout/top-nav'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { Loader2 } from 'lucide-react'
 import { dashboardApi } from './api'
 import { Analytics } from './components/analytics'
 import { Overview } from './components/overview'
@@ -34,7 +35,7 @@ function formatNumber(n: number) {
 }
 
 export function Dashboard() {
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.getStats().then((r) => r.data),
   })
@@ -81,7 +82,12 @@ export function Dashboard() {
             </TabsList>
           </div>
           <TabsContent value='overview' className='space-y-4'>
-            <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+            {isLoading ? (
+              <div className='flex items-center justify-center min-h-[200px]'>
+                <Loader2 className='animate-spin h-8 w-8 text-muted-foreground' />
+              </div>
+            ) : (
+              <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
               <Card>
                 <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                   <CardTitle className='text-sm font-medium'>
@@ -194,6 +200,7 @@ export function Dashboard() {
                 </CardContent>
               </Card>
             </div>
+            )}
             <div className='grid grid-cols-1 gap-4 lg:grid-cols-7'>
               <Card className='col-span-1 lg:col-span-4'>
                 <CardHeader>

@@ -1,5 +1,6 @@
 import { Controller, Get, Put, Param, Query, Body } from '@nestjs/common';
 import { ShipmentService } from './shipment.service';
+import { Roles } from '../common/decorators/roles.decorator';
 
 interface CreateOrUpdateShipmentDto {
   trackingNo?: string;
@@ -11,6 +12,7 @@ interface CreateOrUpdateShipmentDto {
 export class ShipmentController {
   constructor(private readonly svc: ShipmentService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -28,11 +30,13 @@ export class ShipmentController {
     });
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('order/:orderId')
   findByOrderId(@Param('orderId') orderId: string) {
     return this.svc.findByOrderId(orderId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put('order/:orderId')
   createOrUpdate(
     @Param('orderId') orderId: string,

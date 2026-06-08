@@ -13,7 +13,7 @@ export interface ProductsResponse {
   };
 }
 
-function transformBackendProduct(raw: any): Product {
+export function transformBackendProduct(raw: any): Product {
   const rawBasePrice = Number(raw.basePrice);
   const rawSalePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
   const rawImages = Array.isArray(raw.images) ? raw.images : [];

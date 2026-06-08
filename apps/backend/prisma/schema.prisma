@@ -153,6 +153,8 @@ model Category {
   products    Product[]           @relation("ProductCategory")
   productCategories ProductCategory[]
   combos      Combo[]
+  sizeChartId String?
+  sizeChart   SizeChart? @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
 }
 
 model ProductCategory {
@@ -206,9 +208,12 @@ model Product {
 
   category   Category?          @relation("ProductCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   productCategories ProductCategory[]
+  productTags ProductTag[]
   variants   ProductVariant[]
   orderItems OrderItem[]
   comboItems ComboItem[]
+  sizeChartId String?
+  sizeChart   SizeChart? @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
 }
 
 model ProductVariant {
@@ -575,6 +580,20 @@ model OrderCounter {
   seq  Int
 }
 
+model SizeChart {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  image       String?
+  tableData   Json?    @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categories Category[]
+  products   Product[]
+}
+
 model CmsPage {
   id        String   @id @default(uuid())
   slug      String   @unique
@@ -585,4 +604,23 @@ model CmsPage {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  slug      String    @unique
+  productCount Int    @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  ProductTag[]
+}
+
+model ProductTag {
+  productId String
+  tagId     String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
 }

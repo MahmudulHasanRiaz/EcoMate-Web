@@ -11,7 +11,9 @@ import {
 import { CourierManagerService } from './courier-manager.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Request } from 'express';
+import { Roles } from '../common/decorators/roles.decorator';
 
+@Roles('superadmin', 'admin', 'manager')
 @Controller('couriers')
 export class CourierManagerController {
   constructor(

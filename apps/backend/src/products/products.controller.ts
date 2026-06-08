@@ -16,6 +16,7 @@ import {
   UpdateVariantDto,
 } from './dto/product.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -72,25 +73,32 @@ export class ProductsController {
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/delete') bulkRemove(@Body() body: { ids: string[] }) {
     return this.svc.bulkRemove(body.ids);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/update') bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
     return this.svc.bulkUpdate(body.ids, body.data);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post() create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id') update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.svc.update(id, dto);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Delete(':id') remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/variants/generate')
   generateVariants(@Param('id') id: string, @Body() dto: GenerateVariantsDto) {
     return this.svc.generateVariants(id, dto);
   }
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id/variants/:variantId')
   updateVariant(
     @Param('id') id: string,

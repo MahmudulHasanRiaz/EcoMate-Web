@@ -1,15 +1,18 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('low-stock')
   async lowStock() {
     return this.inventoryService.lowStock();
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('logs')
   async logs(
     @Query('page') page?: string,
@@ -23,6 +26,7 @@ export class InventoryController {
     );
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('adjust')
   async adjust(
     @Body() body: { productId: string; quantity: number; reason: string; performedBy?: string },
@@ -35,6 +39,7 @@ export class InventoryController {
     );
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk-adjust')
   async bulkAdjust(
     @Body() body: { items: { productId: string; quantity: number; reason: string }[]; performedBy?: string },

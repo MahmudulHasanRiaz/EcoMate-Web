@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift,
+  LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift, Ruler,
   Users, ShieldCheck, HelpCircle, Percent,
   RefreshCw, Truck, AlertTriangle, Coins, Settings,
 } from 'lucide-react'
@@ -25,7 +25,9 @@ export const sidebarData: SidebarData = {
           { title: 'All Products', url: '/op/products' },
           { title: 'Combos', url: '/op/combos', icon: Gift },
           { title: 'Categories', url: '/op/categories' },
+          { title: 'Tags', url: '/op/tags' },
           { title: 'Attributes', url: '/op/attributes', icon: Palette },
+          { title: 'Size Charts', url: '/op/size-charts', icon: Ruler },
         ],
       },
       { title: 'Inventory', url: '/op/inventory', icon: AlertTriangle },

@@ -317,6 +317,9 @@ export class SystemSettingsController {
       shippingZones,
       districtCharges: parseJson<Record<string, number>>(map['district_charges'] || '{}', {}),
       catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
+      features: {
+        sizeChart: map['size_chart_enabled'] === 'true',
+      },
     };
   }
 

@@ -5,6 +5,7 @@ import { InvoiceTemplate } from '@/features/print/invoice-template'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Printer, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_authenticated/op/print/bulk/')({
   component: BulkPrint,
@@ -31,6 +32,9 @@ function BulkPrint() {
     )).then(results => {
       setOrders(results.flat())
       setLoading(false)
+    }).catch(() => {
+      setLoading(false)
+      toast.error('Failed to load orders')
     })
   }, [ids])
 
