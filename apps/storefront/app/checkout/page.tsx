@@ -88,12 +88,13 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   );
 }
 
-function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
+function PaymentPopup({ orderId, total, guestPhone, guestName, onClose, onSuccess }: {
   orderId: string;
   total: number;
   guestPhone?: string;
   guestName?: string;
   onClose: () => void;
+  onSuccess?: () => void;
 }) {
   const [gateways, setGateways] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,8 +133,10 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
       });
       const data = await res.json();
       if (data.redirectURL) {
+        onSuccess?.();
         window.location.href = data.redirectURL;
       } else if (data.bkashURL) {
+        onSuccess?.();
         window.location.href = data.bkashURL;
       } else {
         toast.error('Payment initiation failed. Order saved as pending.');
@@ -158,6 +161,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose }: {
         transactionId: trxId.trim(),
         notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
       });
+      onSuccess?.();
       setSubmitted(true);
       toast.success('Payment info submitted! Awaiting verification.');
     } catch {
@@ -329,6 +333,7 @@ export default function CheckoutPage() {
   const [paymentMode, setPaymentMode] = useState('cod');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
+  const paymentSuccessCallback = useRef<(() => void) | null>(null);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
@@ -549,15 +554,21 @@ export default function CheckoutPage() {
       payload.paymentMethod = isOnlinePayment ? 'online' : COD_METHOD;
       const order = await createOrder(payload);
 
-      clearCart();
-      try {
-        ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
-         'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
-      } catch {}
-
       if (isOnlinePayment) {
+        paymentSuccessCallback.current = () => {
+          clearCart();
+          try {
+            ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
+             'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
+          } catch {}
+        };
         setPaymentPopup({ orderId: order.id, total: totalWithDelivery });
       } else {
+        clearCart();
+        try {
+          ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
+           'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
+        } catch {}
         router.push(`/checkout/thank-you?orderId=${order.id}`);
       }
     } catch (err: any) {
@@ -923,7 +934,9 @@ export default function CheckoutPage() {
           total={paymentPopup.total}
           guestPhone={guestPhone}
           guestName={guestName}
+          onSuccess={() => paymentSuccessCallback.current?.()}
           onClose={() => {
+            paymentSuccessCallback.current = null;
             setPaymentPopup(null);
             router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&pending=true`);
           }}
