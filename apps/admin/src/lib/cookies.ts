@@ -15,7 +15,7 @@ export function getCookie(name: string): string | undefined {
   const parts = value.split(`; ${name}=`)
   if (parts.length === 2) {
     const cookieValue = parts.pop()?.split(';').shift()
-    return cookieValue
+    return cookieValue ? decodeURIComponent(cookieValue) : undefined
   }
   return undefined
 }
@@ -30,7 +30,9 @@ export function setCookie(
 ): void {
   if (typeof document === 'undefined') return
 
-  document.cookie = `${name}=${value}; path=/; max-age=${maxAge}`
+  const secureFlag = window.location.protocol === 'https:' ? '; Secure' : ''
+  const encodedValue = encodeURIComponent(value)
+  document.cookie = `${name}=${encodedValue}; path=/; max-age=${maxAge}${secureFlag}; SameSite=Lax`
 }
 
 /**
