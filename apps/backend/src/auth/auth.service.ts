@@ -187,14 +187,14 @@ export class AuthService {
       '7d') as StringValue;
 
     const accessToken = this.jwtService.sign(payload, {
-      secret: process.env['JWT_SECRET'] || 'eco-mate-jwt-secret',
+      secret: process.env['JWT_SECRET'],
       expiresIn: ms(accessExpiresIn) / 1000,
     });
 
     const refreshToken = this.jwtService.sign(
       { sub: user.id, email: user.email },
       {
-        secret: process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret',
+        secret: process.env['JWT_REFRESH_SECRET'],
         expiresIn: ms(refreshExpiresIn) / 1000,
       },
     );
