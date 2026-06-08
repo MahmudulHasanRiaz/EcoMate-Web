@@ -34,6 +34,8 @@ export function Inventory() {
   const [productSearch, setProductSearch] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
+  const [quantity, setQuantity] = useState('0')
+  const [reason, setReason] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
