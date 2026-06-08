@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 interface Props {
@@ -13,10 +13,10 @@ export function ProductImageGallery({ images, productName }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
-  const [isHovered, setIsHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -25,93 +25,168 @@ export function ProductImageGallery({ images, productName }: Props) {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!mainRef.current || isMobile) return;
-    const rect = mainRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setZoomPos({ x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) });
-  }, [isMobile]);
+  useEffect(() => {
+    if (scrollRef.current && lightboxOpen) {
+      scrollRef.current.scrollLeft = 0;
+    }
+  }, [lightboxOpen]);
 
-  const handlePrev = useCallback(() => {
-    setActiveIndex(prev => (prev === 0 ? images.length - 1 : prev - 1));
-  }, [images.length]);
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    if (idx !== activeIndex) setActiveIndex(idx);
+  }, [activeIndex]);
 
-  const handleNext = useCallback(() => {
-    setActiveIndex(prev => (prev === images.length - 1 ? 0 : prev + 1));
-  }, [images.length]);
+  const scrollTo = useCallback((index: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: el.clientWidth * index, behavior: 'smooth' });
+    setActiveIndex(index);
+  }, []);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    const diff = touchStartX.current - touchEndX.current;
+    const threshold = 50;
+    if (Math.abs(diff) > threshold) {
+      if (diff > 0 && activeIndex < images.length - 1) {
+        scrollTo(activeIndex + 1);
+      } else if (diff < 0 && activeIndex > 0) {
+        scrollTo(activeIndex - 1);
+      }
+    }
+  }, [activeIndex, images.length, scrollTo]);
 
   const currentSrc = imgErrors[activeIndex] ? PLACEHOLDER_IMAGE : (images[activeIndex] || PLACEHOLDER_IMAGE);
 
+  if (images.length === 0) {
+    return (
+      <div className="md:w-1/2">
+        <div className="aspect-square bg-gray-50 rounded-lg flex items-center justify-center">
+          <img src={PLACEHOLDER_IMAGE} alt={productName} className="w-full h-full object-contain" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex gap-4 md:gap-6 flex-row md:w-1/2">
-        <div className="flex flex-col gap-3 w-[60px] md:w-[80px] flex-shrink-0">
-          {images.map((img, i) => (
-            <button key={i} onClick={() => setActiveIndex(i)}
-              className={`w-full aspect-square border rounded-[4px] overflow-hidden flex items-center justify-center p-1 transition-colors ${activeIndex === i ? 'border-brand-blue' : 'border-gray-200'}`}>
-              <img
-                src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
-                alt=""
-                className="w-full h-full object-contain"
-                onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
-              />
-            </button>
-          ))}
+      <div className="md:w-1/2">
+        <div className="relative -mx-4 md:mx-0">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {images.map((img, i) => (
+              <div
+                key={i}
+                className="snap-center shrink-0 w-full md:rounded-lg overflow-hidden bg-gray-50"
+                style={{ aspectRatio: '4/5' }}
+                onClick={() => setLightboxOpen(true)}
+              >
+                <img
+                  src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
+                  alt={`${productName} ${i + 1}`}
+                  className="w-full h-full object-contain cursor-pointer"
+                  onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
+                  draggable={false}
+                />
+              </div>
+            ))}
+          </div>
+
+          {images.length > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-3 px-4 md:px-0">
+              {images.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => scrollTo(i)}
+                  className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                    i === activeIndex
+                      ? 'bg-brand-blue w-5'
+                      : 'bg-gray-300 hover:bg-gray-400'
+                  }`}
+                  aria-label={`Go to image ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
-        <div
-          ref={mainRef}
-          className="flex-1 border border-gray-100 rounded-[4px] relative aspect-square overflow-hidden cursor-crosshair"
-          onMouseMove={handleMouseMove}
-          onMouseEnter={() => !isMobile && setIsHovered(true)}
-          onMouseLeave={() => { setIsHovered(false); setZoomPos({ x: 50, y: 50 }); }}
-          onClick={() => setLightboxOpen(true)}
-        >
-          <button className="absolute left-2 w-8 h-8 flex items-center justify-center text-blue-500 top-1/2 -translate-y-1/2 opacity-70 hover:opacity-100 transition-opacity z-10"
-            onClick={e => { e.stopPropagation(); handlePrev(); }}>
-            <ChevronLeft size={24} strokeWidth={1.5} />
-          </button>
-
-          <img
-            src={currentSrc}
-            alt={productName}
-            className="w-full h-full object-contain transition-transform duration-200 ease-out"
-            style={{
-              transform: isHovered ? 'scale(1.5)' : 'scale(1)',
-              transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
-              touchAction: 'pinch-zoom',
-            }}
-            onError={() => setImgErrors(prev => ({ ...prev, [activeIndex]: true }))}
-          />
-
-          <button className="absolute right-2 w-8 h-8 flex items-center justify-center text-blue-500 top-1/2 -translate-y-1/2 opacity-70 hover:opacity-100 transition-opacity z-10"
-            onClick={e => { e.stopPropagation(); handleNext(); }}>
-            <ChevronRight size={24} strokeWidth={1.5} />
-          </button>
-        </div>
+        {images.length > 1 && (
+          <div className="hidden md:flex gap-2 mt-3 overflow-x-auto hide-scrollbar">
+            {images.map((img, i) => (
+              <button key={i} onClick={() => scrollTo(i)}
+                className={`w-16 h-16 flex-shrink-0 border rounded-md overflow-hidden p-0.5 transition-colors ${
+                  i === activeIndex ? 'border-brand-blue ring-1 ring-brand-blue' : 'border-gray-200 hover:border-gray-400'
+                }`}>
+                <img
+                  src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
+                  alt=""
+                  className="w-full h-full object-contain"
+                  onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
+                />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {lightboxOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center" onClick={() => setLightboxOpen(false)}>
-          <button onClick={() => setLightboxOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center" onClick={() => setLightboxOpen(false)}>
+          <button onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
             <X size={28} />
           </button>
 
-          <button onClick={e => { e.stopPropagation(); handlePrev(); }} className="absolute left-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
-            <ChevronLeft size={32} />
-          </button>
-
-          <img
-            src={currentSrc}
-            alt={productName}
-            className="max-w-[90vw] max-h-[90vh] object-contain"
+          <div
+            className="relative w-full h-full flex items-center justify-center"
             onClick={e => e.stopPropagation()}
-          />
+          >
+            <img
+              src={currentSrc}
+              alt={productName}
+              className="max-w-[95vw] max-h-[90vh] object-contain select-none"
+              draggable={false}
+            />
+          </div>
 
-          <button onClick={e => { e.stopPropagation(); handleNext(); }} className="absolute right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
-            <ChevronRight size={32} />
-          </button>
+          {images.length > 1 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
+              {images.map((_, i) => (
+                <button key={i} onClick={(e) => { e.stopPropagation(); scrollTo(i); }}
+                  className={`w-2.5 h-2.5 rounded-full transition-all ${
+                    i === activeIndex ? 'bg-white scale-110' : 'bg-white/40 hover:bg-white/70'
+                  }`} />
+              ))}
+            </div>
+          )}
+
+          {activeIndex > 0 && (
+            <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex - 1); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          )}
+          {activeIndex < images.length - 1 && (
+            <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex + 1); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
         </div>
       )}
     </>

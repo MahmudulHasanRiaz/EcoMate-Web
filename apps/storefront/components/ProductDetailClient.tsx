@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Truck, RefreshCw, ShieldCheck, Wallet, Copy, Check } from 'lucide-react';
+import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
-import type { Product, Variant } from "@/lib/types";
+import type { Product, Variant, Review } from "@/lib/types";
 import { trackEvent } from "@/lib/tracking";
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
@@ -40,6 +40,107 @@ function StockBadge({ stock, manageStock }: { stock?: number; manageStock?: bool
   return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-orange-100 text-orange-800">Only {stock} left!</span>;
 }
 
+function StarRating({ rating, size = 16 }: { rating: number; size?: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          size={size}
+          className={star <= Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}
+        />
+      ))}
+    </div>
+  );
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
+
+function sanitizeHTML(html: string): string {
+  return DOMPurify.sanitize(html.replace(/\\n/g, '<br>').replace(/##/g, ''), {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+    ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
+  });
+}
+
+function ReviewsSection({ reviews, productId }: { reviews?: Review[]; productId: string }) {
+  const [showForm, setShowForm] = useState(false);
+
+  if (!reviews || reviews.length === 0) {
+    return (
+      <div className="border-t border-gray-100 pt-8 mt-8">
+        <h3 className="text-[16px] font-semibold text-gray-800 mb-4">রিভিউ</h3>
+        <div className="text-center py-10 px-4 bg-gray-50 rounded-lg">
+          <Star size={32} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-[14px] text-gray-500 mb-4">এই পণ্যে এখনো কোনো রিভিউ নেই। প্রথম রিভিউ দিন!</p>
+          <button
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center px-5 h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-medium hover:bg-brand-blue-dark transition-colors"
+          >
+            প্রথম রিভিউ দিন
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  const totalReviews = reviews.length;
+
+  return (
+    <div className="border-t border-gray-100 pt-8 mt-8">
+      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">রিভিউ</h3>
+      <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+        <div className="text-center">
+          <span className="text-[36px] font-bold text-gray-800 leading-none">{avgRating.toFixed(1)}</span>
+          <div className="mt-1">
+            <StarRating rating={avgRating} size={18} />
+          </div>
+          <span className="text-[12px] text-gray-400 mt-1 block">{totalReviews} টি রিভিউ</span>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {reviews.map((review) => (
+          <div key={review.id} className="border-b border-gray-50 pb-4 last:border-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[14px] font-medium text-gray-800">{review.customerName}</span>
+              <span className="text-[11px] text-gray-400">{formatDate(review.createdAt)}</span>
+            </div>
+            <StarRating rating={review.rating} size={14} />
+            {review.text && <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">{review.text}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrustBar({ config }: { config: any }) {
+  const items = [
+    { icon: <Truck size={16} />, label: `Free Delivery${config.delivery.freeDeliveryMin > 0 ? ` (over ৳${config.delivery.freeDeliveryMin.toLocaleString()})` : ''}`, key: 'delivery' },
+    { icon: <Wallet size={16} />, label: 'Cash on Delivery', key: 'cod' },
+    { icon: <RefreshCw size={16} />, label: 'Easy Returns', key: 'returns' },
+    { icon: <ShieldCheck size={16} />, label: 'Secure Payment', key: 'payment' },
+  ];
+
+  return (
+    <div className="flex gap-2 overflow-x-auto hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0 pb-1">
+      {items.map((item) => (
+        <div key={item.key} className="flex-shrink-0 flex flex-col items-center gap-1.5 bg-gray-50 rounded-lg px-4 py-3 min-w-[100px]">
+          <div className="text-gray-500">{item.icon}</div>
+          <span className="text-[11px] text-gray-600 text-center leading-tight font-medium">{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ProductDetailClient({ product }: { product: Product }) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
@@ -50,8 +151,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const [justAdded, setJustAdded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sizeChartLoading, setSizeChartLoading] = useState(false);
-  const [showStickyBar, setShowStickyBar] = useState(false);
   const [heartPop, setHeartPop] = useState(false);
+  const [reviews, setReviews] = useState<Review[] | undefined>(product.reviews);
+  const [descExpanded, setDescExpanded] = useState(false);
   const ctaRef = useRef<HTMLDivElement>(null);
 
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
@@ -74,25 +176,22 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   }, []);
 
   useEffect(() => {
-    const el = ctaRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyBar(!entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
     if (product.slug) {
       setSizeChartLoading(true);
       apiClient.get(`/size-charts/by-product/${product.slug}`)
         .then(res => setSizeChartData(res.data))
-        .catch(err => console.warn('Size chart fetch failed:', err))
+        .catch(() => {})
         .finally(() => setSizeChartLoading(false));
     }
   }, [product.slug]);
+
+  useEffect(() => {
+    if (!reviews && product.slug) {
+      apiClient.get(`/reviews/product/${product.slug}`)
+        .then(res => setReviews(res.data))
+        .catch(() => {});
+    }
+  }, [product.slug, reviews]);
 
   const variantLabel = selectedVariant
     ? selectedVariant.attributeValues.map((av) => av.attributeValue.value).join(' / ')
@@ -178,31 +277,35 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleStickyAdd() {
-    if (inCart && quantity > 0) {
-      updateQuantity(itemKey, 0);
-    } else {
-      addToCart({
-        id: product.id,
-        name: product.name,
-        price: displayPrice,
-        originalPrice: displayOriginalPrice,
-        image: displayImage,
-        quantity: 1,
-        variantId: selectedVariant?.id,
-        variantLabel,
-        variantAttributes,
-        stock: displayStock,
-      });
-    }
+  function handleStickyBuyNow() {
+    addToCart({
+      id: product.id,
+      name: product.name,
+      price: displayPrice,
+      originalPrice: displayOriginalPrice,
+      image: displayImage,
+      quantity: 1,
+      variantId: selectedVariant?.id,
+      variantLabel,
+      variantAttributes,
+      stock: displayStock,
+    });
+    router.push('/checkout');
   }
 
   const [shareUrl, setShareUrl] = useState('');
   const shareText = encodeURIComponent(`Check out ${product.name}`);
   useEffect(() => { setShareUrl(encodeURIComponent(window.location.href)); }, []);
 
+  const sections = product.descriptionSections;
+
+  const waNumber = config.order?.whatsapp || config.social.whatsapp;
+  const callNumber = config.order?.callNumber || config.store.phone;
+  const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#';
+  const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
+
   return (
-    <div className="bg-white min-h-screen pb-24 md:pb-12">
+    <div className="bg-white min-h-screen pb-28 md:pb-12">
       <style>{`
         @keyframes pricePop {
           0% { transform: scale(1); }
@@ -214,36 +317,48 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           50% { transform: scale(1.3); }
           100% { transform: scale(1); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease forwards;
+        }
       `}</style>
 
-      <div className="px-4 py-3 flex items-center gap-2 text-[14px]">
-        <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-800 transition-colors">Home</button>
-        <ChevronRight size={14} className="text-gray-400" />
+      <div className="px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
+        <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</button>
+        <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
         {product.category ? (
           <>
             <button
               onClick={() => router.push(product.categoryId ? `/products?category=${product.categoryId}` : '/products')}
-              className="text-gray-500 hover:text-gray-800 transition-colors"
+              className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap"
             >
               {product.category}
             </button>
-            <ChevronRight size={14} className="text-gray-400" />
+            <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
           </>
         ) : (
           <>
-            <button onClick={() => router.push('/products')} className="text-gray-500 hover:text-gray-800 transition-colors">Products</button>
-            <ChevronRight size={14} className="text-gray-400" />
+            <button onClick={() => router.push('/products')} className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Products</button>
+            <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
           </>
         )}
-        <span className="text-gray-800">{product.name}</span>
+        <span className="text-gray-800 truncate">{product.name}</span>
       </div>
 
-      <div className="px-4 py-4 md:py-8 max-w-screen-xl mx-auto flex flex-col md:flex-row gap-8">
+      <div className="mx-auto flex flex-col md:flex-row gap-0 md:gap-8 md:max-w-screen-xl">
         <ProductImageGallery images={itemGallery} productName={product.name} key={selectedVariant?.id || product.id} />
 
-        <div className="flex flex-col md:w-1/2 pt-2 md:pt-0">
+        <div className="flex flex-col md:w-1/2 px-4 md:px-0 pt-4 md:pt-2">
           <div className="flex items-start justify-between gap-3">
-            <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-3">{product.name}</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-1">{product.name}</h1>
+              {sections?.tagline && (
+                <p className="text-[15px] text-brand-blue italic leading-relaxed mb-3">{sections.tagline}</p>
+              )}
+            </div>
             <button onClick={handleWishlistToggle}
               className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
                 isWishlisted(product.id)
@@ -254,7 +369,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-3 mb-2" key={`price-${displayPrice}-${selectedVariant?.id || ''}`}>
+          <div className="flex items-center gap-3 mb-1" key={`price-${displayPrice}-${selectedVariant?.id || ''}`}>
             <span className="text-[20px] font-bold text-brand-blue" style={{ animation: 'pricePop 300ms ease' }}>
               {config.currency.symbol}{(displayPrice ?? 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
             </span>
@@ -268,12 +383,20 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             )}
           </div>
 
-          <div className="mb-3">
+          <div className="mb-1 flex items-center gap-3 flex-wrap">
             <StockBadge stock={displayStock} manageStock={product.manageStock} />
+            {(product.codAvailable !== false) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#21bc5c] text-white text-[11px] font-bold leading-tight">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/>
+                </svg>
+                COD Available ✓
+              </span>
+            )}
           </div>
 
           {product.sku && (
-            <p className="text-[13px] text-gray-400 mb-4">Product Code: {product.sku}</p>
+            <p className="text-[13px] text-gray-400 mb-3">Product Code: {product.sku}</p>
           )}
 
           {isVariable && product.variants && (
@@ -281,44 +404,58 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               variants={product.variants}
               selectedVariant={selectedVariant}
               onSelect={setSelectedVariant}
+              sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
+              onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
             />
           )}
 
-          {(sizeChartLoading || sizeChartData) && (
-            <div className="flex items-center gap-2 mb-6">
+          {!isVariable && (sizeChartLoading || sizeChartData) && (
+            <div className="flex items-center gap-2 mb-4">
               {sizeChartLoading && (
                 <span className="text-[13px] text-gray-400 italic">Loading size chart...</span>
               )}
               {sizeChartData && (
                 <button
                   onClick={() => setSizeChartOpen(true)}
-                  className="text-[13px] text-brand-blue font-medium hover:underline underline-offset-2"
+                  className="text-[12px] text-gray-400 hover:text-brand-blue flex items-center gap-1 transition-colors"
                 >
-                  Size Chart
+                  <span>📏</span>
+                  <span className="underline underline-offset-2">Size Guide</span>
                 </button>
               )}
             </div>
           )}
 
-          <div className="flex items-center gap-6 mb-6">
+          <div className="flex items-center gap-6 mb-4">
             <span className="text-[16px] text-gray-800">Quantity:</span>
-            <div className="flex items-center h-[38px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
+            <div className="flex items-center h-[42px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
               <button onClick={() => inCart ? updateQuantity(itemKey, quantity - 1) : null}
-                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={18} /></button>
+                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={18} /></button>
               <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : 1}</div>
               <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : null}
-                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={18} /></button>
+                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={18} /></button>
             </div>
           </div>
 
-          <div ref={ctaRef} className="flex gap-3 mb-4 w-full" data-cta-section>
+          {sections?.benefits && sections.benefits.length > 0 && (
+            <div className="mb-4 space-y-1.5">
+              {sections.benefits.map((benefit, i) => (
+                <div key={i} className="flex items-start gap-2 text-[13px] text-gray-600">
+                  <span className="text-[#21bc5c] mt-0.5 flex-shrink-0">✓</span>
+                  <span>{benefit}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div ref={ctaRef} className="flex flex-col gap-2 mb-6 w-full" data-cta-section>
             <button onClick={handleAddToCart}
-              className={`flex-1 h-[42px] md:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] md:text-[14px] ${
+              className={`w-full h-[44px] md:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] md:text-[14px] ${
                 justAdded
                   ? 'bg-green-600 text-white'
                   : inCart
                     ? 'bg-red-500 hover:bg-red-600 text-white'
-                    : 'bg-brand-blue hover:bg-brand-blue/90 text-white'
+                    : 'border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5'
               }`}>
               {justAdded ? (
                 <><Check size={16} /> ADDED</>
@@ -329,140 +466,145 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               )}
             </button>
             <button onClick={handleBuyNow}
-              className="flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#0c2423] hover:bg-[#071716] text-white font-medium flex items-center justify-center transition-colors uppercase text-[13px] md:text-[14px]">BUY NOW</button>
+              className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide">
+              BUY NOW
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            {config.delivery.freeDeliveryMin > 0 && (
-              <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                <Truck size={16} className="text-gray-400 flex-shrink-0" />
-                <span>Free Delivery</span>
-              </div>
-            )}
-            <div className="flex items-center gap-2 text-[12px] text-gray-500">
-              <RefreshCw size={16} className="text-gray-400 flex-shrink-0" />
-              <span>Easy Returns</span>
-            </div>
-            <div className="flex items-center gap-2 text-[12px] text-gray-500">
-              <ShieldCheck size={16} className="text-gray-400 flex-shrink-0" />
-              <span>Secure Payment</span>
-            </div>
-            <div className="flex items-center gap-2 text-[12px] text-gray-500">
-              <Wallet size={16} className="text-gray-400 flex-shrink-0" />
-              <span>COD Available</span>
-            </div>
+          <div className="mb-6">
+            <TrustBar config={config} />
           </div>
 
-          {(config.delivery.freeDeliveryMin > 0 || config.delivery.charge > 0) && (
-            <div className="mb-6 text-[13px] text-gray-400">
-              {config.delivery.freeDeliveryMin > 0 ? (
-                <span>Free delivery on orders over {config.currency.symbol}{config.delivery.freeDeliveryMin.toLocaleString()}</span>
-              ) : (
-                config.delivery.charge > 0 && <span>Delivery fee: {config.currency.symbol}{config.delivery.charge.toLocaleString()}</span>
-              )}
-            </div>
-          )}
-
-          <div className="flex gap-3 mb-8 w-full">
-            {(() => {
-              const waNumber = config.order?.whatsapp || config.social.whatsapp;
-              const callNumber = config.order?.callNumber || config.store.phone;
-              const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#';
-              const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
-              return (
-                <>
-                  <a href={waHref}
-                    target="_blank" rel="noreferrer"
-                    className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#21bc5c] hover:bg-[#1d9e4c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <WhatsAppIcon />
-                    <span className="truncate">Order On WhatsApp</span>
-                  </a>
-                  <a href={callHref}
-                    className={`flex-1 h-[42px] md:h-12 rounded-[4px] bg-[#2a3c87] hover:bg-[#212f6c] text-white font-medium flex items-center justify-center gap-2 transition-colors text-[13px] md:text-[14px] ${!callNumber ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <Phone size={16} />
-                    <span className="truncate">Call For Order</span>
-                  </a>
-                </>
-              );
-            })()}
+          <div className="mb-6 flex items-center gap-3">
+            <span className="text-[13px] text-gray-500 font-medium">Share:</span>
+            <button onClick={handleCopyLink}
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+            <a href={`https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`}
+              target="_blank" rel="noreferrer"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#1877f2] hover:border-[#1877f2] transition-all">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+            </a>
+            <a href={`https://wa.me/?text=${shareText}%20${shareUrl}`}
+              target="_blank" rel="noreferrer"
+              className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#21bc5c] hover:border-[#21bc5c] transition-all">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            </a>
           </div>
         </div>
       </div>
 
-      {product.tags && product.tags.length > 0 && (
-        <div className="px-4 max-w-screen-xl mx-auto mb-6 flex flex-wrap gap-2">
-          {product.tags.map((tag) => (
+      <div className="px-4 max-w-screen-xl mx-auto">
+        {sections?.specifications && (
+          <div className="border-t border-gray-100 pt-6 mb-6 animate-fadeIn">
+            <h3 className="text-[16px] font-semibold text-gray-800 mb-3">বিস্তারিত</h3>
+            <div className="text-[13px] text-gray-500 leading-relaxed" dangerouslySetInnerHTML={{
+              __html: sanitizeHTML(sections.specifications)
+            }} />
+          </div>
+        )}
+
+        {sections?.stylingTip && (
+          <div className="mb-6 animate-fadeIn">
+            <p className="text-[13px] text-gray-400 italic flex items-start gap-2">
+              <span>💡</span>
+              <span>{sections.stylingTip}</span>
+            </p>
+          </div>
+        )}
+
+        {product.description && (
+          <div className="border-t border-gray-100 pt-6 mb-6">
             <button
-              key={tag}
-              onClick={() => router.push(`/products?search=${encodeURIComponent(tag)}`)}
-              className="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[12px] text-gray-600 rounded-full transition-colors"
+              onClick={() => setDescExpanded(!descExpanded)}
+              className="w-full flex items-center justify-between text-[16px] font-semibold text-gray-800 mb-0"
             >
-              {tag}
+              <span>বর্ণনা</span>
+              {descExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
-          ))}
-        </div>
-      )}
+            {descExpanded && (
+              <div className="text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn" dangerouslySetInnerHTML={{
+                __html: sanitizeHTML(product.description)
+              }} />
+            )}
+          </div>
+        )}
 
-      {product.shortDesc && (
+        {sections?.seoTags && sections.seoTags.length > 0 && (
+          <div className="border-t border-gray-100 pt-6 mb-6">
+            <details className="group">
+              <summary className="text-[12px] text-gray-400 cursor-pointer list-none flex items-center gap-1 hover:text-gray-600 transition-colors">
+                <span>Related Searches</span>
+                <ChevronDown size={12} className="group-open:rotate-180 transition-transform" />
+              </summary>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {sections.seoTags.map((tag, i) => (
+                  <button
+                    key={i}
+                    onClick={() => router.push(`/products?search=${encodeURIComponent(tag)}`)}
+                    className="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[12px] text-gray-500 rounded-full transition-colors"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+
+        <ReviewsSection reviews={reviews} productId={product.id} />
+      </div>
+
+      {product.tags && product.tags.length > 0 && !sections?.seoTags && (
         <div className="px-4 max-w-screen-xl mx-auto mb-6">
-          <p className="text-[14px] text-gray-600 leading-relaxed">{product.shortDesc}</p>
-        </div>
-      )}
-
-      {product.description && (
-        <div className="px-4 max-w-screen-xl mx-auto mb-8">
-          <h3 className="text-[16px] font-semibold text-gray-800 mb-3 border-b border-gray-100 pb-2">Description</h3>
-          <div className="text-[14px] text-gray-600 leading-relaxed" dangerouslySetInnerHTML={{
-            __html: DOMPurify.sanitize(product.description.replace(/\\n/g, '<br>').replace(/##/g, ''), {
-              ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-              ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
-            })
-          }} />
-        </div>
-      )}
-
-      <div className="px-4 max-w-screen-xl mx-auto mb-8">
-        <div className="flex items-center gap-3">
-          <span className="text-[13px] text-gray-500 font-medium">Share:</span>
-          <button onClick={handleCopyLink}
-            className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
-          <a href={`https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`}
-            target="_blank" rel="noreferrer"
-            className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#1877f2] hover:border-[#1877f2] transition-all">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-          </a>
-          <a href={`https://wa.me/?text=${shareText}%20${shareUrl}`}
-            target="_blank" rel="noreferrer"
-            className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#21bc5c] hover:border-[#21bc5c] transition-all">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-          </a>
-        </div>
-      </div>
-
-      <div className={`fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 px-4 py-3 md:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)] transition-transform duration-300 ${
-        showStickyBar ? 'translate-y-0' : 'translate-y-full'
-      }`}>
-        <div className="flex items-center justify-between max-w-screen-xl mx-auto">
-          <div>
-            <span className="text-[18px] font-bold text-brand-blue">{config.currency.symbol}{(displayPrice ?? 0).toLocaleString()}</span>
-            {displayOriginalPrice && <span className="text-[12px] text-gray-400 line-through ml-2">{config.currency.symbol}{(displayOriginalPrice ?? 0).toLocaleString()}</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center h-[36px] border border-gray-300 rounded-md overflow-hidden">
-              <button onClick={() => inCart ? updateQuantity(itemKey, quantity - 1) : null} className="w-8 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={16} /></button>
-              <span className="w-8 text-center text-[14px] font-medium">{inCart ? quantity : 1}</span>
-              <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : null} className="w-8 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={16} /></button>
+          <details className="group">
+            <summary className="text-[12px] text-gray-400 cursor-pointer list-none flex items-center gap-1 hover:text-gray-600 transition-colors">
+              <span>Related Searches</span>
+              <ChevronDown size={12} className="group-open:rotate-180 transition-transform" />
+            </summary>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {product.tags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => router.push(`/products?search=${encodeURIComponent(tag)}`)}
+                  className="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[12px] text-gray-500 rounded-full transition-colors"
+                >
+                  {tag}
+                </button>
+              ))}
             </div>
-            <button onClick={handleStickyAdd} className="h-[36px] px-4 bg-brand-blue text-white text-[12px] font-medium rounded-md hover:bg-brand-blue/90 transition-colors">
-              {inCart && quantity > 0 ? 'Remove' : 'Add'}
-            </button>
-          </div>
+          </details>
         </div>
-      </div>
+      )}
 
       <SizeChartModal open={sizeChartOpen} onClose={() => setSizeChartOpen(false)} sizeChart={sizeChartData} />
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] pb-safe md:hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 max-w-screen-xl mx-auto">
+          <a href={callHref}
+            className={`w-[42px] h-[42px] flex items-center justify-center rounded-full border-2 border-gray-200 text-gray-400 hover:text-brand-blue hover:border-brand-blue transition-colors flex-shrink-0 ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}
+            aria-label="Call to order"
+          >
+            <Phone size={16} />
+          </a>
+
+          <a href={waHref}
+            target="_blank" rel="noreferrer"
+            className={`flex-1 h-[42px] rounded-md flex items-center justify-center gap-2 text-white text-[13px] font-medium transition-colors ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}
+            style={{ backgroundColor: '#25D366' }}
+          >
+            <WhatsAppIcon />
+            <span className="truncate">Order on WhatsApp</span>
+          </a>
+
+          <button onClick={handleStickyBuyNow}
+            className="flex-[2] h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-bold flex items-center justify-center gap-1 hover:bg-brand-blue-dark transition-colors"
+          >
+            Buy Now
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

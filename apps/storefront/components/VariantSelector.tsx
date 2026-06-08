@@ -7,9 +7,26 @@ interface Props {
   variants: Variant[];
   selectedVariant: Variant | null;
   onSelect: (variant: Variant) => void;
+  sizeGuideLabel?: string;
+  onSizeGuideClick?: () => void;
 }
 
-export function VariantSelector({ variants, selectedVariant, onSelect }: Props) {
+const SIZE_ORDER: Record<string, number> = {
+  'S': 0, 'M': 1, 'L': 2, 'XL': 3, 'XXL': 4, 'XXXL': 5,
+  's': 0, 'm': 1, 'l': 2, 'xl': 3, 'xxl': 4, 'xxxl': 5,
+  'এস': 0, 'এম': 1, 'এল': 2, 'এক্সএল': 3, 'ডাব্লিউএক্সএল': 4,
+};
+
+function sortValues(values: string[]): string[] {
+  return [...values].sort((a, b) => {
+    const aIdx = SIZE_ORDER[a] ?? 999;
+    const bIdx = SIZE_ORDER[b] ?? 999;
+    if (aIdx !== 999 || bIdx !== 999) return aIdx - bIdx;
+    return a.localeCompare(b);
+  });
+}
+
+export function VariantSelector({ variants, selectedVariant, onSelect, sizeGuideLabel, onSizeGuideClick }: Props) {
   const attributeGroups = useMemo(() => {
     const groups: Record<string, { value: string; variant: Variant }[]> = {};
     for (const v of variants) {
@@ -21,6 +38,10 @@ export function VariantSelector({ variants, selectedVariant, onSelect }: Props) 
           groups[attr.name].push({ value: av.attributeValue.value, variant: v });
         }
       }
+    }
+    for (const name of Object.keys(groups)) {
+      groups[name] = sortValues(groups[name].map(g => g.value))
+        .map(v => ({ value: v, variant: groups[name].find(g => g.value === v)!.variant }));
     }
     return groups;
   }, [variants]);
@@ -49,7 +70,18 @@ export function VariantSelector({ variants, selectedVariant, onSelect }: Props) 
     <div className="space-y-4 mb-6">
       {attrNames.map((name) => (
         <div key={name}>
-          <span className="text-[14px] text-gray-700 font-medium block mb-2">{name}:</span>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[14px] text-gray-700 font-medium">{name}:</span>
+            {onSizeGuideClick && (
+              <button
+                onClick={onSizeGuideClick}
+                className="text-[12px] text-gray-400 hover:text-brand-blue flex items-center gap-1 transition-colors"
+              >
+                <span>📏</span>
+                <span className="underline underline-offset-2">Size Guide</span>
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {attributeGroups[name].map(({ value, variant }) => {
               const isActive = variant.stock > 0;
@@ -59,16 +91,26 @@ export function VariantSelector({ variants, selectedVariant, onSelect }: Props) 
                   key={value}
                   onClick={() => isActive && handleSelect(name, value)}
                   disabled={!isActive}
+                  style={{ minWidth: '44px', minHeight: '44px' }}
                   className={[
-                    "px-4 py-2 text-[13px] rounded-md border transition-colors",
+                    "px-4 text-[13px] rounded-md border transition-colors",
                     selected
-                      ? "bg-brand-blue text-white border-brand-blue"
+                      ? "bg-brand-blue text-white border-brand-blue font-medium"
                       : isActive
                         ? "bg-white text-gray-800 border-gray-300 hover:border-brand-blue"
-                        : "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed",
+                        : "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed relative overflow-hidden",
                   ].join(" ")}
                 >
-                  {value}
+                  {isActive ? (
+                    value
+                  ) : (
+                    <span className="relative">
+                      {value}
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="w-full h-px bg-gray-300 absolute top-1/2 left-0" style={{ transform: 'rotate(-15deg)' }} />
+                      </span>
+                    </span>
+                  )}
                 </button>
               );
             })}

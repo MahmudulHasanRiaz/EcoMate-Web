@@ -44,6 +44,11 @@ export interface Product {
   isActive?: boolean;
   manageStock?: boolean;
   variants?: Variant[];
+  codAvailable?: boolean;
+  descriptionSections?: ProductDescriptionSections;
+  reviews?: Review[];
+  reviewCount?: number;
+  averageRating?: number;
 }
 
 export interface Category {
@@ -129,6 +134,23 @@ export interface Order {
   createdAt: string;
   guestName?: string;
   guestPhone?: string;
+}
+
+export interface Review {
+  id: string;
+  productId: string;
+  customerName: string;
+  rating: number;
+  text: string;
+  createdAt: string;
+}
+
+export interface ProductDescriptionSections {
+  tagline?: string;
+  benefits?: string[];
+  specifications?: string;
+  stylingTip?: string;
+  seoTags?: string[];
 }
 
 export interface CartItem {
