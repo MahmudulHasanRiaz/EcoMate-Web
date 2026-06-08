@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 interface Props {
@@ -13,17 +13,9 @@ export function ProductImageGallery({ images, productName }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   useEffect(() => {
     if (scrollRef.current && lightboxOpen) {
@@ -178,13 +170,13 @@ export function ProductImageGallery({ images, productName }: Props) {
           {activeIndex > 0 && (
             <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex - 1); }}
               className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           {activeIndex < images.length - 1 && (
             <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex + 1); }}
               className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              <ChevronRight size={20} strokeWidth={2.5} />
             </button>
           )}
         </div>

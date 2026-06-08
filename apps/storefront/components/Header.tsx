@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
+import { getMenuCategories } from "@/lib/menu-categories";
 
 
 
@@ -22,13 +23,7 @@ export default function Header() {
   const [menuCategories, setMenuCategories] = useState<any[]>([])
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories/menu`)
-      .then(res => res.json())
-      .then(data => {
-        const cats = data.data || data || []
-        setMenuCategories(Array.isArray(cats) ? cats : [])
-      })
-      .catch(() => {})
+    getMenuCategories().then(setMenuCategories)
   }, [])
 
   const allNavItems = useMemo(() => {

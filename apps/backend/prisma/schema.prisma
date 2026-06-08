@@ -214,6 +214,7 @@ model Product {
   comboItems ComboItem[]
   sizeChartId String?
   sizeChart   SizeChart? @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
+  reviews     Review[]
 }
 
 model ProductVariant {
@@ -578,6 +579,18 @@ model InventoryLog {
 model OrderCounter {
   date String @id // YYMMDD
   seq  Int
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerName String
+  rating       Int
+  text         String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("reviews")
 }
 
 model SizeChart {

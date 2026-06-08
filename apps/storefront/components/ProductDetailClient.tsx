@@ -277,21 +277,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleStickyBuyNow() {
-    addToCart({
-      id: product.id,
-      name: product.name,
-      price: displayPrice,
-      originalPrice: displayOriginalPrice,
-      image: displayImage,
-      quantity: 1,
-      variantId: selectedVariant?.id,
-      variantLabel,
-      variantAttributes,
-      stock: displayStock,
-    });
-    router.push('/checkout');
-  }
+  const handleStickyBuyNow = handleBuyNow
 
   const [shareUrl, setShareUrl] = useState('');
   const shareText = encodeURIComponent(`Check out ${product.name}`);
@@ -306,7 +292,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
   return (
     <div className="bg-white min-h-screen pb-28 md:pb-12">
-      <style>{`
+      <style dangerouslySetInnerHTML={{__html: `
         @keyframes pricePop {
           0% { transform: scale(1); }
           50% { transform: scale(1.15); }
@@ -324,7 +310,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         .animate-fadeIn {
           animation: fadeIn 0.3s ease forwards;
         }
-      `}</style>
+      `}} />
 
       <div className="px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
         <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</button>

@@ -36,6 +36,7 @@ import { ImportModule } from './import/import.module';
 import { SizeChartsModule } from './size-charts/size-charts.module';
 import { CmsPagesModule } from './cms-pages/cms-pages.module';
 import { TagsModule } from './tags/tags.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -75,6 +76,7 @@ import { RolesGuard } from './auth/roles.guard';
     SizeChartsModule,
     CmsPagesModule,
     TagsModule,
+    ReviewsModule,
   ],
   controllers: [OrderStatusController],
   providers: [

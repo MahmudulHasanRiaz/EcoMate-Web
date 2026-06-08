@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { getMenuCategories } from "@/lib/menu-categories";
 
 export default function MobileMenu() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -14,13 +15,7 @@ export default function MobileMenu() {
   const [menuCategories, setMenuCategories] = useState<any[]>([])
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories/menu`)
-      .then(res => res.json())
-      .then(data => {
-        const cats = data.data || data || []
-        setMenuCategories(Array.isArray(cats) ? cats : [])
-      })
-      .catch(() => {})
+    getMenuCategories().then(setMenuCategories)
   }, [])
 
   const allMenuItems = useMemo(() => {

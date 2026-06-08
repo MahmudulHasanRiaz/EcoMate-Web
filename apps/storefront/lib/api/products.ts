@@ -79,6 +79,10 @@ export function transformBackendProduct(raw: any): Product {
     isActive: raw.isActive,
     manageStock: raw.manageStock,
     variants: variants.length > 0 ? variants : undefined,
+    codAvailable: raw.codAvailable,
+    descriptionSections: raw.descriptionSections,
+    reviewCount: raw._count?.reviews ?? raw.reviewCount,
+    averageRating: raw.averageRating,
   };
 }
 
