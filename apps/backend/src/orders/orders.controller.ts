@@ -10,6 +10,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { OrdersEventService } from './orders-event.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -19,11 +20,14 @@ import {
 } from './dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { Observable, Subject } from 'rxjs';
+import { Observable } from 'rxjs';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly svc: OrdersService) {}
+  constructor(
+    private readonly svc: OrdersService,
+    private readonly events: OrdersEventService,
+  ) {}
 
   @Get()
   findAll(
@@ -155,18 +159,24 @@ export class OrdersController {
   @Get('stream/updates')
   @Sse()
   streamUpdates(): Observable<MessageEvent> {
-    const subject = new Subject<MessageEvent>();
-    const interval = setInterval(() => {
-      subject.next({
-        data: JSON.stringify({
-          type: 'heartbeat',
-          timestamp: new Date().toISOString(),
-        }),
-      } as MessageEvent);
-    }, 10000);
-    return new Observable((observer) => {
-      subject.subscribe(observer);
-      return () => clearInterval(interval);
+    return new Observable<MessageEvent>((observer) => {
+      const heartbeat = setInterval(() => {
+        observer.next({
+          data: JSON.stringify({
+            type: 'heartbeat',
+            timestamp: new Date().toISOString(),
+          }),
+        } as MessageEvent);
+      }, 10000);
+
+      const sub = this.events.subscribe().subscribe((event) => {
+        observer.next({ data: JSON.stringify(event) } as MessageEvent);
+      });
+
+      return () => {
+        clearInterval(heartbeat);
+        sub.unsubscribe();
+      };
     });
   }
 }

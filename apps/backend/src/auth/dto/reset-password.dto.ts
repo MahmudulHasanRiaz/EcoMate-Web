@@ -1,11 +1,11 @@
 import { IsString } from 'class-validator';
 import { IsStrongPassword } from '../validators/password.validator';
 
-export class ChangePasswordDto {
+export class ResetPasswordDto {
   @IsString()
-  currentPassword: string;
+  token: string;
 
   @IsString()
   @IsStrongPassword()
-  newPassword: string;
+  password: string;
 }

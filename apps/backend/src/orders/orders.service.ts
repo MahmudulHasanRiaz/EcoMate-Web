@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
+import { OrdersEventService } from './orders-event.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -24,6 +25,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly tracking: TrackingService,
     private readonly customersService: CustomersService,
+    private readonly events: OrdersEventService,
   ) {}
 
   private transformOrder(order: any) {
@@ -43,16 +45,17 @@ export class OrdersService {
     const yy = String(today.getFullYear()).slice(2);
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const dd = String(today.getDate()).padStart(2, '0');
-    const prefix = `ORD-${yy}${mm}${dd}`;
-    const last = await this.prisma.order.findFirst({
-      where: { displayId: { startsWith: prefix } },
-      orderBy: { displayId: 'desc' },
-      select: { displayId: true },
+    const dateStr = `${yy}${mm}${dd}`;
+    const prefix = `ORD-${dateStr}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.orderCounter.upsert({
+        where: { date: dateStr },
+        create: { date: dateStr, seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
     });
-    const nextNo = last
-      ? parseInt(last.displayId.split('-').pop() || '0') + 1
-      : 1;
-    return `${prefix}-${String(nextNo).padStart(4, '0')}`;
   }
 
   private recalculate(
@@ -390,6 +393,8 @@ export class OrdersService {
 
     await this.deductStock(dto.items, displayId);
 
+    this.events.emit({ type: 'order.created', data: { id: order.id, displayId: order.displayId } });
+
     return order;
   }
 
@@ -627,6 +632,8 @@ export class OrdersService {
         });
       }
     }
+
+    this.events.emit({ type: 'order.status_changed', data: { id: updated.id, displayId: updated.displayId, statusId: dto.statusId, statusName: newStatus.name } });
 
     return updated;
   }

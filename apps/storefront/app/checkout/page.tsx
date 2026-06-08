@@ -341,6 +341,7 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setDistrict(readStorage('checkout_district', ''));
@@ -402,7 +403,7 @@ export default function CheckoutPage() {
   const validPhone = !user ? normalizePhone(guestPhone) : true;
   const showPhoneError = !user && guestPhone.length > 0 && !validPhone;
   const phoneOk = !user ? (guestPhone.length === 0 || validPhone) : true;
-  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk)) && !noDeliveryError;
+  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk)) && !noDeliveryError && Object.keys(fieldErrors).length === 0;
 
   useEffect(() => { localStorage.setItem('checkout_guestName', guestName); }, [guestName]);
   useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone); }, [guestPhone]);
@@ -539,8 +540,42 @@ export default function CheckoutPage() {
     setCouponError('');
   };
 
+  const validateShipping = (): boolean => {
+    const errors: Record<string, string> = {};
+    const districtReq = checkoutCfg?.districtRequired !== false;
+    if (districtReq && !district.trim()) {
+      errors.district = 'Please select a district';
+    }
+    const thanaReq = checkoutCfg?.thanaRequired !== false;
+    if (thanaReq && !thana.trim()) {
+      errors.thana = 'Please select a thana/upazila';
+    }
+    if (!addressLine.trim() || addressLine.trim().length < 5) {
+      errors.addressLine = 'Address must be at least 5 characters';
+    }
+    if (config.shippingMode === 'options' && !selectedShippingOptionId) {
+      errors.shippingOption = 'Please select a delivery option';
+    }
+    if (!user) {
+      if (!guestName.trim()) {
+        errors.guestName = 'Please enter your name';
+      }
+      if (!guestPhone.trim()) {
+        errors.guestPhone = 'Please enter your phone number';
+      } else if (!normalizePhone(guestPhone)) {
+        errors.guestPhone = 'Please enter a valid Bangladeshi phone number';
+      }
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handlePlaceOrder = async () => {
     if (items.length === 0 || submitting) return;
+    if (!validateShipping()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
     if (!user) {
       if (!guestName) { toast.error('Please enter your name.'); return }
       if (!guestPhone) { toast.error('Please enter your phone number.'); return }
@@ -625,12 +660,14 @@ export default function CheckoutPage() {
                 </div>
                 {!user && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); setFieldErrors(prev => ({...prev, guestName: ''})); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    {fieldErrors.guestName && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestName}</p>}
                     <div className="flex">
                       <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
-                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
+                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); setFieldErrors(prev => ({...prev, guestPhone: ''})); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
                         className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
                     </div>
+                    {fieldErrors.guestPhone && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestPhone}</p>}
                     {showPhoneError && <p className="text-red-500 text-[12px] mt-1.5">Please enter a valid Bangladeshi phone number</p>}
                   </div>
                 )}
@@ -697,33 +734,40 @@ export default function CheckoutPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {checkoutCfg?.districtEnabled !== false && (
-                    <div className="relative">
-                      <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); scheduleLeadCapture(); }}
-                        className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.districtRequired ? 'border-gray-200' : 'border-gray-200'}`}>
-                        <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
-                        {districts.map(d => (
-                          <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
+                    <>
+                      <div className="relative">
+                        <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); setFieldErrors(prev => ({...prev, district: ''})); scheduleLeadCapture(); }}
+                          className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.districtRequired ? 'border-gray-200' : 'border-gray-200'}`}>
+                          <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
+                          {districts.map(d => (
+                            <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                      {fieldErrors.district && <p className="text-red-500 text-xs mt-1">{fieldErrors.district}</p>}
+                    </>
                   )}
                   {checkoutCfg?.thanaEnabled !== false && district && (
-                    <div className="relative">
-                      <select value={thana} onChange={(e) => { setThana(e.target.value); scheduleLeadCapture(); }}
-                        className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.thanaRequired ? 'border-gray-200' : 'border-gray-200'}`}>
-                        <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
-                        {thanas.map(t => (
-                          <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
+                    <>
+                      <div className="relative">
+                        <select value={thana} onChange={(e) => { setThana(e.target.value); setFieldErrors(prev => ({...prev, thana: ''})); scheduleLeadCapture(); }}
+                          className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.thanaRequired ? 'border-gray-200' : 'border-gray-200'}`}>
+                          <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
+                          {thanas.map(t => (
+                            <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                      {fieldErrors.thana && <p className="text-red-500 text-xs mt-1">{fieldErrors.thana}</p>}
+                    </>
                   )}
                   <div className="md:col-span-2">
-                    <textarea value={addressLine} onChange={e => setAddressLine(e.target.value)}
+                    <textarea value={addressLine} onChange={e => { setAddressLine(e.target.value); setFieldErrors(prev => ({...prev, addressLine: ''})); }}
                       placeholder="ex: House no. / building / street / area" rows={2}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none bg-[#fcfcfc]" />
+                    {fieldErrors.addressLine && <p className="text-red-500 text-xs mt-1">{fieldErrors.addressLine}</p>}
                   </div>
                 </div>
                 {config.shippingMode === 'options' && config.shippingOptions?.length > 0 && (
@@ -732,7 +776,7 @@ export default function CheckoutPage() {
                     {config.shippingOptions.map(opt => (
                       <label key={opt.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${selectedShippingOptionId === opt.id ? 'border-brand-blue bg-brand-blue/5' : 'border-gray-200 hover:border-gray-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => setSelectedShippingOptionId(opt.id)} className="accent-brand-blue" />
+                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => { setSelectedShippingOptionId(opt.id); setFieldErrors(prev => ({...prev, shippingOption: ''})); }} className="accent-brand-blue" />
                           <span className="text-sm font-medium text-gray-800">{opt.name}</span>
                         </div>
                         <span className="text-sm font-bold text-gray-800">{s}{opt.amount}</span>
@@ -740,6 +784,7 @@ export default function CheckoutPage() {
                     ))}
                   </div>
                 )}
+                {fieldErrors.shippingOption && <p className="text-red-500 text-xs mt-1">{fieldErrors.shippingOption}</p>}
                 {config.shippingMode !== 'options' && district && deliveryCharge > 0 && !noDeliveryError && (
                   <div className="mt-3 text-xs text-gray-400">
                     Delivery charge for {district}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
