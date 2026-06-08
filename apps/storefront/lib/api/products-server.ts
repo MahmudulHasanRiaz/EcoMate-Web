@@ -161,14 +161,5 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
 }
 
 export async function getProductBySlugServer(slug: string): Promise<Product | null> {
-  const res = await fetchProductsServer({ search: slug, perPage: 1 });
-  const found = res.data.find((p) => p.slug === slug);
-  if (found) return found;
-
-  try {
-    const byId = await serverFetch<any>(`/products/${slug}`, { revalidate: 60 });
-    return byId?.id ? transformBackendProduct(byId) : null;
-  } catch {
-    return null;
-  }
+  return serverFetch<Product | null>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
 }

@@ -63,6 +63,12 @@ export class ProductsController {
   }
 
   @Public()
+  @Get('slug/:slug')
+  async findBySlug(@Param('slug') slug: string) {
+    return this.svc.findBySlug(slug);
+  }
+
+  @Public()
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }

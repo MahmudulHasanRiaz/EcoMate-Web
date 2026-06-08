@@ -108,12 +108,8 @@ export async function getProduct(id: string): Promise<Product> {
 }
 
 export async function getProductBySlug(slug: string): Promise<Product> {
-  const { data } = await apiClient.get("/products", {
-    params: { search: slug, perPage: 1 },
-  });
-  const found = data.data.find((p: any) => p.slug === slug);
-  if (!found) throw new Error("Product not found");
-  return transformBackendProduct(found);
+  const { data } = await apiClient.get(`/products/slug/${encodeURIComponent(slug)}`);
+  return transformBackendProduct(data);
 }
 
 export async function getFeaturedProducts(): Promise<Product[]> {
