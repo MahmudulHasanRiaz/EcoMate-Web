@@ -140,10 +140,10 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
 
           <div className="flex items-center gap-3 mb-6">
-            <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{displayPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span className="text-[20px] font-bold text-brand-blue">{config.currency.symbol}{(displayPrice ?? 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
             {displayOriginalPrice && displayOriginalPrice > displayPrice && (
               <>
-                <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{displayOriginalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{(displayOriginalPrice ?? 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                 <div className="bg-[#21bc5c] text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
                   Save {Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)}%
                 </div>

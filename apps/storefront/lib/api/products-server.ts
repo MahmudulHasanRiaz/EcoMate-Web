@@ -161,5 +161,6 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
 }
 
 export async function getProductBySlugServer(slug: string): Promise<Product | null> {
-  return serverFetch<Product | null>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
+  const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
+  return data ? transformBackendProduct(data) : null;
 }

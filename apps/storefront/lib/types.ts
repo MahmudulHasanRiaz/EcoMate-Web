@@ -69,22 +69,13 @@ export interface ComboItemDetails {
   variants?: Variant[];
 }
 
-export interface CartItem {
+export interface User {
   id: string;
   name: string;
-  price: number;
-  originalPrice?: number;
-  image: string;
-  quantity: number;
-  category?: string;
-  slug?: string;
-  stock?: number;
-  isCombo?: boolean;
-  comboId?: string;
-  comboItems?: ComboItemDetails[];
-  comboSelections?: Record<string, string>;
-  variantId?: string;
-  variantLabel?: string;
+  email: string;
+  phone?: string;
+  role: "customer" | "admin";
+  createdAt?: string;
 }
 
 export interface Combo {
