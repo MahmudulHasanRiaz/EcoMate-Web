@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
 import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
@@ -10,6 +10,32 @@ export default function MobileMenu() {
   const router = useRouter();
   const { config } = useStorefrontConfig();
   const menuItems = config.navigation?.items?.length ? config.navigation.items : [];
+
+  const [menuCategories, setMenuCategories] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories/menu`)
+      .then(res => res.json())
+      .then(data => {
+        const cats = data.data || data || []
+        setMenuCategories(Array.isArray(cats) ? cats : [])
+      })
+      .catch(() => {})
+  }, [])
+
+  const allMenuItems = useMemo(() => {
+    const items = [...(config.navigation?.items || [])]
+    for (const cat of menuCategories) {
+      const exists = items.some(i => i.href === `/products?categoryId=${cat.id}`)
+      if (!exists) {
+        items.push({
+          name: cat.name,
+          href: `/products?categoryId=${cat.id}`,
+        })
+      }
+    }
+    return items
+  }, [config.navigation?.items, menuCategories])
 
   useEffect(() => {
     const handleOpen = () => setIsMobileMenuOpen(true);
@@ -69,7 +95,7 @@ export default function MobileMenu() {
         <div className="flex-1 overflow-y-auto pb-8">
            <div className="px-4 mb-6">
              <div className="bg-[#fcfcfc] rounded-[8px] border border-gray-100 overflow-hidden">
-                {menuItems.map((item, index) => (
+                {allMenuItems.map((item, index) => (
                   <button 
                      key={item.name || index} 
                      onClick={() => handleCategoryClick(item.href)}

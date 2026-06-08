@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
 import { useCart } from "@/context/CartContext";
@@ -15,9 +15,35 @@ export default function Header() {
   const { cartCount, setIsCartOpen } = useCart();
   const { user } = useAuth();
   const router = useRouter();
-  const [isMobileSearchOpen, setIsMobileSearchOpen] = React.useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { config } = useStorefrontConfig();
   const navItems = config.navigation?.items?.length ? config.navigation.items : [];
+
+  const [menuCategories, setMenuCategories] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories/menu`)
+      .then(res => res.json())
+      .then(data => {
+        const cats = data.data || data || []
+        setMenuCategories(Array.isArray(cats) ? cats : [])
+      })
+      .catch(() => {})
+  }, [])
+
+  const allNavItems = useMemo(() => {
+    const items = [...(config.navigation?.items || [])]
+    for (const cat of menuCategories) {
+      const exists = items.some(i => i.href === `/products?categoryId=${cat.id}`)
+      if (!exists) {
+        items.push({
+          name: cat.name,
+          href: `/products?categoryId=${cat.id}`,
+        })
+      }
+    }
+    return items
+  }, [config.navigation?.items, menuCategories])
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-white/20">
@@ -153,7 +179,7 @@ export default function Header() {
       <div className="hidden md:block bg-[#1a1a1a] text-white border-b border-gray-200">
         <div className="max-w-screen-xl mx-auto px-4 h-10 flex items-center justify-between">
           <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap hide-scrollbar">
-            {navItems.map((item, idx) => (
+            {allNavItems.map((item, idx) => (
               <button 
                 key={idx} 
                 onClick={() => { if (item.href) router.push(item.href); }}
