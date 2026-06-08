@@ -795,6 +795,21 @@ export class OrdersService {
     });
   }
 
+  async findByViewToken(viewToken: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { viewToken },
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
+        items: { include: { product: { select: { name: true, slug: true, images: true } } } },
+        status: true,
+        payments: true,
+        shipment: true,
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.transformOrder(order);
+  }
+
   async rotateViewToken(orderId: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');

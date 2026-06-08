@@ -64,6 +64,12 @@ export class OrdersController {
   }
 
   @Public()
+  @Get('public/:viewToken')
+  findByViewToken(@Param('viewToken') viewToken: string) {
+    return this.svc.findByViewToken(viewToken);
+  }
+
+  @Public()
   @Get(':id') findOne(
     @Param('id') id: string,
     @CurrentUser() user: { userId: string } | null | undefined,
