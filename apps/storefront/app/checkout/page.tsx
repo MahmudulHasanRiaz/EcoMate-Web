@@ -380,7 +380,12 @@ export default function CheckoutPage() {
       }
     }
   }
-  const totalWithDelivery = cartTotal + deliveryCharge;
+  const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
+    ? (appliedCoupon.coupon.type === 'percentage'
+      ? (cartTotal * Number(appliedCoupon.coupon.value)) / 100
+      : Number(appliedCoupon.coupon.value))
+    : 0;
+  const totalWithDelivery = cartTotal + deliveryCharge - discountAmount;
 
   useEffect(() => {
     getDistricts().then(setDistricts).catch(() => {});
@@ -876,6 +881,12 @@ export default function CheckoutPage() {
                     )}
                   </span>
                 </div>
+                {appliedCoupon?.valid && discountAmount > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span className="text-[14px] font-medium">Discount ({appliedCoupon.coupon.code})</span>
+                    <span className="text-[14px] font-black">-{s}{discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
                 {paymentMode === 'partial' && partialAmount && parseFloat(partialAmount) > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-[14px] text-gray-500 font-medium">Paid Online</span>
