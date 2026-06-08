@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Category" ADD COLUMN "showInMenu" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "menuSortOrder" INTEGER NOT NULL DEFAULT 0;

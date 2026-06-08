@@ -127,8 +127,10 @@ model Category {
   slug      String    @unique
   parentId  String?
   image     String?
-  sortOrder Int       @default(0)
-  isActive  Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  showInMenu    Boolean   @default(true)
+  menuSortOrder Int       @default(0)
+  isActive      Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
