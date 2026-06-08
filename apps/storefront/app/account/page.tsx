@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Lock, User, LogOut, Package, MapPin, Heart, History, Settings, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import apiClient from '@/lib/api-client';
+import { toast } from 'sonner';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -17,6 +19,8 @@ export default function AccountPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [profile, setProfile] = useState({ name: '', email: '', phone: '' });
+  const [saving, setSaving] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +46,12 @@ export default function AccountPage() {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      setProfile({ name: user.name || '', email: user.email || '', phone: user.phone || '' });
+    }
+  }, [user]);
 
   const handleLogout = async () => {
     await logout();
@@ -241,20 +251,34 @@ export default function AccountPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-600 ml-1">Name</label>
-                <input type="text" defaultValue={user.name} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                <input type="text" value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-600 ml-1">Email</label>
-                <input type="email" defaultValue={user.email} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                <input type="email" value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-600 ml-1">Phone</label>
-                <input type="tel" defaultValue={user.phone || ''} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                <input type="tel" value={profile.phone} onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
               </div>
             </div>
 
-            <button className="bg-brand-blue hover:bg-brand-blue/90 text-white px-8 h-11 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
-              Save Changes
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await apiClient.put('/users/profile', profile);
+                  toast.success('Profile updated successfully');
+                } catch {
+                  toast.error('Failed to update profile');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="bg-brand-blue hover:bg-brand-blue/90 text-white px-8 h-11 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {saving ? <Loader2 className="animate-spin inline-block" size={18} /> : 'Save Changes'}
             </button>
           </div>
 
