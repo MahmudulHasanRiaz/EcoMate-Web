@@ -8,6 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { Roles } from '../common/decorators/roles.decorator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -44,31 +45,37 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
+  @Roles('superadmin', 'admin')
   @Post()
   async create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
   }
 
+  @Roles('superadmin', 'admin')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
+  @Roles('superadmin', 'admin')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
 
+  @Roles('superadmin', 'admin')
   @Post('bulk-delete')
   async bulkDelete(@Body() dto: BulkDeleteUsersDto) {
     return this.usersService.bulkDelete(dto.ids);
   }
 
+  @Roles('superadmin', 'admin')
   @Post('bulk-update')
   async bulkUpdate(@Body() dto: BulkUpdateUsersDto) {
     return this.usersService.bulkUpdateStatus(dto.ids, dto.status);
   }
 
+  @Roles('superadmin', 'admin')
   @Post('invite')
   async invite(@Body() dto: InviteUserDto) {
     return {

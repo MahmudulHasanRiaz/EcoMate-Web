@@ -8,6 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { Roles } from '../common/decorators/roles.decorator';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -46,6 +47,7 @@ export class TasksController {
     return this.tasksService.findOne(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post()
   async create(
     @Body() dto: CreateTaskDto,
@@ -54,21 +56,25 @@ export class TasksController {
     return this.tasksService.create(dto, user.userId);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
     return this.tasksService.update(id, dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.tasksService.remove(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk-delete')
   async bulkDelete(@Body() dto: BulkDeleteTasksDto) {
     return this.tasksService.bulkDelete(dto.ids);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post('bulk-update')
   async bulkUpdate(@Body() dto: BulkUpdateTasksDto) {
     return this.tasksService.bulkUpdate(dto.ids, {

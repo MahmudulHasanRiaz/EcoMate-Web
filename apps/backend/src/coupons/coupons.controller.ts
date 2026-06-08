@@ -9,6 +9,7 @@ import {
   BadRequestException,
   Query,
 } from '@nestjs/common';
+import { Roles } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('coupons')
@@ -54,6 +55,7 @@ export class CouponsController {
     };
   }
 
+  @Roles('superadmin', 'admin')
   @Post() async create(@Body() dto: Record<string, unknown>) {
     return this.prisma.coupon.create({
       data: {
@@ -69,6 +71,7 @@ export class CouponsController {
       },
     });
   }
+  @Roles('superadmin', 'admin')
   @Put(':id') async update(
     @Param('id') id: string,
     @Body() dto: Record<string, unknown>,
@@ -85,6 +88,7 @@ export class CouponsController {
       },
     });
   }
+  @Roles('superadmin', 'admin')
   @Delete(':id') async remove(@Param('id') id: string) {
     await this.prisma.coupon.delete({ where: { id } });
     return { message: 'Deleted' };
