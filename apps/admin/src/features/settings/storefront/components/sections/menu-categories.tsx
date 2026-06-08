@@ -43,7 +43,44 @@ export function MenuCategoriesSection({ hook }: Props) {
     onError: () => toast.error('Failed to update category'),
   })
 
-  const active = (categories || []).filter((c) => c.showInMenu)
+  const [orderedCats, setOrderedCats] = useState<MenuCategory[]>([])
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (categories) {
+      const shown = categories.filter(c => c.showInMenu)
+      setOrderedCats([...shown].sort((a, b) => a.menuSortOrder - b.menuSortOrder))
+    }
+  }, [categories])
+
+  const handleDragStart = (idx: number) => { setDragIdx(idx) }
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === idx) return
+    const next = [...orderedCats]
+    const [moved] = next.splice(dragIdx, 1)
+    next.splice(idx, 0, moved)
+    setOrderedCats(next)
+    setDragIdx(idx)
+  }
+
+  const handleDragEnd = async () => {
+    setDragIdx(null)
+    for (let i = 0; i < orderedCats.length; i++) {
+      if (orderedCats[i].menuSortOrder !== i) {
+        try {
+          await apiClient.put(`/categories/${orderedCats[i].id}`, { menuSortOrder: i })
+        } catch {
+          toast.error('Failed to save category order')
+          break
+        }
+      }
+    }
+    toast.success('Menu order saved')
+    queryClient.invalidateQueries({ queryKey: ['categories'] })
+  }
+
   const hidden = (categories || []).filter((c) => !c.showInMenu)
 
   return (
@@ -65,14 +102,14 @@ export function MenuCategoriesSection({ hook }: Props) {
       ) : (
         <div className='space-y-3'>
           <p className='text-sm text-muted-foreground'>
-            {active.length} category active · {hidden.length} hidden
+            {orderedCats.length} category active · {hidden.length} hidden
           </p>
-          {active.length > 0 && (
+          {orderedCats.length > 0 && (
             <>
               <div className='text-sm font-medium text-muted-foreground'>
                 Shown in menu
               </div>
-              {active.map((cat) => (
+              {orderedCats.map((cat, idx) => (
                 <CategoryRow
                   key={cat.id}
                   category={cat}
@@ -80,6 +117,10 @@ export function MenuCategoriesSection({ hook }: Props) {
                   onToggle={(id, showInMenu) =>
                     updateMut.mutate({ id, data: { showInMenu } })
                   }
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragEnd={handleDragEnd}
                 />
               ))}
             </>
@@ -111,20 +152,32 @@ function CategoryRow({
   category,
   depth,
   onToggle,
+  draggable,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
 }: {
   category: MenuCategory
   depth: number
   onToggle: (id: string, showInMenu: boolean) => void
+  draggable?: boolean
+  onDragStart?: () => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDragEnd?: () => void
 }) {
   const [checked, setChecked] = useState(category.showInMenu)
 
   return (
     <div>
       <div
-        className='flex items-center gap-2 p-2.5 border rounded-lg bg-muted/20'
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        className='flex items-center gap-2 p-2.5 border rounded-lg bg-muted/20 cursor-grab active:cursor-grabbing'
         style={{ marginLeft: depth * 20 }}
       >
-        <GripVertical className='h-4 w-4 text-muted-foreground shrink-0 cursor-grab' />
+        <GripVertical className='h-4 w-4 text-muted-foreground shrink-0' />
         <div className='flex-1 text-sm font-medium'>{category.name}</div>
         <Switch
           checked={checked}
