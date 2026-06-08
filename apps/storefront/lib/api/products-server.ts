@@ -142,7 +142,6 @@ export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]
 export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
   const res = await fetchProductsServer({
     isActive: true,
-    isFeatured: true,
     perPage,
     sort: 'createdAt',
     order: 'desc',
@@ -153,8 +152,9 @@ export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
 export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
   const res = await fetchProductsServer({
     isActive: true,
+    isFeatured: true,
     perPage,
-    sort: 'createdAt',
+    sort: 'updatedAt',
     order: 'desc',
   });
   return res.data;
