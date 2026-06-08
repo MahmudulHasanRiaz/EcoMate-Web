@@ -13,6 +13,7 @@ import {
   UpdateOrderStatusDto,
   UpdateOrderDto,
   UpdateOrderItemDto,
+  CustomerInfoDto,
 } from './dto/order.dto';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -461,10 +462,20 @@ export class OrdersService {
     }
 
     if (dto.customerInfo && order.customerId) {
-      await this.prisma.user.update({
-        where: { id: order.customerId },
-        data: dto.customerInfo,
-      });
+      const allowedFields: (keyof CustomerInfoDto)[] = ['firstName', 'lastName', 'phoneNumber', 'email'];
+      const safeData: Record<string, string> = {};
+      for (const field of allowedFields) {
+        const value = (dto.customerInfo as any)[field];
+        if (value !== undefined) {
+          safeData[field] = String(value);
+        }
+      }
+      if (Object.keys(safeData).length > 0) {
+        await this.prisma.user.update({
+          where: { id: order.customerId },
+          data: safeData,
+        });
+      }
     }
 
     data.timeline = timeline;

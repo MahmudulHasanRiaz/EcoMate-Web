@@ -50,6 +50,24 @@ export class UpdateOrderStatusDto {
   @IsOptional() @IsString() note?: string;
 }
 
+export class CustomerInfoDto {
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+}
+
 export class UpdateOrderDto {
   @IsOptional() @IsNumber() shippingCharge?: number;
   @IsOptional() @IsString() selectedShippingOptionId?: string;
@@ -58,7 +76,10 @@ export class UpdateOrderDto {
   @IsOptional() @IsObject() shippingAddress?: any;
   @IsOptional() @IsString() customerNotes?: string;
   @IsOptional() @IsString() officeNotes?: string;
-  @IsOptional() @IsObject() customerInfo?: any;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerInfoDto)
+  customerInfo?: CustomerInfoDto;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
