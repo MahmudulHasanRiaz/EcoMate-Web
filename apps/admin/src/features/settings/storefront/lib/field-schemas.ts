@@ -46,6 +46,7 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   payment_info:                  { label: 'Payment Information', type: 'textarea', rows: 3 },
   shipping_info:                 { label: 'Shipping Policy Text', type: 'textarea', rows: 3, hint: 'Per-district delivery charges are configured in Shipping Settings.' },
   navigation_items:              { label: 'Navigation Items', type: 'array-nav' },
+  navigation_categories:         { label: 'Menu Categories', type: 'text', hint: 'Managed in the Menu Categories section' },
   faq_items:                     { label: 'FAQ Items', type: 'array-faq' },
   hours_label:                   { label: 'Hours Summary (text)', type: 'text', placeholder: 'Sat-Thu 10AM-10PM, Fri 3PM-10PM' },
   hours_details:                 { label: 'Daily Schedule', type: 'array-hours' },

@@ -11,6 +11,7 @@ export type SectionId =
   | 'visuals-hero'
   | 'visuals-footer'
   | 'content-navigation'
+  | 'menu-categories'
   | 'content-faq'
   | 'content-hours'
   | 'content-about'
@@ -59,8 +60,8 @@ export const CATEGORIES: CategoryMeta[] = [
   {
     id: 'content',
     label: 'Content',
-    description: 'Navigation, FAQ, hours, about page',
-    sections: ['content-navigation', 'content-faq', 'content-hours', 'content-about'],
+    description: 'Navigation, menu categories, FAQ, hours, about page',
+    sections: ['content-navigation', 'menu-categories', 'content-faq', 'content-hours', 'content-about'],
   },
   {
     id: 'discovery',
@@ -130,6 +131,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     description: 'Header navigation items shown in the top bar.',
     icon: List,
     fields: ['navigation_items'],
+  },
+  'menu-categories': {
+    id: 'menu-categories',
+    categoryId: 'content',
+    title: 'Menu Categories',
+    description: 'Toggle and reorder categories in the storefront navigation.',
+    icon: List,
+    fields: [],
   },
   'content-faq': {
     id: 'content-faq',
