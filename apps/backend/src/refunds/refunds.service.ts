@@ -136,10 +136,16 @@ export class RefundsService {
             || null;
 
           if (effectiveVariantId) {
-            await this.prisma.productVariant.update({
+            const variant = await this.prisma.productVariant.findUnique({
               where: { id: effectiveVariantId },
-              data: { stock: { increment: qty } },
+              include: { product: { select: { manageStock: true } } },
             });
+            if (variant?.product?.manageStock !== false) {
+              await this.prisma.productVariant.update({
+                where: { id: effectiveVariantId },
+                data: { stock: { increment: qty } },
+              });
+            }
           }
           const product = await this.prisma.product.findUnique({
             where: { id: ci.productId },
@@ -166,10 +172,16 @@ export class RefundsService {
         }
       } else {
         if (item.variantId) {
-          await this.prisma.productVariant.update({
+          const variant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
-            data: { stock: { increment: item.quantity } },
+            include: { product: { select: { manageStock: true } } },
           });
+          if (variant?.product?.manageStock !== false) {
+            await this.prisma.productVariant.update({
+              where: { id: item.variantId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
         }
         const product = item.productId
           ? await this.prisma.product.findUnique({
