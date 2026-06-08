@@ -75,15 +75,15 @@ function ReviewsSection({ reviews, productId }: { reviews?: Review[]; productId:
   if (!reviews || reviews.length === 0) {
     return (
       <div className="border-t border-gray-100 pt-8 mt-8">
-        <h3 className="text-[16px] font-semibold text-gray-800 mb-4">রিভিউ</h3>
+        <h3 className="text-[16px] font-semibold text-gray-800 mb-4">Reviews</h3>
         <div className="text-center py-10 px-4 bg-gray-50 rounded-lg">
           <Star size={32} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-[14px] text-gray-500 mb-4">এই পণ্যে এখনো কোনো রিভিউ নেই। প্রথম রিভিউ দিন!</p>
+          <p className="text-[14px] text-gray-500 mb-4">No reviews yet. Be the first to review!</p>
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center px-5 h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-medium hover:bg-brand-blue-dark transition-colors"
           >
-            প্রথম রিভিউ দিন
+            Be the first to review
           </button>
         </div>
       </div>
@@ -95,14 +95,14 @@ function ReviewsSection({ reviews, productId }: { reviews?: Review[]; productId:
 
   return (
     <div className="border-t border-gray-100 pt-8 mt-8">
-      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">রিভিউ</h3>
+      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">Reviews</h3>
       <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
         <div className="text-center">
           <span className="text-[36px] font-bold text-gray-800 leading-none">{avgRating.toFixed(1)}</span>
           <div className="mt-1">
             <StarRating rating={avgRating} size={18} />
           </div>
-          <span className="text-[12px] text-gray-400 mt-1 block">{totalReviews} টি রিভিউ</span>
+          <span className="text-[12px] text-gray-400 mt-1 block">{totalReviews} Reviews</span>
         </div>
       </div>
       <div className="space-y-4">
@@ -154,6 +154,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const [heartPop, setHeartPop] = useState(false);
   const [reviews, setReviews] = useState<Review[] | undefined>(product.reviews);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [showStickyOrder, setShowStickyOrder] = useState(false);
   const ctaRef = useRef<HTMLDivElement>(null);
 
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
@@ -192,6 +193,16 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         .catch(() => {});
     }
   }, [product.slug, reviews]);
+
+  useEffect(() => {
+    function check() {
+      if (!ctaRef.current) return;
+      setShowStickyOrder(ctaRef.current.getBoundingClientRect().top < 0);
+    }
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    return () => window.removeEventListener('scroll', check);
+  }, []);
 
   const variantLabel = selectedVariant
     ? selectedVariant.attributeValues.map((av) => av.attributeValue.value).join(' / ')
@@ -285,7 +296,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
   const waNumber = config.order?.whatsapp || config.social.whatsapp;
   const callNumber = config.order?.callNumber || config.store.phone;
-  const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}` : '#';
+  const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}%0A${shareUrl}` : '#';
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (
@@ -374,7 +385,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/>
                 </svg>
-                COD Available ✓
+                Cash on Delivery Available
               </span>
             )}
           </div>
@@ -451,7 +462,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             </button>
             <button onClick={handleBuyNow}
               className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide">
-              BUY NOW
+              ORDER NOW
             </button>
           </div>
 
@@ -482,7 +493,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       <div className="px-4 max-w-screen-xl mx-auto">
         {sections?.specifications && (
           <div className="border-t border-gray-100 pt-6 mb-6 animate-fadeIn">
-            <h3 className="text-[16px] font-semibold text-gray-800 mb-3">বিস্তারিত</h3>
+            <h3 className="text-[16px] font-semibold text-gray-800 mb-3">Details</h3>
             <div className="text-[13px] text-gray-500 leading-relaxed" dangerouslySetInnerHTML={{
               __html: sanitizeHTML(sections.specifications)
             }} />
@@ -504,7 +515,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               onClick={() => setDescExpanded(!descExpanded)}
               className="w-full flex items-center justify-between text-[16px] font-semibold text-gray-800 mb-0"
             >
-              <span>বর্ণনা</span>
+              <span>Description</span>
               {descExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
             {descExpanded && (
@@ -582,12 +593,14 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             <span>WhatsApp</span>
           </a>
 
-          <button onClick={handleBuyNow}
-            className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark"
-          >
-            <ShoppingBag size={16} strokeWidth={2.5} />
-            <span>Buy Now</span>
-          </button>
+          {showStickyOrder && (
+            <button onClick={handleBuyNow}
+              className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark"
+            >
+              <ShoppingBag size={16} strokeWidth={2.5} />
+              <span>Order Now</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
