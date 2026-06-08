@@ -33,6 +33,14 @@ export class InventoryService {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Product not found');
 
+    if (!product.manageStock) {
+      throw new BadRequestException('This product does not manage stock. Stock adjustments are disabled.');
+    }
+
+    if (product.type === 'variable') {
+      throw new BadRequestException('Variable products use variant-level stock management. Adjust stock at the variant level.');
+    }
+
     await this.prisma.product.update({
       where: { id: productId },
       data: { stock: { increment: quantity } },
