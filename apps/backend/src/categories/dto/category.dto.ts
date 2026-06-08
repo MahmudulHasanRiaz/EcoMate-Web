@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsInt,
   IsObject,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -31,6 +32,15 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  showInMenu?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  menuSortOrder?: number;
 }
 
 export class UpdateCategoryDto {
@@ -58,4 +68,13 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  showInMenu?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  menuSortOrder?: number;
 }

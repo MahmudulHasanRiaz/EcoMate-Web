@@ -23,6 +23,12 @@ export class CategoriesController {
   }
 
   @Public()
+  @Get('menu')
+  async getMenuCategories() {
+    return this.svc.findMenuCategories();
+  }
+
+  @Public()
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);

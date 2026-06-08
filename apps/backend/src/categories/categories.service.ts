@@ -14,6 +14,19 @@ export class CategoriesService {
     private readonly media: MediaService,
   ) {}
 
+  async findMenuCategories() {
+    return this.prisma.category.findMany({
+      where: { showInMenu: true, isActive: true },
+      include: {
+        children: {
+          where: { showInMenu: true, isActive: true },
+          orderBy: { menuSortOrder: 'asc' },
+        },
+      },
+      orderBy: { menuSortOrder: 'asc' },
+    });
+  }
+
   async findAll() {
     return this.prisma.category.findMany({
       include: { children: true, _count: { select: { products: true } } },
