@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Controller, Post, Body, Param, Req, Res, UnauthorizedException, Logger } from '@nestjs/common';
 import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -60,6 +61,15 @@ export class CourierWebhookController {
 
   @Post('redx')
   async redx(@Body() body: Record<string, unknown>, @Req() req: Request) {
+    const signature = req.headers['x-redx-signature'] as string;
+    const webhookSecret = process.env['REDX_WEBHOOK_SECRET'];
+    if (webhookSecret && signature) {
+      const payload = JSON.stringify(body);
+      const expected = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
+      if (signature !== expected) {
+        throw new UnauthorizedException('Invalid webhook signature');
+      }
+    }
     this.logger.log('RedX webhook received');
     return this.svc.handleRedx(body);
   }
