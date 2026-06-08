@@ -65,8 +65,9 @@ export function Products() {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setBulkAction(null); setSelectedIds([]);
-      toast.success(`${res.success} product(s) deleted${res.failed ? `, ${res.failed} failed` : ''}`);
-      if (res.errors?.length) console.error('Bulk delete errors:', res.errors);
+      const d = res.data || res;
+      toast.success(`${d.success} product(s) deleted${d.failed ? `, ${d.failed} failed` : ''}`);
+      if (d.errors?.length) console.error('Bulk delete errors:', d.errors);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Bulk delete failed'),
   })
@@ -76,7 +77,8 @@ export function Products() {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setBulkAction(null); setSelectedIds([]);
-      toast.success(`${res.success} product(s) updated${res.failed ? `, ${res.failed} failed` : ''}`);
+      const d = res.data || res;
+      toast.success(`${d.success} product(s) updated${d.failed ? `, ${d.failed} failed` : ''}`);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Bulk update failed'),
   })
