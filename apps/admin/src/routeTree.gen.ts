@@ -32,6 +32,7 @@ import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedOpTagsIndexRouteImport } from './routes/_authenticated/op/tags/index'
 import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_authenticated/op/size-charts/index'
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
+import { Route as AuthenticatedOpReviewsIndexRouteImport } from './routes/_authenticated/op/reviews/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
@@ -192,6 +193,12 @@ const AuthenticatedOpShipmentsIndexRoute =
   AuthenticatedOpShipmentsIndexRouteImport.update({
     id: '/op/shipments/',
     path: '/op/shipments/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpReviewsIndexRoute =
+  AuthenticatedOpReviewsIndexRouteImport.update({
+    id: '/op/reviews/',
+    path: '/op/reviews/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpRefundsIndexRoute =
@@ -461,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
+  '/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
@@ -523,6 +531,7 @@ export interface FileRoutesByTo {
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
   '/op/refunds': typeof AuthenticatedOpRefundsIndexRoute
+  '/op/reviews': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/tags': typeof AuthenticatedOpTagsIndexRoute
@@ -587,6 +596,7 @@ export interface FileRoutesById {
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/_authenticated/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
+  '/_authenticated/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/_authenticated/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
@@ -651,6 +661,7 @@ export interface FileRouteTypes {
     | '/op/payments/'
     | '/op/products/'
     | '/op/refunds/'
+    | '/op/reviews/'
     | '/op/shipments/'
     | '/op/size-charts/'
     | '/op/tags/'
@@ -713,6 +724,7 @@ export interface FileRouteTypes {
     | '/op/payments'
     | '/op/products'
     | '/op/refunds'
+    | '/op/reviews'
     | '/op/shipments'
     | '/op/size-charts'
     | '/op/tags'
@@ -776,6 +788,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/payments/'
     | '/_authenticated/op/products/'
     | '/_authenticated/op/refunds/'
+    | '/_authenticated/op/reviews/'
     | '/_authenticated/op/shipments/'
     | '/_authenticated/op/size-charts/'
     | '/_authenticated/op/tags/'
@@ -974,6 +987,13 @@ declare module '@tanstack/react-router' {
       path: '/op/shipments'
       fullPath: '/op/shipments/'
       preLoaderRoute: typeof AuthenticatedOpShipmentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/reviews/': {
+      id: '/_authenticated/op/reviews/'
+      path: '/op/reviews'
+      fullPath: '/op/reviews/'
+      preLoaderRoute: typeof AuthenticatedOpReviewsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/refunds/': {
@@ -1353,6 +1373,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
   AuthenticatedOpRefundsIndexRoute: typeof AuthenticatedOpRefundsIndexRoute
+  AuthenticatedOpReviewsIndexRoute: typeof AuthenticatedOpReviewsIndexRoute
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
   AuthenticatedOpSizeChartsIndexRoute: typeof AuthenticatedOpSizeChartsIndexRoute
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
@@ -1395,6 +1416,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
   AuthenticatedOpRefundsIndexRoute: AuthenticatedOpRefundsIndexRoute,
+  AuthenticatedOpReviewsIndexRoute: AuthenticatedOpReviewsIndexRoute,
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
   AuthenticatedOpSizeChartsIndexRoute: AuthenticatedOpSizeChartsIndexRoute,
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,

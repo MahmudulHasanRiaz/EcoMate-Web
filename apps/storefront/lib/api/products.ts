@@ -67,6 +67,7 @@ export function transformBackendProduct(raw: any): Product {
     images: rawImages,
     category: raw.category?.name || "",
     categoryId: raw.categoryId || undefined,
+    categorySlug: raw.category?.slug || undefined,
     badge: raw.isFeatured ? "Featured" : displaySalePrice ? "Sale" : undefined,
     saveAmount: displayOriginalPrice ? displayOriginalPrice - displayPrice : undefined,
     isFeatured: raw.isFeatured,
@@ -91,6 +92,10 @@ export async function getProducts(params?: {
   perPage?: number;
   search?: string;
   categoryId?: string;
+  category?: string;
+  tagSlug?: string;
+  minPrice?: number;
+  maxPrice?: number;
   isActive?: boolean;
   isFeatured?: boolean;
   ids?: string;

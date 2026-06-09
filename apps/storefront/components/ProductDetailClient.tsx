@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -27,11 +27,9 @@ function cartItemKey(productId: string, variantId?: string) {
   return variantId ? `${productId}::${variantId}` : productId;
 }
 
-function StockBadge({ stock, manageStock }: { stock?: number; manageStock?: boolean }) {
-  if (manageStock === false) {
-    return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-green-100 text-green-800">In Stock</span>;
-  }
-  if (stock === undefined || stock === 0) {
+function StockBadge({ stock }: { stock?: number }) {
+  if (stock === undefined) return null;
+  if (stock === 0) {
     return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>;
   }
   if (stock > 10) {
@@ -69,54 +67,160 @@ function sanitizeHTML(html: string): string {
   });
 }
 
-function ReviewsSection({ reviews, productId }: { reviews?: Review[]; productId: string }) {
-  const [showForm, setShowForm] = useState(false);
+function ReviewForm({ productId, onSubmitted }: { productId: string; onSubmitted: () => void }) {
+  const [name, setName] = useState('');
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
 
-  if (!reviews || reviews.length === 0) {
+  if (submitted) {
     return (
-      <div className="border-t border-gray-100 pt-8 mt-8">
-        <h3 className="text-[16px] font-semibold text-gray-800 mb-4">Reviews</h3>
-        <div className="text-center py-10 px-4 bg-gray-50 rounded-lg">
-          <Star size={32} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-[14px] text-gray-500 mb-4">No reviews yet. Be the first to review!</p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center px-5 h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-medium hover:bg-brand-blue-dark transition-colors"
-          >
-            Be the first to review
-          </button>
-        </div>
+      <div className="text-center py-6 px-4 bg-green-50 rounded-lg">
+        <Check size={28} className="mx-auto text-green-600 mb-2" />
+        <p className="text-[14px] font-semibold text-green-800 mb-1">Thank you for your review!</p>
+        <p className="text-[13px] text-green-600">It will be visible once approved by the admin.</p>
       </div>
     );
   }
 
-  const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-  const totalReviews = reviews.length;
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError('Please enter your name'); return; }
+    if (rating < 1) { setError('Please select a rating'); return; }
+    setError('');
+    setSubmitting(true);
+    try {
+      await apiClient.post('/reviews', {
+        productId,
+        customerName: name.trim(),
+        rating,
+        text: text.trim() || undefined,
+      });
+      setSubmitted(true);
+      setTimeout(onSubmitted, 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to submit review. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <p className="text-[13px] text-red-500 bg-red-50 rounded-lg px-4 py-2">{error}</p>
+      )}
+      <div>
+        <p className="text-[13px] text-gray-500 mb-2">Your Rating</p>
+        <div className="flex items-center gap-1">
+          {[1, 2, 3, 4, 5].map(s => (
+            <button key={s} type="button"
+              onClick={() => setRating(s)}
+              onMouseEnter={() => setHoverRating(s)}
+              onMouseLeave={() => setHoverRating(0)}
+              className="p-0.5 transition-transform hover:scale-110"
+            >
+              <Star
+                size={22}
+                className={s <= (hoverRating || rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}
+                strokeWidth={1.5}
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Your Name"
+          className="w-full h-[42px] px-4 text-[14px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue"
+        />
+      </div>
+      <div>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Write your review (optional)"
+          rows={3}
+          className="w-full px-4 py-3 text-[14px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue resize-none"
+        />
+      </div>
+      <button type="submit" disabled={submitting}
+        className="w-full h-[42px] rounded-lg bg-brand-blue text-white text-[14px] font-semibold flex items-center justify-center gap-2 transition-all hover:bg-brand-blue-dark disabled:opacity-50"
+      >
+        {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
+        Submit Review
+      </button>
+    </form>
+  );
+}
+
+function ReviewsSection({ reviews, productId }: { reviews?: Review[]; productId: string }) {
+  const [showForm, setShowForm] = useState(false);
+
+  const hasReviews = reviews && reviews.length > 0;
+  const avgRating = hasReviews ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  const totalReviews = hasReviews ? reviews.length : 0;
 
   return (
     <div className="border-t border-gray-100 pt-8 mt-8">
       <h3 className="text-[16px] font-semibold text-gray-800 mb-4">Reviews</h3>
-      <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-        <div className="text-center">
-          <span className="text-[36px] font-bold text-gray-800 leading-none">{avgRating.toFixed(1)}</span>
-          <div className="mt-1">
-            <StarRating rating={avgRating} size={18} />
-          </div>
-          <span className="text-[12px] text-gray-400 mt-1 block">{totalReviews} Reviews</span>
-        </div>
-      </div>
-      <div className="space-y-4">
-        {reviews.map((review) => (
-          <div key={review.id} className="border-b border-gray-50 pb-4 last:border-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[14px] font-medium text-gray-800">{review.customerName}</span>
-              <span className="text-[11px] text-gray-400">{formatDate(review.createdAt)}</span>
+
+      {hasReviews ? (
+        <>
+          <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+            <div className="text-center">
+              <span className="text-[36px] font-bold text-gray-800 leading-none">{avgRating.toFixed(1)}</span>
+              <div className="mt-1">
+                <StarRating rating={avgRating} size={18} />
+              </div>
+              <span className="text-[12px] text-gray-400 mt-1 block">{totalReviews} Reviews</span>
             </div>
-            <StarRating rating={review.rating} size={14} />
-            {review.text && <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">{review.text}</p>}
           </div>
-        ))}
-      </div>
+          <div className="space-y-4 mb-6">
+            {reviews.map((review) => (
+              <div key={review.id} className="border-b border-gray-50 pb-4 last:border-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[14px] font-medium text-gray-800">{review.customerName}</span>
+                  <span className="text-[11px] text-gray-400">{formatDate(review.createdAt)}</span>
+                </div>
+                <StarRating rating={review.rating} size={14} />
+                {review.text && <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">{review.text}</p>}
+              </div>
+            ))}
+          </div>
+          {!showForm && (
+            <button onClick={() => setShowForm(true)}
+              className="w-full h-[42px] rounded-lg border-2 border-brand-blue text-brand-blue text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-brand-blue/5 transition-colors"
+            >
+              Write a Review
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="text-center py-10 px-4 bg-gray-50 rounded-lg mb-4">
+          <Star size={32} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-[14px] text-gray-500 mb-4">No reviews yet. Be the first to review!</p>
+          {!showForm && (
+            <button onClick={() => setShowForm(true)}
+              className="inline-flex items-center px-5 h-[42px] rounded-md bg-brand-blue text-white text-[13px] font-medium hover:bg-brand-blue-dark transition-colors"
+            >
+              Be the first to review
+            </button>
+          )}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="border-t border-gray-100 pt-6 mt-6">
+          <ReviewForm productId={productId} onSubmitted={() => setShowForm(false)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -155,6 +259,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const [reviews, setReviews] = useState<Review[] | undefined>(product.reviews);
   const [descExpanded, setDescExpanded] = useState(false);
   const [showStickyOrder, setShowStickyOrder] = useState(false);
+  const [qty, setQty] = useState(1);
   const ctaRef = useRef<HTMLDivElement>(null);
 
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
@@ -164,6 +269,43 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     if (isVariable && activeVariants.length > 0) return activeVariants[0];
     return null;
   });
+  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
+
+  const allAttrNames = useMemo(() => {
+    const names = new Set<string>();
+    product.variants?.forEach(v =>
+      v.attributeValues?.forEach(av => names.add(av.attributeValue.attribute.name))
+    );
+    return [...names];
+  }, [product.variants]);
+
+  const effectiveStock = useMemo(() => {
+    if (product.manageStock !== true) return undefined;
+    const variants = product.variants || [];
+    const selectedCount = Object.keys(selectedAttrs).length;
+
+    // No explicit selection: check any active variant has stock
+    if (selectedCount === 0) {
+      const anyStock = variants.some(v => v.isActive && v.stock > 0);
+      return anyStock ? 999 : 0;
+    }
+
+    // Partial selection: find variants matching explicitly selected attrs
+    if (selectedCount < allAttrNames.length) {
+      const matching = variants.filter(v => {
+        if (!v.isActive) return false;
+        return Object.entries(selectedAttrs).every(([name, value]) =>
+          v.attributeValues?.some(av =>
+            av.attributeValue.attribute.name === name && av.attributeValue.value === value
+          )
+        );
+      });
+      return matching.some(v => v.stock > 0) ? 999 : 0;
+    }
+
+    // Full selection: use selected variant's stock
+    return selectedVariant?.stock ?? 0;
+  }, [product, selectedVariant, selectedAttrs, allAttrNames]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -218,7 +360,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const displayPrice = selectedVariant?.price ?? product.price;
   const displayOriginalPrice = product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined;
   const displayImage = selectedVariant?.image || product.image;
-  const displayStock = selectedVariant?.stock ?? product.stock;
+  const displayStock = effectiveStock;
 
   const itemGallery = isVariable
     ? [displayImage, ...(product.images?.slice(1) || [])]
@@ -242,7 +384,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         price: displayPrice,
         originalPrice: displayOriginalPrice,
         image: displayImage,
-        quantity: 1,
+        quantity: qty,
         variantId: selectedVariant?.id,
         variantLabel,
         variantAttributes,
@@ -327,7 +469,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         {product.category ? (
           <>
             <button
-              onClick={() => router.push(product.categoryId ? `/products?category=${product.categoryId}` : '/products')}
+              onClick={() => router.push(product.categorySlug ? `/products?category=${product.categorySlug}` : '/products')}
               className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap"
             >
               {product.category}
@@ -379,7 +521,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
 
           <div className="mb-1 flex items-center gap-3 flex-wrap">
-            <StockBadge stock={displayStock} manageStock={product.manageStock} />
+            <StockBadge stock={displayStock} />
             {(product.codAvailable !== false) && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#21bc5c] text-white text-[11px] font-bold leading-tight">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -399,6 +541,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               variants={product.variants}
               selectedVariant={selectedVariant}
               onSelect={setSelectedVariant}
+              onSelectAttr={(name, value) => setSelectedAttrs(prev => ({ ...prev, [name]: value }))}
               sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
               onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
             />
@@ -424,10 +567,10 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <div className="flex items-center gap-6 mb-4">
             <span className="text-[16px] text-gray-800">Quantity:</span>
             <div className="flex items-center h-[42px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
-              <button onClick={() => inCart ? updateQuantity(itemKey, quantity - 1) : null}
+              <button onClick={() => inCart ? updateQuantity(itemKey, Math.max(1, quantity - 1)) : setQty(Math.max(1, qty - 1))}
                 className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={18} /></button>
-              <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : 1}</div>
-              <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : null}
+              <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : qty}</div>
+              <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : setQty(qty + 1)}
                 className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={18} /></button>
             </div>
           </div>

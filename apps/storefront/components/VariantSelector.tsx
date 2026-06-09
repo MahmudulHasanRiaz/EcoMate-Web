@@ -7,6 +7,7 @@ interface Props {
   variants: Variant[];
   selectedVariant: Variant | null;
   onSelect: (variant: Variant) => void;
+  onSelectAttr?: (attrName: string, value: string) => void;
   sizeGuideLabel?: string;
   onSizeGuideClick?: () => void;
 }
@@ -26,7 +27,7 @@ function sortValues(values: string[]): string[] {
   });
 }
 
-export function VariantSelector({ variants, selectedVariant, onSelect, sizeGuideLabel, onSizeGuideClick }: Props) {
+export function VariantSelector({ variants, selectedVariant, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick }: Props) {
   const attributeGroups = useMemo(() => {
     const groups: Record<string, { value: string; variant: Variant }[]> = {};
     for (const v of variants) {
@@ -56,7 +57,10 @@ export function VariantSelector({ variants, selectedVariant, onSelect, sizeGuide
         av.attributeValue.value === value
       )
     );
-    if (found) onSelect(found);
+    if (found) {
+      onSelect(found);
+      onSelectAttr?.(attrName, value);
+    }
   }
 
   function isSelected(v: Variant): boolean {
@@ -72,7 +76,7 @@ export function VariantSelector({ variants, selectedVariant, onSelect, sizeGuide
         <div key={name}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[14px] text-gray-700 font-medium">{name}:</span>
-            {onSizeGuideClick && (
+            {name === attrNames[attrNames.length - 1] && onSizeGuideClick && (
               <button
                 onClick={onSizeGuideClick}
                 className="text-[12px] text-gray-400 hover:text-brand-blue flex items-center gap-1 transition-colors"

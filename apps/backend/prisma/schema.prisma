@@ -588,6 +588,7 @@ model Review {
   customerName String
   rating       Int
   text         String?  @db.Text
+  approved     Boolean  @default(false)
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@map("reviews")

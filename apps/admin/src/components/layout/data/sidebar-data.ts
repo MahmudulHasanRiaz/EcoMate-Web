@@ -39,6 +39,7 @@ export const sidebarData: SidebarData = {
         items: [
           { title: 'All Orders', url: '/op/orders' },
           { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads' },
+          { title: 'Reviews', url: '/op/reviews' },
         ],
       },
       { title: 'Customers', url: '/op/customers', icon: Users },

@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 type ProductsSearchParams = {
   search?: string;
   category?: string;
+  tag?: string;
+  minPrice?: string;
+  maxPrice?: string;
   sort?: string;
   page?: string;
 };
@@ -26,15 +29,21 @@ export default async function ProductsPage({
       perPage: 24,
       isActive: true,
       search: sp.search || undefined,
-      categoryId: sp.category || undefined,
+      category: sp.category || undefined,
+      tagSlug: sp.tag || undefined,
+      minPrice: sp.minPrice ? parseFloat(sp.minPrice) : undefined,
+      maxPrice: sp.maxPrice ? parseFloat(sp.maxPrice) : undefined,
       sort: sortField,
       order,
     }),
     getCategoriesServer(),
   ]);
 
+  const filterKey = JSON.stringify(sp);
+
   return (
     <ArchivePageClient
+      key={filterKey}
       initialItems={data}
       initialCursor={meta.nextCursor}
       initialHasMore={meta.hasMore}

@@ -18,6 +18,10 @@ export interface FetchProductsServerOpts {
   search?: string;
   type?: string;
   categoryId?: string;
+  category?: string;
+  tagSlug?: string;
+  minPrice?: number;
+  maxPrice?: number;
   isActive?: boolean;
   isFeatured?: boolean;
   ids?: string;
@@ -32,6 +36,10 @@ function buildQuery(params: FetchProductsServerOpts): string {
   if (params.search) sp.set("search", params.search);
   if (params.type) sp.set("type", params.type);
   if (params.categoryId) sp.set("categoryId", params.categoryId);
+  if (params.category) sp.set("category", params.category);
+  if (params.tagSlug) sp.set("tagSlug", params.tagSlug);
+  if (params.minPrice !== undefined) sp.set("minPrice", String(params.minPrice));
+  if (params.maxPrice !== undefined) sp.set("maxPrice", String(params.maxPrice));
   if (params.isActive !== undefined) sp.set("isActive", String(params.isActive));
   if (params.isFeatured !== undefined) sp.set("isFeatured", String(params.isFeatured));
   if (params.ids) sp.set("ids", params.ids);

@@ -29,11 +29,12 @@ export default function Header() {
   const allNavItems = useMemo(() => {
     const items = [...(config.navigation?.items || [])]
     for (const cat of menuCategories) {
-      const exists = items.some(i => i.href === `/products?categoryId=${cat.id}`)
+      const slug = cat.slug || cat.id
+      const exists = items.some(i => i.href === `/products?category=${slug}`)
       if (!exists) {
         items.push({
           name: cat.name,
-          href: `/products?categoryId=${cat.id}`,
+          href: `/products?category=${slug}`,
         })
       }
     }

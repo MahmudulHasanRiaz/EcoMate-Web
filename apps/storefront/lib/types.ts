@@ -29,6 +29,7 @@ export interface Product {
   images?: string[];
   category: string;
   categoryId?: string;
+  categorySlug?: string;
   badge?: string;
   saveAmount?: number;
   isFeatured?: boolean;

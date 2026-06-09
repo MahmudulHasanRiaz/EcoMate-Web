@@ -13,7 +13,7 @@ export interface ArchivePageClientProps {
   initialCursor: string | null;
   initialHasMore: boolean;
   categories: Category[];
-  filters: { search?: string; category?: string; sort?: string; page?: string };
+  filters: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
 }
 
 const PAGE_SIZE = 24;
@@ -35,16 +35,20 @@ export default function ArchivePageClient({
   const searchParams = useSearchParams();
   const initialSearch = filters.search || '';
   const initialCategory = filters.category || '';
+  const initialTag = filters.tag || '';
+  const initialMinPrice = filters.minPrice || '';
+  const initialMaxPrice = filters.maxPrice || '';
   const initialSort = filters.sort || 'default';
 
   const [searchQuery, setSearchQuery] = React.useState(initialSearch);
-  const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(initialCategory || null);
+  const [selectedCategorySlug, setSelectedCategorySlug] = React.useState<string | null>(initialCategory || null);
   const [sortBy, setSortBy] = React.useState(initialSort);
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [selectedBrands, setSelectedBrands] = React.useState<string[]>([]);
   const [brandSearch, setBrandSearch] = React.useState('');
-  const [priceRange, setPriceRange] = React.useState<[number, number]>([0, 50000]);
+  const [priceMin, setPriceMin] = React.useState(initialMinPrice);
+  const [priceMax, setPriceMax] = React.useState(initialMaxPrice);
 
   const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
     useInfiniteScroll<Product>({
@@ -56,7 +60,10 @@ export default function ArchivePageClient({
         const res = await getProducts({
           isActive: true,
           search: filters.search || undefined,
-          categoryId: filters.category || undefined,
+          category: filters.category || undefined,
+          tagSlug: filters.tag || undefined,
+          minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
+          maxPrice: filters.maxPrice ? parseFloat(filters.maxPrice) : undefined,
           sort:
             sortBy === 'price-low' || sortBy === 'price-high' ? 'basePrice' : undefined,
           order: sortBy === 'price-low' ? 'asc' : sortBy === 'price-high' ? 'desc' : undefined,
@@ -82,17 +89,15 @@ export default function ArchivePageClient({
   }, [items]);
 
   const visibleItems = useMemo(() => {
+    if (selectedBrands.length === 0) return items;
     return items.filter((p) => {
-      if (priceRange[1] < 50000 && (p.price < priceRange[0] || p.price > priceRange[1])) return false;
-      if (selectedBrands.length > 0) {
-        const productBrands = (p.tags || []).map((t) => t.toLowerCase());
-        if (!selectedBrands.some((b) => productBrands.includes(b.toLowerCase()))) return false;
-      }
+      const productBrands = (p.tags || []).map((t) => t.toLowerCase());
+      if (!selectedBrands.some((b) => productBrands.includes(b.toLowerCase()))) return false;
       return true;
     });
-  }, [items, priceRange, selectedBrands]);
+  }, [items, selectedBrands]);
 
-  const applyFilters = (next: { search?: string; category?: string; sort?: string }) => {
+  const applyFilters = (next: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string }) => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (next.search !== undefined) {
       if (next.search) params.set('search', next.search);
@@ -101,6 +106,18 @@ export default function ArchivePageClient({
     if (next.category !== undefined) {
       if (next.category) params.set('category', next.category);
       else params.delete('category');
+    }
+    if (next.tag !== undefined) {
+      if (next.tag) params.set('tag', next.tag);
+      else params.delete('tag');
+    }
+    if (next.minPrice !== undefined) {
+      if (next.minPrice) params.set('minPrice', next.minPrice);
+      else params.delete('minPrice');
+    }
+    if (next.maxPrice !== undefined) {
+      if (next.maxPrice) params.set('maxPrice', next.maxPrice);
+      else params.delete('maxPrice');
     }
     if (next.sort !== undefined) {
       if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
@@ -117,25 +134,25 @@ export default function ArchivePageClient({
   };
 
   const clearAll = () => {
-    setPriceRange([0, 50000]);
-    setSelectedCategoryId(null);
-    setSearchQuery('');
     setSelectedBrands([]);
     router.push('/products');
   };
 
-  const currentCategoryName =
-    categories.find((c) => c.id === selectedCategoryId)?.name || 'Products';
+  const currentCategorySlug = selectedCategorySlug || filters.category || '';
+  const currentCategory =
+    categories.find((c) => c.slug === currentCategorySlug)?.name ||
+    categories.find((c) => c.id === currentCategorySlug)?.name ||
+    'Products';
 
   return (
     <div className="bg-white min-h-screen pb-20 font-sans">
       <div className="bg-[#f5f5f5] py-3 md:py-4 border-b border-gray-100">
         <div className="max-w-screen-xl mx-auto px-4 flex items-center justify-between">
-          <h1 className="text-[17px] md:text-[18px] font-medium text-gray-800">{currentCategoryName}</h1>
+          <h1 className="text-[17px] md:text-[18px] font-medium text-gray-800">{currentCategory}</h1>
           <nav className="flex items-center gap-1 text-[13px] text-gray-500 font-normal">
             <button onClick={() => router.push('/')} className="hover:text-brand-blue cursor-pointer transition-colors">Home</button>
             <ChevronRight size={12} className="opacity-70 mx-1" strokeWidth={2} />
-            <span className="text-gray-800">{currentCategoryName}</span>
+            <span className="text-gray-800">{currentCategory}</span>
           </nav>
         </div>
       </div>
@@ -213,14 +230,14 @@ export default function ArchivePageClient({
                           <input
                             type="radio"
                             name="category"
-                            checked={selectedCategoryId === cat.id}
+                            checked={selectedCategorySlug === cat.slug}
                             onChange={() => {
-                              setSelectedCategoryId(cat.id);
-                              applyFilters({ category: cat.id });
+                              setSelectedCategorySlug(cat.slug);
+                              applyFilters({ category: cat.slug });
                             }}
                             className="w-3.5 h-3.5 text-brand-blue border-gray-300 focus:ring-brand-blue"
                           />
-                          <span className={`text-[13px] transition-colors ${selectedCategoryId === cat.id ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{cat.name}</span>
+                          <span className={`text-[13px] transition-colors ${selectedCategorySlug === cat.slug ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{cat.name}</span>
                         </div>
                       </label>
                     ))}
@@ -231,18 +248,47 @@ export default function ArchivePageClient({
                   <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
                     Price Range <ChevronDown size={14} className="text-gray-400"/>
                   </h4>
-                  <div className="space-y-5">
-                    <input type="range" min="0" max="50000" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])} className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-brand-blue" />
-                    <div className="flex items-center gap-3">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
                       <div className="flex-1 border border-gray-200 rounded-md py-2 px-3 flex items-center gap-1 bg-gray-50 focus-within:border-brand-blue focus-within:bg-white transition-colors">
                         <span className="text-gray-400 text-[13px] font-medium font-mono">৳</span>
-                        <input type="number" value={priceRange[0]} onChange={(e) => setPriceRange([parseInt(e.target.value) || 0, priceRange[1]])} className="w-full text-[13px] font-bold text-gray-800 outline-none bg-transparent" min="0" />
+                        <input
+                          type="number"
+                          value={priceMin}
+                          onChange={(e) => setPriceMin(e.target.value)}
+                          placeholder="Min"
+                          className="w-full text-[13px] font-bold text-gray-800 outline-none bg-transparent"
+                          min="0"
+                        />
                       </div>
-                      <span className="text-gray-300 font-bold">-</span>
+                      <span className="text-gray-300 font-bold flex-shrink-0">-</span>
                       <div className="flex-1 border border-gray-200 rounded-md py-2 px-3 flex items-center gap-1 bg-gray-50 focus-within:border-brand-blue focus-within:bg-white transition-colors">
                         <span className="text-gray-400 text-[13px] font-medium font-mono">৳</span>
-                        <input type="number" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value) || 0])} className="w-full text-[13px] font-bold text-gray-800 outline-none bg-transparent" min="0" />
+                        <input
+                          type="number"
+                          value={priceMax}
+                          onChange={(e) => setPriceMax(e.target.value)}
+                          placeholder="Max"
+                          className="w-full text-[13px] font-bold text-gray-800 outline-none bg-transparent"
+                          min="0"
+                        />
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => applyFilters({ minPrice: priceMin || undefined, maxPrice: priceMax || undefined })}
+                        className="flex-1 bg-brand-blue text-white text-[12px] font-bold py-2 rounded-md hover:bg-brand-blue/90 transition-colors"
+                      >
+                        Apply
+                      </button>
+                      {(filters.minPrice || filters.maxPrice) && (
+                        <button
+                          onClick={() => { setPriceMin(''); setPriceMax(''); applyFilters({ minPrice: undefined, maxPrice: undefined }); }}
+                          className="text-[11px] text-gray-500 hover:text-brand-blue underline"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

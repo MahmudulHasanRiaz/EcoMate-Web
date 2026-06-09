@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { TagsService } from './tags.service';
 
 @Controller('tags')
@@ -9,6 +10,12 @@ export class TagsController {
   @Roles('superadmin', 'admin', 'manager')
   @Get()
   async findAll() {
+    return this.svc.findAll();
+  }
+
+  @Public()
+  @Get('public')
+  async findAllPublic() {
     return this.svc.findAll();
   }
 

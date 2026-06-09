@@ -24,12 +24,16 @@ export class ProductsController {
 
   @Public()
   @Get()
-  findAll(
+  async findAll(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
     @Query('search') search?: string,
     @Query('type') type?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('category') category?: string,
+    @Query('tagSlug') tagSlug?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
     @Query('isActive') isActive?: string,
     @Query('isFeatured') isFeatured?: string,
     @Query('ids') ids?: string,
@@ -37,24 +41,33 @@ export class ProductsController {
     @Query('order') order?: string,
     @Query('cursor') cursor?: string,
   ) {
+    const effectiveCategoryId = categoryId || (category ? await this.svc.resolveCategorySlug(category) : undefined);
     if (cursor) {
       return this.svc.findAllCursor({
         cursor,
         perPage: perPage ? parseInt(perPage) : undefined,
         search,
         type,
-        categoryId,
+        categoryId: effectiveCategoryId,
+        tagSlug: tagSlug || undefined,
+        minPrice: minPrice ? parseFloat(minPrice) : undefined,
+        maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         isActive: isActive !== undefined ? isActive === 'true' : undefined,
         isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
       });
     }
+    const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
+    const parsedMaxPrice = maxPrice ? parseFloat(maxPrice) : undefined;
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
       perPage: perPage ? parseInt(perPage) : undefined,
       search,
       type,
-      categoryId,
+      categoryId: effectiveCategoryId,
+      tagSlug: tagSlug || undefined,
+      minPrice: parsedMinPrice,
+      maxPrice: parsedMaxPrice,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
       ids: ids ? ids.split(',').filter(Boolean) : undefined,

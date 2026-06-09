@@ -65,6 +65,12 @@ export class ProductsService {
     return where;
   }
 
+  async resolveCategorySlug(slug: string): Promise<string | undefined> {
+    if (!slug) return undefined;
+    const cat = await this.prisma.category.findUnique({ where: { slug }, select: { id: true } });
+    return cat?.id;
+  }
+
   private decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
     try {
       const raw = Buffer.from(cursor, 'base64url').toString('utf8');
@@ -83,7 +89,7 @@ export class ProductsService {
   }
 
   private readonly productInclude = {
-    category: { select: { id: true, name: true } },
+    category: { select: { id: true, name: true, slug: true } },
     productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
     variants: {
       include: {
@@ -100,6 +106,9 @@ export class ProductsService {
     search?: string;
     type?: string;
     categoryId?: string;
+    tagSlug?: string;
+    minPrice?: number;
+    maxPrice?: number;
     isActive?: boolean;
     isFeatured?: boolean;
     ids?: string[];
@@ -109,7 +118,15 @@ export class ProductsService {
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 24;
-    const where = this.buildWhere(query);
+    const where: any = this.buildWhere(query);
+    if (query.tagSlug) {
+      where.tags = { has: query.tagSlug };
+    }
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      where.basePrice = {};
+      if (query.minPrice !== undefined) where.basePrice.gte = query.minPrice;
+      if (query.maxPrice !== undefined) where.basePrice.lte = query.maxPrice;
+    }
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
@@ -139,34 +156,51 @@ export class ProductsService {
     search?: string;
     type?: string;
     categoryId?: string;
+    category?: string;
+    tagSlug?: string;
+    minPrice?: number;
+    maxPrice?: number;
     isActive?: boolean;
     isFeatured?: boolean;
     ids?: string[];
   }) {
     const perPage = query.perPage || 24;
-    const where: any = { ...this.buildWhere(query) };
+    const effectiveCategoryId = query.categoryId || (query.category ? await this.resolveCategorySlug(query.category) : undefined);
+    const filters = this.buildWhere({ ...query, categoryId: effectiveCategoryId });
+    if (query.tagSlug) {
+      filters.tags = { has: query.tagSlug };
+    }
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      filters.basePrice = {};
+      if (query.minPrice !== undefined) filters.basePrice.gte = query.minPrice;
+      if (query.maxPrice !== undefined) filters.basePrice.lte = query.maxPrice;
+    }
+    const cursorWhere: any = { ...filters };
     if (query.cursor) {
       const decoded = this.decodeCursor(query.cursor);
       if (decoded) {
-        where.OR = [
-          { createdAt: { lt: decoded.createdAt } },
-          {
-            createdAt: decoded.createdAt,
-            id: { lt: decoded.id },
-          },
-        ];
+        const cursorFilter = {
+          OR: [
+            { createdAt: { lt: decoded.createdAt } },
+            { createdAt: decoded.createdAt, id: { lt: decoded.id } },
+          ],
+        };
+        if (cursorWhere.OR) {
+          cursorWhere.AND = [cursorFilter, { OR: cursorWhere.OR }];
+          delete cursorWhere.OR;
+        } else {
+          cursorWhere.AND = [cursorFilter];
+        }
       }
     }
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
-        where,
+        where: cursorWhere,
         take: perPage,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: this.productInclude,
       }),
-      this.prisma.product.count({
-        where: this.buildWhere(query),
-      }),
+      this.prisma.product.count({ where: filters }),
     ]);
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];

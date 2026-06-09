@@ -20,8 +20,11 @@ export default async function CombosPage({
     search: sp.search || undefined,
   });
 
+  const filterKey = JSON.stringify(sp);
+
   return (
     <ComboGridClient
+      key={filterKey}
       initialItems={data}
       initialCursor={meta.nextCursor}
       initialHasMore={meta.hasMore}

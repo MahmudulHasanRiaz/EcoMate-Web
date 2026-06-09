@@ -27,7 +27,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const categories = data.data || data || [];
     if (Array.isArray(categories)) {
       categoryPages = categories.map((cat: any) => ({
-        url: `${baseUrl}/products?categoryId=${cat.id}`,
+        url: `${baseUrl}/products?category=${cat.slug || cat.id}`,
         lastModified: new Date(cat.updatedAt),
         changeFrequency: 'daily' as const,
         priority: 0.7,

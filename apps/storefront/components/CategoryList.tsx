@@ -94,7 +94,7 @@ function CategoryItem({ category, router, imgErrors, setImgErrors }: {
 }) {
   return (
     <a
-      onClick={(e) => { e.preventDefault(); router.push(`/products?category=${category.id}`); }}
+      onClick={(e) => { e.preventDefault(); router.push(`/products?category=${category.slug}`); }}
       href={`#${category.id}`}
       className="flex flex-col items-center gap-2 min-w-[95px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
     >
