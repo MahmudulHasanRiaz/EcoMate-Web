@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Star } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import apiClient from "@/lib/api-client";
 
@@ -19,10 +20,15 @@ interface ReviewItem {
   };
 }
 
+const AUTO_SLIDE_INTERVAL = 4000;
+
 export default function Testimonials() {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [current, setCurrent] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     apiClient
@@ -34,59 +40,126 @@ export default function Testimonials() {
 
   const items = reviews.slice(0, 6);
 
+  const next = useCallback(() => {
+    setCurrent((p) => (p + 1) % items.length);
+  }, [items.length]);
+
+  const prev = useCallback(() => {
+    setCurrent((p) => (p - 1 + items.length) % items.length);
+  }, [items.length]);
+
+  useEffect(() => {
+    if (isPaused || items.length < 2) return;
+    timerRef.current = setInterval(next, AUTO_SLIDE_INTERVAL);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isPaused, items.length, next]);
+
   if (loading) return null;
   if (items.length === 0) return null;
 
   return (
-    <section className="py-12 bg-[#fcfcfc]">
+    <section className="py-16 bg-[#fcfcfc] overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 text-center">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {items.map((r) => {
-            const imgKey = r.id;
-            const productImage =
-              r.product?.images?.[0] || PLACEHOLDER_IMAGE;
-            return (
-              <div
-                key={r.id}
-                className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-left"
+        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+          What Our Customers Say
+        </h2>
+        <p className="text-gray-500 text-sm md:text-base mb-10">
+          Real reviews from real people
+        </p>
+
+        <div
+          className="relative max-w-2xl mx-auto"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+        >
+          <div className="relative min-h-[220px]">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={items[current].id}
+                initial={{ opacity: 0, x: 60 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -60 }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm text-left"
               >
-                <div className="flex items-center gap-1 mb-3">
+                <div className="flex items-center gap-1 mb-4">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star
                       key={i}
-                      size={14}
+                      size={16}
                       className={
-                        i < r.rating
+                        i < items[current].rating
                           ? "fill-yellow-400 text-yellow-400"
                           : "text-gray-200"
                       }
                     />
                   ))}
                 </div>
-                <p className="text-[13px] md:text-[14px] text-gray-600 italic mb-6 leading-relaxed">
-                  &ldquo;{r.text}&rdquo;
+                <p className="text-[14px] md:text-[15px] text-gray-600 italic leading-relaxed mb-6">
+                  &ldquo;{items[current].text}&rdquo;
                 </p>
                 <div className="flex items-center gap-3">
                   <img
-                    src={imgErrors[imgKey] ? PLACEHOLDER_IMAGE : productImage}
-                    alt={r.customerName}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-100 bg-gray-50"
+                    src={
+                      imgErrors[items[current].id]
+                        ? PLACEHOLDER_IMAGE
+                        : items[current].product?.images?.[0] ||
+                          PLACEHOLDER_IMAGE
+                    }
+                    alt={items[current].customerName}
+                    className="w-11 h-11 rounded-full object-cover border border-gray-100 bg-gray-50"
                     onError={() =>
-                      setImgErrors((prev) => ({ ...prev, [imgKey]: true }))
+                      setImgErrors((prev) => ({
+                        ...prev,
+                        [items[current].id]: true,
+                      }))
                     }
                   />
                   <div>
                     <h4 className="text-[14px] font-bold text-gray-800">
-                      {r.customerName}
+                      {items[current].customerName}
                     </h4>
                     <p className="text-[11px] text-gray-400 font-medium">
-                      {r.product?.name || "Verified Buyer"}
+                      {items[current].product?.name || "Verified Buyer"}
                     </p>
                   </div>
                 </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {items.length > 1 && (
+            <>
+              <button
+                onClick={prev}
+                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 md:-translate-x-12 w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-brand-blue hover:border-brand-blue transition-all"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                onClick={next}
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 md:translate-x-12 w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-brand-blue hover:border-brand-blue transition-all"
+              >
+                <ChevronRight size={18} />
+              </button>
+
+              <div className="flex items-center justify-center gap-2 mt-8">
+                {items.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrent(i)}
+                    className={`rounded-full transition-all ${
+                      i === current
+                        ? "w-6 h-2 bg-brand-blue"
+                        : "w-2 h-2 bg-gray-300 hover:bg-gray-400"
+                    }`}
+                  />
+                ))}
               </div>
-            );
-          })}
+            </>
+          )}
         </div>
       </div>
     </section>
