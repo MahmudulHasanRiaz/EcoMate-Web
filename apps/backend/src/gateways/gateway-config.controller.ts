@@ -14,7 +14,7 @@ export class GatewayConfigController {
       where: { enabled: true },
       orderBy: { gateway: 'asc' },
     });
-    return gateways.map(g => ({
+    return gateways.map((g) => ({
       id: g.id,
       gateway: g.gateway,
       enabled: g.enabled,
@@ -29,7 +29,7 @@ export class GatewayConfigController {
     const gateways = await this.prisma.paymentGatewayConfig.findMany({
       orderBy: { gateway: 'asc' },
     });
-    return gateways.map(g => ({
+    return gateways.map((g) => ({
       id: g.id,
       gateway: g.gateway,
       enabled: g.enabled,

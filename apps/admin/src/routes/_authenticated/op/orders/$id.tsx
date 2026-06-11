@@ -347,12 +347,25 @@ function OrderDetailPage() {
             <Card>
               <CardHeader className='pb-2'><CardTitle className='text-base'>Timeline</CardTitle></CardHeader>
               <CardContent>
+                {!order.timeline || order.timeline.length === 0 ? (
+                  <div className='text-center py-8 text-muted-foreground'>
+                    <Clock className='h-8 w-8 mx-auto mb-2 opacity-40' />
+                    <p className='text-sm'>No timeline entries yet.</p>
+                  </div>
+                ) : (
                 <div className='space-y-0'>
                   {(order.timeline as any[]).map((t: any, i: number) => {
                     const isStatus = !!t.status && !t.type; const isPrivate = t.visibility === 'private';
                     const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1';
+                    const prev = i > 0 ? (order.timeline as any[])[i - 1] : null;
+                    const prevIsStatus = !!prev?.status && !prev?.type;
+                    const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus));
+                    const performer = t.performedBy || t.performer || '';
+                    const formattedPerformer = performer.includes('@')
+                      ? performer.split('@')[0].charAt(0).toUpperCase() + performer.split('@')[0].slice(1)
+                      : performer;
                     return (
-                      <div key={i} className='relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0' style={{ borderColor: color }}>
+                      <div key={i} className={`relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0${isGrouped ? ' border-dashed' : ''}`} style={{ borderColor: color }}>
                         <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: color }} />
                         <div className='flex items-center gap-2 flex-wrap'>
                           {isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
@@ -361,6 +374,8 @@ function OrderDetailPage() {
                           {t.type === 'note' && <Badge variant='outline' className='text-xs'><MessageSquarePlus className='h-3 w-3 mr-1' />Note</Badge>}
                           {t.type === 'courier' && <Badge variant='outline' className='text-xs'><Truck className='h-3 w-3 mr-1' />{(t as any).courier}</Badge>}
                           {isPrivate && <Badge variant='secondary' className='text-xs'><EyeOff className='h-2.5 w-2.5 mr-0.5' />Private</Badge>}
+                          {performer && <span className='text-xs text-muted-foreground'><User className='h-3 w-3 mr-0.5 inline' />{formattedPerformer}</span>}
+                          {performer === 'System' && <Badge variant='secondary' className='text-[10px] h-4'>Auto</Badge>}
                           <span className='text-xs text-muted-foreground'><Clock className='h-3 w-3 mr-1 inline' />{new Date(t.timestamp).toLocaleString()}</span>
                         </div>
                         {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
@@ -368,6 +383,7 @@ function OrderDetailPage() {
                     )
                   })}
                 </div>
+                )}
               </CardContent>
             </Card>
 

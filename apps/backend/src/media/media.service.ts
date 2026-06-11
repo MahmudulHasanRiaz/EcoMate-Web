@@ -132,7 +132,8 @@ export class MediaService {
           where: { id: att.entityId },
           select: { sku: true, product: { select: { name: true } } },
         });
-        if (variant) entityName = `${variant.product?.name || ''} (${variant.sku})`;
+        if (variant)
+          entityName = `${variant.product?.name || ''} (${variant.sku})`;
       } else if (att.entityType === 'storefront') {
         entityName = `Storefront · ${att.entityId}`;
       }
@@ -163,7 +164,9 @@ export class MediaService {
     try {
       await this.storage.delete(filename);
     } catch (err) {
-      this.logger.warn(`Storage delete failed for ${filename}: ${(err as Error).message}`);
+      this.logger.warn(
+        `Storage delete failed for ${filename}: ${(err as Error).message}`,
+      );
     }
     await this.prisma.media.delete({ where: { id } });
 
@@ -237,7 +240,13 @@ export class MediaService {
   async ingestFromUrl(
     rawUrl: string,
     opts: { filename?: string; alt?: string; uploadedBy?: string } = {},
-  ): Promise<{ id: string; url: string; filename: string; size: number; mimeType: string }> {
+  ): Promise<{
+    id: string;
+    url: string;
+    filename: string;
+    size: number;
+    mimeType: string;
+  }> {
     const url = await this.assertSafeRemoteUrl(rawUrl);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -262,7 +271,10 @@ export class MediaService {
     const contentType =
       resp.headers.get('content-type')?.split(';')[0].trim() ||
       'application/octet-stream';
-    if (!contentType.startsWith('image/') && !contentType.startsWith('video/')) {
+    if (
+      !contentType.startsWith('image/') &&
+      !contentType.startsWith('video/')
+    ) {
       throw new BadRequestException('URL must point to an image or video');
     }
     const lenHeader = resp.headers.get('content-length');
@@ -278,13 +290,14 @@ export class MediaService {
     const hash = sha256(buffer);
 
     const existing = await this.prisma.media.findUnique({ where: { hash } });
-    if (existing) return {
-      id: existing.id,
-      url: existing.url,
-      filename: existing.filename,
-      size: existing.size,
-      mimeType: existing.mimeType,
-    };
+    if (existing)
+      return {
+        id: existing.id,
+        url: existing.url,
+        filename: existing.filename,
+        size: existing.size,
+        mimeType: existing.mimeType,
+      };
 
     const inferredName =
       opts.filename?.trim() ||
@@ -326,22 +339,35 @@ export class MediaService {
   async ingestFromMulter(
     file: Express.Multer.File,
     opts: { filename?: string; alt?: string; uploadedBy?: string } = {},
-  ): Promise<{ id: string; url: string; filename: string; size: number; mimeType: string }> {
+  ): Promise<{
+    id: string;
+    url: string;
+    filename: string;
+    size: number;
+    mimeType: string;
+  }> {
     if (!file?.buffer) throw new BadRequestException('No file uploaded');
-    if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
+    if (
+      !file.mimetype.startsWith('image/') &&
+      !file.mimetype.startsWith('video/')
+    ) {
       throw new BadRequestException('Only images & videos allowed');
     }
     const hash = sha256(file.buffer);
     const existing = await this.prisma.media.findUnique({ where: { hash } });
-    if (existing) return {
-      id: existing.id,
-      url: existing.url,
-      filename: existing.filename,
-      size: existing.size,
-      mimeType: existing.mimeType,
-    };
+    if (existing)
+      return {
+        id: existing.id,
+        url: existing.url,
+        filename: existing.filename,
+        size: existing.size,
+        mimeType: existing.mimeType,
+      };
 
-    const result = await this.storage.upload(file, opts.filename?.trim() || undefined);
+    const result = await this.storage.upload(
+      file,
+      opts.filename?.trim() || undefined,
+    );
     const created = await this.prisma.media.create({
       data: {
         filename: result.filename,
@@ -387,10 +413,7 @@ export class MediaService {
       const fname = trimmed.split('/').pop()?.split('?')[0] || '';
       const known = await this.prisma.media.findFirst({
         where: {
-          OR: [
-            { url: trimmed },
-            ...(fname ? [{ filename: fname }] : []),
-          ],
+          OR: [{ url: trimmed }, ...(fname ? [{ filename: fname }] : [])],
         },
         select: { id: true, url: true },
       });

@@ -22,7 +22,8 @@ export class BkashPgwController {
   @Get('callback')
   async callback(@Query() query: any, @Res() res: Response) {
     const { paymentID, status, orderId: queryOrderId } = query;
-    const storefrontUrl = process.env['STOREFRONT_URL'] || 'http://localhost:3000';
+    const storefrontUrl =
+      process.env['STOREFRONT_URL'] || 'http://localhost:3000';
     const orderId = queryOrderId || '';
 
     let resolvedOrderId = orderId;
@@ -65,6 +66,8 @@ export class BkashPgwController {
       select: { viewToken: true },
     });
     const tokenQuery = orderRow?.viewToken ? `&t=${orderRow.viewToken}` : '';
-    res.redirect(`${storefrontUrl}/checkout/thank-you?orderId=${orderId}&pending=true${tokenQuery}`);
+    res.redirect(
+      `${storefrontUrl}/checkout/thank-you?orderId=${orderId}&pending=true${tokenQuery}`,
+    );
   }
 }

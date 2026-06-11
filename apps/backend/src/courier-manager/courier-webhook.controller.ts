@@ -1,5 +1,14 @@
 import crypto from 'node:crypto';
-import { Controller, Post, Body, Param, Req, Res, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Req,
+  Res,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
 import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,16 +23,25 @@ export class CourierWebhookController {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async validateWebhookToken(courier: string, authHeader: string | undefined): Promise<void> {
-    if (!authHeader) throw new UnauthorizedException('Missing authorization header');
+  private async validateWebhookToken(
+    courier: string,
+    authHeader: string | undefined,
+  ): Promise<void> {
+    if (!authHeader)
+      throw new UnauthorizedException('Missing authorization header');
 
     const [type, token] = authHeader.split(' ');
-    if (type !== 'Bearer' || !token) throw new UnauthorizedException('Invalid authorization format');
+    if (type !== 'Bearer' || !token)
+      throw new UnauthorizedException('Invalid authorization format');
 
-    const creds = await this.prisma.courierCredentials.findUnique({ where: { courier } });
-    if (!creds?.webhookSecret) throw new UnauthorizedException('Webhook not configured');
+    const creds = await this.prisma.courierCredentials.findUnique({
+      where: { courier },
+    });
+    if (!creds?.webhookSecret)
+      throw new UnauthorizedException('Webhook not configured');
 
-    if (token !== creds.webhookSecret) throw new UnauthorizedException('Invalid token');
+    if (token !== creds.webhookSecret)
+      throw new UnauthorizedException('Invalid token');
   }
 
   @Post('steadfast')
@@ -53,7 +71,10 @@ export class CourierWebhookController {
     if (signature !== creds.webhookSecret)
       throw new UnauthorizedException('Invalid X-PATHAO-Signature');
 
-    res.set('X-Pathao-Merchant-Webhook-Integration-Secret', creds.webhookSecret);
+    res.set(
+      'X-Pathao-Merchant-Webhook-Integration-Secret',
+      creds.webhookSecret,
+    );
 
     this.logger.log('Pathao webhook received');
     return this.svc.handlePathao(body);
@@ -65,7 +86,10 @@ export class CourierWebhookController {
     const webhookSecret = process.env['REDX_WEBHOOK_SECRET'];
     if (webhookSecret && signature) {
       const payload = JSON.stringify(body);
-      const expected = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
+      const expected = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payload)
+        .digest('hex');
       if (signature !== expected) {
         throw new UnauthorizedException('Invalid webhook signature');
       }

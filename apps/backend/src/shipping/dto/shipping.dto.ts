@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsIn, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsArray,
+  IsIn,
+  Min,
+} from 'class-validator';
 
 export class CreateShippingOptionDto {
   @IsString() name: string;
@@ -24,7 +32,10 @@ export class CreateShippingZoneGroupDto {
 
 export class UpdateShippingZoneGroupDto {
   @IsOptional() @IsString() label?: string;
-  @IsOptional() @IsString() @IsIn(['custom_amount', 'no_delivery']) type?: string;
+  @IsOptional()
+  @IsString()
+  @IsIn(['custom_amount', 'no_delivery'])
+  type?: string;
   @IsOptional() @IsNumber() @Min(0) amount?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) districts?: string[];
   @IsOptional() @IsBoolean() isActive?: boolean;

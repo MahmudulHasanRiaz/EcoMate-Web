@@ -1,4 +1,10 @@
-import { ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments, registerDecorator, ValidationOptions } from 'class-validator';
+import {
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
+  registerDecorator,
+  ValidationOptions,
+} from 'class-validator';
 
 @ValidatorConstraint({ name: 'strongPassword', async: false })
 export class StrongPasswordConstraint implements ValidatorConstraintInterface {
@@ -9,9 +15,11 @@ export class StrongPasswordConstraint implements ValidatorConstraintInterface {
     if (!/[A-Z]/.test(password)) errors.push('an uppercase letter');
     if (!/[a-z]/.test(password)) errors.push('a lowercase letter');
     if (!/[0-9]/.test(password)) errors.push('a number');
-    if (!/[!@#$%^&*()_+\-=\[\]{}|;':",.\/<>?]/.test(password)) errors.push('a special character');
+    if (!/[!@#$%^&*()_+\-=\[\]{}|;':",.\/<>?]/.test(password))
+      errors.push('a special character');
     if (errors.length > 0) {
-      (args.object as any)[args.property + '_error'] = `Password must include ${errors.join(', ')}`;
+      (args.object as any)[args.property + '_error'] =
+        `Password must include ${errors.join(', ')}`;
       return false;
     }
     return true;
@@ -23,7 +31,7 @@ export class StrongPasswordConstraint implements ValidatorConstraintInterface {
 }
 
 export function IsStrongPassword(validationOptions?: ValidationOptions) {
-  return function (object: Object, propertyName: string) {
+  return function (object: object, propertyName: string) {
     registerDecorator({
       target: object.constructor,
       propertyName: propertyName,

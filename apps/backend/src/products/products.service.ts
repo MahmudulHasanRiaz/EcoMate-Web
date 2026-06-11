@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -13,7 +14,10 @@ import {
 import { MediaService } from '../media/media.service';
 
 function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 @Injectable()
@@ -29,9 +33,14 @@ export class ProductsService {
       const slug = slugify(name);
       let tag = await this.prisma.tag.findUnique({ where: { slug } });
       if (tag) {
-        await this.prisma.tag.update({ where: { id: tag.id }, data: { productCount: { increment: 1 } } });
+        await this.prisma.tag.update({
+          where: { id: tag.id },
+          data: { productCount: { increment: 1 } },
+        });
       } else {
-        tag = await this.prisma.tag.create({ data: { name, slug, productCount: 1 } });
+        tag = await this.prisma.tag.create({
+          data: { name, slug, productCount: 1 },
+        });
       }
       await this.prisma.productTag.upsert({
         where: { productId_tagId: { productId, tagId: tag.id } },
@@ -67,7 +76,10 @@ export class ProductsService {
 
   async resolveCategorySlug(slug: string): Promise<string | undefined> {
     if (!slug) return undefined;
-    const cat = await this.prisma.category.findUnique({ where: { slug }, select: { id: true } });
+    const cat = await this.prisma.category.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
     return cat?.id;
   }
 
@@ -85,12 +97,16 @@ export class ProductsService {
   }
 
   private encodeCursor(createdAt: Date, id: string): string {
-    return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64url');
+    return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString(
+      'base64url',
+    );
   }
 
   private readonly productInclude = {
     category: { select: { id: true, name: true, slug: true } },
-    productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
+    productCategories: {
+      include: { category: { select: { id: true, name: true, slug: true } } },
+    },
     variants: {
       include: {
         attributeValues: {
@@ -165,8 +181,15 @@ export class ProductsService {
     ids?: string[];
   }) {
     const perPage = query.perPage || 24;
-    const effectiveCategoryId = query.categoryId || (query.category ? await this.resolveCategorySlug(query.category) : undefined);
-    const filters = this.buildWhere({ ...query, categoryId: effectiveCategoryId });
+    const effectiveCategoryId =
+      query.categoryId ||
+      (query.category
+        ? await this.resolveCategorySlug(query.category)
+        : undefined);
+    const filters = this.buildWhere({
+      ...query,
+      categoryId: effectiveCategoryId,
+    });
     if (query.tagSlug) {
       filters.tags = { has: query.tagSlug };
     }
@@ -204,7 +227,8 @@ export class ProductsService {
     ]);
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
-    const nextCursor = hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
+    const nextCursor =
+      hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
     return {
       data,
       meta: {
@@ -245,7 +269,11 @@ export class ProductsService {
       where: { id },
       include: {
         category: true,
-        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
         variants: {
           include: {
             attributeValues: {
@@ -275,7 +303,7 @@ export class ProductsService {
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         sku: dto.sku,
-        stock: dto.type === 'variable' ? 0 : (dto.stock || 0),
+        stock: dto.type === 'variable' ? 0 : dto.stock || 0,
         lowStockQty: dto.lowStockQty,
         categoryId: dto.categoryId,
         productCategories: dto.categoryIds
@@ -287,7 +315,7 @@ export class ProductsService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        manageStock: dto.type === 'variable' ? false : (dto.manageStock || false),
+        manageStock: dto.type === 'variable' ? false : dto.manageStock || false,
         variants: dto.variants
           ? {
               create: dto.variants.map((v) => ({
@@ -308,7 +336,11 @@ export class ProductsService {
       },
       include: {
         category: true,
-        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
         variants: {
           include: {
             attributeValues: {
@@ -334,14 +366,16 @@ export class ProductsService {
           where: { id: product.id },
           data: { images: synced as any },
         });
-        product.images = synced as any;
+        product.images = synced;
       }
     }
 
     if (dto.variants?.length) {
       for (const variant of product.variants) {
         if (variant.image) {
-          await this.media.syncEntityImages('variant', variant.id, [variant.image]);
+          await this.media.syncEntityImages('variant', variant.id, [
+            variant.image,
+          ]);
         }
       }
     }
@@ -349,7 +383,7 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, dto: UpdateProductDto) {
+  async update(id: string, dto: UpdateProductDto, performedBy?: string) {
     const p = await this.prisma.product.findUnique({ where: { id } });
     if (!p) throw new NotFoundException('Product not found');
     if (dto.slug && dto.slug !== p.slug) {
@@ -366,15 +400,28 @@ export class ProductsService {
     delete data.attributes;
     delete data.categoryIds;
 
-    if (p.type === 'variable') {
+    if (p.type !== 'variable') {
+      if (dto.manageStock !== undefined && dto.manageStock !== p.manageStock) {
+        data.manageStock = dto.manageStock;
+        data.stock = dto.manageStock ? (dto.stock ?? 0) : 0;
+      } else {
+        delete data.stock;
+        delete data.manageStock;
+      }
+    } else {
       delete data.stock;
       delete data.manageStock;
     }
 
     if (dto.categoryIds) {
-      await this.prisma.productCategory.deleteMany({ where: { productId: id } });
+      await this.prisma.productCategory.deleteMany({
+        where: { productId: id },
+      });
       await this.prisma.productCategory.createMany({
-        data: dto.categoryIds.map((cid) => ({ productId: id, categoryId: cid })),
+        data: dto.categoryIds.map((cid) => ({
+          productId: id,
+          categoryId: cid,
+        })),
       });
     }
 
@@ -383,7 +430,11 @@ export class ProductsService {
       data,
       include: {
         category: true,
-        productCategories: { include: { category: { select: { id: true, name: true, slug: true } } } },
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
         variants: true,
       },
     });
@@ -403,7 +454,31 @@ export class ProductsService {
           where: { id },
           data: { images: synced as any },
         });
-        product.images = synced as any;
+        product.images = synced;
+      }
+    }
+
+    if (p.type !== 'variable' && dto.manageStock !== undefined && dto.manageStock !== p.manageStock) {
+      if (dto.manageStock) {
+        await this.prisma.inventoryLog.create({
+          data: {
+            productId: id,
+            quantity: dto.stock ?? 0,
+            type: 'stock_tracking_enabled',
+            reason: 'Stock tracking enabled',
+            performedBy,
+          },
+        });
+      } else if (p.stock > 0) {
+        await this.prisma.inventoryLog.create({
+          data: {
+            productId: id,
+            quantity: -p.stock,
+            type: 'stock_tracking_disabled',
+            reason: `Stock tracking disabled, removed ${p.stock} units`,
+            performedBy,
+          },
+        });
       }
     }
 
@@ -440,7 +515,7 @@ export class ProductsService {
   }
 
   async bulkUpdate(ids: string[], data: UpdateProductDto) {
-    const { variants, attributes, ...clean } = data as any;
+    const { variants, attributes, stock, manageStock, ...clean } = data as any;
     const results = { success: 0, failed: 0, errors: [] as string[] };
     for (const id of ids) {
       try {
@@ -514,22 +589,36 @@ export class ProductsService {
     );
   }
 
-  async updateVariant(productId: string, variantId: string, dto: UpdateVariantDto) {
-    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+  async updateVariant(
+    productId: string,
+    variantId: string,
+    dto: UpdateVariantDto,
+  ) {
+    const variant = await this.prisma.productVariant.findUnique({
+      where: { id: variantId },
+    });
     if (!variant || variant.productId !== productId) {
       throw new NotFoundException('Variant not found');
     }
-    const data: any = {}
+    if (dto.stock !== undefined) {
+      throw new BadRequestException(
+        'Variant stock cannot be edited directly. Use Inventory > Adjust Stock to change stock levels.',
+      );
+    }
+    const data: any = {};
     if (dto.sku !== undefined) data.sku = dto.sku;
     if (dto.price !== undefined) data.price = dto.price;
-    if (dto.stock !== undefined) data.stock = dto.stock;
     if (dto.image !== undefined) data.image = dto.image;
     const updated = await this.prisma.productVariant.update({
       where: { id: variantId },
       data,
     });
     if (dto.image !== undefined) {
-      await this.media.syncEntityImages('variant', variantId, dto.image ? [dto.image] : []);
+      await this.media.syncEntityImages(
+        'variant',
+        variantId,
+        dto.image ? [dto.image] : [],
+      );
     }
     return updated;
   }

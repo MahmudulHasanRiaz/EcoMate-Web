@@ -234,7 +234,10 @@ describe('ProductsService', () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);
 
-      const cursor = Buffer.from('2025-01-02T00:00:00.000Z|p-2', 'utf8').toString('base64url');
+      const cursor = Buffer.from(
+        '2025-01-02T00:00:00.000Z|p-2',
+        'utf8',
+      ).toString('base64url');
       await service.findAllCursor({ perPage: 5, cursor });
 
       expect(prisma.product.findMany).toHaveBeenCalledWith(
@@ -256,7 +259,10 @@ describe('ProductsService', () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);
 
-      const result = await service.findAllCursor({ perPage: 5, cursor: 'not-a-real-cursor' });
+      const result = await service.findAllCursor({
+        perPage: 5,
+        cursor: 'not-a-real-cursor',
+      });
 
       expect(result.data).toHaveLength(0);
       const callArg = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
@@ -322,7 +328,11 @@ describe('ProductsService', () => {
         where: { slug: 'new-product' },
       });
       expect(prisma.product.create).toHaveBeenCalled();
-      expect(media.syncEntityImages).toHaveBeenCalledWith('product', 'prod-1', createDto.images);
+      expect(media.syncEntityImages).toHaveBeenCalledWith(
+        'product',
+        'prod-1',
+        createDto.images,
+      );
       expect(result).toEqual(mockProduct);
     });
 
@@ -354,7 +364,9 @@ describe('ProductsService', () => {
       (prisma.product.create as jest.Mock).mockResolvedValue(
         productWithVariant,
       );
-      (media.syncEntityImages as jest.Mock).mockResolvedValue(dtoWithVariants.images);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue(
+        dtoWithVariants.images,
+      );
 
       const result = await service.create(dtoWithVariants);
 
@@ -382,12 +394,22 @@ describe('ProductsService', () => {
         ...mockProduct,
         variants: [mockVariant],
       });
-      (media.syncEntityImages as jest.Mock).mockResolvedValue(dtoWithVariants.images);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue(
+        dtoWithVariants.images,
+      );
 
       await service.create(dtoWithVariants);
 
-      expect(media.syncEntityImages).toHaveBeenCalledWith('product', 'prod-1', dtoWithVariants.images);
-      expect(media.syncEntityImages).toHaveBeenCalledWith('variant', 'variant-1', ['variant-image.jpg']);
+      expect(media.syncEntityImages).toHaveBeenCalledWith(
+        'product',
+        'prod-1',
+        dtoWithVariants.images,
+      );
+      expect(media.syncEntityImages).toHaveBeenCalledWith(
+        'variant',
+        'variant-1',
+        ['variant-image.jpg'],
+      );
     });
   });
 
@@ -444,26 +466,32 @@ describe('ProductsService', () => {
     });
 
     it('should sync images via MediaService when images are provided', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(mockProduct);
+      (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        mockProduct,
+      );
       (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
-      (media.syncEntityImages as jest.Mock).mockResolvedValue(['https://cdn.example.com/new-image.jpg']);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([
+        'https://cdn.example.com/new-image.jpg',
+      ]);
 
       await service.update('prod-1', {
         images: ['https://cdn.example.com/new-image.jpg'],
       });
 
-      expect(media.syncEntityImages).toHaveBeenCalledWith(
-        'product',
-        'prod-1',
-        ['https://cdn.example.com/new-image.jpg'],
-      );
+      expect(media.syncEntityImages).toHaveBeenCalledWith('product', 'prod-1', [
+        'https://cdn.example.com/new-image.jpg',
+      ]);
     });
   });
 
   describe('remove', () => {
     it('should delete a product successfully and detach all media', async () => {
-      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockProduct);
-      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([{ id: 'variant-1' }]);
+      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(
+        mockProduct,
+      );
+      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+        { id: 'variant-1' },
+      ]);
       (media.detachAll as jest.Mock).mockResolvedValue(undefined);
       (prisma.product.delete as jest.Mock).mockResolvedValue(mockProduct);
 
@@ -492,17 +520,29 @@ describe('ProductsService', () => {
 
   describe('updateVariant', () => {
     it('should update variant fields and sync its image attachment', async () => {
-      (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(mockVariant);
-      (prisma.productVariant.update as jest.Mock).mockResolvedValue({ ...mockVariant, price: 1500 });
+      (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+        mockVariant,
+      );
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+        ...mockVariant,
+        price: 1500,
+      });
       (media.syncEntityImages as jest.Mock).mockResolvedValue(['new.jpg']);
 
-      const result = await service.updateVariant('prod-1', 'variant-1', { price: 1500, image: 'new.jpg' });
+      const result = await service.updateVariant('prod-1', 'variant-1', {
+        price: 1500,
+        image: 'new.jpg',
+      });
 
       expect(prisma.productVariant.update).toHaveBeenCalledWith({
         where: { id: 'variant-1' },
         data: { price: 1500, image: 'new.jpg' },
       });
-      expect(media.syncEntityImages).toHaveBeenCalledWith('variant', 'variant-1', ['new.jpg']);
+      expect(media.syncEntityImages).toHaveBeenCalledWith(
+        'variant',
+        'variant-1',
+        ['new.jpg'],
+      );
       expect(result.price).toBe(1500);
     });
 

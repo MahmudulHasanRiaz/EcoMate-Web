@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, IsInt, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsInt,
+  MinLength,
+} from 'class-validator';
 
 export class CreateCmsPageDto {
   @IsString()

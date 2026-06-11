@@ -58,7 +58,8 @@ export class OrdersController {
   }
 
   @Public()
-  @Post() create(@Body() dto: CreateOrderDto) {
+  @Post()
+  create(@Body() dto: CreateOrderDto) {
     return this.svc.create(dto);
   }
 
@@ -75,7 +76,8 @@ export class OrdersController {
   }
 
   @Public()
-  @Get(':id') findOne(
+  @Get(':id')
+  findOne(
     @Param('id') id: string,
     @CurrentUser() user: { userId: string } | null | undefined,
     @Query('t') token?: string,
@@ -85,10 +87,7 @@ export class OrdersController {
 
   @Public()
   @Post(':id/cancel')
-  cancelByCustomer(
-    @Param('id') id: string,
-    @Body() dto: CancelOrderDto,
-  ) {
+  cancelByCustomer(@Param('id') id: string, @Body() dto: CancelOrderDto) {
     return this.svc.cancelByCustomer(id, dto.token);
   }
 
@@ -99,10 +98,8 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @Put(':id') updateOrder(
-    @Param('id') id: string,
-    @Body() dto: UpdateOrderDto,
-  ) {
+  @Put(':id')
+  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
     return this.svc.updateOrder(id, dto);
   }
 
@@ -111,27 +108,24 @@ export class OrdersController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.updateStatus(id, dto, user.userId);
+    return this.svc.updateStatus(id, dto, user.userId, user.email);
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @Post(':id/items') addItem(
-    @Param('id') id: string,
-    @Body() dto: UpdateOrderItemDto,
-  ) {
+  @Post(':id/items')
+  addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) {
     return this.svc.addItem(id, dto);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Delete(':id/items/:itemId') removeItem(
-    @Param('id') id: string,
-    @Param('itemId') itemId: string,
-  ) {
+  @Delete(':id/items/:itemId')
+  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
     return this.svc.removeItem(id, itemId);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post(':id/note') addNote(
+  @Post(':id/note')
+  addNote(
     @Param('id') id: string,
     @Body() dto: { note: string; visibility: 'public' | 'private' },
     @CurrentUser() user: { userId: string },
@@ -140,31 +134,34 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk') async bulkOrders(@Body() dto: { ids: string[] }) {
+  @Post('bulk')
+  async bulkOrders(@Body() dto: { ids: string[] }) {
     const orders = await this.svc.bulkOrders(dto.ids || []);
     return { orders };
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk/status') async bulkStatus(
-    @Body() dto: { ids: string[]; statusId: string },
-  ) {
+  @Post('bulk/status')
+  async bulkStatus(@Body() dto: { ids: string[]; statusId: string }) {
     return this.svc.bulkStatusChange(dto.ids, dto.statusId);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk/dispatch') async bulkDispatch(
+  @Post('bulk/dispatch')
+  async bulkDispatch(
     @Body() dto: { ids: string[]; courier: string },
     @CurrentUser() user: { userId: string },
   ) {
     return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk/assign') async bulkAssign(
+  @Post('bulk/assign')
+  async bulkAssign(
     @Body() dto: { ids: string[]; assignedToId: string | null },
   ) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Get('staff/list') async staffList() {
+  @Get('staff/list')
+  async staffList() {
     return this.svc.getStaff();
   }
 

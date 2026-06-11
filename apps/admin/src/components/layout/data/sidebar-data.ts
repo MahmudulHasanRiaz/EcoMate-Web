@@ -30,7 +30,14 @@ export const sidebarData: SidebarData = {
           { title: 'Size Charts', url: '/op/size-charts', icon: Ruler },
         ],
       },
-      { title: 'Inventory', url: '/op/inventory', icon: AlertTriangle },
+      {
+        title: 'Inventory',
+        icon: AlertTriangle,
+        items: [
+          { title: 'All Inventory', url: '/op/inventory' },
+          { title: 'Stock Overview', url: '/op/inventory/overview' },
+        ],
+      },
     ]},
     { title: 'Sales', panel: 'operational', items: [
       {

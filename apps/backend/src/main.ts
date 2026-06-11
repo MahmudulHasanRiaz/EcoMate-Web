@@ -7,7 +7,9 @@ import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
-    throw new Error('JWT_SECRET and JWT_REFRESH_SECRET environment variables are required');
+    throw new Error(
+      'JWT_SECRET and JWT_REFRESH_SECRET environment variables are required',
+    );
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

@@ -28,8 +28,10 @@ export class CourierManagerService {
 
   private async getBaseUrl(courier: string): Promise<string> {
     const creds = await this.getCreds(courier);
-    const mode = (creds?.mode || 'production') as string;
-    return BASE_URLS[courier]?.[mode] || BASE_URLS[courier]?.['production'] || '';
+    const mode = creds?.mode || 'production';
+    return (
+      BASE_URLS[courier]?.[mode] || BASE_URLS[courier]?.['production'] || ''
+    );
   }
 
   private async getCreds(courier: string) {
@@ -41,7 +43,7 @@ export class CourierManagerService {
     return c;
   }
 
-private normalizePhone(raw?: string | null): string {
+  private normalizePhone(raw?: string | null): string {
     const digits = (raw || '').replace(/\D/g, '');
     if (digits.length <= 11) {
       if (digits.length === 10) return `0${digits}`;
@@ -104,9 +106,11 @@ private normalizePhone(raw?: string | null): string {
     order: any,
   ): Promise<{ consignmentId?: string; trackingCode?: string }> {
     const creds = await this.getCreds(courier);
-    const mode = (creds?.mode || 'production') as string;
-    const base = BASE_URLS[courier]?.[mode] || BASE_URLS[courier]?.['production'] || '';
-    if (!base) throw new BadRequestException(`No base URL for ${courier} (${mode})`);
+    const mode = creds?.mode || 'production';
+    const base =
+      BASE_URLS[courier]?.[mode] || BASE_URLS[courier]?.['production'] || '';
+    if (!base)
+      throw new BadRequestException(`No base URL for ${courier} (${mode})`);
 
     switch (courier) {
       case 'steadfast':
@@ -172,45 +176,45 @@ private normalizePhone(raw?: string | null): string {
             'Api-Key': apiKey,
             'Secret-Key': secretKey,
           },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as Record<string, unknown>;
-
-      const consignment = data['consignment'] as
-        | Record<string, unknown>
-        | undefined;
-      const statusCode = data['status'];
-
-      if (
-        statusCode === 200 ||
-        (consignment && consignment['consignment_id'])
-      ) {
-        const consignmentId = String(
-          consignment?.['consignment_id'] || data['consignment_id'] || '',
-        );
-        const trackingCode = String(
-          consignment?.['tracking_code'] || data['tracking_code'] || '',
-        );
-        await this.prisma.order.update({
-          where: { id: order.id },
-          data: {
-            courierService: 'steadfast',
-            courierConsignmentId: consignmentId,
-            courierTrackingCode: trackingCode,
-          },
+          body: JSON.stringify(payload),
         });
-        await this.logDispatch({
-          orderId: order.id,
-          courier: 'steadfast',
-          status: 'success',
-          consignmentId,
-          trackingCode,
-          requestPayload: payload,
-          responsePayload: data,
-        });
-        return { consignmentId, trackingCode };
-      }
-      const msg = String(
+        const data = (await res.json()) as Record<string, unknown>;
+
+        const consignment = data['consignment'] as
+          | Record<string, unknown>
+          | undefined;
+        const statusCode = data['status'];
+
+        if (
+          statusCode === 200 ||
+          (consignment && consignment['consignment_id'])
+        ) {
+          const consignmentId = String(
+            consignment?.['consignment_id'] || data['consignment_id'] || '',
+          );
+          const trackingCode = String(
+            consignment?.['tracking_code'] || data['tracking_code'] || '',
+          );
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: {
+              courierService: 'steadfast',
+              courierConsignmentId: consignmentId,
+              courierTrackingCode: trackingCode,
+            },
+          });
+          await this.logDispatch({
+            orderId: order.id,
+            courier: 'steadfast',
+            status: 'success',
+            consignmentId,
+            trackingCode,
+            requestPayload: payload,
+            responsePayload: data,
+          });
+          return { consignmentId, trackingCode };
+        }
+        const msg = String(
           data['message'] || data['error'] || 'Steadfast dispatch failed',
         );
         await this.logDispatch({
@@ -228,7 +232,7 @@ private normalizePhone(raw?: string | null): string {
           `Steadfast dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
         );
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
     }
@@ -307,7 +311,13 @@ private normalizePhone(raw?: string | null): string {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const token = await this.getPathaoToken(base, clientId, clientSecret, username, password);
+        const token = await this.getPathaoToken(
+          base,
+          clientId,
+          clientSecret,
+          username,
+          password,
+        );
 
         const res = await fetch(`${base}/aladdin/api/v1/orders`, {
           method: 'POST',
@@ -354,7 +364,7 @@ private normalizePhone(raw?: string | null): string {
           `Pathao dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
         );
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
     }
@@ -399,7 +409,8 @@ private normalizePhone(raw?: string | null): string {
 
   private async dispatchRedx(creds: any, base: string, order: any) {
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+    if (!apiToken)
+      throw new BadRequestException('RedX API token not configured');
 
     const recipient = order.customer;
     const phone = this.normalizePhone(recipient.phoneNumber);
@@ -407,10 +418,13 @@ private normalizePhone(raw?: string | null): string {
     const address = order.shippingAddress as Record<string, unknown> | null;
     const name = `${recipient.firstName} ${recipient.lastName}`.trim();
 
-    const district = address?.district as string || 'Dhaka';
+    const district = (address?.district as string) || 'Dhaka';
     const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
 
-    const itemDescription = order.items?.map((item: any) => item.product?.name || 'Product').join(', ') || 'Product';
+    const itemDescription =
+      order.items
+        ?.map((item: any) => item.product?.name || 'Product')
+        .join(', ') || 'Product';
 
     const payload: Record<string, unknown> = {
       merchant_invoice_id: order.displayId,
@@ -439,9 +453,9 @@ private normalizePhone(raw?: string | null): string {
       try {
         const res = await fetch(`${base}/parcel`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'API-ACCESS-TOKEN': `Bearer ${apiToken}` 
+          headers: {
+            'Content-Type': 'application/json',
+            'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
           },
           body: JSON.stringify(payload),
         });
@@ -457,13 +471,13 @@ private normalizePhone(raw?: string | null): string {
           });
           await this.logDispatch({
             orderId: order.id,
-          courier: 'redx',
-          status: 'success',
-          trackingCode,
-          requestPayload: payload,
-          responsePayload: data,
-        });
-        return { trackingCode };
+            courier: 'redx',
+            status: 'success',
+            trackingCode,
+            requestPayload: payload,
+            responsePayload: data,
+          });
+          return { trackingCode };
         }
         const msg = String(data['message'] || 'RedX dispatch failed');
         await this.logDispatch({
@@ -481,7 +495,7 @@ private normalizePhone(raw?: string | null): string {
           `RedX dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
         );
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
     }
@@ -786,12 +800,16 @@ private normalizePhone(raw?: string | null): string {
   async getRedxParcelDetails(trackingId: string) {
     const creds = await this.getCreds('redx');
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+    if (!apiToken)
+      throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
     const res = await fetch(`${base}/parcel/info/${trackingId}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
+      },
     });
     return res.json();
   }
@@ -799,12 +817,16 @@ private normalizePhone(raw?: string | null): string {
   async trackRedxParcel(trackingId: string) {
     const creds = await this.getCreds('redx');
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+    if (!apiToken)
+      throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
     const res = await fetch(`${base}/parcel/track/${trackingId}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
+      },
     });
     return res.json();
   }
@@ -812,12 +834,16 @@ private normalizePhone(raw?: string | null): string {
   async cancelRedxParcel(trackingId: string, reason: string) {
     const creds = await this.getCreds('redx');
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiToken) throw new BadRequestException('RedX API token not configured');
+    if (!apiToken)
+      throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
     const res = await fetch(`${base}/parcels`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'API-ACCESS-TOKEN': `Bearer ${apiToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
+      },
       body: JSON.stringify({
         entity_type: 'parcel-tracking-id',
         entity_id: trackingId,
@@ -832,32 +858,51 @@ private normalizePhone(raw?: string | null): string {
   }
 
   async getCities() {
-    const pathao = await this.prisma.courierCredentials.findUnique({ where: { courier: 'pathao' } });
-    const carrybee = await this.prisma.courierCredentials.findUnique({ where: { courier: 'carrybee' } });
+    const pathao = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'pathao' },
+    });
+    const carrybee = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'carrybee' },
+    });
 
     if (pathao?.enabled) {
       return this.getPathaoCities(pathao);
     } else if (carrybee?.enabled) {
       return this.getCarrybeeCities(carrybee);
     }
-    throw new BadRequestException('No supported courier (Pathao/Carrybee) is enabled');
+    throw new BadRequestException(
+      'No supported courier (Pathao/Carrybee) is enabled',
+    );
   }
 
   async getZones(cityId: string) {
-    const pathao = await this.prisma.courierCredentials.findUnique({ where: { courier: 'pathao' } });
-    const carrybee = await this.prisma.courierCredentials.findUnique({ where: { courier: 'carrybee' } });
+    const pathao = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'pathao' },
+    });
+    const carrybee = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'carrybee' },
+    });
 
     if (pathao?.enabled) {
       return this.getPathaoZones(pathao, cityId);
     } else if (carrybee?.enabled) {
       return this.getCarrybeeZones(carrybee, cityId);
     }
-    throw new BadRequestException('No supported courier (Pathao/Carrybee) is enabled');
+    throw new BadRequestException(
+      'No supported courier (Pathao/Carrybee) is enabled',
+    );
   }
 
   private async getPathaoCities(creds: any) {
-    const base = BASE_URLS['pathao']?.[creds.mode] || BASE_URLS['pathao']?.['production'];
-    const token = await this.getPathaoToken(base, creds.clientId, creds.clientSecret, creds.username, creds.password);
+    const base =
+      BASE_URLS['pathao']?.[creds.mode] || BASE_URLS['pathao']?.['production'];
+    const token = await this.getPathaoToken(
+      base,
+      creds.clientId,
+      creds.clientSecret,
+      creds.username,
+      creds.password,
+    );
     const res = await fetch(`${base}/aladdin/api/v1/city-list`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -870,11 +915,21 @@ private normalizePhone(raw?: string | null): string {
   }
 
   private async getPathaoZones(creds: any, cityId: string) {
-    const base = BASE_URLS['pathao']?.[creds.mode] || BASE_URLS['pathao']?.['production'];
-    const token = await this.getPathaoToken(base, creds.clientId, creds.clientSecret, creds.username, creds.password);
-    const res = await fetch(`${base}/aladdin/api/v1/cities/${cityId}/zone-list`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const base =
+      BASE_URLS['pathao']?.[creds.mode] || BASE_URLS['pathao']?.['production'];
+    const token = await this.getPathaoToken(
+      base,
+      creds.clientId,
+      creds.clientSecret,
+      creds.username,
+      creds.password,
+    );
+    const res = await fetch(
+      `${base}/aladdin/api/v1/cities/${cityId}/zone-list`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
     const parsed = await res.json();
     const list = parsed?.data?.data || parsed?.data || [];
     return list.map((item: any) => ({
@@ -884,7 +939,9 @@ private normalizePhone(raw?: string | null): string {
   }
 
   private async getCarrybeeCities(creds: any) {
-    const base = BASE_URLS['carrybee']?.[creds.mode] || BASE_URLS['carrybee']?.['production'];
+    const base =
+      BASE_URLS['carrybee']?.[creds.mode] ||
+      BASE_URLS['carrybee']?.['production'];
     const res = await fetch(`${base}/api/v2/cities`, {
       headers: {
         'Client-ID': creds.clientId,
@@ -901,7 +958,9 @@ private normalizePhone(raw?: string | null): string {
   }
 
   private async getCarrybeeZones(creds: any, cityId: string) {
-    const base = BASE_URLS['carrybee']?.[creds.mode] || BASE_URLS['carrybee']?.['production'];
+    const base =
+      BASE_URLS['carrybee']?.[creds.mode] ||
+      BASE_URLS['carrybee']?.['production'];
     const res = await fetch(`${base}/api/v2/cities/${cityId}/zones`, {
       headers: {
         'Client-ID': creds.clientId,

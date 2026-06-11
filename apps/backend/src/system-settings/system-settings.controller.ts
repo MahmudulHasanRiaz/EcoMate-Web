@@ -1,4 +1,11 @@
-import { Controller, Get, Post, Body, Param, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
@@ -35,7 +42,9 @@ const DEFAULT_CATALOG_IMAGE_RATIO: CatalogImageRatio = {
   scope: 'all',
 };
 
-function parseCatalogImageRatio(raw: string | undefined | null): CatalogImageRatio {
+function parseCatalogImageRatio(
+  raw: string | undefined | null,
+): CatalogImageRatio {
   if (!raw) return { ...DEFAULT_CATALOG_IMAGE_RATIO };
   let parsed: unknown;
   try {
@@ -43,15 +52,22 @@ function parseCatalogImageRatio(raw: string | undefined | null): CatalogImageRat
   } catch {
     return { ...DEFAULT_CATALOG_IMAGE_RATIO };
   }
-  if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_CATALOG_IMAGE_RATIO };
+  if (!parsed || typeof parsed !== 'object')
+    return { ...DEFAULT_CATALOG_IMAGE_RATIO };
 
   const obj = parsed as Record<string, unknown>;
   const scope: CatalogImageRatioScope =
-    obj['scope'] === 'product' || obj['scope'] === 'combo' || obj['scope'] === 'all'
-      ? (obj['scope'] as CatalogImageRatioScope)
+    obj['scope'] === 'product' ||
+    obj['scope'] === 'combo' ||
+    obj['scope'] === 'all'
+      ? obj['scope']
       : 'all';
 
-  if (obj['mode'] === 'custom' && obj['custom'] && typeof obj['custom'] === 'object') {
+  if (
+    obj['mode'] === 'custom' &&
+    obj['custom'] &&
+    typeof obj['custom'] === 'object'
+  ) {
     const custom = obj['custom'] as Record<string, unknown>;
     const w = Number(custom['width']);
     const h = Number(custom['height']);
@@ -74,7 +90,7 @@ function parseCatalogImageRatio(raw: string | undefined | null): CatalogImageRat
       obj['preset'] === '4-3' ||
       obj['preset'] === '3-4' ||
       obj['preset'] === '16-9'
-        ? (obj['preset'] as CatalogImageRatioPreset)
+        ? obj['preset']
         : 'square';
     return { mode: 'preset', preset, scope };
   }
@@ -94,13 +110,17 @@ function validateCatalogImageRatio(raw: string): CatalogImageRatio {
   }
   const obj = parsed as Record<string, unknown>;
   const scope: CatalogImageRatioScope =
-    obj['scope'] === 'product' || obj['scope'] === 'combo' || obj['scope'] === 'all'
-      ? (obj['scope'] as CatalogImageRatioScope)
+    obj['scope'] === 'product' ||
+    obj['scope'] === 'combo' ||
+    obj['scope'] === 'all'
+      ? obj['scope']
       : 'all';
 
   if (obj['mode'] === 'custom') {
     if (!obj['custom'] || typeof obj['custom'] !== 'object') {
-      throw new BadRequestException('catalogImageRatio custom requires width and height');
+      throw new BadRequestException(
+        'catalogImageRatio custom requires width and height',
+      );
     }
     const custom = obj['custom'] as Record<string, unknown>;
     const w = Number(custom['width']);
@@ -113,7 +133,9 @@ function validateCatalogImageRatio(raw: string): CatalogImageRatio {
       w > 999 ||
       h > 999
     ) {
-      throw new BadRequestException('catalogImageRatio custom width and height must be integers between 1 and 999');
+      throw new BadRequestException(
+        'catalogImageRatio custom width and height must be integers between 1 and 999',
+      );
     }
     return { mode: 'custom', custom: { width: w, height: h }, scope };
   }
@@ -124,12 +146,14 @@ function validateCatalogImageRatio(raw: string): CatalogImageRatio {
       obj['preset'] === '4-3' ||
       obj['preset'] === '3-4' ||
       obj['preset'] === '16-9'
-        ? (obj['preset'] as CatalogImageRatioPreset)
+        ? obj['preset']
         : 'square';
     return { mode: 'preset', preset, scope };
   }
 
-  throw new BadRequestException('catalogImageRatio mode must be "preset" or "custom"');
+  throw new BadRequestException(
+    'catalogImageRatio mode must be "preset" or "custom"',
+  );
 }
 
 @Controller('system-settings')
@@ -190,11 +214,19 @@ export class SystemSettingsController {
     for (const s of settings) map[s.key] = s.value;
 
     const parseJson = <T>(val: string, fallback: T): T => {
-      try { return JSON.parse(val); } catch { return fallback; }
+      try {
+        return JSON.parse(val);
+      } catch {
+        return fallback;
+      }
     };
 
     let heroSlides: HeroSlide[] = [];
-    try { heroSlides = JSON.parse(map['hero_slides'] || '[]'); } catch { heroSlides = []; }
+    try {
+      heroSlides = JSON.parse(map['hero_slides'] || '[]');
+    } catch {
+      heroSlides = [];
+    }
 
     const systems = parseJson<StoreSystem[]>(map['store_systems'] || '[]', []);
 
@@ -202,24 +234,45 @@ export class SystemSettingsController {
     const shippingMode = map['shipping_mode'] || 'auto_district';
 
     // Get active shipping options
-    let shippingOptions: { id: string; name: string; amount: number; sortOrder: number }[] = [];
+    let shippingOptions: {
+      id: string;
+      name: string;
+      amount: number;
+      sortOrder: number;
+    }[] = [];
     try {
       const opts = await this.prisma.shippingOption.findMany({
         where: { isActive: true },
         orderBy: { sortOrder: 'asc' },
         select: { id: true, name: true, amount: true, sortOrder: true },
       });
-      shippingOptions = opts.map(o => ({ ...o, amount: Number(o.amount) }));
+      shippingOptions = opts.map((o) => ({ ...o, amount: Number(o.amount) }));
     } catch {}
 
     // Get active zone groups
-    let shippingZones: { id: string; type: string; amount: number | null; districts: string[]; label: string | null }[] = [];
+    let shippingZones: {
+      id: string;
+      type: string;
+      amount: number | null;
+      districts: string[];
+      label: string | null;
+    }[] = [];
     try {
       const zones = await this.prisma.shippingZoneGroup.findMany({
         where: { isActive: true },
-        select: { id: true, type: true, amount: true, districts: true, label: true },
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          districts: true,
+          label: true,
+        },
       });
-      shippingZones = zones.map(z => ({ ...z, amount: z.amount ? Number(z.amount) : null, districts: z.districts as string[] }));
+      shippingZones = zones.map((z) => ({
+        ...z,
+        amount: z.amount ? Number(z.amount) : null,
+        districts: z.districts as string[],
+      }));
     } catch {}
 
     return {
@@ -281,22 +334,39 @@ export class SystemSettingsController {
         info: map['payment_info'] || '',
       },
       meta: {
-        pixelEnabled: (map['tracking_meta_enabled'] || map['meta_pixel_enabled']) === 'true',
-        pixelId: map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
+        pixelEnabled:
+          (map['tracking_meta_enabled'] || map['meta_pixel_enabled']) ===
+          'true',
+        pixelId:
+          map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
       },
       tiktok: {
-        pixelEnabled: (map['tracking_tiktok_enabled'] || map['tiktok_pixel_enabled']) === 'true',
-        pixelCode: map['tracking_tiktok_pixel_code'] || process.env.TIKTOK_PIXEL_CODE || '',
+        pixelEnabled:
+          (map['tracking_tiktok_enabled'] || map['tiktok_pixel_enabled']) ===
+          'true',
+        pixelCode:
+          map['tracking_tiktok_pixel_code'] ||
+          process.env.TIKTOK_PIXEL_CODE ||
+          '',
       },
       navigation: {
-        items: parseJson<{ name: string; href: string }[]>(map['navigation_items'] || '[]', []),
+        items: parseJson<{ name: string; href: string }[]>(
+          map['navigation_items'] || '[]',
+          [],
+        ),
       },
       faq: {
-        items: parseJson<{ question: string; answer: string }[]>(map['faq_items'] || '[]', []),
+        items: parseJson<{ question: string; answer: string }[]>(
+          map['faq_items'] || '[]',
+          [],
+        ),
       },
       hours: {
         label: map['hours_label'] || 'Sat-Thu 10AM-10PM, Fri 3PM-10PM',
-        details: parseJson<{ day: string; time: string }[]>(map['hours_details'] || '[]', []),
+        details: parseJson<{ day: string; time: string }[]>(
+          map['hours_details'] || '[]',
+          [],
+        ),
       },
       company: {
         name: map['company_name'] || '',
@@ -310,12 +380,18 @@ export class SystemSettingsController {
         thanaEnabled: map['checkout_thana_enabled'] !== 'false',
         districtRequired: map['checkout_district_required'] === 'true',
         thanaRequired: map['checkout_thana_required'] === 'true',
-        paymentModes: parseJson<string[]>(map['checkout_payment_modes'] || '["cod","full","partial"]', ['cod', 'full', 'partial']),
+        paymentModes: parseJson<string[]>(
+          map['checkout_payment_modes'] || '["cod","full","partial"]',
+          ['cod', 'full', 'partial'],
+        ),
       },
       shippingMode,
       shippingOptions,
       shippingZones,
-      districtCharges: parseJson<Record<string, number>>(map['district_charges'] || '{}', {}),
+      districtCharges: parseJson<Record<string, number>>(
+        map['district_charges'] || '{}',
+        {},
+      ),
       catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
       features: {
         sizeChart: map['size_chart_enabled'] === 'true',

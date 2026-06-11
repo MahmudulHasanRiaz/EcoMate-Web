@@ -17,6 +17,7 @@ import {
 } from './dto/product.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -41,7 +42,9 @@ export class ProductsController {
     @Query('order') order?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const effectiveCategoryId = categoryId || (category ? await this.svc.resolveCategorySlug(category) : undefined);
+    const effectiveCategoryId =
+      categoryId ||
+      (category ? await this.svc.resolveCategorySlug(category) : undefined);
     if (cursor) {
       return this.svc.findAllCursor({
         cursor,
@@ -53,7 +56,8 @@ export class ProductsController {
         minPrice: minPrice ? parseFloat(minPrice) : undefined,
         maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         isActive: isActive !== undefined ? isActive === 'true' : undefined,
-        isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
+        isFeatured:
+          isFeatured !== undefined ? isFeatured === 'true' : undefined,
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
       });
     }
@@ -83,27 +87,33 @@ export class ProductsController {
   }
 
   @Public()
-  @Get(':id') findOne(@Param('id') id: string) {
+  @Get(':id')
+  findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk/delete') bulkRemove(@Body() body: { ids: string[] }) {
+  @Post('bulk/delete')
+  bulkRemove(@Body() body: { ids: string[] }) {
     return this.svc.bulkRemove(body.ids);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post('bulk/update') bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
+  @Post('bulk/update')
+  bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
     return this.svc.bulkUpdate(body.ids, body.data);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Post() create(@Body() dto: CreateProductDto) {
+  @Post()
+  create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Put(':id') update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
-    return this.svc.update(id, dto);
+  @Put(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() user: { email: string }) {
+    return this.svc.update(id, dto, user.email);
   }
   @Roles('superadmin', 'admin', 'manager')
-  @Delete(':id') remove(@Param('id') id: string) {
+  @Delete(':id')
+  remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
   @Roles('superadmin', 'admin', 'manager')

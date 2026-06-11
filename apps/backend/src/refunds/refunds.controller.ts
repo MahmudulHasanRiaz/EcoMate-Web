@@ -41,8 +41,8 @@ export class RefundsController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateRefundStatusDto,
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.updateStatus(id, dto, user.userId);
+    return this.svc.updateStatus(id, dto, user.userId, user.email);
   }
 }

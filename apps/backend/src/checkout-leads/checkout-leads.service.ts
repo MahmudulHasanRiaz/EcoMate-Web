@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -40,25 +44,41 @@ export class CheckoutLeadsService {
         where,
         skip: (page - 1) * perPage,
         take: perPage,
-        orderBy: { [query.sort || 'lastSeenAt']: (query.order || 'desc') as 'asc' | 'desc' },
+        orderBy: {
+          [query.sort || 'lastSeenAt']: (query.order || 'desc') as
+            | 'asc'
+            | 'desc',
+        },
         include: {
           assignedTo: { select: { id: true, firstName: true, lastName: true } },
-          convertedBy: { select: { id: true, firstName: true, lastName: true } },
+          convertedBy: {
+            select: { id: true, firstName: true, lastName: true },
+          },
         },
       }),
       this.prisma.checkoutLead.count({ where }),
     ]);
 
-    const orderIds = data.map(l => l.convertedOrderId).filter(Boolean) as string[];
-    const orders = orderIds.length > 0
-      ? await this.prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, displayId: true } })
-      : [];
-    const orderMap = new Map(orders.map(o => [o.id, { id: o.id, displayId: o.displayId }]));
+    const orderIds = data
+      .map((l) => l.convertedOrderId)
+      .filter(Boolean) as string[];
+    const orders =
+      orderIds.length > 0
+        ? await this.prisma.order.findMany({
+            where: { id: { in: orderIds } },
+            select: { id: true, displayId: true },
+          })
+        : [];
+    const orderMap = new Map(
+      orders.map((o) => [o.id, { id: o.id, displayId: o.displayId }]),
+    );
 
     return {
-      data: data.map(l => ({
+      data: data.map((l) => ({
         ...l,
-        convertedOrder: l.convertedOrderId ? orderMap.get(l.convertedOrderId) || null : null,
+        convertedOrder: l.convertedOrderId
+          ? orderMap.get(l.convertedOrderId) || null
+          : null,
       })),
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
     };
@@ -158,13 +178,17 @@ export class CheckoutLeadsService {
     return this.prisma.checkoutLead.update({ where: { id }, data });
   }
 
-  async convertToOrder(id: string, userId: string, overrides?: ConvertOrderDto) {
+  async convertToOrder(
+    id: string,
+    userId: string,
+    overrides?: ConvertOrderDto,
+  ) {
     const lead = await this.findOne(id);
     if (lead.status !== 'PENDING') {
       throw new BadRequestException('Only PENDING leads can be converted');
     }
 
-    const items = (overrides?.items || (lead.items as any[]) || []);
+    const items = overrides?.items || (lead.items as any[]) || [];
     if (items.length === 0) {
       throw new BadRequestException('Lead has no items to convert');
     }
@@ -179,7 +203,8 @@ export class CheckoutLeadsService {
     const initialStatus = await this.prisma.orderStatus.findFirst({
       where: { isInitial: true },
     });
-    if (!initialStatus) throw new BadRequestException('No initial order status');
+    if (!initialStatus)
+      throw new BadRequestException('No initial order status');
 
     const displayId = await this.generateOrderDisplayId();
 
@@ -187,12 +212,17 @@ export class CheckoutLeadsService {
       where: { id: userId },
       select: { firstName: true, lastName: true },
     });
-    const userName = userData ? `${userData.firstName} ${userData.lastName}`.trim() : userId;
+    const userName = userData
+      ? `${userData.firstName} ${userData.lastName}`.trim()
+      : userId;
 
     const guestName = overrides?.guestName ?? lead.name;
     let resolvedCustomerId: string | null = null;
     if (guestPhone && guestName) {
-      const customer = await this.customersService.findOrCreateCustomer(guestPhone, guestName);
+      const customer = await this.customersService.findOrCreateCustomer(
+        guestPhone,
+        guestName,
+      );
       resolvedCustomerId = customer.id;
     }
 
@@ -321,7 +351,13 @@ export class CheckoutLeadsService {
       this.prisma.checkoutLead.count({ where: { status: 'NOT_CONVERTED' } }),
       this.prisma.checkoutLead.count({ where: { status: 'DELETED' } }),
     ]);
-    return { pending, converted, notConverted, deleted, total: pending + converted + notConverted + deleted };
+    return {
+      pending,
+      converted,
+      notConverted,
+      deleted,
+      total: pending + converted + notConverted + deleted,
+    };
   }
 
   private async leadDisplayId(): Promise<string> {

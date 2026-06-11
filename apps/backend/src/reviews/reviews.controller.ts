@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Query, Patch, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Patch,
+  Delete,
+} from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ReviewsService } from './reviews.service';
@@ -15,7 +24,15 @@ export class ReviewsController {
 
   @Public()
   @Post()
-  async create(@Body() dto: { productId: string; customerName: string; rating: number; text?: string }) {
+  async create(
+    @Body()
+    dto: {
+      productId: string;
+      customerName: string;
+      rating: number;
+      text?: string;
+    },
+  ) {
     return this.svc.create(dto);
   }
 

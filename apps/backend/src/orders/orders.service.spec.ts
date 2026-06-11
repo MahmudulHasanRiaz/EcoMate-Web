@@ -195,7 +195,9 @@ describe('OrdersService', () => {
     it('should return an order by id when a matching token is provided', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
-      const result = await service.findOne('order-id-1', { token: 'mock-view-token' });
+      const result = await service.findOne('order-id-1', {
+        token: 'mock-view-token',
+      });
 
       expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-id-1' } }),
@@ -242,7 +244,11 @@ describe('OrdersService', () => {
     it('should create an order successfully', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
-          cb({ orderCounter: { upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }) } }),
+          cb({
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
       );
       (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
         mockInitialStatus,
@@ -269,7 +275,11 @@ describe('OrdersService', () => {
     it('should throw BadRequestException if no initial status configured', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
-          cb({ orderCounter: { upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }) } }),
+          cb({
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
       );
       (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(null);
 
@@ -281,7 +291,11 @@ describe('OrdersService', () => {
     it('should generate sequential display IDs', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
-          cb({ orderCounter: { upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 6 }) } }),
+          cb({
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 6 }),
+            },
+          }),
       );
       (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
         mockInitialStatus,
@@ -303,7 +317,11 @@ describe('OrdersService', () => {
 
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
-          cb({ orderCounter: { upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }) } }),
+          cb({
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
       );
       (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
         mockInitialStatus,

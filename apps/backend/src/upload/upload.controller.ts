@@ -24,10 +24,7 @@ const fileFilter = (
     !file.mimetype.startsWith('image/') &&
     !file.mimetype.startsWith('video/')
   ) {
-    return cb(
-      new BadRequestException('Only images & videos allowed'),
-      false,
-    );
+    return cb(new BadRequestException('Only images & videos allowed'), false);
   }
   cb(null, true);
 };

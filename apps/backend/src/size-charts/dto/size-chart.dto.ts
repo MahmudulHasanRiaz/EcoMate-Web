@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, IsArray, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  MinLength,
+} from 'class-validator';
 
 export class CreateSizeChartDto {
   @IsString() @MinLength(1) name: string;

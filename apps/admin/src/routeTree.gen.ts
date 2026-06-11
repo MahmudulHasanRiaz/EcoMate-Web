@@ -54,6 +54,7 @@ import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
+import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
@@ -326,6 +327,12 @@ const AuthenticatedOpOrdersIdRoute = AuthenticatedOpOrdersIdRouteImport.update({
   path: '/op/orders/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpInventoryOverviewRoute =
+  AuthenticatedOpInventoryOverviewRouteImport.update({
+    id: '/op/inventory/overview',
+    path: '/op/inventory/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
   id: '/mon/users/$id',
   path: '/mon/users/$id',
@@ -447,6 +454,7 @@ export interface FileRoutesByFullPath {
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -510,6 +518,7 @@ export interface FileRoutesByTo {
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -575,6 +584,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
@@ -640,6 +650,7 @@ export interface FileRouteTypes {
     | '/mon/'
     | '/op/'
     | '/mon/users/$id'
+    | '/op/inventory/overview'
     | '/op/orders/$id'
     | '/mon/activity-logs/'
     | '/mon/analytics/'
@@ -703,6 +714,7 @@ export interface FileRouteTypes {
     | '/mon'
     | '/op'
     | '/mon/users/$id'
+    | '/op/inventory/overview'
     | '/op/orders/$id'
     | '/mon/activity-logs'
     | '/mon/analytics'
@@ -767,6 +779,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
     | '/_authenticated/mon/users/$id'
+    | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
@@ -1143,6 +1156,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/overview': {
+      id: '/_authenticated/op/inventory/overview'
+      path: '/op/inventory/overview'
+      fullPath: '/op/inventory/overview'
+      preLoaderRoute: typeof AuthenticatedOpInventoryOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/users/$id': {
       id: '/_authenticated/mon/users/$id'
       path: '/mon/users/$id'
@@ -1352,6 +1372,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
+  AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
@@ -1393,6 +1414,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
+  AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedMonActivityLogsIndexRoute:
     AuthenticatedMonActivityLogsIndexRoute,

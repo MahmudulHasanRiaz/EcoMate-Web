@@ -44,10 +44,7 @@ export class MediaController {
 
   @Patch(':id')
   @Roles('superadmin', 'admin', 'manager')
-  updateMeta(
-    @Param('id') id: string,
-    @Body() dto: { alt?: string },
-  ) {
+  updateMeta(@Param('id') id: string, @Body() dto: { alt?: string }) {
     return this.svc.updateMeta(id, dto);
   }
 

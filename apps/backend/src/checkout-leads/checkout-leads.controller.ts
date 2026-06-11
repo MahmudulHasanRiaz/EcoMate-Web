@@ -1,5 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
 } from '@nestjs/common';
 import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -25,7 +31,11 @@ export class CheckoutLeadsController {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
       perPage: perPage ? parseInt(perPage) : undefined,
-      search, status, assignedToId, sort, order,
+      search,
+      status,
+      assignedToId,
+      sort,
+      order,
     });
   }
 
@@ -43,11 +53,19 @@ export class CheckoutLeadsController {
 
   @Public()
   @Post()
-  upsert(@Body() dto: {
-    phone?: string; name?: string; email?: string;
-    address?: any; items?: any; payload?: any;
-    paymentMethod?: string; fingerprint?: string;
-  }) {
+  upsert(
+    @Body()
+    dto: {
+      phone?: string;
+      name?: string;
+      email?: string;
+      address?: any;
+      items?: any;
+      payload?: any;
+      paymentMethod?: string;
+      fingerprint?: string;
+    },
+  ) {
     return this.svc.upsert(dto);
   }
 

@@ -84,6 +84,7 @@ export class RefundsService {
     id: string,
     dto: UpdateRefundStatusDto,
     processedBy: string,
+    performedBy?: string,
   ) {
     const refund = await this.prisma.refund.findUnique({ where: { id } });
     if (!refund) throw new NotFoundException('Refund not found');
@@ -110,103 +111,13 @@ export class RefundsService {
     });
 
     if (dto.status === 'completed') {
-      await this.restockOrderItems(updated.order.id, processedBy);
+      await this.inventoryService.restockOrderItems(
+        updated.order.id,
+        performedBy || processedBy,
+        'refund_restock',
+      );
     }
 
     return updated;
-  }
-
-  private async restockOrderItems(orderId: string, performedBy: string) {
-    const orderItems = await this.prisma.orderItem.findMany({
-      where: { orderId },
-    });
-
-    for (const item of orderItems) {
-      if (item.comboId) {
-        const combo = await this.prisma.combo.findUnique({
-          where: { id: item.comboId },
-          include: { items: true },
-        });
-        if (!combo) continue;
-
-        for (const ci of combo.items) {
-          const qty = ci.quantity * item.quantity;
-          const effectiveVariantId = ci.variantId
-            || ((item.comboSelection as Record<string, string> | null)?.[ci.productId])
-            || null;
-
-          if (effectiveVariantId) {
-            const variant = await this.prisma.productVariant.findUnique({
-              where: { id: effectiveVariantId },
-              include: { product: { select: { manageStock: true } } },
-            });
-            if (variant?.product?.manageStock !== false) {
-              await this.prisma.productVariant.update({
-                where: { id: effectiveVariantId },
-                data: { stock: { increment: qty } },
-              });
-            }
-          }
-          const product = await this.prisma.product.findUnique({
-            where: { id: ci.productId },
-            select: { manageStock: true },
-          });
-          if (product?.manageStock) {
-            await this.prisma.product.update({
-              where: { id: ci.productId },
-              data: { stock: { increment: qty } },
-            });
-          }
-          await this.prisma.inventoryLog.create({
-            data: {
-              productId: ci.productId,
-              variantId: effectiveVariantId,
-              comboId: item.comboId,
-              quantity: qty,
-              type: 'refund_restock',
-              reason: `Refund restock for order ${orderId}`,
-              performedBy,
-              createdAt: new Date(),
-            },
-          });
-        }
-      } else {
-        if (item.variantId) {
-          const variant = await this.prisma.productVariant.findUnique({
-            where: { id: item.variantId },
-            include: { product: { select: { manageStock: true } } },
-          });
-          if (variant?.product?.manageStock !== false) {
-            await this.prisma.productVariant.update({
-              where: { id: item.variantId },
-              data: { stock: { increment: item.quantity } },
-            });
-          }
-        }
-        const product = item.productId
-          ? await this.prisma.product.findUnique({
-              where: { id: item.productId },
-              select: { manageStock: true, type: true },
-            })
-          : null;
-        if (product && product.manageStock && (!item.variantId || product.type === 'simple')) {
-          await this.prisma.product.update({
-            where: { id: item.productId! },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
-        await this.prisma.inventoryLog.create({
-          data: {
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            type: 'refund_restock',
-            reason: `Refund restock for order ${orderId}`,
-            performedBy,
-            createdAt: new Date(),
-          },
-        });
-      }
-    }
   }
 }

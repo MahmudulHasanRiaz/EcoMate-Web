@@ -7,7 +7,10 @@ import { randomUUID } from 'crypto';
 export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findOrCreateCustomer(phone: string, name: string): Promise<{ id: string }> {
+  async findOrCreateCustomer(
+    phone: string,
+    name: string,
+  ): Promise<{ id: string }> {
     const nameParts = (name || '').trim().split(/\s+/);
     const firstName = nameParts[0] || 'Unknown';
     const lastName = nameParts.slice(1).join(' ') || '';

@@ -78,6 +78,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [variantPickerOpen, setVariantPickerOpen] = useState(false)
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; stock: number }>({ open: false, stock: 0 })
+  const [manageStockJustToggled, setManageStockJustToggled] = useState(false)
 
   const prevRowId = useRef<string | undefined>(undefined)
 
@@ -147,7 +149,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-    setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
+    setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 });
   }
 
   const createMut = useMutation({
@@ -200,8 +202,12 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
     }
     if (type !== 'variable') {
-      payload.stock = parseInt(stock) || 0
       payload.manageStock = manageStock
+      if (!isEdit) {
+        payload.stock = parseInt(stock) || 0
+      } else if (manageStockJustToggled) {
+        payload.stock = parseInt(stock) || 0
+      }
     }
     if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
     else createMut.mutate(payload)
@@ -445,7 +451,61 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
               <section className='bg-muted/20 rounded-lg p-5 space-y-4'>
                 <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Inventory</h3>
                 {type === 'variable' ? (
-                  <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
+                  isEdit ? (
+                    <div className='space-y-3'>
+                      <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
+                      <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                        <p className='text-xs text-blue-700 dark:text-blue-300'>
+                          To adjust stock, go to <strong>Inventory → Adjust Stock</strong> and select a variant.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
+                  )
+                ) : isEdit ? (
+                  <div className='space-y-3'>
+                    <div className='flex items-center gap-3'>
+                      <Switch checked={manageStock} onCheckedChange={(v) => {
+                        if (!v && parseInt(stock) > 0) {
+                          setConfirmDialog({ open: true, stock: parseInt(stock) })
+                        } else {
+                          setManageStock(v)
+                          if (v) setManageStockJustToggled(true)
+                        }
+                      }} />
+                      <Label>Manage Stock</Label>
+                    </div>
+                    {manageStock ? (
+                      <>
+                        <div className='flex items-center gap-3'>
+                          <Badge variant='outline' className='text-sm px-3 py-1'>
+                            {manageStockJustToggled ? 'Initial Stock:' : 'Current Stock:'} <strong className='ml-1'>{stock}</strong>
+                          </Badge>
+                          {manageStockJustToggled ? (
+                            <div className='space-y-1.5 w-40'>
+                              <Label className='text-xs'>Quantity</Label>
+                              <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' className='h-8 text-xs' />
+                            </div>
+                          ) : (
+                            <div className='space-y-1.5 w-40'>
+                              <Label className='text-xs'>Low Stock Alert</Label>
+                              <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' className='h-8 text-xs' />
+                            </div>
+                          )}
+                        </div>
+                        {!manageStockJustToggled && (
+                          <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                            <p className='text-xs text-blue-700 dark:text-blue-300'>
+                              Stock can only be adjusted from <strong>Inventory → Adjust Stock</strong>.
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className='text-sm text-muted-foreground'>Stock status-based (In Stock / Out of Stock). No quantity tracking.</p>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className='flex items-center gap-3'>
@@ -702,6 +762,25 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
           </Button>
         </div>
       </DialogContent>
+
+      {confirmDialog.open && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setConfirmDialog({ open: false, stock: 0 })}>
+          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <h3 className='font-semibold text-lg'>Disable Stock Tracking?</h3>
+            <p className='text-sm text-muted-foreground'>
+              This product has <strong>{confirmDialog.stock} units</strong> in stock. Disabling stock tracking will remove all stock and switch to status-based (In Stock / Out of Stock).
+            </p>
+            <div className='flex justify-end gap-2'>
+              <Button variant='outline' onClick={() => setConfirmDialog({ open: false, stock: 0 })}>
+                Cancel
+              </Button>
+              <Button variant='destructive' onClick={() => { setManageStock(false); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 }) }}>
+                Remove Stock & Disable
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 }
@@ -781,17 +860,11 @@ function VariantRow({
           )}
         </div>
 
-        {/* Stock */}
+        {/* Stock (read-only) */}
         <div className='min-w-0'>
           <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
-          {editing === 'stock' ? (
-            <Input type='number' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-20' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
-          ) : (
-            <button onClick={() => startEdit('stock', variant.stock)} className='flex items-center gap-1 group'>
-              <Badge variant='outline' className='text-xs'>{variant.stock}</Badge>
-              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
-            </button>
-          )}
+          <Badge variant='outline' className='text-xs cursor-default'>{variant.stock}</Badge>
+          <p className='text-[10px] text-muted-foreground mt-0.5'>Adjust via Inventory</p>
         </div>
       </div>
     </div>

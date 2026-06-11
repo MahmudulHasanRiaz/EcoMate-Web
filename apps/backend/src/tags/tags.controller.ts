@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+} from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { TagsService } from './tags.service';
@@ -33,7 +41,10 @@ export class TagsController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: { name?: string; slug?: string }) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: { name?: string; slug?: string },
+  ) {
     return this.svc.update(id, dto);
   }
 

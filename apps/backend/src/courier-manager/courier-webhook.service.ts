@@ -128,7 +128,9 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'redx', mappedStatus);
-    this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`);
+    this.logger.log(
+      `RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`,
+    );
     return { ok: true, status: mappedStatus, deliveryType };
   }
 
@@ -191,9 +193,19 @@ export class CourierWebhookService {
   }
 
   private logWebhookRequest(courier: string, body: Record<string, unknown>) {
-    const tracking = body['tracking_number'] || body['tracking_id'] || body['consignment_id'] || 'unknown';
-    const invoice = body['invoice_number'] || body['merchant_invoice_id'] || body['invoice'] || 'unknown';
-    this.logger.log(`Webhook ${courier}: tracking=${tracking} invoice=${invoice} status=${body['status'] || body['event'] || 'unknown'}`);
+    const tracking =
+      body['tracking_number'] ||
+      body['tracking_id'] ||
+      body['consignment_id'] ||
+      'unknown';
+    const invoice =
+      body['invoice_number'] ||
+      body['merchant_invoice_id'] ||
+      body['invoice'] ||
+      'unknown';
+    this.logger.log(
+      `Webhook ${courier}: tracking=${tracking} invoice=${invoice} status=${body['status'] || body['event'] || 'unknown'}`,
+    );
   }
 
   private async addTimelineEntry(

@@ -27,8 +27,14 @@ export class MetaConversionsService {
   ) {}
 
   async sendEvent(event: TrackEvent) {
-    const pixelId = await this.getSetting('tracking_meta_pixel_id', 'META_PIXEL_ID');
-    const accessToken = await this.getSetting('tracking_meta_access_token', 'META_ACCESS_TOKEN');
+    const pixelId = await this.getSetting(
+      'tracking_meta_pixel_id',
+      'META_PIXEL_ID',
+    );
+    const accessToken = await this.getSetting(
+      'tracking_meta_access_token',
+      'META_ACCESS_TOKEN',
+    );
     const testCode = await this.getSetting('tracking_meta_test_code', null);
     const enabled = await this.getSetting('tracking_meta_enabled', null);
 
@@ -43,26 +49,42 @@ export class MetaConversionsService {
 
     try {
       const body: any = {
-        data: [{
-          event_name: event.eventName,
-          event_time: event.eventTime,
-          event_id: event.eventId,
-          action_source: 'website',
-          user_data: {
-            em: event.userData.email ? this.hash(event.userData.email) : undefined,
-            ph: event.userData.phone ? this.hash(event.userData.phone) : undefined,
-            fn: event.userData.name ? this.hash(this.splitName(event.userData.name).firstName) : undefined,
-            ln: event.userData.name ? this.hash(this.splitName(event.userData.name).lastName) : undefined,
-            external_id: event.userData.phone ? this.hash(event.userData.phone) : undefined,
-            fbp: (event.userData as any).fbp || undefined,
-            fbc: (event.userData as any).fbc || undefined,
-            ct: (event.userData as any).city ? this.hash((event.userData as any).city) : undefined, // সিটি হ্যাশ করা হলো
-            cn: (event.userData as any).country ? this.hash((event.userData as any).country) : undefined, // কান্ট্রি হ্যাশ করা হলো
-            client_ip_address: event.userData.ip,
-            client_user_agent: event.userData.userAgent,
+        data: [
+          {
+            event_name: event.eventName,
+            event_time: event.eventTime,
+            event_id: event.eventId,
+            action_source: 'website',
+            user_data: {
+              em: event.userData.email
+                ? this.hash(event.userData.email)
+                : undefined,
+              ph: event.userData.phone
+                ? this.hash(event.userData.phone)
+                : undefined,
+              fn: event.userData.name
+                ? this.hash(this.splitName(event.userData.name).firstName)
+                : undefined,
+              ln: event.userData.name
+                ? this.hash(this.splitName(event.userData.name).lastName)
+                : undefined,
+              external_id: event.userData.phone
+                ? this.hash(event.userData.phone)
+                : undefined,
+              fbp: (event.userData as any).fbp || undefined,
+              fbc: (event.userData as any).fbc || undefined,
+              ct: (event.userData as any).city
+                ? this.hash((event.userData as any).city)
+                : undefined, // সিটি হ্যাশ করা হলো
+              cn: (event.userData as any).country
+                ? this.hash((event.userData as any).country)
+                : undefined, // কান্ট্রি হ্যাশ করা হলো
+              client_ip_address: event.userData.ip,
+              client_user_agent: event.userData.userAgent,
+            },
+            custom_data: event.customData,
           },
-          custom_data: event.customData,
-        }],
+        ],
         access_token: accessToken,
       };
 
@@ -77,16 +99,23 @@ export class MetaConversionsService {
       });
 
       if (!response.ok) {
-        this.logger.error(`Meta CAPI error: ${response.status} ${await response.text()}`);
+        this.logger.error(
+          `Meta CAPI error: ${response.status} ${await response.text()}`,
+        );
       }
     } catch (err) {
       this.logger.error('Meta CAPI request failed', err);
     }
   }
 
-  private async getSetting(systemKey: string, envKey: string | null): Promise<string | null> {
+  private async getSetting(
+    systemKey: string,
+    envKey: string | null,
+  ): Promise<string | null> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({ where: { key: systemKey } });
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: systemKey },
+      });
       if (setting?.value) return setting.value;
     } catch {}
     if (envKey) return this.config.get(envKey) || null;
@@ -95,7 +124,10 @@ export class MetaConversionsService {
 
   private hash(data: string): string {
     const crypto = require('crypto');
-    return crypto.createHash('sha256').update(data.toLowerCase().trim()).digest('hex');
+    return crypto
+      .createHash('sha256')
+      .update(data.toLowerCase().trim())
+      .digest('hex');
   }
 
   private splitName(fullName: string): { firstName: string; lastName: string } {

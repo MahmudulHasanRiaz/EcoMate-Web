@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
+import { InventoryService } from '../inventory/inventory.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -26,6 +27,7 @@ export class OrdersService {
     private readonly tracking: TrackingService,
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   private transformOrder(order: any) {
@@ -65,10 +67,12 @@ export class OrdersService {
     discountType = 'flat',
   ) {
     const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-    const effectiveDiscount = discountType === 'percentage'
-      ? subtotal * (discount / 100)
-      : discount;
-    return { subtotal, total: Math.max(0, subtotal + shipping - effectiveDiscount) };
+    const effectiveDiscount =
+      discountType === 'percentage' ? subtotal * (discount / 100) : discount;
+    return {
+      subtotal,
+      total: Math.max(0, subtotal + shipping - effectiveDiscount),
+    };
   }
 
   async findAll(query: {
@@ -218,13 +222,15 @@ export class OrdersService {
       }
     }
 
-    const comboIds = dto.items
-      .filter((i) => i.comboId)
-      .map((i) => i.comboId!);
+    const comboIds = dto.items.filter((i) => i.comboId).map((i) => i.comboId!);
     if (comboIds.length > 0) {
       const existingCombos = await this.prisma.combo.findMany({
         where: { id: { in: comboIds } },
-        select: { id: true, name: true, items: { select: { productId: true, variantId: true } } },
+        select: {
+          id: true,
+          name: true,
+          items: { select: { productId: true, variantId: true } },
+        },
       });
       const existingIds = new Set(existingCombos.map((c) => c.id));
       const missing = comboIds.filter((id) => !existingIds.has(id));
@@ -306,7 +312,9 @@ export class OrdersService {
         total,
         viewToken: randomUUID(),
         shippingAddress: {
-          ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress ? dto.shippingAddress : {}),
+          ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
+            ? dto.shippingAddress
+            : {}),
           district: dto.district,
           thana: dto.thana,
         },
@@ -337,7 +345,13 @@ export class OrdersService {
       },
       include: {
         customer: {
-          select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phoneNumber: true,
+          },
         },
         status: true,
         items: {
@@ -349,9 +363,10 @@ export class OrdersService {
     });
 
     if (dto.paymentMethod) {
-      const paymentAmount = dto.paymentMode === 'partial' && dto.partialAmount
-        ? dto.partialAmount
-        : total;
+      const paymentAmount =
+        dto.paymentMode === 'partial' && dto.partialAmount
+          ? dto.partialAmount
+          : total;
       await this.prisma.payment.create({
         data: {
           orderId: order.id,
@@ -374,15 +389,19 @@ export class OrdersService {
       });
     }
 
-    this.tracking.track({
-      eventName: 'purchase',
-      customData: {
-        value: Number(total),
-        currency: 'BDT',
-        content_ids: dto.items.map(i => i.productId || i.comboId).filter(Boolean),
-        num_items: dto.items.reduce((s, i) => s + i.quantity, 0),
-      },
-    }).catch(() => {});
+    this.tracking
+      .track({
+        eventName: 'purchase',
+        customData: {
+          value: Number(total),
+          currency: 'BDT',
+          content_ids: dto.items
+            .map((i) => i.productId || i.comboId)
+            .filter(Boolean),
+          num_items: dto.items.reduce((s, i) => s + i.quantity, 0),
+        },
+      })
+      .catch(() => {});
 
     if (couponCode) {
       await this.prisma.coupon.update({
@@ -393,7 +412,10 @@ export class OrdersService {
 
     await this.deductStock(dto.items, displayId);
 
-    this.events.emit({ type: 'order.created', data: { id: order.id, displayId: order.displayId } });
+    this.events.emit({
+      type: 'order.created',
+      data: { id: order.id, displayId: order.displayId },
+    });
 
     return order;
   }
@@ -467,7 +489,12 @@ export class OrdersService {
     }
 
     if (dto.customerInfo && order.customerId) {
-      const allowedFields: (keyof CustomerInfoDto)[] = ['firstName', 'lastName', 'phoneNumber', 'email'];
+      const allowedFields: (keyof CustomerInfoDto)[] = [
+        'firstName',
+        'lastName',
+        'phoneNumber',
+        'email',
+      ];
       const safeData: Record<string, string> = {};
       for (const field of allowedFields) {
         const value = (dto.customerInfo as any)[field];
@@ -578,7 +605,7 @@ export class OrdersService {
     });
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string) {
+  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, performedBy?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: { status: true },
@@ -633,7 +660,28 @@ export class OrdersService {
       }
     }
 
-    this.events.emit({ type: 'order.status_changed', data: { id: updated.id, displayId: updated.displayId, statusId: dto.statusId, statusName: newStatus.name } });
+    if (newStatus.name === 'Cancelled') {
+      try {
+        await this.inventoryService.restockOrderItems(
+          id,
+          performedBy || userId,
+          'cancellation_restock',
+        );
+      } catch (err) {
+        // Log but don't block status change
+        console.error(`Failed to restock cancelled order ${id}:`, err);
+      }
+    }
+
+    this.events.emit({
+      type: 'order.status_changed',
+      data: {
+        id: updated.id,
+        displayId: updated.displayId,
+        statusId: dto.statusId,
+        statusName: newStatus.name,
+      },
+    });
 
     return updated;
   }
@@ -748,7 +796,11 @@ export class OrdersService {
 
     const orders = await this.prisma.order.findMany({
       where: { id: { in: ids } },
-      select: { id: true, statusId: true, status: { select: { nextStatuses: true } } },
+      select: {
+        id: true,
+        statusId: true,
+        status: { select: { nextStatuses: true } },
+      },
     });
 
     const validIds: string[] = [];
@@ -806,8 +858,19 @@ export class OrdersService {
     const order = await this.prisma.order.findFirst({
       where: { viewToken },
       include: {
-        customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
-        items: { include: { product: { select: { name: true, slug: true, images: true } } } },
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
+        },
+        items: {
+          include: {
+            product: { select: { name: true, slug: true, images: true } },
+          },
+        },
         status: true,
         payments: true,
         shipment: true,
@@ -818,7 +881,9 @@ export class OrdersService {
   }
 
   async rotateViewToken(orderId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new NotFoundException('Order not found');
     const viewToken = randomUUID();
     const updated = await this.prisma.order.update({
@@ -857,11 +922,23 @@ export class OrdersService {
         note: 'Cancelled by customer',
       },
     ];
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { statusId: cancelled.id, timeline: timeline as any },
       include: { status: true },
     });
+
+    try {
+      await this.inventoryService.restockOrderItems(
+        orderId,
+        'customer',
+        'cancellation_restock',
+      );
+    } catch (err) {
+      console.error(`Failed to restock cancelled order ${orderId}:`, err);
+    }
+
+    return updated;
   }
 
   async backfillViewTokens() {
@@ -897,20 +974,25 @@ export class OrdersService {
       .filter((i) => i.variantId && !i.comboId)
       .map((i) => i.variantId!);
 
-    let products = standaloneProductIds.length > 0
-      ? await this.prisma.product.findMany({
-          where: { id: { in: standaloneProductIds }, manageStock: true },
-          select: { id: true, type: true, stock: true, manageStock: true },
-        })
-      : [];
+    const products =
+      standaloneProductIds.length > 0
+        ? await this.prisma.product.findMany({
+            where: { id: { in: standaloneProductIds }, manageStock: true },
+            select: { id: true, type: true, stock: true, manageStock: true },
+          })
+        : [];
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    let variants = standaloneVariantIds.length > 0
-      ? await this.prisma.productVariant.findMany({
-          where: { id: { in: standaloneVariantIds }, product: { manageStock: true } },
-          select: { id: true, stock: true, productId: true },
-        })
-      : [];
+    const variants =
+      standaloneVariantIds.length > 0
+        ? await this.prisma.productVariant.findMany({
+            where: {
+              id: { in: standaloneVariantIds },
+              product: { manageStock: true },
+            },
+            select: { id: true, stock: true, productId: true },
+          })
+        : [];
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     for (const item of items) {
@@ -922,9 +1004,10 @@ export class OrdersService {
         if (!combo) continue;
         for (const ci of combo.items) {
           const qty = ci.quantity * item.quantity;
-          const effectiveVariantId = ci.variantId
-            || (item.comboSelection?.[ci.productId]) // flexible variant choice
-            || null;
+          const effectiveVariantId =
+            ci.variantId ||
+            item.comboSelection?.[ci.productId] || // flexible variant choice
+            null;
 
           if (effectiveVariantId) {
             if (!variantMap.has(effectiveVariantId)) {
@@ -992,12 +1075,21 @@ export class OrdersService {
         }
 
         const product = item.productId ? productMap.get(item.productId) : null;
-        if (product && product.manageStock && (!item.variantId || product.type === 'simple') && product.stock < item.quantity) {
+        if (
+          product &&
+          product.manageStock &&
+          (!item.variantId || product.type === 'simple') &&
+          product.stock < item.quantity
+        ) {
           throw new BadRequestException(
             `Insufficient stock for product "${item.productId}". Available: ${product.stock}, requested: ${item.quantity}.`,
           );
         }
-        if (product && product.manageStock && (!item.variantId || product.type === 'simple')) {
+        if (
+          product &&
+          product.manageStock &&
+          (!item.variantId || product.type === 'simple')
+        ) {
           await this.prisma.product.update({
             where: { id: item.productId! },
             data: { stock: { decrement: item.quantity } },

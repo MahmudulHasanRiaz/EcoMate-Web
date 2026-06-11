@@ -56,7 +56,8 @@ export class CouponsController {
   }
 
   @Roles('superadmin', 'admin')
-  @Post() async create(@Body() dto: Record<string, unknown>) {
+  @Post()
+  async create(@Body() dto: Record<string, unknown>) {
     return this.prisma.coupon.create({
       data: {
         code: dto['code'] as string,
@@ -72,10 +73,8 @@ export class CouponsController {
     });
   }
   @Roles('superadmin', 'admin')
-  @Put(':id') async update(
-    @Param('id') id: string,
-    @Body() dto: Record<string, unknown>,
-  ) {
+  @Put(':id')
+  async update(@Param('id') id: string, @Body() dto: Record<string, unknown>) {
     return this.prisma.coupon.update({
       where: { id },
       data: {
@@ -89,7 +88,8 @@ export class CouponsController {
     });
   }
   @Roles('superadmin', 'admin')
-  @Delete(':id') async remove(@Param('id') id: string) {
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
     await this.prisma.coupon.delete({ where: { id } });
     return { message: 'Deleted' };
   }

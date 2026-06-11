@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import * as Papa from 'papaparse';
@@ -88,7 +84,13 @@ export class ImportService {
       if (dryRun) continue;
 
       try {
-        await this.processProductGroup(groupKey, group, mode, summary, allErrors);
+        await this.processProductGroup(
+          groupKey,
+          group,
+          mode,
+          summary,
+          allErrors,
+        );
       } catch (err) {
         const msg = (err as Error).message;
         this.logger.error(`Group processing failed for ${groupKey}: ${msg}`);
@@ -107,7 +109,9 @@ export class ImportService {
     return { summary, errors: allErrors };
   }
 
-  private groupByParent(rows: CsvRowWithMeta[]): Record<string, CsvRowWithMeta[]> {
+  private groupByParent(
+    rows: CsvRowWithMeta[],
+  ): Record<string, CsvRowWithMeta[]> {
     const idToSku: Record<string, string> = {};
     for (const row of rows) {
       const csvId = row.data.ID?.trim();
@@ -144,9 +148,10 @@ export class ImportService {
     summary: ImportSummary,
     errors: ImportError[],
   ): Promise<void> {
-    const parentRow = rows.find(
-      (r) => (r.data.Type || 'simple').toLowerCase() !== 'variation',
-    ) || rows[0];
+    const parentRow =
+      rows.find(
+        (r) => (r.data.Type || 'simple').toLowerCase() !== 'variation',
+      ) || rows[0];
 
     const variationRows = rows.filter(
       (r) => (r.data.Type || 'simple').toLowerCase() === 'variation',
@@ -174,7 +179,14 @@ export class ImportService {
     }
 
     for (const vRow of variationRows) {
-      await this.processVariation(productId, parentSku, vRow, mode, summary, errors);
+      await this.processVariation(
+        productId,
+        parentSku,
+        vRow,
+        mode,
+        summary,
+        errors,
+      );
     }
   }
 
@@ -196,12 +208,13 @@ export class ImportService {
     const categoryId = await this.resolveCategories(categories, summary);
 
     const name = data.Name?.trim() || sku;
-    const slug = data.Slug?.trim() || await this.uniqueSlug(slugify(name));
+    const slug = data.Slug?.trim() || (await this.uniqueSlug(slugify(name)));
 
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
-    const manageStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const manageStock =
+      !isVariable && parsedStock !== undefined && parsedStock > 0;
     const stock = manageStock ? parsedStock : 0;
     const seoMeta = this.buildSeoMeta(data);
 
@@ -218,9 +231,8 @@ export class ImportService {
     const isActive = data.Published !== '0' && data.Published !== '-1';
 
     const attrs = this.extractAttributes(data);
-    const resolvedAttrs = attrs.length > 0
-      ? await this.resolveAttributes(attrs, summary)
-      : [];
+    const resolvedAttrs =
+      attrs.length > 0 ? await this.resolveAttributes(attrs, summary) : [];
 
     if (!isVariable && resolvedAttrs.length > 0) {
       seoMeta.attributes = resolvedAttrs.map((a) => ({
@@ -242,9 +254,10 @@ export class ImportService {
         stock,
         categoryId: categoryId ?? undefined,
         tags: tags as any,
-        productTags: tagIds.length > 0
-          ? { create: tagIds.map(id => ({ tagId: id })) }
-          : undefined,
+        productTags:
+          tagIds.length > 0
+            ? { create: tagIds.map((id) => ({ tagId: id })) }
+            : undefined,
         images: [] as any,
         seoMeta: seoMeta as any,
         isFeatured,
@@ -284,7 +297,8 @@ export class ImportService {
     const parsedStock = this.parseInt(data.Stock);
     const type = (data.Type || 'simple').toLowerCase().trim();
     const isVariable = type === 'variable' || type === 'variable-subscription';
-    const manageStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const manageStock =
+      !isVariable && parsedStock !== undefined && parsedStock > 0;
     const stock = manageStock ? parsedStock : 0;
     const seoMeta = this.buildSeoMeta(data);
 
@@ -303,17 +317,20 @@ export class ImportService {
     const updateData: Record<string, unknown> = {};
 
     if (data.Name?.trim()) updateData.name = data.Name.trim();
-    if (data.Description?.trim() !== undefined) updateData.description = data.Description.trim() || null;
-    if (data['Short description']?.trim() !== undefined) updateData.shortDesc = data['Short description'].trim() || null;
+    if (data.Description?.trim() !== undefined)
+      updateData.description = data.Description.trim() || null;
+    if (data['Short description']?.trim() !== undefined)
+      updateData.shortDesc = data['Short description'].trim() || null;
     updateData.basePrice = basePrice;
     updateData.salePrice = salePrice ?? null;
     updateData.stock = stock;
     updateData.categoryId = categoryId ?? null;
-    updateData.tags = tags as any;
-    updateData.productTags = tagIds.length > 0
-      ? { deleteMany: {}, create: tagIds.map(id => ({ tagId: id })) }
-      : { deleteMany: {} };
-    updateData.seoMeta = seoMeta as any;
+    updateData.tags = tags;
+    updateData.productTags =
+      tagIds.length > 0
+        ? { deleteMany: {}, create: tagIds.map((id) => ({ tagId: id })) }
+        : { deleteMany: {} };
+    updateData.seoMeta = seoMeta;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
     updateData.manageStock = manageStock;
@@ -357,9 +374,10 @@ export class ImportService {
     const mainImage = images[0];
 
     const varAttrs = this.extractVariationAttributes(data);
-    const resolvedVarAttrs = varAttrs.length > 0
-      ? await this.resolveAttributes(varAttrs, summary)
-      : [];
+    const resolvedVarAttrs =
+      varAttrs.length > 0
+        ? await this.resolveAttributes(varAttrs, summary)
+        : [];
 
     if (existing) {
       const updateData: Record<string, unknown> = {};
@@ -390,15 +408,16 @@ export class ImportService {
         price: price ?? undefined,
         stock,
         image: mainImage || undefined,
-        attributeValues: resolvedVarAttrs.length > 0
-          ? {
-              create: resolvedVarAttrs.flatMap((attr) =>
-                attr.values.map((av) => ({
-                  attributeValueId: av.id,
-                })),
-              ),
-            }
-          : undefined,
+        attributeValues:
+          resolvedVarAttrs.length > 0
+            ? {
+                create: resolvedVarAttrs.flatMap((attr) =>
+                  attr.values.map((av) => ({
+                    attributeValueId: av.id,
+                  })),
+                ),
+              }
+            : undefined,
       },
     });
 
@@ -428,7 +447,11 @@ export class ImportService {
     }
 
     if (resolved.length > 0) {
-      const synced = await this.media.syncEntityImages('product', productId, resolved);
+      const synced = await this.media.syncEntityImages(
+        'product',
+        productId,
+        resolved,
+      );
       await this.prisma.product.update({
         where: { id: productId },
         data: { images: synced as any },
@@ -479,7 +502,10 @@ export class ImportService {
       .map((s) => s.trim())
       .filter(Boolean)
       .map((part) => {
-        const segments = part.split('>').map((s) => s.trim()).filter(Boolean);
+        const segments = part
+          .split('>')
+          .map((s) => s.trim())
+          .filter(Boolean);
         const name = segments[segments.length - 1] || part;
         return { name, slug: slugify(name), path: part };
       });
@@ -492,7 +518,10 @@ export class ImportService {
     if (categories.length === 0) return null;
 
     const first = categories[0];
-    const segments = first.path.split('>').map((s) => s.trim()).filter(Boolean);
+    const segments = first.path
+      .split('>')
+      .map((s) => s.trim())
+      .filter(Boolean);
     let parentId: string | null = null;
     let lastId: string | null = null;
 
@@ -548,7 +577,10 @@ export class ImportService {
 
   private parseTags(value?: string): string[] {
     if (!value?.trim()) return [];
-    return value.split(',').map((s) => s.trim()).filter(Boolean);
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
   private parseImages(value?: string): string[] {
@@ -633,13 +665,20 @@ export class ImportService {
   }
 
   private async resolveAttributes(
-    attrs: Array<{ name: string; values: string[]; visible: boolean; global: boolean }>,
+    attrs: Array<{
+      name: string;
+      values: string[];
+      visible: boolean;
+      global: boolean;
+    }>,
     summary: ImportSummary,
   ): Promise<ResolvedAttrs[]> {
     const result: ResolvedAttrs[] = [];
 
     for (const attr of attrs) {
-      const cleanName = attr.name.startsWith('pa_') ? attr.name.slice(3) : attr.name;
+      const cleanName = attr.name.startsWith('pa_')
+        ? attr.name.slice(3)
+        : attr.name;
       const normalizedName = cleanName
         .replace(/[-_]+/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase())

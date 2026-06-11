@@ -98,7 +98,8 @@ export class StorageService {
 
   async resolveFilename(desired: string): Promise<string> {
     const ext = extname(desired);
-    let base = desired.replace(ext, '')
+    let base = desired
+      .replace(ext, '')
       .replace(/[^a-zA-Z0-9_. -]/g, '')
       .trim()
       .slice(0, 100)
@@ -107,7 +108,9 @@ export class StorageService {
     if (!base) base = 'file';
     let candidate = base + ext;
     let counter = 1;
-    while (await this.prisma.media.findFirst({ where: { filename: candidate } })) {
+    while (
+      await this.prisma.media.findFirst({ where: { filename: candidate } })
+    ) {
       candidate = `${base}-${counter}${ext}`;
       counter++;
     }

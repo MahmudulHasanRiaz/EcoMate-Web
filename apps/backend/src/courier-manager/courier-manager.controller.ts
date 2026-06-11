@@ -230,7 +230,10 @@ export class CourierManagerController {
   }
 
   @Put('redx/cancel/:trackingId')
-  async cancelRedxParcel(@Param('trackingId') trackingId: string, @Body() dto: { reason: string }) {
+  async cancelRedxParcel(
+    @Param('trackingId') trackingId: string,
+    @Body() dto: { reason: string },
+  ) {
     return this.svc.cancelRedxParcel(trackingId, dto.reason);
   }
 }

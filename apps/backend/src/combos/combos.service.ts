@@ -23,7 +23,15 @@ export class CombosService {
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
-        { items: { some: { product: { name: { contains: query.search, mode: 'insensitive' } } } } },
+        {
+          items: {
+            some: {
+              product: {
+                name: { contains: query.search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
       ];
     }
     if (query.categoryId) where.categoryId = query.categoryId;
@@ -45,14 +53,25 @@ export class CombosService {
   }
 
   private encodeCursor(createdAt: Date, id: string): string {
-    return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64url');
+    return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString(
+      'base64url',
+    );
   }
 
   private readonly comboInclude = {
     category: { select: { id: true, name: true } },
     items: {
       include: {
-        product: { select: { id: true, name: true, slug: true, images: true, basePrice: true, type: true } },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            images: true,
+            basePrice: true,
+            type: true,
+          },
+        },
         variant: { select: { id: true, sku: true, price: true } },
       },
     },
@@ -129,7 +148,8 @@ export class CombosService {
     ]);
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
-    const nextCursor = hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
+    const nextCursor =
+      hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
     return {
       data,
       meta: {
@@ -150,18 +170,29 @@ export class CombosService {
           include: {
             product: {
               select: {
-                id: true, name: true, slug: true, sku: true,
-                basePrice: true, salePrice: true, stock: true,
-                images: true, type: true,
+                id: true,
+                name: true,
+                slug: true,
+                sku: true,
+                basePrice: true,
+                salePrice: true,
+                stock: true,
+                images: true,
+                type: true,
                 variants: {
                   select: {
-                    id: true, sku: true, price: true, stock: true,
-                    image: true, isActive: true,
+                    id: true,
+                    sku: true,
+                    price: true,
+                    stock: true,
+                    image: true,
+                    isActive: true,
                     attributeValues: {
                       select: {
                         attributeValue: {
                           select: {
-                            id: true, value: true,
+                            id: true,
+                            value: true,
                             attribute: { select: { id: true, name: true } },
                           },
                         },
@@ -183,7 +214,9 @@ export class CombosService {
   }
 
   async create(dto: CreateComboDto) {
-    const existing = await this.prisma.combo.findUnique({ where: { slug: dto.slug } });
+    const existing = await this.prisma.combo.findUnique({
+      where: { slug: dto.slug },
+    });
     if (existing) throw new ConflictException('Slug already exists');
 
     const combo = await this.prisma.combo.create({
@@ -216,19 +249,28 @@ export class CombosService {
         category: true,
         items: {
           include: {
-            product: { select: { id: true, name: true, slug: true, images: true, basePrice: true } },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                images: true,
+                basePrice: true,
+              },
+            },
             variant: { select: { id: true, sku: true, price: true } },
           },
         },
       },
     });
 
-    const allUrls = [
-      ...(dto.image ? [dto.image] : []),
-      ...((dto.images || []) as string[]),
-    ];
+    const allUrls = [...(dto.image ? [dto.image] : []), ...(dto.images || [])];
     if (allUrls.length) {
-      const synced = await this.media.syncEntityImages('combo', combo.id, allUrls);
+      const synced = await this.media.syncEntityImages(
+        'combo',
+        combo.id,
+        allUrls,
+      );
       const [featured, ...rest] = synced;
       if (
         featured !== dto.image ||
@@ -239,7 +281,7 @@ export class CombosService {
           data: { image: featured || null, images: rest as any },
         });
         combo.image = featured || null;
-        combo.images = rest as any;
+        combo.images = rest;
       }
     }
 
@@ -251,7 +293,9 @@ export class CombosService {
     if (!combo) throw new NotFoundException('Combo not found');
 
     if (dto.slug && dto.slug !== combo.slug) {
-      const exist = await this.prisma.combo.findUnique({ where: { slug: dto.slug } });
+      const exist = await this.prisma.combo.findUnique({
+        where: { slug: dto.slug },
+      });
       if (exist) throw new ConflictException('Slug already exists');
     }
 
@@ -287,7 +331,7 @@ export class CombosService {
       const featured = dto.image !== undefined ? dto.image : combo.image;
       const gallery =
         dto.images !== undefined
-          ? (dto.images as string[])
+          ? dto.images
           : (combo.images as string[] | null) || [];
       const allUrls = [...(featured ? [featured] : []), ...gallery];
       const synced = await this.media.syncEntityImages('combo', id, allUrls);

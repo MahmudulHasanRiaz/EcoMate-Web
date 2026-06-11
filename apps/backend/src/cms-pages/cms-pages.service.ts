@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCmsPageDto, UpdateCmsPageDto } from './dto/cms-page.dto';
 
@@ -33,7 +37,9 @@ export class CmsPagesService {
   }
 
   async create(dto: CreateCmsPageDto) {
-    const existing = await this.prisma.cmsPage.findUnique({ where: { slug: dto.slug } });
+    const existing = await this.prisma.cmsPage.findUnique({
+      where: { slug: dto.slug },
+    });
     if (existing) throw new ConflictException('Slug already exists');
     return this.prisma.cmsPage.create({ data: dto as any });
   }
@@ -43,7 +49,9 @@ export class CmsPagesService {
     if (!page) throw new NotFoundException('Page not found');
 
     if (dto.slug && dto.slug !== page.slug) {
-      const exist = await this.prisma.cmsPage.findUnique({ where: { slug: dto.slug } });
+      const exist = await this.prisma.cmsPage.findUnique({
+        where: { slug: dto.slug },
+      });
       if (exist) throw new ConflictException('Slug already exists');
     }
 

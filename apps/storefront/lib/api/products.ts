@@ -36,6 +36,8 @@ export function transformBackendProduct(raw: any): Product {
       attributeValues: v.attributeValues || [],
     }));
 
+  const rawOriginalPrice = raw.originalPrice ? Number(raw.originalPrice) : undefined;
+
   let displayPrice: number;
   let displayOriginalPrice: number | undefined;
   let displaySalePrice: number | undefined;
@@ -47,12 +49,14 @@ export function transformBackendProduct(raw: any): Product {
     displayPrice = minPrice;
     displayBasePrice = minPrice;
     displaySalePrice = undefined;
-    displayOriginalPrice = undefined;
+    displayOriginalPrice = rawOriginalPrice && rawOriginalPrice > minPrice ? rawOriginalPrice : undefined;
   } else {
     displayPrice = rawSalePrice || rawBasePrice;
     displayBasePrice = rawBasePrice;
     displaySalePrice = rawSalePrice;
-    displayOriginalPrice = rawSalePrice && rawSalePrice < rawBasePrice ? rawBasePrice : undefined;
+    displayOriginalPrice = rawSalePrice && rawSalePrice < rawBasePrice
+      ? rawBasePrice
+      : (rawOriginalPrice && rawOriginalPrice > displayPrice ? rawOriginalPrice : undefined);
   }
 
   return {
