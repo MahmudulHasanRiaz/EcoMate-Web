@@ -50,6 +50,9 @@ export interface Product {
   reviews?: Review[];
   reviewCount?: number;
   averageRating?: number;
+  videoUrl?: string;
+  videoPosition?: number;
+  showRelatedProducts?: boolean;
 }
 
 export interface Category {

@@ -11,6 +11,8 @@ import { trackEvent } from "@/lib/tracking";
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
 import { SizeChartModal } from "./SizeChartModal";
+import VideoEmbed from "./VideoEmbed";
+import RelatedProducts from "./RelatedProducts";
 import DOMPurify from 'isomorphic-dompurify';
 import apiClient from "@/lib/api-client";
 import type { SizeChartData } from "./SizeChartModal";
@@ -257,7 +259,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const [sizeChartLoading, setSizeChartLoading] = useState(false);
   const [heartPop, setHeartPop] = useState(false);
   const [reviews, setReviews] = useState<Review[] | undefined>(product.reviews);
-  const [descExpanded, setDescExpanded] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(true);
   const [showStickyOrder, setShowStickyOrder] = useState(false);
   const [qty, setQty] = useState(1);
   const ctaRef = useRef<HTMLDivElement>(null);
@@ -435,6 +437,8 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   useEffect(() => { setShareUrl(encodeURIComponent(window.location.href)); }, []);
 
   const sections = product.descriptionSections;
+  const videoPos = product.videoPosition ?? 4;
+  const videoUrl = product.videoUrl;
 
   const waNumber = config.order?.whatsapp || config.social.whatsapp;
   const callNumber = config.order?.callNumber || config.store.phone;
@@ -489,6 +493,10 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         <ProductImageGallery images={itemGallery} productName={product.name} key={selectedVariant?.id || product.id} />
 
         <div className="flex flex-col md:w-1/2 px-4 md:px-0 pt-4 md:pt-2">
+          {videoUrl && videoPos === 1 && (
+            <VideoEmbed url={videoUrl} />
+          )}
+
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <h1 className="text-[22px] md:text-[26px] text-gray-800 font-normal leading-tight mb-1">{product.name}</h1>
@@ -532,6 +540,10 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             )}
           </div>
 
+          {videoUrl && videoPos === 2 && (
+            <VideoEmbed url={videoUrl} />
+          )}
+
           {product.sku && (
             <p className="text-[13px] text-gray-400 mb-3">Product Code: {product.sku}</p>
           )}
@@ -564,14 +576,14 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             </div>
           )}
 
-          <div className="flex items-center gap-6 mb-4">
-            <span className="text-[16px] text-gray-800">Quantity:</span>
-            <div className="flex items-center h-[42px] border border-gray-300 rounded-md overflow-hidden bg-white w-[130px]">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
+            <div className="flex items-center h-9 border border-gray-300 rounded-md overflow-hidden bg-white">
               <button onClick={() => inCart ? updateQuantity(itemKey, Math.max(1, quantity - 1)) : setQty(Math.max(1, qty - 1))}
-                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={18} /></button>
-              <div className="flex-1 border-x border-gray-300 h-full flex items-center justify-center text-[16px] font-medium">{inCart ? quantity : qty}</div>
+                className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={14} /></button>
+              <div className="w-[44px] border-x border-gray-300 h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
               <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : setQty(qty + 1)}
-                className="w-10 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={18} /></button>
+                className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={14} /></button>
             </div>
           </div>
 
@@ -612,6 +624,12 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <div className="mb-6">
             <TrustBar config={config} />
           </div>
+
+          {videoUrl && videoPos === 3 && (
+            <div className="mb-6">
+              <VideoEmbed url={videoUrl} />
+            </div>
+          )}
 
           <div className="mb-6 flex items-center gap-3">
             <span className="text-[13px] text-gray-500 font-medium">Share:</span>
@@ -669,51 +687,36 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </div>
         )}
 
-        {sections?.seoTags && sections.seoTags.length > 0 && (
-          <div className="border-t border-gray-100 pt-6 mb-6">
-            <details className="group">
-              <summary className="text-[12px] text-gray-400 cursor-pointer list-none flex items-center gap-1 hover:text-gray-600 transition-colors">
-                <span>Related Searches</span>
-                <ChevronDown size={12} className="group-open:rotate-180 transition-transform" />
-              </summary>
-              <div className="flex flex-wrap gap-2 mt-3">
-                {sections.seoTags.map((tag, i) => (
-                  <button
-                    key={i}
-                    onClick={() => router.push(`/products?search=${encodeURIComponent(tag)}`)}
-                    className="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[12px] text-gray-500 rounded-full transition-colors"
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </details>
-          </div>
+        {videoUrl && videoPos === 4 && (
+          <VideoEmbed url={videoUrl} />
         )}
 
-        <ReviewsSection reviews={reviews} productId={product.id} />
-      </div>
-
-      {product.tags && product.tags.length > 0 && !sections?.seoTags && (
-        <div className="px-4 max-w-screen-xl mx-auto mb-6">
-          <details className="group">
-            <summary className="text-[12px] text-gray-400 cursor-pointer list-none flex items-center gap-1 hover:text-gray-600 transition-colors">
-              <span>Related Searches</span>
-              <ChevronDown size={12} className="group-open:rotate-180 transition-transform" />
-            </summary>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {product.tags.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => router.push(`/products?search=${encodeURIComponent(tag)}`)}
-                  className="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[12px] text-gray-500 rounded-full transition-colors"
-                >
-                  {tag}
-                </button>
+        <div className="hidden" aria-hidden="true">
+          {sections?.seoTags && sections.seoTags.length > 0 && (
+            <div>
+              {sections.seoTags.map((tag, i) => (
+                <span key={i}>{tag}, </span>
               ))}
             </div>
-          </details>
+          )}
+          {product.tags && product.tags.length > 0 && (
+            <div>
+              {product.tags.map((tag) => (
+                <span key={tag}>{tag}, </span>
+              ))}
+            </div>
+          )}
         </div>
+
+        <ReviewsSection reviews={reviews} productId={product.id} />
+
+        {videoUrl && videoPos === 5 && (
+          <VideoEmbed url={videoUrl} />
+        )}
+      </div>
+
+      {product.showRelatedProducts !== false && (
+        <RelatedProducts product={product} />
       )}
 
       <SizeChartModal open={sizeChartOpen} onClose={() => setSizeChartOpen(false)} sizeChart={sizeChartData} />
