@@ -8,6 +8,47 @@ import { randomUUID } from 'crypto';
 export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findAll(query: { search?: string; page?: number; perPage?: number }) {
+    const page = query.page || 1;
+    const perPage = query.perPage || 20;
+    const where: any = { role: 'customer' };
+
+    if (query.search) {
+      const normalizedPhone = normalizePhone(query.search);
+      where.OR = [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+      ];
+      if (normalizedPhone) {
+        where.OR.push({ phoneNumber: normalizedPhone });
+      }
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip: (page - 1) * perPage,
+        take: perPage,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phoneNumber: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
   async findOrCreateCustomer(
     phone: string,
     name: string,
