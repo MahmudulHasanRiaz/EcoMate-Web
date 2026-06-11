@@ -2,10 +2,12 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import { UserRole, UserStatus } from '@prisma/client';
 
@@ -117,6 +119,9 @@ export class UsersService {
       );
     }
 
+    const normalizedPhone = normalizePhone(dto.phoneNumber);
+    if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
+
     const hashedPassword = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
       data: {
@@ -124,7 +129,7 @@ export class UsersService {
         lastName: dto.lastName,
         username: dto.username,
         email: dto.email,
-        phoneNumber: dto.phoneNumber,
+        phoneNumber: normalizedPhone,
         password: hashedPassword,
         role: dto.role as UserRole,
       },
@@ -181,7 +186,11 @@ export class UsersService {
     if (dto.lastName !== undefined) data.lastName = dto.lastName;
     if (dto.username !== undefined) data.username = dto.username;
     if (dto.email !== undefined) data.email = dto.email;
-    if (dto.phoneNumber !== undefined) data.phoneNumber = dto.phoneNumber;
+    if (dto.phoneNumber !== undefined) {
+      const normalizedPhone = normalizePhone(dto.phoneNumber);
+      if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
+      data.phoneNumber = normalizedPhone;
+    }
     if (dto.status !== undefined) data.status = dto.status as UserStatus;
     if (dto.role !== undefined) data.role = dto.role as UserRole;
     if (dto.password) {

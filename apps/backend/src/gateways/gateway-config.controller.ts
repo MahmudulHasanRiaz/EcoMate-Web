@@ -2,6 +2,7 @@ import { Controller, Get, Put, Body, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { normalizePhone } from '../common/utils/phone-utils';
 
 @Controller('gateways')
 export class GatewayConfigController {
@@ -42,19 +43,20 @@ export class GatewayConfigController {
   @Roles('superadmin', 'admin')
   @Put(':gateway')
   async upsertOne(@Param('gateway') gateway: string, @Body() dto: any) {
+    const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
     return this.prisma.paymentGatewayConfig.upsert({
       where: { gateway },
       create: {
         gateway,
         enabled: dto.enabled ?? true,
         mode: dto.mode || 'personal',
-        phoneNumber: dto.phoneNumber || null,
+        phoneNumber,
         credentials: dto.credentials || {},
       },
       update: {
         enabled: dto.enabled,
         mode: dto.mode,
-        phoneNumber: dto.phoneNumber,
+        phoneNumber,
         credentials: dto.credentials,
       },
     });

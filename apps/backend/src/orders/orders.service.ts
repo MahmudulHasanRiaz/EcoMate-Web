@@ -91,6 +91,7 @@ export class OrdersService {
     const perPage = query.perPage || 10;
     const where: any = {};
     if (query.search) {
+      const normalizedPhone = normalizePhone(query.search);
       where.OR = [
         { displayId: { contains: query.search, mode: 'insensitive' } },
         {
@@ -103,9 +104,9 @@ export class OrdersService {
             lastName: { contains: query.search, mode: 'insensitive' },
           },
         },
-        { customer: { phoneNumber: { contains: query.search } } },
+        { customer: { phoneNumber: { contains: normalizedPhone || query.search } } },
         { guestName: { contains: query.search, mode: 'insensitive' } },
-        { guestPhone: { contains: query.search } },
+        { guestPhone: { contains: normalizedPhone || query.search } },
       ];
     }
     if (query.statusId) where.statusId = query.statusId;
@@ -501,6 +502,11 @@ export class OrdersService {
         if (value !== undefined) {
           safeData[field] = String(value);
         }
+      }
+      if (safeData.phoneNumber) {
+        const normalized = normalizePhone(safeData.phoneNumber);
+        if (!normalized) throw new BadRequestException('Invalid phone number');
+        safeData.phoneNumber = normalized;
       }
       if (Object.keys(safeData).length > 0) {
         await this.prisma.user.update({

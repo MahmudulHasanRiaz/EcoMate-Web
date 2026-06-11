@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, mediaUrl } from './api'
 import type { OrderResponse } from './api'
@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -149,6 +149,7 @@ function EmptyState({ search, statusFilter, onClear }: { search: string; statusF
 }
 
 export function Orders() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
@@ -256,6 +257,9 @@ export function Orders() {
             <h2 className='text-2xl font-bold tracking-tight'>Orders</h2>
             <p className='text-muted-foreground text-sm'>{totalOrders} orders found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}</p>
           </div>
+          <Button onClick={() => navigate({ to: '/op/orders/create' })}>
+            <Plus className='h-4 w-4 mr-1' /> Create Order
+          </Button>
         </div>
 
         <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>

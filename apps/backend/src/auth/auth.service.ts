@@ -11,6 +11,7 @@ import { EmailService } from '../email/email.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import ms from 'ms';
 import type { StringValue } from 'ms';
@@ -36,6 +37,9 @@ export class AuthService {
       );
     }
 
+    const normalizedPhone = normalizePhone(dto.phoneNumber);
+    if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
+
     const hashedPassword = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
       data: {
@@ -43,7 +47,7 @@ export class AuthService {
         lastName: dto.lastName,
         username: dto.username,
         email: dto.email,
-        phoneNumber: dto.phoneNumber,
+        phoneNumber: normalizedPhone,
         password: hashedPassword,
       },
     });

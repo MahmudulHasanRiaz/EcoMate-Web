@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift, Ruler,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, LayoutGrid,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
@@ -11,12 +12,15 @@ export class CustomersService {
     phone: string,
     name: string,
   ): Promise<{ id: string }> {
+    const normalized = normalizePhone(phone);
+    if (!normalized) throw new BadRequestException('Invalid phone number');
+
     const nameParts = (name || '').trim().split(/\s+/);
     const firstName = nameParts[0] || 'Unknown';
     const lastName = nameParts.slice(1).join(' ') || '';
 
     const existing = await this.prisma.user.findFirst({
-      where: { phoneNumber: phone, role: 'customer' },
+      where: { phoneNumber: normalized, role: 'customer' },
     });
 
     if (existing) {
@@ -29,7 +33,7 @@ export class CustomersService {
       return { id: existing.id };
     }
 
-    const phoneKey = phone.replace(/[^\d]/g, '');
+    const phoneKey = normalized.replace(/[^\d]/g, '');
     const hashedPassword = await bcrypt.hash(randomUUID(), 12);
 
     const user = await this.prisma.user.create({
@@ -38,7 +42,7 @@ export class CustomersService {
         lastName,
         username: `cust_${phoneKey}`,
         email: `cust_${phoneKey}@ecomate.local`,
-        phoneNumber: phone,
+        phoneNumber: normalized,
         password: hashedPassword,
         role: 'customer',
       },
@@ -52,8 +56,11 @@ export class CustomersService {
   }
 
   async getOrderSummary(phoneNumber: string) {
+    const normalized = normalizePhone(phoneNumber);
+    if (!normalized) return null;
+
     const user = await this.prisma.user.findFirst({
-      where: { phoneNumber, role: 'customer' },
+      where: { phoneNumber: normalized, role: 'customer' },
       select: { id: true, firstName: true, lastName: true, phoneNumber: true },
     });
 

@@ -29,9 +29,10 @@ export class CheckoutLeadsService {
     const where: any = {};
 
     if (query.search) {
+      const normalizedSearch = normalizePhone(query.search) || query.search;
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
-        { phone: { contains: query.search } },
+        { phone: { contains: normalizedSearch } },
         { email: { contains: query.search, mode: 'insensitive' } },
       ];
     }

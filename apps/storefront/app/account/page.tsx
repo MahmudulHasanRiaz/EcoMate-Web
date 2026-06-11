@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, User, LogOut, Package, MapPin, Heart, History, Settings, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/AuthContext'
+import { normalizePhone } from '@/lib/phone-utils';
 import apiClient from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -36,7 +37,7 @@ export default function AccountPage() {
           lastName: lastName || '',
           username: username || email.split('@')[0],
           email,
-          phoneNumber: phoneNumber || '',
+          phoneNumber: normalizePhone(phoneNumber) || phoneNumber || '',
           password,
         });
       }
@@ -267,7 +268,7 @@ export default function AccountPage() {
               onClick={async () => {
                 setSaving(true);
                 try {
-                  await apiClient.put('/users/profile', profile);
+                  await apiClient.put('/users/profile', { ...profile, phone: normalizePhone(profile.phone) || profile.phone });
                   toast.success('Profile updated successfully');
                 } catch {
                   toast.error('Failed to update profile');
