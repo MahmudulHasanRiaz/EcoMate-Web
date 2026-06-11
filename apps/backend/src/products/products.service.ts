@@ -28,6 +28,7 @@ export class ProductsService {
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
+    await this.prisma.productTag.deleteMany({ where: { productId } });
     if (!tagNames?.length) return;
     for (const name of tagNames) {
       const slug = slugify(name);
@@ -351,9 +352,7 @@ export class ProductsService {
       },
     });
 
-    if (dto.tags?.length) {
-      await this.syncTags(dto.tags, product.id);
-    }
+    await this.syncTags(dto.tags || [], product.id);
 
     if (dto.images?.length) {
       const synced = await this.media.syncEntityImages(
@@ -400,15 +399,7 @@ export class ProductsService {
     delete data.attributes;
     delete data.categoryIds;
 
-    if (p.type !== 'variable') {
-      if (dto.manageStock !== undefined && dto.manageStock !== p.manageStock) {
-        data.manageStock = dto.manageStock;
-        data.stock = dto.manageStock ? (dto.stock ?? 0) : 0;
-      } else {
-        delete data.stock;
-        delete data.manageStock;
-      }
-    } else {
+    if (p.type === 'variable' || p.type === 'combo') {
       delete data.stock;
       delete data.manageStock;
     }
@@ -439,9 +430,7 @@ export class ProductsService {
       },
     });
 
-    if (dto.tags?.length) {
-      await this.syncTags(dto.tags, id);
-    }
+    await this.syncTags(dto.tags || [], id);
 
     if (dto.images !== undefined) {
       const synced = await this.media.syncEntityImages(
@@ -496,7 +485,16 @@ export class ProductsService {
       await this.media.detachAll('variant', v.id);
     }
     await this.media.detachAll('product', id);
-    await this.prisma.product.delete({ where: { id } });
+    try {
+      await this.prisma.product.delete({ where: { id } });
+    } catch (e: any) {
+      if (e.code === 'P2003') {
+        throw new BadRequestException(
+          'Cannot delete product with existing orders. Archive it instead.',
+        );
+      }
+      throw e;
+    }
     return { message: 'Product deleted' };
   }
 

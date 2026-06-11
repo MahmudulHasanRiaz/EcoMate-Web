@@ -31,6 +31,11 @@ export default function AccountPage() {
       if (isLoginMode) {
         await login(email, password);
       } else {
+        if (phoneNumber && !normalizePhone(phoneNumber)) {
+          setError('Please enter a valid phone number');
+          setSubmitting(false);
+          return;
+        }
         const nameParts = (firstName + ' ' + lastName).trim();
         await register({
           firstName: firstName || nameParts,
@@ -266,6 +271,10 @@ export default function AccountPage() {
 
             <button
               onClick={async () => {
+                if (profile.phone && !normalizePhone(profile.phone)) {
+                  toast.error('Please enter a valid phone number');
+                  return;
+                }
                 setSaving(true);
                 try {
                   await apiClient.put('/users/profile', { ...profile, phone: normalizePhone(profile.phone) || profile.phone });

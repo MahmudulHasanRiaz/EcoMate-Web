@@ -13,22 +13,23 @@ export function ProductImageGallery({ images, productName }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
   useEffect(() => {
-    if (scrollRef.current && lightboxOpen) {
-      scrollRef.current.scrollLeft = 0;
+    if (lightboxOpen) {
+      setLightboxIndex(activeIndex);
     }
   }, [lightboxOpen]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const idx = Math.round(el.scrollLeft / el.clientWidth);
-    if (idx !== activeIndex) setActiveIndex(idx);
-  }, [activeIndex]);
+    const newIndex = el.clientWidth > 0 ? Math.round(el.scrollLeft / el.clientWidth) : 0
+    setActiveIndex(isNaN(newIndex) ? 0 : newIndex);
+  }, []);
 
   const scrollTo = useCallback((index: number) => {
     const el = scrollRef.current;
@@ -137,7 +138,7 @@ export function ProductImageGallery({ images, productName }: Props) {
         )}
       </div>
 
-      {lightboxOpen && (
+          {lightboxOpen && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center" onClick={() => setLightboxOpen(false)}>
           <button onClick={() => setLightboxOpen(false)}
             className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
@@ -149,7 +150,7 @@ export function ProductImageGallery({ images, productName }: Props) {
             onClick={e => e.stopPropagation()}
           >
             <img
-              src={currentSrc}
+              src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
               alt={productName}
               className="max-w-[95vw] max-h-[90vh] object-contain select-none"
               draggable={false}
@@ -159,22 +160,22 @@ export function ProductImageGallery({ images, productName }: Props) {
           {images.length > 1 && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
               {images.map((_, i) => (
-                <button key={i} onClick={(e) => { e.stopPropagation(); scrollTo(i); }}
+                <button key={i} onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); }}
                   className={`w-2.5 h-2.5 rounded-full transition-all ${
-                    i === activeIndex ? 'bg-white scale-110' : 'bg-white/40 hover:bg-white/70'
+                    i === lightboxIndex ? 'bg-white scale-110' : 'bg-white/40 hover:bg-white/70'
                   }`} />
               ))}
             </div>
           )}
 
-          {activeIndex > 0 && (
-            <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex - 1); }}
+          {lightboxIndex > 0 && (
+            <button onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
               className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
               <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
-          {activeIndex < images.length - 1 && (
-            <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex + 1); }}
+          {lightboxIndex < images.length - 1 && (
+            <button onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
               className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
               <ChevronRight size={20} strokeWidth={2.5} />
             </button>

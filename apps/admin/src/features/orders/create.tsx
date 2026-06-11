@@ -64,7 +64,6 @@ export function CreateOrder() {
 
   const [customerNotes, setCustomerNotes] = useState('')
   const [officeNotes, setOfficeNotes] = useState('')
-  const [creating, setCreating] = useState(false)
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
 
   const customerSearchRef = useRef<ReturnType<typeof setTimeout>>()
@@ -72,7 +71,7 @@ export function CreateOrder() {
   const productDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    apiClient.get('/categories').then(r => setCategories(r.data as any[])).catch(() => {})
+    apiClient.get('/categories').then(r => setCategories(r.data as any[])).catch(() => toast.error('Failed to load categories'))
     apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
   }, [])
 
@@ -303,7 +302,10 @@ export function CreateOrder() {
       toast.error('Customer name is required')
       return
     }
-    setCreating(true)
+    if (paymentMode === 'partial' && (!partialAmount || parseFloat(partialAmount) <= 0)) {
+      toast.error('Enter a partial payment amount')
+      return
+    }
     createMut.mutate(buildPayload())
   }
 
@@ -665,7 +667,7 @@ export function CreateOrder() {
               </CardContent>
             </Card>
 
-            <Button className='w-full' size='lg' onClick={handleSubmit} disabled={creating || createMut.isPending}>
+            <Button className='w-full' size='lg' onClick={handleSubmit} disabled={createMut.isPending}>
               {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
               Create Order
             </Button>

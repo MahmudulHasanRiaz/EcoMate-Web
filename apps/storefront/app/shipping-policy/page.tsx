@@ -4,10 +4,14 @@ import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 export default async function ShippingPolicyPage() {
   let storeName = "Store";
   let shippingInfo = "";
+  let deliveryCharge = 60;
+  let freeDeliveryMin = 5000;
   try {
     const c = await getStorefrontConfigServer();
     storeName = c.store.name;
     shippingInfo = c.shipping.info;
+    deliveryCharge = c.delivery.charge || 60;
+    freeDeliveryMin = c.delivery.freeDeliveryMin || 5000;
   } catch {}
 
   return (
@@ -32,8 +36,8 @@ export default async function ShippingPolicyPage() {
             </ul>
             <h3 className="text-[15px] font-semibold text-gray-800">Shipping Charges</h3>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Free shipping on orders over ৳5,000</li>
-              <li>Inside Dhaka: ৳60 flat rate</li>
+              <li>Free shipping on orders over ৳{freeDeliveryMin.toLocaleString()}</li>
+              <li>Inside Dhaka: ৳{deliveryCharge} flat rate</li>
               <li>Outside Dhaka: ৳100-300 depending on location</li>
             </ul>
             <h3 className="text-[15px] font-semibold text-gray-800">Order Tracking</h3>

@@ -42,13 +42,13 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
   const [targetPos, setTargetPos] = useState({ x: item.x, y: item.y });
 
   useEffect(() => {
-    // eslint-disable-next-line prefer-const
-    let target = document.getElementById('floating-cart');
+    const target = document.getElementById('floating-cart');
+    if (!target) return;
 
     let targetX = window.innerWidth - 30;
     let targetY = window.innerHeight / 2;
 
-    if (target && !target.className.includes('translate-x-[120%]')) {
+    if (!target.className.includes('translate-x-[120%]')) {
       const rect = target.getBoundingClientRect();
       targetX = rect.left + rect.width / 2;
       targetY = rect.top + rect.height / 2;

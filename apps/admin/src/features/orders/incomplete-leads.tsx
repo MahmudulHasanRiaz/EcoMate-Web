@@ -596,16 +596,28 @@ export function IncompleteLeads() {
           )}
           <DialogFooter className='gap-2'>
             <Button variant='outline' onClick={() => setEditingLead(null)}>Cancel</Button>
-            <Button onClick={() => editingLead && convertEditMut.mutate({
-              id: editingLead.id,
-              overrides: {
-                items: editForm.items,
-                guestName: editForm.guestName,
-                guestPhone: editForm.guestPhone,
-                paymentMethod: editForm.paymentMethod,
-                shippingAddress: editForm.shippingAddress ? JSON.parse(editForm.shippingAddress) : undefined,
-              },
-            })} disabled={convertEditMut.isPending || editForm.items.length === 0}>
+            <Button onClick={() => {
+              if (!editingLead) return
+              let parsedAddress = undefined
+              if (editForm.shippingAddress) {
+                try {
+                  parsedAddress = JSON.parse(editForm.shippingAddress)
+                } catch {
+                  toast.error('Invalid shipping address format')
+                  return
+                }
+              }
+              convertEditMut.mutate({
+                id: editingLead.id,
+                overrides: {
+                  items: editForm.items,
+                  guestName: editForm.guestName,
+                  guestPhone: editForm.guestPhone,
+                  paymentMethod: editForm.paymentMethod,
+                  shippingAddress: parsedAddress,
+                },
+              })
+            }} disabled={convertEditMut.isPending || editForm.items.length === 0}>
               {convertEditMut.isPending ? 'Creating...' : 'Create Order'}
             </Button>
           </DialogFooter>

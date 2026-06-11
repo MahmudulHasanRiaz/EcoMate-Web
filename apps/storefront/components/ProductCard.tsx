@@ -28,7 +28,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
   const cartItem = items.find((item) => item.id === product.id);
   const inCart = !!cartItem && !isVar;
-  const quantity = cartItem?.quantity || 0;
+  const quantity = cartItem?.quantity ?? 0;
   const isPriority = index < 6;
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {

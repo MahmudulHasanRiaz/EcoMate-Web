@@ -92,7 +92,7 @@ export function Inventory() {
 
   const adjustMut = useMutation({
     mutationFn: (data: any) => inventoryApi.adjust(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); resetDialog(); toast.success('Stock adjusted'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-low'] }); qc.invalidateQueries({ queryKey: ['inventory-logs'] }); resetDialog(); toast.success('Stock adjusted'); },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to adjust stock'),
   })
 
@@ -113,6 +113,10 @@ export function Inventory() {
   const handleAdjust = () => {
     const qty = parseInt(quantity)
     if (isNaN(qty) || qty === 0) return
+    if (!reason.trim()) {
+      toast.error('Please provide a reason for the adjustment')
+      return
+    }
     if (adjustType === 'combo') {
       if (!comboId) return
       adjustMut.mutate({ comboId, quantity: qty, reason })

@@ -31,10 +31,10 @@ export class UsersService {
     const where: any = {};
     if (query.search) {
       where.OR = [
-        { firstName: { contains: query.search } },
-        { lastName: { contains: query.search } },
-        { username: { contains: query.search } },
-        { email: { contains: query.search } },
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { username: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.status) {

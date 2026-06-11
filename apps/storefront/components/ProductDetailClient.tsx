@@ -16,6 +16,7 @@ import RelatedProducts from "./RelatedProducts";
 import DOMPurify from 'isomorphic-dompurify';
 import apiClient from "@/lib/api-client";
 import type { SizeChartData } from "./SizeChartModal";
+import { toast } from 'sonner';
 
 function WhatsAppIcon() {
   return (
@@ -349,11 +350,11 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   }, []);
 
   const variantLabel = selectedVariant
-    ? selectedVariant.attributeValues.map((av) => av.attributeValue.value).join(' / ')
+    ? selectedVariant.attributeValues?.map((av) => av.attributeValue.value).join(' / ')
     : undefined;
 
   const variantAttributes = selectedVariant
-    ? selectedVariant.attributeValues.map((av) => ({
+    ? selectedVariant.attributeValues?.map((av) => ({
         name: av.attributeValue.attribute.name,
         value: av.attributeValue.value,
       }))
@@ -405,6 +406,10 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   }
 
   function handleBuyNow() {
+    if (isVariable && !selectedVariant) {
+      toast?.error?.('Please select a variant first') || alert('Please select a variant first')
+      return
+    }
     addToCart({
       id: product.id,
       name: product.name,

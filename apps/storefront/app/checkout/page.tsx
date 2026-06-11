@@ -547,7 +547,7 @@ export default function CheckoutPage() {
       errors.district = 'Please select a district';
     }
     const thanaReq = checkoutCfg?.thanaRequired !== false;
-    if (thanaReq && !thana.trim()) {
+    if (thanaReq && district.trim() && !thana.trim()) {
       errors.thana = 'Please select a thana/upazila';
     }
     if (!addressLine.trim() || addressLine.trim().length < 5) {

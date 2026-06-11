@@ -135,7 +135,7 @@ export default function ThankYouContent({
   const statusName = String(order.status?.name || '');
   const paymentMethod = String(order.paymentMethod || '');
   const paymentMode = String(order.paymentMode || '');
-  const isPendingStatus = statusName === 'Pending';
+  const isPendingStatus = statusName.toLowerCase() === 'pending';
   const isCancellable = paymentStatus === 'pending' && isPendingStatus;
   const verifiedPayments = (order.payments || []).filter((p: any) => p.status === 'verified');
   const totalPaid = verifiedPayments.reduce((s: number, p: any) => s + nn(p.amount), 0);

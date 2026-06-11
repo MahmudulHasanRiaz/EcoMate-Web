@@ -14,8 +14,8 @@ export interface ProductsResponse {
 }
 
 export function transformBackendProduct(raw: any): Product {
-  const rawBasePrice = Number(raw.basePrice);
-  const rawSalePrice = raw.salePrice ? Number(raw.salePrice) : undefined;
+  const rawBasePrice = Number(raw.basePrice) || 0;
+  const rawSalePrice = raw.salePrice ? Number(raw.salePrice) || 0 : undefined;
   const rawImages = Array.isArray(raw.images) ? raw.images : [];
   const firstImage = rawImages.length > 0 ? rawImages[0] : null;
   const isVar = (raw.type || 'simple') === 'variable';
@@ -86,8 +86,9 @@ export function transformBackendProduct(raw: any): Product {
     variants: variants.length > 0 ? variants : undefined,
     codAvailable: raw.codAvailable,
     descriptionSections: raw.descriptionSections,
+    rating: raw.averageRating || raw.rating || 0,
     reviewCount: raw._count?.reviews ?? raw.reviewCount,
-    averageRating: raw.averageRating,
+    averageRating: raw.averageRating || raw.rating || 0,
   };
 }
 

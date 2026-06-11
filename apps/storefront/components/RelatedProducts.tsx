@@ -66,7 +66,7 @@ export default function RelatedProducts({ product }: Props) {
     return () => { cancelled = true; };
   }, [product.id, product.category, product.categorySlug, product.tags]);
 
-  if (loading || products.length < 4) return null;
+  if (loading || products.length === 0) return null;
 
   return (
     <div className="border-t border-gray-100 pt-8 mt-8 px-4 max-w-screen-xl mx-auto">

@@ -133,17 +133,27 @@ function OrderDetailPage() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => ordersApi.updateOrder(id, data),
-    onSuccess: () => toast.success('Updated'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      setEditing(false)
+      toast.success('Updated')
+    },
   })
 
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
-    onSuccess: () => toast.success('Status updated'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      toast.success('Status updated')
+    },
   })
 
   const noteMut = useMutation({
     mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
-    onSuccess: () => toast.success('Note added'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      toast.success('Note added')
+    },
   })
 
   const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
@@ -183,7 +193,6 @@ function OrderDetailPage() {
         })),
       }
     })
-    setEditing(false)
   }
 
   const rawDiscount = parseFloat(discount) || 0

@@ -63,11 +63,13 @@ export class InventoryController {
     },
     @CurrentUser() user: { email: string },
   ) {
+    const performedBy = body.performedBy || user.email;
+    delete body.performedBy;
     return this.inventoryService.adjust(
       body.productId,
       body.quantity,
       body.reason,
-      body.performedBy || user.email,
+      performedBy,
       body.variantId,
       body.comboId,
     );
@@ -89,6 +91,6 @@ export class InventoryController {
     },
     @CurrentUser() user: { email: string },
   ) {
-    return this.inventoryService.bulkAdjust(body.items, body.performedBy || user.email);
+    return this.inventoryService.bulkAdjust(body.items, user.email);
   }
 }

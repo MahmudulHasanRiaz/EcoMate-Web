@@ -68,11 +68,20 @@ function FacebookEmbed({ url }: { url: string }) {
       script.defer = true;
       script.crossOrigin = 'anonymous';
       script.onload = init;
+      script.onerror = () => setLoaded(false);
       document.body.appendChild(script);
     } else {
       init();
     }
   }, []);
+
+  if (!loaded) {
+    return (
+      <div ref={containerRef} className="absolute inset-0 w-full h-full flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+        <span className="text-[13px] text-gray-400">Failed to load video</span>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="absolute inset-0 w-full h-full flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">

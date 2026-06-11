@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { UpsertGatewayConfigDto } from './dto/upsert-gateway-config.dto';
 
 @Controller('gateways')
 export class GatewayConfigController {
@@ -42,7 +43,7 @@ export class GatewayConfigController {
 
   @Roles('superadmin', 'admin')
   @Put(':gateway')
-  async upsertOne(@Param('gateway') gateway: string, @Body() dto: any) {
+  async upsertOne(@Param('gateway') gateway: string, @Body() dto: UpsertGatewayConfigDto) {
     const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
     return this.prisma.paymentGatewayConfig.upsert({
       where: { gateway },

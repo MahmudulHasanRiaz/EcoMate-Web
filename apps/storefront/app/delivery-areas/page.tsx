@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { MapPin, Truck, CheckCircle } from "lucide-react";
+import { MapPin, Truck, CheckCircle, Gift } from "lucide-react";
 import { pageMetadata } from "@/lib/metadata";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
 const areas = [
   { zone: "Inside Dhaka", areas: ["Gulshan", "Banani", "Uttara", "Mirpur", "Mohammadpur", "Dhanmondi", "Motijheel", "Farmgate", "Bashundhara", "Baridhara"], charge: "Free", time: "24-48 hours" },
@@ -12,12 +13,27 @@ export async function generateMetadata(): Promise<Metadata> {
   return pageMetadata("Delivery Areas", "Check if {store} delivers to your area. We deliver across Bangladesh including Dhaka, Chittagong, Sylhet, and all districts.");
 }
 
-export default function DeliveryAreasPage() {
+export default async function DeliveryAreasPage() {
+  let freeDeliveryMin = 0;
+  try {
+    const config = await getStorefrontConfigServer();
+    freeDeliveryMin = config.delivery.freeDeliveryMin || 0;
+  } catch {}
+
   return (
     <div className="max-w-screen-xl mx-auto px-3 md:px-4 py-4 md:py-8">
       <h1 className="text-[18px] md:text-[24px] font-bold text-gray-900 mb-1">Delivery Areas</h1>
       <p className="text-[13px] text-gray-500 mb-6">We deliver across Bangladesh.</p>
-      
+
+      {freeDeliveryMin > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+          <Gift size={20} className="text-green-600 shrink-0" />
+          <p className="text-[13px] text-green-800 font-medium">
+            Free delivery on orders over ৳{freeDeliveryMin.toLocaleString()}!
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {areas.map((zone, i) => (
           <div key={i} className="bg-white rounded-[14px] border border-gray-100 p-4">

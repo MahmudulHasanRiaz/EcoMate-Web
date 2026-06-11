@@ -366,16 +366,17 @@ export class CheckoutLeadsService {
     const yy = String(today.getFullYear()).slice(2);
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const dd = String(today.getDate()).padStart(2, '0');
-    const prefix = `LEAD-${yy}${mm}${dd}`;
-    const last = await this.prisma.checkoutLead.findFirst({
-      where: { displayId: { startsWith: prefix } },
-      orderBy: { displayId: 'desc' },
-      select: { displayId: true },
+    const dateStr = `${yy}${mm}${dd}`;
+    const prefix = `LEAD-${dateStr}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.orderCounter.upsert({
+        where: { date: `LEAD-${dateStr}` },
+        create: { date: `LEAD-${dateStr}`, seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
     });
-    const nextNo = last
-      ? parseInt(last.displayId!.split('-').pop() || '0') + 1
-      : 1;
-    return `${prefix}-${String(nextNo).padStart(4, '0')}`;
   }
 
   private async generateOrderDisplayId(): Promise<string> {

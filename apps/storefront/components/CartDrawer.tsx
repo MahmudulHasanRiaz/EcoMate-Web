@@ -130,10 +130,10 @@ export default function CartDrawer() {
                    </span>
                 </div>
              </div>
-             {/* Progress bar */}
-             <div className="absolute bottom-0 left-0 w-full h-[4px] bg-brand-blue/10">
-               <div className="h-full bg-brand-blue w-[25%]"></div>
-             </div>
+              {/* Progress bar */}
+              <div className="absolute bottom-0 left-0 w-full h-[4px] bg-brand-blue/10">
+                <div className="h-full bg-brand-blue" style={{ width: `${Math.min(100, (cartTotal / config.delivery.freeDeliveryMin) * 100)}%` }}></div>
+              </div>
           </div>
 
           {items.length === 0 ? (
