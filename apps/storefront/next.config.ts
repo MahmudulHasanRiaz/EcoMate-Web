@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.r2.dev' },
       { protocol: 'https', hostname: '**.amazonaws.com' },
       { protocol: 'https', hostname: '**.cloudfront.net' },
+      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
 };
@@ -47,6 +48,10 @@ export default async function (phase: string) {
         {
           source: '/uploads/:path*',
           destination: `${apiUrl}/uploads/:path*`,
+        },
+        {
+          source: '/assets/:path*',
+          destination: `${apiUrl}/assets/:path*`,
         },
         {
           source: '/admin',

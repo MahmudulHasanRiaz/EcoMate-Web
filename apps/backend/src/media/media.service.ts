@@ -666,6 +666,66 @@ export class MediaService {
       );
     }
 
+    // Storefront store systems (logo images)
+    const sysRow = await this.prisma.systemSetting.findUnique({
+      where: { key: 'store_systems' },
+    });
+    if (sysRow?.value) {
+      try {
+        const systems: { logo?: string }[] = JSON.parse(sysRow.value);
+        const urls = systems.map((s) => s.logo).filter((u): u is string => !!u);
+        scanned += urls.length;
+        const resolved = await this.resolveUrlsToMedia(urls, opts);
+        let changed = false;
+        const nextSystems = systems.map((s, i) => {
+          if (s.logo && resolved[i] && s.logo !== resolved[i].url) {
+            changed = true;
+            migrated++;
+          }
+          return { ...s, logo: resolved[i]?.url || s.logo };
+        });
+        if (changed) {
+          await this.prisma.systemSetting.update({
+            where: { key: 'store_systems' },
+            data: { value: JSON.stringify(nextSystems) },
+          });
+        }
+        const mediaIds = resolved
+          .map((r) => r.mediaId)
+          .filter((id): id is string => !!id);
+        await this.syncAttachments('storefront', 'store_systems', mediaIds);
+      } catch {
+        /* ignore malformed */
+      }
+    }
+
+    // Single-value image URL settings
+    for (const key of [
+      'storefront_og_image',
+      'storefront_favicon',
+      'admin_favicon',
+    ] as const) {
+      const row = await this.prisma.systemSetting.findUnique({
+        where: { key },
+      });
+      if (row?.value) {
+        scanned++;
+        const [r] = await this.resolveUrlsToMedia([row.value], opts);
+        if (r && r.url !== row.value) {
+          migrated++;
+          await this.prisma.systemSetting.update({
+            where: { key },
+            data: { value: r.url },
+          });
+        }
+        await this.syncAttachments(
+          'storefront',
+          key,
+          r?.mediaId ? [r.mediaId] : [],
+        );
+      }
+    }
+
     this.logger.log(
       `Media migration: scanned=${scanned} migrated=${migrated} failed=${failed}`,
     );

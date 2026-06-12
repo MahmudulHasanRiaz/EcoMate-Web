@@ -18,6 +18,7 @@ async function bootstrap() {
   app.use(urlencoded({ limit: '10mb', extended: true }));
 
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
+  app.useStaticAssets(join(process.cwd(), 'public'), { prefix: '/assets/' });
   app.use(cookieParser());
 
   app.enableCors({

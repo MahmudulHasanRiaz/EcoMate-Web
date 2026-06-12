@@ -12,6 +12,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/uploads': 'http://localhost:4000',
+      '/assets': 'http://localhost:4000',
     },
   },
   plugins: [

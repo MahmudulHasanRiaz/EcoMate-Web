@@ -664,7 +664,10 @@ export class ImportService {
 
       attrs.push({
         name,
-        values: [value],
+        values: value
+          .split(/[,|]/)
+          .map((v) => v.trim())
+          .filter(Boolean),
         visible: true,
         global: true,
       });

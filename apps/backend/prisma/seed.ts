@@ -1,7 +1,21 @@
 import { PrismaClient, UserRole, UserStatus, PaymentOptionType, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join, extname } from 'path';
+import { v4 as uuid } from 'uuid';
+import { createHash } from 'crypto';
 
 const prisma = new PrismaClient();
+
+const MIME_EXT_MAP: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/svg+xml': '.svg',
+  'image/avif': '.avif',
+};
 
 async function main() {
   console.log('Seeding database...');
@@ -854,6 +868,106 @@ async function main() {
     });
   }
   console.log(`  ✓ ${systemSettings.length} system settings created`);
+
+  // ── Download external images to local storage ──
+  console.log('\n  Downloading external product images...');
+  let scanned = 0;
+  let migrated = 0;
+  let failed = 0;
+
+  const downloadAndSave = async (url: string): Promise<string | null> => {
+    scanned++;
+    try {
+      const resp = await fetch(url, {
+        signal: AbortSignal.timeout(15_000),
+        redirect: 'follow',
+        headers: { 'User-Agent': 'EcoMate-Seed/1.0' },
+      });
+      if (!resp.ok) { failed++; return null; }
+      const contentType = resp.headers.get('content-type')?.split(';')[0].trim() || '';
+      if (!contentType.startsWith('image/')) { failed++; return null; }
+      const buffer = Buffer.from(await resp.arrayBuffer());
+
+      // Deduplicate by sha256
+      const hash = createHash('sha256').update(buffer).digest('hex');
+      const existing = await prisma.media.findUnique({ where: { hash } });
+      if (existing) { migrated++; return existing.url; }
+
+      const ext = MIME_EXT_MAP[contentType] || extname(new URL(url).pathname) || '.jpg';
+      const filename = `${uuid()}${ext}`;
+
+      // Save to uploads directory
+      const uploadDir = join(process.cwd(), 'uploads');
+      if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
+      await writeFile(join(uploadDir, filename), buffer);
+
+      // Register in Media library
+      const localUrl = `/uploads/${filename}`;
+      await prisma.media.create({
+        data: {
+          filename,
+          url: localUrl,
+          mimeType: contentType,
+          size: buffer.length,
+          hash,
+          sourceUrl: url,
+        },
+      });
+
+      migrated++;
+      return localUrl;
+    } catch {
+      failed++;
+      return null;
+    }
+  };
+
+  const products = await prisma.product.findMany({ select: { id: true, images: true } });
+  for (const p of products) {
+    const imgs = (p.images as string[]) || [];
+    if (imgs.length === 0) continue;
+    const newImgs: string[] = [];
+    for (const img of imgs) {
+      if (/^https?:\/\//i.test(img)) {
+        const local = await downloadAndSave(img);
+        newImgs.push(local || img);
+      } else {
+        newImgs.push(img);
+      }
+    }
+    const changed = JSON.stringify(newImgs) !== JSON.stringify(imgs);
+    if (changed) {
+      await prisma.product.update({ where: { id: p.id }, data: { images: newImgs as any } });
+    }
+  }
+
+  // Storefront hero slides
+  const heroRow = await prisma.systemSetting.findUnique({ where: { key: 'hero_slides' } });
+  if (heroRow?.value) {
+    try {
+      const slides: { image: string; link?: string; alt?: string }[] = JSON.parse(heroRow.value);
+      const newSlides: typeof slides = [];
+      for (const s of slides) {
+        if (s.image && /^https?:\/\//i.test(s.image)) {
+          const local = await downloadAndSave(s.image);
+          newSlides.push({ ...s, image: local || s.image });
+        } else {
+          newSlides.push(s);
+        }
+      }
+      if (JSON.stringify(newSlides) !== JSON.stringify(slides)) {
+        await prisma.systemSetting.update({
+          where: { key: 'hero_slides' },
+          data: { value: JSON.stringify(newSlides) },
+        });
+      }
+    } catch { /* ignore */ }
+  }
+
+  console.log(`  ✓ Scanned: ${scanned}, Saved: ${migrated}, Failed: ${failed}`);
+  if (failed > 0) {
+    console.log(`  ⚠ ${failed} image(s) failed — may still have external URLs in DB`);
+  }
 
   console.log('\n✅ Database seeded successfully!');
   console.log('   Super Admin: admin@ecomate.com / Admin@123');

@@ -5,5 +5,23 @@ dist
 .next
 .vite
 *.log
-.draft/
+draft/
 env-backup
+
+# Runtime uploads (never commit generated files)
+uploads/
+**/uploads/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+**/coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
