@@ -27,6 +27,7 @@ export interface FetchProductsServerOpts {
   ids?: string;
   sort?: string;
   order?: string;
+  hasStock?: boolean;
 }
 
 function buildQuery(params: FetchProductsServerOpts): string {
@@ -45,6 +46,7 @@ function buildQuery(params: FetchProductsServerOpts): string {
   if (params.ids) sp.set("ids", params.ids);
   if (params.sort) sp.set("sort", params.sort);
   if (params.order) sp.set("order", params.order);
+  if (params.hasStock !== undefined) sp.set("hasStock", String(params.hasStock));
   const qs = sp.toString();
   return qs ? `?${qs}` : "";
 }

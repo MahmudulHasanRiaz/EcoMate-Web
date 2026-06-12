@@ -395,6 +395,7 @@ export class SystemSettingsController {
       catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
       features: {
         sizeChart: map['size_chart_enabled'] === 'true',
+        hideOosFromArchive: map['hide_oos_products'] === 'true',
       },
     };
   }

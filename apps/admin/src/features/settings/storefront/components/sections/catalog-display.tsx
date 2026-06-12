@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 import { SectionShell } from '@/features/settings/storefront/components/section-shell'
+import { Field } from '@/features/settings/storefront/components/field'
+import { FIELD_SCHEMAS } from '@/features/settings/storefront/lib/field-schemas'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -149,7 +151,7 @@ export function CatalogDisplaySection({ hook }: Props) {
     return { mode: 'preset', preset, scope }
   }, [mode, preset, customWidth, customHeight, scope])
 
-  const lastSavedAt = hook.lastSavedMap.catalogImageRatio || null
+  const lastSavedAt = hook.lastSavedMap.catalogImageRatio || hook.lastSavedMap.hide_oos_products || null
 
   return (
     <SectionShell
@@ -266,6 +268,15 @@ export function CatalogDisplaySection({ hook }: Props) {
           ))}
         </RadioGroup>
       </div>
+
+      <Separator />
+
+      <Field
+        fieldKey='hide_oos_products'
+        schema={FIELD_SCHEMAS.hide_oos_products}
+        value={hook.values.hide_oos_products ?? 'false'}
+        onChange={v => hook.setValue('hide_oos_products', v as string)}
+      />
     </SectionShell>
   )
 }

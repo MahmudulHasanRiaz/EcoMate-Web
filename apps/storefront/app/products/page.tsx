@@ -1,4 +1,5 @@
 import { fetchProductsServer, getCategoriesServer } from "@/lib/api/products-server";
+import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import ArchivePageClient from "./ArchivePageClient";
 
 export const dynamic = "force-dynamic";
@@ -24,20 +25,25 @@ export default async function ProductsPage({
     sort === "price-low" ? "asc" : sort === "price-high" ? "desc" : undefined;
   const sortField = sort === "price-low" || sort === "price-high" ? "basePrice" : undefined;
 
-  const [{ data, meta }, categories] = await Promise.all([
-    fetchProductsServer({
-      perPage: 24,
-      isActive: true,
-      search: sp.search || undefined,
-      category: sp.category || undefined,
-      tagSlug: sp.tag || undefined,
-      minPrice: sp.minPrice ? parseFloat(sp.minPrice) : undefined,
-      maxPrice: sp.maxPrice ? parseFloat(sp.maxPrice) : undefined,
-      sort: sortField,
-      order,
-    }),
+  const [config, categories] = await Promise.all([
+    getStorefrontConfigServer().catch(() => null),
     getCategoriesServer(),
   ]);
+
+  const hideOos = config?.features?.hideOosFromArchive === true;
+
+  const { data, meta } = await fetchProductsServer({
+    perPage: 24,
+    isActive: true,
+    hasStock: hideOos || undefined,
+    search: sp.search || undefined,
+    category: sp.category || undefined,
+    tagSlug: sp.tag || undefined,
+    minPrice: sp.minPrice ? parseFloat(sp.minPrice) : undefined,
+    maxPrice: sp.maxPrice ? parseFloat(sp.maxPrice) : undefined,
+    sort: sortField,
+    order,
+  });
 
   const filterKey = JSON.stringify(sp);
 
@@ -49,6 +55,7 @@ export default async function ProductsPage({
       initialHasMore={meta.hasMore}
       categories={categories}
       filters={sp}
+      hasStock={hideOos || undefined}
     />
   );
 }

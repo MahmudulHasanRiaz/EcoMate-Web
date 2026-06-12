@@ -14,6 +14,7 @@ export interface ArchivePageClientProps {
   initialHasMore: boolean;
   categories: Category[];
   filters: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
+  hasStock?: boolean;
 }
 
 const PAGE_SIZE = 24;
@@ -30,6 +31,7 @@ export default function ArchivePageClient({
   initialHasMore,
   categories,
   filters,
+  hasStock,
 }: ArchivePageClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -59,6 +61,7 @@ export default function ArchivePageClient({
       fetchPage: async (cursor, signal) => {
         const res = await getProducts({
           isActive: true,
+          hasStock: hasStock || undefined,
           search: filters.search || undefined,
           category: filters.category || undefined,
           tagSlug: filters.tag || undefined,

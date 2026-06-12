@@ -213,7 +213,7 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     title: 'Catalog Display',
     description: 'Image ratio and display settings for product and combo cards.',
     icon: ImageIcon,
-    fields: ['catalogImageRatio'],
+    fields: ['catalogImageRatio', 'hide_oos_products'],
   },
 }
 

@@ -261,7 +261,7 @@ export default function CartDrawer() {
                 setIsCartOpen(false);
                 router.push('/checkout');
               }}
-              className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-medium text-[15px] rounded-[6px] flex items-center justify-center tracking-wide uppercase animate-[bump_2s_ease-in-out_infinite]"
+              className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-medium text-[15px] rounded-[6px] flex items-center justify-center tracking-wide uppercase animate-[bump_1.5s_ease-in-out_infinite]"
             >
               Checkout
             </button>

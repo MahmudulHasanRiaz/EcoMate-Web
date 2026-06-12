@@ -103,6 +103,7 @@ export async function getProducts(params?: {
   maxPrice?: number;
   isActive?: boolean;
   isFeatured?: boolean;
+  hasStock?: boolean;
   ids?: string;
   sort?: string;
   order?: string;

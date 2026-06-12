@@ -41,10 +41,12 @@ export class ProductsController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('cursor') cursor?: string,
+    @Query('hasStock') hasStock?: string,
   ) {
     const effectiveCategoryId =
       categoryId ||
       (category ? await this.svc.resolveCategorySlug(category) : undefined);
+    const parsedHasStock = hasStock !== undefined ? hasStock === 'true' : undefined;
     if (cursor) {
       return this.svc.findAllCursor({
         cursor,
@@ -59,6 +61,7 @@ export class ProductsController {
         isFeatured:
           isFeatured !== undefined ? isFeatured === 'true' : undefined,
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
+        hasStock: parsedHasStock,
       });
     }
     const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
@@ -77,6 +80,7 @@ export class ProductsController {
       ids: ids ? ids.split(',').filter(Boolean) : undefined,
       sort,
       order,
+      hasStock: parsedHasStock,
     });
   }
 

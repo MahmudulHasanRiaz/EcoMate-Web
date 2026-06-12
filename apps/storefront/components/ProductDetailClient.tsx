@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -364,6 +364,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const displayOriginalPrice = product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined;
   const displayImage = selectedVariant?.image || product.image;
   const displayStock = effectiveStock;
+  const isOutOfStock = displayStock === 0;
 
   const itemGallery = isVariable
     ? [displayImage, ...(product.images?.slice(1) || [])]
@@ -378,6 +379,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const quantity = cartItem?.quantity || 1;
 
   function handleAddToCart() {
+    if (isOutOfStock) return;
     if (inCart) {
       updateQuantity(itemKey, 0);
     } else {
@@ -406,6 +408,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   }
 
   function handleBuyNow() {
+    if (isOutOfStock) return;
     if (isVariable && !selectedVariant) {
       toast?.error?.('Please select a variant first') || alert('Please select a variant first')
       return
@@ -533,25 +536,46 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             )}
           </div>
 
-          <div className="mb-1 flex items-center gap-3 flex-wrap">
-            <StockBadge stock={displayStock} />
-            {(product.codAvailable !== false) && (
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#21bc5c] font-medium leading-tight animate-[fadeSlideIn_0.5s_ease-out]">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21bc5c] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#21bc5c]" />
-                </span>
-                Cash on Delivery Available
-              </span>
+          <div className="flex items-center justify-between mb-3 min-h-[28px]">
+            {isOutOfStock ? (
+              <div className="w-full border border-red-200 bg-red-50/50 rounded-lg px-4 py-3 space-y-2 animate-[fadeIn_0.3s_ease-out]">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-bold bg-red-100 text-red-700">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                    </span>
+                    Out of Stock
+                  </span>
+                </div>
+                <div className="text-[12px] text-gray-500 space-y-1">
+                  {product.sku && <div className="flex items-center gap-2"><span className="text-gray-400 w-[90px] flex-shrink-0">Product Code</span><span className="text-gray-700 font-medium">{product.sku}</span></div>}
+                  {(product.codAvailable !== false) && <div className="flex items-center gap-2"><span className="text-gray-400 w-[90px] flex-shrink-0">Payment</span><span className="text-[#21bc5c] font-medium">Cash on Delivery</span></div>}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <StockBadge stock={displayStock} />
+                  {product.sku && (
+                    <span className="text-[12px] text-gray-400">Product Code: {product.sku}</span>
+                  )}
+                </div>
+                {(product.codAvailable !== false) && (
+                  <span className="flex items-center gap-1.5 text-[11px] text-[#21bc5c] font-medium leading-tight animate-[fadeSlideIn_0.5s_ease-out]">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21bc5c] opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#21bc5c]" />
+                    </span>
+                    Cash on Delivery Available
+                  </span>
+                )}
+              </>
             )}
           </div>
 
           {videoUrl && videoPos === 2 && (
             <VideoEmbed url={videoUrl} />
-          )}
-
-          {product.sku && (
-            <p className="text-[13px] text-gray-400 mb-3">Product Code: {product.sku}</p>
           )}
 
           {isVariable && product.variants && (
@@ -582,14 +606,14 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             </div>
           )}
 
-          <div className="flex items-center gap-3 mb-4">
+          <div className={`flex items-center gap-3 mb-4 ${isOutOfStock ? 'opacity-50' : ''}`}>
             <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
             <div className="flex items-center h-9 border border-gray-300 rounded-md overflow-hidden bg-white">
               <button onClick={() => inCart ? updateQuantity(itemKey, Math.max(1, quantity - 1)) : setQty(Math.max(1, qty - 1))}
-                className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Minus size={14} /></button>
+                className={`w-9 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Minus size={14} /></button>
               <div className="w-[44px] border-x border-gray-300 h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
               <button onClick={() => inCart ? updateQuantity(itemKey, quantity + 1) : setQty(qty + 1)}
-                className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"><Plus size={14} /></button>
+                className={`w-9 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Plus size={14} /></button>
             </div>
           </div>
 
@@ -605,26 +629,35 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           )}
 
           <div ref={ctaRef} className="flex flex-col gap-2 mb-6 w-full" data-cta-section>
-            <button onClick={handleAddToCart}
-              className={`w-full h-[44px] md:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] md:text-[14px] ${
-                justAdded
-                  ? 'bg-green-600 text-white'
-                  : inCart
-                    ? 'bg-red-500 hover:bg-red-600 text-white'
-                    : 'border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5'
-              }`}>
-              {justAdded ? (
-                <><Check size={16} /> ADDED</>
-              ) : inCart ? (
-                <><ShoppingBag size={16} /> REMOVE FROM CART</>
-              ) : (
-                <><ShoppingBag size={16} /> ADD TO CART</>
-              )}
-            </button>
-            <button onClick={handleBuyNow}
-              className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide animate-[bump_2s_ease-in-out_infinite]">
-              ORDER NOW
-            </button>
+            {isOutOfStock ? (
+              <button disabled
+                className="w-full h-[44px] md:h-12 rounded-[4px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] md:text-[15px] tracking-wide cursor-not-allowed">
+                <X size={16} /> OUT OF STOCK
+              </button>
+            ) : (
+              <>
+                <button onClick={handleAddToCart}
+                  className={`w-full h-[44px] md:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] md:text-[14px] ${
+                    justAdded
+                      ? 'bg-green-600 text-white'
+                      : inCart
+                        ? 'bg-red-500 hover:bg-red-600 text-white'
+                        : 'border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5'
+                  }`}>
+                  {justAdded ? (
+                    <><Check size={16} /> ADDED</>
+                  ) : inCart ? (
+                    <><ShoppingBag size={16} /> REMOVE FROM CART</>
+                  ) : (
+                    <><ShoppingBag size={16} /> ADD TO CART</>
+                  )}
+                </button>
+                <button onClick={handleBuyNow}
+                  className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
+                  ORDER NOW
+                </button>
+              </>
+            )}
           </div>
 
           <div className="mb-6">
@@ -746,12 +779,19 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           </a>
 
           {showStickyOrder && (
-            <button onClick={handleBuyNow}
-              className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark animate-[bump_2s_ease-in-out_infinite]"
-            >
-              <ShoppingBag size={16} strokeWidth={2.5} />
-              <span>Order Now</span>
-            </button>
+            isOutOfStock ? (
+              <div className="flex-[1.5] rounded-lg bg-gray-200 text-gray-500 text-[14px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed">
+                <X size={16} strokeWidth={2.5} />
+                <span>Out of Stock</span>
+              </div>
+            ) : (
+              <button onClick={handleBuyNow}
+                className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark animate-[glow-pulse_1.5s_ease-in-out_infinite]"
+              >
+                <ShoppingBag size={16} strokeWidth={2.5} />
+                <span>Order Now</span>
+              </button>
+            )
           )}
         </div>
       </div>

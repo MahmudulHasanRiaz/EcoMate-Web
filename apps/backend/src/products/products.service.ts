@@ -117,7 +117,7 @@ export class ProductsService {
     },
   };
 
-  async findAll(query: {
+    async findAll(query: {
     page?: number;
     perPage?: number;
     search?: string;
@@ -132,6 +132,7 @@ export class ProductsService {
     sort?: string;
     order?: string;
     cursor?: string;
+    hasStock?: boolean;
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 24;
@@ -143,6 +144,17 @@ export class ProductsService {
       where.basePrice = {};
       if (query.minPrice !== undefined) where.basePrice.gte = query.minPrice;
       if (query.maxPrice !== undefined) where.basePrice.lte = query.maxPrice;
+    }
+    if (query.hasStock === true) {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { type: { not: 'variable' }, stock: { gt: 0 } },
+            { type: 'variable', variants: { some: { stock: { gt: 0 } } } },
+          ],
+        },
+      ];
     }
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
@@ -180,6 +192,7 @@ export class ProductsService {
     isActive?: boolean;
     isFeatured?: boolean;
     ids?: string[];
+    hasStock?: boolean;
   }) {
     const perPage = query.perPage || 24;
     const effectiveCategoryId =
@@ -198,6 +211,17 @@ export class ProductsService {
       filters.basePrice = {};
       if (query.minPrice !== undefined) filters.basePrice.gte = query.minPrice;
       if (query.maxPrice !== undefined) filters.basePrice.lte = query.maxPrice;
+    }
+    if (query.hasStock === true) {
+      filters.AND = [
+        ...(filters.AND || []),
+        {
+          OR: [
+            { type: { not: 'variable' }, stock: { gt: 0 } },
+            { type: 'variable', variants: { some: { stock: { gt: 0 } } } },
+          ],
+        },
+      ];
     }
     const cursorWhere: any = { ...filters };
     if (query.cursor) {

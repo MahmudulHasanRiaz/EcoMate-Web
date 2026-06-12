@@ -62,4 +62,5 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   checkout_thana_required:       { label: 'Thana/Upazila Required', type: 'switch', hint: 'Customer must select a thana' },
   checkout_payment_modes:        { label: 'Payment Modes', type: 'payment-modes' },
   catalogImageRatio:             { label: 'Catalog Image Ratio', type: 'text', hint: 'JSON — managed via Catalog Display section' },
+  hide_oos_products:             { label: 'Hide Out of Stock Products', type: 'switch', hint: 'When enabled, products with zero stock are hidden from the archive/catalog listing' },
 }

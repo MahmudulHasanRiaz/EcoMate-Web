@@ -105,6 +105,7 @@ export interface StorefrontConfig {
   catalogImageRatio?: CatalogImageRatio;
   features: {
     sizeChart: boolean;
+    hideOosFromArchive: boolean;
   };
 }
 
