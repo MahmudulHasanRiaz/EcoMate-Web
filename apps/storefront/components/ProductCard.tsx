@@ -80,14 +80,14 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const aspect = getAspectStyle(config.catalogImageRatio);
 
   return (
-    <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all">
+    <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
       {(product.saveAmount && product.originalPrice) && (
         <div className="absolute top-2 right-2 bg-[#2ecc71] text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
         </div>
       )}
 
-      <div className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden`}
+      <div className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden select-none`}
         style={'style' in aspect ? aspect.style : undefined}
         onClick={() => router.push(linkUrl)}>
         <Image
@@ -102,7 +102,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
           decoding="async"
           placeholder={useUnoptimized ? "empty" : "blur"}
           blurDataURL={PRODUCT_BLUR_DATA_URL}
-          className="object-contain transition-transform duration-500 group-hover:scale-105"
+          className="object-contain transition-transform duration-500 group-hover:scale-105 pointer-events-none"
           onError={() => setImageError(true)}
           unoptimized={useUnoptimized}
         />

@@ -536,10 +536,11 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <div className="mb-1 flex items-center gap-3 flex-wrap">
             <StockBadge stock={displayStock} />
             {(product.codAvailable !== false) && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#21bc5c] text-white text-[11px] font-bold leading-tight">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/>
-                </svg>
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#21bc5c] font-medium leading-tight animate-[fadeSlideIn_0.5s_ease-out]">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21bc5c] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#21bc5c]" />
+                </span>
                 Cash on Delivery Available
               </span>
             )}
@@ -621,7 +622,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               )}
             </button>
             <button onClick={handleBuyNow}
-              className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide">
+              className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide animate-[bump_2s_ease-in-out_infinite]">
               ORDER NOW
             </button>
           </div>
@@ -746,7 +747,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
           {showStickyOrder && (
             <button onClick={handleBuyNow}
-              className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark"
+              className="flex-[1.5] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark animate-[bump_2s_ease-in-out_infinite]"
             >
               <ShoppingBag size={16} strokeWidth={2.5} />
               <span>Order Now</span>

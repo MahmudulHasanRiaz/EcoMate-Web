@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { CartItem } from "@/lib/types";
 
 export interface VariantAttribute {
@@ -54,6 +54,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const userDismissedRef = useRef(false);
+
+  const handleSetIsCartOpen = useCallback((open: boolean) => {
+    if (!open) userDismissedRef.current = true;
+    else userDismissedRef.current = false;
+    setIsCartOpen(open);
+  }, []);
 
   useEffect(() => {
     setItems(loadCart());
@@ -64,18 +71,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (loaded) saveCart(items);
   }, [items, loaded]);
 
-  const addToCart = (product: CartItem) => {
+  const addToCart = useCallback((product: CartItem) => {
     setItems((prev) => {
       const key = getItemKey(product);
       const existing = prev.find((item) => getItemKey(item) === key);
-      if (existing) {
-        return prev.map((item) =>
-          getItemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [...prev, { ...product, quantity: 1 }];
+      return existing
+        ? prev.map((item) =>
+            getItemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
+          )
+        : [...prev, { ...product, quantity: 1 }];
     });
-  };
+    if (!userDismissedRef.current) setIsCartOpen(true);
+  }, []);
 
   const removeFromCart = (productKey: string) => {
     setItems((prev) => prev.filter((item) => getItemKey(item) !== productKey));
@@ -94,7 +101,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal, isCartOpen, setIsCartOpen, clearCart }}>
+    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal, isCartOpen, setIsCartOpen: handleSetIsCartOpen, clearCart }}>
       {children}
     </CartContext.Provider>
   );
