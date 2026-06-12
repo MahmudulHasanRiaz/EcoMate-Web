@@ -15,6 +15,7 @@ import { categoriesApi } from '@/features/categories/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -428,7 +429,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                 </div>
                 <div className='space-y-1.5'>
                   <Label>Description</Label>
-                  <Textarea value={desc} onChange={e => setDesc(e.target.value)} rows={10} placeholder='Full product description...' className='min-h-[200px]' />
+                  <RichTextEditor value={desc} onChange={setDesc} placeholder='Full product description...' minHeight={300} />
                 </div>
               </section>
 

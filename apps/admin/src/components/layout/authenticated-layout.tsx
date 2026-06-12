@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+import { apiClient } from '@/lib/api-client'
 import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { PanelProvider } from '@/context/panel-provider'
@@ -23,6 +24,19 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken) {
       navigate({ to: '/sign-in', replace: true })
     }
+  }, [accessToken, navigate])
+
+  useEffect(() => {
+    if (!accessToken) return
+    const { user, setUser, reset } = useAuthStore.getState().auth
+    if (user) return
+    apiClient.get('/auth/me').then(r => {
+      const u = r.data?.user || r.data
+      if (u) setUser({ id: u.id, email: u.email, role: u.role })
+    }).catch(() => {
+      reset()
+      navigate({ to: '/sign-in', replace: true })
+    })
   }, [accessToken, navigate])
 
   if (!accessToken) {

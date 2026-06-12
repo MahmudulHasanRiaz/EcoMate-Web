@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { SectionShell } from '@/features/settings/storefront/components/section-shell'
 import { Field } from '@/features/settings/storefront/components/field'
 import { systemSettingsApi } from '@/features/settings/storage-api'
@@ -28,33 +29,31 @@ const DEFAULT_VALUES: GeneralValues = {
 }
 
 export function GeneralSettings() {
+  const { data: settingsData, isLoading } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => systemSettingsApi.getAll().then(r => r.data as Partial<GeneralValues>),
+    staleTime: 30_000,
+  })
+
   const [values, setValues] = useState<GeneralValues>(DEFAULT_VALUES)
   const [originalValues, setOriginalValues] = useState<GeneralValues>(DEFAULT_VALUES)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
-    systemSettingsApi.getAll().then(r => {
-      const data = r.data as Partial<GeneralValues>
-      const extracted: GeneralValues = {
-        app_name: data.app_name ?? '',
-        app_url: data.app_url ?? '',
-        default_timezone: data.default_timezone ?? 'Asia/Dhaka',
-        default_locale: data.default_locale ?? 'en',
-        maintenance_mode: data.maintenance_mode ?? 'false',
-        admin_email: data.admin_email ?? '',
-        pagination_default: data.pagination_default ?? '20',
-        size_chart_enabled: data.size_chart_enabled ?? 'false',
-      }
-      setValues(extracted)
-      setOriginalValues(extracted)
-      setIsLoading(false)
-    }).catch(e => {
-      console.error('Failed to load settings', e)
-      toast.error('Failed to load settings')
-      setIsLoading(false)
-    })
-  }, [])
+    if (!settingsData) return
+    const extracted: GeneralValues = {
+      app_name: settingsData.app_name ?? '',
+      app_url: settingsData.app_url ?? '',
+      default_timezone: settingsData.default_timezone ?? 'Asia/Dhaka',
+      default_locale: settingsData.default_locale ?? 'en',
+      maintenance_mode: settingsData.maintenance_mode ?? 'false',
+      admin_email: settingsData.admin_email ?? '',
+      pagination_default: settingsData.pagination_default ?? '20',
+      size_chart_enabled: settingsData.size_chart_enabled ?? 'false',
+    }
+    setValues(extracted)
+    setOriginalValues(extracted)
+  }, [settingsData])
 
   const setValue = (key: string, value: string) => {
     setValues(prev => ({ ...prev, [key]: value }))

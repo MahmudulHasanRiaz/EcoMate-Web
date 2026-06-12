@@ -11,6 +11,7 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE, PRODUCT_BLUR_DATA_URL } from "@/lib/constants";
 import { trackEvent } from "@/lib/tracking";
 import { getAspectStyle } from "@/lib/utils/image-ratio";
+import { VariantPickerModal } from '@/components/VariantPickerModal';
 
 interface ProductCardProps {
   product: Product;
@@ -31,9 +32,14 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const quantity = cartItem?.quantity ?? 0;
   const isPriority = index < 6;
 
+  const [variantPickerOpen, setVariantPickerOpen] = React.useState(false);
+  const [flyTarget, setFlyTarget] = React.useState<{ x: number; y: number } | undefined>(undefined);
+
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isVar) {
-      router.push(linkUrl);
+      const rect = e.currentTarget.getBoundingClientRect();
+      setFlyTarget({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      setVariantPickerOpen(true);
       return;
     }
     const img = document.getElementById(`img-${product.id}`);
@@ -138,11 +144,17 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
             <button onClick={handleAddToCart}
               className="w-full h-[34px] md:h-[40px] bg-white text-brand-blue font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all group/btn">
               <ShoppingCart size={16} strokeWidth={2.5} className="group-hover/btn:scale-110 transition-transform" />
-              {isVar ? 'VIEW OPTIONS' : 'ADD TO CART'}
+              {isVar ? 'ADD TO CART' : 'ADD TO CART'}
             </button>
           )}
         </div>
       </div>
+      <VariantPickerModal
+        product={product}
+        open={variantPickerOpen}
+        onClose={() => setVariantPickerOpen(false)}
+        flyTarget={flyTarget}
+      />
     </div>
   );
 }
