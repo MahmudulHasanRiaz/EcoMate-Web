@@ -39,6 +39,15 @@ export default async function (phase: string) {
         },
       ];
     },
+    async redirects() {
+      return [
+        {
+          source: '/favicon.ico',
+          destination: '/favicon.svg',
+          permanent: true,
+        },
+      ];
+    },
     async rewrites() {
       return [
         {

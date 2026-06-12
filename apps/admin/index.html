@@ -123,60 +123,73 @@
     <div id="root"></div>
 
     <!--
-      Branding override: deferred so it never blocks the first paint.
-      Runs after the browser is idle (or after a 2s fallback timeout).
+      Branding override: applies cached favicon immediately, fetches fresh values after.
       Safe to fail — it only updates document.title, favicon, and meta tags.
     -->
     <script>
       (function () {
-        var run = function () {
-          try {
-            var apiBase = (function () {
-              if (window.__API_URL__) return window.__API_URL__;
-              if (location.hostname.indexOf('localhost') === -1) return '/api';
-              return 'http://localhost:4000/api';
-            })();
-            fetch(apiBase + '/system-settings/branding', { credentials: 'include', cache: 'no-store' })
-              .then(function (r) { return r.ok ? r.json() : null; })
-              .then(function (data) {
-                if (!data) return;
-                if (data.adminTitle) {
-                  document.title = data.adminTitle;
-                  var t = document.querySelector('meta[name="title"]');
-                  if (t) t.setAttribute('content', data.adminTitle);
-                  var og = document.querySelector('meta[property="og:title"]');
-                  if (og) og.setAttribute('content', data.adminTitle);
-                  var tw = document.querySelector('meta[property="twitter:title"]');
-                  if (tw) tw.setAttribute('content', data.adminTitle);
-                }
-                if (data.adminFavicon) {
-                  var href = data.adminFavicon;
-                  document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
-                    l.setAttribute('href', href);
-                  });
-                  var d = document.createElement('link');
-                  d.setAttribute('rel', 'icon');
-                  d.setAttribute('href', href);
-                  document.head.appendChild(d);
-                }
-                if (data.adminTagline) {
-                  var desc = document.querySelector('meta[name="description"]');
-                  if (desc) desc.setAttribute('content', data.adminTagline);
-                  var ogd = document.querySelector('meta[property="og:description"]');
-                  if (ogd) ogd.setAttribute('content', data.adminTagline);
-                  var twd = document.querySelector('meta[property="twitter:description"]');
-                  if (twd) twd.setAttribute('content', data.adminTagline);
-                }
-              })
-              .catch(function () { /* keep defaults */ });
-          } catch (_) { /* keep defaults */ }
-        };
-        // Defer until the browser is idle. 2s fallback in case rIC is unavailable or slow.
-        if ('requestIdleCallback' in window) {
-          window.requestIdleCallback(run, { timeout: 2000 });
-        } else {
-          setTimeout(run, 200);
-        }
+        // Apply cached favicon instantly (avoids flash of default icon)
+        try {
+          var cached = localStorage.getItem('admin_branding');
+          if (cached) {
+            var prev = JSON.parse(cached);
+            if (prev.adminFavicon) {
+              document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
+                l.setAttribute('href', prev.adminFavicon);
+              });
+              var d = document.createElement('link');
+              d.setAttribute('rel', 'icon');
+              d.setAttribute('href', prev.adminFavicon);
+              document.head.appendChild(d);
+            }
+            if (prev.adminTitle) {
+              document.title = prev.adminTitle;
+            }
+          }
+        } catch (_) {}
+
+        // Fetch fresh branding values and cache them
+        try {
+          var apiBase = (function () {
+            if (window.__API_URL__) return window.__API_URL__;
+            if (location.hostname.indexOf('localhost') === -1) return '/api';
+            return 'http://localhost:4000/api';
+          })();
+          fetch(apiBase + '/system-settings/branding', { credentials: 'include', cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data) return;
+              try { localStorage.setItem('admin_branding', JSON.stringify(data)); } catch (_) {}
+              if (data.adminTitle) {
+                document.title = data.adminTitle;
+                var t = document.querySelector('meta[name="title"]');
+                if (t) t.setAttribute('content', data.adminTitle);
+                var og = document.querySelector('meta[property="og:title"]');
+                if (og) og.setAttribute('content', data.adminTitle);
+                var tw = document.querySelector('meta[property="twitter:title"]');
+                if (tw) tw.setAttribute('content', data.adminTitle);
+              }
+              if (data.adminFavicon) {
+                var href = data.adminFavicon;
+                document.querySelectorAll('link[rel="icon"]').forEach(function (l) {
+                  l.setAttribute('href', href);
+                });
+                var d = document.createElement('link');
+                d.setAttribute('rel', 'icon');
+                d.setAttribute('href', href);
+                document.head.appendChild(d);
+              }
+              if (data.adminTagline) {
+                var desc = document.querySelector('meta[name="description"]');
+                if (desc) desc.setAttribute('content', data.adminTagline);
+                var ogd = document.querySelector('meta[property="og:description"]');
+                if (ogd) ogd.setAttribute('content', data.adminTagline);
+                var twd = document.querySelector('meta[property="twitter:description"]');
+                if (twd) twd.setAttribute('content', data.adminTagline);
+              }
+            })
+            .catch(function () { /* keep defaults */ });
+        } catch (_) { /* keep defaults */ }
       })();
     </script>
 

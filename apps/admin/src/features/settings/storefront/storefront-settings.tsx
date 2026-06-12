@@ -18,6 +18,7 @@ import { DiscoverySeoSection } from '@/features/settings/storefront/components/s
 import { DiscoverySocialSection } from '@/features/settings/storefront/components/sections/discovery-social'
 import { CommerceCheckoutSection } from '@/features/settings/storefront/components/sections/commerce-checkout'
 import { CommerceOrderSection } from '@/features/settings/storefront/components/sections/commerce-order'
+import { MenuCategoriesSection } from '@/features/settings/storefront/components/sections/menu-categories'
 import { CatalogDisplaySection } from '@/features/settings/storefront/components/sections/catalog-display'
 import {
   CATEGORIES,
@@ -138,6 +139,7 @@ export function StorefrontSettings() {
           <VisualsHeroSection hook={hook} />
           <VisualsFooterSection hook={hook} />
           <ContentNavigationSection hook={hook} />
+          <MenuCategoriesSection hook={hook} />
           <ContentFaqSection hook={hook} />
           <ContentHoursSection hook={hook} />
           <ContentAboutSection hook={hook} />

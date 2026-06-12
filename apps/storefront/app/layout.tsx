@@ -44,11 +44,9 @@ export async function generateMetadata(): Promise<Metadata> {
       },
       description: config.seo.description || `${config.store.name} — premium products and services`,
       keywords: config.seo.keywords || undefined,
-      icons: faviconUrl
-        ? {
-            icon: [{ url: faviconUrl }],
-          }
-        : undefined,
+      icons: {
+        icon: [{ url: faviconUrl || '/favicon.svg', type: 'image/svg+xml' }],
+      },
       openGraph: {
         title: config.seo.title || config.store.name,
         description: config.seo.description || undefined,
@@ -66,6 +64,9 @@ export async function generateMetadata(): Promise<Metadata> {
     return {
       title: "Store",
       description: "Premium products and services",
+      icons: {
+        icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
+      },
     };
   }
 }

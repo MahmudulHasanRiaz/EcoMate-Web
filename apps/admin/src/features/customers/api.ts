@@ -30,16 +30,37 @@ export interface CustomersQuery {
   order?: string
 }
 
-export interface OrderSummary {
+interface OrderStatusInfo {
+  name: string
+  color: string
+}
+
+interface RecentOrder {
+  id: string
+  displayId: string
+  total: number
+  statusId: string
+  createdAt: string
+  status: OrderStatusInfo
+}
+
+interface CustomerInfo {
+  id: string
+  firstName: string
+  lastName: string
+  phoneNumber: string
+}
+
+interface OrderSummaryData {
   totalOrders: number
   totalSpent: number
   lastOrderDate: string | null
-  recentOrders: Array<{
-    id: string
-    total: number
-    status: string
-    createdAt: string
-  }>
+}
+
+export interface OrderSummary {
+  customer: CustomerInfo | null
+  summary: OrderSummaryData | null
+  recentOrders: RecentOrder[]
 }
 
 export const customersApi = {

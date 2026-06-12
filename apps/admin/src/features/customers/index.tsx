@@ -129,7 +129,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
         </CardHeader>
         <CardContent>
           <div className='text-2xl font-bold'>
-            {orderSummary?.totalOrders ?? 0}
+            {orderSummary?.summary?.totalOrders ?? 0}
           </div>
         </CardContent>
       </Card>
@@ -151,7 +151,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
         </CardHeader>
         <CardContent>
           <div className='text-2xl font-bold'>
-            ৳{orderSummary?.totalSpent?.toFixed(2) ?? '0.00'}
+            ৳{Number(orderSummary?.summary?.totalSpent ?? 0).toFixed(2)}
           </div>
         </CardContent>
       </Card>
@@ -176,8 +176,8 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
         </CardHeader>
         <CardContent>
           <div className='text-2xl font-bold'>
-            {orderSummary?.lastOrderDate
-              ? format(new Date(orderSummary.lastOrderDate), 'MMM d, yyyy')
+            {orderSummary?.summary?.lastOrderDate
+              ? format(new Date(orderSummary.summary.lastOrderDate), 'MMM d, yyyy')
               : 'N/A'}
           </div>
         </CardContent>
@@ -206,8 +206,12 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
                         {order.id}
                       </TableCell>
                       <TableCell>
-                        <Badge variant='outline' className='capitalize'>
-                          {order.status}
+                        <Badge
+                          variant='outline'
+                          className='capitalize'
+                          style={{ borderColor: order.status.color, color: order.status.color }}
+                        >
+                          {order.status.name}
                         </Badge>
                       </TableCell>
                       <TableCell>৳{order.total.toFixed(2)}</TableCell>
