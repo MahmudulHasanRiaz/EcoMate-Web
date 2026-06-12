@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
@@ -10,30 +10,18 @@ import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
 
-
-
-export default function Header({ menuCategories = [] }: { menuCategories?: any[] }) {
+export default function Header({}: {}) {
   const { cartCount, setIsCartOpen } = useCart();
   const { user } = useAuth();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { config } = useStorefrontConfig();
-  const navItems = config.navigation?.items?.length ? config.navigation.items : [];
 
-  const allNavItems = useMemo(() => {
-    const items = [...(config.navigation?.items || [])]
-    for (const cat of menuCategories) {
-      const slug = cat.slug || cat.id
-      const exists = items.some(i => i.href === `/products?category=${slug}`)
-      if (!exists) {
-        items.push({
-          name: cat.name,
-          href: `/products?category=${slug}`,
-        })
-      }
-    }
-    return items
-  }, [config.navigation?.items, menuCategories])
+  const navItems = config.menu?.header?.items || [];
+  const getHref = (item: any) => {
+    if (item.type === 'category') return `/products?category=${item.categoryId || item.id}`;
+    return item.url || '/';
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-white/20">
@@ -84,7 +72,6 @@ export default function Header({ menuCategories = [] }: { menuCategories?: any[]
 
           {/* Action Icons - Right */}
           <div className="flex items-center gap-1 md:gap-5">
-            {/* Desktop Only Icons */}
             <HeaderAction 
               icon={<ClipboardList size={22} />} 
               label="Track Order" 
@@ -113,9 +100,7 @@ export default function Header({ menuCategories = [] }: { menuCategories?: any[]
               href="/wishlist"
             />
             
-            {/* Action Group for Mobile (Search + Cart) */}
             <div className="flex items-center gap-2 md:gap-0">
-              {/* Mobile Search Icon */}
               <button 
                 className="p-2 md:hidden text-gray-800 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors"
                 onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
@@ -123,7 +108,6 @@ export default function Header({ menuCategories = [] }: { menuCategories?: any[]
                 <Search size={18} strokeWidth={2} />
               </button>
 
-              {/* Cart Icon - Visible on Both */}
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="flex flex-col items-center group relative text-gray-800 md:text-gray-600 gap-0.5 p-1 md:p-0"
@@ -167,21 +151,38 @@ export default function Header({ menuCategories = [] }: { menuCategories?: any[]
       </div>
 
       {/* Category Navigation - Desktop Only */}
-      <div className="hidden md:block bg-[#1a1a1a] text-white border-b border-gray-200">
-        <div className="max-w-screen-xl mx-auto px-4 h-10 flex items-center justify-between">
-          <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap hide-scrollbar">
-            {allNavItems.map((item, idx) => (
-              <Link 
-                key={idx} 
-                href={item.href || '/'}
-                className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide"
-              >
-                {item.name}
-              </Link>
-            ))}
+      {navItems.length > 0 && (
+        <div className="hidden md:block bg-[#1a1a1a] text-white border-b border-gray-200">
+          <div className="max-w-screen-xl mx-auto px-4 h-10 flex items-center justify-between">
+            <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap hide-scrollbar">
+              {navItems.map((item: any) => (
+                <div key={item.id} className="relative group">
+                  <Link 
+                    href={getHref(item)}
+                    className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide"
+                  >
+                    {item.label}
+                    {item.children?.length > 0 && <ChevronDown size={12} />}
+                  </Link>
+                  {item.children?.length > 0 && (
+                    <div className="absolute top-full left-0 bg-white text-gray-800 shadow-lg rounded-lg py-2 min-w-[180px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                      {item.children.map((child: any) => (
+                        <Link 
+                          key={child.id}
+                          href={getHref(child)}
+                          className="block px-4 py-2 text-[13px] hover:bg-gray-50 hover:text-brand-blue"
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </header>
   );
 }

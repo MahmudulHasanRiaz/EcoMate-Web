@@ -16,9 +16,6 @@ import TrackingScripts from "@/components/TrackingScripts";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
-import { getFooterCmsPages } from "@/lib/api/cms-pages";
-import type { CmsPageSummary } from "@/lib/api/cms-pages";
-import { getMenuCategories } from "@/lib/menu-categories";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -79,12 +76,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let initialConfig: StorefrontConfig | undefined;
-  let footerCmsPages: CmsPageSummary[] = [];
-  let menuCategories: any[] = [];
   try {
     initialConfig = await getStorefrontConfigServer();
-    footerCmsPages = await getFooterCmsPages();
-    menuCategories = await getMenuCategories();
   } catch {}
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
@@ -127,11 +120,11 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
             />
             <TrackingScripts />
-            <Header menuCategories={menuCategories} />
+            <Header />
             <CartDrawer />
-            <MobileMenu menuCategories={menuCategories} />
+            <MobileMenu />
             <main className="flex-1 pb-24 md:pb-0">{children}</main>
-            <Footer cmsPages={footerCmsPages} />
+            <Footer />
             <BottomNav />
             <FloatingWidgets />
             <FlyCartLayer />

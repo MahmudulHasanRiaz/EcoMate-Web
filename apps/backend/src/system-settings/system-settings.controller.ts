@@ -364,12 +364,18 @@ export class SystemSettingsController {
         validatedStatus:
           map['tracking_tiktok_validated_status'] || '',
       },
-      navigation: {
-        items: parseJson<{ name: string; href: string }[]>(
-          map['navigation_items'] || '[]',
-          [],
-        ),
-      },
+      menu: (() => {
+        const menuConfig = parseJson<{
+          header?: { mode?: string; showAllCategories?: boolean; excludedCategories?: string[]; items?: any[] };
+          mobile?: { mode?: string; showAllCategories?: boolean; excludedCategories?: string[]; items?: any[] };
+          footer?: { columns?: any[] };
+        }>(map['menu_config'], {});
+        return {
+          header: menuConfig.header || { mode: 'include', showAllCategories: false, excludedCategories: [], items: [] },
+          mobile: menuConfig.mobile || { mode: 'include', showAllCategories: false, excludedCategories: [], items: [] },
+          footer: menuConfig.footer || { columns: [] },
+        };
+      })(),
       faq: {
         items: parseJson<{ question: string; answer: string }[]>(
           map['faq_items'] || '[]',

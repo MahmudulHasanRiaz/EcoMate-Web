@@ -19,7 +19,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   payment: { info: "" },
   meta: { pixelEnabled: false, pixelId: "", purchaseMode: "instant", validatedStatus: "" },
   tiktok: { pixelEnabled: false, pixelCode: "", purchaseMode: "instant", validatedStatus: "" },
-  navigation: { items: [] },
+  menu: { header: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, mobile: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, footer: { columns: [] } },
   faq: { items: [] },
   hours: { label: "", details: [] },
   company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },

@@ -5,11 +5,51 @@ import { MapPin, Phone, Mail } from 'lucide-react';
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
-import type { CmsPageSummary } from "@/lib/api/cms-pages";
 
-export default function Footer({ cmsPages = [] }: { cmsPages?: CmsPageSummary[] }) {
+export default function Footer({}: {}) {
   const { config } = useStorefrontConfig();
   const { store, social, footer: footerConfig } = config;
+
+  const footerColumns = config.menu?.footer?.columns || [];
+
+  const defaultColumns = footerColumns.length > 0 ? [] : [
+    { id: 'info', title: 'Information', items: [
+      { id: 'abt', type: 'custom', label: 'About us', url: '/about' },
+      { id: 'cnt', type: 'custom', label: 'Contact us', url: '/support' },
+      { id: 'cmp', type: 'custom', label: 'Company Information', url: '/company' },
+      { id: 'str', type: 'custom', label: `${store.name} Stores`, url: '/stores' },
+      { id: 'trm', type: 'custom', label: 'Terms & Conditions', url: '/terms-conditions' },
+      { id: 'prv', type: 'custom', label: 'Privacy Policy', url: '/privacy-policy' },
+      { id: 'car', type: 'custom', label: 'Careers', url: '/careers' },
+    ]},
+    { id: 'shop', title: 'Shop By', items: [
+      { id: 's1', type: 'custom', label: 'iPhone' },
+      { id: 's2', type: 'custom', label: 'Samsung' },
+      { id: 's3', type: 'custom', label: 'Google Pixel' },
+      { id: 's4', type: 'custom', label: 'Accessories' },
+      { id: 's5', type: 'custom', label: 'Smart Watches' },
+      { id: 's6', type: 'custom', label: 'Audio Gadgets' },
+      { id: 's7', type: 'custom', label: 'MacBook' },
+    ]},
+    { id: 'sup', title: 'Support', items: [
+      { id: 'su1', type: 'custom', label: 'Support Center', url: '/support' },
+      { id: 'su2', type: 'custom', label: 'How to Order' },
+      { id: 'su3', type: 'custom', label: 'Order Tracking', url: '/orders' },
+      { id: 'su4', type: 'custom', label: 'Payment' },
+      { id: 'su5', type: 'custom', label: 'Shipping' },
+      { id: 'su6', type: 'custom', label: 'FAQ', url: '/faq' },
+    ]},
+    { id: 'con', title: 'Consumer Policy', items: [
+      { id: 'co1', type: 'custom', label: 'Happy Return' },
+      { id: 'co2', type: 'custom', label: 'Refund Policy', url: '/refund-policy' },
+      { id: 'co3', type: 'custom', label: 'Exchange', url: '/exchange-policy' },
+      { id: 'co4', type: 'custom', label: 'Cancellation' },
+      { id: 'co5', type: 'custom', label: 'Pre-Order' },
+      { id: 'co6', type: 'custom', label: 'Extra Discount' },
+    ]},
+  ];
+
+  const columns = footerColumns.length > 0 ? footerColumns : defaultColumns;
 
   return (
     <footer className="bg-white pt-16 pb-20 md:pb-8 border-t border-gray-100">
@@ -68,45 +108,9 @@ export default function Footer({ cmsPages = [] }: { cmsPages?: CmsPageSummary[] 
 
           {/* Columns */}
           <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-3 gap-8 md:gap-4">
-            <FooterColumn
-              title="Information"
-              links={[
-                { name: "About us", href: '/about' },
-                { name: "Contact us", href: '/support' },
-                { name: "Company Information", href: '/company' },
-                { name: `${store.name} Stores`, href: '/stores' },
-                { name: "Terms & Conditions", href: '/terms-conditions' },
-                { name: "Privacy Policy", href: '/privacy-policy' },
-                { name: "Careers", href: '/careers' },
-                ...cmsPages.map((p) => ({
-                  name: p.title,
-                  href: `/pages/${p.slug}`,
-                })),
-              ]}
-            />
-            <FooterColumn title="Shop By" links={["iPhone", "Samsung", "Google Pixel", "Accessories", "Smart Watches", "Audio Gadgets", "MacBook"]} />
-            <FooterColumn 
-              title="Support" 
-              links={[
-                { name: "Support Center", href: '/support' }, 
-                { name: "How to Order" }, 
-                { name: "Order Tracking", href: '/orders' }, 
-                { name: "Payment" }, 
-                { name: "Shipping" }, 
-                { name: "FAQ", href: '/faq' }
-              ]} 
-            />
-            <FooterColumn 
-              title="Consumer Policy" 
-              links={[
-                "Happy Return", 
-                { name: "Refund Policy", href: '/refund-policy' }, 
-                { name: "Exchange", href: '/exchange-policy' }, 
-                "Cancellation", 
-                "Pre-Order", 
-                "Extra Discount"
-              ]} 
-            />
+            {columns.map((col: any) => (
+              <FooterColumn key={col.id} title={col.title} items={col.items} />
+            ))}
           </div>
 
         </div>
@@ -163,26 +167,27 @@ export default function Footer({ cmsPages = [] }: { cmsPages?: CmsPageSummary[] 
   );
 }
 
-function FooterColumn({ title, links }: { title: string, links: (string | { name: string, href?: string })[] }) {
+function FooterColumn({ title, items }: { title: string, items: any[] }) {
   return (
     <div>
       <h4 className="font-bold text-[14px] text-gray-800 mb-4">{title}</h4>
       <ul className="space-y-2.5">
-        {links.map((link, idx) => {
-          const name = typeof link === 'string' ? link : link.name;
-          const href = typeof link === 'string' ? undefined : link.href;
+        {items.map((item: any) => {
+          const href = item.type === 'category' 
+            ? `/products?category=${item.categoryId || item.id}`
+            : item.url;
           if (href) {
             return (
-              <li key={idx}>
+              <li key={item.id}>
                 <Link href={href} className="text-[12px] text-gray-500 hover:text-brand-blue transition-colors text-left">
-                  {name}
+                  {item.label}
                 </Link>
               </li>
             );
           }
           return (
-            <li key={idx}>
-              <span className="text-[12px] text-gray-500">{name}</span>
+            <li key={item.id}>
+              <span className="text-[12px] text-gray-500">{item.label}</span>
             </li>
           );
         })}
@@ -190,5 +195,3 @@ function FooterColumn({ title, links }: { title: string, links: (string | { name
     </div>
   );
 }
-
-

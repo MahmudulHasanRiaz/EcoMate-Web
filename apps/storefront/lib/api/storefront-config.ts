@@ -79,8 +79,10 @@ export interface StorefrontConfig {
     purchaseMode: 'instant' | 'validated';
     validatedStatus: string;
   };
-  navigation: {
-    items: { name: string; href: string }[];
+  menu: {
+    header: { mode: string; showAllCategories: boolean; excludedCategories: string[]; items: any[] };
+    mobile: { mode: string; showAllCategories: boolean; excludedCategories: string[]; items: any[] };
+    footer: { columns: any[] };
   };
   faq: {
     items: { question: string; answer: string }[];

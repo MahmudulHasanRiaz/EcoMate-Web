@@ -67,6 +67,7 @@ import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './rout
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsPagesIndexRouteImport } from './routes/_authenticated/mon/settings/pages/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
+import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
@@ -405,6 +406,12 @@ const AuthenticatedMonSettingsOrderStatusesIndexRoute =
     path: '/order-statuses/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsMenuIndexRoute =
+  AuthenticatedMonSettingsMenuIndexRouteImport.update({
+    id: '/menu/',
+    path: '/menu/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsGeneralIndexRoute =
   AuthenticatedMonSettingsGeneralIndexRouteImport.update({
     id: '/general/',
@@ -496,6 +503,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
+  '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -561,6 +569,7 @@ export interface FileRoutesByTo {
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
+  '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/pages': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -628,6 +637,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
+  '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -695,6 +705,7 @@ export interface FileRouteTypes {
     | '/mon/settings/courier/'
     | '/mon/settings/gateways/'
     | '/mon/settings/general/'
+    | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/pages/'
     | '/mon/settings/shipping/'
@@ -760,6 +771,7 @@ export interface FileRouteTypes {
     | '/mon/settings/courier'
     | '/mon/settings/gateways'
     | '/mon/settings/general'
+    | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
     | '/mon/settings/pages'
     | '/mon/settings/shipping'
@@ -826,6 +838,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/courier/'
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/general/'
+    | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/pages/'
     | '/_authenticated/mon/settings/shipping/'
@@ -1260,6 +1273,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/menu/': {
+      id: '/_authenticated/mon/settings/menu/'
+      path: '/menu'
+      fullPath: '/mon/settings/menu/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsMenuIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/general/': {
       id: '/_authenticated/mon/settings/general/'
       path: '/general'
@@ -1310,6 +1330,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
+  AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsPagesIndexRoute: typeof AuthenticatedMonSettingsPagesIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -1329,6 +1350,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsGatewaysIndexRoute,
     AuthenticatedMonSettingsGeneralIndexRoute:
       AuthenticatedMonSettingsGeneralIndexRoute,
+    AuthenticatedMonSettingsMenuIndexRoute:
+      AuthenticatedMonSettingsMenuIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
     AuthenticatedMonSettingsPagesIndexRoute:

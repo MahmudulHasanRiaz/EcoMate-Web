@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio } from 'lucide-react'
+import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -52,6 +52,7 @@ export function Settings() {
       groupLabel: 'Content',
       items: [
         { title: 'CMS Pages', href: '/mon/settings/pages', icon: <FileText size={18} /> },
+        { title: 'Menu', href: '/mon/settings/menu', icon: <List size={18} /> },
         { title: 'Storage', href: '/mon/settings/storage', icon: <HardDrive size={18} /> },
       ],
     },

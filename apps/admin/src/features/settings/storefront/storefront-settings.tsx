@@ -10,7 +10,6 @@ import { IdentityStoreSection } from '@/features/settings/storefront/components/
 import { IdentityBrandsSection } from '@/features/settings/storefront/components/sections/identity-brands'
 import { VisualsHeroSection } from '@/features/settings/storefront/components/sections/visuals-hero'
 import { VisualsFooterSection } from '@/features/settings/storefront/components/sections/visuals-footer'
-import { ContentNavigationSection } from '@/features/settings/storefront/components/sections/content-navigation'
 import { ContentFaqSection } from '@/features/settings/storefront/components/sections/content-faq'
 import { ContentHoursSection } from '@/features/settings/storefront/components/sections/content-hours'
 import { ContentAboutSection } from '@/features/settings/storefront/components/sections/content-about'
@@ -18,7 +17,6 @@ import { DiscoverySeoSection } from '@/features/settings/storefront/components/s
 import { DiscoverySocialSection } from '@/features/settings/storefront/components/sections/discovery-social'
 import { CommerceCheckoutSection } from '@/features/settings/storefront/components/sections/commerce-checkout'
 import { CommerceOrderSection } from '@/features/settings/storefront/components/sections/commerce-order'
-import { MenuCategoriesSection } from '@/features/settings/storefront/components/sections/menu-categories'
 import { CatalogDisplaySection } from '@/features/settings/storefront/components/sections/catalog-display'
 import {
   CATEGORIES,
@@ -138,8 +136,6 @@ export function StorefrontSettings() {
           <IdentityBrandsSection hook={hook} />
           <VisualsHeroSection hook={hook} />
           <VisualsFooterSection hook={hook} />
-          <ContentNavigationSection hook={hook} />
-          <MenuCategoriesSection hook={hook} />
           <ContentFaqSection hook={hook} />
           <ContentHoursSection hook={hook} />
           <ContentAboutSection hook={hook} />

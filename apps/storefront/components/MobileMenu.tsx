@@ -1,29 +1,19 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
-export default function MobileMenu({ menuCategories = [] }: { menuCategories?: any[] }) {
+export default function MobileMenu({}: {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { config } = useStorefrontConfig();
-  const menuItems = config.navigation?.items?.length ? config.navigation.items : [];
+  const menuItems = config.menu?.mobile?.items || [];
 
-  const allMenuItems = useMemo(() => {
-    const items = [...(config.navigation?.items || [])]
-    for (const cat of menuCategories) {
-      const slug = cat.slug || cat.id
-      const exists = items.some(i => i.href === `/products?category=${slug}`)
-      if (!exists) {
-        items.push({
-          name: cat.name,
-          href: `/products?category=${slug}`,
-        })
-      }
-    }
-    return items
-  }, [config.navigation?.items, menuCategories])
+  const getHref = (item: any) => {
+    if (item.type === 'category') return `/products?category=${item.categoryId || item.id}`;
+    return item.url || '/';
+  };
 
   useEffect(() => {
     const handleOpen = () => setIsMobileMenuOpen(true);
@@ -77,17 +67,17 @@ export default function MobileMenu({ menuCategories = [] }: { menuCategories?: a
         <div className="flex-1 overflow-y-auto pb-8">
            <div className="px-4 mb-6">
              <div className="bg-[#fcfcfc] rounded-[8px] border border-gray-100 overflow-hidden">
-                {allMenuItems.map((item, index) => (
+                {menuItems.map((item, index) => (
                   <Link 
-                     key={item.name || index} 
-                     href={item.href || '/'}
+                     key={item.id || item.name || index} 
+                     href={getHref(item)}
                      onClick={closeMenu}
                      className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
                        index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
                      } hover:bg-gray-50`}
                   >
-                     <span className="text-[13px] text-gray-700 font-normal">{item.name}</span>
-                     {item.href && <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />}
+                     <span className="text-[13px] text-gray-700 font-normal">{item.label || item.name}</span>
+                     <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />
                   </Link>
                 ))}
              </div>
