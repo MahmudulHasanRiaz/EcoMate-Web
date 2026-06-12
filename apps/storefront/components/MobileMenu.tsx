@@ -2,13 +2,12 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { getMenuCategories } from "@/lib/menu-categories";
 
 export default function MobileMenu() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const router = useRouter();
   const { config } = useStorefrontConfig();
   const menuItems = config.navigation?.items?.length ? config.navigation.items : [];
 
@@ -44,13 +43,7 @@ export default function MobileMenu() {
     };
   }, []);
 
-  const handleCategoryClick = (href: string) => {
-    if (href) router.push(href);
-    setIsMobileMenuOpen(false);
-  };
-
-  const resetAllAndOpen = (path: string) => {
-    router.push(path);
+  const closeMenu = () => {
     setIsMobileMenuOpen(false);
   };
 
@@ -92,16 +85,17 @@ export default function MobileMenu() {
            <div className="px-4 mb-6">
              <div className="bg-[#fcfcfc] rounded-[8px] border border-gray-100 overflow-hidden">
                 {allMenuItems.map((item, index) => (
-                  <button 
+                  <Link 
                      key={item.name || index} 
-                     onClick={() => handleCategoryClick(item.href)}
+                     href={item.href || '/'}
+                     onClick={closeMenu}
                      className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
                        index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
                      } hover:bg-gray-50`}
                   >
                      <span className="text-[13px] text-gray-700 font-normal">{item.name}</span>
                      {item.href && <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />}
-                  </button>
+                  </Link>
                 ))}
              </div>
            </div>
@@ -116,21 +110,22 @@ export default function MobileMenu() {
               </div>
               
               <div className="bg-[#f9f9f9] rounded-[10px] overflow-hidden py-1 border border-gray-100">
-                <button 
-                  onClick={() => resetAllAndOpen('/orders')}
+                <Link 
+                  href="/orders"
+                  onClick={closeMenu}
                   className="w-full flex items-center gap-4 px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100/70"
                 >
                   <Calendar size={18} strokeWidth={1.5} className="text-gray-700" /> 
                   <span className="text-[13px] tracking-wide text-gray-700">Track Your Order</span>
-                </button>
-                <button onClick={() => resetAllAndOpen('/wishlist')} className="w-full flex items-center gap-4 px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100/70">
+                </Link>
+                <Link href="/wishlist" onClick={closeMenu} className="w-full flex items-center gap-4 px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100/70">
                   <Heart size={18} strokeWidth={1.5} className="text-gray-700" /> 
                   <span className="text-[13px] tracking-wide text-gray-700">My Wishlists</span>
-                </button>
-                <button onClick={() => resetAllAndOpen('/faq')} className="w-full flex items-center gap-4 px-4 py-3 hover:bg-gray-100 transition-colors">
+                </Link>
+                <Link href="/faq" onClick={closeMenu} className="w-full flex items-center gap-4 px-4 py-3 hover:bg-gray-100 transition-colors">
                   <HelpCircle size={18} strokeWidth={1.5} className="text-gray-700" /> 
                   <span className="text-[13px] tracking-wide text-gray-700">F.A.Qs</span>
-                </button>
+                </Link>
               </div>
            </div>
         </div>

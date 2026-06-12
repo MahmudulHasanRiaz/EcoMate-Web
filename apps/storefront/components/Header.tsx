@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
-import { useRouter } from "next/navigation";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
 import { getMenuCategories } from "@/lib/menu-categories";
@@ -58,14 +59,15 @@ export default function Header() {
               <Menu size={20} strokeWidth={2} />
             </button>
 
-            <motion.div 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="flex flex-shrink-0 items-center cursor-pointer"
-              onClick={() => router.push('/')}
-            >
-              <StoreBrand />
-            </motion.div>
+            <Link href="/">
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex flex-shrink-0 items-center cursor-pointer"
+              >
+                <StoreBrand />
+              </motion.div>
+            </Link>
           </div>
 
           {/* Search Bar - Desktop Centered */}
@@ -94,28 +96,28 @@ export default function Header() {
               icon={<ClipboardList size={22} />} 
               label="Track Order" 
               hideOnMobile 
-              onClick={() => router.push('/orders')}
+              href="/orders"
             />
             {user ? (
               <HeaderAction 
                 icon={<div className="w-6 h-6 bg-brand-blue/20 text-brand-blue rounded-full flex items-center justify-center text-[11px] font-bold">{user.name[0].toUpperCase()}</div>} 
                 label={user.name.split(' ')[0]}
                 hideOnMobile
-                onClick={() => router.push('/account')}
+                href="/account"
               />
             ) : (
               <HeaderAction 
                 icon={<User size={22} />} 
                 label="Sign In" 
                 hideOnMobile 
-                onClick={() => router.push('/account')}
+                href="/account"
               />
             )}
             <HeaderAction 
               icon={<Heart size={22} />} 
               label="Wishlist" 
               hideOnMobile 
-              onClick={() => router.push('/wishlist')}
+              href="/wishlist"
             />
             
             {/* Action Group for Mobile (Search + Cart) */}
@@ -176,13 +178,13 @@ export default function Header() {
         <div className="max-w-screen-xl mx-auto px-4 h-10 flex items-center justify-between">
           <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap hide-scrollbar">
             {allNavItems.map((item, idx) => (
-              <button 
+              <Link 
                 key={idx} 
-                onClick={() => { if (item.href) router.push(item.href); }}
-                className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide cursor-pointer"
+                href={item.href || '/'}
+                className="text-[12px] font-medium hover:text-brand-blue transition-colors flex items-center gap-1 uppercase tracking-wide"
               >
                 {item.name}
-              </button>
+              </Link>
             ))}
           </div>
         </div>
@@ -191,12 +193,9 @@ export default function Header() {
   );
 }
 
-function HeaderAction({ icon, label, count, hideOnMobile, onClick }: { icon: React.ReactNode, label: string, count?: number, hideOnMobile?: boolean, onClick?: () => void }) {
-  return (
-    <button 
-      onClick={onClick || (() => {})}
-      className={`${hideOnMobile ? 'hidden md:flex' : 'flex'} flex-col items-center text-gray-600 hover:text-brand-blue transition-colors group gap-0.5`}
-    >
+function HeaderAction({ icon, label, count, hideOnMobile, onClick, href }: { icon: React.ReactNode, label: string, count?: number, hideOnMobile?: boolean, onClick?: () => void, href?: string }) {
+  const content = (
+    <>
       <div className="relative">
         {icon}
         {count !== undefined && (
@@ -206,6 +205,23 @@ function HeaderAction({ icon, label, count, hideOnMobile, onClick }: { icon: Rea
         )}
       </div>
       <span className="text-[11px] font-medium">{label}</span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={`${hideOnMobile ? 'hidden md:flex' : 'flex'} flex-col items-center text-gray-600 hover:text-brand-blue transition-colors group gap-0.5`}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button 
+      onClick={onClick || (() => {})}
+      className={`${hideOnMobile ? 'hidden md:flex' : 'flex'} flex-col items-center text-gray-600 hover:text-brand-blue transition-colors group gap-0.5`}
+    >
+      {content}
     </button>
   );
 }

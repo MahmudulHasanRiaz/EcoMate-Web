@@ -3,7 +3,7 @@
 import React from 'react';
 import { ShoppingCart, Heart } from "lucide-react";
 import Image from "next/image";
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import type { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
@@ -22,7 +22,6 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
-  const router = useRouter();
   const [imageError, setImageError] = React.useState(false);
 
   const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
@@ -87,9 +86,9 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
         </div>
       )}
 
-      <div className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden select-none`}
+      <Link href={linkUrl} className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden select-none`}
         style={'style' in aspect ? aspect.style : undefined}
-        onClick={() => router.push(linkUrl)}>
+        scroll={true}>
         <Image
           id={`img-${product.id}`}
           src={imageSrc}
@@ -115,13 +114,13 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
           }`}>
           <Heart size={16} className={isWishlisted(product.id) ? 'fill-white' : ''} />
         </button>
-      </div>
+      </Link>
 
       <div className="p-2 md:p-3 flex flex-col flex-1 bg-white">
-        <h4 className="text-[12px] md:text-[14px] text-gray-800 line-clamp-2 mb-2 font-medium leading-normal cursor-pointer hover:text-brand-blue transition-colors min-h-[2.2rem] md:min-h-[2.5rem]"
-          onClick={() => router.push(linkUrl)}>
+        <Link href={linkUrl} className="text-[12px] md:text-[14px] text-gray-800 line-clamp-2 mb-2 font-medium leading-normal cursor-pointer hover:text-brand-blue transition-colors min-h-[2.2rem] md:min-h-[2.5rem]"
+          scroll={true}>
           {product.name}
-        </h4>
+        </Link>
 
         <div className="mt-auto space-y-3">
           <div className="flex items-center gap-1.5 flex-wrap">

@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { getCombos } from '@/lib/api/combos';
 import type { Combo } from '@/lib/types';
 import { PLACEHOLDER_IMAGE, COMBO_BLUR_DATA_URL } from "@/lib/constants";
 import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 
 export default function ComboDeals() {
-  const router = useRouter();
   const [combos, setCombos] = useState<Combo[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const aspect = useCatalogImageStyle('combo');
@@ -35,13 +34,13 @@ export default function ComboDeals() {
               </div>
               <h3 className="text-[18px] md:text-[22px] font-bold text-gray-800">Exclusive Combo Deals</h3>
             </div>
-            <button onClick={() => router.push('/combos')}
+            <Link href="/combos"
               className="bg-brand-blue text-white px-5 py-2 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-brand-blue/90 transition-colors">
               View All Combos
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path>
               </svg>
-            </button>
+            </Link>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-5">
@@ -55,9 +54,8 @@ export default function ComboDeals() {
               const useUnoptimized = imgErrors[combo.id] || imageSrc === PLACEHOLDER_IMAGE;
 
               return (
-                <div key={combo.id}
-                  className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm group hover:shadow-xl transition-all duration-300 flex flex-col cursor-pointer"
-                  onClick={() => router.push(`/combos/${combo.id}`)}>
+                <Link key={combo.id} href={`/combos/${combo.id}`}
+                  className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm group hover:shadow-xl transition-all duration-300 flex flex-col cursor-pointer">
                   <div className={`relative ${aspect.className} p-1 bg-[#fcfcfc]`}
                     style={'style' in aspect ? aspect.style : undefined}>
                     <Image
@@ -86,12 +84,12 @@ export default function ComboDeals() {
                       <span className="text-brand-blue font-black text-[15px] md:text-[16px]">৳{combo.price.toLocaleString()}</span>
                       {combo.originalPrice && <span className="text-gray-300 text-[12px] line-through font-medium">৳{combo.originalPrice.toLocaleString()}</span>}
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); router.push(`/combos/${combo.id}`); }}
-                      className="w-full bg-[#f8f9fa] text-gray-700 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all hover:bg-brand-blue hover:text-white border border-gray-100">
+                    <Link href={`/combos/${combo.id}`}
+                      className="w-full bg-[#f8f9fa] text-gray-700 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all hover:bg-brand-blue hover:text-white border border-gray-100 block text-center">
                       View Details
-                    </button>
+                    </Link>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

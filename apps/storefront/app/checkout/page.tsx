@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
@@ -660,7 +661,7 @@ export default function CheckoutPage() {
         <div className="max-w-screen-xl mx-auto px-4 text-center">
           <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Checkout</h1>
           <nav className="flex items-center justify-center gap-2 text-[11px] md:text-[13px] text-gray-400 font-medium">
-            <button onClick={() => router.push('/')} className="hover:text-brand-blue">Home</button>
+            <Link href="/" className="hover:text-brand-blue">Home</Link>
             <ChevronRight size={14} />
             <span className="text-gray-600">Checkout</span>
           </nav>
@@ -672,8 +673,8 @@ export default function CheckoutPage() {
           <div className="bg-white rounded-lg border border-gray-100 p-3 md:p-4 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-[14px] md:text-[15px] text-gray-700 font-medium">Have an account? Login for faster checkout</p>
             <div className="flex gap-2 w-full md:w-auto">
-              <button onClick={() => router.push('/account?redirect=/checkout')} className="flex-1 md:flex-none border border-gray-200 text-gray-700 px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-gray-50">Login</button>
-              <button onClick={() => router.push('/account?redirect=/checkout')} className="flex-1 md:flex-none bg-brand-blue text-white px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Register</button>
+              <Link href="/account?redirect=/checkout" className="flex-1 md:flex-none inline-flex items-center justify-center border border-gray-200 text-gray-700 px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-gray-50">Login</Link>
+              <Link href="/account?redirect=/checkout" className="flex-1 md:flex-none inline-flex items-center justify-center bg-brand-blue text-white px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Register</Link>
             </div>
           </div>
         )}

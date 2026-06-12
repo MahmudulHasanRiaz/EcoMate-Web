@@ -3,13 +3,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getCategories } from "@/lib/api/products";
 import type { Category } from "@/lib/types";
 
 export default function CategoryList() {
-  const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isPaused, setIsPaused] = useState(false);
@@ -77,7 +76,7 @@ export default function CategoryList() {
             className="flex overflow-x-auto gap-4 md:gap-6 pb-6 scrollbar-hide snap-x"
           >
             {categories.map((category) => (
-              <CategoryItem key={category.id} category={category} router={router} imgErrors={imgErrors} setImgErrors={setImgErrors} />
+              <CategoryItem key={category.id} category={category} imgErrors={imgErrors} setImgErrors={setImgErrors} />
             ))}
           </div>
         </div>
@@ -86,16 +85,14 @@ export default function CategoryList() {
   );
 }
 
-function CategoryItem({ category, router, imgErrors, setImgErrors }: {
+function CategoryItem({ category, imgErrors, setImgErrors }: {
   category: Category;
-  router: ReturnType<typeof useRouter>;
   imgErrors: { [key: string]: boolean };
   setImgErrors: React.Dispatch<React.SetStateAction<{ [key: string]: boolean }>>;
 }) {
   return (
-    <a
-      onClick={(e) => { e.preventDefault(); router.push(`/products?category=${category.slug}`); }}
-      href={`#${category.id}`}
+    <Link
+      href={`/products?category=${category.slug}`}
       className="flex flex-col items-center gap-2 min-w-[95px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
     >
       <div className="w-[95px] h-[95px] md:w-[120px] md:h-[120px] bg-white rounded-[24px] md:rounded-[32px] shadow-[0_4px_16px_rgba(0,0,0,0.04)] flex items-center justify-center overflow-hidden group-hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-shadow">
@@ -109,6 +106,6 @@ function CategoryItem({ category, router, imgErrors, setImgErrors }: {
       <span className="text-[13px] md:text-[14px] font-medium text-gray-800 text-center leading-tight mt-1">
         {category.name}
       </span>
-    </a>
+    </Link>
   );
 }

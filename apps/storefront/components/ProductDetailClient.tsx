@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -476,21 +477,21 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       `}} />
 
       <div className="px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
-        <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</button>
+        <Link href="/" className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</Link>
         <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
         {product.category ? (
           <>
-            <button
-              onClick={() => router.push(product.categorySlug ? `/products?category=${product.categorySlug}` : '/products')}
+            <Link
+              href={product.categorySlug ? `/products?category=${product.categorySlug}` : '/products'}
               className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap"
             >
               {product.category}
-            </button>
+            </Link>
             <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
           </>
         ) : (
           <>
-            <button onClick={() => router.push('/products')} className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Products</button>
+            <Link href="/products" className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Products</Link>
             <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
           </>
         )}

@@ -97,7 +97,6 @@ export interface StorefrontConfig {
     thanaEnabled: boolean;
     districtRequired: boolean;
     thanaRequired: boolean;
-    paymentModes: string[];
   };
   districtCharges: Record<string, number>;
   shippingMode: 'options' | 'auto_district';

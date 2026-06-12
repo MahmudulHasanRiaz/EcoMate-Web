@@ -383,10 +383,6 @@ export class SystemSettingsController {
         thanaEnabled: map['checkout_thana_enabled'] !== 'false',
         districtRequired: map['checkout_district_required'] === 'true',
         thanaRequired: map['checkout_thana_required'] === 'true',
-        paymentModes: parseJson<string[]>(
-          map['checkout_payment_modes'] || '["cod","full","partial"]',
-          ['cod', 'full', 'partial'],
-        ),
       },
       shippingMode,
       shippingOptions,
