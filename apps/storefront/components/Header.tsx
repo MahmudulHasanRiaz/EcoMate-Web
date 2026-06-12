@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
@@ -9,23 +9,16 @@ import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
-import { getMenuCategories } from "@/lib/menu-categories";
 
 
 
-export default function Header() {
+export default function Header({ menuCategories = [] }: { menuCategories?: any[] }) {
   const { cartCount, setIsCartOpen } = useCart();
   const { user } = useAuth();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { config } = useStorefrontConfig();
   const navItems = config.navigation?.items?.length ? config.navigation.items : [];
-
-  const [menuCategories, setMenuCategories] = useState<any[]>([])
-
-  useEffect(() => {
-    getMenuCategories().then(setMenuCategories)
-  }, [])
 
   const allNavItems = useMemo(() => {
     const items = [...(config.navigation?.items || [])]

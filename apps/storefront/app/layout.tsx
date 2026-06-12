@@ -13,10 +13,12 @@ import MobileMenu from "@/components/MobileMenu";
 import FloatingWidgets from "@/components/FloatingWidgets";
 import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
+import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import { getFooterCmsPages } from "@/lib/api/cms-pages";
 import type { CmsPageSummary } from "@/lib/api/cms-pages";
+import { getMenuCategories } from "@/lib/menu-categories";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -78,9 +80,11 @@ export default async function RootLayout({
 }>) {
   let initialConfig: StorefrontConfig | undefined;
   let footerCmsPages: CmsPageSummary[] = [];
+  let menuCategories: any[] = [];
   try {
     initialConfig = await getStorefrontConfigServer();
     footerCmsPages = await getFooterCmsPages();
+    menuCategories = await getMenuCategories();
   } catch {}
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
@@ -103,6 +107,13 @@ export default async function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#16a34a" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="EcoMate" />
+      </head>
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
         {initialConfig ? (
           <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
@@ -116,18 +127,35 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
             />
             <TrackingScripts />
-            <Header />
+            <Header menuCategories={menuCategories} />
             <CartDrawer />
-            <MobileMenu />
+            <MobileMenu menuCategories={menuCategories} />
             <main className="flex-1 pb-24 md:pb-0">{children}</main>
             <Footer cmsPages={footerCmsPages} />
             <BottomNav />
             <FloatingWidgets />
             <FlyCartLayer />
+            <Toaster
+              position="top-right"
+              richColors
+              closeButton
+              duration={4000}
+            />
             </StorefrontConfigProvider>
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

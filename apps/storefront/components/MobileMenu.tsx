@@ -4,18 +4,11 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { getMenuCategories } from "@/lib/menu-categories";
 
-export default function MobileMenu() {
+export default function MobileMenu({ menuCategories = [] }: { menuCategories?: any[] }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { config } = useStorefrontConfig();
   const menuItems = config.navigation?.items?.length ? config.navigation.items : [];
-
-  const [menuCategories, setMenuCategories] = useState<any[]>([])
-
-  useEffect(() => {
-    getMenuCategories().then(setMenuCategories)
-  }, [])
 
   const allMenuItems = useMemo(() => {
     const items = [...(config.navigation?.items || [])]

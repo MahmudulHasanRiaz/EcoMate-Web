@@ -1,3 +1,4 @@
+import type { Product } from "@/lib/types";
 import Hero from "../components/Hero";
 import CategoryList from "../components/CategoryList";
 import ProductSection from "../components/ProductSection";
@@ -9,11 +10,22 @@ import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer 
 export const revalidate = 300;
 
 export default async function HomePage() {
-  const [featured, newArrivals, popular] = await Promise.all([
-    getFeaturedProductsServer(),
-    getNewArrivalsServer(),
-    getPopularItemsServer(),
-  ]);
+  let featured: Product[] = [];
+  let newArrivals: Product[] = [];
+  let popular: Product[] = [];
+
+  try {
+    const results = await Promise.all([
+      getFeaturedProductsServer(),
+      getNewArrivalsServer(),
+      getPopularItemsServer(),
+    ]);
+    featured = results[0];
+    newArrivals = results[1];
+    popular = results[2];
+  } catch (error) {
+    console.error('Homepage data fetch failed:', error);
+  }
 
   return (
     <>

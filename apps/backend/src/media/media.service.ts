@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { createHash } from 'crypto';
 import { extname } from 'path';
+import { readFile, unlink } from 'fs/promises';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 
@@ -383,7 +384,10 @@ export class MediaService {
     size: number;
     mimeType: string;
   }> {
-    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    if (!file?.buffer && !file?.path) throw new BadRequestException('No file uploaded');
+    if (!file.buffer) {
+      file.buffer = await readFile(file.path);
+    }
     if (
       !file.mimetype.startsWith('image/') &&
       !file.mimetype.startsWith('video/')
@@ -392,7 +396,8 @@ export class MediaService {
     }
     const hash = sha256(file.buffer);
     const existing = await this.prisma.media.findUnique({ where: { hash } });
-    if (existing)
+    if (existing) {
+      if (file.path) await unlink(file.path).catch(() => {});
       return {
         id: existing.id,
         url: existing.url,
@@ -400,11 +405,13 @@ export class MediaService {
         size: existing.size,
         mimeType: existing.mimeType,
       };
+    }
 
     const result = await this.storage.upload(
       file,
       opts.filename?.trim() || undefined,
     );
+    if (file.path) await unlink(file.path).catch(() => {});
     const created = await this.prisma.media.create({
       data: {
         filename: result.filename,

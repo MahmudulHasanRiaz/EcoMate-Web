@@ -21,6 +21,10 @@ export class ImagesController {
       return res.status(400).json({ error: 'path parameter is required' });
     }
 
+    if (path.includes('..')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
     try {
       const result = await this.imagesService.resize({
         path,

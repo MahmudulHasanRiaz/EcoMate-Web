@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { join, extname } from 'path';
+import { join, extname, resolve } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 
@@ -19,19 +19,35 @@ export class ImagesService {
     const sharp = (await import('sharp')).default;
 
     const relativePath = params.path.replace(/^\/uploads\//, '');
-    const sourcePath = join(this.uploadRoot, relativePath);
+
+    if (relativePath.includes('..')) {
+      throw new Error('Invalid path');
+    }
+
+    const sourcePath = resolve(join(this.uploadRoot, relativePath));
+
+    if (!sourcePath.startsWith(resolve(this.uploadRoot))) {
+      throw new Error('Invalid path');
+    }
 
     if (!existsSync(sourcePath)) {
       throw new Error(`Image not found: ${params.path}`);
     }
 
+    const allowedExtensions = [
+      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif',
+    ];
     const ext = extname(relativePath).toLowerCase();
+    if (!allowedExtensions.includes(ext)) {
+      throw new Error('Invalid file type');
+    }
+
     const mimeMap: Record<string, string> = {
       '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
       '.png': 'image/png', '.webp': 'image/webp',
       '.gif': 'image/gif', '.avif': 'image/avif',
     };
-    const mime = mimeMap[ext] || 'image/jpeg';
+    const mime = mimeMap[ext];
 
     if (!params.w && !params.h) {
       return { buffer: readFileSync(sourcePath), ext, mime };

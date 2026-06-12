@@ -8,12 +8,26 @@ import {
   Body,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { MediaService } from '../media/media.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB per file
 const MAX_BULK = 20;
+
+const UPLOADS_DIR = join(process.cwd(), 'uploads');
+if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const diskStorageConfig = diskStorage({
+  destination: UPLOADS_DIR,
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + extname(file.originalname));
+  },
+});
 
 const fileFilter = (
   _req: unknown,
@@ -36,7 +50,7 @@ export class UploadController {
   @Post('image')
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: MAX_BYTES }, fileFilter }),
+    FileInterceptor('file', { storage: diskStorageConfig, limits: { fileSize: MAX_BYTES }, fileFilter }),
   )
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
@@ -56,6 +70,7 @@ export class UploadController {
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   @UseInterceptors(
     FilesInterceptor('files', MAX_BULK, {
+      storage: diskStorageConfig,
       limits: { fileSize: MAX_BYTES },
       fileFilter,
     }),

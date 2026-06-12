@@ -105,6 +105,22 @@ export class ProductsService {
     );
   }
 
+  private readonly listInclude = {
+    category: { select: { id: true, name: true, slug: true } },
+    productCategories: {
+      include: { category: { select: { id: true, name: true, slug: true } } },
+    },
+    variants: {
+      select: {
+        id: true,
+        sku: true,
+        price: true,
+        stock: true,
+        image: true,
+      },
+    },
+  };
+
   private readonly productInclude = {
     category: { select: { id: true, name: true, slug: true } },
     productCategories: {
@@ -164,7 +180,7 @@ export class ProductsService {
         skip: (page - 1) * perPage,
         take: perPage,
         orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
-        include: this.productInclude,
+        include: this.listInclude,
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -248,7 +264,7 @@ export class ProductsService {
         where: cursorWhere,
         take: perPage,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        include: this.productInclude,
+        include: this.listInclude,
       }),
       this.prisma.product.count({ where: filters }),
     ]);

@@ -1,8 +1,6 @@
 import { fetchCombosServer } from "@/lib/api/combos-server";
 import ComboGridClient from "./ComboGridClient";
 
-export const dynamic = "force-dynamic";
-
 type CombosSearchParams = {
   search?: string;
   page?: string;

@@ -2,8 +2,6 @@ import { fetchProductsServer, getCategoriesServer } from "@/lib/api/products-ser
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import ArchivePageClient from "./ArchivePageClient";
 
-export const dynamic = "force-dynamic";
-
 type ProductsSearchParams = {
   search?: string;
   category?: string;
