@@ -24,9 +24,11 @@ export function BrandingSettings() {
   const [adminTagline, setAdminTagline] = useState('')
   const [storefrontFavicon, setStorefrontFavicon] = useState('')
   const [storefrontOgImage, setStorefrontOgImage] = useState('')
+  const [storeLogo, setStoreLogo] = useState('')
   const [adminFaviconPickerOpen, setAdminFaviconPickerOpen] = useState(false)
   const [storefrontFaviconPickerOpen, setStorefrontFaviconPickerOpen] = useState(false)
   const [ogImagePickerOpen, setOgImagePickerOpen] = useState(false)
+  const [storeLogoPickerOpen, setStoreLogoPickerOpen] = useState(false)
 
   useEffect(() => {
     if (settings) {
@@ -35,6 +37,7 @@ export function BrandingSettings() {
       setAdminTagline(settings.admin_tagline || 'Admin Dashboard')
       setStorefrontFavicon(settings.storefront_favicon || '')
       setStorefrontOgImage(settings.storefront_og_image || '')
+      setStoreLogo(settings.store_logo || '')
     }
   }, [settings])
 
@@ -50,6 +53,7 @@ export function BrandingSettings() {
       { key: 'admin_tagline', value: adminTagline },
       { key: 'storefront_favicon', value: storefrontFavicon },
       { key: 'storefront_og_image', value: storefrontOgImage },
+      { key: 'store_logo', value: storeLogo },
     ]
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
       .then(() => toast.success('Branding settings saved. Refresh the storefront/admin to see changes.'))
@@ -173,6 +177,37 @@ export function BrandingSettings() {
           </div>
 
           <div className='space-y-2'>
+            <Label>Store Logo</Label>
+            <div className='flex items-start gap-3'>
+              <div className='h-16 w-40 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
+                {storeLogo
+                  ? <SafeImage src={mediaUrl(storeLogo)} alt='Store logo' className='h-full w-full object-contain' />
+                  : <ImageIcon className='h-6 w-6 text-muted-foreground' />}
+              </div>
+              <div className='flex-1 flex flex-col gap-2'>
+                <div className='flex gap-2'>
+                  <Input
+                    value={storeLogo}
+                    onChange={e => setStoreLogo(e.target.value)}
+                    placeholder='https://example.com/logo.png'
+                  />
+                  <Button type='button' variant='outline' size='sm' onClick={() => setStoreLogoPickerOpen(true)}>
+                    Pick
+                  </Button>
+                  {storeLogo && (
+                    <Button type='button' variant='ghost' size='icon' onClick={() => setStoreLogo('')}>
+                      <X className='h-4 w-4' />
+                    </Button>
+                  )}
+                </div>
+                <p className='text-xs text-muted-foreground'>Shown in the storefront header when no brand systems are configured. Use a horizontal logo for best results.</p>
+              </div>
+            </div>
+          </div>
+
+          <Separator className='my-4' />
+
+          <div className='space-y-2'>
             <Label>Default Social Share Image (Open Graph)</Label>
             <div className='flex items-start gap-3'>
               <div className='h-24 w-40 rounded border overflow-hidden bg-muted shrink-0 flex items-center justify-center'>
@@ -241,6 +276,16 @@ export function BrandingSettings() {
         onSelect={(urls) => {
           setStorefrontOgImage(urls[urls.length - 1] || '')
           setOgImagePickerOpen(false)
+        }}
+      />
+      <MediaPicker
+        open={storeLogoPickerOpen}
+        onOpenChange={setStoreLogoPickerOpen}
+        selected={storeLogo ? [storeLogo] : []}
+        multiple={false}
+        onSelect={(urls) => {
+          setStoreLogo(urls[urls.length - 1] || '')
+          setStoreLogoPickerOpen(false)
         }}
       />
     </div>

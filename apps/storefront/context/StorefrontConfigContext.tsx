@@ -11,7 +11,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "", messengerUsername: "" },
   order: { whatsapp: "", callNumber: "" },
-  branding: { storefrontFavicon: "", storefrontOgImage: "", adminTitle: "", adminFavicon: "", adminTagline: "" },
+  branding: { storefrontFavicon: "", storefrontOgImage: "", storeLogo: "", adminTitle: "", adminFavicon: "", adminTagline: "" },
   seo: { title: "", description: "", keywords: "" },
   footer: { description: "", copyright: "" },
   about: { text: "" },

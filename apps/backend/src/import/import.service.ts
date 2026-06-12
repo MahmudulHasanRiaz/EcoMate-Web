@@ -507,7 +507,7 @@ export class ImportService {
   private parseCategories(value?: string): ParsedCategory[] {
     if (!value?.trim()) return [];
     return value
-      .split('|')
+      .split(/[,|]/)
       .map((s) => s.trim())
       .filter(Boolean)
       .map((part) => {

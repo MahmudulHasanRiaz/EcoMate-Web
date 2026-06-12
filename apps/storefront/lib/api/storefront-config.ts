@@ -44,6 +44,7 @@ export interface StorefrontConfig {
   branding: {
     storefrontFavicon: string;
     storefrontOgImage: string;
+    storeLogo: string;
     adminTitle: string;
     adminFavicon: string;
     adminTagline: string;

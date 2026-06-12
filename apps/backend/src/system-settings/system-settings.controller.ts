@@ -186,6 +186,7 @@ export class SystemSettingsController {
             'admin_tagline',
             'storefront_favicon',
             'storefront_og_image',
+            'store_logo',
             'seo_title',
             'seo_description',
           ],
@@ -201,6 +202,7 @@ export class SystemSettingsController {
       adminTagline: map['admin_tagline'] || 'Admin Dashboard',
       storefrontFavicon: map['storefront_favicon'] || '',
       storefrontOgImage: map['storefront_og_image'] || '',
+      storeLogo: map['store_logo'] || '',
       seoTitle: map['seo_title'] || '',
       seoDescription: map['seo_description'] || '',
     };
@@ -311,6 +313,7 @@ export class SystemSettingsController {
       branding: {
         storefrontFavicon: map['storefront_favicon'] || '',
         storefrontOgImage: map['storefront_og_image'] || '',
+        storeLogo: map['store_logo'] || '',
         adminTitle: map['admin_title'] || '',
         adminFavicon: map['admin_favicon'] || '',
         adminTagline: map['admin_tagline'] || '',
