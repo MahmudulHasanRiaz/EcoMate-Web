@@ -76,9 +76,32 @@ async function main() {
     const status = await prisma.orderStatus.upsert({
       where: { name: s.name },
       update: {},
-      create: s,
+      create: { ...s, nextStatuses: [] },
     });
     orderStatusMap[s.name] = status.id;
+  }
+
+  // Define allowed transitions
+  const transitions: Record<string, string[]> = {
+    'Payment Pending': ['Pending', 'Confirmed', 'Cancelled'],
+    'Pending': ['Confirmed', 'Cancelled'],
+    'Confirmed': ['Processing', 'Cancelled'],
+    'Processing': ['Shipped', 'Cancelled'],
+    'Shipped': ['Delivered', 'Return Pending', 'Damaged'],
+    'Delivered': [],
+    'Cancelled': [],
+    'Refunded': [],
+    'Returned': [],
+    'Return Pending': ['Returned', 'Refunded'],
+    'Damaged': [],
+  };
+
+  for (const [name, nextNames] of Object.entries(transitions)) {
+    const ids = nextNames.map((n) => orderStatusMap[n]).filter(Boolean);
+    await prisma.orderStatus.update({
+      where: { name },
+      data: { nextStatuses: ids as any },
+    });
   }
   console.log(`  ✓ ${statuses.length} order statuses created`);
 
