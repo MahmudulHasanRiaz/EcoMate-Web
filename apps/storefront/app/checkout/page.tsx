@@ -366,6 +366,13 @@ export default function CheckoutPage() {
   const paymentModes = checkoutCfg?.paymentModes || ['cod', 'full', 'partial'];
   const availableMode = (mode: string) => paymentModes.includes(mode);
 
+  const [gateways, setGateways] = useState<any[]>([]);
+  useEffect(() => {
+    getGateways().then(list => setGateways(list)).catch(() => {});
+  }, []);
+  const codGateway = gateways.find(g => g.gateway === 'cod');
+  const isCodGatewayEnabled = codGateway?.enabled === true;
+
   let deliveryCharge = 0;
   let noDeliveryError = '';
 
@@ -421,6 +428,13 @@ export default function CheckoutPage() {
   useEffect(() => { localStorage.setItem('checkout_address', addressLine); }, [addressLine]);
   useEffect(() => { localStorage.setItem('checkout_notes', customerNotes); }, [customerNotes]);
   useEffect(() => { localStorage.setItem('checkout_paymentMode', paymentMode); }, [paymentMode]);
+
+  useEffect(() => {
+    if (paymentMode === 'cod' && !isCodGatewayEnabled) {
+      const fallback = paymentModes.find(m => m !== 'cod') || 'full';
+      setPaymentMode(fallback);
+    }
+  }, [isCodGatewayEnabled, paymentMode, paymentModes]);
 
   const initiatedRef = useRef(false);
 
@@ -821,7 +835,7 @@ export default function CheckoutPage() {
 
                 {/* Payment Mode Selection */}
                 <div className="space-y-2 mb-4">
-                  {availableMode('cod') && (
+                  {availableMode('cod') && isCodGatewayEnabled && (
                     <div onClick={() => setPaymentMode('cod')}
                       className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'cod' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
                       <div className="flex items-center gap-3">
