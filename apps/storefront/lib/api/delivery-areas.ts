@@ -24,7 +24,11 @@ export async function getThanas(district: string): Promise<BDThana[]> {
 
 export interface GatewayConfig {
   id: string;
-  gateway: string;
+  code: string;
+  name: string;
+  type: string;
+  paymentOptionType: string;
+  paymentOptionName?: string;
   enabled: boolean;
   mode: string;
   phoneNumber?: string;

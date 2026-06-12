@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, Param, Query, Res } from '@nestjs/common';
+import { PaymentStatus } from '@prisma/client';
 import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -36,11 +37,11 @@ export class BkashPgwController {
         if (result.transactionStatus === 'Completed') {
           if (result.payerReference) {
             await this.prisma.payment.updateMany({
-              where: { orderId: result.payerReference, method: 'online' },
+              where: { orderId: result.payerReference, gatewayCode: 'bkash_pgw' },
               data: {
-                status: 'verified',
+                status: PaymentStatus.PAID,
                 transactionId: result.trxID,
-                method: 'bkash',
+                gatewayCode: 'bkash',
                 verifiedAt: new Date(),
               },
             });

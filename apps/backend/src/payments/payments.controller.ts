@@ -14,14 +14,14 @@ export class PaymentsController {
   findAll(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
-    @Query('method') method?: string,
+    @Query('gatewayCode') gatewayCode?: string,
     @Query('status') status?: string,
     @Query('orderId') orderId?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
       perPage: perPage ? parseInt(perPage) : undefined,
-      method,
+      gatewayCode,
       status,
       orderId,
     });

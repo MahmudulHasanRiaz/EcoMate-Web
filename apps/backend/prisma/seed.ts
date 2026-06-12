@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
+import { PrismaClient, UserRole, UserStatus, PaymentOptionType, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -44,16 +44,17 @@ async function main() {
 
   // ── Order Statuses ──
   const statuses = [
-    { name: 'Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 1 },
-    { name: 'Confirmed', color: '#3B82F6', isInitial: false, isFinal: false, sortOrder: 2 },
-    { name: 'Processing', color: '#8B5CF6', isInitial: false, isFinal: false, sortOrder: 3 },
-    { name: 'Shipped', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 4 },
-    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 5 },
-    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 6 },
-    { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 7 },
-    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 8 },
-    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 9 },
-    { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 10 },
+    { name: 'Payment Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 0, nextStatuses: [] },
+    { name: 'Pending', color: '#F59E0B', isInitial: false, isFinal: false, sortOrder: 1, nextStatuses: [] },
+    { name: 'Confirmed', color: '#3B82F6', isInitial: false, isFinal: false, sortOrder: 2, nextStatuses: [] },
+    { name: 'Processing', color: '#8B5CF6', isInitial: false, isFinal: false, sortOrder: 3, nextStatuses: [] },
+    { name: 'Shipped', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
+    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 5, nextStatuses: [] },
+    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 6, nextStatuses: [] },
+    { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 7, nextStatuses: [] },
+    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 8, nextStatuses: [] },
+    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 9, nextStatuses: [] },
+    { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 10, nextStatuses: [] },
   ];
 
   const orderStatusMap: Record<string, string> = {};
@@ -746,9 +747,9 @@ async function main() {
     await prisma.payment.create({
       data: {
         orderId: orderRecord.id,
-        method: order.status === 'Pending' ? 'pending' : 'bkash',
+        gatewayCode: order.status === 'Pending' ? 'cash' : 'bkash',
         amount: order.total,
-        status: order.status === 'Delivered' ? 'verified' : order.status === 'Pending' ? 'pending' : 'verified',
+        status: order.status === 'Delivered' ? PaymentStatus.PAID : order.status === 'Pending' ? PaymentStatus.PENDING : PaymentStatus.PAID,
         transactionId: order.status !== 'Pending' ? `TXN${Date.now()}${Math.random().toString(36).substring(2, 6).toUpperCase()}` : null,
         verifiedBy: order.status === 'Delivered' ? admin.id : null,
         verifiedAt: order.status === 'Delivered' ? new Date() : null,
@@ -757,19 +758,39 @@ async function main() {
   }
   console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
 
+  // ── Payment Options ──
+  const paymentOptions = [
+    { type: PaymentOptionType.FULL_PAYMENT, name: 'Full Payment', description: 'Pay the full order amount online', enabled: true, sortOrder: 1 },
+    { type: PaymentOptionType.PARTIAL_PAYMENT, name: 'Partial Payment', description: 'Pay a partial amount online, rest on delivery', enabled: true, sortOrder: 2 },
+    { type: PaymentOptionType.CASH_ON_DELIVERY, name: 'Cash on Delivery', description: 'Pay in cash when order is delivered', enabled: true, sortOrder: 3 },
+  ];
+  for (const opt of paymentOptions) {
+    await prisma.paymentOption.upsert({
+      where: { type: opt.type },
+      create: opt,
+      update: {},
+    });
+  }
+  console.log(`  ✓ ${paymentOptions.length} payment options created`);
+
   // ── Payment Gateways ──
   const gateways = [
-    { gateway: 'cod', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
-    { gateway: 'bkash', enabled: false, mode: 'personal', phoneNumber: '01700000000', credentials: {} },
-    { gateway: 'nagad', enabled: false, mode: 'personal', phoneNumber: '01700000001', credentials: {} },
-    { gateway: 'rocket', enabled: false, mode: 'personal', phoneNumber: '01700000002', credentials: {} },
-    { gateway: 'upay', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
-    { gateway: 'cellfin', enabled: false, mode: 'personal', phoneNumber: null, credentials: {} },
-    { gateway: 'bkash_pgw', enabled: false, mode: 'sandbox', phoneNumber: null, credentials: { appKey: '', appSecret: '', username: '', password: '' } },
+    // CASH_ON_DELIVERY gateways
+    { code: 'cash', name: 'Cash', type: 'cash', paymentOptionType: PaymentOptionType.CASH_ON_DELIVERY, enabled: true, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 1 },
+    
+    // FULL_PAYMENT / PARTIAL_PAYMENT manual gateways
+    { code: 'bkash', name: 'bKash (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000000', credentials: {}, sortOrder: 2 },
+    { code: 'nagad', name: 'Nagad (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000001', credentials: {}, sortOrder: 3 },
+    { code: 'rocket', name: 'Rocket (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000002', credentials: {}, sortOrder: 4 },
+    { code: 'upay', name: 'Upay (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 5 },
+    { code: 'cellfin', name: 'Cellfin (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 6 },
+    
+    // bKash PGW - API gateway
+    { code: 'bkash_pgw', name: 'bKash PGW (API)', type: 'api', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'sandbox', phoneNumber: null, credentials: { appKey: '', appSecret: '', username: '', password: '' }, sortOrder: 7 },
   ];
   for (const g of gateways) {
-    await prisma.paymentGatewayConfig.upsert({
-      where: { gateway: g.gateway },
+    await prisma.paymentGateway.upsert({
+      where: { code: g.code },
       create: g,
       update: {},
     });

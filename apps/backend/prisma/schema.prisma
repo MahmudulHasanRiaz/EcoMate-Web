@@ -43,6 +43,23 @@ enum TaskPriority {
   critical
 }
 
+enum PaymentOptionType {
+  FULL_PAYMENT
+  PARTIAL_PAYMENT
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PAYMENT_PENDING
+  PENDING
+  PAID
+  PARTIAL_PAID
+  UNPAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
 model User {
   id          String     @id @default(uuid())
   firstName   String
@@ -215,6 +232,7 @@ model Product {
   sizeChartId String?
   sizeChart   SizeChart? @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
   reviews     Review[]
+  paymentOptionOverrides ProductPaymentOption[]
 }
 
 model ProductVariant {
@@ -270,6 +288,7 @@ model Combo {
   category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   items      ComboItem[]
   orderItems OrderItem[]
+  paymentOptionOverrides ProductPaymentOption[]
 }
 
 model ComboItem {
@@ -302,16 +321,16 @@ model OrderStatus {
 }
 
 model Order {
-  id              String    @id @default(uuid())
-  displayId       String    @unique
+  id              String        @id @default(uuid())
+  displayId       String        @unique
   customerId      String?
   statusId        String
-  subtotal        Decimal   @db.Decimal(10, 2)
-  shippingCharge  Decimal   @default(0) @db.Decimal(10, 2)
-  discount        Decimal   @default(0) @db.Decimal(10, 2)
-  discountType    String    @default("flat")
-  total           Decimal   @db.Decimal(10, 2)
-  shippingAddress Json?     @default("{}")
+  subtotal        Decimal       @db.Decimal(10, 2)
+  shippingCharge  Decimal       @default(0) @db.Decimal(10, 2)
+  discount        Decimal       @default(0) @db.Decimal(10, 2)
+  discountType    String        @default("flat")
+  total           Decimal       @db.Decimal(10, 2)
+  shippingAddress Json?         @default("{}")
   customerNotes   String?
   officeNotes     String?
   courierService  CourierService?
@@ -320,15 +339,16 @@ model Order {
   courierStatus   String?
   assignedToId    String?
   assignedAt      DateTime?
-  timeline        Json?     @default("[]")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  timeline        Json?         @default("[]")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   guestName       String?
   guestPhone      String?
-  paymentMethod   String?
-  paymentMode     String?   @default("cod")
-  partialAmount   Decimal?  @db.Decimal(10, 2)
-  viewToken       String?   @unique
+  paymentOptionType PaymentOptionType? // FULL_PAYMENT | PARTIAL_PAYMENT | CASH_ON_DELIVERY
+  paymentOption   PaymentOption? @relation(fields: [paymentOptionType], references: [type])
+  paymentStatus   PaymentStatus  @default(PAYMENT_PENDING)
+  partialAmount   Decimal?       @db.Decimal(10, 2)
+  viewToken       String?        @unique
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean  @default(false)
 
@@ -360,20 +380,23 @@ model OrderItem {
 }
 
 model Payment {
-  id            String    @id @default(uuid())
+  id            String        @id @default(uuid())
   orderId       String
-  method        String
-  amount        Decimal   @db.Decimal(10, 2)
+  gatewayCode   String        // Links to PaymentGateway.code (e.g., 'bkash', 'nagad', 'bkash_pgw', 'cash')
+  amount        Decimal       @db.Decimal(10, 2)
   transactionId String?
   screenshot    String?
-  status        String    @default("pending")
+  status        PaymentStatus @default(PENDING)
   verifiedBy    String?
   verifiedAt    DateTime?
   notes         String?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime      @default(now())
 
   order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   verifier User?  @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
+
+  @@index([orderId])
+  @@index([gatewayCode])
 }
 
 model CheckoutLead {
@@ -449,15 +472,57 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
-model PaymentGatewayConfig {
-  id          String   @id @default(uuid())
-  gateway     String   @unique
-  enabled     Boolean  @default(false)
-  mode        String   @default("personal")
-  phoneNumber String?
-  credentials Json?     @default("{}")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model PaymentOption {
+  id          String            @id @default(uuid())
+  type        PaymentOptionType @unique
+  name        String
+  description String?
+  enabled     Boolean           @default(true)
+  sortOrder   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  gateways    PaymentGateway[]
+  productOverrides ProductPaymentOption[]
+  orders      Order[]
+}
+
+model PaymentGateway {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  name          String
+  type          String   // 'manual' | 'api' | 'cash'
+  paymentOptionType PaymentOptionType
+  paymentOption   PaymentOption @relation(fields: [paymentOptionType], references: [type])
+  enabled       Boolean  @default(false)
+  mode          String   @default("personal") // 'personal' | 'agent' | 'merchant' | 'sandbox' | 'production'
+  phoneNumber   String?
+  credentials   Json?    @default("{}")
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([paymentOptionType])
+}
+
+model ProductPaymentOption {
+  id                String            @id @default(uuid())
+  productId         String?
+  comboId           String?
+  paymentOptionType PaymentOptionType
+  paymentOption     PaymentOption     @relation(fields: [paymentOptionType], references: [type])
+  enabled           Boolean           @default(true)
+  partialFixedAmount Decimal?         @db.Decimal(10, 2) // Fixed amount for partial payment
+  partialPercentage  Decimal?         @db.Decimal(5, 2)  // Percentage for partial payment (e.g., 30.00 for 30%)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  product           Product?          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  combo             Combo?            @relation(fields: [comboId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, comboId, paymentOptionType])
+  @@index([productId])
+  @@index([comboId])
 }
 
 model Media {

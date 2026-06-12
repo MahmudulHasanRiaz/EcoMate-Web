@@ -98,7 +98,18 @@ function paymentMethodLabel(method: string): { label: string; colorClass: string
   if (m.includes('card') || m.includes('visa') || m.includes('master')) return { label: method, colorClass: 'text-blue-500' }
   if (m.includes('cod') || m.includes('cash') || m.includes('delivery')) return { label: 'COD', colorClass: 'text-emerald-600 dark:text-emerald-400' }
   if (m.includes('bank') || m.includes('transfer')) return { label: method, colorClass: 'text-slate-500' }
+  if (m.includes('gateway')) return { label: method.split('_').slice(1).join(' ') || method, colorClass: 'text-muted-foreground' }
   return { label: method, colorClass: 'text-muted-foreground' }
+}
+
+function paymentStatusBadgeClass(status: string): { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string } {
+  const s = status?.toLowerCase() || ''
+  if (['paid', 'verified', 'completed'].includes(s)) return { variant: 'default', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' }
+  if (['pending', 'payment_pending'].includes(s)) return { variant: 'secondary', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800' }
+  if (['failed', 'cancelled', 'unpaid'].includes(s)) return { variant: 'destructive', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800' }
+  if (s === 'partial_paid') return { variant: 'default', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800' }
+  if (s === 'refunded') return { variant: 'outline', className: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800' }
+  return { variant: 'outline', className: '' }
 }
 
 async function copyToClipboard(text: string, label?: string) {
@@ -681,7 +692,9 @@ export function Orders() {
                                     <div className='space-y-1.5'>
                                       <div className='text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>Payments</div>
                                       {o.payments.map((p) => {
-                                        const pm = paymentMethodLabel(p.method)
+                                        const gw = p.gatewayCode || p.method
+                                        const pm = paymentMethodLabel(gw)
+                                        const ps = paymentStatusBadgeClass(p.status)
                                         return (
                                           <div key={p.id} className='flex items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-sm'>
                                             <div className='flex items-center gap-2'>
@@ -690,10 +703,7 @@ export function Orders() {
                                             </div>
                                             <div className='flex items-center gap-2'>
                                               <span className='text-sm font-semibold'>৳{fmt(p.amount)}</span>
-                                              <Badge variant={p.status === 'completed' || p.status === 'paid' || p.status === 'verified' ? 'default' : 'secondary'}
-                                                className={`text-[10px] ${p.status === 'completed' || p.status === 'paid' || p.status === 'verified' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' : ''}`}>
-                                                {p.status}
-                                              </Badge>
+                                              <Badge variant={ps.variant} className={`text-[10px] ${ps.className}`}>{p.status}</Badge>
                                             </div>
                                           </div>
                                         )

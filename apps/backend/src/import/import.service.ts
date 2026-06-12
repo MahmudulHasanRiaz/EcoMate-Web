@@ -171,11 +171,15 @@ export class ImportService {
 
     let productId: string;
 
+    const hasVariations = variationRows.length > 0;
+
     if (existingProduct) {
       await this.updateProduct(existingProduct.id, parentRow, summary, errors);
       productId = existingProduct.id;
     } else {
-      productId = await this.createProduct(parentRow, summary, errors);
+      productId = await this.createProduct(parentRow, summary, errors, {
+        skipVariantGeneration: hasVariations,
+      });
     }
 
     for (const vRow of variationRows) {
@@ -194,6 +198,7 @@ export class ImportService {
     row: CsvRowWithMeta,
     summary: ImportSummary,
     errors: ImportError[],
+    options?: { skipVariantGeneration?: boolean },
   ): Promise<string> {
     const data = row.data;
     const sku = data.SKU!.trim();
@@ -272,7 +277,11 @@ export class ImportService {
 
     summary.productsCreated++;
 
-    if (isVariable && resolvedAttrs.length > 0) {
+    if (
+      isVariable &&
+      resolvedAttrs.length > 0 &&
+      !options?.skipVariantGeneration
+    ) {
       await this.generateVariantCombinations(product.id, resolvedAttrs);
     }
 
@@ -615,7 +624,7 @@ export class ImportService {
       if (!name) continue;
 
       const values = (data[valuesKey] || '')
-        .split('|')
+        .split(/[,|]/)
         .map((v) => v.trim())
         .filter(Boolean);
 

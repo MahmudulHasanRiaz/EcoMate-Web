@@ -17,6 +17,7 @@ import {
   UpdateOrderItemDto,
   CustomerInfoDto,
 } from './dto/order.dto';
+import { PaymentStatus, PaymentOptionType } from '@prisma/client';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 
@@ -326,9 +327,15 @@ export class OrdersService {
         officeNotes: dto.officeNotes,
         guestName: dto.guestName,
         guestPhone: dto.guestPhone,
-        paymentMethod: dto.paymentMethod,
-        paymentMode: dto.paymentMode || 'cod',
-        partialAmount: dto.partialAmount,
+        paymentOptionType: dto.paymentOptionType,
+        paymentStatus:
+          dto.paymentOptionType === 'CASH_ON_DELIVERY'
+            ? PaymentStatus.UNPAID
+            : PaymentStatus.PAYMENT_PENDING,
+        partialAmount:
+          dto.paymentOptionType === 'PARTIAL_PAYMENT'
+            ? dto.partialAmount ?? undefined
+            : undefined,
         items: {
           create: dto.items.map((i) => ({
             productId: i.productId,
@@ -366,19 +373,35 @@ export class OrdersService {
       },
     });
 
-    if (dto.paymentMethod) {
+    if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
+      if (
+        dto.partialAmount !== undefined &&
+        (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
+      ) {
+        throw new BadRequestException(
+          'Partial payment amount must be greater than 0 and not exceed the order total',
+        );
+      }
+    }
+
+    if (dto.paymentOptionType) {
       const paymentAmount =
-        dto.paymentMode === 'partial' && dto.partialAmount
+        dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
           ? dto.partialAmount
           : total;
-      await this.prisma.payment.create({
-        data: {
-          orderId: order.id,
-          method: dto.paymentMethod,
-          amount: paymentAmount,
-          status: 'pending',
-        },
-      });
+      const gatewayCode =
+        dto.gatewayCode ||
+        (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
+      if (gatewayCode) {
+        await this.prisma.payment.create({
+          data: {
+            orderId: order.id,
+            gatewayCode,
+            amount: paymentAmount,
+            status: PaymentStatus.PENDING,
+          },
+        });
+      }
     }
 
     const phoneToClose = dto.guestPhone || order.customer?.phoneNumber;
@@ -655,13 +678,13 @@ export class OrdersService {
 
     if (newStatus.name === 'Delivered') {
       const codPayment = updated.payments?.find(
-        (p) => p.method === 'cod' && p.status !== 'verified',
+        (p) => p.gatewayCode === 'cash' && p.status === PaymentStatus.UNPAID,
       );
       if (codPayment) {
         await this.prisma.payment.update({
           where: { id: codPayment.id },
           data: {
-            status: 'verified',
+            status: PaymentStatus.PAID,
             verifiedBy: userId,
             verifiedAt: new Date(),
           },
@@ -912,7 +935,7 @@ export class OrdersService {
     if (!order || order.viewToken !== token) {
       throw new NotFoundException('Order not found');
     }
-    if (order.status.name !== 'Pending') {
+    if (order.status.name !== 'Pending' && order.status.name !== 'Payment Pending') {
       throw new BadRequestException(
         `Order in "${order.status.name}" status cannot be cancelled`,
       );
@@ -935,6 +958,16 @@ export class OrdersService {
       where: { id: orderId },
       data: { statusId: cancelled.id, timeline: timeline as any },
       include: { status: true },
+    });
+
+    this.events.emit({
+      type: 'order.status_changed',
+      data: {
+        id: updated.id,
+        displayId: updated.displayId,
+        statusId: cancelled.id,
+        statusName: cancelled.name,
+      },
     });
 
     try {

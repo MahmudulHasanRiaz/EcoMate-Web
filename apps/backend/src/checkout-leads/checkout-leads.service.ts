@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -237,7 +238,6 @@ export class CheckoutLeadsService {
         shippingAddress: overrides?.shippingAddress ?? (lead.address as any),
         guestName,
         guestPhone,
-        paymentMethod: overrides?.paymentMethod ?? lead.paymentMethod,
         items: {
           create: items.map((i: any) => ({
             productId: i.productId,
@@ -272,9 +272,9 @@ export class CheckoutLeadsService {
       await this.prisma.payment.create({
         data: {
           orderId: order.id,
-          method: pm,
+          gatewayCode: pm,
           amount: subtotal,
-          status: isPgw ? 'verified' : 'pending',
+          status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
           verifiedBy: isPgw ? 'system' : null,
           verifiedAt: isPgw ? new Date() : null,
         },

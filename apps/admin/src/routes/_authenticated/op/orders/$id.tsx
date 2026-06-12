@@ -27,6 +27,23 @@ const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
 
+function paymentOptionTypeLabel(type: string): string {
+  const map: Record<string, string> = { FULL_PAYMENT: 'Full Payment', PARTIAL_PAYMENT: 'Partial Payment', CASH_ON_DELIVERY: 'Cash on Delivery' }
+  return map[type] || type?.replace(/_/g, ' ') || '—'
+}
+
+const paymentStatusColors: Record<string, string> = {
+  PAYMENT_PENDING: '#F59E0B', PENDING: '#F59E0B', PAID: '#22C55E',
+  PARTIAL_PAID: '#3B82F6', UNPAID: '#EF4444', FAILED: '#DC2626',
+  CANCELLED: '#6B7280', REFUNDED: '#EC4899',
+}
+
+function PaymentStatusBadge({ status }: { status?: string | null }) {
+  if (!status) return null
+  const color = paymentStatusColors[status] || '#6B7280'
+  return <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{status.replace(/_/g, ' ')}</Badge>
+}
+
 export const Route = createFileRoute('/_authenticated/op/orders/$id')({ component: OrderDetailPage })
 
 function OrderDetailPage() {
@@ -514,7 +531,33 @@ function OrderDetailPage() {
               <>
                 <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Details</CardTitle></CardHeader><CardContent className='space-y-2 text-sm'><div className='flex justify-between'><span className='text-muted-foreground'>Subtotal</span><span>৳{fmt(order.subtotal)}</span></div><div className='flex justify-between'><span className='text-muted-foreground'>Shipping</span><span>৳{fmt(order.shippingCharge)}</span></div>{nn(order.discount) > 0 && <div className='flex justify-between text-green-600'><span className='text-muted-foreground'>Discount ({order.discountType})</span><span>-৳{fmt(order.discount)}</span></div>}<div className='flex justify-between font-bold pt-1 border-t'><span>Total</span><span>৳{fmt(order.total)}</span></div></CardContent></Card>
                 {order.shipment && <Card><CardHeader className='pb-2'><CardTitle className='text-base'>Shipment</CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Courier: {order.shipment.courier}</p><p>Tracking: {order.shipment.trackingNo}</p></CardContent></Card>}
-                {order.payments?.map((p: any) => <Card key={p.id}><CardHeader className='pb-2'><CardTitle className='text-base text-xs flex items-center justify-between'><PaymentLogo method={p.method} size='sm' /><Badge className={p.status === 'verified' ? 'bg-green-500 text-xs' : 'text-xs'}>{p.status}</Badge></CardTitle></CardHeader><CardContent className='space-y-1 text-sm'><p>Amount: ৳{fmt(p.amount)}</p>{p.transactionId && <p>TrxID: {p.transactionId}</p>}</CardContent></Card>)}
+                {order.paymentOptionType && (
+                  <Card>
+                    <CardHeader className='pb-2'><CardTitle className='text-base flex items-center gap-2'>Payment <PaymentStatusBadge status={order.paymentStatus} /></CardTitle></CardHeader>
+                    <CardContent className='space-y-1 text-sm'>
+                      <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order.paymentOptionType)}</p>
+                      {order.partialAmount && <p><span className='text-muted-foreground'>Partial Amount:</span> ৳{fmt(order.partialAmount)}</p>}
+                    </CardContent>
+                  </Card>
+                )}
+                {order.payments?.map((p: any) => {
+                  const ps = p.status?.toLowerCase()
+                  const statusVariant = ps === 'paid' || ps === 'verified' || ps === 'completed' ? 'default' as const : ps === 'pending' || ps === 'payment_pending' ? 'secondary' as const : ps === 'failed' || ps === 'cancelled' ? 'destructive' as const : 'outline' as const
+                  return (
+                  <Card key={p.id}>
+                    <CardHeader className='pb-2'>
+                      <CardTitle className='text-base text-xs flex items-center justify-between'>
+                        <PaymentLogo method={p.gatewayCode || p.method} size='sm' />
+                        <Badge variant={statusVariant} className='text-xs'>{p.status}</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className='space-y-1 text-sm'>
+                      <p>Amount: ৳{fmt(p.amount)}</p>
+                      {p.transactionId && <p>TrxID: {p.transactionId}</p>}
+                      {p.gatewayCode && <p className='text-xs text-muted-foreground'>Gateway: {p.gatewayCode}</p>}
+                    </CardContent>
+                  </Card>
+                )})}
               </>
             )}
           </div>

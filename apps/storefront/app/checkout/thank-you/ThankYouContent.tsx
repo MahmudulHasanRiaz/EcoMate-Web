@@ -2,15 +2,17 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTriangle, Clock, XCircle, Ban } from 'lucide-react';
+import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTriangle, Clock, XCircle, Ban, Loader2, CheckCircle, ExternalLink, CreditCard, ArrowLeft } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { trackEvent } from '@/lib/tracking';
 import { ResumePaymentButton } from '@/components/ThankYou/ResumePaymentButton';
 import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { CancelOrderButton } from '@/components/ThankYou/CancelOrderButton';
+import { submitPayment } from '@/lib/api/payments';
+import { getGateways } from '@/lib/api/delivery-areas';
 import { motion } from 'motion/react';
 
 export type PaymentStatus = 'paid' | 'pending' | 'partial' | 'failed' | 'cancelled';
@@ -41,6 +43,19 @@ export default function ThankYouContent({
   const router = useRouter();
   const { clearCart } = useCart();
   const { config } = useStorefrontConfig();
+  const [gateways, setGateways] = useState<any[]>([]);
+  const [loadingGateways, setLoadingGateways] = useState(true);
+  const [selectedGw, setSelectedGw] = useState<any | null>(null);
+  const [senderPhone, setSenderPhone] = useState('');
+  const [trxId, setTrxId] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [submittedPayment, setSubmittedPayment] = useState(false);
+
+  useEffect(() => {
+    getGateways().then(list => {
+      setGateways(list.filter(g => g.enabled && g.code !== 'cash'));
+    }).catch(() => {}).finally(() => setLoadingGateways(false));
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -133,17 +148,37 @@ export default function ThankYouContent({
   const shippingAddress = order.shippingAddress || {};
   const hasDeliveryArea = shippingAddress?.district || shippingAddress?.thana;
   const statusName = String(order.status?.name || '');
-  const paymentMethod = String(order.paymentMethod || '');
-  const paymentMode = String(order.paymentMode || '');
+  const paymentOptionType = String(order.paymentOptionType || '');
   const isPendingStatus = statusName.toLowerCase() === 'pending';
   const isCancellable = paymentStatus === 'pending' && isPendingStatus;
-  const verifiedPayments = (order.payments || []).filter((p: any) => p.status === 'verified');
+  const verifiedPayments = (order.payments || []).filter((p: any) => p.status === 'PAID');
   const totalPaid = verifiedPayments.reduce((s: number, p: any) => s + nn(p.amount), 0);
   const orderTotal = nn(order.total);
   const remaining = Math.max(0, orderTotal - totalPaid);
-  const isBkas = paymentMethod === 'bkash' || paymentMethod === 'online';
-  const isManual = paymentMethod === 'manual' || paymentMethod === 'send-money' || paymentMethod === 'send_money';
-  const isCod = paymentMethod === 'cod' || (!paymentMethod && paymentMode === 'cod');
+  const isCod = paymentOptionType === 'CASH_ON_DELIVERY';
+  const hasBkasPgw = (order.payments || []).some((p: any) => p.gatewayCode === 'bkash_pgw');
+  const isBkas = hasBkasPgw || (order.payments || []).some((p: any) => p.gatewayCode === 'bkash');
+  const isManual = (order.payments || []).some((p: any) =>
+    p.gatewayCode && p.gatewayCode !== 'cash' && p.gatewayCode !== 'bkash_pgw'
+  );
+
+  const handleSubmitPayment = async () => {
+    if (!trxId.trim()) return;
+    setSubmittingPayment(true);
+    try {
+      await submitPayment(order.id, {
+        gatewayCode: selectedGw.code,
+        amount: orderTotal,
+        transactionId: trxId.trim(),
+        notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
+      });
+      setSubmittedPayment(true);
+    } catch {
+      // Error handled silently — button re-enables for retry
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
 
   const headerBg = paymentStatus === 'paid' ? 'bg-green-100' : paymentStatus === 'cancelled' ? 'bg-red-100' : 'bg-amber-100';
   const headerIconColor =
@@ -288,22 +323,126 @@ export default function ThankYouContent({
               )}
 
               {isCod && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-                  <Truck className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-900">Cash on Delivery</p>
-                    <p className="text-blue-800 text-xs mt-1">
-                      Pay {config.currency.symbol}
-                      {fmt(orderTotal)} in cash when your order is delivered.
-                    </p>
+                <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                    <Truck className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">Cash on Delivery</p>
+                      <p className="text-blue-800 text-xs mt-1">
+                        Pay {config.currency.symbol}
+                        {fmt(orderTotal)} in cash when your order is delivered.
+                      </p>
+                    </div>
                   </div>
+
+                  {paymentStatus === 'pending' && !submittedPayment && (
+                    <div>
+                      {!selectedGw ? (
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                            <CreditCard size={16} className="text-brand-blue" />
+                            Or Pay Online Now
+                          </h3>
+                          {loadingGateways ? (
+                            <div className="text-center py-4">
+                              <Loader2 className="animate-spin mx-auto text-brand-blue" size={20} />
+                            </div>
+                          ) : gateways.length === 0 ? (
+                            <p className="text-xs text-gray-400">No online payment options available.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {gateways.map(gw => (
+                                <button
+                                  key={gw.id}
+                                  onClick={() => setSelectedGw(gw)}
+                                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
+                                >
+                                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
+                                    {(gw.name || gw.code).slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="flex-1 text-left">
+                                    <p className="text-[13px] font-bold text-gray-800">{gw.name || gw.code}</p>
+                                    {gw.phoneNumber && <p className="text-[11px] text-gray-400">{gw.phoneNumber}</p>}
+                                  </div>
+                                  <ChevronRight size={18} className="text-gray-300" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <button onClick={() => setSelectedGw(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                              <ArrowLeft size={18} />
+                            </button>
+                            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                              <CreditCard size={16} className="text-brand-blue" />
+                              Pay via {selectedGw.name || selectedGw.code}
+                            </h3>
+                          </div>
+
+                          <div className="bg-blue-50 rounded-xl p-4 space-y-2 mb-4">
+                            <p className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                              <ExternalLink size={14} className="text-brand-blue" />
+                              Send Money to This Number
+                            </p>
+                            <p className="text-xl font-black text-center text-brand-blue tracking-wide">
+                              {selectedGw.phoneNumber || 'Not set'}
+                            </p>
+                            <p className="text-xs text-gray-500 text-center">
+                              Amount: <span className="font-bold text-gray-800">{config.currency.symbol}{fmt(orderTotal)}</span>
+                            </p>
+                          </div>
+
+                          <div className="space-y-3 mb-4">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Your Phone Number (Sent From)</label>
+                              <input type="tel" value={senderPhone} onChange={e => setSenderPhone(e.target.value)}
+                                placeholder="01XXXXXXXXX"
+                                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Transaction ID (TrxID)</label>
+                              <input type="text" value={trxId} onChange={e => setTrxId(e.target.value)}
+                                placeholder="e.g. TrxID8A7B3C"
+                                className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
+                            </div>
+                          </div>
+
+                          <button onClick={handleSubmitPayment} disabled={submittingPayment}
+                            className={`w-full text-white font-bold py-2.5 rounded-lg text-[14px] transition-all active:scale-[0.98] ${submittingPayment ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-blue hover:bg-brand-blue/90 shadow-lg shadow-brand-blue/20'}`}>
+                            {submittingPayment ? <Loader2 className="animate-spin mx-auto" size={18} /> : 'I Have Sent the Money'}
+                          </button>
+
+                          <p className="text-[11px] text-gray-400 text-center mt-3 leading-relaxed">
+                            After sending the money, enter your TrxID above and click submit. Our team will verify your payment within 24 hours.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {submittedPayment && (
+                    <div className="border-t border-gray-100 pt-4">
+                      <div className="text-center py-2">
+                        <CheckCircle size={36} className="mx-auto mb-2 text-green-500" />
+                        <h3 className="text-sm font-bold text-gray-800 mb-1">Payment Submitted!</h3>
+                        <p className="text-xs text-gray-500 mb-4">Your payment info has been received. We will verify it shortly.</p>
+                        <button onClick={() => router.push('/orders')}
+                          className="w-full bg-brand-blue text-white font-bold py-2.5 rounded-lg text-[14px] hover:bg-brand-blue/90 transition-colors">
+                          View My Orders
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {!isBkas && !isManual && !isCod && (
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                   <p className="text-sm text-gray-600">
-                    Payment method: <span className="font-medium">{paymentMethod || 'Not specified'}</span>
+                    Payment method: <span className="font-medium">{paymentOptionType || 'Not specified'}</span>
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Our team will contact you to confirm payment. You can also call us for assistance.
@@ -468,13 +607,13 @@ export default function ThankYouContent({
                 <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Payment</h3>
                 {(order.payments as any[]).map((p: any, i: number) => (
                   <div key={i} className="flex justify-between text-[12px]">
-                    <span className="text-gray-500 capitalize">{p.method}</span>
+                    <span className="text-gray-500 capitalize">{p.gatewayCode}</span>
                     <span
                       className={`font-bold ${
-                        p.status === 'verified' ? 'text-green-600' : p.status === 'pending' ? 'text-amber-500' : 'text-gray-500'
+                        p.status === 'PAID' ? 'text-green-600' : p.status === 'PENDING' || p.status === 'PAYMENT_PENDING' || p.status === 'UNPAID' ? 'text-amber-500' : 'text-gray-500'
                       }`}
                     >
-                      {p.status === 'verified' ? 'Paid' : p.status === 'pending' ? 'Pending' : p.status}
+                      {p.status === 'PAID' ? 'Paid' : p.status === 'PENDING' || p.status === 'PAYMENT_PENDING' || p.status === 'UNPAID' ? 'Pending' : p.status}
                     </span>
                   </div>
                 ))}

@@ -20,8 +20,8 @@ export interface CreateOrderData {
   couponCode?: string;
   guestName?: string;
   guestPhone?: string;
-  paymentMethod?: string;
-  paymentMode?: string;
+  paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
+  gatewayCode?: string;
   partialAmount?: number;
   district?: string;
   thana?: string;
@@ -142,7 +142,7 @@ export async function submitManualPaymentProof(
   const { data } = await apiClient.post(
     `/payments/${encodeURIComponent(orderId)}`,
     {
-      method: "manual",
+      gatewayCode: 'manual',
       amount: typeof amount === "number" ? amount : 0,
       transactionId: transactionId || undefined,
       screenshot,

@@ -6,6 +6,7 @@ import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { apiClient } from '@/lib/api-client'
+import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 
@@ -35,6 +36,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
   const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
   const { data: allTags } = useQuery({ queryKey: ['tags'], queryFn: () => apiClient.get('/tags').then(r => r.data) })
+  const { data: overrideData } = useQuery({
+    queryKey: ['product-overrides', currentRow?.id],
+    queryFn: () => productOverrideApi.list(currentRow!.id).then(r => (Array.isArray(r.data) ? r.data : r.data?.data || [])),
+    enabled: isEdit && !!currentRow?.id,
+  })
 
   const categoryOptions = React.useMemo(() => {
     const flatten = (items: any[], depth: number): MultiSearchableOption[] => {
@@ -81,6 +87,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; stock: number }>({ open: false, stock: 0 })
   const [manageStockJustToggled, setManageStockJustToggled] = useState(false)
+  const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
+    FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+    PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+    CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+  })
 
   const prevRowId = useRef<string | undefined>(undefined)
 
@@ -146,11 +157,34 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     }
   }, [categoryIds, sizeCharts])
 
+  useEffect(() => {
+    if (!overrideData) return
+    const state: Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }> = {
+      FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+      PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+      CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+    }
+    for (const ov of overrideData) {
+      const key = ov.paymentOptionType as string
+      if (state[key]) {
+        state[key].enabled = ov.enabled ?? false
+        state[key].partialFixedAmount = ov.partialFixedAmount != null ? String(ov.partialFixedAmount) : ''
+        state[key].partialPercentage = ov.partialPercentage != null ? String(ov.partialPercentage) : ''
+      }
+    }
+    setOverrideFormState(state)
+  }, [overrideData])
+
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 });
+    setOverrideFormState({
+      FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+      PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+      CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
+    })
   }
 
   const createMut = useMutation({
@@ -188,6 +222,34 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
+
+  const upsertOverrideMut = useMutation({
+    mutationFn: ({ type, data }: { type: string; data: any }) => productOverrideApi.upsert(currentRow!.id, type, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['product-overrides', currentRow?.id] }) },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error saving payment override'),
+  })
+
+  const handleOverrideToggle = (type: string, enabled: boolean) => {
+    const update: any = { enabled }
+    if (type === 'PARTIAL_PAYMENT') {
+      const cur = overrideFormState[type]
+      if (cur.partialFixedAmount) update.partialFixedAmount = parseFloat(cur.partialFixedAmount)
+      if (cur.partialPercentage) update.partialPercentage = parseFloat(cur.partialPercentage)
+    }
+    upsertOverrideMut.mutate({ type, data: update })
+    setOverrideFormState(prev => ({ ...prev, [type]: { ...prev[type], enabled } }))
+  }
+
+  const handlePartialBlur = (type: string) => {
+    const cur = overrideFormState[type]
+    if (!cur?.enabled) return
+    const update: any = { enabled: true }
+    if (cur.partialFixedAmount) update.partialFixedAmount = parseFloat(cur.partialFixedAmount)
+    else update.partialFixedAmount = null
+    if (cur.partialPercentage) update.partialPercentage = parseFloat(cur.partialPercentage)
+    else update.partialPercentage = null
+    upsertOverrideMut.mutate({ type, data: update })
+  }
 
   const handleSave = () => {
     const payload: any = {
@@ -266,6 +328,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             <TabsTrigger value='general'>General</TabsTrigger>
             <TabsTrigger value='images'>Images</TabsTrigger>
             <TabsTrigger value='variants' disabled={type !== 'variable'}>Variants</TabsTrigger>
+            <TabsTrigger value='payments'>Payments</TabsTrigger>
             <TabsTrigger value='seo'>SEO</TabsTrigger>
           </TabsList>
 
@@ -729,6 +792,65 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   />
                 </>
               )}
+            </TabsContent>
+
+            <TabsContent value='payments' className='mt-0 space-y-6'>
+              <div className='bg-muted/20 rounded-lg p-5 space-y-4'>
+                <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Payment Options</h3>
+                <p className='text-xs text-muted-foreground'>Override global payment option settings for this product.</p>
+                {!isEdit ? (
+                  <p className='text-sm text-muted-foreground py-4'>Save the product first to configure payment overrides.</p>
+                ) : (
+                  <div className='space-y-2'>
+                    {[
+                      { type: 'FULL_PAYMENT', label: 'Full Payment', desc: 'One-time full payment' },
+                      { type: 'PARTIAL_PAYMENT', label: 'Partial Payment', desc: 'Pay in installments' },
+                      { type: 'CASH_ON_DELIVERY', label: 'Cash on Delivery', desc: 'Pay upon delivery' },
+                    ].map(({ type, label, desc }) => (
+                      <div key={type} className='border rounded-lg p-4 space-y-3'>
+                        <div className='flex items-center justify-between'>
+                          <div>
+                            <p className='text-sm font-medium'>{label}</p>
+                            <p className='text-xs text-muted-foreground'>{desc}</p>
+                          </div>
+                          <Switch
+                            checked={overrideFormState[type]?.enabled || false}
+                            onCheckedChange={(v) => handleOverrideToggle(type, v)}
+                          />
+                        </div>
+                        {type === 'PARTIAL_PAYMENT' && overrideFormState[type]?.enabled && (
+                          <div className='grid grid-cols-2 gap-4 pt-2 border-t'>
+                            <div className='space-y-1.5'>
+                              <Label className='text-xs'>Fixed Amount</Label>
+                              <Input
+                                type='number' step='0.01' placeholder='0.00'
+                                value={overrideFormState[type]?.partialFixedAmount || ''}
+                                onChange={(e) => setOverrideFormState(prev => ({
+                                  ...prev,
+                                  [type]: { ...prev[type], partialFixedAmount: e.target.value }
+                                }))}
+                                onBlur={() => handlePartialBlur(type)}
+                              />
+                            </div>
+                            <div className='space-y-1.5'>
+                              <Label className='text-xs'>Percentage (%)</Label>
+                              <Input
+                                type='number' step='0.01' min='0' max='100' placeholder='0'
+                                value={overrideFormState[type]?.partialPercentage || ''}
+                                onChange={(e) => setOverrideFormState(prev => ({
+                                  ...prev,
+                                  [type]: { ...prev[type], partialPercentage: e.target.value }
+                                }))}
+                                onBlur={() => handlePartialBlur(type)}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value='seo' className='mt-0 space-y-6'>

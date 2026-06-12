@@ -20,8 +20,6 @@ function simpleFingerprint(phone: string, items: any[]) {
   return `${phone}:${itemStr}`.replace(/\s/g, '');
 }
 
-const COD_METHOD = 'cod';
-
 function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: string): string | null {
   if (attrs && attrs.length > 0) {
     return attrs.map((a) => `${a.name}: ${a.value}`).join(', ');
@@ -29,13 +27,6 @@ function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: stri
   if (fallback && fallback.trim()) return fallback;
   return null;
 }
-
-const GATEWAY_LABELS: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
-  bkash: { label: 'bKash', icon: 'bkash', bg: '#e2136e', fg: 'white' },
-  nagad: { label: 'Nagad', icon: 'NAGAD', bg: '#f5821f', fg: 'white' },
-  rocket: { label: 'Rocket', icon: 'Rocket', bg: '#981ceb', fg: 'white' },
-  upay: { label: 'Upay', icon: 'Upay', bg: '#00a651', fg: 'white' },
-};
 
 function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
   const s = currencySymbol || '৳';
@@ -108,12 +99,12 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
 
   useEffect(() => {
     getGateways().then(list => {
-      setGateways(list.filter(g => g.enabled && g.gateway !== COD_METHOD));
+      setGateways(list.filter(g => g.enabled && g.code !== 'cash'));
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const handleSelectGateway = (gw: any) => {
-    if (gw.gateway === 'bkash_pgw') {
+    if (gw.code === 'bkash_pgw') {
       initiateBkashPgw();
     } else {
       setSelectedGw(gw);
@@ -157,7 +148,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
     setSubmittingPayment(true);
     try {
       await submitPayment(orderId, {
-        method: selectedGw.gateway,
+        gatewayCode: selectedGw.code,
         amount: total,
         transactionId: trxId.trim(),
         notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
@@ -200,7 +191,8 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
   }
 
   if (selectedGw) {
-    const meta = GATEWAY_LABELS[selectedGw.gateway] || { label: selectedGw.gateway, icon: selectedGw.gateway.slice(0, 2).toUpperCase(), bg: '#6b7280', fg: 'white' };
+    const gwName = selectedGw.name || selectedGw.code;
+    const gwIcon = gwName.slice(0, 2).toUpperCase();
     const modeLabel = selectedGw.mode === 'agent' ? 'Agent' : selectedGw.mode === 'merchant' ? 'Merchant' : 'Personal';
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -211,11 +203,11 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
                 <ArrowLeft size={20} />
               </button>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold" style={{ backgroundColor: meta.bg, color: meta.fg }}>
-                  {meta.icon}
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
+                  {gwIcon}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-800">{meta.label}</h3>
+                  <h3 className="text-lg font-bold text-gray-800">{gwName}</h3>
                   <p className="text-xs text-gray-400">{modeLabel} Account</p>
                 </div>
               </div>
@@ -281,18 +273,19 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
             <p className="text-sm text-gray-400 text-center py-4">No online payment gateways available. Your order has been saved as pending.</p>
           )}
           {gateways.map(gw => {
-            const meta = GATEWAY_LABELS[gw.gateway] || { label: gw.gateway, icon: gw.gateway.slice(0, 2).toUpperCase(), bg: '#6b7280', fg: 'white' };
+            const gwName = gw.name || gw.code;
+            const gwIcon = gwName.slice(0, 2).toUpperCase();
             return (
               <button
                 key={gw.id}
                 onClick={() => handleSelectGateway(gw)}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
               >
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-sm font-bold" style={{ backgroundColor: meta.bg, color: meta.fg }}>
-                  {meta.icon}
+                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
+                  {gwIcon}
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="font-bold text-gray-800">{meta.label}</p>
+                  <p className="font-bold text-gray-800">{gwName}</p>
                   {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}
                 </div>
                 <ChevronRight size={20} className="text-gray-300" />
@@ -331,7 +324,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cod');
+  const [paymentOptionType, setPaymentOptionType] = useState<'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'>('CASH_ON_DELIVERY');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number; viewToken?: string } | null>(null);
   const paymentSuccessCallback = useRef<(() => void) | null>(null);
@@ -359,19 +352,18 @@ export default function CheckoutPage() {
     setCustomerNotes(readStorage('checkout_notes', ''));
     setGuestName(readStorage('checkout_guestName', ''));
     setGuestPhone(readStorage('checkout_guestPhone', ''));
-    setPaymentMode(readStorage('checkout_paymentMode', 'cod'));
+    setPaymentOptionType((readStorage('checkout_paymentOptionType', 'CASH_ON_DELIVERY') as 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'));
   }, []);
 
   const checkoutCfg = config.checkout;
-  const paymentModes = checkoutCfg?.paymentModes || ['cod', 'full', 'partial'];
-  const availableMode = (mode: string) => paymentModes.includes(mode);
 
   const [gateways, setGateways] = useState<any[]>([]);
   useEffect(() => {
     getGateways().then(list => setGateways(list)).catch(() => {});
   }, []);
-  const codGateway = gateways.find(g => g.gateway === 'cod');
-  const isCodGatewayEnabled = codGateway?.enabled === true;
+  const hasCodGateway = gateways.some(g => g.code === 'cash' && g.enabled);
+  const hasFullPayment = gateways.some(g => g.paymentOptionType === 'FULL_PAYMENT' && g.enabled);
+  const hasPartialPayment = gateways.some(g => g.paymentOptionType === 'PARTIAL_PAYMENT' && g.enabled);
 
   let deliveryCharge = 0;
   let noDeliveryError = '';
@@ -427,14 +419,19 @@ export default function CheckoutPage() {
   useEffect(() => { localStorage.setItem('checkout_thana', thana); }, [thana]);
   useEffect(() => { localStorage.setItem('checkout_address', addressLine); }, [addressLine]);
   useEffect(() => { localStorage.setItem('checkout_notes', customerNotes); }, [customerNotes]);
-  useEffect(() => { localStorage.setItem('checkout_paymentMode', paymentMode); }, [paymentMode]);
+  useEffect(() => { localStorage.setItem('checkout_paymentOptionType', paymentOptionType); }, [paymentOptionType]);
 
   useEffect(() => {
-    if (paymentMode === 'cod' && !isCodGatewayEnabled) {
-      const fallback = paymentModes.find(m => m !== 'cod') || 'full';
-      setPaymentMode(fallback);
+    if (paymentOptionType === 'CASH_ON_DELIVERY' && !hasCodGateway) {
+      if (hasFullPayment) {
+        setPaymentOptionType('FULL_PAYMENT');
+      } else if (hasPartialPayment) {
+        setPaymentOptionType('PARTIAL_PAYMENT');
+      } else {
+        setPaymentOptionType('CASH_ON_DELIVERY');
+      }
     }
-  }, [isCodGatewayEnabled, paymentMode, paymentModes]);
+  }, [hasCodGateway, hasFullPayment, hasPartialPayment, paymentOptionType]);
 
   const initiatedRef = useRef(false);
 
@@ -471,10 +468,10 @@ export default function CheckoutPage() {
         id: i.id, name: i.name, price: i.price, quantity: i.quantity,
         image: i.image, isCombo: i.isCombo, comboId: i.comboId,
       })),
-      paymentMethod: paymentMode,
+      paymentMethod: paymentOptionType,
       fingerprint: simpleFingerprint(phone, items),
     };
-  }, [guestPhone, guestName, items, district, thana, addressLine, paymentMode, user]);
+  }, [guestPhone, guestName, items, district, thana, addressLine, paymentOptionType, user]);
 
   const captureLead = useCallback(() => {
     const data = getLeadData();
@@ -515,14 +512,15 @@ export default function CheckoutPage() {
       shippingAddress: { district, thana, addressLine },
       guestName: user ? undefined : guestName,
       guestPhone: user ? undefined : (normalizePhone(guestPhone) || undefined),
-      paymentMode,
+      paymentOptionType,
+      gatewayCode: paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined,
       district: district || undefined,
       thana: thana || undefined,
       selectedShippingOptionId: config.shippingMode === 'options' ? (selectedShippingOptionId || null) : undefined,
     };
 
-    const isOnlinePayment = paymentMode === 'full' || paymentMode === 'partial';
-    if (paymentMode === 'partial' && partialAmount) {
+    const isOnlinePayment = paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT';
+    if (paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount) {
       payload.partialAmount = parseFloat(partialAmount) || 0;
     }
 
@@ -614,7 +612,14 @@ export default function CheckoutPage() {
 
       wasSubmitted.current = true;
 
-      payload.paymentMethod = isOnlinePayment ? 'online' : COD_METHOD;
+      if (isOnlinePayment && gateways.length > 0) {
+        const selectedGw = gateways.find(g =>
+          g.paymentOptionType === paymentOptionType && g.enabled
+        );
+        if (selectedGw) {
+          payload.gatewayCode = selectedGw.code;
+        }
+      }
       const order = await createOrder(payload);
 
       if (isOnlinePayment) {
@@ -622,7 +627,7 @@ export default function CheckoutPage() {
           clearCart();
           try {
             ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
-             'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
+             'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
           } catch {}
         };
         setPaymentPopup({ orderId: order.id, total: totalWithDelivery, viewToken: order.viewToken });
@@ -630,7 +635,7 @@ export default function CheckoutPage() {
         clearCart();
         try {
           ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
-           'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
+           'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
         } catch {}
         router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}`);
       }
@@ -835,46 +840,46 @@ export default function CheckoutPage() {
 
                 {/* Payment Mode Selection */}
                 <div className="space-y-2 mb-4">
-                  {availableMode('cod') && isCodGatewayEnabled && (
-                    <div onClick={() => setPaymentMode('cod')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'cod' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                  {hasCodGateway && (
+                    <div onClick={() => setPaymentOptionType('CASH_ON_DELIVERY')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'CASH_ON_DELIVERY' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center">
                           <Banknote size={20} className="text-brand-blue" />
                         </div>
                         <span className="text-[13px] text-gray-800 font-bold">Cash On Delivery</span>
                       </div>
-                      {paymentMode === 'cod' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
+                      {paymentOptionType === 'CASH_ON_DELIVERY' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
                     </div>
                   )}
 
-                  {availableMode('full') && (
-                    <div onClick={() => setPaymentMode('full')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'full' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                  {hasFullPayment && (
+                    <div onClick={() => setPaymentOptionType('FULL_PAYMENT')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'FULL_PAYMENT' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-brand-blue rounded-md flex items-center justify-center">
                           <CreditCard size={20} className="text-white" />
                         </div>
                         <span className="text-[13px] text-gray-800 font-bold">Pay Online (Full)</span>
                       </div>
-                      {paymentMode === 'full' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
+                      {paymentOptionType === 'FULL_PAYMENT' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
                     </div>
                   )}
 
-                  {availableMode('partial') && (
-                    <div onClick={() => setPaymentMode('partial')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentMode === 'partial' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
+                  {hasPartialPayment && (
+                    <div onClick={() => setPaymentOptionType('PARTIAL_PAYMENT')}
+                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'PARTIAL_PAYMENT' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#f59e0b] rounded-md flex items-center justify-center">
                           <CreditCard size={20} className="text-white" />
                         </div>
                         <span className="text-[13px] text-gray-800 font-bold">Pay Partial Online</span>
                       </div>
-                      {paymentMode === 'partial' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
+                      {paymentOptionType === 'PARTIAL_PAYMENT' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
                     </div>
                   )}
 
-                  {paymentMode === 'partial' && (
+                  {paymentOptionType === 'PARTIAL_PAYMENT' && (
                     <div className="mt-3">
                       <label className="text-xs text-gray-500 font-medium mb-1 block">Partial Payment Amount ({s})</label>
                       <input type="number" value={partialAmount} onChange={e => setPartialAmount(e.target.value)}
@@ -955,7 +960,7 @@ export default function CheckoutPage() {
                     <span className="text-[14px] font-black">-{s}{discountAmount.toFixed(2)}</span>
                   </div>
                 )}
-                {paymentMode === 'partial' && partialAmount && parseFloat(partialAmount) > 0 && (
+                {paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount && parseFloat(partialAmount) > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-[14px] text-gray-500 font-medium">Paid Online</span>
                     <span className="text-[14px] text-green-600 font-black">-{s}{parseFloat(partialAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
@@ -990,16 +995,16 @@ export default function CheckoutPage() {
                   I have read and agree to the <span className="text-brand-blue font-bold cursor-pointer hover:underline">Terms and Conditions</span>, <span className="text-brand-blue font-bold cursor-pointer hover:underline">Privacy Policy</span> & <span className="text-brand-blue font-bold cursor-pointer hover:underline">Refund and Return Policy</span>.
                 </p>
               </div>
-              {(paymentMode === 'cod') && (
+              {paymentOptionType === 'CASH_ON_DELIVERY' && (
                 <button onClick={handlePlaceOrder} disabled={!canSubmit}
                   className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
                   {submitting ? 'PLACING ORDER...' : 'PLACE ORDER'}
                 </button>
               )}
-              {(paymentMode === 'full' || paymentMode === 'partial') && (
+              {(paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT') && (
                 <button onClick={handlePayNow} disabled={!canSubmit}
                   className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-[#f59e0b] hover:bg-[#d97706] shadow-amber-500/20' : 'bg-gray-400 cursor-not-allowed'}`}>
-                  {submitting ? 'PROCESSING...' : `PAY ${s}${(paymentMode === 'partial' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
+                  {submitting ? 'PROCESSING...' : `PAY ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
                 </button>
               )}
             </div>

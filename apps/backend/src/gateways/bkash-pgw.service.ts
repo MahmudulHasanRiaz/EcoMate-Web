@@ -8,8 +8,8 @@ export class BkashPgwService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async getCredentials() {
-    const config = await this.prisma.paymentGatewayConfig.findUnique({
-      where: { gateway: 'bkash_pgw' },
+    const config = await this.prisma.paymentGateway.findUnique({
+      where: { code: 'bkash_pgw' },
     });
     if (!config || !config.enabled)
       throw new BadRequestException('bKash PGW is not enabled');

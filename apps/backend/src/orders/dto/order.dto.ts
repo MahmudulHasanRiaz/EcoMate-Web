@@ -35,11 +35,11 @@ export class CreateOrderDto {
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
-  @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsString() couponCode?: string;
 
   // Checkout enhancements
-  @IsOptional() @IsIn(['cod', 'full', 'partial']) paymentMode?: string;
+  @IsOptional() @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY']) paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
+  @IsOptional() @IsString() gatewayCode?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
   @IsOptional() @IsString() district?: string;
   @IsOptional() @IsString() thana?: string;
@@ -95,7 +95,7 @@ export class UpdateOrderItemDto {
 }
 
 export class CreatePaymentDto {
-  @IsString() method: string;
+  @IsString() gatewayCode: string;
   @IsNumber() amount: number;
   @IsOptional() @IsString() transactionId?: string;
   @IsOptional() @IsString() screenshot?: string;

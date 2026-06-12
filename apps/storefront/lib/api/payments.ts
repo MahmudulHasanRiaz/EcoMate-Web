@@ -1,7 +1,7 @@
 import apiClient from "../api-client";
 
 export interface SubmitPaymentData {
-  method: string;
+  gatewayCode: string;
   amount: number;
   transactionId?: string;
   notes?: string;

@@ -15,6 +15,8 @@ export interface OrderResponse {
   viewToken?: string | null;
   paymentMethod?: string | null;
   paymentMode?: string | null;
+  paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY' | null;
+  paymentStatus?: 'PAYMENT_PENDING' | 'PENDING' | 'PAID' | 'PARTIAL_PAID' | 'UNPAID' | 'FAILED' | 'CANCELLED' | 'REFUNDED' | null;
   partialAmount?: number | string | null;
   dispatchLogs?: {
     id: string; courier: string; status: string; message?: string | null;
@@ -25,7 +27,7 @@ export interface OrderResponse {
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
   items: { id: string; productId: string; variantId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; images: any; slug?: string } }[];
-  payments: { id: string; method: string; amount: number | string; status: string; transactionId?: string | null }[];
+  payments: { id: string; method?: string; gatewayCode?: string; amount: number | string; status: string; transactionId?: string | null }[];
   shipment?: { id: string; trackingNo?: string | null; courier?: string | null; status: string } | null;
 }
 

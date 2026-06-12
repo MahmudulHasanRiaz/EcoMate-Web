@@ -7,11 +7,11 @@ type AnyOrder = Record<string, unknown> & {
   id: string;
   displayId?: string;
   status?: { id?: string; name?: string };
-  payments?: Array<{ status?: string; amount?: number | string }>;
+  payments?: Array<{ status?: string; amount?: number | string; gatewayCode?: string }>;
   total?: number | string;
   viewToken?: string | null;
-  paymentMethod?: string | null;
-  paymentMode?: string | null;
+  paymentOptionType?: string | null;
+  paymentStatus?: string | null;
 };
 
 function derivePaymentStatus(order: AnyOrder | null): PaymentStatus {
@@ -23,24 +23,24 @@ function derivePaymentStatus(order: AnyOrder | null): PaymentStatus {
     return 'paid';
   }
 
+  // Use order.paymentStatus from backend if available
+  const ps = order.paymentStatus;
+  if (ps === 'PAID') return 'paid';
+  if (ps === 'PARTIAL_PAID') return 'partial';
+  if (ps === 'FAILED' || ps === 'CANCELLED') return 'cancelled';
+  if (ps === 'UNPAID' || ps === 'PAYMENT_PENDING') return 'pending';
+
+  // Fallback: check individual payments
   const payments = Array.isArray(order.payments) ? order.payments : [];
-  const verified = payments.filter((p) => p.status === 'verified');
-  const failed = payments.filter((p) => p.status === 'failed');
-  const totalPaid = verified.reduce(
-    (s, p) => s + Number(p.amount || 0),
-    0,
-  );
+  const verifiedPayments = payments.filter((p) => p.status === 'PAID' || p.status === 'PENDING' || p.status === 'UNPAID');
+  const paidPayments = payments.filter((p) => p.status === 'PAID');
+  const failedPayments = payments.filter((p) => p.status === 'FAILED');
+  const totalPaid = paidPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const orderTotal = Number(order.total || 0);
 
-  if (verified.length > 0 && orderTotal > 0 && totalPaid >= orderTotal) {
-    return 'paid';
-  }
-  if (verified.length > 0 && orderTotal > 0 && totalPaid < orderTotal) {
-    return 'partial';
-  }
-  if (failed.length > 0 && verified.length === 0) {
-    return 'failed';
-  }
+  if (paidPayments.length > 0 && totalPaid >= orderTotal) return 'paid';
+  if (paidPayments.length > 0 && totalPaid < orderTotal) return 'partial';
+  if (failedPayments.length > 0) return 'failed';
   return 'pending';
 }
 

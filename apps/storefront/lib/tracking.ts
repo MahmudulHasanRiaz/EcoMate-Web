@@ -109,22 +109,26 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
   const url = typeof window !== 'undefined' ? window.location.href : '';
   const referrer = typeof document !== 'undefined' ? document.referrer : '';
 
-  // Server-side CAPI কল সবসময় যাবে
-  fetch(`${API_URL}/tracking/events`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      eventId,
-      eventName: eventNameToSnake(event),
-      customData: data,
-      userData: {
-        ...userData,
-        fbp,
-        fbc,
-        url,
-        referrer
-      },
-    }),
-    keepalive: true,
-  }).catch(() => {});
+  // Server-side CAPI call শুধু তখনই যাবে যখন ট্র্যাকিং এনাবলড থাকে
+  if (_metaId || _tiktokCode) {
+    fetch(`${API_URL}/tracking/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        eventName: eventNameToSnake(event),
+        customData: data,
+        userData: {
+          ...userData,
+          fbp,
+          fbc,
+          url,
+          referrer
+        },
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } else {
+    debug('Skipping server-side CAPI call - no tracking enabled');
+  }
 }
