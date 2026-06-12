@@ -21,6 +21,9 @@ export default function Header({}: {}) {
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white border-b border-gray-100">
+      {/* Top Brand Accent Bar */}
+      <div className="h-[3px] w-full bg-gradient-to-r from-brand-blue/40 via-brand-blue to-brand-blue/40" />
+
       {/* Main Header Row */}
       <div className="max-w-screen-xl mx-auto px-3 py-2 md:px-4 md:py-3">
         <div className="flex items-center justify-between gap-2 md:gap-8 min-h-[36px] md:min-h-[44px]">
@@ -124,7 +127,7 @@ export default function Header({}: {}) {
 
       {/* Desktop Navigation - Modern Minimal */}
       {navItems.length > 0 && (
-        <div className="hidden md:block border-t border-gray-100">
+        <div className="hidden md:block bg-brand-blue/[0.03] border-t border-brand-blue/10">
           <div className="max-w-screen-xl mx-auto px-4">
             <nav className="flex items-center gap-0.5 h-11">
               {navItems.map((item: any) => (
