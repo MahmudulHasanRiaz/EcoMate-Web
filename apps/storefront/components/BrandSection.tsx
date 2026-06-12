@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 const BRANDS = [
@@ -30,9 +31,10 @@ export default function BrandSection() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {BRANDS.map((brand, idx) => (
             <div key={idx} className="bg-white border border-gray-100 rounded-lg p-6 flex items-center justify-center h-[100px] shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-              <img 
+              <Image 
                 src={imgErrors[brand.name] ? PLACEHOLDER_IMAGE : (brand.logo || PLACEHOLDER_IMAGE)} 
                 alt={brand.name} 
+                width={120} height={60}
                 className="max-h-full max-w-full object-contain grayscale hover:grayscale-0 transition-all duration-300"
                 onError={() => setImgErrors(prev => ({ ...prev, [brand.name]: true }))}
               />

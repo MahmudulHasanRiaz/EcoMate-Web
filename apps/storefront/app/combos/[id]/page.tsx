@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Gift, ShoppingBag, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { getCombo } from '@/lib/api/combos';
 import { useCart } from '@/context/CartContext';
@@ -305,8 +306,8 @@ export default function ComboDetailPage() {
           <div className="md:w-1/2">
             <div className="bg-gray-50 rounded-xl overflow-hidden relative">
               {combo.image ? (
-                <img src={combo.image} alt={combo.name} className="w-full h-72 md:h-96 object-cover"
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }} />
+                <Image src={combo.image} alt={combo.name} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover"
+                  onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
               ) : (
                 <div className="w-full h-72 md:h-96 flex items-center justify-center"><Gift className="w-20 h-20 text-gray-300" /></div>
               )}
@@ -392,8 +393,8 @@ export default function ComboDetailPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         {item.productImage ? (
-                          <img src={item.productImage} alt="" className="w-10 h-10 rounded object-cover"
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }} />
+                          <Image src={item.productImage} alt={item.productName} width={40} height={40} className="w-10 h-10 rounded object-cover"
+                            onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
                         ) : (
                           <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center">
                             <Gift size={18} className="text-gray-300" />

@@ -50,7 +50,30 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
   try {
     const product = await getProductBySlugServer(slug);
     if (!product) return <ProductNotFound />;
-    return <ProductDetailClient product={product} />;
+    const productJsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      description: product.description?.slice(0, 160),
+      image: product.image || undefined,
+      offers: {
+        '@type': 'Offer',
+        price: product.price,
+        priceCurrency: 'BDT',
+        availability: product.stock && product.stock > 0
+          ? 'https://schema.org/InStock'
+          : 'https://schema.org/OutOfStock',
+      },
+    };
+    return (
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        />
+        <ProductDetailClient product={product} />
+      </>
+    );
   } catch {
     return <ProductNotFound />;
   }

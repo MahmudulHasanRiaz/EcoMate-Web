@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 interface Props {
@@ -64,7 +65,7 @@ export function ProductImageGallery({ images, productName }: Props) {
     return (
       <div className="md:w-1/2">
         <div className="aspect-square bg-gray-50 rounded-lg flex items-center justify-center">
-          <img src={PLACEHOLDER_IMAGE} alt={productName} className="w-full h-full object-contain" />
+          <Image src={PLACEHOLDER_IMAGE} alt={productName} width={600} height={600} className="w-full h-full object-contain" />
         </div>
       </div>
     );
@@ -86,14 +87,16 @@ export function ProductImageGallery({ images, productName }: Props) {
             {images.map((img, i) => (
               <div
                 key={i}
-                className="snap-center shrink-0 w-full md:rounded-lg overflow-hidden bg-gray-50"
+                className="snap-center shrink-0 w-full md:rounded-lg overflow-hidden bg-gray-50 relative"
                 style={{ aspectRatio: '4/5' }}
                 onClick={() => setLightboxOpen(true)}
               >
-                <img
+                <Image
                   src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
                   alt={`${productName} ${i + 1}`}
-                  className="w-full h-full object-contain cursor-pointer"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-contain cursor-pointer"
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   draggable={false}
                 />
@@ -126,9 +129,10 @@ export function ProductImageGallery({ images, productName }: Props) {
                 className={`w-16 h-16 flex-shrink-0 border rounded-md overflow-hidden p-0.5 transition-colors ${
                   i === activeIndex ? 'border-brand-blue ring-1 ring-brand-blue' : 'border-gray-200 hover:border-gray-400'
                 }`}>
-                <img
+                <Image
                   src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
                   alt=""
+                  width={64} height={64}
                   className="w-full h-full object-contain"
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                 />
@@ -149,9 +153,10 @@ export function ProductImageGallery({ images, productName }: Props) {
             className="relative w-full h-full flex items-center justify-center"
             onClick={e => e.stopPropagation()}
           >
-            <img
+            <Image
               src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
               alt={productName}
+              width={800} height={800}
               className="max-w-[95vw] max-h-[90vh] object-contain select-none"
               draggable={false}
             />

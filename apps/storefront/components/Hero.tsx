@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
@@ -44,10 +45,12 @@ export default function Hero() {
                 const isActive = index === currentSlide;
                 const href = (slide as { link?: string }).link;
                 const inner = (
-                  <img
+                  <Image
                     src={slide.image || PLACEHOLDER_IMAGE}
                     alt={slide.alt || `Promotional banner ${index + 1}`}
-                    className="absolute inset-0 w-full h-full object-cover"
+                    fill
+                    sizes="100vw"
+                    className="object-cover"
                     onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}
                   />
                 );
@@ -102,10 +105,12 @@ export default function Hero() {
           {/* Secondary Banner (col-4) */}
           <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
             <div className="relative w-full h-[400px]">
-              <img
+              <Image
                 src={config.hero.secondaryBanner || PLACEHOLDER_IMAGE}
                 alt={config.hero.secondaryBannerAlt || 'Featured banner'}
-                className="absolute inset-0 w-full h-full object-cover"
+                fill
+                sizes="(max-width: 768px) 0vw, 33vw"
+                className="object-cover"
                 onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}
               />
             </div>

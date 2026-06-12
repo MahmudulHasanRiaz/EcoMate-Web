@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { SafeImage } from '@/components/safe-image'
 import { Loader2, Star, Trash2, Check, MessageSquareText, EyeOff } from 'lucide-react'
 
 const reviewsApi = {
@@ -138,7 +139,7 @@ export function Reviews() {
                 <TableRow key={r.id}>
                   <TableCell>
                     <div className='flex items-center gap-2 max-w-[200px]'>
-                      {(() => { const img = getProductImage(r.product); return img ? <img src={img} alt='' className='w-8 h-8 rounded object-cover flex-shrink-0' /> : null })()}
+                      {(() => { const img = getProductImage(r.product); return img ? <SafeImage src={img} alt='' className='w-8 h-8 rounded object-cover flex-shrink-0' thumbWidth={40} thumbHeight={40} /> : null })()}
                       <span className='truncate text-sm font-medium'>{r.product.name}</span>
                     </div>
                   </TableCell>

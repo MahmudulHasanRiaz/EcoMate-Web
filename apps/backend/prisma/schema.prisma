@@ -233,6 +233,10 @@ model Product {
   sizeChart   SizeChart? @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
   reviews     Review[]
   paymentOptionOverrides ProductPaymentOption[]
+
+  @@index([isActive])
+  @@index([categoryId])
+  @@index([createdAt])
 }
 
 model ProductVariant {
@@ -250,6 +254,8 @@ model ProductVariant {
   attributeValues ProductVariantAttributeValue[]
   orderItems      OrderItem[]
   comboItems      ComboItem[]
+
+  @@index([productId])
 }
 
 model ProductVariantAttributeValue {
@@ -289,6 +295,8 @@ model Combo {
   items      ComboItem[]
   orderItems OrderItem[]
   paymentOptionOverrides ProductPaymentOption[]
+
+  @@index([isActive])
 }
 
 model ComboItem {
@@ -360,6 +368,11 @@ model Order {
   shipment Shipment?
   dispatchLogs CourierDispatchLog[]
   refunds    Refund[]
+
+  @@index([customerId])
+  @@index([statusId])
+  @@index([assignedToId])
+  @@index([createdAt])
 }
 
 model OrderItem {
@@ -377,6 +390,8 @@ model OrderItem {
   product Product?         @relation(fields: [productId], references: [id])
   variant ProductVariant?  @relation(fields: [variantId], references: [id])
   combo   Combo?           @relation(fields: [comboId], references: [id])
+
+  @@index([orderId])
 }
 
 model Payment {
@@ -656,6 +671,7 @@ model Review {
   approved     Boolean  @default(false)
   createdAt    DateTime @default(now()) @map("created_at")
 
+  @@index([productId])
   @@map("reviews")
 }
 

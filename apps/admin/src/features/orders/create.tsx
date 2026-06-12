@@ -446,7 +446,7 @@ export function CreateOrder() {
                             }}
                           >
                             {p.images && Array.isArray(p.images) && p.images[0] ? (
-                              <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' />
+                              <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
                             ) : (
                               <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
                             )}
@@ -523,7 +523,7 @@ export function CreateOrder() {
                           <TableCell>
                             <div className='flex items-center gap-2'>
                               {item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? (
-                                <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' />
+                                <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
                               ) : (
                                 <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
                               )}
@@ -693,7 +693,7 @@ export function CreateOrder() {
                 >
                   <div className='flex items-center gap-2'>
                     {v.image ? (
-                      <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' />
+                      <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
                     ) : (
                       <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
                     )}

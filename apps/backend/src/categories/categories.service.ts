@@ -6,16 +6,20 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { MediaService } from '../media/media.service';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class CategoriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
+    private readonly cache: CacheService,
   ) {}
 
   async findMenuCategories() {
-    return this.prisma.category.findMany({
+    const cached = this.cache.get<any[]>('categories:menu');
+    if (cached) return cached;
+    const data = await this.prisma.category.findMany({
       where: { showInMenu: true, isActive: true },
       include: {
         children: {
@@ -25,13 +29,19 @@ export class CategoriesService {
       },
       orderBy: { menuSortOrder: 'asc' },
     });
+    this.cache.set('categories:menu', data);
+    return data;
   }
 
   async findAll() {
-    return this.prisma.category.findMany({
+    const cached = this.cache.get<any[]>('categories:all');
+    if (cached) return cached;
+    const data = await this.prisma.category.findMany({
       include: { children: true, _count: { select: { products: true } } },
       orderBy: { sortOrder: 'asc' },
     });
+    this.cache.set('categories:all', data);
+    return data;
   }
 
   async findOne(id: string) {
@@ -54,6 +64,7 @@ export class CategoriesService {
     if (existing) throw new ConflictException('Slug already exists');
 
     const created = await this.prisma.category.create({ data: dto as any });
+    this.cache.invalidateByPrefix('categories:');
 
     if (dto.image) {
       const [resolved] = await this.media.syncEntityImages(
@@ -86,6 +97,7 @@ export class CategoriesService {
       where: { id },
       data: dto as any,
     });
+    this.cache.invalidateByPrefix('categories:');
 
     if (dto.image !== undefined) {
       const urls = dto.image ? [dto.image] : [];

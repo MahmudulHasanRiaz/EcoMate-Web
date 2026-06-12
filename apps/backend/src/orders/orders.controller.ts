@@ -18,6 +18,12 @@ import {
   UpdateOrderItemDto,
   CancelOrderDto,
 } from './dto/order.dto';
+import {
+  BulkOrdersDto,
+  BulkStatusDto,
+  BulkDispatchDto,
+  BulkAssignDto,
+} from './dto/bulk-order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
@@ -135,28 +141,26 @@ export class OrdersController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk')
-  async bulkOrders(@Body() dto: { ids: string[] }) {
+  async bulkOrders(@Body() dto: BulkOrdersDto) {
     const orders = await this.svc.bulkOrders(dto.ids || []);
     return { orders };
   }
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/status')
-  async bulkStatus(@Body() dto: { ids: string[]; statusId: string }) {
+  async bulkStatus(@Body() dto: BulkStatusDto) {
     return this.svc.bulkStatusChange(dto.ids, dto.statusId);
   }
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/dispatch')
   async bulkDispatch(
-    @Body() dto: { ids: string[]; courier: string },
+    @Body() dto: BulkDispatchDto,
     @CurrentUser() user: { userId: string },
   ) {
     return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId);
   }
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/assign')
-  async bulkAssign(
-    @Body() dto: { ids: string[]; assignedToId: string | null },
-  ) {
+  async bulkAssign(@Body() dto: BulkAssignDto) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
   @Roles('superadmin', 'admin', 'manager')

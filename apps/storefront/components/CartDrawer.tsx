@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
+import Image from 'next/image';
 import { useCart, getItemKey, VariantAttribute } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
@@ -50,7 +51,8 @@ function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
         {upsells.map((p: any) => (
           <div key={p.id} className="min-w-[75%] bg-white rounded-xl p-3 flex gap-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100 snap-start">
             <div className="w-[70px] h-[70px] flex items-center justify-center bg-white flex-shrink-0">
-              <img src={imgErrors[p.id] ? PLACEHOLDER_IMAGE : (p.images?.[0] || p.image)} alt={p.name}
+              <Image src={imgErrors[p.id] ? PLACEHOLDER_IMAGE : (p.images?.[0] || p.image)} alt={p.name}
+                width={70} height={70}
                 className="w-full h-full object-contain"
                 onError={() => setImgErrors(prev => ({ ...prev, [p.id]: true }))} />
             </div>
@@ -153,9 +155,10 @@ export default function CartDrawer() {
                 return (
                 <div key={key} className="bg-white rounded-xl p-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 relative flex gap-3">
                   <div className="w-[60px] h-[60px] md:w-[70px] md:h-[70px] bg-white rounded-lg border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">
-                    <img 
+                    <Image 
                       src={imgErrors[key] ? PLACEHOLDER_IMAGE : (item.image || PLACEHOLDER_IMAGE)} 
                       alt={item.name} 
+                      width={70} height={70}
                       className="w-full h-full object-contain" 
                       onError={() => handleImageError(key)}
                     />

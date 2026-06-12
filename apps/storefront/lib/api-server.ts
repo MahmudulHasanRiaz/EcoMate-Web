@@ -5,11 +5,18 @@ export async function serverFetch<T = unknown>(
   options?: RequestInit & { revalidate?: number }
 ): Promise<T> {
   const { revalidate, ...fetchOptions } = options || {};
-  const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...(revalidate !== undefined ? { next: { revalidate } } : {}),
-    ...fetchOptions,
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${API}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...(revalidate !== undefined ? { next: { revalidate } } : {}),
+      signal: controller.signal,
+      ...fetchOptions,
+    });
+    if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }

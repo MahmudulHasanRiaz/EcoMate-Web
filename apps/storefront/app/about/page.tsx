@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Target, Users, ShieldCheck, Heart } from 'lucide-react';
+import Image from 'next/image';
 import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
@@ -23,10 +24,12 @@ export default async function AboutPage() {
       {/* Hero Section */}
       <section className="relative h-[40vh] md:h-[50vh] flex items-center justify-center bg-[#1a1a1a] overflow-hidden">
         <div className="absolute inset-0 opacity-40">
-          <img 
+          <Image 
             src={PLACEHOLDER_IMAGE}
             alt={storeName}
-            className="w-full h-full object-cover"
+            fill
+            sizes="100vw"
+            className="object-cover"
           />
         </div>
         <div className="relative z-10 text-center px-4">
@@ -66,11 +69,11 @@ export default async function AboutPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl skew-y-2">
-              <img src={PLACEHOLDER_IMAGE} alt="Tech Repair" className="w-full h-full object-cover" />
+            <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl skew-y-2 relative">
+              <Image src={PLACEHOLDER_IMAGE} alt="Tech Repair" fill sizes="25vw" className="object-cover" />
             </div>
-            <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl -skew-y-2 translate-y-12">
-              <img src={PLACEHOLDER_IMAGE} alt="Gadgets" className="w-full h-full object-cover" />
+            <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl -skew-y-2 translate-y-12 relative">
+              <Image src={PLACEHOLDER_IMAGE} alt="Gadgets" fill sizes="25vw" className="object-cover" />
             </div>
           </div>
         </div>

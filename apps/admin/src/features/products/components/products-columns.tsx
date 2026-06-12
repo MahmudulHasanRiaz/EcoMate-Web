@@ -42,7 +42,7 @@ export function productsColumns(
       cell: ({ row }) => {
         const img = Array.isArray(row.original.images) ? row.original.images[0] : null
         return img
-          ? <SafeImage src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' />
+          ? <SafeImage src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' thumbWidth={40} thumbHeight={40} />
           : <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
       },
       enableSorting: false,

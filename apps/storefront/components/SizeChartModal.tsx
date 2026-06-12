@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image';
 import { X } from 'lucide-react';
 
 export interface SizeChartData {
@@ -36,7 +37,7 @@ export function SizeChartModal({ open, onClose, sizeChart }: Props) {
           {sizeChart.description && <p className="text-[14px] text-gray-600 mb-4">{sizeChart.description}</p>}
 
           {sizeChart.image && (
-            <img src={sizeChart.image} alt={sizeChart.name} className="w-full max-h-[400px] object-contain mb-4 rounded-lg" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+            <Image src={sizeChart.image} alt={sizeChart.name} width={800} height={400} className="w-full max-h-[400px] object-contain mb-4 rounded-lg" onError={(e) => { e.currentTarget.style.display = 'none' }} />
           )}
 
           {hasTableData && (

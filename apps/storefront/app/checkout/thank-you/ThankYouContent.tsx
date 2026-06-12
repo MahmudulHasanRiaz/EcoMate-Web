@@ -536,7 +536,7 @@ export default function ThankYouContent({
                       {item.product?.images?.[0] ? (
                         <img
                           src={item.product.images[0]}
-                          alt=""
+                          alt={item.product?.name || item.combo?.name || 'Product'}
                           className="w-full h-full object-cover rounded"
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).src = '/placeholder.svg';

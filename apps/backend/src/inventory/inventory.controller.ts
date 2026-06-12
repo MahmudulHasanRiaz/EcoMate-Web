@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AdjustInventoryDto, BulkAdjustInventoryDto } from './dto/adjust-inventory.dto';
 
 @Controller('inventory')
 export class InventoryController {
@@ -52,24 +53,14 @@ export class InventoryController {
   @Roles('superadmin', 'admin', 'manager')
   @Post('adjust')
   async adjust(
-    @Body()
-    body: {
-      productId?: string;
-      variantId?: string;
-      comboId?: string;
-      quantity: number;
-      reason: string;
-      performedBy?: string;
-    },
+    @Body() body: AdjustInventoryDto,
     @CurrentUser() user: { email: string },
   ) {
-    const performedBy = body.performedBy || user.email;
-    delete body.performedBy;
     return this.inventoryService.adjust(
       body.productId,
       body.quantity,
       body.reason,
-      performedBy,
+      user.email,
       body.variantId,
       body.comboId,
     );
@@ -78,17 +69,7 @@ export class InventoryController {
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk-adjust')
   async bulkAdjust(
-    @Body()
-    body: {
-      items: {
-        productId?: string;
-        variantId?: string;
-        comboId?: string;
-        quantity: number;
-        reason: string;
-      }[];
-      performedBy?: string;
-    },
+    @Body() body: BulkAdjustInventoryDto,
     @CurrentUser() user: { email: string },
   ) {
     return this.inventoryService.bulkAdjust(body.items, user.email);

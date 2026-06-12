@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
 import { serverFetch } from '@/lib/api-server';
 import { useRouter } from 'next/navigation';
 
@@ -235,9 +236,10 @@ export default function OrdersPage() {
                 </p>
                 <div className="flex items-center gap-3 p-3 bg-[#f8f9fa] rounded-xl border border-gray-50">
                   <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                    <img 
+                    <Image 
                       src="/placeholder.svg" 
                       alt="Support" 
+                      width={40} height={40}
                       className="w-full h-full object-cover" 
                     />
                   </div>

@@ -12,6 +12,7 @@ import {
   UpdateVariantDto,
 } from './dto/product.dto';
 import { MediaService } from '../media/media.service';
+import { CacheService } from '../cache/cache.service';
 
 function slugify(text: string): string {
   return text
@@ -25,6 +26,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
+    private readonly cache: CacheService,
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
@@ -266,6 +268,9 @@ export class ProductsService {
   }
 
   async findBySlug(slug: string) {
+    const cacheKey = `product:slug:${slug}`;
+    const cached = this.cache.get<any>(cacheKey);
+    if (cached) return cached;
     const product = await this.prisma.product.findUnique({
       where: { slug },
       include: {
@@ -286,6 +291,7 @@ export class ProductsService {
       },
     });
     if (!product) throw new NotFoundException('Product not found');
+    this.cache.set(cacheKey, product);
     return product;
   }
 
@@ -377,6 +383,7 @@ export class ProductsService {
     });
 
     await this.syncTags(dto.tags || [], product.id);
+    this.cache.invalidateByPrefix('product:');
 
     if (dto.images?.length) {
       const synced = await this.media.syncEntityImages(
@@ -495,6 +502,7 @@ export class ProductsService {
       }
     }
 
+    this.cache.invalidateByPrefix('product:');
     return product;
   }
 
@@ -509,6 +517,7 @@ export class ProductsService {
       await this.media.detachAll('variant', v.id);
     }
     await this.media.detachAll('product', id);
+    this.cache.invalidateByPrefix('product:');
     try {
       await this.prisma.product.delete({ where: { id } });
     } catch (e: any) {

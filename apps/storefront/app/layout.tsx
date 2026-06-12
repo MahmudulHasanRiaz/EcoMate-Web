@@ -83,6 +83,21 @@ export default async function RootLayout({
     footerCmsPages = await getFooterCmsPages();
   } catch {}
 
+  const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: initialConfig?.store.name || 'Store',
+    url: BASE_URL,
+    logo: initialConfig?.branding?.storeLogo || undefined,
+    sameAs: [
+      initialConfig?.social?.facebook,
+      initialConfig?.social?.instagram,
+      initialConfig?.social?.youtube,
+    ].filter(Boolean),
+  };
+
   return (
     <html
       lang="en"
@@ -96,6 +111,10 @@ export default async function RootLayout({
           <CartProvider>
             <WishlistProvider>
             <StorefrontConfigProvider initialConfig={initialConfig}>
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+            />
             <TrackingScripts />
             <Header />
             <CartDrawer />

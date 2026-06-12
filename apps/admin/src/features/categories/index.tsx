@@ -61,7 +61,7 @@ export function Categories() {
       <div className={`flex items-center gap-3 py-2.5 px-3 rounded-md hover:bg-muted/50 group ${depth > 0 ? 'ml-6 border-l-2 pl-4' : ''}`}>
         {cat.children && cat.children.length > 0 && <ChevronRight className='h-4 w-4 text-muted-foreground' />}
         {cat.image ? (
-          <SafeImage src={mediaUrl(cat.image)} alt='' className='h-8 w-8 rounded object-cover border shrink-0' />
+          <SafeImage src={mediaUrl(cat.image)} alt='' className='h-8 w-8 rounded object-cover border shrink-0' thumbWidth={40} thumbHeight={40} />
         ) : (
           <div className='h-8 w-8 rounded bg-muted border shrink-0 flex items-center justify-center'><ImageIcon className='h-4 w-4 text-muted-foreground' /></div>
         )}

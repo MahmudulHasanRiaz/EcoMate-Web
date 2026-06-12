@@ -102,6 +102,56 @@ export class MediaService {
     });
     if (!media) throw new NotFoundException('Media not found');
 
+    const productIds = media.attachments
+      .filter((a) => a.entityType === 'product')
+      .map((a) => a.entityId);
+    const comboIds = media.attachments
+      .filter((a) => a.entityType === 'combo')
+      .map((a) => a.entityId);
+    const categoryIds = media.attachments
+      .filter((a) => a.entityType === 'category')
+      .map((a) => a.entityId);
+    const variantIds = media.attachments
+      .filter((a) => a.entityType === 'variant')
+      .map((a) => a.entityId);
+
+    type ProductInfo = { id: string; name: string; slug: string };
+    type ComboInfo = { id: string; name: string };
+    type CategoryInfo = { id: string; name: string };
+    type VariantInfo = { id: string; sku: string; product: { name: string } | null };
+
+    const [products, combos, categories, variants] = await Promise.all([
+      productIds.length
+        ? this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true, slug: true },
+          })
+        : (Promise.resolve([]) as Promise<ProductInfo[]>),
+      comboIds.length
+        ? this.prisma.combo.findMany({
+            where: { id: { in: comboIds } },
+            select: { id: true, name: true },
+          })
+        : (Promise.resolve([]) as Promise<ComboInfo[]>),
+      categoryIds.length
+        ? this.prisma.category.findMany({
+            where: { id: { in: categoryIds } },
+            select: { id: true, name: true },
+          })
+        : (Promise.resolve([]) as Promise<CategoryInfo[]>),
+      variantIds.length
+        ? this.prisma.productVariant.findMany({
+            where: { id: { in: variantIds } },
+            select: { id: true, sku: true, product: { select: { name: true } } },
+          })
+        : (Promise.resolve([]) as Promise<VariantInfo[]>),
+    ]);
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const comboMap = new Map(combos.map((c) => [c.id, c]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const variantMap = new Map(variants.map((v) => [v.id, v]));
+
     const details: {
       entityType: string;
       entityId: string;
@@ -110,30 +160,17 @@ export class MediaService {
     for (const att of media.attachments) {
       let entityName = att.entityId;
       if (att.entityType === 'product') {
-        const product = await this.prisma.product.findUnique({
-          where: { id: att.entityId },
-          select: { name: true },
-        });
-        if (product) entityName = product.name;
+        const p = productMap.get(att.entityId);
+        if (p) entityName = p.name;
       } else if (att.entityType === 'combo') {
-        const combo = await this.prisma.combo.findUnique({
-          where: { id: att.entityId },
-          select: { name: true },
-        });
-        if (combo) entityName = combo.name;
+        const c = comboMap.get(att.entityId);
+        if (c) entityName = c.name;
       } else if (att.entityType === 'category') {
-        const cat = await this.prisma.category.findUnique({
-          where: { id: att.entityId },
-          select: { name: true },
-        });
-        if (cat) entityName = cat.name;
+        const c = categoryMap.get(att.entityId);
+        if (c) entityName = c.name;
       } else if (att.entityType === 'variant') {
-        const variant = await this.prisma.productVariant.findUnique({
-          where: { id: att.entityId },
-          select: { sku: true, product: { select: { name: true } } },
-        });
-        if (variant)
-          entityName = `${variant.product?.name || ''} (${variant.sku})`;
+        const v = variantMap.get(att.entityId);
+        if (v) entityName = `${v.product?.name || ''} (${v.sku})`;
       } else if (att.entityType === 'storefront') {
         entityName = `Storefront · ${att.entityId}`;
       }

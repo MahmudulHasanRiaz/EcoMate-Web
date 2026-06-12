@@ -11,6 +11,7 @@ import {
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ReviewsService } from './reviews.service';
+import { CreateReviewDto } from './dto/create-review.dto';
 
 @Controller('reviews')
 export class ReviewsController {
@@ -24,15 +25,7 @@ export class ReviewsController {
 
   @Public()
   @Post()
-  async create(
-    @Body()
-    dto: {
-      productId: string;
-      customerName: string;
-      rating: number;
-      text?: string;
-    },
-  ) {
+  async create(@Body() dto: CreateReviewDto) {
     return this.svc.create(dto);
   }
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Building2, Award, Users2, Rocket } from 'lucide-react';
+import Image from 'next/image';
 import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
@@ -26,11 +27,13 @@ export default async function CompanyPage() {
            </p>
         </div>
         <div className="relative overflow-hidden hidden lg:block">
-           <img 
-             src={PLACEHOLDER_IMAGE}
-             className="w-full h-full object-cover" 
-             alt="Office" 
-           />
+           <Image 
+              src={PLACEHOLDER_IMAGE}
+              fill
+              sizes="50vw"
+              className="object-cover" 
+              alt="Office" 
+            />
            <div className="absolute inset-0 bg-brand-blue/10 mix-blend-multiply" />
         </div>
       </div>
@@ -52,7 +55,7 @@ export default async function CompanyPage() {
               </p>
               <div className="flex items-center gap-6 mt-12 bg-gray-50 p-6 rounded-2xl border-l-4 border-brand-blue">
                  <div className="shrink-0 w-16 h-16 rounded-full bg-gray-200 overflow-hidden">
-                    <img src={PLACEHOLDER_IMAGE} alt="CEO" />
+                    <Image src={PLACEHOLDER_IMAGE} alt="CEO" width={64} height={64} className="w-full h-full object-cover" />
                  </div>
                  <div>
                      <p className="font-bold text-gray-900">{company.ceoName || "Mahmud Riaz"}</p>

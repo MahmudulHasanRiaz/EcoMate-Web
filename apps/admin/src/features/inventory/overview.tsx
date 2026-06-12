@@ -195,6 +195,8 @@ export function StockOverview() {
                               src={appUrl(img)}
                               alt=''
                               className='w-9 h-9 rounded border object-cover'
+                              thumbWidth={48}
+                              thumbHeight={48}
                             />
                           ) : (
                             <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'>

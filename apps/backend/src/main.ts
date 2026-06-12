@@ -17,8 +17,16 @@ async function bootstrap() {
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ limit: '10mb', extended: true }));
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
-  app.useStaticAssets(join(process.cwd(), 'public'), { prefix: '/assets/' });
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+    prefix: '/uploads/',
+    maxAge: '1y',
+    immutable: true,
+  } as any);
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    prefix: '/assets/',
+    maxAge: '1y',
+    immutable: true,
+  } as any);
   app.use(cookieParser());
 
   app.enableCors({

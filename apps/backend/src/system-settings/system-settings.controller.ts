@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
+import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -162,6 +163,7 @@ export class SystemSettingsController {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly media: MediaService,
+    private readonly cache: CacheService,
   ) {}
 
   @Get()
@@ -211,6 +213,8 @@ export class SystemSettingsController {
   @Public()
   @Get('storefront')
   async getStorefrontConfig() {
+    const cached = this.cache.get<any>('storefront:config');
+    if (cached) return cached;
     const settings = await this.prisma.systemSetting.findMany();
     const map: Record<string, string> = {};
     for (const s of settings) map[s.key] = s.value;
@@ -277,7 +281,7 @@ export class SystemSettingsController {
       }));
     } catch {}
 
-    return {
+    const result = {
       store: {
         name: map['store_name'] || 'EcoMate',
         tagline: map['store_tagline'] || '',
@@ -397,6 +401,8 @@ export class SystemSettingsController {
         hideOosFromArchive: map['hide_oos_products'] === 'true',
       },
     };
+    this.cache.set('storefront:config', result);
+    return result;
   }
 
   @Get('storage')
@@ -477,6 +483,7 @@ export class SystemSettingsController {
       create: { key, value },
       update: { value },
     });
+    this.cache.delete('storefront:config');
     return { key, value };
   }
 }

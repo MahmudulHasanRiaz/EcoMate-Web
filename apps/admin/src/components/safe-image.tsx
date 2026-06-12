@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 
 const PLACEHOLDER_DATA_URI =
   "data:image/svg+xml;charset=UTF-8," +
@@ -18,11 +18,33 @@ const PLACEHOLDER_DATA_URI =
 
 interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string | null
+  thumbWidth?: number
+  thumbHeight?: number
 }
 
-export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
+export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, ...props }: SafeImageProps) {
   const [failed, setFailed] = useState(false)
   const showPlaceholder = !src || failed
+
+  const finalSrc = useMemo(() => {
+    if (!src) return src
+    if (!thumbWidth && !thumbHeight) return src
+
+    let path = src
+    if (path.startsWith('http')) {
+      try { path = new URL(path).pathname } catch { return src }
+    }
+    if (!path.startsWith('/')) return src
+
+    const base = import.meta.env.DEV
+      ? 'http://localhost:4000/api/images/resize'
+      : '/api/images/resize'
+    const params = new URLSearchParams()
+    params.set('path', path)
+    if (thumbWidth) params.set('w', String(thumbWidth))
+    if (thumbHeight) params.set('h', String(thumbHeight))
+    return `${base}?${params.toString()}`
+  }, [src, thumbWidth, thumbHeight])
 
   if (showPlaceholder) {
     return (
@@ -37,7 +59,7 @@ export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
 
   return (
     <img
-      src={src}
+      src={finalSrc}
       alt={alt || ''}
       className={className}
       onError={() => setFailed(true)}

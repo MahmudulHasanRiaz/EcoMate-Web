@@ -37,6 +37,8 @@ import { SizeChartsModule } from './size-charts/size-charts.module';
 import { CmsPagesModule } from './cms-pages/cms-pages.module';
 import { TagsModule } from './tags/tags.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { ImagesModule } from './images/images.module';
+import { CacheModule } from './cache/cache.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -77,6 +79,8 @@ import { RolesGuard } from './auth/roles.guard';
     CmsPagesModule,
     TagsModule,
     ReviewsModule,
+    ImagesModule,
+    CacheModule,
   ],
   controllers: [OrderStatusController],
   providers: [

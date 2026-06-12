@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
+import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
 interface FlyingItem {
   id: number;
@@ -98,7 +100,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
           opacity: isActive ? 0.3 : 1,
         }}
       >
-        <img src={item.image || undefined} alt="Flying Item" className="w-full h-full object-contain drop-shadow-md" />
+        <Image src={item.image || PLACEHOLDER_IMAGE} alt="Flying Item" width={128} height={128} className="w-full h-full object-contain drop-shadow-md" />
       </div>
     </div>
   );

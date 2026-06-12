@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Heart, ShoppingCart, Trash2, ArrowRight } from 'lucide-react';
+import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { getProducts } from '@/lib/api/products';
@@ -67,7 +68,7 @@ export default function WishlistPage() {
                 onClick={() => router.push(`/products/${product.slug || product.id}`)}>
                 <div className={`relative ${aspect.className} overflow-hidden bg-gray-50`}
                   style={'style' in aspect ? aspect.style : undefined}>
-                  <img src={imgErrors[product.id] ? PLACEHOLDER_IMAGE : (product.image || PLACEHOLDER_IMAGE)} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  <Image src={imgErrors[product.id] ? PLACEHOLDER_IMAGE : (product.image || PLACEHOLDER_IMAGE)} alt={product.name} fill sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover transition-transform duration-700 group-hover:scale-110"
                     onError={() => setImgErrors(prev => ({ ...prev, [product.id]: true }))} />
                   {product.saveAmount && product.saveAmount > 0 && (
                     <div className="absolute top-4 left-4 bg-black text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full">

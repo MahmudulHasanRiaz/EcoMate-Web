@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Loader2, Upload, X, Image as ImageIcon, AlertCircle, CheckCircle2 } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { submitManualPaymentProof } from "@/lib/api/orders";
 
@@ -132,7 +133,7 @@ export function PaymentProofUpload({
         </label>
         {preview ? (
           <div className="relative w-32 h-32 border rounded-lg overflow-hidden bg-gray-50">
-            <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+            <Image src={preview} alt="Preview" width={128} height={128} className="w-full h-full object-cover" />
             <button
               type="button"
               onClick={reset}

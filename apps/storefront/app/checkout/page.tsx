@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
@@ -35,8 +36,8 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   return (
     <div className="flex gap-4">
       <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
-        <img src={item.image || '/placeholder.svg'} alt={item.name} className="w-full h-full object-contain"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }} />
+        <Image src={item.image || '/placeholder.svg'} alt={item.name} width={80} height={80} className="w-full h-full object-contain"
+          onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-start mb-2 pr-1">

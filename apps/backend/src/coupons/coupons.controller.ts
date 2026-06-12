@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateCouponDto } from './dto/create-coupon.dto';
+import { UpdateCouponDto } from './dto/update-coupon.dto';
 
 @Controller('coupons')
 export class CouponsController {
@@ -57,33 +59,31 @@ export class CouponsController {
 
   @Roles('superadmin', 'admin')
   @Post()
-  async create(@Body() dto: Record<string, unknown>) {
+  async create(@Body() dto: CreateCouponDto) {
     return this.prisma.coupon.create({
       data: {
-        code: dto['code'] as string,
-        type: (dto['type'] as string) || 'flat',
-        value: dto['value'] as number,
-        minOrderValue: dto['minOrderValue'] as number,
-        maxUses: dto['maxUses'] as number,
-        startsAt: dto['startsAt'] ? new Date(dto['startsAt'] as string) : null,
-        expiresAt: dto['expiresAt']
-          ? new Date(dto['expiresAt'] as string)
-          : null,
+        code: dto.code,
+        type: dto.type || 'flat',
+        value: dto.value,
+        minOrderValue: dto.minOrderValue,
+        maxUses: dto.maxUses,
+        startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       },
     });
   }
   @Roles('superadmin', 'admin')
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: Record<string, unknown>) {
+  async update(@Param('id') id: string, @Body() dto: UpdateCouponDto) {
     return this.prisma.coupon.update({
       where: { id },
       data: {
-        code: dto['code'] as string,
-        type: dto['type'] as string,
-        value: dto['value'] as number,
-        isActive: dto['isActive'] as boolean,
-        minOrderValue: dto['minOrderValue'] as number,
-        maxUses: dto['maxUses'] as number,
+        code: dto.code,
+        type: dto.type,
+        value: dto.value,
+        isActive: dto.isActive,
+        minOrderValue: dto.minOrderValue,
+        maxUses: dto.maxUses,
       },
     });
   }
