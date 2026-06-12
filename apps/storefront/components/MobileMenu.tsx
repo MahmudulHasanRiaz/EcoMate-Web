@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { X, User, ChevronRight, HelpCircle, Heart, Calendar } from 'lucide-react';
+import { X, User, ChevronRight, ChevronDown, HelpCircle, Heart, Calendar } from 'lucide-react';
+import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 
@@ -9,11 +10,6 @@ export default function MobileMenu({}: {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { config } = useStorefrontConfig();
   const menuItems = config.menu?.mobile?.items || [];
-
-  const getHref = (item: any) => {
-    if (item.type === 'category') return `/products?category=${item.categoryId || item.id}`;
-    return item.url || '/';
-  };
 
   useEffect(() => {
     const handleOpen = () => setIsMobileMenuOpen(true);
@@ -68,17 +64,7 @@ export default function MobileMenu({}: {}) {
            <div className="px-4 mb-6">
              <div className="bg-[#fcfcfc] rounded-[8px] border border-gray-100 overflow-hidden">
                 {menuItems.map((item, index) => (
-                  <Link 
-                     key={item.id || item.name || index} 
-                     href={getHref(item)}
-                     onClick={closeMenu}
-                     className={`w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors ${
-                       index !== menuItems.length - 1 ? 'border-b border-gray-100/70' : ''
-                     } hover:bg-gray-50`}
-                  >
-                     <span className="text-[13px] text-gray-700 font-normal">{item.label || item.name}</span>
-                     <ChevronRight size={14} className="text-gray-400" strokeWidth={2} />
-                  </Link>
+                  <MobileNavItem key={item.id || item.label || index} item={item} onClose={closeMenu} />
                 ))}
              </div>
            </div>
@@ -114,5 +100,63 @@ export default function MobileMenu({}: {}) {
         </div>
       </div>
     </>
+  );
+}
+
+function MobileNavItem({ item, onClose, level = 0 }: { item: any; onClose: () => void; level?: number }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasChildren = item.children?.length > 0;
+
+  const getHref = (it: any) => {
+    if (it.type === 'category') return `/products?category=${it.categoryId || it.id}`;
+    return it.url || '/';
+  };
+
+  if (!hasChildren) {
+    return (
+      <Link 
+        href={getHref(item)}
+        onClick={onClose}
+        className="w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors hover:bg-gray-50"
+        style={{ paddingLeft: `${16 + level * 20}px` }}
+      >
+        <span className="text-[13px] text-gray-700 font-normal">{item.label || item.name}</span>
+      </Link>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center text-left justify-between px-4 py-[11px] transition-colors hover:bg-gray-50"
+        style={{ paddingLeft: `${16 + level * 20}px` }}
+      >
+        <span className="text-[13px] text-gray-700 font-normal">{item.label || item.name}</span>
+        <ChevronDown
+          size={14}
+          className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          strokeWidth={2}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            key={item.label}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden bg-gray-50/50"
+          >
+            <div>
+              {item.children.map((child: any, i: number) => (
+                <MobileNavItem key={child.id || child.label || i} item={child} onClose={onClose} level={level + 1} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
