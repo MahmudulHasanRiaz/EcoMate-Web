@@ -53,6 +53,8 @@ export const mediaApi = {
     apiClient.patch<MediaResponse>(`/media/${id}`, dto),
   delete: (id: string, force = false) =>
     apiClient.delete(`/media/${id}${force ? '?force=true' : ''}`),
+  bulkDelete: (ids: string[]) =>
+    apiClient.post<{ succeeded: number; failed: number }>('/media/bulk-delete', { ids }),
   migrateOrphans: () =>
     apiClient.post<{ scanned: number; migrated: number; failed: number }>(
       '/media/migrate-orphans',

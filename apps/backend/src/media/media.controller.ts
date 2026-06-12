@@ -72,6 +72,12 @@ export class MediaController {
     return this.svc.detach(id, dto.entityType, dto.entityId);
   }
 
+  @Post('bulk-delete')
+  @Roles('superadmin', 'admin', 'manager')
+  bulkRemove(@Body() dto: { ids: string[]; force?: boolean }) {
+    return this.svc.bulkRemove(dto.ids, dto.force ?? false);
+  }
+
   @Post('migrate-orphans')
   @Roles('superadmin', 'admin')
   migrate() {

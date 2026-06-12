@@ -211,6 +211,25 @@ export class MediaService {
     return { message: 'Media deleted' };
   }
 
+  async bulkRemove(ids: string[], force = false) {
+    const results: { id: string; success: boolean; error?: string }[] = [];
+    for (const id of ids) {
+      try {
+        await this.remove(id, force);
+        results.push({ id, success: true });
+      } catch (err) {
+        results.push({
+          id,
+          success: false,
+          error: (err as Error).message,
+        });
+      }
+    }
+    const succeeded = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    return { succeeded, failed, results };
+  }
+
   async attach(mediaId: string, entityType: string, entityId: string) {
     return this.prisma.mediaAttachment.upsert({
       where: { mediaId_entityType_entityId: { mediaId, entityType, entityId } },

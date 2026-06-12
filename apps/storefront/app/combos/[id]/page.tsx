@@ -304,7 +304,7 @@ export default function ComboDetailPage() {
       <div className="max-w-5xl mx-auto px-4">
         <div className="flex flex-col md:flex-row gap-8 mb-8">
           <div className="md:w-1/2">
-            <div className="bg-gray-50 rounded-xl overflow-hidden relative">
+            <div className="bg-gray-50 rounded-xl overflow-hidden relative h-72 md:h-96">
               {combo.image ? (
                 <Image src={combo.image} alt={combo.name} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover"
                   onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />

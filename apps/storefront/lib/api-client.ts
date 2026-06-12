@@ -1,5 +1,8 @@
 import axios from "axios";
 
+let lastRefreshAttempt = 0;
+const REFRESH_COOLDOWN = 5000;
+
 function getBaseUrl(): string {
   if (typeof window !== "undefined" && !window.location.hostname.includes("localhost")) {
     return "/api";
@@ -29,6 +32,11 @@ apiClient.interceptors.response.use(
   async (error) => {
     const req = error.config;
     if (error.response?.status === 401 && !req._retry && req.url !== "/auth/refresh") {
+      const now = Date.now();
+      if (now - lastRefreshAttempt < REFRESH_COOLDOWN) {
+        return Promise.reject(error);
+      }
+      lastRefreshAttempt = now;
       req._retry = true;
       try {
         const { data } = await axios.post(

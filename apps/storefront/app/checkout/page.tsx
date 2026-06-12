@@ -475,6 +475,9 @@ export default function CheckoutPage() {
     };
   }, [guestPhone, guestName, items, district, thana, addressLine, paymentOptionType, user]);
 
+  const leadDataRef = useRef(getLeadData());
+  leadDataRef.current = getLeadData();
+
   const captureLead = useCallback(() => {
     const data = getLeadData();
     if (data) saveCheckoutLead(data);
@@ -488,7 +491,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
     const sendLead = () => {
-      const data = getLeadData();
+      const data = leadDataRef.current;
       if (data) navigator.sendBeacon(beaconUrl, new Blob([JSON.stringify(data)], { type: 'application/json' }));
     };
     window.addEventListener('beforeunload', sendLead);
@@ -497,7 +500,7 @@ export default function CheckoutPage() {
       if (leadTimer.current) clearTimeout(leadTimer.current);
       sendLead();
     };
-  }, [getLeadData]);
+  }, []);
 
   const buildOrderPayload = () => {
     const orderItems = items.map((item) => {

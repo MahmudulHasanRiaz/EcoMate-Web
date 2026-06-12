@@ -13,6 +13,7 @@ import MobileMenu from "@/components/MobileMenu";
 import FloatingWidgets from "@/components/FloatingWidgets";
 import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
+import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
@@ -134,6 +135,7 @@ export default async function RootLayout({
               closeButton
               duration={4000}
             />
+            <OfflineBanner />
             </StorefrontConfigProvider>
             </WishlistProvider>
           </CartProvider>

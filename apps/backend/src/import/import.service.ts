@@ -50,6 +50,19 @@ export class ImportService {
       throw new BadRequestException(`CSV parse error: ${msg}`);
     }
 
+    const headers = parsed.meta?.fields || [];
+    this.logger.log(`CSV headers (${headers.length}): ${headers.join(', ')}`);
+
+    // Log attribute-related columns found
+    const attrCols = headers.filter(
+      (h) => h.toLowerCase().includes('attribute') || h.toLowerCase().includes('attr '),
+    );
+    if (attrCols.length > 0) {
+      this.logger.log(`Attribute columns: ${attrCols.join(', ')}`);
+    } else {
+      this.logger.warn('No attribute columns found in CSV headers!');
+    }
+
     const rows: CsvRowWithMeta[] = parsed.data
       .map((data, i) => ({ rowNumber: i + 2, data }))
       .filter((r) => r.data.SKU?.trim());
@@ -383,6 +396,12 @@ export class ImportService {
     const mainImage = images[0];
 
     const varAttrs = this.extractVariationAttributes(data);
+    if (varAttrs.length === 0) {
+      this.logger.warn(
+        `Variation SKU ${varSku}: no attributes extracted. ` +
+        `Available keys: ${Object.keys(data).filter(k => k.toLowerCase().includes('attr')).join(', ')}`,
+      );
+    }
     const resolvedVarAttrs =
       varAttrs.length > 0
         ? await this.resolveAttributes(varAttrs, summary)
@@ -657,9 +676,10 @@ export class ImportService {
     for (let i = 1; i <= 5; i++) {
       const nameKey = `Attribute ${i} name`;
       const valuesKey = `Attribute ${i} value(s)`;
+      const valuesKeyAlt = `Attribute ${i} value`;
 
       const name = data[nameKey]?.trim();
-      const value = data[valuesKey]?.trim();
+      const value = (data[valuesKey] || data[valuesKeyAlt])?.trim();
       if (!name || !value) continue;
 
       attrs.push({

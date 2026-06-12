@@ -35,6 +35,8 @@ export function Media() {
   const [dragActive, setDragActive] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [urlBusy, setUrlBusy] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [pending, setPending] = useState<PendingUpload[]>([])
   const dropRef = useRef<HTMLDivElement | null>(null)
   const fileInputId = useRef(`media-input-${Math.random().toString(36).slice(2)}`)
@@ -72,6 +74,26 @@ export function Media() {
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         (err as Error)?.message
       toast.error(message || 'Migration failed')
+    },
+  })
+
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: string[]) => mediaApi.bulkDelete(ids).then(r => r.data),
+    onSuccess: (d) => {
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+      setSelectedIds(new Set())
+      setBulkDeleteOpen(false)
+      if (d.failed > 0) {
+        toast.warning(`Deleted ${d.succeeded}, ${d.failed} failed`)
+      } else {
+        toast.success(`Deleted ${d.succeeded} file${d.succeeded === 1 ? '' : 's'}`)
+      }
+    },
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err as Error)?.message
+      toast.error(message || 'Bulk delete failed')
     },
   })
 
@@ -267,6 +289,21 @@ export function Media() {
           </div>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className='flex items-center justify-between bg-primary/5 rounded-lg border px-4 py-2.5'>
+            <span className='text-sm font-medium'>{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected</span>
+            <div className='flex items-center gap-2'>
+              <Button variant='ghost' size='sm' onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </Button>
+              <Button variant='destructive' size='sm' onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleteMut.isPending}>
+                <Trash2 className='h-3.5 w-3.5 mr-1' />
+                {bulkDeleteMut.isPending ? 'Deleting...' : 'Delete Selected'}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div
           ref={dropRef}
           onDragOver={handleDragOver}
@@ -311,12 +348,30 @@ export function Media() {
                 {(data?.data || []).map(m => (
                   <div
                     key={m.id}
-                    className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
+                    className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
                     onClick={() => {
                       if (selected?.id === m.id) { setSelected(null); setDetailOpen(false); }
                       else { setSelected(m); setDetailOpen(true); }
                     }}
                   >
+                    <div
+                      className='absolute top-1.5 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity'
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <input
+                        type='checkbox'
+                        checked={selectedIds.has(m.id)}
+                        onChange={() => {
+                          setSelectedIds(prev => {
+                            const next = new Set(prev)
+                            if (next.has(m.id)) next.delete(m.id)
+                            else next.add(m.id)
+                            return next
+                          })
+                        }}
+                        className='h-4 w-4 rounded cursor-pointer accent-primary'
+                      />
+                    </div>
                     {m.mimeType.startsWith('image/') ? (
                       <SafeImage src={mediaUrl(m.url)} alt={m.alt || m.filename} className='w-full h-full object-cover' />
                     ) : (
@@ -425,6 +480,15 @@ export function Media() {
       </Main>
 
       <ConfirmDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)} title='Delete Media' desc={`Delete "${deleteTarget?.filename}"?`} confirmText='Delete' destructive handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)} />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(o) => { if (!o) setBulkDeleteOpen(false) }}
+        title={`Delete ${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'}?`}
+        desc={`This will permanently delete ${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'} from the library. ${selectedIds.size > 0 ? 'Attached files cannot be deleted unless forced.' : ''}`}
+        confirmText='Delete'
+        destructive
+        handleConfirm={() => bulkDeleteMut.mutate(Array.from(selectedIds))}
+      />
     </>
   )
 }

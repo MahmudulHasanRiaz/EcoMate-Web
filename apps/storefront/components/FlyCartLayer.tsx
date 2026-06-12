@@ -100,7 +100,8 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
           opacity: isActive ? 0.3 : 1,
         }}
       >
-        <Image src={item.image || PLACEHOLDER_IMAGE} alt="Flying Item" width={128} height={128} className="w-full h-full object-contain drop-shadow-md" />
+        <Image src={item.image || PLACEHOLDER_IMAGE} alt="Flying Item" width={128} height={128} className="w-full h-full object-contain drop-shadow-md"
+          onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }} />
       </div>
     </div>
   );
