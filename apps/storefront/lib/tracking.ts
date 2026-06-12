@@ -21,6 +21,8 @@ function generateEventId(): string {
 
 let _metaId = '';
 let _tiktokCode = '';
+let _metaPurchaseMode = 'instant';
+let _tiktokPurchaseMode = 'instant';
 let _eventQueue: { event: EventName; data?: Record<string, any>; eventId: string }[] = [];
 
 const debug = process.env.NODE_ENV !== 'production'
@@ -31,6 +33,12 @@ export function setPixelIds(metaId: string, tiktokCode: string) {
   _metaId = metaId;
   _tiktokCode = tiktokCode;
   flushQueue();
+}
+
+export function setTrackingConfig(metaPurchaseMode: string, tiktokPurchaseMode: string) {
+  _metaPurchaseMode = metaPurchaseMode;
+  _tiktokPurchaseMode = tiktokPurchaseMode;
+  debug('Tracking config set:', { metaPurchaseMode, tiktokPurchaseMode });
 }
 
 export function flushQueue() {
@@ -60,7 +68,6 @@ export function flushQueue() {
   }
 }
 
-// গ্লোবাল উইন্ডো অবজেক্টে ফাংশনটি দিয়ে রাখছি যেন স্ক্রিপ্ট ট্যাগ থেকে কল করা যায়
 if (typeof window !== 'undefined') {
   window.__flushTrackingQueue = flushQueue;
 }
@@ -73,9 +80,18 @@ function getCookie(name: string): string {
   return '';
 }
 
-export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string }) {
+export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string; zip?: string; state?: string; address?: string }) {
   debug('trackEvent called:', { event, data, userData });
   if (typeof window === 'undefined') return;
+
+  if (event === 'Purchase') {
+    const shouldFireMeta = _metaPurchaseMode === 'instant';
+    const shouldFireTiktok = _tiktokPurchaseMode === 'instant';
+    if (!shouldFireMeta && !shouldFireTiktok) {
+      debug('Skipping Purchase event — mode is validated:', { meta: _metaPurchaseMode, tiktok: _tiktokPurchaseMode });
+      return;
+    }
+  }
 
   const eventId = generateEventId();
   const fbq = window.fbq;
@@ -101,15 +117,11 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     }
   }
 
-  // মেটার জন্য fbp এবং fbc কুকি রিড করো
   const fbp = getCookie('_fbp');
   const fbc = getCookie('_fbc');
-
-  // টিকটকের জন্য URL এবং Referrer রিড করো
   const url = typeof window !== 'undefined' ? window.location.href : '';
   const referrer = typeof document !== 'undefined' ? document.referrer : '';
 
-  // Server-side CAPI call শুধু তখনই যাবে যখন ট্র্যাকিং এনাবলড থাকে
   if (_metaId || _tiktokCode) {
     fetch(`${API_URL}/tracking/events`, {
       method: 'POST',
@@ -123,7 +135,7 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
           fbp,
           fbc,
           url,
-          referrer
+          referrer,
         },
       }),
       keepalive: true,

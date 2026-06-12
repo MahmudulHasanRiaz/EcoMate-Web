@@ -416,20 +416,6 @@ export class OrdersService {
       });
     }
 
-    this.tracking
-      .track({
-        eventName: 'purchase',
-        customData: {
-          value: Number(total),
-          currency: 'BDT',
-          content_ids: dto.items
-            .map((i) => i.productId || i.comboId)
-            .filter(Boolean),
-          num_items: dto.items.reduce((s, i) => s + i.quantity, 0),
-        },
-      })
-      .catch(() => {});
-
     if (couponCode) {
       await this.prisma.coupon.update({
         where: { code: couponCode },
@@ -715,6 +701,10 @@ export class OrdersService {
       },
     });
 
+    if (newStatus.name === 'Confirmed' || newStatus.name === 'Delivered') {
+      await this.firePurchaseIfModeMatches(newStatus.name, updated, userId).catch(() => {});
+    }
+
     return updated;
   }
 
@@ -997,6 +987,95 @@ export class OrdersService {
       updated += 1;
     }
     return { updated, total: orders.length };
+  }
+
+  private async firePurchaseIfModeMatches(
+    statusName: string,
+    order: any,
+    _userId: string,
+  ) {
+    try {
+      const settings = await this.prisma.systemSetting.findMany({
+        where: {
+          key: { in: ['tracking_meta_purchase_mode', 'tracking_meta_validated_status', 'tracking_tiktok_purchase_mode', 'tracking_tiktok_validated_status'] },
+        },
+      });
+      const settingMap = Object.fromEntries(
+        settings.map((s: any) => [s.key, s.value]),
+      );
+      const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
+      const metaStatus = settingMap['tracking_meta_validated_status'] || '';
+      const tiktokMode = settingMap['tracking_tiktok_purchase_mode'] || 'instant';
+      const tiktokStatus = settingMap['tracking_tiktok_validated_status'] || '';
+
+      const shouldFire =
+        (metaMode === 'validated' && metaStatus === statusName) ||
+        (tiktokMode === 'validated' && tiktokStatus === statusName);
+
+      if (!shouldFire) return;
+
+      let email = '';
+      let phone = '';
+      let firstName = '';
+      let lastName = '';
+      let city = '';
+      let country = 'BD';
+
+      if (order.customer) {
+        email = order.customer.email || '';
+        firstName = order.customer.firstName || '';
+        lastName = order.customer.lastName || '';
+        phone = order.customer.phoneNumber || '';
+      }
+
+      if (!phone) phone = order.guestPhone || '';
+      if (!firstName) firstName = order.guestName || '';
+
+      const shippingAddr = order.shippingAddress || {};
+      if (typeof shippingAddr === 'object') {
+        city = shippingAddr.city || shippingAddr.district || '';
+        if (shippingAddr.country) country = shippingAddr.country;
+      }
+
+      const savedCtx = await this.tracking.getContext(order.id);
+      const itemsList = (order.items as any[]) || [];
+      const totalValue = Number(order.total || 0);
+
+      const customData = {
+        value: totalValue,
+        currency: 'BDT',
+        content_ids: itemsList.map((i: any) => i.productId || i.comboId || '').filter(Boolean),
+        num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
+        order_id: order.id,
+        contents: itemsList.map((i: any) => ({
+          id: i.productId || i.comboId || '',
+          quantity: i.quantity,
+          item_price: Number(i.price),
+        })),
+      };
+
+      await this.tracking.track({
+        eventName: 'purchase',
+        eventId: `purchase_${order.id}`,
+        userId: order.customerId || undefined,
+        userData: {
+          email,
+          phone,
+          name: firstName || undefined,
+          city,
+          country,
+          ip: '',
+          userAgent: '',
+          fbp: savedCtx?.fbp || undefined,
+          fbc: savedCtx?.fbc || undefined,
+          url: savedCtx?.url || undefined,
+          referrer: savedCtx?.referrer || undefined,
+        },
+        customData,
+      });
+    } catch (err) {
+      console.error('Failed to fire purchase event:', err);
+    }
   }
 
   private async deductStock(

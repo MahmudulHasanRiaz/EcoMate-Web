@@ -24,10 +24,26 @@ export class TrackingController {
       userData: {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        ...body.userData, // ফ্রন্টএন্ড থেকে আসা ইউজার ডাটা এখানে মার্জ হচ্ছে
+        ...body.userData,
       },
       customData: body.customData,
     });
+    return { success: true };
+  }
+
+  @Public()
+  @Post('context')
+  async saveContext(
+    @Body() body: { orderId: string; fbp?: string; fbc?: string; url?: string; referrer?: string },
+  ) {
+    if (body.orderId) {
+      await this.tracking.saveContext(body.orderId, {
+        fbp: body.fbp,
+        fbc: body.fbc,
+        url: body.url,
+        referrer: body.referrer,
+      });
+    }
     return { success: true };
   }
 }

@@ -346,6 +346,10 @@ export class SystemSettingsController {
           'true',
         pixelId:
           map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
+        purchaseMode:
+          map['tracking_meta_purchase_mode'] || 'instant',
+        validatedStatus:
+          map['tracking_meta_validated_status'] || '',
       },
       tiktok: {
         pixelEnabled:
@@ -355,6 +359,10 @@ export class SystemSettingsController {
           map['tracking_tiktok_pixel_code'] ||
           process.env.TIKTOK_PIXEL_CODE ||
           '',
+        purchaseMode:
+          map['tracking_tiktok_purchase_mode'] || 'instant',
+        validatedStatus:
+          map['tracking_tiktok_validated_status'] || '',
       },
       navigation: {
         items: parseJson<{ name: string; href: string }[]>(

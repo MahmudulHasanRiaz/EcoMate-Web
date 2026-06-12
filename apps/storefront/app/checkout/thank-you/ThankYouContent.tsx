@@ -25,6 +25,14 @@ export interface ThankYouContentProps {
   errorMessage?: string;
 }
 
+function getCookie(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || '';
+  return '';
+}
+
 const nn = (v: number | string | undefined | null) => {
   if (v === undefined || v === null) return 0;
   const n = Number(v);
@@ -69,31 +77,58 @@ export default function ThankYouContent({
     const sessionKey = `tracked_order_${order.id}`;
     if (sessionStorage.getItem(sessionKey)) return;
 
-    const itemsList = (order.items as any[]) || [];
-    const totalValue = Number(order.total || order.subtotal || 0);
-    trackEvent(
-      'Purchase',
-      {
-        value: totalValue,
-        currency: config.currency.code,
-        content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
-        num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
-        order_id: order.id,
-        contents: itemsList.map((i: any) => ({
-          id: i.productId || i.comboId || '',
-          quantity: i.quantity,
-          item_price: Number(i.price),
-        })),
-      },
-      {
-        phone: order.shippingAddress?.phone || order.guestPhone || '',
-        name: order.shippingAddress?.name || order.guestName || '',
-        city: order.shippingAddress?.city || '',
-        country: 'BD',
-      },
-    );
+    const metaMode = config.meta?.purchaseMode || 'instant';
+    const tiktokMode = config.tiktok?.purchaseMode || 'instant';
+    const isInstant = metaMode === 'instant' && tiktokMode === 'instant';
+
+    if (isInstant) {
+      const itemsList = (order.items as any[]) || [];
+      const totalValue = Number(order.total || order.subtotal || 0);
+      trackEvent(
+        'Purchase',
+        {
+          value: totalValue,
+          currency: config.currency.code,
+          content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
+          num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
+          order_id: order.id,
+          contents: itemsList.map((i: any) => ({
+            id: i.productId || i.comboId || '',
+            quantity: i.quantity,
+            item_price: Number(i.price),
+          })),
+        },
+        {
+          email: order.customer?.email || '',
+          phone: order.shippingAddress?.phone || order.guestPhone || '',
+          name: order.shippingAddress?.name || order.guestName || '',
+          city: order.shippingAddress?.city || '',
+          state: order.shippingAddress?.district || '',
+          country: 'BD',
+          zip: order.shippingAddress?.zip || '',
+          address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),
+        },
+      );
+    }
+
+    const fbp = getCookie('_fbp');
+    const fbc = getCookie('_fbc');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    fetch(`${apiUrl}/tracking/context`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: order.id,
+        fbp: fbp || '',
+        fbc: fbc || '',
+        url: window.location.href,
+        referrer: document.referrer,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+
     sessionStorage.setItem(sessionKey, 'true');
-  }, [order, clearCart, config.currency.code]);
+  }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);
 
   if (!orderId || (!order && !errorMessage)) {
     return (

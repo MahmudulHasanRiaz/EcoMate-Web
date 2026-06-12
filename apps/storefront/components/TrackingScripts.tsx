@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { setPixelIds } from "@/lib/tracking";
+import { setPixelIds, setTrackingConfig } from "@/lib/tracking";
 
 export default function TrackingScripts() {
   const { config } = useStorefrontConfig();
@@ -12,7 +12,8 @@ export default function TrackingScripts() {
 
   useEffect(() => {
     setPixelIds(metaId, tiktokCode);
-  }, [metaId, tiktokCode]);
+    setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
+  }, [metaId, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
 
   useEffect(() => {
     if (metaId) (window as any).__META_ID = metaId;

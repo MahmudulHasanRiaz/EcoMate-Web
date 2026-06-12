@@ -70,10 +70,14 @@ export interface StorefrontConfig {
   meta: {
     pixelEnabled: boolean;
     pixelId: string;
+    purchaseMode: 'instant' | 'validated';
+    validatedStatus: string;
   };
   tiktok: {
     pixelEnabled: boolean;
     pixelCode: string;
+    purchaseMode: 'instant' | 'validated';
+    validatedStatus: string;
   };
   navigation: {
     items: { name: string; href: string }[];

@@ -11,8 +11,19 @@ interface TrackEvent {
     email?: string;
     phone?: string;
     name?: string;
+    firstName?: string;
+    lastName?: string;
     ip?: string;
     userAgent?: string;
+    city?: string;
+    country?: string;
+    state?: string;
+    zip?: string;
+    address?: string;
+    fbp?: string;
+    fbc?: string;
+    url?: string;
+    referrer?: string;
   };
   customData?: Record<string, any>;
 }
@@ -48,6 +59,26 @@ export class MetaConversionsService {
     const apiUrl = `https://graph.facebook.com/v18.0/${pixelId}/events`;
 
     try {
+      const { email, phone, name, firstName, lastName, ip, userAgent, city, country, state, zip, fbp, fbc, url } = event.userData;
+
+      const fn = firstName
+        ? this.hash(firstName)
+        : name
+          ? this.hash(this.splitName(name).firstName)
+          : undefined;
+
+      const ln = lastName
+        ? this.hash(lastName)
+        : name
+          ? this.hash(this.splitName(name).lastName)
+          : undefined;
+
+      const external_id = event.userId
+        ? this.hash(event.userId)
+        : phone
+          ? this.hash(phone)
+          : undefined;
+
       const body: any = {
         data: [
           {
@@ -55,32 +86,21 @@ export class MetaConversionsService {
             event_time: event.eventTime,
             event_id: event.eventId,
             action_source: 'website',
+            event_source_url: url || undefined,
             user_data: {
-              em: event.userData.email
-                ? this.hash(event.userData.email)
-                : undefined,
-              ph: event.userData.phone
-                ? this.hash(event.userData.phone)
-                : undefined,
-              fn: event.userData.name
-                ? this.hash(this.splitName(event.userData.name).firstName)
-                : undefined,
-              ln: event.userData.name
-                ? this.hash(this.splitName(event.userData.name).lastName)
-                : undefined,
-              external_id: event.userData.phone
-                ? this.hash(event.userData.phone)
-                : undefined,
-              fbp: (event.userData as any).fbp || undefined,
-              fbc: (event.userData as any).fbc || undefined,
-              ct: (event.userData as any).city
-                ? this.hash((event.userData as any).city)
-                : undefined, // সিটি হ্যাশ করা হলো
-              cn: (event.userData as any).country
-                ? this.hash((event.userData as any).country)
-                : undefined, // কান্ট্রি হ্যাশ করা হলো
-              client_ip_address: event.userData.ip,
-              client_user_agent: event.userData.userAgent,
+              em: email ? this.hash(email) : undefined,
+              ph: phone ? this.hash(this.normalizePhone(phone)) : undefined,
+              fn,
+              ln,
+              ct: city ? this.hash(city) : undefined,
+              cn: country ? this.hash(country) : undefined,
+              zp: zip ? this.hash(zip) : undefined,
+              st: state ? this.hash(state) : undefined,
+              external_id,
+              fbp: fbp || undefined,
+              fbc: fbc || undefined,
+              client_ip_address: ip,
+              client_user_agent: userAgent,
             },
             custom_data: event.customData,
           },
@@ -92,17 +112,39 @@ export class MetaConversionsService {
         body.test_event_code = testCode;
       }
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const maxRetries = 3;
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
 
-      if (!response.ok) {
-        this.logger.error(
-          `Meta CAPI error: ${response.status} ${await response.text()}`,
-        );
+          if (response.ok) {
+            this.logger.log(`Meta CAPI event sent: ${event.eventName} [${event.eventId}]`);
+            return;
+          }
+
+          if (response.status < 500 && response.status !== 429) {
+            this.logger.error(`Meta CAPI error: ${response.status} ${await response.text()}`);
+            return;
+          }
+
+          lastError = new Error(`HTTP ${response.status}: ${await response.text()}`);
+          this.logger.warn(`Meta CAPI retryable error (attempt ${attempt + 1}/${maxRetries}): ${response.status}`);
+        } catch (err) {
+          lastError = err as Error;
+          this.logger.warn(`Meta CAPI network error (attempt ${attempt + 1}/${maxRetries}): ${err}`);
+        }
+
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+        }
       }
+
+      this.logger.error(`Meta CAPI failed after ${maxRetries} retries`, lastError);
     } catch (err) {
       this.logger.error('Meta CAPI request failed', err);
     }
@@ -117,7 +159,9 @@ export class MetaConversionsService {
         where: { key: systemKey },
       });
       if (setting?.value) return setting.value;
-    } catch {}
+    } catch (err) {
+      this.logger.warn(`Failed to read setting ${systemKey}: ${err}`);
+    }
     if (envKey) return this.config.get(envKey) || null;
     return null;
   }
@@ -138,5 +182,17 @@ export class MetaConversionsService {
     const lastName = parts.pop() || '';
     const firstName = parts.join(' ');
     return { firstName, lastName };
+  }
+
+  private normalizePhone(phone: string): string {
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.startsWith('01') && cleaned.length === 11) {
+      cleaned = '88' + cleaned;
+    } else {
+      // remove leading 00 or + already stripped by \D
+      cleaned = cleaned.replace(/^0+/, '');
+      if (!/^\d{11,15}$/.test(cleaned)) return phone.replace(/\D/g, '');
+    }
+    return cleaned;
   }
 }

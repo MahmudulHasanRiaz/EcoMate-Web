@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MetaConversionsService } from './meta-conversions.service';
 import { TikTokEventsService } from './tiktok-events.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { v4 as uuid } from 'uuid';
 
 export interface TrackingEvent {
@@ -11,8 +12,19 @@ export interface TrackingEvent {
     email?: string;
     phone?: string;
     name?: string;
+    firstName?: string;
+    lastName?: string;
     ip?: string;
     userAgent?: string;
+    city?: string;
+    country?: string;
+    state?: string;
+    zip?: string;
+    address?: string;
+    fbp?: string;
+    fbc?: string;
+    url?: string;
+    referrer?: string;
   };
   customData?: Record<string, any>;
 }
@@ -22,6 +34,7 @@ export class TrackingService {
   constructor(
     private readonly meta: MetaConversionsService,
     private readonly tiktok: TikTokEventsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async track(event: TrackingEvent) {
@@ -34,13 +47,7 @@ export class TrackingService {
       eventId,
       eventTime,
       userId: event.userId,
-      userData: {
-        email: userData.email,
-        phone: userData.phone,
-        name: userData.name, // নাম যুক্ত করা হলো
-        ip: userData.ip,
-        userAgent: userData.userAgent,
-      },
+      userData: { ...userData },
       customData: event.customData,
     };
 
@@ -48,6 +55,29 @@ export class TrackingService {
       this.meta.sendEvent(payload),
       this.tiktok.sendEvent(payload),
     ]);
+  }
+
+  async saveContext(orderId: string, context: { fbp?: string; fbc?: string; url?: string; referrer?: string }) {
+    try {
+      await this.prisma.systemSetting.upsert({
+        where: { key: `tracking_ctx_${orderId}` },
+        create: { key: `tracking_ctx_${orderId}`, value: JSON.stringify(context) },
+        update: { value: JSON.stringify(context) },
+      });
+    } catch (err) {
+      console.error('Failed to save tracking context:', err);
+    }
+  }
+
+  async getContext(orderId: string): Promise<{ fbp?: string; fbc?: string; url?: string; referrer?: string } | null> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: `tracking_ctx_${orderId}` },
+      });
+      return setting ? JSON.parse(setting.value) : null;
+    } catch {
+      return null;
+    }
   }
 
   private mapEventName(name: string): string {

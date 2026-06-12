@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { systemSettingsApi } from '../storage-api'
+import { orderStatusApi } from '@/features/order-statuses/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Radio, Save, ExternalLink } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 
 export function TrackingSettings() {
@@ -17,6 +19,12 @@ export function TrackingSettings() {
     queryFn: () => systemSettingsApi.getAll().then(r => r.data),
   })
 
+  const { data: statusList } = useQuery({
+    queryKey: ['order-statuses'],
+    queryFn: () => orderStatusApi.list().then(r => r.data),
+    staleTime: 300000,
+  })
+
   const [metaEnabled, setMetaEnabled] = useState(false)
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
@@ -24,6 +32,10 @@ export function TrackingSettings() {
   const [tiktokEnabled, setTiktokEnabled] = useState(false)
   const [tiktokPixelCode, setTiktokPixelCode] = useState('')
   const [tiktokAccessToken, setTiktokAccessToken] = useState('')
+  const [metaPurchaseMode, setMetaPurchaseMode] = useState('instant')
+  const [metaValidatedStatus, setMetaValidatedStatus] = useState('')
+  const [tiktokPurchaseMode, setTiktokPurchaseMode] = useState('instant')
+  const [tiktokValidatedStatus, setTiktokValidatedStatus] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -31,9 +43,13 @@ export function TrackingSettings() {
       setMetaPixelId(settings.tracking_meta_pixel_id || '')
       setMetaAccessToken(settings.tracking_meta_access_token || '')
       setMetaTestCode(settings.tracking_meta_test_code || '')
+      setMetaPurchaseMode(settings.tracking_meta_purchase_mode || 'instant')
+      setMetaValidatedStatus(settings.tracking_meta_validated_status || '')
       setTiktokEnabled(settings.tracking_tiktok_enabled === 'true')
       setTiktokPixelCode(settings.tracking_tiktok_pixel_code || '')
       setTiktokAccessToken(settings.tracking_tiktok_access_token || '')
+      setTiktokPurchaseMode(settings.tracking_tiktok_purchase_mode || 'instant')
+      setTiktokValidatedStatus(settings.tracking_tiktok_validated_status || '')
     }
   }, [settings])
 
@@ -43,14 +59,26 @@ export function TrackingSettings() {
   })
 
   const handleSave = () => {
+    if (metaPurchaseMode === 'validated' && !metaValidatedStatus) {
+      toast.error('Please select a trigger status for Meta Purchase event');
+      return;
+    }
+    if (tiktokPurchaseMode === 'validated' && !tiktokValidatedStatus) {
+      toast.error('Please select a trigger status for TikTok Purchase event');
+      return;
+    }
     const updates = [
       { key: 'tracking_meta_enabled', value: String(metaEnabled) },
       { key: 'tracking_meta_pixel_id', value: metaPixelId },
       { key: 'tracking_meta_access_token', value: metaAccessToken },
       { key: 'tracking_meta_test_code', value: metaTestCode },
+      { key: 'tracking_meta_purchase_mode', value: metaPurchaseMode },
+      { key: 'tracking_meta_validated_status', value: metaValidatedStatus },
       { key: 'tracking_tiktok_enabled', value: String(tiktokEnabled) },
       { key: 'tracking_tiktok_pixel_code', value: tiktokPixelCode },
       { key: 'tracking_tiktok_access_token', value: tiktokAccessToken },
+      { key: 'tracking_tiktok_purchase_mode', value: tiktokPurchaseMode },
+      { key: 'tracking_tiktok_validated_status', value: tiktokValidatedStatus },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -125,6 +153,41 @@ export function TrackingSettings() {
             </div>
           </div>
 
+          <div className='space-y-2 sm:col-span-2 mt-4'>
+            <Label htmlFor='meta-purchase-mode'>Purchase Event Mode</Label>
+            <Select value={metaPurchaseMode} onValueChange={(v) => { setMetaPurchaseMode(v); if (v === 'instant') setMetaValidatedStatus(''); }}>
+              <SelectTrigger id='meta-purchase-mode' className='bg-background/50 w-full sm:w-72'>
+                <SelectValue placeholder='Select mode' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='instant'>Instant — Send immediately (client + server)</SelectItem>
+                <SelectItem value='validated'>Validated — Send when status is reached (server only)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className='text-xs text-muted-foreground'>
+              Choose "Instant" for immediate purchase tracking, or "Validated" to delay until the order reaches a specific status.
+            </p>
+          </div>
+
+          {metaPurchaseMode === 'validated' && (
+            <div className='space-y-2 sm:col-span-2'>
+              <Label htmlFor='meta-validated-status'>Trigger on Status</Label>
+              <Select value={metaValidatedStatus} onValueChange={setMetaValidatedStatus}>
+                <SelectTrigger id='meta-validated-status' className='bg-background/50 w-full sm:w-72'>
+                  <SelectValue placeholder='Select order status' />
+                </SelectTrigger>
+                <SelectContent>
+                  {(statusList || []).map((s: any) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className='text-xs text-muted-foreground'>
+                The Purchase event will be sent (server-side only) when the order reaches this status. Client identifiers (fbp, fbc) are saved at checkout and included.
+              </p>
+            </div>
+          )}
+
           <div className='mt-4'>
             <a
               href='https://developers.facebook.com/docs/marketing-api/conversions-api/get-started'
@@ -176,12 +239,47 @@ export function TrackingSettings() {
               />
             </div>
           </div>
+          <div className='space-y-2 sm:col-span-2'>
+            <Label htmlFor='tiktok-purchase-mode'>Purchase Event Mode</Label>
+            <Select value={tiktokPurchaseMode} onValueChange={(v) => { setTiktokPurchaseMode(v); if (v === 'instant') setTiktokValidatedStatus(''); }}>
+              <SelectTrigger id='tiktok-purchase-mode' className='bg-background/50 w-full sm:w-72'>
+                <SelectValue placeholder='Select mode' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='instant'>Instant — Send immediately (client + server)</SelectItem>
+                <SelectItem value='validated'>Validated — Send when status is reached (server only)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className='text-xs text-muted-foreground'>
+              Choose "Instant" for immediate purchase tracking, or "Validated" to delay until the order reaches a specific status.
+            </p>
+          </div>
+
+          {tiktokPurchaseMode === 'validated' && (
+            <div className='space-y-2 sm:col-span-2'>
+              <Label htmlFor='tiktok-validated-status'>Trigger on Status</Label>
+              <Select value={tiktokValidatedStatus} onValueChange={setTiktokValidatedStatus}>
+                <SelectTrigger id='tiktok-validated-status' className='bg-background/50 w-full sm:w-72'>
+                  <SelectValue placeholder='Select order status' />
+                </SelectTrigger>
+                <SelectContent>
+                  {(statusList || []).map((s: any) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className='text-xs text-muted-foreground'>
+                The Purchase event will be sent (server-side only) when the order reaches this status. Client identifiers (fbp, fbc) are saved at checkout and included.
+              </p>
+            </div>
+          )}
+
           <div className='mt-4'>
             <a
               href='https://ads.tiktok.com/help/article/evnts-api-get-started'
               target='_blank'
               rel='noreferrer'
-              className='text-sm text-primary hover:underline inline-flex items-center gap-1'
+              className='text-sm text-primary hover:inline-flex items-center gap-1'
             >
               How to get TikTok Events API credentials <ExternalLink className='h-3 w-3' />
             </a>
