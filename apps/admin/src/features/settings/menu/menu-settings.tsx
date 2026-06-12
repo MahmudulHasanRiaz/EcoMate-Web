@@ -287,6 +287,7 @@ function MenuSectionBuilder({ section, onChange, categories }: {
 
         <div>
           <Label className="text-sm font-medium mb-2 block">Ordered items ({section.items.length})</Label>
+          <p className="text-xs text-muted-foreground mb-2">Drag items to reorder. Drag to the <span className="text-primary font-medium">right edge</span> of an item to make it a sub-menu (child).</p>
           {section.items.length === 0 ? (
             <p className="text-sm text-muted-foreground italic py-4 text-center border rounded-lg bg-muted/20">
               No menu items yet. Select categories above or add custom links.
@@ -388,12 +389,29 @@ function MenuItemList({ items, onChange, categories, depth = 0 }: {
   depth?: number
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [nestTarget, setNestTarget] = useState<number | null>(null)
 
-  const handleDragStart = (idx: number) => setDragIdx(idx)
+  const handleDragStart = (idx: number) => {
+    setDragIdx(idx)
+    setDragId(items[idx]?.id || null)
+  }
 
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault()
-    if (dragIdx === null || dragIdx === idx) return
+    if (dragIdx === null) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const isNest = x / rect.width > 0.6
+
+    if (isNest && idx !== dragIdx) {
+      setNestTarget(idx)
+      return
+    }
+    setNestTarget(null)
+
+    if (dragIdx === idx) return
     const next = [...items]
     const [moved] = next.splice(dragIdx, 1)
     next.splice(idx, 0, moved)
@@ -401,7 +419,37 @@ function MenuItemList({ items, onChange, categories, depth = 0 }: {
     setDragIdx(idx)
   }
 
-  const handleDragEnd = () => setDragIdx(null)
+  const handleDrop = (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const isNest = x / rect.width > 0.6
+
+    if (isNest && dragId && targetIdx !== dragIdx) {
+      const next = [...items]
+      const srcIdx = next.findIndex(i => i.id === dragId)
+      if (srcIdx > -1) {
+        const [moved] = next.splice(srcIdx, 1)
+        const adjustedTarget = srcIdx < targetIdx ? targetIdx - 1 : targetIdx
+        if (adjustedTarget >= 0 && adjustedTarget < next.length) {
+          next[adjustedTarget] = {
+            ...next[adjustedTarget],
+            children: [...(next[adjustedTarget].children || []), moved],
+          }
+          onChange(next)
+        }
+      }
+    }
+    setDragIdx(null)
+    setDragId(null)
+    setNestTarget(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragIdx(null)
+    setDragId(null)
+    setNestTarget(null)
+  }
 
   const update = (idx: number, item: MenuItem) => {
     const next = [...items]
@@ -429,18 +477,20 @@ function MenuItemList({ items, onChange, categories, depth = 0 }: {
           categories={categories}
           depth={depth}
           isDragging={dragIdx === idx}
+          isNestTarget={nestTarget === idx}
           dragHandlers={{
             onDragStart: () => handleDragStart(idx),
             onDragOver: (e) => handleDragOver(e, idx),
             onDragEnd: handleDragEnd,
           }}
+          onDrop={(e) => handleDrop(e, idx)}
         />
       ))}
     </div>
   )
 }
 
-function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, depth, isDragging, dragHandlers }: {
+function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, depth, isDragging, isNestTarget, dragHandlers, onDrop }: {
   item: MenuItem
   onUpdate: (item: MenuItem) => void
   onDelete: () => void
@@ -448,11 +498,13 @@ function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, d
   categories: Category[]
   depth: number
   isDragging: boolean
+  isNestTarget: boolean
   dragHandlers: {
     onDragStart: () => void
     onDragOver: (e: React.DragEvent) => void
     onDragEnd: () => void
   }
+  onDrop: (e: React.DragEvent) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [expanded, setExpanded] = useState(true)
@@ -482,14 +534,13 @@ function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, d
     <div style={{ marginLeft: depth * 16 }} className={depth > 0 ? 'border-l-2 border-muted pl-2' : ''}>
       <div
         draggable
-        {...dragHandlers}
+        onDragStart={dragHandlers.onDragStart}
+        onDragOver={dragHandlers.onDragOver}
+        onDragEnd={dragHandlers.onDragEnd}
+        onDrop={onDrop}
         className={`flex items-center gap-2 p-2.5 border rounded-lg bg-card transition-all ${
           isDragging ? 'opacity-50 shadow-md' : ''
-        }`}
-        onDragOver={e => {
-          e.preventDefault()
-          dragHandlers.onDragOver(e)
-        }}
+        } ${isNestTarget ? 'ring-2 ring-primary/50 bg-primary/5' : ''}`}
       >
         <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" />
 
