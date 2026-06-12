@@ -63,12 +63,17 @@ function getStorefrontApiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 }
 
+function isInvalidToken(t: string | undefined | null): boolean {
+  return !t || t === 'undefined' || t === 'null' || t.trim() === '';
+}
+
 export async function getOrderForThankYou(
   orderId: string,
   token?: string,
 ): Promise<unknown> {
-  const url = token
-    ? `${getStorefrontApiBase()}/orders/${encodeURIComponent(orderId)}?t=${encodeURIComponent(token)}`
+  const safeToken = isInvalidToken(token) ? undefined : token;
+  const url = safeToken
+    ? `${getStorefrontApiBase()}/orders/${encodeURIComponent(orderId)}?t=${encodeURIComponent(safeToken)}`
     : `${getStorefrontApiBase()}/orders/${encodeURIComponent(orderId)}`;
   const res = await fetch(url, {
     cache: "no-store",

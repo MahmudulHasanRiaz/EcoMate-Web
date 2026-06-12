@@ -88,11 +88,12 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   );
 }
 
-function PaymentPopup({ orderId, total, guestPhone, guestName, onClose, onSuccess }: {
+function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClose, onSuccess }: {
   orderId: string;
   total: number;
   guestPhone?: string;
   guestName?: string;
+  viewToken?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }) {
@@ -189,7 +190,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, onClose, onSucces
           <CheckCircle size={48} className="mx-auto mb-4 text-green-500" />
           <h3 className="text-lg font-bold text-gray-800 mb-2">Payment Submitted!</h3>
           <p className="text-sm text-gray-500 mb-6">Your payment info has been received. We will verify it shortly.</p>
-          <button onClick={() => router.push(`/checkout/thank-you?orderId=${orderId}&pending=true`)}
+          <button onClick={() => router.push(`/checkout/thank-you?orderId=${orderId}&t=${viewToken || ''}&pending=true`)}
             className="w-full bg-brand-blue text-white font-bold py-3 rounded-lg hover:bg-brand-blue/90 transition-colors">
             View Order Status
           </button>
@@ -332,7 +333,7 @@ export default function CheckoutPage() {
   const [guestPhone, setGuestPhone] = useState('');
   const [paymentMode, setPaymentMode] = useState('cod');
   const [partialAmount, setPartialAmount] = useState('');
-  const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number } | null>(null);
+  const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number; viewToken?: string } | null>(null);
   const paymentSuccessCallback = useRef<(() => void) | null>(null);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
   const [couponInput, setCouponInput] = useState('');
@@ -342,6 +343,14 @@ export default function CheckoutPage() {
   const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const clearFieldError = useCallback((field: string) => {
+    setFieldErrors(prev => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     setDistrict(readStorage('checkout_district', ''));
@@ -602,14 +611,14 @@ export default function CheckoutPage() {
              'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
           } catch {}
         };
-        setPaymentPopup({ orderId: order.id, total: totalWithDelivery });
+        setPaymentPopup({ orderId: order.id, total: totalWithDelivery, viewToken: order.viewToken });
       } else {
         clearCart();
         try {
           ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
            'checkout_address','checkout_notes','checkout_paymentMode'].forEach(k => localStorage.removeItem(k));
         } catch {}
-        router.push(`/checkout/thank-you?orderId=${order.id}`);
+        router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}`);
       }
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to place order. Please try again.';
@@ -660,11 +669,11 @@ export default function CheckoutPage() {
                 </div>
                 {!user && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); setFieldErrors(prev => ({...prev, guestName: ''})); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
+                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
                     {fieldErrors.guestName && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestName}</p>}
                     <div className="flex">
                       <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
-                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); setFieldErrors(prev => ({...prev, guestPhone: ''})); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
+                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
                         className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
                     </div>
                     {fieldErrors.guestPhone && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestPhone}</p>}
@@ -685,7 +694,7 @@ export default function CheckoutPage() {
                     <p className="text-gray-500 text-sm py-4">Your cart is empty.</p>
                   ) : (
                     items.map(item => (
-                      <div key={item.id} className="border border-gray-100 rounded-xl p-4 transition-colors hover:bg-[#fcfcfc]">
+                      <div key={getItemKey(item)} className="border border-gray-100 rounded-xl p-4 transition-colors hover:bg-[#fcfcfc]">
                         {item.isCombo ? (
                           <div className="space-y-4">
                             <div className="flex items-center justify-between">
@@ -736,7 +745,7 @@ export default function CheckoutPage() {
                   {checkoutCfg?.districtEnabled !== false && (
                     <>
                       <div className="relative">
-                        <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); setFieldErrors(prev => ({...prev, district: ''})); scheduleLeadCapture(); }}
+                        <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
                           className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.districtRequired ? 'border-gray-200' : 'border-gray-200'}`}>
                           <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
                           {districts.map(d => (
@@ -751,7 +760,7 @@ export default function CheckoutPage() {
                   {checkoutCfg?.thanaEnabled !== false && district && (
                     <>
                       <div className="relative">
-                        <select value={thana} onChange={(e) => { setThana(e.target.value); setFieldErrors(prev => ({...prev, thana: ''})); scheduleLeadCapture(); }}
+                        <select value={thana} onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
                           className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.thanaRequired ? 'border-gray-200' : 'border-gray-200'}`}>
                           <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
                           {thanas.map(t => (
@@ -764,7 +773,7 @@ export default function CheckoutPage() {
                     </>
                   )}
                   <div className="md:col-span-2">
-                    <textarea value={addressLine} onChange={e => { setAddressLine(e.target.value); setFieldErrors(prev => ({...prev, addressLine: ''})); }}
+                    <textarea value={addressLine} onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
                       placeholder="ex: House no. / building / street / area" rows={2}
                       className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none bg-[#fcfcfc]" />
                     {fieldErrors.addressLine && <p className="text-red-500 text-xs mt-1">{fieldErrors.addressLine}</p>}
@@ -776,7 +785,7 @@ export default function CheckoutPage() {
                     {config.shippingOptions.map(opt => (
                       <label key={opt.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${selectedShippingOptionId === opt.id ? 'border-brand-blue bg-brand-blue/5' : 'border-gray-200 hover:border-gray-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => { setSelectedShippingOptionId(opt.id); setFieldErrors(prev => ({...prev, shippingOption: ''})); }} className="accent-brand-blue" />
+                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => { setSelectedShippingOptionId(opt.id); clearFieldError('shippingOption'); }} className="accent-brand-blue" />
                           <span className="text-sm font-medium text-gray-800">{opt.name}</span>
                         </div>
                         <span className="text-sm font-bold text-gray-800">{s}{opt.amount}</span>
@@ -988,13 +997,14 @@ export default function CheckoutPage() {
         <PaymentPopup
           orderId={paymentPopup.orderId}
           total={paymentPopup.total}
+          viewToken={paymentPopup.viewToken}
           guestPhone={guestPhone}
           guestName={guestName}
           onSuccess={() => paymentSuccessCallback.current?.()}
           onClose={() => {
             paymentSuccessCallback.current = null;
             setPaymentPopup(null);
-            router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&pending=true`);
+            router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&t=${paymentPopup.viewToken}&pending=true`);
           }}
         />
       )}

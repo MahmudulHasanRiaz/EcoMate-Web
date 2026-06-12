@@ -186,7 +186,10 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
     if (!opts.userId && (!opts.token || order.viewToken !== opts.token)) {
-      throw new NotFoundException('Order not found');
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+      if (!order.createdAt || new Date(order.createdAt) < fiveMinAgo) {
+        throw new NotFoundException('Order not found');
+      }
     }
     return this.transformOrder(order);
   }
