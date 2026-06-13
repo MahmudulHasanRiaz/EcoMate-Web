@@ -28,6 +28,7 @@ const queryClient = new QueryClient({
     },
     mutations: {
       onError: (error) => {
+        if (import.meta.env.DEV) console.error('[Mutation Error]', error)
         handleServerError(error)
 
         if (error instanceof AxiosError) {
@@ -40,6 +41,8 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error) => {
+      if (import.meta.env.DEV) console.error('[Query Error]', error)
+
       if (error instanceof AxiosError) {
         if (error.response?.status === 401) {
           return

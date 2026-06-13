@@ -3,15 +3,27 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
+  error?: unknown
+  reset?: () => void
   minimal?: boolean
 }
 
 export function GeneralError({
   className,
+  error,
   minimal = false,
 }: GeneralErrorProps) {
   const navigate = useNavigate()
   const { history } = useRouter()
+
+  if (import.meta.env.DEV && error) {
+    console.error('[GeneralError]', error)
+  }
+
+  const errorMessage = import.meta.env.DEV && error
+    ? error instanceof Error ? error.message : String(error)
+    : null
+
   return (
     <div className={cn('h-svh w-full', className)}>
       <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
@@ -22,6 +34,11 @@ export function GeneralError({
         <p className='text-center text-muted-foreground'>
           We apologize for the inconvenience. <br /> Please try again later.
         </p>
+        {errorMessage && (
+          <pre className='mt-2 max-w-lg text-xs text-muted-foreground bg-muted p-3 rounded overflow-auto'>
+            {errorMessage}
+          </pre>
+        )}
         {!minimal && (
           <div className='mt-6 flex gap-4'>
             <Button variant='outline' onClick={() => history.go(-1)}>

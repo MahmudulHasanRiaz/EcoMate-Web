@@ -16,7 +16,6 @@ const PRECACHE_ASSETS = [
 const OFFLINE_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><circle fill="#d1d5db" cx="200" cy="130" r="40"/><path fill="#d1d5db" d="M60 250 L140 180 L220 250 L300 160 L340 250 Z"/><text fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14" text-anchor="middle" x="200" y="215">Image unavailable offline</text></svg>`;
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAMES.static).then((cache) =>
       cache.addAll(PRECACHE_ASSETS)
@@ -27,7 +26,6 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      await self.clients.claim();
       const keys = await caches.keys();
       await Promise.all(
         keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k))

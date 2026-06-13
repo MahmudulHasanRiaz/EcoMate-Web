@@ -204,6 +204,10 @@ export function Media() {
     return () => document.removeEventListener('keydown', handler)
   }, [data?.data])
 
+  const pageItemIds = data?.data?.map(m => m.id) ?? []
+  const allSelected = pageItemIds.length > 0 && pageItemIds.every(id => selectedIds.has(id))
+  const someSelected = pageItemIds.some(id => selectedIds.has(id))
+
   useEffect(() => {
     if (masterRef.current) {
       masterRef.current.indeterminate = someSelected && !allSelected
@@ -235,10 +239,6 @@ export function Media() {
   }
 
   const formatSize = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-
-  const pageItemIds = data?.data?.map(m => m.id) ?? []
-  const allSelected = pageItemIds.length > 0 && pageItemIds.every(id => selectedIds.has(id))
-  const someSelected = pageItemIds.some(id => selectedIds.has(id))
 
   return (
     <>
