@@ -91,6 +91,10 @@ export class ImportService {
     const allErrors: ImportError[] = [];
 
     const groups = this.groupByParent(rows);
+    this.logger.log(
+      `Grouped ${rows.length} row(s) into ${Object.keys(groups).length} group(s): ` +
+      `${Object.entries(groups).map(([k, g]) => `${k}(${g.length})`).join(', ')}`,
+    );
 
     for (const [groupKey, group] of Object.entries(groups)) {
       if (!groupKey) continue;
@@ -194,6 +198,10 @@ export class ImportService {
         skipVariantGeneration: hasVariations,
       });
     }
+
+    this.logger.log(
+      `Product ${parentSku}: ${variationRows.length} variation(s) to process`,
+    );
 
     for (const vRow of variationRows) {
       await this.processVariation(
@@ -379,7 +387,13 @@ export class ImportService {
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
-    if (!varSku) return;
+    if (!varSku) {
+      this.logger.warn(
+        `Variation row ${row.rowNumber}: skipped — no SKU. ` +
+        `Available keys: ${Object.keys(data).slice(0, 20).join(', ')}`,
+      );
+      return;
+    }
 
     const existing = await this.prisma.productVariant.findUnique({
       where: { sku: varSku },
@@ -399,13 +413,29 @@ export class ImportService {
     if (varAttrs.length === 0) {
       this.logger.warn(
         `Variation SKU ${varSku}: no attributes extracted. ` +
-        `Available keys: ${Object.keys(data).filter(k => k.toLowerCase().includes('attr')).join(', ')}`,
+        `Available attr keys: ${Object.keys(data).filter(k => k.toLowerCase().includes('attr')).join(', ')}`,
+      );
+    } else {
+      this.logger.log(
+        `Variation SKU ${varSku}: extracted ${varAttrs.length} attribute(s): ` +
+        `${varAttrs.map(a => `${a.name}=${a.values.join(',')}`).join('; ')}`,
       );
     }
     const resolvedVarAttrs =
       varAttrs.length > 0
         ? await this.resolveAttributes(varAttrs, summary)
         : [];
+
+    if (resolvedVarAttrs.length > 0) {
+      this.logger.log(
+        `Variation SKU ${varSku}: resolved ${resolvedVarAttrs.length} attribute(s) from DB`,
+      );
+    }
+
+    this.logger.log(
+      `Variation SKU ${varSku}: images=${images.length}, mainImage=${mainImage || 'none'}, ` +
+      `price=${price ?? '??'}, stock=${stock}`,
+    );
 
     if (existing) {
       const updateData: Record<string, unknown> = {};
@@ -423,6 +453,23 @@ export class ImportService {
         if (ingested) {
           await this.media.syncEntityImages('variant', existing.id, [ingested]);
         }
+      }
+
+      if (resolvedVarAttrs.length > 0) {
+        await this.prisma.productVariantAttributeValue.deleteMany({
+          where: { variantId: existing.id },
+        });
+        await this.prisma.productVariantAttributeValue.createMany({
+          data: resolvedVarAttrs.flatMap((attr) =>
+            attr.values.map((av) => ({
+              variantId: existing.id,
+              attributeValueId: av.id,
+            })),
+          ),
+        });
+        this.logger.log(
+          `Variation SKU ${varSku}: updated ${resolvedVarAttrs.length} attribute value(s) (update mode)`,
+        );
       }
 
       summary.productsUpdated++;
@@ -613,11 +660,12 @@ export class ImportService {
 
   private parseImages(value?: string): string[] {
     if (!value?.trim()) return [];
-    // WooCommerce exports use | or , as image separators
-    return value
+    const parts = value
       .split(/[|,]/)
       .map((s) => s.trim())
       .filter(Boolean);
+    this.logger.log(`parseImages: raw="${value}" -> ${parts.length} image(s): [${parts.join(', ')}]`);
+    return parts;
   }
 
   private extractAttributes(data: WooCommerceCsvRow): Array<{
@@ -680,14 +728,35 @@ export class ImportService {
 
       const name = data[nameKey]?.trim();
       const value = (data[valuesKey] || data[valuesKeyAlt])?.trim();
-      if (!name || !value) continue;
+
+      if (!name) {
+        this.logger.warn(
+          `extractVariationAttributes: attribute ${i} skipped — no name key found. ` +
+          `Checked "${nameKey}" (="${data[nameKey] ?? '(missing)'}")`,
+        );
+        continue;
+      }
+      if (!value) {
+        this.logger.warn(
+          `extractVariationAttributes: attribute "${name}" (attr ${i}) skipped — no value. ` +
+          `Checked "${valuesKey}" (="${data[valuesKey] ?? '(missing)'}") and ` +
+          `"${valuesKeyAlt}" (="${data[valuesKeyAlt] ?? '(missing)'}")`,
+        );
+        continue;
+      }
+
+      const parsed = value
+        .split(/[,|]/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+      this.logger.log(
+        `extractVariationAttributes: attr ${i} name="${name}" rawValue="${value}" parsed=[${parsed.join(', ')}]`,
+      );
 
       attrs.push({
         name,
-        values: value
-          .split(/[,|]/)
-          .map((v) => v.trim())
-          .filter(Boolean),
+        values: parsed,
         visible: true,
         global: true,
       });

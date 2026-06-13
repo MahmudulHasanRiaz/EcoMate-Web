@@ -36,9 +36,11 @@ export function Media() {
   const [urlInput, setUrlInput] = useState('')
   const [urlBusy, setUrlBusy] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [pending, setPending] = useState<PendingUpload[]>([])
   const dropRef = useRef<HTMLDivElement | null>(null)
+  const masterRef = useRef<HTMLInputElement>(null)
   const fileInputId = useRef(`media-input-${Math.random().toString(36).slice(2)}`)
 
   const { data: attachDetails } = useQuery({
@@ -177,6 +179,37 @@ export function Media() {
     return () => document.removeEventListener('paste', handlePaste)
   }, [handlePaste])
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+        if (isInput) return
+        e.preventDefault()
+        if (data?.data?.length) {
+          setSelectedIds(prev => {
+            const next = new Set(prev)
+            data.data.forEach(m => next.add(m.id))
+            return next
+          })
+        }
+      }
+      if (e.key === 'Escape') {
+        if (isInput) return
+        setSelectedIds(new Set())
+        setLastClickedIndex(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [data?.data])
+
+  useEffect(() => {
+    if (masterRef.current) {
+      masterRef.current.indeterminate = someSelected && !allSelected
+    }
+  }, [someSelected, allSelected])
+
   const handleUrlImport = async () => {
     const url = urlInput.trim()
     if (!url) return
@@ -203,6 +236,10 @@ export function Media() {
 
   const formatSize = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 
+  const pageItemIds = data?.data?.map(m => m.id) ?? []
+  const allSelected = pageItemIds.length > 0 && pageItemIds.every(id => selectedIds.has(id))
+  const someSelected = pageItemIds.some(id => selectedIds.has(id))
+
   return (
     <>
       <Header fixed>
@@ -211,7 +248,7 @@ export function Media() {
           <Input
             placeholder='Search files...'
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            onChange={e => { setSearch(e.target.value); setPage(1); setLastClickedIndex(null); }}
             className='border-0 shadow-none bg-transparent'
           />
         </div>
@@ -228,14 +265,14 @@ export function Media() {
           <div className='flex items-center gap-2 flex-wrap'>
             <div className='flex gap-1 border rounded-md p-0.5'>
               {[{ label: 'All', value: '' }, { label: 'Images', value: 'image' }, { label: 'Videos', value: 'video' }].map(f => (
-                <Button key={f.value} variant={typeFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setTypeFilter(f.value)}>
+                <Button key={f.value} variant={typeFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => { setTypeFilter(f.value); setLastClickedIndex(null); }}>
                   {f.label}
                 </Button>
               ))}
             </div>
             <div className='flex gap-1 border rounded-md p-0.5'>
               {[{ label: 'All', value: '' }, { label: 'Attached', value: 'yes' }, { label: 'Unattached', value: 'no' }].map(f => (
-                <Button key={f.value} variant={attachFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setAttachFilter(f.value)}>
+                <Button key={f.value} variant={attachFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => { setAttachFilter(f.value); setLastClickedIndex(null); }}>
                   {f.label}
                 </Button>
               ))}
@@ -293,7 +330,7 @@ export function Media() {
           <div className='flex items-center justify-between bg-primary/5 rounded-lg border px-4 py-2.5'>
             <span className='text-sm font-medium'>{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected</span>
             <div className='flex items-center gap-2'>
-              <Button variant='ghost' size='sm' onClick={() => setSelectedIds(new Set())}>
+              <Button variant='ghost' size='sm' onClick={() => { setSelectedIds(new Set()); setLastClickedIndex(null); }}>
                 Clear
               </Button>
               <Button variant='destructive' size='sm' onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleteMut.isPending}>
@@ -324,6 +361,41 @@ export function Media() {
             <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8 text-muted-foreground' /></div>
           ) : data?.data?.length || pending.length ? (
             <>
+              {(data?.data?.length ?? 0) > 0 && (
+                <div className='flex items-center gap-2 px-1.5 pt-1 pb-0.5'>
+                  <input
+                    ref={masterRef}
+                    type='checkbox'
+                    checked={allSelected}
+                    onChange={() => {
+                      if (allSelected) {
+                        setLastClickedIndex(null)
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          pageItemIds.forEach(id => next.delete(id))
+                          return next
+                        })
+                      } else {
+                        setLastClickedIndex(null)
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          pageItemIds.forEach(id => next.add(id))
+                          return next
+                        })
+                      }
+                    }}
+                    className='h-4 w-4 rounded cursor-pointer accent-primary'
+                  />
+                  <span className='text-xs text-muted-foreground'>
+                    {allSelected
+                      ? `${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'} selected`
+                      : someSelected
+                        ? `${selectedIds.size} selected — click to select all ${pageItemIds.length} on this page`
+                        : `Select all ${pageItemIds.length} item${pageItemIds.length === 1 ? '' : 's'} on this page`
+                    }
+                  </span>
+                </div>
+              )}
               {pending.length > 0 && (
                 <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
                   {pending.map((p) => (
@@ -345,17 +417,47 @@ export function Media() {
                 </div>
               )}
               <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
-                {(data?.data || []).map(m => (
+                {(data?.data || []).map((m, index) => (
                   <div
                     key={m.id}
                     className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
-                    onClick={() => {
-                      if (selected?.id === m.id) { setSelected(null); setDetailOpen(false); }
-                      else { setSelected(m); setDetailOpen(true); }
+                    onClick={(e) => {
+                      const idx = index
+                      if (e.shiftKey) {
+                        e.preventDefault()
+                        const anchor = lastClickedIndex ?? idx
+                        const start = Math.min(anchor, idx)
+                        const end = Math.max(anchor, idx)
+                        if (data?.data) {
+                          setSelectedIds(prev => {
+                            const next = new Set(prev)
+                            for (let i = start; i <= Math.min(end, data.data.length - 1); i++) {
+                              next.add(data.data[i].id)
+                            }
+                            return next
+                          })
+                        }
+                        setLastClickedIndex(idx)
+                        return
+                      }
+                      if (e.metaKey || e.ctrlKey) {
+                        e.preventDefault()
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(m.id)) next.delete(m.id)
+                          else next.add(m.id)
+                          return next
+                        })
+                        setLastClickedIndex(idx)
+                        return
+                      }
+                      setLastClickedIndex(null)
+                      if (selected?.id === m.id) { setSelected(null); setDetailOpen(false) }
+                      else { setSelected(m); setDetailOpen(true) }
                     }}
                   >
                     <div
-                      className='absolute top-1.5 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity'
+                      className='absolute top-1.5 left-1.5 z-10'
                       onClick={e => e.stopPropagation()}
                     >
                       <input
@@ -368,6 +470,7 @@ export function Media() {
                             else next.add(m.id)
                             return next
                           })
+                          setLastClickedIndex(index)
                         }}
                         className='h-4 w-4 rounded cursor-pointer accent-primary'
                       />
@@ -389,8 +492,8 @@ export function Media() {
                 <div className='flex items-center justify-between pt-2 px-1'>
                   <span className='text-sm text-muted-foreground'>Page {page} of {data.meta.totalPages}</span>
                   <div className='flex gap-2'>
-                    <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-                    <Button variant='outline' size='sm' disabled={page >= data.meta.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+                    <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => { setPage(p => p - 1); setLastClickedIndex(null); }}>Previous</Button>
+                    <Button variant='outline' size='sm' disabled={page >= data.meta.totalPages} onClick={() => { setPage(p => p + 1); setLastClickedIndex(null); }}>Next</Button>
                   </div>
                 </div>
               )}
