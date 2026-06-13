@@ -32,6 +32,12 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const isEdit = mode === 'edit'
   const [tab, setTab] = useState('general')
 
+  const { data: fullProduct } = useQuery({
+    queryKey: ['product', currentRow?.id],
+    queryFn: () => productsApi.get(currentRow!.id).then(r => r.data),
+    enabled: isEdit && !!currentRow?.id,
+  })
+
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => r.data?.data || []) })
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
   const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
@@ -314,7 +320,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const removeImage = (url: string) => setImages(prev => prev.filter(i => i !== url))
 
-  const variantList = currentRow?.variants || []
+  const variantList = fullProduct?.variants || currentRow?.variants || []
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>

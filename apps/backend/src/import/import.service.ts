@@ -326,6 +326,7 @@ export class ImportService {
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
     const type = (data.Type || 'simple').toLowerCase().trim();
+    const slug = data.Slug?.trim();
     const isVariable = type === 'variable' || type === 'variable-subscription';
     const manageStock =
       !isVariable && parsedStock !== undefined && parsedStock > 0;
@@ -360,6 +361,8 @@ export class ImportService {
       tagIds.length > 0
         ? { deleteMany: {}, create: tagIds.map((id) => ({ tagId: id })) }
         : { deleteMany: {} };
+    updateData.type = isVariable ? 'variable' : type;
+    if (slug) updateData.slug = slug;
     updateData.seoMeta = seoMeta;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
@@ -373,6 +376,11 @@ export class ImportService {
     if (images.length > 0) {
       await this.processProductImages(productId, images, summary, errors);
     }
+
+    this.logger.log(
+      `Product ${productId}: updated (type=${type}, name=${data.Name?.trim() || '(unchanged)'}, ` +
+      `basePrice=${basePrice}, stock=${stock}, images=${images.length})`,
+    );
 
     summary.productsUpdated++;
   }
@@ -452,6 +460,7 @@ export class ImportService {
         const ingested = await this.ingestImage(mainImage, summary, errors);
         if (ingested) {
           await this.media.syncEntityImages('variant', existing.id, [ingested]);
+          this.logger.log(`Variation SKU ${varSku}: image synced`);
         }
       }
 
@@ -500,7 +509,14 @@ export class ImportService {
       const ingested = await this.ingestImage(mainImage, summary, errors);
       if (ingested) {
         await this.media.syncEntityImages('variant', variant.id, [ingested]);
+        this.logger.log(`Variation SKU ${varSku}: image synced`);
       }
+    }
+
+    if (resolvedVarAttrs.length > 0) {
+      this.logger.log(
+        `Variation SKU ${varSku}: created with ${resolvedVarAttrs.length} attribute value(s)`,
+      );
     }
 
     summary.variantsImported++;
@@ -531,6 +547,9 @@ export class ImportService {
         where: { id: productId },
         data: { images: synced as any },
       });
+      this.logger.log(`Product ${productId}: synced ${synced.length} image(s) (${resolved.length} resolved from ${urls.length} URL(s))`);
+    } else {
+      this.logger.warn(`Product ${productId}: 0 images resolved from ${urls.length} URL(s)`);
     }
   }
 
@@ -549,12 +568,14 @@ export class ImportService {
 
     if (existing) {
       summary.imagesReused++;
+      this.logger.log(`Image reused: ${trimmed} -> ${existing.url}`);
       return existing.url;
     }
 
     try {
       const result = await this.media.ingestFromUrl(trimmed);
       summary.imagesImported++;
+      this.logger.log(`Image downloaded: ${trimmed} -> ${result.url}`);
       return result.url;
     } catch (err) {
       const msg = `Image failed: ${(err as Error).message}`;

@@ -3,9 +3,6 @@ import { useAuthStore } from '@/stores/auth-store'
 
 function resolveApiUrl(): string {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
-    return '/api'
-  }
   return 'http://localhost:4000/api'
 }
 

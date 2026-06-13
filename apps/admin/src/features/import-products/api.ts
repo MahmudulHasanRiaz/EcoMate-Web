@@ -39,6 +39,7 @@ export const importApi = {
     const qs = params.toString()
     return apiClient.post<ImportResult>(`/import/products${qs ? `?${qs}` : ''}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
     })
   },
 }

@@ -1,7 +1,9 @@
 import { Controller, Get, Query, Res, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { ImagesService } from './images.service';
+import { Public } from '../common/decorators/public.decorator';
 
+@Public()
 @Controller('images')
 export class ImagesController {
   private readonly logger = new Logger(ImagesController.name);

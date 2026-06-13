@@ -111,12 +111,18 @@ export class ProductsService {
       include: { category: { select: { id: true, name: true, slug: true } } },
     },
     variants: {
-      select: {
-        id: true,
-        sku: true,
-        price: true,
-        stock: true,
-        image: true,
+      include: {
+        attributeValues: {
+          select: {
+            attributeValue: {
+              select: {
+                id: true,
+                value: true,
+                attribute: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
       },
     },
   };
