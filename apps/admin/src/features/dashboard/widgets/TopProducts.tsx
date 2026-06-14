@@ -17,11 +17,11 @@ export function TopProducts({ dateRange }: WidgetProps) {
   return (
     <WidgetShell title="Top Products" isLoading={isLoading} error={error} onRetry={() => refetch()}>
       <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={chartData} layout="vertical" background={{ fill: 'transparent' }}>
-          <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-          <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={120} />
-          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
-          <Bar dataKey="quantity" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
+        <BarChart data={chartData} layout="vertical">
+          <XAxis type="number" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+          <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={120} />
+          <Tooltip />
+          <Bar dataKey="quantity" fill="#6366f1" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </WidgetShell>

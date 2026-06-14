@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import type { WidgetProps } from '../types'
@@ -26,7 +26,7 @@ export function OrderStatusChart({ dateRange }: WidgetProps) {
             ))}
           </Pie>
           <Legend />
-          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
+          <Tooltip />
         </PieChart>
       </ResponsiveContainer>
     </WidgetShell>

@@ -17,11 +17,11 @@ export function RevenueChart({ dateRange }: WidgetProps) {
   return (
     <WidgetShell title="Revenue" isLoading={isLoading} error={error} onRetry={() => refetch()}>
       <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={chartData} background={{ fill: 'transparent' }}>
-          <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} />
-          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
-          <Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+        <BarChart data={chartData}>
+          <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+          <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} />
+          <Tooltip />
+          <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </WidgetShell>
