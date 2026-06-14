@@ -23,6 +23,8 @@ import { Route as authOtpRouteImport } from './routes/(auth)/otp'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
 import { Route as AuthenticatedOpIndexRouteImport } from './routes/_authenticated/op/index'
 import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticated/mon/index'
+import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
+import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
 import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authenticated/op/print/route'
@@ -144,6 +146,17 @@ const AuthenticatedMonIndexRoute = AuthenticatedMonIndexRouteImport.update({
   path: '/mon/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpOverviewRoute = AuthenticatedOpOverviewRouteImport.update({
+  id: '/op/overview',
+  path: '/op/overview',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMonOverviewRoute =
+  AuthenticatedMonOverviewRouteImport.update({
+    id: '/mon/overview',
+    path: '/mon/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -465,6 +478,8 @@ export interface FileRoutesByFullPath {
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -531,6 +546,8 @@ export interface FileRoutesByTo {
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -599,6 +616,8 @@ export interface FileRoutesById {
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -667,6 +686,8 @@ export interface FileRouteTypes {
     | '/op/print'
     | '/op/settings'
     | '/errors/$error'
+    | '/mon/overview'
+    | '/op/overview'
     | '/mon/'
     | '/op/'
     | '/mon/users/$id'
@@ -733,6 +754,8 @@ export interface FileRouteTypes {
     | '/op/print'
     | '/op/settings'
     | '/errors/$error'
+    | '/mon/overview'
+    | '/op/overview'
     | '/mon'
     | '/op'
     | '/mon/users/$id'
@@ -800,6 +823,8 @@ export interface FileRouteTypes {
     | '/_authenticated/op/print'
     | '/_authenticated/op/settings'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/mon/overview'
+    | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
     | '/_authenticated/mon/users/$id'
@@ -963,6 +988,20 @@ declare module '@tanstack/react-router' {
       path: '/mon'
       fullPath: '/mon/'
       preLoaderRoute: typeof AuthenticatedMonIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/overview': {
+      id: '/_authenticated/op/overview'
+      path: '/op/overview'
+      fullPath: '/op/overview'
+      preLoaderRoute: typeof AuthenticatedOpOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/overview': {
+      id: '/_authenticated/mon/overview'
+      path: '/mon/overview'
+      fullPath: '/mon/overview'
+      preLoaderRoute: typeof AuthenticatedMonOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -1412,6 +1451,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPrintRouteRoute: typeof AuthenticatedOpPrintRouteRouteWithChildren
   AuthenticatedOpSettingsRouteRoute: typeof AuthenticatedOpSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
+  AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
@@ -1455,6 +1496,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpSettingsRouteRoute:
     AuthenticatedOpSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
+  AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,

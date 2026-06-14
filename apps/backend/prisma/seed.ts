@@ -741,9 +741,9 @@ async function main() {
           phone: '+8801711111111',
         }),
         customerNotes: order.status === 'Pending' ? 'Please deliver between 9-11 AM' : null,
-        timeline: JSON.stringify([
+        timeline: [
           { status: order.status, timestamp: new Date().toISOString(), note: 'Order placed' },
-        ]),
+        ],
       },
     });
 

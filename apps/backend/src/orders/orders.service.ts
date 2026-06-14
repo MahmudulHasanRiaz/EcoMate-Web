@@ -31,10 +31,15 @@ export class OrdersService {
     private readonly inventoryService: InventoryService,
   ) {}
 
+  private parseTimeline(timeline: unknown): any[] {
+    return Array.isArray(timeline) ? timeline : [];
+  }
+
   private transformOrder(order: any) {
     if (!order) return order;
     return {
       ...order,
+      timeline: Array.isArray(order.timeline) ? order.timeline : [],
       trackingUrl: buildTrackingUrl(
         order.courierService,
         order.courierTrackingCode,
@@ -496,7 +501,7 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
-    const timeline = [...((order.timeline as any[]) || [])];
+    const timeline = [...this.parseTimeline(order.timeline)];
     const now = new Date().toISOString();
     const data: any = {};
 
@@ -650,6 +655,7 @@ export class OrdersService {
     note: string,
     visibility: 'public' | 'private',
     userId: string,
+    performedBy?: string,
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -657,13 +663,13 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     const timeline = [
-      ...((order.timeline as any[]) || []),
+      ...this.parseTimeline(order.timeline),
       {
         type: 'note',
         visibility,
         timestamp: new Date().toISOString(),
         note,
-        addedBy: userId,
+        performedBy: performedBy || userId,
       },
     ];
 
@@ -697,12 +703,13 @@ export class OrdersService {
     }
 
     const timeline = [
-      ...((order.timeline as any[]) || []),
+      ...this.parseTimeline(order.timeline),
       {
         status: newStatus.name,
+        oldStatus: order.status.name,
         timestamp: new Date().toISOString(),
         note: dto.note || '',
-        changedBy: userId,
+        performedBy: performedBy || userId,
       },
     ];
 
@@ -991,7 +998,7 @@ export class OrdersService {
       throw new BadRequestException('Cancelled status not configured');
     }
     const timeline = [
-      ...((order.timeline as any[]) || []),
+      ...this.parseTimeline(order.timeline),
       {
         status: 'Cancelled',
         timestamp: new Date().toISOString(),

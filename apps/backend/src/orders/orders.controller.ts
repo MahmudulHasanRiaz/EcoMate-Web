@@ -156,9 +156,9 @@ export class OrdersController {
   addNote(
     @Param('id') id: string,
     @Body() dto: { note: string; visibility: 'public' | 'private' },
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.addNote(id, dto.note, dto.visibility, user.userId);
+    return this.svc.addNote(id, dto.note, dto.visibility, user.userId, user.email);
   }
 
   @Roles('superadmin', 'admin', 'manager')

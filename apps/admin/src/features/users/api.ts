@@ -72,4 +72,7 @@ export const usersApi = {
 
   invite: (email: string, role: string, desc?: string) =>
     apiClient.post('/users/invite', { email, role, desc }),
+
+  findByEmail: (email: string) =>
+    apiClient.get<UserResponse>(`/users/by-email/${encodeURIComponent(email)}`),
 }

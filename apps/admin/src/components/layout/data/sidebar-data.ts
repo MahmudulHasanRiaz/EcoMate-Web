@@ -14,7 +14,7 @@ export const sidebarData: SidebarData = {
   navGroups: [
     // ===== OPERATIONAL PANEL =====
     { title: 'Overview', panel: 'operational', items: [
-      { title: 'Dashboard', url: '/op', icon: LayoutDashboard },
+      { title: 'Dashboard', url: '/op/overview', icon: LayoutDashboard },
       { title: 'Tasks', url: '/op/tasks', icon: ListTodo },
     ]},
     { title: 'Catalog', panel: 'operational', items: [
@@ -66,7 +66,7 @@ export const sidebarData: SidebarData = {
     ]},
     // ===== MONITORING / ADMIN PANEL =====
     { title: 'Overview', panel: 'monitoring', items: [
-      { title: 'Dashboard', url: '/mon', icon: LayoutDashboard },
+      { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
       { title: 'Analytics', url: '/mon/analytics', icon: Monitor },
     ]},
     { title: 'Administration', panel: 'monitoring', items: [

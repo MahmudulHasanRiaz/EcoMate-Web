@@ -15,11 +15,14 @@ import { ConfigDrawer } from '@/components/config-drawer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus } from 'lucide-react'
@@ -176,6 +179,8 @@ export function Orders() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [statusDialog, setStatusDialog] = useState<{ order: OrderResponse; newStatusId: string; newStatusName: string } | null>(null)
+  const [statusNote, setStatusNote] = useState('')
 
   useEffect(() => { const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
 
@@ -198,7 +203,7 @@ export function Orders() {
   })
 
   const statusMut = useMutation({
-    mutationFn: ({ id, statusId }: { id: string; statusId: string }) => ordersApi.updateStatus(id, statusId),
+    mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated') },
   })
 
@@ -473,7 +478,10 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
-                          <Select value={o.status.id} onValueChange={v => statusMut.mutate({ id: o.id, statusId: v })}>
+                          <Select value={o.status.id} onValueChange={v => {
+                            const s = statusList.find((s: any) => s.id === v)
+                            if (s) { setStatusNote(''); setStatusDialog({ order: o, newStatusId: v, newStatusName: s.name }) }
+                          }}>
                             <SelectTrigger className='h-7 w-[130px] text-xs border-0 bg-transparent hover:bg-muted' style={{ backgroundColor: accentColor + '15' }}>
                               <SelectValue>
                                 <div className='flex items-center gap-1.5'>
@@ -787,6 +795,48 @@ export function Orders() {
             </div>
           </div>
         )}
+
+        <Dialog open={!!statusDialog} onOpenChange={o => { if (!o) setStatusDialog(null); setStatusNote('') }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Change Order Status</DialogTitle>
+              <DialogDescription>
+                Update status for <span className="font-mono font-medium">{statusDialog?.order.displayId}</span>
+              </DialogDescription>
+            </DialogHeader>
+            {statusDialog && (
+              <div className="space-y-4 py-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">Current</p>
+                    <p className="text-sm font-medium mt-0.5">{statusDialog.order.status.name}</p>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">New</p>
+                    <p className="text-sm font-medium mt-0.5">{statusDialog.newStatusName}</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="status-note">Note (optional)</Label>
+                  <Textarea id="status-note" placeholder="Reason for this status change..." value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setStatusDialog(null); setStatusNote('') }}>Cancel</Button>
+              <Button onClick={() => {
+                if (!statusDialog) return
+                statusMut.mutate(
+                  { id: statusDialog.order.id, statusId: statusDialog.newStatusId, note: statusNote || undefined },
+                  { onSuccess: () => { setStatusDialog(null); setStatusNote('') } },
+                )
+              }} disabled={statusMut.isPending}>
+                {statusMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                Confirm Change
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Main>
     </>
   )

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
+import { UserBadge } from '@/components/user-badge'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { CustomerViewCard } from '@/features/orders/customer-view-card'
 import { apiClient } from '@/lib/api-client'
@@ -21,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Loader2, ArrowLeft, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send } from 'lucide-react'
+import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send } from 'lucide-react'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -387,21 +388,26 @@ function OrderDetailPage() {
                     const prevIsStatus = !!prev?.status && !prev?.type;
                     const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus));
                     const performer = t.performedBy || t.performer || '';
-                    const formattedPerformer = performer.includes('@')
-                      ? performer.split('@')[0].charAt(0).toUpperCase() + performer.split('@')[0].slice(1)
-                      : performer;
+                    const performerEmail = performer.includes('@') ? performer : undefined;
                     return (
                       <div key={i} className={`relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0${isGrouped ? ' border-dashed' : ''}`} style={{ borderColor: color }}>
                         <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: color }} />
                         <div className='flex items-center gap-2 flex-wrap'>
-                          {isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
+                          {isStatus && t.oldStatus ? (
+                            <div className='flex items-center gap-1.5'>
+                              <Badge variant='outline' className='text-xs'>{t.oldStatus}</Badge>
+                              <ArrowRight className='h-3 w-3 text-muted-foreground' />
+                              <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>
+                            </div>
+                          ) : isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
                           {t.type === 'shipping' && <Badge variant='outline' className='text-xs'><ArrowRightLeft className='h-3 w-3 mr-1' />Shipping</Badge>}
                           {t.type === 'discount' && <Badge variant='outline' className='text-xs'><Tag className='h-3 w-3 mr-1' />Discount</Badge>}
                           {t.type === 'note' && <Badge variant='outline' className='text-xs'><MessageSquarePlus className='h-3 w-3 mr-1' />Note</Badge>}
                           {t.type === 'courier' && <Badge variant='outline' className='text-xs'><Truck className='h-3 w-3 mr-1' />{(t as any).courier}</Badge>}
                           {isPrivate && <Badge variant='secondary' className='text-xs'><EyeOff className='h-2.5 w-2.5 mr-0.5' />Private</Badge>}
-                          {performer && <span className='text-xs text-muted-foreground'><User className='h-3 w-3 mr-0.5 inline' />{formattedPerformer}</span>}
+                          {performer && performer !== 'System' && performer !== 'Customer' && <UserBadge email={performerEmail || performer} showEmail={false} size="sm" />}
                           {performer === 'System' && <Badge variant='secondary' className='text-[10px] h-4'>Auto</Badge>}
+                          {performer === 'Customer' && <Badge variant='secondary' className='text-[10px] h-4'>Customer</Badge>}
                           <span className='text-xs text-muted-foreground'><Clock className='h-3 w-3 mr-1 inline' />{new Date(t.timestamp).toLocaleString()}</span>
                         </div>
                         {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
