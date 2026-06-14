@@ -525,7 +525,7 @@ async function main() {
         categoryId: catId,
         basePrice: productData.basePrice,
         salePrice: productData.salePrice ?? null,
-        tags: JSON.stringify(productData.tags),
+        tags: productData.tags,
         images: productData.images,
       },
     });
@@ -635,8 +635,8 @@ async function main() {
         isFeatured: combo.isFeatured,
         isActive: combo.isActive,
         categoryId: catId || null,
-        images: JSON.stringify([]),
-        tags: JSON.stringify([]),
+        images: [],
+        tags: [],
       },
     });
 

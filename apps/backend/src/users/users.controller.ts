@@ -7,13 +7,18 @@ import {
   Body,
   Param,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { BulkDeleteUsersDto, BulkUpdateUsersDto } from './dto/bulk-user.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Controller('users')
 export class UsersController {
@@ -83,5 +88,21 @@ export class UsersController {
       email: dto.email,
       role: dto.role,
     };
+  }
+
+  @SkipThrottle()
+  @Get('settings')
+  async getSettings(@CurrentUser() user: { userId: string }) {
+    return this.usersService.getSettings(user.userId);
+  }
+
+  @SkipThrottle()
+  @Put('settings')
+  @HttpCode(HttpStatus.OK)
+  async updateSettings(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: UpdateSettingsDto,
+  ) {
+    return this.usersService.updateSettings(user.userId, dto);
   }
 }

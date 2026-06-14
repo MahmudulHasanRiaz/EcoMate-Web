@@ -63,6 +63,28 @@ export class OrdersController {
     });
   }
 
+  @Get('my')
+  findMyOrders(
+    @CurrentUser() user: { userId: string },
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.svc.findMyOrders(user.userId, {
+      page: page ? parseInt(page) : undefined,
+      perPage: perPage ? parseInt(perPage) : undefined,
+      status,
+    });
+  }
+
+  @Get('my/:id')
+  findMyOrderById(
+    @CurrentUser() user: { userId: string },
+    @Param('id') id: string,
+  ) {
+    return this.svc.findMyOrderById(user.userId, id);
+  }
+
   @Public()
   @Post()
   create(@Body() dto: CreateOrderDto) {

@@ -84,10 +84,9 @@ export default function ComboDeals() {
                       <span className="text-brand-blue font-black text-[15px] md:text-[16px]">৳{combo.price.toLocaleString()}</span>
                       {combo.originalPrice && <span className="text-gray-300 text-[12px] line-through font-medium">৳{combo.originalPrice.toLocaleString()}</span>}
                     </div>
-                    <Link href={`/combos/${combo.id}`}
-                      className="w-full bg-[#f8f9fa] text-gray-700 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all hover:bg-brand-blue hover:text-white border border-gray-100 block text-center">
+                    <span className="w-full bg-[#f8f9fa] text-gray-700 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all group-hover:bg-brand-blue group-hover:text-white border border-gray-100 block text-center pointer-events-none">
                       View Details
-                    </Link>
+                    </span>
                   </div>
                 </Link>
               );

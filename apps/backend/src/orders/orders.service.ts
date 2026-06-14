@@ -154,6 +154,60 @@ export class OrdersService {
     };
   }
 
+  async findMyOrders(userId: string, query: { page?: number; perPage?: number; status?: string }) {
+    const page = query.page || 1;
+    const perPage = query.perPage || 10;
+    const where: any = { customerId: userId };
+    if (query.status) {
+      where.status = { name: { equals: query.status, mode: 'insensitive' } };
+    }
+    const [data, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        skip: (page - 1) * perPage,
+        take: perPage,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          status: true,
+          items: {
+            include: {
+              product: { select: { id: true, name: true, images: true, slug: true } },
+            },
+          },
+          payments: true,
+        },
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return {
+      data: data.map((o: any) => this.transformOrder(o)),
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
+  async findMyOrderById(userId: string, id: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, customerId: userId },
+      include: {
+        status: true,
+        shipment: true,
+        items: {
+          include: {
+            product: { select: { id: true, name: true, images: true, slug: true } },
+          },
+        },
+        payments: {
+          include: {
+            verifier: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        dispatchLogs: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.transformOrder(order);
+  }
+
   async findOne(id: string, opts: { token?: string; userId?: string } = {}) {
     const order = await this.prisma.order.findUnique({
       where: { id },

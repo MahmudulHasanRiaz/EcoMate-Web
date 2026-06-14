@@ -80,11 +80,15 @@ export interface ComboItemDetails {
 
 export interface User {
   id: string;
-  name: string;
+  firstName: string;
+  lastName: string;
+  username: string;
   email: string;
-  phone?: string;
-  role: "customer" | "admin";
-  createdAt?: string;
+  phoneNumber: string;
+  status: string;
+  role: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Combo {

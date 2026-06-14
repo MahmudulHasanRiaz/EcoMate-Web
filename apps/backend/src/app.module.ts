@@ -38,6 +38,7 @@ import { CmsPagesModule } from './cms-pages/cms-pages.module';
 import { TagsModule } from './tags/tags.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { ImagesModule } from './images/images.module';
+import { AddressesModule } from './addresses/addresses.module';
 import { CacheModule } from './cache/cache.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -80,6 +81,7 @@ import { RolesGuard } from './auth/roles.guard';
     TagsModule,
     ReviewsModule,
     ImagesModule,
+    AddressesModule,
     CacheModule,
   ],
   controllers: [OrderStatusController],

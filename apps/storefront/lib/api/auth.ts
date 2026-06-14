@@ -39,3 +39,13 @@ export async function refreshToken(): Promise<AuthResponse> {
   const { data } = await apiClient.post("/auth/refresh");
   return data;
 }
+
+export async function updateProfile(data: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+}): Promise<User> {
+  const { data: res } = await apiClient.put("/auth/me", data);
+  return res;
+}

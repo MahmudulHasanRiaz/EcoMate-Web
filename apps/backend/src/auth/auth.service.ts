@@ -11,6 +11,7 @@ import { EmailService } from '../email/email.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import ms from 'ms';
@@ -138,6 +139,35 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const data: any = {};
+    if (dto.firstName !== undefined) data.firstName = dto.firstName;
+    if (dto.lastName !== undefined) data.lastName = dto.lastName;
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.phoneNumber !== undefined) {
+      const normalized = normalizePhone(dto.phoneNumber);
+      if (!normalized) throw new BadRequestException('Invalid phone number');
+      data.phoneNumber = normalized;
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        email: true,
+        phoneNumber: true,
+        status: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {

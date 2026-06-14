@@ -150,3 +150,17 @@ export async function submitManualPaymentProof(
   );
   return data;
 }
+
+export async function getMyOrders(params?: {
+  page?: number;
+  perPage?: number;
+  status?: string;
+}) {
+  const { data } = await apiClient.get("/orders/my", { params });
+  return data;
+}
+
+export async function getMyOrderById(id: string) {
+  const { data } = await apiClient.get(`/orders/my/${id}`);
+  return data;
+}

@@ -73,7 +73,7 @@ export default function Header({}: {}) {
           <div className="flex items-center gap-1 md:gap-5">
             <HeaderAction icon={<ClipboardList size={20} />} label="Track Order" hideOnMobile href="/orders" />
             {user ? (
-              <HeaderAction icon={<div className="w-6 h-6 bg-brand-blue/10 text-brand-blue rounded-full flex items-center justify-center text-[11px] font-bold">{user.name[0].toUpperCase()}</div>} label={user.name.split(' ')[0]} hideOnMobile href="/account" />
+              <HeaderAction icon={<div className="w-6 h-6 bg-brand-blue/10 text-brand-blue rounded-full flex items-center justify-center text-[11px] font-bold">{(user.firstName?.[0] || user.email[0]).toUpperCase()}</div>} label={user.firstName || 'Account'} hideOnMobile href="/account" />
             ) : (
               <HeaderAction icon={<User size={20} />} label="Sign In" hideOnMobile href="/account" />
             )}

@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Put,
   Body,
   Res,
   UseGuards,
@@ -17,6 +18,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './auth.guard';
 import { RefreshJwtGuard } from './refresh-jwt.guard';
 import { Public } from '../common/decorators/public.decorator';
@@ -103,6 +105,16 @@ export class AuthController {
   @Get('me')
   async me(@CurrentUser() user: { userId: string }) {
     return this.authService.me(user.userId);
+  }
+
+  @SkipThrottle()
+  @Put('me')
+  @HttpCode(HttpStatus.OK)
+  async updateProfile(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(user.userId, dto);
   }
 
   @SkipThrottle()

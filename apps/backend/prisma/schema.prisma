@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum UserStatus {
@@ -78,6 +79,7 @@ model User {
   settings      UserSettings?
   refreshTokens RefreshToken[]
   orders        Order[]
+  addresses     Address[]
   assignedOrders Order[]      @relation("OrderAssignee")
   payments      Payment[]     @relation("VerifiedPayments")
   refunds       Refund[]      @relation("RefundProcessor")
@@ -136,10 +138,31 @@ model UserSettings {
   notificationMarketingEmail     Boolean @default(false)
   notificationSecurityEmail      Boolean @default(true)
   displayItems                   String?
+  autoVariantSelect              Boolean  @default(true)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Address {
+  id          String   @id @default(uuid())
+  userId      String
+  label       String   // "Home", "Office", etc.
+  fullName    String
+  phoneNumber String
+  street      String
+  city        String
+  state       String?
+  zipCode     String?
+  country     String   @default("Bangladesh")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model RefreshToken {

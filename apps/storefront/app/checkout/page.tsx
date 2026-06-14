@@ -451,17 +451,17 @@ export default function CheckoutPage() {
         num_items: items.reduce((s, i) => s + i.quantity, 0),
         contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
       }, {
-        phone: user?.phone || '',
-        name: user?.name || '',
+        phone: user?.phoneNumber || '',
+        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || '',
       });
       initiatedRef.current = true;
     }
   }, [items, config.currency.code, user]);
 
   const getLeadData = useCallback(() => {
-    const rawPhone = guestPhone || user?.phone || '';
+    const rawPhone = guestPhone || user?.phoneNumber || '';
     const phone = normalizePhone(rawPhone);
-    const name = guestName || user?.name || '';
+    const name = guestName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || '';
     if (!phone || !name || wasSubmitted.current) return null;
     return {
       phone, name,

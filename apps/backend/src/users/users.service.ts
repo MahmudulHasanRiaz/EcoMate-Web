@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import { UserRole, UserStatus } from '@prisma/client';
@@ -238,5 +239,25 @@ export class UsersService {
       data: { status: status as UserStatus },
     });
     return { message: `${ids.length} users updated successfully` };
+  }
+
+  async getSettings(userId: string) {
+    let settings = await this.prisma.userSettings.findUnique({
+      where: { userId },
+    });
+    if (!settings) {
+      settings = await this.prisma.userSettings.create({
+        data: { userId },
+      });
+    }
+    return settings;
+  }
+
+  async updateSettings(userId: string, dto: UpdateSettingsDto) {
+    return this.prisma.userSettings.upsert({
+      where: { userId },
+      create: { userId, ...dto },
+      update: dto,
+    });
   }
 }

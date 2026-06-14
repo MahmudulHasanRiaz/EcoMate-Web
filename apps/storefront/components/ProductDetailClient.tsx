@@ -269,11 +269,33 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
   const activeVariants = product.variants?.filter((v) => v.isActive && v.stock > 0) || [];
 
-  const [selectedVariant, setSelectedVariant] = useState<Variant | null>(() => {
-    if (isVariable && activeVariants.length > 0) return activeVariants[0];
-    return null;
-  });
+  const [selectedVariant, setSelectedVariant] = useState<Variant | null>(null);
   const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!isVariable || activeVariants.length === 0) {
+      setSettingsLoaded(true);
+      return;
+    }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setSelectedVariant(activeVariants[0]);
+      setSettingsLoaded(true);
+      return;
+    }
+    import('@/lib/api/settings').then(({ getSettings }) => {
+      getSettings().then(s => {
+        if (s.autoVariantSelect !== false) {
+          setSelectedVariant(activeVariants[0]);
+        }
+        setSettingsLoaded(true);
+      }).catch(() => {
+        setSelectedVariant(activeVariants[0]);
+        setSettingsLoaded(true);
+      });
+    });
+  }, []);
 
   const allAttrNames = useMemo(() => {
     const names = new Set<string>();
@@ -476,7 +498,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
         }
       `}} />
 
-      <div className="px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
+      <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
         <Link href="/" className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</Link>
         <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
         {product.category ? (
