@@ -8,6 +8,18 @@ import type { WidgetProps } from '../types'
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-lg border bg-card/90 backdrop-blur-md p-2.5 shadow-md border-border">
+        <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{payload[0].name}</p>
+        <p className="text-sm font-bold text-foreground mt-0.5">Orders: {payload[0].value}</p>
+      </div>
+    )
+  }
+  return null
+}
+
 export function OrderStatusChart({ dateRange }: WidgetProps) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-order-status', dateRange.start.toISOString(), dateRange.end.toISOString()],
@@ -26,7 +38,7 @@ export function OrderStatusChart({ dateRange }: WidgetProps) {
             ))}
           </Pie>
           <Legend />
-          <Tooltip />
+          <Tooltip content={<CustomTooltip />} />
         </PieChart>
       </ResponsiveContainer>
     </WidgetShell>
