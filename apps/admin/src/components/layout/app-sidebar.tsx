@@ -25,8 +25,8 @@ export function AppSidebar() {
         <TeamSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        {mainGroups.map((props) => (
-          <NavGroup key={props.title} {...props} />
+        {mainGroups.map((props, idx) => (
+          <NavGroup key={props.title || props.panel || idx} {...props} />
         ))}
       </SidebarContent>
       <SidebarFooter>
