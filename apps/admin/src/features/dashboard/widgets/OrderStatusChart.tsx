@@ -29,18 +29,32 @@ export function OrderStatusChart({ dateRange }: WidgetProps) {
   const chartData = data?.data || []
 
   return (
-    <WidgetShell title="Order Status" isLoading={isLoading} error={error} onRetry={() => refetch()}>
-      <ResponsiveContainer width="100%" height={250}>
-        <PieChart>
-          <Pie data={chartData} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={80} label={({ status, count }) => `${status}: ${count}`}>
-            {chartData.map((_, i) => (
-              <Cell key={i} fill={COLORS[i % COLORS.length]} />
-            ))}
-          </Pie>
-          <Legend />
-          <Tooltip content={<CustomTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
+    <WidgetShell title="Order Status" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+      {chartData.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-[250px] text-muted-foreground text-sm">
+          No orders in this period
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={250}>
+          <PieChart>
+            <Pie
+              data={chartData}
+              dataKey="count"
+              nameKey="status"
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              label={({ name, value }) => `${name}: ${value}`}
+            >
+              {chartData.map((_, i) => (
+                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              ))}
+            </Pie>
+            <Legend />
+            <Tooltip content={<CustomTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+      )}
     </WidgetShell>
   )
 }

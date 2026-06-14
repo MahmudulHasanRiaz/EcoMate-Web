@@ -20,23 +20,32 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 export function RevenueChart({ dateRange }: WidgetProps) {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['dashboard-revenue', dateRange.start.toISOString(), dateRange.end.toISOString()],
-    queryFn: () => dashboardApi.getStats(dateRange.start.toISOString(), dateRange.end.toISOString()),
+    queryKey: ['dashboard-revenue-payment', dateRange.start.toISOString(), dateRange.end.toISOString()],
+    queryFn: () => dashboardApi.getRevenueByPaymentMethod(dateRange.start.toISOString(), dateRange.end.toISOString()),
   })
 
-  const chartData = data?.data.totalRevenue ? [{ name: 'Revenue', total: data.data.totalRevenue }] : []
+  const chartData = (data?.data || []).map(item => ({
+    name: item.method.toUpperCase(),
+    total: item.revenue
+  }))
 
   return (
-    <WidgetShell title="Revenue" isLoading={isLoading} error={error} onRetry={() => refetch()}>
-      <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(156, 163, 175, 0.1)" />
-          <XAxis dataKey="name" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} dy={10} />
-          <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} dx={-5} />
-          <Tooltip content={<CustomTooltip />} cursor={false} />
-          <Bar dataKey="total" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={120} />
-        </BarChart>
-      </ResponsiveContainer>
+    <WidgetShell title="Revenue by Payment Method" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+      {chartData.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-[250px] text-muted-foreground text-sm">
+          No revenue recorded in this period
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(156, 163, 175, 0.1)" />
+            <XAxis dataKey="name" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+            <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} dx={-5} />
+            <Tooltip content={<CustomTooltip />} cursor={false} />
+            <Bar dataKey="total" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={60} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
     </WidgetShell>
   )
 }

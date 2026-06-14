@@ -36,7 +36,7 @@ export class DashboardService {
       this.prisma.product.count({ where: { isActive: true } }),
       this.prisma.order.findMany({
         where: { ...dateFilter },
-        take: 5,
+        take: 20,
         orderBy: { createdAt: 'desc' },
         include: { status: true, _count: { select: { items: true } } },
       }),
@@ -108,10 +108,11 @@ export class DashboardService {
       where: { manageStock: true },
       select: { id: true, name: true, slug: true, sku: true, stock: true, lowStockQty: true, images: true },
     });
-    return products
-      .filter(p => p.stock <= (p.lowStockQty || 0))
-      .sort((a, b) => a.stock - b.stock)
-      .slice(0, 20);
+    const lowStock = products.filter(p => p.stock <= (p.lowStockQty || 0));
+    return {
+      count: lowStock.length,
+      products: lowStock.sort((a, b) => a.stock - b.stock).slice(0, 20),
+    };
   }
 
   async getTopProducts(startDate?: string, endDate?: string, limit = 10) {
