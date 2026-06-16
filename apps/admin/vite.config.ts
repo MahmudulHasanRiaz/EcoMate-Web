@@ -10,9 +10,14 @@ import { playwright } from '@vitest/browser-playwright'
 export default defineConfig({
   base: '/admin/',
   server: {
+    host: '0.0.0.0',
     proxy: {
       '/uploads': 'http://localhost:4000',
       '/assets': 'http://localhost:4000',
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
     },
   },
   plugins: [

@@ -68,8 +68,12 @@ export function UserAuthForm({
 
       toast.success(`Welcome back!`)
     } catch (error: any) {
-      const message =
-        error.response?.data?.message || 'Invalid email or password'
+      let message = error.response?.data?.message
+      if (!message) {
+        message = error.request
+          ? 'Server not responding. Check your connection.'
+          : 'Network error. Please try again.'
+      }
       toast.error(message)
     } finally {
       setIsLoading(false)
