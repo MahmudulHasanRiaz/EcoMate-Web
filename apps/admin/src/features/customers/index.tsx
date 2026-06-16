@@ -214,7 +214,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
                           {order.status.name}
                         </Badge>
                       </TableCell>
-                      <TableCell>৳{order.total.toFixed(2)}</TableCell>
+                      <TableCell>৳{Number(order.total).toFixed(2)}</TableCell>
                       <TableCell className='text-nowrap'>
                         {format(new Date(order.createdAt), 'MMM d, yyyy')}
                       </TableCell>
