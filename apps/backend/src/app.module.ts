@@ -47,6 +47,7 @@ import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
 import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
 import { BlockSettingsModule } from './block-settings/block-settings.module';
 import { SecurityModule } from './security/security.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { SecurityModule } from './security/security.module';
     BlockedEntriesModule,
     BlockSettingsModule,
     SecurityModule,
+    SearchModule,
   ],
   controllers: [OrderStatusController],
   providers: [
