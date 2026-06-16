@@ -10,7 +10,6 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -220,7 +219,7 @@ function OrderDetailPage() {
 
   return (
     <>
-      <Header fixed><Link to='/op/orders' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+      <Header fixed><Link to='/op/orders' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-center justify-between gap-4'>
           <div><h2 className='text-2xl font-bold tracking-tight'>{order.displayId}</h2><p className='text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p></div>

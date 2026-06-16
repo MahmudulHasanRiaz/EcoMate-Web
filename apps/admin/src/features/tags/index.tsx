@@ -7,7 +7,6 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -149,7 +148,7 @@ export function Tags() {
         <div className='flex items-center gap-2 me-auto'>
           <Search value={search} onChange={e => setSearch(e.target.value)} placeholder='Search tags...' />
         </div>
-        <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+        <ThemeSwitch /><ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between'>

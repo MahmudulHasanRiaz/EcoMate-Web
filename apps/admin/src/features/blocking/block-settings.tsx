@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { toast } from 'sonner'
 
@@ -27,7 +26,7 @@ export function BlockSettingsPage() {
       <>
         <Header fixed>
           <div className='me-auto' />
-          <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+          <ThemeSwitch /><ProfileDropdown />
         </Header>
         <Main><div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div></Main>
       </>
@@ -60,7 +59,7 @@ export function BlockSettingsPage() {
           {updateMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1' /> : <Save className='h-4 w-4 mr-1' />}
           Save
         </Button>
-        <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+        <ThemeSwitch /><ProfileDropdown />
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>

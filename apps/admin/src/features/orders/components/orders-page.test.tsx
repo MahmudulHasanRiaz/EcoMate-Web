@@ -5,7 +5,6 @@ import { Orders } from '../index'
 
 vi.mock('@/components/search', () => ({ Search: () => null }))
 vi.mock('@/components/theme-switch', () => ({ ThemeSwitch: () => null }))
-vi.mock('@/components/config-drawer', () => ({ ConfigDrawer: () => null }))
 vi.mock('@/components/profile-dropdown', () => ({ ProfileDropdown: () => null }))
 vi.mock('@/components/payment-logo', () => ({ PaymentLogo: () => null }))
 vi.mock('@/components/ui/sidebar', () => ({ SidebarTrigger: () => null, Separator: () => null }))

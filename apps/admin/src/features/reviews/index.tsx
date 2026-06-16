@@ -6,7 +6,6 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -92,7 +91,7 @@ export function Reviews() {
     <>
       <Header fixed>
         <div className='flex items-center gap-4 ms-auto'>
-          <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+          <ThemeSwitch /><ProfileDropdown />
         </div>
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>

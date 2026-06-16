@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
 import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -104,7 +103,6 @@ export function Products() {
       <Header fixed>
         <Search className='me-auto' />
         <ThemeSwitch />
-        <ConfigDrawer />
         <ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>

@@ -8,7 +8,6 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -154,7 +153,7 @@ export function ConvertLead({ id }: { id: string }) {
   if (isLoading) {
     return (
       <>
-        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ProfileDropdown /></Header>
         <Main><div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div></Main>
       </>
     )
@@ -163,7 +162,7 @@ export function ConvertLead({ id }: { id: string }) {
   if (!lead) {
     return (
       <>
-        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ProfileDropdown /></Header>
         <Main><div className='p-6 text-muted-foreground'>Lead not found</div></Main>
       </>
     )
@@ -172,7 +171,7 @@ export function ConvertLead({ id }: { id: string }) {
   if (lead.status === 'CONVERTED') {
     return (
       <>
-        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+        <Header fixed><Link to='/op/orders/incomplete-leads' className='me-auto'><Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button></Link><ThemeSwitch /><ProfileDropdown /></Header>
         <Main>
           <div className='p-6 text-center'>
             <p className='text-lg font-medium mb-2'>This lead has already been converted</p>
@@ -193,7 +192,7 @@ export function ConvertLead({ id }: { id: string }) {
         <Link to='/op/orders/incomplete-leads' className='me-auto'>
           <Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Incomplete Leads</Button>
         </Link>
-        <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+        <ThemeSwitch /><ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-center justify-between gap-4'>

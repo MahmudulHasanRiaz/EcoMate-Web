@@ -7,7 +7,6 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
@@ -319,7 +318,7 @@ export function CreateOrder() {
         <Button variant='ghost' onClick={() => navigate({ to: '/op/orders' })}>
           <ArrowLeft className='h-4 w-4 mr-1' /> Back to Orders
         </Button>
-        <ThemeSwitch /><ConfigDrawer /><ProfileDropdown />
+        <ThemeSwitch /><ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-center justify-between'>

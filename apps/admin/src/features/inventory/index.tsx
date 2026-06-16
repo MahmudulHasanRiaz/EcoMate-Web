@@ -6,7 +6,6 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -129,7 +128,7 @@ export function Inventory() {
 
   return (
     <>
-      <Header fixed><Search className='me-auto' /><ThemeSwitch /><ConfigDrawer /><ProfileDropdown /></Header>
+      <Header fixed><Search className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-center justify-between'>
           <div><h2 className='text-2xl font-bold tracking-tight'>Inventory</h2><p className='text-muted-foreground text-sm'>Monitor and adjust stock levels.</p></div>

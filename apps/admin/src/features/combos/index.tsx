@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Plus } from 'lucide-react'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -36,7 +35,6 @@ export function Combos() {
       <Header fixed>
         <Search className='me-auto' />
         <ThemeSwitch />
-        <ConfigDrawer />
         <ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>

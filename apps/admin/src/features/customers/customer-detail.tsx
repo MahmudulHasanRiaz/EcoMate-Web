@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
@@ -42,7 +41,6 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <Header fixed>
           <div className='me-auto' />
           <ThemeSwitch />
-          <ConfigDrawer />
           <ProfileDropdown />
         </Header>
         <Main>
@@ -87,7 +85,6 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
           </Badge>
         </div>
         <ThemeSwitch />
-        <ConfigDrawer />
         <ProfileDropdown />
       </Header>
 

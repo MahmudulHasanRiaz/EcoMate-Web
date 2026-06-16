@@ -10,10 +10,8 @@ import { opWidgets } from '../config/op-widgets'
 import { canAccess } from '../constants'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { TopNav } from '@/components/layout/top-nav'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import type { RoleKey } from '../types'
 
@@ -42,10 +40,8 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
   return (
     <>
       <Header>
-        <TopNav links={topNav} className="me-auto" />
-        <Search />
+        <Search className="me-auto" />
         <ThemeSwitch />
-        <ConfigDrawer />
         <ProfileDropdown />
       </Header>
       
@@ -133,9 +129,3 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
   )
 }
 
-const topNav = [
-  { title: 'Dashboard', href: 'dashboard/overview', isActive: true, disabled: false },
-  { title: 'Orders', href: 'dashboard/orders', isActive: false, disabled: true },
-  { title: 'Products', href: 'dashboard/products', isActive: false, disabled: true },
-  { title: 'Customers', href: 'dashboard/customers', isActive: false, disabled: true },
-]
