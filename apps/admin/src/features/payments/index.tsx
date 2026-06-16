@@ -18,7 +18,7 @@ import { PaymentLogo } from '@/components/payment-logo'
 import type { PaginationState } from '@tanstack/react-table'
 
 interface PaymentResponse {
-  id: string; orderId: string; method: string; amount: number;
+  id: string; orderId: string; gatewayCode: string; amount: number;
   transactionId?: string | null; screenshot?: string | null;
   status: string; verifiedBy?: string | null; verifiedAt?: string | null;
   notes?: string | null; createdAt: string;
@@ -81,7 +81,7 @@ export function Payments() {
                   <TableRow key={p.id}>
                     <TableCell className='font-mono text-sm'>{p.order.displayId}</TableCell>
                     <TableCell>
-                      <PaymentLogo method={p.method} size='sm' showName={false} />
+                      <PaymentLogo method={p.gatewayCode} size='sm' showName={false} />
                     </TableCell>
                     <TableCell className='font-medium'>৳{Number(p.amount).toFixed(2)}</TableCell>
                     <TableCell className='font-mono text-xs'>{p.transactionId || '—'}</TableCell>

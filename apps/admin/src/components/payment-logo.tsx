@@ -29,7 +29,7 @@ const labelMap: Record<string, string> = {
 }
 
 export function PaymentLogo({ method, size = 'md', showName = true }: { method: string; size?: 'sm' | 'md' | 'lg'; showName?: boolean }) {
-  const key = method.toLowerCase()
+  const key = (method || '').toLowerCase()
   const logo = logoMap[key]
   const label = labelMap[key] || method.toUpperCase()
   const sizeClass = size === 'sm' ? 'h-5' : size === 'lg' ? 'h-8' : 'h-6'
