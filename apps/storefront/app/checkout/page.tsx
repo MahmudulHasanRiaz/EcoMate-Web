@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
+import { PaymentLogo } from '@/components/PaymentLogo';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
@@ -194,7 +195,6 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
 
   if (selectedGw) {
     const gwName = selectedGw.name || selectedGw.code;
-    const gwIcon = gwName.slice(0, 2).toUpperCase();
     const modeLabel = selectedGw.mode === 'agent' ? 'Agent' : selectedGw.mode === 'merchant' ? 'Merchant' : 'Personal';
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -205,9 +205,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
                 <ArrowLeft size={20} />
               </button>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
-                  {gwIcon}
-                </div>
+                <PaymentLogo method={selectedGw.code} size="md" />
                 <div>
                   <h3 className="text-lg font-bold text-gray-800">{gwName}</h3>
                   <p className="text-xs text-gray-400">{modeLabel} Account</p>
@@ -276,16 +274,13 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
           )}
           {gateways.map(gw => {
             const gwName = gw.name || gw.code;
-            const gwIcon = gwName.slice(0, 2).toUpperCase();
             return (
               <button
                 key={gw.id}
                 onClick={() => handleSelectGateway(gw)}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
               >
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
-                  {gwIcon}
-                </div>
+                <PaymentLogo method={gw.code} size="md" />
                 <div className="flex-1 text-left">
                   <p className="font-bold text-gray-800">{gwName}</p>
                   {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}

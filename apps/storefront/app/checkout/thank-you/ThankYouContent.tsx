@@ -13,6 +13,7 @@ import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { CancelOrderButton } from '@/components/ThankYou/CancelOrderButton';
 import { submitPayment } from '@/lib/api/payments';
 import { getGateways } from '@/lib/api/delivery-areas';
+import { PaymentLogo } from '@/components/PaymentLogo';
 import { motion } from 'motion/react';
 
 export type PaymentStatus = 'paid' | 'pending' | 'partial' | 'failed' | 'cancelled';
@@ -392,9 +393,7 @@ export default function ThankYouContent({
                                   onClick={() => setSelectedGw(gw)}
                                   className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
                                 >
-                                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold bg-gray-500 text-white">
-                                    {(gw.name || gw.code).slice(0, 2).toUpperCase()}
-                                  </div>
+                                  <PaymentLogo method={gw.code} size="sm" />
                                   <div className="flex-1 text-left">
                                     <p className="text-[13px] font-bold text-gray-800">{gw.name || gw.code}</p>
                                     {gw.phoneNumber && <p className="text-[11px] text-gray-400">{gw.phoneNumber}</p>}
@@ -642,7 +641,10 @@ export default function ThankYouContent({
                 <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Payment</h3>
                 {(order.payments as any[]).map((p: any, i: number) => (
                   <div key={i} className="flex justify-between text-[12px]">
-                    <span className="text-gray-500 capitalize">{p.gatewayCode}</span>
+                    <div className="flex items-center gap-1.5">
+                      <PaymentLogo method={p.gatewayCode} size="sm" />
+                      <span className="text-gray-500 capitalize">{p.gatewayCode}</span>
+                    </div>
                     <span
                       className={`font-bold ${
                         p.status === 'PAID' ? 'text-green-600' : p.status === 'PENDING' || p.status === 'PAYMENT_PENDING' || p.status === 'UNPAID' ? 'text-amber-500' : 'text-gray-500'
