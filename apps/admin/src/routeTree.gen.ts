@@ -76,6 +76,7 @@ import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './rout
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
+import { Route as AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/$id/convert'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -461,6 +462,12 @@ const AuthenticatedOpPrintInvoiceIdRoute =
     path: '/invoice/$id',
     getParentRoute: () => AuthenticatedOpPrintRouteRoute,
   } as any)
+const AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute =
+  AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport.update({
+    id: '/op/orders/incomplete-leads/$id/convert',
+    path: '/op/orders/incomplete-leads/$id/convert',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -529,6 +536,7 @@ export interface FileRoutesByFullPath {
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
+  '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof authForgotPasswordRoute
@@ -597,6 +605,7 @@ export interface FileRoutesByTo {
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
+  '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -667,6 +676,7 @@ export interface FileRoutesById {
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
+  '/_authenticated/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -737,6 +747,7 @@ export interface FileRouteTypes {
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
     | '/op/settings/personal/'
+    | '/op/orders/incomplete-leads/$id/convert'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/forgot-password'
@@ -805,6 +816,7 @@ export interface FileRouteTypes {
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
     | '/op/settings/personal'
+    | '/op/orders/incomplete-leads/$id/convert'
   id:
     | '__root__'
     | '/_authenticated'
@@ -874,6 +886,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/settings/personal/'
+    | '/_authenticated/op/orders/incomplete-leads/$id/convert'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1361,6 +1374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpPrintInvoiceIdRouteImport
       parentRoute: typeof AuthenticatedOpPrintRouteRoute
     }
+    '/_authenticated/op/orders/incomplete-leads/$id/convert': {
+      id: '/_authenticated/op/orders/incomplete-leads/$id/convert'
+      path: '/op/orders/incomplete-leads/$id/convert'
+      fullPath: '/op/orders/incomplete-leads/$id/convert'
+      preLoaderRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -1486,6 +1506,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
+  AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1534,6 +1555,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:
     AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
+  AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute:
+    AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

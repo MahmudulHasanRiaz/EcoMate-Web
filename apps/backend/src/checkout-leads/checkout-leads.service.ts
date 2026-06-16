@@ -242,10 +242,16 @@ export class CheckoutLeadsService {
           create: items.map((i: any) => ({
             productId: i.productId,
             comboId: i.comboId,
+            variantId: i.variantId,
             quantity: i.quantity || 1,
             price: i.price || 0,
           })),
         },
+        paymentOptionType: overrides?.paymentMode === 'cod' ? 'CASH_ON_DELIVERY' 
+          : overrides?.paymentMode === 'partial' ? 'PARTIAL_PAYMENT' 
+          : overrides?.paymentMode === 'full' ? 'FULL_PAYMENT' 
+          : undefined,
+        partialAmount: overrides?.paymentMode === 'partial' ? (overrides.partialAmount ?? null) : undefined,
         timeline: [
           {
             status: initialStatus.name,
@@ -257,23 +263,57 @@ export class CheckoutLeadsService {
       },
     });
 
+    // Apply shipping charge, discount, notes from overrides
+    const shippingCharge = overrides?.shippingCharge ?? 0;
+    const discountAmount = overrides?.discount ?? 0;
+    const discountType = overrides?.discountType ?? 'flat';
+
+    // Build shipping address from overrides
+    let shippingAddress = overrides?.shippingAddress ?? (lead.address as any);
+    if (overrides?.district || overrides?.thana) {
+      shippingAddress = {
+        ...(typeof shippingAddress === 'object' ? shippingAddress : {}),
+        district: overrides.district,
+        thana: overrides.thana,
+        ...(overrides.shippingAddress ? (typeof overrides.shippingAddress === 'object' ? overrides.shippingAddress : {}) : {}),
+      };
+    }
+
     const subtotal = items.reduce(
       (s: number, i: any) => s + (i.price || 0) * (i.quantity || 1),
       0,
     );
+    const effectiveDiscount = discountType === 'percentage'
+      ? subtotal * (discountAmount / 100)
+      : discountAmount;
+    const total = Math.max(0, subtotal + shippingCharge - effectiveDiscount);
+
     await this.prisma.order.update({
       where: { id: order.id },
-      data: { subtotal, total: subtotal },
+      data: {
+        subtotal,
+        total,
+        shippingCharge,
+        discount: discountAmount,
+        discountType,
+        customerNotes: overrides?.customerNotes ?? null,
+        officeNotes: overrides?.officeNotes ?? null,
+        shippingAddress,
+      },
     });
 
     const pm = overrides?.paymentMethod ?? lead.paymentMethod;
     if (pm) {
+      const paymentAmount =
+        overrides?.paymentMode === 'partial' && overrides?.partialAmount
+          ? overrides.partialAmount
+          : total;
       const isPgw = pm === 'bkash_pgw';
       await this.prisma.payment.create({
         data: {
           orderId: order.id,
           gatewayCode: pm,
-          amount: subtotal,
+          amount: paymentAmount,
           status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
           verifiedBy: isPgw ? 'system' : null,
           verifiedAt: isPgw ? new Date() : null,

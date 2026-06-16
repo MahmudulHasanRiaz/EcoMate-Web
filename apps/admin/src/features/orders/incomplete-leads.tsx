@@ -327,8 +327,10 @@ export function IncompleteLeads() {
                             <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='h-7 w-7'><MoreHorizontal className='h-3.5 w-3.5' /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align='end'>
                               {l.status === 'PENDING' && (
-                                <DropdownMenuItem onClick={() => setEditingLead(l)}>
-                                  <Edit3 className='h-4 w-4 mr-2' />Convert with Edit
+                                <DropdownMenuItem asChild>
+                                  <Link to='/op/orders/incomplete-leads/$id/convert' params={{ id: l.id }}>
+                                    <Edit3 className='h-4 w-4 mr-2' />Convert with Edit
+                                  </Link>
                                 </DropdownMenuItem>
                               )}
                               {l.status === 'PENDING' && (
