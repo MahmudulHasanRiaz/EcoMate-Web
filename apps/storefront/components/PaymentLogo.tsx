@@ -28,6 +28,18 @@ const labelMap: Record<string, string> = {
   cash: 'Cash on Delivery',
 };
 
+const sizeMap = {
+  sm: { container: 'h-6 px-2', img: 'h-3.5' },
+  md: { container: 'h-8 px-3', img: 'h-5' },
+  lg: { container: 'h-10 px-4', img: 'h-6' },
+} as const;
+
+const fallbackSize = {
+  sm: 'w-6 h-6 text-[10px]',
+  md: 'w-8 h-8 text-xs',
+  lg: 'w-11 h-11 text-sm',
+} as const;
+
 export function PaymentLogo({
   method,
   size = 'md',
@@ -41,13 +53,12 @@ export function PaymentLogo({
   const key = (method || '').toLowerCase();
   const src = logoMap[key];
   const label = labelMap[key] || method.toUpperCase();
-
-  const dims = size === 'sm' ? 24 : size === 'lg' ? 44 : 32;
+  const dims = sizeMap[size];
 
   if (!src || imgError) {
     return (
       <div
-        className={`flex items-center justify-center rounded-lg bg-gray-100 text-gray-500 font-bold ${size === 'sm' ? 'w-6 h-6 text-[10px]' : size === 'lg' ? 'w-11 h-11 text-sm' : 'w-8 h-8 text-xs'}`}
+        className={`flex items-center justify-center rounded-lg bg-gray-100 text-gray-500 font-bold shrink-0 ${fallbackSize[size]}`}
       >
         {label.slice(0, 2).toUpperCase()}
       </div>
@@ -55,16 +66,16 @@ export function PaymentLogo({
   }
 
   return (
-    <div className="relative flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <div
-        className={`relative rounded-lg border border-gray-200 bg-white flex items-center justify-center overflow-hidden shrink-0 ${size === 'sm' ? 'w-7 h-7' : size === 'lg' ? 'w-12 h-12' : 'w-10 h-10'}`}
+        className={`relative rounded-md border border-gray-200 bg-white flex items-center justify-center overflow-hidden shrink-0 ${dims.container}`}
       >
         <Image
           src={src}
           alt={label}
-          width={dims}
-          height={dims}
-          className="object-contain p-1"
+          width={40}
+          height={20}
+          className={`${dims.img} w-auto object-contain`}
           onError={() => setImgError(true)}
         />
       </div>
