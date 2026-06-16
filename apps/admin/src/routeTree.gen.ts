@@ -25,6 +25,7 @@ import { Route as AuthenticatedOpIndexRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticated/mon/index'
 import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
+import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
 import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authenticated/op/print/route'
@@ -49,6 +50,7 @@ import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
 import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_authenticated/op/categories/index'
 import { Route as AuthenticatedOpCampaignsIndexRouteImport } from './routes/_authenticated/op/campaigns/index'
+import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authenticated/op/blocked/index'
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
@@ -58,6 +60,7 @@ import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/
 import { Route as AuthenticatedOpOrdersCreateRouteImport } from './routes/_authenticated/op/orders/create'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
+import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
@@ -156,6 +159,12 @@ const AuthenticatedMonOverviewRoute =
   AuthenticatedMonOverviewRouteImport.update({
     id: '/mon/overview',
     path: '/mon/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonBlockingSettingsRoute =
+  AuthenticatedMonBlockingSettingsRouteImport.update({
+    id: '/mon/blocking-settings',
+    path: '/mon/blocking-settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedErrorsErrorRoute =
@@ -302,6 +311,12 @@ const AuthenticatedOpCampaignsIndexRoute =
     path: '/op/campaigns/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpBlockedIndexRoute =
+  AuthenticatedOpBlockedIndexRouteImport.update({
+    id: '/op/blocked/',
+    path: '/op/blocked/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpAttributesIndexRoute =
   AuthenticatedOpAttributesIndexRouteImport.update({
     id: '/op/attributes/',
@@ -353,6 +368,12 @@ const AuthenticatedOpInventoryOverviewRoute =
   AuthenticatedOpInventoryOverviewRouteImport.update({
     id: '/op/inventory/overview',
     path: '/op/inventory/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpCustomersIdRoute =
+  AuthenticatedOpCustomersIdRouteImport.update({
+    id: '/op/customers/$id',
+    path: '/op/customers/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
@@ -485,11 +506,13 @@ export interface FileRoutesByFullPath {
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
@@ -499,6 +522,7 @@ export interface FileRoutesByFullPath {
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
+  '/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
   '/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
@@ -554,11 +578,13 @@ export interface FileRoutesByTo {
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
@@ -568,6 +594,7 @@ export interface FileRoutesByTo {
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
+  '/op/blocked': typeof AuthenticatedOpBlockedIndexRoute
   '/op/campaigns': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats': typeof AuthenticatedOpChatsIndexRoute
@@ -625,11 +652,13 @@ export interface FileRoutesById {
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
@@ -639,6 +668,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
+  '/_authenticated/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
   '/_authenticated/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/_authenticated/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
@@ -696,11 +726,13 @@ export interface FileRouteTypes {
     | '/op/print'
     | '/op/settings'
     | '/errors/$error'
+    | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
     | '/mon/'
     | '/op/'
     | '/mon/users/$id'
+    | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/orders/$id'
     | '/op/orders/create'
@@ -710,6 +742,7 @@ export interface FileRouteTypes {
     | '/mon/users/'
     | '/op/apps/'
     | '/op/attributes/'
+    | '/op/blocked/'
     | '/op/campaigns/'
     | '/op/categories/'
     | '/op/chats/'
@@ -765,11 +798,13 @@ export interface FileRouteTypes {
     | '/op/print'
     | '/op/settings'
     | '/errors/$error'
+    | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
     | '/mon'
     | '/op'
     | '/mon/users/$id'
+    | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/orders/$id'
     | '/op/orders/create'
@@ -779,6 +814,7 @@ export interface FileRouteTypes {
     | '/mon/users'
     | '/op/apps'
     | '/op/attributes'
+    | '/op/blocked'
     | '/op/campaigns'
     | '/op/categories'
     | '/op/chats'
@@ -835,11 +871,13 @@ export interface FileRouteTypes {
     | '/_authenticated/op/print'
     | '/_authenticated/op/settings'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
     | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
     | '/_authenticated/mon/users/$id'
+    | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
@@ -849,6 +887,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/users/'
     | '/_authenticated/op/apps/'
     | '/_authenticated/op/attributes/'
+    | '/_authenticated/op/blocked/'
     | '/_authenticated/op/campaigns/'
     | '/_authenticated/op/categories/'
     | '/_authenticated/op/chats/'
@@ -1015,6 +1054,13 @@ declare module '@tanstack/react-router' {
       path: '/mon/overview'
       fullPath: '/mon/overview'
       preLoaderRoute: typeof AuthenticatedMonOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/blocking-settings': {
+      id: '/_authenticated/mon/blocking-settings'
+      path: '/mon/blocking-settings'
+      fullPath: '/mon/blocking-settings'
+      preLoaderRoute: typeof AuthenticatedMonBlockingSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -1185,6 +1231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpCampaignsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/blocked/': {
+      id: '/_authenticated/op/blocked/'
+      path: '/op/blocked'
+      fullPath: '/op/blocked/'
+      preLoaderRoute: typeof AuthenticatedOpBlockedIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/attributes/': {
       id: '/_authenticated/op/attributes/'
       path: '/op/attributes'
@@ -1246,6 +1299,13 @@ declare module '@tanstack/react-router' {
       path: '/op/inventory/overview'
       fullPath: '/op/inventory/overview'
       preLoaderRoute: typeof AuthenticatedOpInventoryOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/customers/$id': {
+      id: '/_authenticated/op/customers/$id'
+      path: '/op/customers/$id'
+      fullPath: '/op/customers/$id'
+      preLoaderRoute: typeof AuthenticatedOpCustomersIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/users/$id': {
@@ -1471,11 +1531,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPrintRouteRoute: typeof AuthenticatedOpPrintRouteRouteWithChildren
   AuthenticatedOpSettingsRouteRoute: typeof AuthenticatedOpSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
+  AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
@@ -1485,6 +1547,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
   AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
   AuthenticatedOpAttributesIndexRoute: typeof AuthenticatedOpAttributesIndexRoute
+  AuthenticatedOpBlockedIndexRoute: typeof AuthenticatedOpBlockedIndexRoute
   AuthenticatedOpCampaignsIndexRoute: typeof AuthenticatedOpCampaignsIndexRoute
   AuthenticatedOpCategoriesIndexRoute: typeof AuthenticatedOpCategoriesIndexRoute
   AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
@@ -1517,11 +1580,13 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpSettingsRouteRoute:
     AuthenticatedOpSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
+  AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
@@ -1532,6 +1597,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
   AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,
   AuthenticatedOpAttributesIndexRoute: AuthenticatedOpAttributesIndexRoute,
+  AuthenticatedOpBlockedIndexRoute: AuthenticatedOpBlockedIndexRoute,
   AuthenticatedOpCampaignsIndexRoute: AuthenticatedOpCampaignsIndexRoute,
   AuthenticatedOpCategoriesIndexRoute: AuthenticatedOpCategoriesIndexRoute,
   AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,

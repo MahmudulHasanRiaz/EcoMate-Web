@@ -53,6 +53,7 @@ export const sidebarData: SidebarData = {
         { title: 'Shipments', url: '/op/shipments', icon: Truck },
         { title: 'Refunds', url: '/op/refunds', icon: RefreshCw },
         { title: 'Coupons', url: '/op/coupons', icon: Percent },
+        { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck },
         { title: 'Media Gallery', url: '/op/media', icon: Monitor },
       ],
     },
@@ -64,6 +65,7 @@ export const sidebarData: SidebarData = {
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
         { title: 'Analytics', url: '/mon/analytics', icon: Monitor },
         { title: 'User Management', url: '/mon/users', icon: Users },
+        { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck },
       ],
     },
 

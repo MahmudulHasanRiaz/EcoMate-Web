@@ -43,6 +43,10 @@ import { CacheModule } from './cache/cache.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
+import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
+import { BlockSettingsModule } from './block-settings/block-settings.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -84,6 +88,9 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     ImagesModule,
     AddressesModule,
     CacheModule,
+    BlockedEntriesModule,
+    BlockSettingsModule,
+    SecurityModule,
   ],
   controllers: [OrderStatusController],
   providers: [
@@ -95,6 +102,16 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationIdMiddleware)
+      .forRoutes('*');
+    consumer
+      .apply(IpBlockMiddleware)
+      .exclude(
+        'api/blocked-entries/(.*)',
+        'api/block-settings/(.*)',
+        'api/security/(.*)',
+      )
+      .forRoutes('*');
   }
 }

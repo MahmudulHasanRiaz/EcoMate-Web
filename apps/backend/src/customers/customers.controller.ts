@@ -1,4 +1,4 @@
-import { Controller, Get, BadRequestException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, NotFoundException, BadRequestException, Query } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -27,5 +27,27 @@ export class CustomersController {
     const summary = await this.svc.getOrderSummary(phone);
     if (!summary) return { customer: null, summary: null, recentOrders: [] };
     return summary;
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    const result = await this.svc.findOne(id);
+    if (!result) throw new NotFoundException('Customer not found');
+    return result;
+  }
+
+  @Roles('superadmin', 'admin')
+  @Post(':id/block')
+  async blockPhone(@Param('id') id: string) {
+    await this.svc.blockPhone(id);
+    return { success: true };
+  }
+
+  @Roles('superadmin', 'admin')
+  @Post(':id/unblock')
+  async unblockPhone(@Param('id') id: string) {
+    await this.svc.unblockPhone(id);
+    return { success: true };
   }
 }

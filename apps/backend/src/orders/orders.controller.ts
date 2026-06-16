@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Sse,
+  Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { OrdersService } from './orders.service';
@@ -89,8 +90,8 @@ export class OrdersController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post()
-  create(@Body() dto: CreateOrderDto) {
-    return this.svc.create(dto);
+  create(@Body() dto: CreateOrderDto, @Req() req: any) {
+    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '');
   }
 
   @Roles('superadmin', 'admin')

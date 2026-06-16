@@ -20,6 +20,8 @@ import {
 import { PaymentStatus, PaymentOptionType } from '@prisma/client';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
+import { SecurityService } from '../security/security.service';
 
 @Injectable()
 export class OrdersService {
@@ -29,6 +31,8 @@ export class OrdersService {
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
     private readonly inventoryService: InventoryService,
+    private readonly blockedEntries: BlockedEntriesService,
+    private readonly security: SecurityService,
   ) {}
 
   private parseTimeline(timeline: unknown): any[] {
@@ -254,7 +258,7 @@ export class OrdersService {
     return this.transformOrder(order);
   }
 
-  async create(dto: CreateOrderDto) {
+  async create(dto: CreateOrderDto, clientIp?: string) {
     const displayId = await this.generateDisplayId();
     const initialStatus = await this.prisma.orderStatus.findFirst({
       where: { isInitial: true },
@@ -327,12 +331,38 @@ export class OrdersService {
       dto.guestPhone = normalized;
     }
 
+    if (dto.customerId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: dto.customerId },
+        select: { status: true },
+      });
+      if (user?.status === 'suspended') {
+        throw new BadRequestException('This account has been blocked. Please contact support.');
+      }
+    }
+
     if (dto.guestPhone && dto.guestName && !dto.customerId) {
+      const isBlocked = await this.customersService.isPhoneBlocked(dto.guestPhone);
+      if (isBlocked) {
+        throw new BadRequestException('This phone number has been blocked. Please contact support.');
+      }
       const customer = await this.customersService.findOrCreateCustomer(
         dto.guestPhone,
         dto.guestName,
       );
       dto.customerId = customer.id;
+    }
+
+    if (clientIp) {
+      const orderBlockIp = await this.blockedEntries.findOrderBlockedIp(clientIp);
+      if (orderBlockIp) {
+        throw new BadRequestException('Orders from your IP address are temporarily restricted. Please contact support.');
+      }
+    }
+
+    const blockedPhone = dto.guestPhone ? await this.blockedEntries.findBlockedPhone(dto.guestPhone) : null;
+    if (blockedPhone) {
+      throw new BadRequestException('This phone number has been blocked. Please contact support.');
     }
 
     let couponCode: string | null = null;
@@ -487,6 +517,8 @@ export class OrdersService {
     });
 
     await this.deductStock(dto.items, displayId);
+
+    this.security.recordOrder(dto.guestPhone || '', clientIp || '');
 
     this.events.emit({
       type: 'order.created',

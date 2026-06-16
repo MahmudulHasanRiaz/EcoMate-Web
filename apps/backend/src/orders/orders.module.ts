@@ -5,10 +5,11 @@ import { OrdersEventService } from './orders-event.service';
 import { TrackingModule } from '../tracking/tracking.module';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 
 @Module({
   controllers: [OrdersController],
   providers: [OrdersService, OrdersEventService],
-  imports: [TrackingModule, CustomersModule, InventoryModule],
+  imports: [TrackingModule, CustomersModule, InventoryModule, BlockedEntriesModule],
 })
 export class OrdersModule {}

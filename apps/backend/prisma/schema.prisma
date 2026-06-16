@@ -738,6 +738,43 @@ model CmsPage {
   updatedAt DateTime @updatedAt
 }
 
+model BlockedIp {
+  id          String    @id @default(uuid())
+  ip          String    @unique
+  blockType   String    @default("order")
+  reason      String?
+  blockedAt   DateTime  @default(now())
+  blockedBy   String?
+  isActive    Boolean   @default(true)
+  whitelisted Boolean   @default(false)
+  autoBlocked Boolean   @default(false)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model BlockedPhone {
+  id          String    @id @default(uuid())
+  phone       String    @unique
+  reason      String?
+  blockedAt   DateTime  @default(now())
+  blockedBy   String?
+  isActive    Boolean   @default(true)
+  whitelisted Boolean   @default(false)
+  autoBlocked Boolean   @default(false)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([phone])
+  @@index([isActive])
+}
+
+model BlockSettings {
+  id   String @id @default("singleton")
+  data Json
+}
+
 model Tag {
   id        String    @id @default(uuid())
   name      String    @unique

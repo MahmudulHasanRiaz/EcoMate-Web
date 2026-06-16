@@ -49,6 +49,76 @@ export class CustomersService {
     };
   }
 
+  async findOne(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+        email: true,
+        phoneNumber: true,
+        status: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    if (!user || user.role !== 'customer') return null;
+
+    const orders = await this.prisma.order.findMany({
+      where: { customerId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        displayId: true,
+        total: true,
+        statusId: true,
+        createdAt: true,
+        status: { select: { name: true, color: true } },
+      },
+    });
+
+    const totalOrders = orders.length;
+    const totalSpent = orders.reduce((s, o) => s + Number(o.total), 0);
+    const lastOrder = orders[0] || null;
+
+    return {
+      customer: user,
+      summary: {
+        totalOrders,
+        totalSpent,
+        lastOrderDate: lastOrder?.createdAt || null,
+      },
+      recentOrders: orders.slice(0, 10),
+    };
+  }
+
+  async isPhoneBlocked(phone: string): Promise<boolean> {
+    const normalized = normalizePhone(phone);
+    if (!normalized) return false;
+    const user = await this.prisma.user.findFirst({
+      where: { phoneNumber: normalized, role: 'customer', status: 'suspended' },
+      select: { id: true },
+    });
+    return !!user;
+  }
+
+  async blockPhone(id: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: 'suspended' },
+    });
+  }
+
+  async unblockPhone(id: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: 'active' },
+    });
+  }
+
   async findOrCreateCustomer(
     phone: string,
     name: string,

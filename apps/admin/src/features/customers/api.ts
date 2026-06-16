@@ -63,6 +63,35 @@ export interface OrderSummary {
   recentOrders: RecentOrder[]
 }
 
+export interface CustomerDetail {
+  customer: {
+    id: string
+    firstName: string
+    lastName: string
+    username: string
+    email: string
+    phoneNumber: string
+    status: string
+    role: string
+    createdAt: string
+    updatedAt: string
+  }
+  summary: {
+    totalOrders: number
+    totalSpent: number
+    lastOrderDate: string | null
+  }
+  recentOrders: RecentOrder[]
+}
+
+export interface BlockedIp {
+  id: string
+  ip: string
+  reason: string | null
+  blockedAt: string
+  blockedBy: string | null
+}
+
 export const customersApi = {
   list: (query?: CustomersQuery) =>
     apiClient.get<PaginatedResponse<CustomerResponse>>('/users', {
@@ -71,4 +100,24 @@ export const customersApi = {
 
   getOrderSummary: (phone: string) =>
     apiClient.get<OrderSummary>(`/customers/order-summary?phone=${phone}`),
+
+  getById: (id: string) =>
+    apiClient.get<CustomerDetail>(`/customers/${id}`).then(r => r.data),
+
+  blockPhone: (id: string) =>
+    apiClient.post(`/customers/${id}/block`).then(r => r.data),
+
+  unblockPhone: (id: string) =>
+    apiClient.post(`/customers/${id}/unblock`).then(r => r.data),
+}
+
+export const blockedIpsApi = {
+  list: () =>
+    apiClient.get<BlockedIp[]>('/blocked-ips').then(r => r.data),
+
+  create: (ip: string, reason?: string) =>
+    apiClient.post('/blocked-ips', { ip, reason }).then(r => r.data),
+
+  remove: (id: string) =>
+    apiClient.delete(`/blocked-ips/${id}`).then(r => r.data),
 }

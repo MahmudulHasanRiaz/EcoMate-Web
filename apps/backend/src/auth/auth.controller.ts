@@ -5,6 +5,7 @@ import {
   Put,
   Body,
   Res,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -24,10 +25,14 @@ import { RefreshJwtGuard } from './refresh-jwt.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { SecurityService } from '../security/security.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly security: SecurityService,
+  ) {}
 
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 10 } })
@@ -54,16 +59,23 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
+    @Req() req: any,
   ) {
-    const result = await this.authService.login(dto);
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env['NODE_ENV'] === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
-    return { accessToken: result.accessToken, user: result.user };
+    try {
+      const result = await this.authService.login(dto);
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env['NODE_ENV'] === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+      return { accessToken: result.accessToken, user: result.user };
+    } catch (error) {
+      const ip = req?.ip || req?.socket?.remoteAddress || '';
+      if (ip) this.security.recordFailedLogin(ip);
+      throw error;
+    }
   }
 
   @Throttle({ default: { ttl: 60000, limit: 20 } })

@@ -7,8 +7,9 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ChevronDown, ChevronUp, Package, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Package, Loader2, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
+import { useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import {
   Table,
@@ -32,77 +33,92 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { useCustomersQuery, useCustomerOrderSummary } from './hooks'
 import { type CustomerResponse } from './api'
 
-const columns: ColumnDef<CustomerResponse>[] = [
-  {
-    id: 'fullName',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Name' />
-    ),
-    cell: ({ row }) => {
-      const { firstName, lastName } = row.original
-      return (
-        <span className='font-medium'>
-          {firstName} {lastName}
-        </span>
-      )
+function makeColumns(navigate: ReturnType<typeof useNavigate>): ColumnDef<CustomerResponse>[] {
+  return [
+    {
+      id: 'fullName',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Name' />
+      ),
+      cell: ({ row }) => {
+        const { firstName, lastName } = row.original
+        return (
+          <span className='font-medium'>
+            {firstName} {lastName}
+          </span>
+        )
+      },
     },
-  },
-  {
-    accessorKey: 'phoneNumber',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Phone' />
-    ),
-    cell: ({ row }) => (
-      <span className='text-nowrap'>{row.getValue('phoneNumber')}</span>
-    ),
-    enableSorting: false,
-  },
-  {
-    accessorKey: 'email',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Email' />
-    ),
-    cell: ({ row }) => (
-      <span className='text-nowrap'>{row.getValue('email')}</span>
-    ),
-  },
-  {
-    accessorKey: 'createdAt',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Registered Date' />
-    ),
-    cell: ({ row }) => {
-      const date = row.getValue('createdAt') as string
-      return (
-        <span className='text-nowrap'>
-          {date ? format(new Date(date), 'MMM d, yyyy') : '-'}
-        </span>
-      )
+    {
+      accessorKey: 'phoneNumber',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Phone' />
+      ),
+      cell: ({ row }) => (
+        <span className='text-nowrap'>{row.getValue('phoneNumber')}</span>
+      ),
+      enableSorting: false,
     },
-  },
-  {
-    id: 'totalOrders',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title='Total Orders' />
-    ),
-    cell: ({ row }) => {
-      return (
-        <Button
-          variant='ghost'
-          size='sm'
-          className='h-8 text-muted-foreground'
-          onClick={(e) => {
-            e.stopPropagation()
-            row.toggleExpanded()
-          }}
-        >
-          View
-        </Button>
-      )
+    {
+      accessorKey: 'email',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Email' />
+      ),
+      cell: ({ row }) => (
+        <span className='text-nowrap'>{row.getValue('email')}</span>
+      ),
     },
-    enableSorting: false,
-  },
-]
+    {
+      accessorKey: 'createdAt',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Registered Date' />
+      ),
+      cell: ({ row }) => {
+        const date = row.getValue('createdAt') as string
+        return (
+          <span className='text-nowrap'>
+            {date ? format(new Date(date), 'MMM d, yyyy') : '-'}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'totalOrders',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Orders' />
+      ),
+      cell: ({ row }) => {
+        return (
+          <div className='flex items-center gap-1'>
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-8 px-2 text-muted-foreground'
+              onClick={(e) => {
+                e.stopPropagation()
+                row.toggleExpanded()
+              }}
+            >
+              <ChevronDown className='h-4 w-4' />
+            </Button>
+            <Button
+              variant='outline'
+              size='sm'
+              className='h-8 px-2'
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate({ to: `/op/customers/${row.original.id}` })
+              }}
+            >
+              <ExternalLink className='h-3.5 w-3.5' />
+            </Button>
+          </div>
+        )
+      },
+      enableSorting: false,
+    },
+  ]
+}
 
 function CustomerDetail({ customer }: { customer: CustomerResponse }) {
   const { data: orderSummary, isLoading } = useCustomerOrderSummary(
@@ -231,6 +247,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
 }
 
 export function Customers() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -244,6 +261,8 @@ export function Customers() {
     perPage: pagination.pageSize,
     search: search || undefined,
   })
+
+  const columns = makeColumns(navigate)
 
   const table = useReactTable({
     data: data?.data || [],
