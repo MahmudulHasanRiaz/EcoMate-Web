@@ -193,6 +193,7 @@ export class OrdersController {
     return this.svc.getStaff();
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Get('stream/updates')
   @Sse()
   streamUpdates(): Observable<MessageEvent> {

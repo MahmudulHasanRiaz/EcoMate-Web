@@ -12,10 +12,11 @@ export function useTasksQuery(query: {
   sort?: string
   order?: string
 }) {
-  return useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['tasks', query],
     queryFn: () => tasksApi.list(query).then((r) => r.data),
   })
+  return { data, isLoading, isError, error }
 }
 
 export function useTaskMutations() {

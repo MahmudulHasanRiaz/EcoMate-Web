@@ -3,12 +3,16 @@ import { Injectable } from '@nestjs/common';
 @Injectable()
 export class EmailService {
   async sendOtp(email: string, otp: string) {
-    console.log(`[EmailService] Sending OTP to ${email}: ${otp}`);
+    if (process.env['NODE_ENV'] === 'production') {
+      throw new Error('Email service not configured. Set SMTP_* env vars.');
+    }
+    console.log(`[EmailService] DEV: Sending OTP to ${email}: ${otp}`);
   }
 
   async sendVerificationEmail(email: string, token: string) {
-    console.log(
-      `[EmailService] Sending verification email to ${email}: token=${token}`,
-    );
+    if (process.env['NODE_ENV'] === 'production') {
+      throw new Error('Email service not configured. Set SMTP_* env vars.');
+    }
+    console.log(`[EmailService] DEV: Sending verification email to ${email}: token=${token}`);
   }
 }

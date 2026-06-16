@@ -19,7 +19,25 @@ export default async function FaqPage() {
     { question: "How can I track my order?", answer: "You can track your order by entering your order ID or mobile number on the Track Order page." },
   ];
 
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((faq) => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer,
+      },
+    })),
+  };
+
   return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
     <div className="max-w-4xl mx-auto px-4 py-8 md:py-16">
       <div className="text-center mb-10">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-blue/10 text-brand-blue rounded-full mb-4">
@@ -63,5 +81,6 @@ export default async function FaqPage() {
         </a>
       </div>
     </div>
+    </>
   );
 }

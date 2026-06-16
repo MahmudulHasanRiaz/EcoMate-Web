@@ -94,6 +94,16 @@ export default async function RootLayout({
       initialConfig?.social?.instagram,
       initialConfig?.social?.youtube,
     ].filter(Boolean),
+    contactPoint: {
+      '@type': 'ContactPoint',
+      telephone: initialConfig?.store?.phone || undefined,
+      email: initialConfig?.store?.email || undefined,
+      contactType: 'customer service',
+    },
+    address: initialConfig?.store?.address ? {
+      '@type': 'PostalAddress',
+      streetAddress: initialConfig.store.address,
+    } : undefined,
   };
 
   return (
@@ -103,7 +113,7 @@ export default async function RootLayout({
     >
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#16a34a" />
+        <meta name="theme-color" content="#0089CD" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="EcoMate" />

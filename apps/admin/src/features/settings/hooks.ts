@@ -3,10 +3,11 @@ import { toast } from 'sonner'
 import { settingsApi } from './api'
 
 export function useSettingsQuery() {
-  return useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['settings'],
     queryFn: () => settingsApi.get().then((r) => r.data),
   })
+  return { data, isLoading, isError, error }
 }
 
 export function useSettingsMutation() {

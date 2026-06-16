@@ -1,17 +1,14 @@
 {
-  "name": "EcoMate Store",
-  "short_name": "EcoMate",
-  "description": "Premium products and services",
+  "name": "Fixed Plus",
+  "short_name": "Fixed Plus",
+  "description": "EcoMate - Your trusted online store",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#16a34a",
+  "theme_color": "#0089CD",
   "icons": [
-    {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/icon-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512x512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }

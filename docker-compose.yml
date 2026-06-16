@@ -1,0 +1,142 @@
+version: "3.8"
+
+networks:
+  ecomate-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  uploads-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ecomate_web}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    volumes:
+      - uploads-data:/app/uploads
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://mac.riaz.com.bd}
+      APP_URL: ${APP_URL:-https://mac.riaz.com.bd}
+      STOREFRONT_URL: ${STOREFRONT_URL:-https://mac.riaz.com.bd}
+      META_PIXEL_ID: ${META_PIXEL_ID:-}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      TIKTOK_PIXEL_CODE: ${TIKTOK_PIXEL_CODE:-}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    ports:
+      - "4000:4000"
+
+  backend-migrate:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    networks:
+      - ecomate-network
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed || true"
+
+  storefront:
+    build:
+      context: ./apps/storefront
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://mac.riaz.com.bd/api}
+      NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://mac.riaz.com.bd}
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    ports:
+      - "3000:3000"
+
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    environment:
+      VITE_API_URL: ${ADMIN_VITE_API_URL:-/api}
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    ports:
+      - "8080:80"
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - storefront
+      - admin
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

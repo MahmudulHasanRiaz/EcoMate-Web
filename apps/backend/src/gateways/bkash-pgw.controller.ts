@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Query, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, Res, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -60,8 +60,9 @@ export class BkashPgwController {
           );
           return;
         }
-      } catch {
-        /* fall through */
+      } catch (err) {
+        Logger.error(`bKash callback error: ${err}`, 'BkashPgwController');
+        throw new InternalServerErrorException('bKash payment processing failed');
       }
     }
     const orderRow = await this.prisma.order.findUnique({

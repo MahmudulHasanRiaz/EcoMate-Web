@@ -197,7 +197,7 @@ export function Orders() {
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order],
     queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order }).then(r => r.data),
   })
@@ -270,7 +270,15 @@ export function Orders() {
       <Main className='flex flex-1 flex-col gap-4'>
         <div className='flex items-end justify-between'>
           <div>
-            <h2 className='text-2xl font-bold tracking-tight'>Orders</h2>
+            <div className='flex items-center gap-3'>
+              <h2 className='text-2xl font-bold tracking-tight'>Orders</h2>
+              {isFetching && (
+                <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                  <Loader2 className='h-3 w-3 animate-spin' />
+                  Refreshing...
+                </div>
+              )}
+            </div>
             <p className='text-muted-foreground text-sm'>{totalOrders} orders found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}</p>
           </div>
           <Button onClick={() => navigate({ to: '/op/orders/create' })}>

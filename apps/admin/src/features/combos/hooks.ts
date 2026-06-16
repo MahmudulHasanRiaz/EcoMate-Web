@@ -5,8 +5,9 @@ export function useCombosQuery(query: {
   page?: number; perPage?: number; search?: string;
   sort?: string; order?: string;
 }) {
-  return useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['combos', query],
     queryFn: () => combosApi.list(query).then((r) => r.data),
   })
+  return { data, isLoading, isError, error }
 }

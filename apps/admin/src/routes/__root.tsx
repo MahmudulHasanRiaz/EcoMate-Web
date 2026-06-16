@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 // Devtools are heavy (Recharts + devtools UI). Load them on demand in dev mode only.
 /*
@@ -37,9 +38,16 @@ function Devtools() {
 }
 */
 
-export const Route = createRootRouteWithContext<{
+export interface RouterContext {
   queryClient: QueryClient
-}>()({
+  userRole: string | null
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
+  beforeLoad: () => {
+    const { user } = useAuthStore.getState().auth
+    return { userRole: user?.role ?? null }
+  },
   component: () => {
     return (
       <>

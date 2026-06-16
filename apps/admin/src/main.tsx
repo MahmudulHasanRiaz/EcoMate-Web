@@ -65,7 +65,7 @@ const queryClient = new QueryClient({
 // Create a new router instance
 const router = createRouter({
   routeTree,
-  context: { queryClient },
+  context: { queryClient, userRole: null },
   // 'intent' = preload when user hovers/focuses a link. Previously this
   // caused many modulepreload links to be added to the initial HTML, which
   // slowed first paint on slow connections. Keep intent for in-app links but

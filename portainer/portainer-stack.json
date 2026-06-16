@@ -1,0 +1,27 @@
+{
+  "version": "2",
+  "name": "ecomate",
+  "description": "EcoMate E-Commerce Platform - Full Stack Deployment",
+  "note": "Deploy via Portainer UI. Create the stack with all env vars below.",
+  "repository": {
+    "url": "https://github.com/your-org/ecomate-web",
+    "stackfile": "docker-compose.yml"
+  },
+  "env": [
+    { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
+    { "name": "POSTGRES_PASSWORD", "label": "PostgreSQL Password", "default": "postgres" },
+    { "name": "POSTGRES_DB", "label": "PostgreSQL Database", "default": "ecomate_web" },
+    { "name": "JWT_SECRET", "label": "JWT Secret (change this!)", "default": "" },
+    { "name": "JWT_REFRESH_SECRET", "label": "JWT Refresh Secret (change this!)", "default": "" },
+    { "name": "CORS_ORIGIN", "label": "CORS Origins (comma separated)", "default": "https://mac.riaz.com.bd" },
+    { "name": "APP_URL", "label": "App URL", "default": "https://mac.riaz.com.bd" },
+    { "name": "STOREFRONT_URL", "label": "Storefront URL", "default": "https://mac.riaz.com.bd" },
+    { "name": "STORE_NEXT_PUBLIC_API_URL", "label": "Storefront API URL", "default": "https://mac.riaz.com.bd/api" },
+    { "name": "STORE_NEXT_PUBLIC_STOREFRONT_URL", "label": "Storefront Public URL", "default": "https://mac.riaz.com.bd" },
+    { "name": "ADMIN_VITE_API_URL", "label": "Admin API URL", "default": "/api" },
+    { "name": "META_PIXEL_ID", "label": "Meta Pixel ID", "default": "" },
+    { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token", "default": "" },
+    { "name": "TIKTOK_PIXEL_CODE", "label": "TikTok Pixel Code", "default": "" },
+    { "name": "TIKTOK_ACCESS_TOKEN", "label": "TikTok Access Token", "default": "" }
+  ]
+}

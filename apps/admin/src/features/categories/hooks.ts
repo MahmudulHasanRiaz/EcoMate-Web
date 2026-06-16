@@ -3,10 +3,11 @@ import { toast } from 'sonner'
 import { categoriesApi, type CategoriesQuery } from './api'
 
 export function useCategoriesQuery(query: CategoriesQuery) {
-  return useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['categories', query],
     queryFn: () => categoriesApi.list(query).then((r) => r.data),
   })
+  return { data, isLoading, isError, error }
 }
 
 export function useCategoryMutations() {

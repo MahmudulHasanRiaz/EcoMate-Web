@@ -48,7 +48,7 @@ export function Products() {
     return flatten(allCats || [], 0)
   }, [allCats])
 
-  const { data, isLoading } = useProductsQuery({
+  const { data, isLoading, isFetching } = useProductsQuery({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
     categoryId: filterCategoryId[0] || undefined,
@@ -110,7 +110,15 @@ export function Products() {
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
           <div>
-            <h2 className='text-2xl font-bold tracking-tight'>Products</h2>
+            <div className='flex items-center gap-3'>
+              <h2 className='text-2xl font-bold tracking-tight'>Products</h2>
+              {isFetching && (
+                <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                  <Loader2 className='h-3 w-3 animate-spin' />
+                  Refreshing...
+                </div>
+              )}
+            </div>
             <p className='text-muted-foreground'>Manage products, inventory, and variants.</p>
           </div>
           <div className='flex items-center gap-2'>

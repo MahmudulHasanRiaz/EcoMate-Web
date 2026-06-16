@@ -7,6 +7,7 @@ import {
   BadRequestException,
   Body,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -48,6 +49,7 @@ export class UploadController {
   constructor(private readonly media: MediaService) {}
 
   @Post('image')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   @UseInterceptors(
     FileInterceptor('file', { storage: diskStorageConfig, limits: { fileSize: MAX_BYTES }, fileFilter }),
@@ -67,6 +69,7 @@ export class UploadController {
   }
 
   @Post('images')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   @UseInterceptors(
     FilesInterceptor('files', MAX_BULK, {
@@ -108,6 +111,7 @@ export class UploadController {
   }
 
   @Post('from-url')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadFromUrl(
     @Body('url') url: string,

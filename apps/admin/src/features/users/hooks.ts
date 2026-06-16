@@ -3,10 +3,11 @@ import { toast } from 'sonner'
 import { usersApi, type UsersQuery } from './api'
 
 export function useUsersQuery(query: UsersQuery) {
-  return useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['users', query],
     queryFn: () => usersApi.list(query).then((r) => r.data),
   })
+  return { data, isLoading, isError, error }
 }
 
 export function useUserMutations() {

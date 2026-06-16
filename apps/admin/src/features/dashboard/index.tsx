@@ -35,12 +35,12 @@ function formatNumber(n: number) {
 }
 
 export function Dashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, isFetching: isFetchingStats } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.getStats().then((r) => r.data),
   })
 
-  const { data: analytics } = useQuery({
+  const { data: analytics, isFetching: isFetchingAnalytics } = useQuery({
     queryKey: ['dashboard-analytics'],
     queryFn: () => dashboardApi.getAnalytics().then((r) => r.data),
   })
@@ -59,7 +59,15 @@ export function Dashboard() {
       {/* ===== Main ===== */}
       <Main>
         <div className='mb-2 flex items-center justify-between space-y-2'>
-          <h1 className='text-2xl font-bold tracking-tight'>Dashboard</h1>
+          <div className='flex items-center gap-3'>
+            <h1 className='text-2xl font-bold tracking-tight'>Dashboard</h1>
+            {(isFetchingStats || isFetchingAnalytics) && (
+              <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                <Loader2 className='h-3 w-3 animate-spin' />
+                Refreshing...
+              </div>
+            )}
+          </div>
           <div className='flex items-center space-x-2'>
             <Button>Download</Button>
           </div>

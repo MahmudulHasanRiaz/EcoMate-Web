@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
+import DOMPurify from "isomorphic-dompurify";
 import { getCmsPageBySlug } from "@/lib/api/cms-pages";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { pageMetadata } from "@/lib/metadata";
@@ -51,7 +52,7 @@ export default async function CmsPageView({ params }: PageProps) {
       <article className="max-w-4xl mx-auto px-4 py-12">
         <div
           className="cms-content bg-white rounded-2xl border border-gray-100 p-8 md:p-12 shadow-sm"
-          dangerouslySetInnerHTML={{ __html: page.content }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.content) }}
         />
         <div className="mt-10 pt-6 border-t border-gray-100 text-[12px] text-gray-400">
           Last updated: {new Date(page.updatedAt).toLocaleDateString()}

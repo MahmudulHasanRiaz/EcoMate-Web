@@ -15,6 +15,7 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableShutdownHooks();
 
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },

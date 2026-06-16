@@ -16,8 +16,7 @@ export class RefreshJwtStrategy extends PassportStrategy(
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey:
-        process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret',
+      secretOrKey: process.env['JWT_REFRESH_SECRET'] as string,
       passReqToCallback: true,
     });
   }

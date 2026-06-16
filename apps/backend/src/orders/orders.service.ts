@@ -363,124 +363,128 @@ export class OrdersService {
       couponCode = coupon.code;
     }
 
-    const order = await this.prisma.order.create({
-      data: {
-        displayId,
-        customerId: dto.customerId ?? null,
-        statusId: initialStatus.id,
-        subtotal,
-        shippingCharge: dto.shippingCharge || 0,
-        selectedShippingOptionId: dto.selectedShippingOptionId || null,
-        discount: dto.discount || 0,
-        discountType: dto.discountType || 'flat',
-        total,
-        viewToken: randomUUID(),
-        shippingAddress: {
-          ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
-            ? dto.shippingAddress
-            : {}),
-          district: dto.district,
-          thana: dto.thana,
-        },
-        customerNotes: dto.customerNotes,
-        officeNotes: dto.officeNotes,
-        guestName: dto.guestName,
-        guestPhone: dto.guestPhone,
-        paymentOptionType: dto.paymentOptionType,
-        paymentStatus:
-          dto.paymentOptionType === 'CASH_ON_DELIVERY'
-            ? PaymentStatus.UNPAID
-            : PaymentStatus.PAYMENT_PENDING,
-        partialAmount:
-          dto.paymentOptionType === 'PARTIAL_PAYMENT'
-            ? dto.partialAmount ?? undefined
-            : undefined,
-        items: {
-          create: dto.items.map((i) => ({
-            productId: i.productId,
-            variantId: i.variantId,
-            comboId: i.comboId,
-            comboSelection: i.comboSelection || undefined,
-            quantity: i.quantity,
-            price: i.price,
-          })),
-        },
-        timeline: [
-          {
-            status: initialStatus.name,
-            timestamp: new Date().toISOString(),
-            note: 'Order created',
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          displayId,
+          customerId: dto.customerId ?? null,
+          statusId: initialStatus.id,
+          subtotal,
+          shippingCharge: dto.shippingCharge || 0,
+          selectedShippingOptionId: dto.selectedShippingOptionId || null,
+          discount: dto.discount || 0,
+          discountType: dto.discountType || 'flat',
+          total,
+          viewToken: randomUUID(),
+          shippingAddress: {
+            ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
+              ? dto.shippingAddress
+              : {}),
+            district: dto.district,
+            thana: dto.thana,
           },
-        ] as any,
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phoneNumber: true,
+          customerNotes: dto.customerNotes,
+          officeNotes: dto.officeNotes,
+          guestName: dto.guestName,
+          guestPhone: dto.guestPhone,
+          paymentOptionType: dto.paymentOptionType,
+          paymentStatus:
+            dto.paymentOptionType === 'CASH_ON_DELIVERY'
+              ? PaymentStatus.UNPAID
+              : PaymentStatus.PAYMENT_PENDING,
+          partialAmount:
+            dto.paymentOptionType === 'PARTIAL_PAYMENT'
+              ? dto.partialAmount ?? undefined
+              : undefined,
+          items: {
+            create: dto.items.map((i) => ({
+              productId: i.productId,
+              variantId: i.variantId,
+              comboId: i.comboId,
+              comboSelection: i.comboSelection || undefined,
+              quantity: i.quantity,
+              price: i.price,
+            })),
+          },
+          timeline: [
+            {
+              status: initialStatus.name,
+              timestamp: new Date().toISOString(),
+              note: 'Order created',
+            },
+          ] as any,
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
+            },
+          },
+          status: true,
+          items: {
+            include: {
+              product: { select: { id: true, name: true, images: true } },
+            },
           },
         },
-        status: true,
-        items: {
-          include: {
-            product: { select: { id: true, name: true, images: true } },
-          },
-        },
-      },
-    });
+      });
 
-    if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
-      if (
-        dto.partialAmount !== undefined &&
-        (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
-      ) {
-        throw new BadRequestException(
-          'Partial payment amount must be greater than 0 and not exceed the order total',
-        );
+      if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
+        if (
+          dto.partialAmount !== undefined &&
+          (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
+        ) {
+          throw new BadRequestException(
+            'Partial payment amount must be greater than 0 and not exceed the order total',
+          );
+        }
       }
-    }
 
-    if (dto.paymentOptionType) {
-      const paymentAmount =
-        dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
-          ? dto.partialAmount
-          : total;
-      const gatewayCode =
-        dto.gatewayCode ||
-        (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
-      if (gatewayCode) {
-        await this.prisma.payment.create({
+      if (dto.paymentOptionType) {
+        const paymentAmount =
+          dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
+            ? dto.partialAmount
+            : total;
+        const gatewayCode =
+          dto.gatewayCode ||
+          (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
+        if (gatewayCode) {
+          await tx.payment.create({
+            data: {
+              orderId: created.id,
+              gatewayCode,
+              amount: paymentAmount,
+              status: PaymentStatus.PENDING,
+            },
+          });
+        }
+      }
+
+      const phoneToClose = dto.guestPhone || created.customer?.phoneNumber;
+      if (phoneToClose) {
+        await tx.checkoutLead.updateMany({
+          where: { phone: phoneToClose, status: 'PENDING' },
           data: {
-            orderId: order.id,
-            gatewayCode,
-            amount: paymentAmount,
-            status: PaymentStatus.PENDING,
+            status: 'CONVERTED',
+            convertedOrderId: created.id,
+            convertedAt: new Date(),
           },
         });
       }
-    }
 
-    const phoneToClose = dto.guestPhone || order.customer?.phoneNumber;
-    if (phoneToClose) {
-      await this.prisma.checkoutLead.updateMany({
-        where: { phone: phoneToClose, status: 'PENDING' },
-        data: {
-          status: 'CONVERTED',
-          convertedOrderId: order.id,
-          convertedAt: new Date(),
-        },
-      });
-    }
+      if (couponCode) {
+        await tx.coupon.update({
+          where: { code: couponCode },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
 
-    if (couponCode) {
-      await this.prisma.coupon.update({
-        where: { code: couponCode },
-        data: { usedCount: { increment: 1 } },
-      });
-    }
+      return created;
+    });
 
     await this.deductStock(dto.items, displayId);
 
@@ -1188,7 +1192,7 @@ export class OrdersService {
           const qty = ci.quantity * item.quantity;
           const effectiveVariantId =
             ci.variantId ||
-            item.comboSelection?.[ci.productId] || // flexible variant choice
+            item.comboSelection?.[ci.productId] ||
             null;
 
           if (effectiveVariantId) {

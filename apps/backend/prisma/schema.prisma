@@ -260,6 +260,7 @@ model Product {
   @@index([isActive])
   @@index([categoryId])
   @@index([createdAt])
+  @@index([sku])
 }
 
 model ProductVariant {
@@ -396,6 +397,10 @@ model Order {
   @@index([statusId])
   @@index([assignedToId])
   @@index([createdAt])
+  @@index([courierService])
+  @@index([courierConsignmentId])
+  @@index([courierTrackingCode])
+  @@index([paymentOptionType])
 }
 
 model OrderItem {
@@ -435,6 +440,7 @@ model Payment {
 
   @@index([orderId])
   @@index([gatewayCode])
+  @@index([transactionId])
 }
 
 model CheckoutLead {
@@ -469,6 +475,7 @@ model CheckoutLead {
   @@index([status])
   @@index([assignedToId])
   @@index([lastSeenAt])
+  @@index([fingerprint])
 }
 
 model Shipment {
@@ -634,6 +641,9 @@ model CourierDispatchLog {
   createdAt       DateTime @default(now())
 
   order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([courier])
 }
 
 model Coupon {
@@ -665,6 +675,8 @@ model Refund {
 
   order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   processor User? @relation("RefundProcessor", fields: [processedBy], references: [id])
+
+  @@index([orderId])
 }
 
 model InventoryLog {
@@ -677,6 +689,8 @@ model InventoryLog {
   reason      String?
   performedBy String?
   createdAt   DateTime @default(now())
+
+  @@index([productId, variantId, createdAt])
 }
 
 model OrderCounter {

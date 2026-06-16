@@ -1,4 +1,5 @@
 import { Controller, Post, Body, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { TrackingService } from './tracking.service';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -7,6 +8,7 @@ export class TrackingController {
   constructor(private readonly tracking: TrackingService) {}
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('events')
   async trackEvent(
     @Body()
@@ -32,6 +34,7 @@ export class TrackingController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('context')
   async saveContext(
     @Body() body: { orderId: string; fbp?: string; fbc?: string; url?: string; referrer?: string },

@@ -7,6 +7,12 @@ import ProductDetailClient from "@/components/ProductDetailClient";
 export const revalidate = 300;
 export const dynamicParams = true;
 
+export async function generateStaticParams() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/products?isActive=true&perPage=100`);
+  const { data } = await res.json();
+  return (data || []).map((p: any) => ({ slug: p.slug }));
+}
+
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await props.params;
   let storeName = "Store";
