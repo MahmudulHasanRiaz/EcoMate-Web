@@ -66,7 +66,7 @@ export class AuthController {
     return { accessToken: result.accessToken, user: result.user };
   }
 
-  @SkipThrottle()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Public()
   @UseGuards(RefreshJwtGuard)
   @Post('refresh')

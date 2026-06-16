@@ -15,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class MediaController {
   constructor(private readonly svc: MediaService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -32,11 +33,13 @@ export class MediaController {
     });
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get(':id/attachments')
   getAttachments(@Param('id') id: string) {
     return this.svc.getAttachments(id);

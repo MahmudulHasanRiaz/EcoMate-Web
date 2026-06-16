@@ -11,7 +11,9 @@ import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Throttle } from '@nestjs/throttler';
 import { ConvertOrderDto } from './dto/convert-order.dto';
+import { UpsertLeadDto } from './dto/upsert-lead.dto';
 
 @Controller('checkout-leads')
 export class CheckoutLeadsController {
@@ -51,21 +53,10 @@ export class CheckoutLeadsController {
     return this.svc.findOne(id);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Public()
   @Post()
-  upsert(
-    @Body()
-    dto: {
-      phone?: string;
-      name?: string;
-      email?: string;
-      address?: any;
-      items?: any;
-      payload?: any;
-      paymentMethod?: string;
-      fingerprint?: string;
-    },
-  ) {
+  upsert(@Body() dto: UpsertLeadDto) {
     return this.svc.upsert(dto);
   }
 

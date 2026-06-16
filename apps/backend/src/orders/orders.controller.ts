@@ -9,6 +9,7 @@ import {
   Query,
   Sse,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import {
@@ -86,6 +87,7 @@ export class OrdersController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post()
   create(@Body() dto: CreateOrderDto) {
     return this.svc.create(dto);

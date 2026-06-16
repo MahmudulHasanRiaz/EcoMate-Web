@@ -3,6 +3,7 @@ import { PaymentStatus } from '@prisma/client';
 import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 
 @Controller('payments/bkash')
@@ -13,6 +14,7 @@ export class BkashPgwController {
   ) {}
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('create')
   async create(
     @Body() dto: { amount: number; orderId: string; invoiceNo: string },
