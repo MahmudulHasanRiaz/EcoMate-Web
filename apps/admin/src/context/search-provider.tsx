@@ -71,6 +71,14 @@ export function SearchProvider({ children }: SearchProviderProps) {
     loadRecentSearches,
   )
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const abortRef = useRef<AbortController>()
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      abortRef.current?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -94,6 +102,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   const search = (q: string) => {
     setQuery(q)
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
 
     if (q.length < 2) {
       setResults({ orders: [], products: [], customers: [] })
@@ -105,18 +114,20 @@ export function SearchProvider({ children }: SearchProviderProps) {
     setIsLoading(true)
     setError(null)
 
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await apiClient.get<SearchResults>('/admin/search', {
-          params: { q, limit: 5 },
+    debounceRef.current = setTimeout(() => {
+      abortRef.current = new AbortController()
+      apiClient.get<SearchResults>('/admin/search', {
+        params: { q, limit: 5 },
+        signal: abortRef.current.signal,
+      })
+        .then(res => setResults(res.data))
+        .catch(err => {
+          if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+            setError('Search unavailable')
+            setResults({ orders: [], products: [], customers: [] })
+          }
         })
-        setResults(res.data)
-      } catch {
-        setError('Search unavailable')
-        setResults({ orders: [], products: [], customers: [] })
-      } finally {
-        setIsLoading(false)
-      }
+        .finally(() => setIsLoading(false))
     }, 300)
   }
 
