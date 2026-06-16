@@ -28,17 +28,10 @@ const labelMap: Record<string, string> = {
   card: 'Card',
 }
 
-const sizeMap = {
-  sm: { container: 'h-6 px-2', img: 'h-3.5' },
-  md: { container: 'h-8 px-3', img: 'h-5' },
-  lg: { container: 'h-10 px-4', img: 'h-6' },
-} as const
-
 export function PaymentLogo({ method, size = 'md', showName = true }: { method: string; size?: 'sm' | 'md' | 'lg'; showName?: boolean }) {
   const key = (method || '').toLowerCase()
   const logo = logoMap[key]
   const label = labelMap[key] || method.toUpperCase()
-  const dims = sizeMap[size]
 
   if (!logo) {
     if (key === 'cod') {
@@ -53,10 +46,12 @@ export function PaymentLogo({ method, size = 'md', showName = true }: { method: 
   }
 
   return (
-    <div className='flex items-center gap-1.5'>
-      <div className={`${dims.container} rounded-md border border-border bg-white flex items-center justify-center overflow-hidden shrink-0`}>
-        <img src={logo} alt={label} className={`${dims.img} w-auto object-contain`} />
-      </div>
+    <div className='flex items-center gap-2'>
+      <img
+        src={logo}
+        alt={label}
+        className={`${size === 'sm' ? 'h-7' : size === 'lg' ? 'h-12' : 'h-9'} w-auto shrink-0 bg-white rounded px-1.5 py-0.5`}
+      />
       {showName && <span className='text-xs font-medium text-muted-foreground'>{label}</span>}
     </div>
   )

@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useState } from 'react';
 
 const API = typeof window !== 'undefined'
@@ -29,15 +28,15 @@ const labelMap: Record<string, string> = {
 };
 
 const sizeMap = {
-  sm: { container: 'h-6 px-2', img: 'h-3.5' },
-  md: { container: 'h-8 px-3', img: 'h-5' },
-  lg: { container: 'h-10 px-4', img: 'h-6' },
+  sm: 'h-7',
+  md: 'h-9',
+  lg: 'h-12',
 } as const;
 
 const fallbackSize = {
-  sm: 'w-6 h-6 text-[10px]',
-  md: 'w-8 h-8 text-xs',
-  lg: 'w-11 h-11 text-sm',
+  sm: 'w-8 h-8 text-[11px]',
+  md: 'w-10 h-10 text-xs',
+  lg: 'w-12 h-12 text-sm',
 } as const;
 
 export function PaymentLogo({
@@ -53,12 +52,12 @@ export function PaymentLogo({
   const key = (method || '').toLowerCase();
   const src = logoMap[key];
   const label = labelMap[key] || method.toUpperCase();
-  const dims = sizeMap[size];
+  const hClass = sizeMap[size];
 
   if (!src || imgError) {
     return (
       <div
-        className={`flex items-center justify-center rounded-lg bg-gray-100 text-gray-500 font-bold shrink-0 ${fallbackSize[size]}`}
+        className={`flex items-center justify-center rounded-md bg-gray-100 text-gray-500 font-bold shrink-0 ${fallbackSize[size]}`}
       >
         {label.slice(0, 2).toUpperCase()}
       </div>
@@ -67,18 +66,12 @@ export function PaymentLogo({
 
   return (
     <div className="flex items-center gap-2">
-      <div
-        className={`relative rounded-md border border-gray-200 bg-white flex items-center justify-center overflow-hidden shrink-0 ${dims.container}`}
-      >
-        <Image
-          src={src}
-          alt={label}
-          width={40}
-          height={20}
-          className={`${dims.img} w-auto object-contain`}
-          onError={() => setImgError(true)}
-        />
-      </div>
+      <img
+        src={src}
+        alt={label}
+        className={`${hClass} w-auto drop-shadow-sm shrink-0 bg-gray-100 rounded px-1.5 py-0.5`}
+        onError={() => setImgError(true)}
+      />
       {showName && (
         <span className="text-sm font-medium text-gray-700">{label}</span>
       )}
