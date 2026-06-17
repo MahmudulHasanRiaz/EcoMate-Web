@@ -75,8 +75,9 @@ export default function OrdersPage() {
     try {
       const { data } = await apiClient.get<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
       setOrder(data);
-    } catch {
-      setError('Order not found. Please check your order number.');
+    } catch (err: any) {
+      console.error('Search error details:', err?.response?.data || err?.message || err);
+      setError(err?.response?.data?.message || 'Order not found. Please check your order number.');
     } finally {
       setLoading(false);
     }
@@ -89,7 +90,9 @@ export default function OrdersPage() {
       trimmed = trimmed.substring(1).trim();
     }
     if (!trimmed) return;
-    router.replace(`/orders?id=${encodeURIComponent(trimmed)}`);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `/orders?id=${encodeURIComponent(trimmed)}`);
+    }
     performSearch(trimmed);
   };
 
