@@ -111,10 +111,10 @@ export function SearchProvider({ children }: SearchProviderProps) {
       return
     }
 
-    setIsLoading(true)
     setError(null)
 
     debounceRef.current = setTimeout(() => {
+      setIsLoading(true)
       abortRef.current = new AbortController()
       apiClient.get<SearchResults>('/admin/search', {
         params: { q, limit: 5 },

@@ -29,8 +29,11 @@ export class SearchService {
   constructor(private prisma: PrismaService) {}
 
   async search(query: string, limit = 5): Promise<SearchResult> {
-    const tsquery = query
-      .trim()
+    const sanitized = query.replace(/[&|!()':*]/g, ' ').trim();
+    if (sanitized.length < 2) {
+      return { orders: [], products: [], customers: [] };
+    }
+    const tsquery = sanitized
       .split(/\s+/)
       .map((w) => w + ':*')
       .join(' & ');
