@@ -6,7 +6,7 @@ import dashboardLight from './assets/dashboard-light.png'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn2() {
-  const { redirect } = useSearch({ from: '/(auth)/sign-in-2' })
+  const { redirect } = useSearch({ from: '/(auth)/sign-in-2' }) as any
 
   return (
     <div className='relative container grid h-svh flex-col items-center justify-center lg:max-w-none lg:grid-cols-2 lg:px-0'>

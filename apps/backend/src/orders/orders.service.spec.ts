@@ -3,6 +3,11 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TrackingService } from '../tracking/tracking.service';
+import { CustomersService } from '../customers/customers.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
+import { SecurityService } from '../security/security.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -50,6 +55,7 @@ describe('OrdersService', () => {
     ],
     createdAt: new Date('2025-01-15'),
     updatedAt: new Date('2025-01-15'),
+    trackingUrl: null,
     status: mockInitialStatus,
     customer: {
       id: 'customer-id-1',
@@ -86,6 +92,7 @@ describe('OrdersService', () => {
           provide: PrismaService,
           useValue: {
             $transaction: jest.fn(),
+            $queryRawUnsafe: jest.fn().mockResolvedValue([]),
             order: {
               findMany: jest.fn(),
               findUnique: jest.fn(),
@@ -93,6 +100,7 @@ describe('OrdersService', () => {
               create: jest.fn(),
               update: jest.fn(),
               count: jest.fn(),
+              groupBy: jest.fn().mockResolvedValue([]),
             },
             orderStatus: {
               findFirst: jest.fn(),
@@ -108,19 +116,85 @@ describe('OrdersService', () => {
               upsert: jest.fn(),
             },
             productVariant: {
+              findMany: jest.fn().mockResolvedValue([
+                { id: 'variant-1', price: 1000, isActive: true, productId: 'prod-1' }
+              ]),
               update: jest.fn(),
+            },
+            product: {
+              findMany: jest.fn().mockResolvedValue([
+                { id: 'prod-1', basePrice: 1000, salePrice: null, isActive: true },
+                { id: 'prod-2', basePrice: 500, salePrice: null, isActive: true }
+              ]),
+            },
+            combo: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            coupon: {
+              findUnique: jest.fn(),
+              update: jest.fn(),
+            },
+            payment: {
+              create: jest.fn(),
+            },
+            checkoutLead: {
+              updateMany: jest.fn(),
+            },
+            user: {
+              findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
             },
             inventoryLog: {
               create: jest.fn(),
             },
           },
         },
-        OrdersEventService,
+        {
+          provide: OrdersEventService,
+          useValue: {
+            emit: jest.fn(),
+          },
+        },
+        {
+          provide: TrackingService,
+          useValue: {
+            getContext: jest.fn().mockResolvedValue(undefined),
+            track: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CustomersService,
+          useValue: {
+            isPhoneBlocked: jest.fn().mockResolvedValue(false),
+            findOrCreateCustomer: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+          },
+        },
+        {
+          provide: InventoryService,
+          useValue: {
+            restockOrderItems: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: BlockedEntriesService,
+          useValue: {
+            findOrderBlockedIp: jest.fn().mockResolvedValue(null),
+            findBlockedPhone: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: SecurityService,
+          useValue: {
+            recordOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<OrdersService>(OrdersService);
     prisma = module.get<PrismaService>(PrismaService);
+
+    // Set up default implementation for $transaction to pass the prisma mock
+    (prisma.$transaction as jest.Mock).mockImplementation(async (cb) => cb(prisma));
   });
 
   afterEach(() => {
@@ -144,6 +218,7 @@ describe('OrdersService', () => {
         page: 1,
         perPage: 10,
         totalPages: 1,
+        statusCounts: {},
       });
     });
 
@@ -161,7 +236,14 @@ describe('OrdersService', () => {
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            displayId: { contains: 'ORD-25', mode: 'insensitive' },
+            OR: [
+              { displayId: { contains: 'ORD-25', mode: 'insensitive' } },
+              { customer: { firstName: { contains: 'ORD-25', mode: 'insensitive' } } },
+              { customer: { lastName: { contains: 'ORD-25', mode: 'insensitive' } } },
+              { customer: { phoneNumber: { contains: 'ORD-25' } } },
+              { guestName: { contains: 'ORD-25', mode: 'insensitive' } },
+              { guestPhone: { contains: 'ORD-25' } },
+            ],
             statusId: 'status-pending',
           },
         }),
@@ -245,6 +327,7 @@ describe('OrdersService', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
           cb({
+            ...prisma,
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
             },
@@ -276,6 +359,7 @@ describe('OrdersService', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
           cb({
+            ...prisma,
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
             },
@@ -292,6 +376,7 @@ describe('OrdersService', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
           cb({
+            ...prisma,
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 6 }),
             },
@@ -318,6 +403,7 @@ describe('OrdersService', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
           cb({
+            ...prisma,
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
             },

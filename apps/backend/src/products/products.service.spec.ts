@@ -3,6 +3,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
+import { CacheService } from '../cache/cache.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -58,6 +59,8 @@ describe('ProductsService', () => {
     ],
   };
 
+  let cache: CacheService;
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -87,6 +90,18 @@ describe('ProductsService', () => {
             media: {
               findFirst: jest.fn(),
             },
+            productTag: {
+              deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+              upsert: jest.fn().mockResolvedValue({}),
+            },
+            comboItem: {
+              deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+            },
+            tag: {
+              findUnique: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
+              create: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
+              update: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
+            },
           },
         },
         {
@@ -98,12 +113,21 @@ describe('ProductsService', () => {
             syncEntityImages: jest.fn(),
           },
         },
+        {
+          provide: CacheService,
+          useValue: {
+            get: jest.fn().mockReturnValue(null),
+            set: jest.fn().mockResolvedValue(undefined),
+            invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<ProductsService>(ProductsService);
     prisma = module.get<PrismaService>(PrismaService);
     media = module.get<MediaService>(MediaService);
+    cache = module.get<CacheService>(CacheService);
   });
 
   afterEach(() => {
@@ -127,6 +151,8 @@ describe('ProductsService', () => {
         page: 1,
         perPage: 10,
         totalPages: 1,
+        hasMore: false,
+        nextCursor: null,
       });
     });
 
@@ -173,7 +199,7 @@ describe('ProductsService', () => {
       await service.findAll({});
 
       expect(prisma.product.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0, take: 10 }),
+        expect.objectContaining({ skip: 0, take: 24 }),
       );
     });
 
@@ -243,12 +269,16 @@ describe('ProductsService', () => {
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            OR: [
-              { createdAt: { lt: new Date('2025-01-02T00:00:00.000Z') } },
-              {
-                createdAt: new Date('2025-01-02T00:00:00.000Z'),
-                id: { lt: 'p-2' },
-              },
+            AND: [
+              expect.objectContaining({
+                OR: [
+                  { createdAt: { lt: new Date('2025-01-02T00:00:00.000Z') } },
+                  {
+                    createdAt: new Date('2025-01-02T00:00:00.000Z'),
+                    id: { lt: 'p-2' },
+                  },
+                ],
+              }),
             ],
           }),
         }),
@@ -620,7 +650,7 @@ describe('ProductsService', () => {
       });
       expect(prisma.product.update).toHaveBeenCalledWith({
         where: { id: 'prod-1' },
-        data: { type: 'variable' },
+        data: { type: 'variable', manageStock: false, stock: 0 },
       });
     });
   });

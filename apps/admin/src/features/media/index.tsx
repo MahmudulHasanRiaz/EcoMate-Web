@@ -486,12 +486,12 @@ export function Media() {
                 ))}
               </div>
 
-              {data?.meta?.totalPages > 1 && (
+              {(data?.meta?.totalPages ?? 0) > 1 && (
                 <div className='flex items-center justify-between pt-2 px-1'>
-                  <span className='text-sm text-muted-foreground'>Page {page} of {data.meta.totalPages}</span>
+                  <span className='text-sm text-muted-foreground'>Page {page} of {data?.meta?.totalPages ?? 1}</span>
                   <div className='flex gap-2'>
                     <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => { setPage(p => p - 1); setLastClickedIndex(null); }}>Previous</Button>
-                    <Button variant='outline' size='sm' disabled={page >= data.meta.totalPages} onClick={() => { setPage(p => p + 1); setLastClickedIndex(null); }}>Next</Button>
+                    <Button variant='outline' size='sm' disabled={page >= (data?.meta?.totalPages ?? 1)} onClick={() => { setPage(p => p + 1); setLastClickedIndex(null); }}>Next</Button>
                   </div>
                 </div>
               )}

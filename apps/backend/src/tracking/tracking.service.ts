@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { MetaConversionsService } from './meta-conversions.service';
 import { TikTokEventsService } from './tiktok-events.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +31,8 @@ export interface TrackingEvent {
 
 @Injectable()
 export class TrackingService {
+  private readonly logger = new Logger(TrackingService.name);
+
   constructor(
     private readonly meta: MetaConversionsService,
     private readonly tiktok: TikTokEventsService,
@@ -65,7 +67,7 @@ export class TrackingService {
         update: { value: JSON.stringify(context) },
       });
     } catch (err) {
-      console.error('Failed to save tracking context:', err);
+      this.logger.error('Failed to save tracking context:', err);
     }
   }
 

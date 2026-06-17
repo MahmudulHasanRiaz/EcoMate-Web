@@ -1,7 +1,6 @@
 import { SectionShell } from '@/features/settings/storefront/components/section-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
 import { Palette, Plus, X } from 'lucide-react'

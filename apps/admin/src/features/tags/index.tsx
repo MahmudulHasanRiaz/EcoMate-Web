@@ -5,7 +5,6 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Plus, Pencil, Trash2, Tags as TagsIcon, Search as SearchIcon, X, Merge, Link as LinkIcon, Copy, Check } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Tags as TagsIcon, Merge, Copy, Check } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 
 const tagsApi = {
@@ -146,7 +145,7 @@ export function Tags() {
     <>
       <Header fixed>
         <div className='flex items-center gap-2 me-auto'>
-          <GlobalSearchBar value={search} onChange={e => setSearch(e.target.value)} placeholder='Search tags...' />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder='Search tags...' className='h-8 w-48 lg:w-64' />
         </div>
         <ThemeSwitch /><ProfileDropdown />
       </Header>

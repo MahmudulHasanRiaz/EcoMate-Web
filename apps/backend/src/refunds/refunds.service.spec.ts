@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 describe('RefundsService', () => {
   let service: RefundsService;
@@ -35,6 +36,7 @@ describe('RefundsService', () => {
     ...mockRefund,
     id: 'refund-id-3',
     status: 'completed',
+    order: { id: 'order-id-1', displayId: 'ORD-250115-0001' },
   };
 
   const mockRefundRejected = {
@@ -43,23 +45,37 @@ describe('RefundsService', () => {
     status: 'rejected',
   };
 
+  let inventoryService: InventoryService;
+
+  const mockPrisma = {
+    $transaction: jest.fn(),
+    refund: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
+    order: {
+      findUniqueOrThrow: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+
   beforeEach(async () => {
+    mockPrisma.$transaction.mockImplementation(async (cb) => cb(mockPrisma));
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RefundsService,
         {
           provide: PrismaService,
+          useValue: mockPrisma,
+        },
+        {
+          provide: InventoryService,
           useValue: {
-            refund: {
-              findMany: jest.fn(),
-              findUnique: jest.fn(),
-              create: jest.fn(),
-              update: jest.fn(),
-              count: jest.fn(),
-            },
-            order: {
-              findUniqueOrThrow: jest.fn(),
-            },
+            restockOrderItems: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -67,6 +83,7 @@ describe('RefundsService', () => {
 
     service = module.get<RefundsService>(RefundsService);
     prisma = module.get<PrismaService>(PrismaService);
+    inventoryService = module.get<InventoryService>(InventoryService);
   });
 
   afterEach(() => {
@@ -280,6 +297,19 @@ describe('RefundsService', () => {
         );
 
         expect(result.status).toBe('completed');
+        expect(prisma.order.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'order-id-1' },
+            data: expect.objectContaining({ paymentStatus: 'REFUNDED' }),
+          }),
+        );
+        expect(inventoryService.restockOrderItems).toHaveBeenCalledWith(
+          'order-id-1',
+          processedBy,
+          'refund_restock',
+          false,
+          mockPrisma,
+        );
       });
 
       it('should transition from approved to rejected', async () => {

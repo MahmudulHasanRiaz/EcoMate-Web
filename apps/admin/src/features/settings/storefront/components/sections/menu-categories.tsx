@@ -28,7 +28,7 @@ export function MenuCategoriesSection({ hook }: Props) {
     queryKey: ['categories', 'all-for-menu'],
     queryFn: () =>
       apiClient.get<MenuCategory[]>('/categories').then((r) => {
-        const data = r.data?.data || r.data || []
+        const data = (r.data as any)?.data || r.data || []
         return Array.isArray(data) ? data : []
       }),
   })

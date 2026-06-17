@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class InventoryService {
@@ -330,10 +331,12 @@ export class InventoryService {
     performedBy: string,
     logType: 'refund_restock' | 'cancellation_restock' = 'cancellation_restock',
     force = false,
+    tx?: Prisma.TransactionClient,
   ) {
+    const client = tx || this.prisma;
     const alreadyRestocked =
       !force &&
-      (await this.prisma.inventoryLog.findFirst({
+      (await client.inventoryLog.findFirst({
         where: {
           type: { in: ['refund_restock', 'cancellation_restock'] },
           reason: { contains: orderId },
@@ -341,13 +344,13 @@ export class InventoryService {
       }));
     if (alreadyRestocked) return;
 
-    const orderItems = await this.prisma.orderItem.findMany({
+    const orderItems = await client.orderItem.findMany({
       where: { orderId },
     });
 
     for (const item of orderItems) {
       if (item.comboId) {
-        const combo = await this.prisma.combo.findUnique({
+        const combo = await client.combo.findUnique({
           where: { id: item.comboId },
           include: { items: true },
         });
@@ -363,22 +366,22 @@ export class InventoryService {
             null;
 
           if (effectiveVariantId) {
-            await this.prisma.productVariant.update({
+            await client.productVariant.update({
               where: { id: effectiveVariantId },
               data: { stock: { increment: qty } },
             });
           }
-          const product = await this.prisma.product.findUnique({
+          const product = await client.product.findUnique({
             where: { id: ci.productId },
             select: { manageStock: true },
           });
           if (product?.manageStock) {
-            await this.prisma.product.update({
+            await client.product.update({
               where: { id: ci.productId },
               data: { stock: { increment: qty } },
             });
           }
-          await this.prisma.inventoryLog.create({
+          await client.inventoryLog.create({
             data: {
               productId: ci.productId,
               variantId: effectiveVariantId,
@@ -393,13 +396,13 @@ export class InventoryService {
         }
       } else {
         if (item.variantId) {
-          await this.prisma.productVariant.update({
+          await client.productVariant.update({
             where: { id: item.variantId },
             data: { stock: { increment: item.quantity } },
           });
         }
         const product = item.productId
-          ? await this.prisma.product.findUnique({
+          ? await client.product.findUnique({
               where: { id: item.productId },
               select: { manageStock: true, type: true },
             })
@@ -409,12 +412,12 @@ export class InventoryService {
           product.manageStock &&
           (!item.variantId || product.type === 'simple')
         ) {
-          await this.prisma.product.update({
+          await client.product.update({
             where: { id: item.productId! },
             data: { stock: { increment: item.quantity } },
           });
         }
-        await this.prisma.inventoryLog.create({
+        await client.inventoryLog.create({
           data: {
             productId: item.productId,
             variantId: item.variantId,

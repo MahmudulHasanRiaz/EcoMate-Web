@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
@@ -40,15 +40,51 @@ export class PaymentsService {
   }
 
   async create(orderId: string, dto: CreatePaymentDto) {
-    await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-    const existing = await this.prisma.payment.findFirst({
-      where: { orderId },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existing) {
-      return this.prisma.payment.update({
-        where: { id: existing.id },
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+
+      // Lock the order row
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId);
+
+      const paymentAmount = Number(dto.amount);
+      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+        throw new BadRequestException('Payment amount must be a positive number');
+      }
+
+      const orderTotal = Number(order.total);
+
+      // Sum only PAID/PENDING payments for this order
+      const totalPaidOrPending = order.payments
+        .filter((p) => p.status === PaymentStatus.PAID || p.status === PaymentStatus.PENDING)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+
+      const remainingBalance = Math.max(0, orderTotal - totalPaidOrPending);
+
+      if (paymentAmount > remainingBalance) {
+        throw new BadRequestException(
+          `Payment amount of ৳${paymentAmount} exceeds the remaining order balance of ৳${remainingBalance.toFixed(2)}`,
+        );
+      }
+
+      if (
+        order.paymentOptionType === 'PARTIAL_PAYMENT' &&
+        order.partialAmount &&
+        order.payments.length === 0
+      ) {
+        const requiredPartial = Number(order.partialAmount);
+        if (paymentAmount < requiredPartial) {
+          throw new BadRequestException(
+            `Initial payment for partial payment order must be at least ৳${requiredPartial}`,
+          );
+        }
+      }
+
+      return tx.payment.create({
         data: {
+          orderId,
           gatewayCode: dto.gatewayCode,
           amount: dto.amount,
           transactionId: dto.transactionId,
@@ -57,43 +93,41 @@ export class PaymentsService {
           status: PaymentStatus.PENDING,
         },
       });
-    }
-    return this.prisma.payment.create({
-      data: {
-        orderId,
-        gatewayCode: dto.gatewayCode,
-        amount: dto.amount,
-        transactionId: dto.transactionId,
-        screenshot: dto.screenshot,
-        notes: dto.notes,
-        status: PaymentStatus.PENDING,
-      },
     });
   }
 
   async verify(id: string, dto: VerifyPaymentDto, userId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id } });
-    if (!payment) throw new NotFoundException('Payment not found');
-    const updated = await this.prisma.payment.update({
-      where: { id },
-      data: {
-        status: dto.status as PaymentStatus,
-        verifiedBy: userId,
-        verifiedAt: new Date(),
-        notes: dto.notes ?? payment.notes,
-      },
-    });
-    if (dto.status === PaymentStatus.PAID) {
-      const paymentCount = await this.prisma.payment.count({
-        where: { orderId: payment.orderId },
-      });
-      await this.prisma.order.update({
-        where: { id: payment.orderId },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({ where: { id } });
+      if (!payment) throw new NotFoundException('Payment not found');
+      const updated = await tx.payment.update({
+        where: { id },
         data: {
-          paymentStatus: paymentCount === 1 ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID,
+          status: dto.status as PaymentStatus,
+          verifiedBy: userId,
+          verifiedAt: new Date(),
+          notes: dto.notes ?? payment.notes,
         },
       });
-    }
-    return updated;
+      if (dto.status === PaymentStatus.PAID) {
+        const paidAgg = await tx.payment.aggregate({
+          where: { orderId: payment.orderId, status: PaymentStatus.PAID },
+          _sum: { amount: true },
+        });
+        const totalPaid = Number(paidAgg._sum.amount || 0);
+        const orderData = await tx.order.findUnique({
+          where: { id: payment.orderId },
+          select: { total: true },
+        });
+        const orderTotal = Number(orderData?.total || 0);
+        await tx.order.update({
+          where: { id: payment.orderId },
+          data: {
+            paymentStatus: totalPaid >= orderTotal ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID,
+          },
+        });
+      }
+      return updated;
+    });
   }
 }

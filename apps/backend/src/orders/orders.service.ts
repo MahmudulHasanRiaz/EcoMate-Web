@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,7 +18,7 @@ import {
   UpdateOrderItemDto,
   CustomerInfoDto,
 } from './dto/order.dto';
-import { PaymentStatus, PaymentOptionType } from '@prisma/client';
+import { PaymentStatus, PaymentOptionType, Prisma } from '@prisma/client';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
@@ -25,6 +26,8 @@ import { SecurityService } from '../security/security.service';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tracking: TrackingService,
@@ -286,61 +289,6 @@ export class OrdersService {
     if (!initialStatus)
       throw new BadRequestException('No initial order status configured');
 
-    const { subtotal, total } = this.recalculate(
-      dto.items,
-      dto.shippingCharge || 0,
-      dto.discount || 0,
-      dto.discountType,
-    );
-
-    const productIds = dto.items
-      .filter((i) => i.productId && !i.comboId)
-      .map((i) => i.productId!);
-    if (productIds.length > 0) {
-      const existingProducts = await this.prisma.product.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true },
-      });
-      const existingIds = new Set(existingProducts.map((p) => p.id));
-      const missing = productIds.filter((id) => !existingIds.has(id));
-      if (missing.length > 0) {
-        throw new BadRequestException(
-          `Some products no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
-        );
-      }
-    }
-
-    const comboIds = dto.items.filter((i) => i.comboId).map((i) => i.comboId!);
-    if (comboIds.length > 0) {
-      const existingCombos = await this.prisma.combo.findMany({
-        where: { id: { in: comboIds } },
-        select: {
-          id: true,
-          name: true,
-          items: { select: { productId: true, variantId: true } },
-        },
-      });
-      const existingIds = new Set(existingCombos.map((c) => c.id));
-      const missing = comboIds.filter((id) => !existingIds.has(id));
-      if (missing.length > 0) {
-        throw new BadRequestException(
-          `Some combos no longer exist: ${missing.join(', ')}. Please clear your cart and add products again.`,
-        );
-      }
-      const comboMap = new Map(existingCombos.map((c) => [c.id, c]));
-      for (const ci of dto.items.filter((i) => i.comboId)) {
-        if (!ci.comboSelection) continue;
-        const combo = comboMap.get(ci.comboId!)!;
-        for (const sub of combo.items) {
-          if (!sub.variantId && !ci.comboSelection[sub.productId]) {
-            throw new BadRequestException(
-              `Product "${sub.productId}" in combo "${combo.name}" requires a variant selection.`,
-            );
-          }
-        }
-      }
-    }
-
     if (dto.guestPhone) {
       const normalized = normalizePhone(dto.guestPhone);
       if (!normalized) {
@@ -351,21 +299,38 @@ export class OrdersService {
       dto.guestPhone = normalized;
     }
 
-    if (dto.customerId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: dto.customerId },
-        select: { status: true },
-      });
-      if (user?.status === 'suspended') {
-        throw new BadRequestException('This account has been blocked. Please contact support.');
+    if (clientIp) {
+      const orderBlockIp = await this.blockedEntries.findOrderBlockedIp(
+        clientIp,
+      );
+      if (orderBlockIp) {
+        throw new BadRequestException(
+          'Orders from your IP address are temporarily restricted. Please contact support.',
+        );
+      }
+    }
+
+    const blockedPhone = dto.guestPhone
+      ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
+      : null;
+    if (blockedPhone) {
+      throw new BadRequestException(
+        'This phone number has been blocked. Please contact support.',
+      );
+    }
+
+    if (dto.guestPhone && !dto.customerId) {
+      const isBlocked = await this.customersService.isPhoneBlocked(
+        dto.guestPhone,
+      );
+      if (isBlocked) {
+        throw new BadRequestException(
+          'This phone number has been blocked. Please contact support.',
+        );
       }
     }
 
     if (dto.guestPhone && dto.guestName && !dto.customerId) {
-      const isBlocked = await this.customersService.isPhoneBlocked(dto.guestPhone);
-      if (isBlocked) {
-        throw new BadRequestException('This phone number has been blocked. Please contact support.');
-      }
       const customer = await this.customersService.findOrCreateCustomer(
         dto.guestPhone,
         dto.guestName,
@@ -373,47 +338,187 @@ export class OrdersService {
       dto.customerId = customer.id;
     }
 
-    if (clientIp) {
-      const orderBlockIp = await this.blockedEntries.findOrderBlockedIp(clientIp);
-      if (orderBlockIp) {
-        throw new BadRequestException('Orders from your IP address are temporarily restricted. Please contact support.');
-      }
-    }
-
-    const blockedPhone = dto.guestPhone ? await this.blockedEntries.findBlockedPhone(dto.guestPhone) : null;
-    if (blockedPhone) {
-      throw new BadRequestException('This phone number has been blocked. Please contact support.');
-    }
-
-    let couponCode: string | null = null;
-    if (dto.couponCode) {
-      const coupon = await this.prisma.coupon.findUnique({
-        where: { code: dto.couponCode },
+    if (dto.customerId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: dto.customerId },
+        select: { status: true },
       });
-      if (!coupon || !coupon.isActive) {
-        throw new BadRequestException('Invalid or inactive coupon code');
-      }
-      if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
-        throw new BadRequestException('Coupon usage limit reached');
-      }
-      if (coupon.expiresAt && new Date() > coupon.expiresAt) {
-        throw new BadRequestException('Coupon has expired');
-      }
-      if (coupon.startsAt && new Date() < coupon.startsAt) {
-        throw new BadRequestException('Coupon is not yet active');
-      }
-      if (
-        coupon.minOrderValue &&
-        Number(subtotal) < Number(coupon.minOrderValue)
-      ) {
+      if (user?.status === 'suspended') {
         throw new BadRequestException(
-          `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
+          'This account has been blocked. Please contact support.',
         );
       }
-      couponCode = coupon.code;
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // Fetch and validate database prices and active statuses
+      const productIds = Array.from(
+        new Set(
+          dto.items
+            .filter((i) => i.productId)
+            .map((i) => i.productId!),
+        ),
+      );
+      const products =
+        productIds.length > 0
+          ? await tx.product.findMany({
+              where: { id: { in: productIds } },
+              select: {
+                id: true,
+                basePrice: true,
+                salePrice: true,
+                isActive: true,
+              },
+            })
+          : [];
+      const productMap = new Map(products.map((p) => [p.id, p]));
+
+      const variantIds = Array.from(
+        new Set(
+          dto.items
+            .filter((i) => i.variantId)
+            .map((i) => i.variantId!),
+        ),
+      );
+      const variants =
+        variantIds.length > 0
+          ? await tx.productVariant.findMany({
+              where: { id: { in: variantIds } },
+              select: { id: true, price: true, isActive: true, productId: true },
+            })
+          : [];
+      const variantMap = new Map(variants.map((v) => [v.id, v]));
+
+      const comboIds = Array.from(
+        new Set(
+          dto.items
+            .filter((i) => i.comboId)
+            .map((i) => i.comboId!),
+        ),
+      );
+      const combos =
+        comboIds.length > 0
+          ? await tx.combo.findMany({
+              where: { id: { in: comboIds } },
+              select: {
+                id: true,
+                basePrice: true,
+                salePrice: true,
+                isActive: true,
+                name: true,
+                items: { select: { productId: true, variantId: true } },
+              },
+            })
+          : [];
+      const comboMap = new Map(combos.map((c) => [c.id, c]));
+
+      for (const item of dto.items) {
+        if (item.comboId) {
+          const combo = comboMap.get(item.comboId);
+          if (!combo) {
+            throw new BadRequestException(`Combo ${item.comboId} not found`);
+          }
+          if (!combo.isActive) {
+            throw new BadRequestException(
+              `Combo "${combo.name}" is no longer active`,
+            );
+          }
+          item.price = Number(combo.salePrice ?? combo.basePrice);
+
+          if (item.comboSelection) {
+            for (const sub of combo.items) {
+              if (!sub.variantId && !item.comboSelection[sub.productId]) {
+                throw new BadRequestException(
+                  `Product "${sub.productId}" in combo "${combo.name}" requires a variant selection.`,
+                );
+              }
+            }
+          }
+        } else if (item.variantId) {
+          const variant = variantMap.get(item.variantId);
+          if (!variant) {
+            throw new BadRequestException(`Variant ${item.variantId} not found`);
+          }
+          if (!variant.isActive) {
+            throw new BadRequestException(`Variant is no longer active`);
+          }
+          const parentProduct = productMap.get(variant.productId);
+          if (!parentProduct) {
+            throw new BadRequestException(
+              `Parent product for variant ${item.variantId} not found`,
+            );
+          }
+          if (!parentProduct.isActive) {
+            throw new BadRequestException(`Product is no longer active`);
+          }
+          item.price =
+            variant.price !== null && variant.price !== undefined
+              ? Number(variant.price)
+              : Number(parentProduct.salePrice ?? parentProduct.basePrice);
+        } else if (item.productId) {
+          const product = productMap.get(item.productId);
+          if (!product) {
+            throw new BadRequestException(`Product ${item.productId} not found`);
+          }
+          if (!product.isActive) {
+            throw new BadRequestException(`Product is no longer active`);
+          }
+          item.price = Number(product.salePrice ?? product.basePrice);
+        } else {
+          throw new BadRequestException(
+            'Each item must have a productId, variantId, or comboId',
+          );
+        }
+      }
+
+      const { subtotal, total } = this.recalculate(
+        dto.items,
+        dto.shippingCharge || 0,
+        dto.discount || 0,
+        dto.discountType,
+      );
+
+      let couponCode: string | null = null;
+      if (dto.couponCode) {
+        const coupons = await tx.$queryRawUnsafe<any[]>(
+          'SELECT id, "isActive", "maxUses", "usedCount", "expiresAt", "startsAt", "minOrderValue" FROM "Coupon" WHERE code = $1 FOR UPDATE',
+          dto.couponCode,
+        );
+        const coupon = coupons[0];
+        if (!coupon || !coupon.isActive) {
+          throw new BadRequestException('Invalid or inactive coupon code');
+        }
+        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+          throw new BadRequestException('Coupon usage limit reached');
+        }
+        if (coupon.expiresAt && new Date() > new Date(coupon.expiresAt)) {
+          throw new BadRequestException('Coupon has expired');
+        }
+        if (coupon.startsAt && new Date() < new Date(coupon.startsAt)) {
+          throw new BadRequestException('Coupon is not yet active');
+        }
+        if (
+          coupon.minOrderValue &&
+          Number(subtotal) < Number(coupon.minOrderValue)
+        ) {
+          throw new BadRequestException(
+            `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
+          );
+        }
+        couponCode = dto.couponCode;
+      }
+
+      if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
+        if (
+          dto.partialAmount !== undefined &&
+          (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
+        ) {
+          throw new BadRequestException(
+            'Partial payment amount must be greater than 0 and not exceed the order total',
+          );
+        }
+      }
+
       const created = await tx.order.create({
         data: {
           displayId,
@@ -483,17 +588,6 @@ export class OrdersService {
         },
       });
 
-      if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
-        if (
-          dto.partialAmount !== undefined &&
-          (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
-        ) {
-          throw new BadRequestException(
-            'Partial payment amount must be greater than 0 and not exceed the order total',
-          );
-        }
-      }
-
       if (dto.paymentOptionType) {
         const paymentAmount =
           dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
@@ -533,10 +627,10 @@ export class OrdersService {
         });
       }
 
+      await this.deductStock(tx, dto.items, displayId);
+
       return created;
     });
-
-    await this.deductStock(dto.items, displayId);
 
     this.security.recordOrder(dto.guestPhone || '', clientIp || '');
 
@@ -572,14 +666,13 @@ export class OrdersService {
         timestamp: now,
         oldValue: Number(order.shippingCharge),
         newValue: Number(dto.shippingCharge),
-        note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}${dto.selectedShippingOptionId ? ' (option changed)' : ' (override)'}`,
+        note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}`,
       });
     }
 
-    if (
-      dto.discount !== undefined &&
-      Number(dto.discount) !== Number(order.discount)
-    ) {
+    const discountChanged = dto.discount !== undefined && Number(dto.discount) !== Number(order.discount);
+    const discountTypeChanged = dto.discountType !== undefined && dto.discountType !== order.discountType;
+    if (discountChanged || discountTypeChanged) {
       timeline.push({
         type: 'discount',
         visibility: 'public',
@@ -592,22 +685,6 @@ export class OrdersService {
     }
 
     if (dto.items && dto.items.length > 0) {
-      await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
-      await this.prisma.orderItem.createMany({
-        data: dto.items.map((i) => ({
-          orderId: id,
-          productId: i.productId,
-          variantId: i.variantId,
-          quantity: i.quantity,
-          price: i.price,
-        })),
-      });
-      const oldItems = order.items
-        .map((i) => `${i.product?.name || 'Unknown'} ×${i.quantity}`)
-        .join(', ');
-      const newItems = dto.items
-        .map((i) => `${i.productId} ×${i.quantity}`)
-        .join(', '); // will resolve below
       timeline.push({
         type: 'items',
         visibility: 'public',
@@ -615,45 +692,6 @@ export class OrdersService {
         note: 'Order items updated',
       });
     }
-
-    if (dto.customerInfo && order.customerId) {
-      const allowedFields: (keyof CustomerInfoDto)[] = [
-        'firstName',
-        'lastName',
-        'phoneNumber',
-        'email',
-      ];
-      const safeData: Record<string, string> = {};
-      for (const field of allowedFields) {
-        const value = (dto.customerInfo as any)[field];
-        if (value !== undefined) {
-          safeData[field] = String(value);
-        }
-      }
-      if (safeData.phoneNumber) {
-        const normalized = normalizePhone(safeData.phoneNumber);
-        if (!normalized) throw new BadRequestException('Invalid phone number');
-        safeData.phoneNumber = normalized;
-      }
-      if (Object.keys(safeData).length > 0) {
-        await this.prisma.user.update({
-          where: { id: order.customerId },
-          data: safeData,
-        });
-      }
-    }
-
-    data.timeline = timeline;
-    if (dto.shippingCharge !== undefined)
-      data.shippingCharge = dto.shippingCharge;
-    if (dto.selectedShippingOptionId !== undefined)
-      data.selectedShippingOptionId = dto.selectedShippingOptionId || null;
-    if (dto.discount !== undefined) data.discount = dto.discount;
-    if (dto.discountType !== undefined) data.discountType = dto.discountType;
-    if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes;
-    if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
-    if (dto.shippingAddress !== undefined)
-      data.shippingAddress = dto.shippingAddress;
 
     const currentItems =
       dto.items && dto.items.length > 0
@@ -677,32 +715,100 @@ export class OrdersService {
     );
     data.subtotal = subtotal;
     data.total = total;
+    data.timeline = timeline;
 
-    return this.prisma.order.update({
-      where: { id },
-      data,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phoneNumber: true,
-          },
-        },
-        status: true,
-        shipment: true,
-        assignee: { select: { id: true, firstName: true, lastName: true } },
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, images: true, slug: true },
+    if (dto.shippingCharge !== undefined)
+      data.shippingCharge = dto.shippingCharge;
+    if (dto.selectedShippingOptionId !== undefined)
+      data.selectedShippingOptionId = dto.selectedShippingOptionId || null;
+    if (dto.discount !== undefined) data.discount = dto.discount;
+    if (dto.discountType !== undefined) data.discountType = dto.discountType;
+    if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes;
+    if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
+    if (dto.shippingAddress !== undefined)
+      data.shippingAddress = dto.shippingAddress;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.items && dto.items.length > 0) {
+        // Restock old items
+        await this.deductStock(tx, order.items.map(i => ({
+          productId: i.productId || undefined,
+          variantId: i.variantId || undefined,
+          comboId: i.comboId || undefined,
+          comboSelection: (i.comboSelection as Record<string, string>) || undefined,
+          quantity: i.quantity,
+        })), `restock-${order.displayId}`, true);
+
+        await tx.orderItem.deleteMany({ where: { orderId: id } });
+        await tx.orderItem.createMany({
+          data: dto.items.map((i) => ({
+            orderId: id,
+            productId: i.productId,
+            variantId: i.variantId,
+            comboId: i.comboId,
+            comboSelection: i.comboSelection || undefined,
+            quantity: i.quantity,
+            price: i.price,
+          })),
+        });
+
+        // Deduct stock for new items
+        await this.deductStock(tx, dto.items, order.displayId);
+      }
+
+      if (dto.customerInfo && order.customerId) {
+        const allowedFields: (keyof CustomerInfoDto)[] = [
+          'firstName',
+          'lastName',
+          'phoneNumber',
+          'email',
+        ];
+        const safeData: Record<string, string> = {};
+        for (const field of allowedFields) {
+          const value = (dto.customerInfo as any)[field];
+          if (value !== undefined) {
+            safeData[field] = String(value);
+          }
+        }
+        if (safeData.phoneNumber) {
+          const normalized = normalizePhone(safeData.phoneNumber);
+          if (!normalized) throw new BadRequestException('Invalid phone number');
+          safeData.phoneNumber = normalized;
+        }
+        if (Object.keys(safeData).length > 0) {
+          await tx.user.update({
+            where: { id: order.customerId },
+            data: safeData,
+          });
+        }
+      }
+
+      return tx.order.update({
+        where: { id },
+        data,
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
             },
           },
+          status: true,
+          shipment: true,
+          assignee: { select: { id: true, firstName: true, lastName: true } },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, images: true, slug: true },
+              },
+            },
+          },
+          payments: true,
         },
-        payments: true,
-      },
+      });
     });
   }
 
@@ -804,7 +910,7 @@ export class OrdersService {
         );
       } catch (err) {
         // Log but don't block status change
-        console.error(`Failed to restock cancelled order ${id}:`, err);
+        this.logger.error(`Failed to restock cancelled order ${id}:`, err);
       }
     }
 
@@ -927,7 +1033,7 @@ export class OrdersService {
     });
   }
 
-  async bulkStatusChange(ids: string[], statusId: string) {
+  async bulkStatusChange(ids: string[], statusId: string, userId = 'system') {
     const targetStatus = await this.prisma.orderStatus.findUnique({
       where: { id: statusId },
     });
@@ -958,11 +1064,23 @@ export class OrdersService {
         where: { id: { in: validIds } },
         data: { statusId },
       });
+
+      if (targetStatus.name === 'Cancelled') {
+        for (const id of validIds) {
+          try {
+            await this.inventoryService.restockOrderItems(id, userId, 'cancellation_restock');
+          } catch (err) {
+            this.logger.error(`Failed to restock cancelled order ${id}:`, err);
+          }
+        }
+      }
     }
 
     return {
       updated: validIds.length,
       skipped: skipped.length,
+      failed: 0,
+      failedDetails: [],
       status: targetStatus.name,
     };
   }
@@ -1058,6 +1176,7 @@ export class OrdersService {
     }
     const cancelled = await this.prisma.orderStatus.findFirst({
       where: { name: 'Cancelled' },
+      orderBy: { id: 'asc' },
     });
     if (!cancelled) {
       throw new BadRequestException('Cancelled status not configured');
@@ -1093,7 +1212,7 @@ export class OrdersService {
         'cancellation_restock',
       );
     } catch (err) {
-      console.error(`Failed to restock cancelled order ${orderId}:`, err);
+      this.logger.error(`Failed to restock cancelled order ${orderId}:`, err);
     }
 
     return updated;
@@ -1200,11 +1319,12 @@ export class OrdersService {
         customData,
       });
     } catch (err) {
-      console.error('Failed to fire purchase event:', err);
+      this.logger.error('Failed to fire purchase event:', err);
     }
   }
 
   private async deductStock(
+    tx: Prisma.TransactionClient,
     items: {
       productId?: string;
       variantId?: string;
@@ -1213,6 +1333,7 @@ export class OrdersService {
       quantity: number;
     }[],
     displayId: string,
+    isRestock = false,
   ) {
     const standaloneProductIds = items
       .filter((i) => i.productId && !i.comboId)
@@ -1221,20 +1342,66 @@ export class OrdersService {
       .filter((i) => i.variantId && !i.comboId)
       .map((i) => i.variantId!);
 
+    const comboIds = items.filter((i) => i.comboId).map((i) => i.comboId!);
+    const combos = comboIds.length > 0 ? await tx.combo.findMany({
+      where: { id: { in: comboIds } },
+      include: { items: true },
+    }) : [];
+    const comboMap = new Map(combos.map((c) => [c.id, c]));
+
+    const productIdsToLock = new Set<string>(standaloneProductIds);
+    const variantIdsToLock = new Set<string>(standaloneVariantIds);
+
+    for (const item of items) {
+      if (item.comboId) {
+        const combo = comboMap.get(item.comboId);
+        if (!combo) {
+          throw new BadRequestException(`Combo not found during stock deduction`);
+        }
+        for (const ci of combo.items) {
+          productIdsToLock.add(ci.productId);
+          const effectiveVariantId =
+            ci.variantId ||
+            item.comboSelection?.[ci.productId] ||
+            null;
+          if (effectiveVariantId) {
+            variantIdsToLock.add(effectiveVariantId);
+          }
+        }
+      }
+    }
+
+    const sortedProductIds = Array.from(productIdsToLock).sort();
+    const sortedVariantIds = Array.from(variantIdsToLock).sort();
+
+    // Perform SELECT FOR UPDATE on PostgreSQL
+    if (sortedProductIds.length > 0) {
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "Product" WHERE id IN (${sortedProductIds.map((_, i) => `$${i + 1}`).join(', ')}) FOR UPDATE`,
+        ...sortedProductIds
+      );
+    }
+    if (sortedVariantIds.length > 0) {
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "ProductVariant" WHERE id IN (${sortedVariantIds.map((_, i) => `$${i + 1}`).join(', ')}) FOR UPDATE`,
+        ...sortedVariantIds
+      );
+    }
+
     const products =
-      standaloneProductIds.length > 0
-        ? await this.prisma.product.findMany({
-            where: { id: { in: standaloneProductIds }, manageStock: true },
+      sortedProductIds.length > 0
+        ? await tx.product.findMany({
+            where: { id: { in: sortedProductIds }, manageStock: true },
             select: { id: true, type: true, stock: true, manageStock: true },
           })
         : [];
     const productMap = new Map(products.map((p) => [p.id, p]));
 
     const variants =
-      standaloneVariantIds.length > 0
-        ? await this.prisma.productVariant.findMany({
+      sortedVariantIds.length > 0
+        ? await tx.productVariant.findMany({
             where: {
-              id: { in: standaloneVariantIds },
+              id: { in: sortedVariantIds },
               product: { manageStock: true },
             },
             select: { id: true, stock: true, productId: true },
@@ -1244,10 +1411,7 @@ export class OrdersService {
 
     for (const item of items) {
       if (item.comboId) {
-        const combo = await this.prisma.combo.findUnique({
-          where: { id: item.comboId },
-          include: { items: true },
-        });
+        const combo = comboMap.get(item.comboId);
         if (!combo) continue;
         for (const ci of combo.items) {
           const qty = ci.quantity * item.quantity;
@@ -1257,32 +1421,21 @@ export class OrdersService {
             null;
 
           if (effectiveVariantId) {
-            if (!variantMap.has(effectiveVariantId)) {
-              const v = await this.prisma.productVariant.findUnique({
-                where: { id: effectiveVariantId },
-                select: { id: true, stock: true, productId: true },
-              });
-              if (v) variantMap.set(v.id, v);
-            }
             const v = variantMap.get(effectiveVariantId);
             if (v && v.stock < qty) {
               throw new BadRequestException(
                 `Insufficient stock for variant of product "${ci.productId}". Available: ${v.stock}, requested: ${qty}.`,
               );
             }
-            await this.prisma.productVariant.update({
-              where: { id: effectiveVariantId },
-              data: { stock: { decrement: qty } },
-            });
+            if (v) {
+              await tx.productVariant.update({
+                where: { id: effectiveVariantId },
+                data: { stock: isRestock ? { increment: qty } : { decrement: qty } },
+              });
+              v.stock += isRestock ? qty : -qty;
+            }
           }
 
-          if (!productMap.has(ci.productId)) {
-            const p = await this.prisma.product.findUnique({
-              where: { id: ci.productId },
-              select: { id: true, type: true, stock: true, manageStock: true },
-            });
-            if (p) productMap.set(p.id, p);
-          }
           const p = productMap.get(ci.productId);
           if (p && p.manageStock && p.stock < qty) {
             throw new BadRequestException(
@@ -1290,19 +1443,20 @@ export class OrdersService {
             );
           }
           if (p && p.manageStock) {
-            await this.prisma.product.update({
+            await tx.product.update({
               where: { id: ci.productId },
-              data: { stock: { decrement: qty } },
+              data: { stock: isRestock ? { increment: qty } : { decrement: qty } },
             });
+            p.stock += isRestock ? qty : -qty;
           }
-          await this.prisma.inventoryLog.create({
+          await tx.inventoryLog.create({
             data: {
               productId: ci.productId,
               variantId: effectiveVariantId,
               comboId: item.comboId,
-              quantity: -qty,
-              type: 'combo_order',
-              reason: `Combo in Order ${displayId}`,
+              quantity: isRestock ? qty : -qty,
+              type: isRestock ? 'restock' : 'combo_order',
+              reason: isRestock ? `Restock from Order ${displayId}` : `Combo in Order ${displayId}`,
               createdAt: new Date(),
             },
           });
@@ -1314,11 +1468,12 @@ export class OrdersService {
             `Insufficient stock for product variant. Available: ${variant.stock}, requested: ${item.quantity}.`,
           );
         }
-        if (item.variantId) {
-          await this.prisma.productVariant.update({
+        if (item.variantId && variant) {
+          await tx.productVariant.update({
             where: { id: item.variantId },
-            data: { stock: { decrement: item.quantity } },
+            data: { stock: isRestock ? { increment: item.quantity } : { decrement: item.quantity } },
           });
+          variant.stock += isRestock ? item.quantity : -item.quantity;
         }
 
         const product = item.productId ? productMap.get(item.productId) : null;
@@ -1337,19 +1492,20 @@ export class OrdersService {
           product.manageStock &&
           (!item.variantId || product.type === 'simple')
         ) {
-          await this.prisma.product.update({
+          await tx.product.update({
             where: { id: item.productId! },
-            data: { stock: { decrement: item.quantity } },
+            data: { stock: isRestock ? { increment: item.quantity } : { decrement: item.quantity } },
           });
+          product.stock += isRestock ? item.quantity : -item.quantity;
         }
 
-        await this.prisma.inventoryLog.create({
+        await tx.inventoryLog.create({
           data: {
             productId: item.productId,
             variantId: item.variantId,
-            quantity: -item.quantity,
-            type: 'order_placed',
-            reason: `Order ${displayId}`,
+            quantity: isRestock ? item.quantity : -item.quantity,
+            type: isRestock ? 'restock' : 'order_placed',
+            reason: isRestock ? `Restock from Order ${displayId}` : `Order ${displayId}`,
             createdAt: new Date(),
           },
         });

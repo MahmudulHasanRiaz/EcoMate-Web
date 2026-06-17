@@ -101,7 +101,7 @@ export function MenuSettings() {
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
     queryFn: () =>
-      apiClient.get<any[]>('/categories').then(r => {
+      apiClient.get<any>('/categories').then(r => {
         const d = r.data?.data || r.data || []
         return Array.isArray(d) ? flattenCats(d) : []
       }),
@@ -226,8 +226,10 @@ function MenuSectionBuilder({ section, onChange, categories }: {
   onChange: (s: MenuSection) => void
   categories: Category[]
 }) {
-  const catInItems = new Set(
-    section.items.filter(i => i.type === 'category' && i.categoryId).map(i => i.categoryId)
+  const catInItems = new Set<string>(
+    section.items
+      .filter(i => i.type === 'category' && i.categoryId)
+      .map(i => i.categoryId!)
   )
 
   const toggleCat = (catId: string) => {

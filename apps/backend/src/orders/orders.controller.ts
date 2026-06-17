@@ -172,8 +172,11 @@ export class OrdersController {
   }
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/status')
-  async bulkStatus(@Body() dto: BulkStatusDto) {
-    return this.svc.bulkStatusChange(dto.ids, dto.statusId);
+  async bulkStatus(
+    @Body() dto: BulkStatusDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.svc.bulkStatusChange(dto.ids, dto.statusId, user?.userId || 'system');
   }
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk/dispatch')

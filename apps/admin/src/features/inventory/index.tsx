@@ -49,7 +49,7 @@ export function Inventory() {
 
   const [quantity, setQuantity] = useState('0')
   const [reason, setReason] = useState('')
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>()
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (productSearch.length < 2) { setSearchResults([]); return }

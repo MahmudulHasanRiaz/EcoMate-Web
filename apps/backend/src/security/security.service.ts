@@ -1,13 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { BlockSettingsService } from '../block-settings/block-settings.service';
+import Redis from 'ioredis';
 
 @Injectable()
-export class SecurityService {
+export class SecurityService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SecurityService.name);
-  private failedLogins = new Map<string, { count: number; firstAttempt: number }>();
-  private ipOrderCounts = new Map<string, { count: number; firstOrder: number }>();
+  private redis: Redis | null = null;
+  private isRedisConnected = false;
+
+  private failedLoginsFallback = new Map<string, { count: number; firstAttempt: number }>();
+  private ipOrderCountsFallback = new Map<string, { count: number; firstOrder: number }>();
   private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
@@ -15,28 +19,97 @@ export class SecurityService {
     private readonly blockedEntries: BlockedEntriesService,
     private readonly blockSettings: BlockSettingsService,
   ) {
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup().catch(() => {});
+    }, 60_000);
+  }
+
+  onModuleInit() {
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    try {
+      this.redis = new Redis(redisUrl, {
+        maxRetriesPerRequest: 1,
+        enableOfflineQueue: false,
+        connectTimeout: 2000,
+      });
+
+      this.redis.on('connect', () => {
+        this.isRedisConnected = true;
+        this.logger.log('Connected to Redis for distributed rate limiting');
+      });
+
+      this.redis.on('error', (err) => {
+        this.isRedisConnected = false;
+        this.logger.warn(`Redis connection error, falling back to in-memory: ${err.message}`);
+      });
+    } catch (err: any) {
+      this.isRedisConnected = false;
+      this.logger.warn(`Failed to initialize Redis client: ${err.message}`);
+    }
   }
 
   onModuleDestroy() {
     clearInterval(this.cleanupInterval);
+    if (this.redis) {
+      this.redis.disconnect();
+    }
   }
 
   async recordFailedLogin(ip: string) {
     const now = Date.now();
-    const entry = this.failedLogins.get(ip) || { count: 0, firstAttempt: now };
-    entry.count++;
-    if (entry.count === 1) entry.firstAttempt = now;
-    this.failedLogins.set(ip, entry);
-
     const settings = await this.blockSettings.getSettings();
     const threshold = settings.autoBlock.failedLoginThreshold;
     const windowMs = (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
+    const windowSec = Math.ceil(windowMs / 1000);
 
-    if (entry.count >= threshold && (now - entry.firstAttempt) <= windowMs) {
-      this.failedLogins.delete(ip);
+    let count = 0;
+    let firstAttempt = now;
+    let redisSucceeded = false;
+
+    if (this.isRedisConnected && this.redis) {
+      const key = `ratelimit:login:${ip}`;
+      try {
+        const pipeline = this.redis.pipeline();
+        pipeline.incr(key);
+        pipeline.ttl(key);
+        const results = await pipeline.exec();
+
+        if (results && results[0] && results[1]) {
+          count = results[0][1] as number;
+          const ttl = results[1][1] as number;
+
+          if (count === 1 || ttl === -1) {
+            await this.redis.expire(key, windowSec);
+            firstAttempt = now;
+          } else {
+            firstAttempt = now - (windowMs - (ttl * 1000));
+          }
+          redisSucceeded = true;
+        }
+      } catch (err: any) {
+        this.logger.error(`Redis recordFailedLogin failed, falling back: ${err.message}`);
+        this.isRedisConnected = false;
+      }
+    }
+
+    if (!redisSucceeded) {
+      const entry = this.failedLoginsFallback.get(ip) || { count: 0, firstAttempt: now };
+      entry.count++;
+      if (entry.count === 1) entry.firstAttempt = now;
+      this.failedLoginsFallback.set(ip, entry);
+      count = entry.count;
+      firstAttempt = entry.firstAttempt;
+    }
+
+    if (count >= threshold && (now - firstAttempt) <= windowMs) {
+      if (this.isRedisConnected && this.redis) {
+        await this.redis.del(`ratelimit:login:${ip}`).catch(() => {});
+      } else {
+        this.failedLoginsFallback.delete(ip);
+      }
+
       if (settings.autoBlock.autoFullBlockIp) {
-        this.logger.warn(`Auto full-blocking IP ${ip} (${entry.count} failed logins)`);
+        this.logger.warn(`Auto full-blocking IP ${ip} (${count} failed logins)`);
         await this.blockedEntries.createAutoBlock('ip', ip, 'full', 1440);
       }
     }
@@ -54,20 +127,58 @@ export class SecurityService {
     }
 
     if (settings.autoBlock?.autoOrderBlockIp && ip) {
-      const now = Date.now();
       const windowMs = (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
-      const entry = this.ipOrderCounts.get(ip) || { count: 0, firstOrder: now };
-      entry.count++;
-      if (entry.count === 1) entry.firstOrder = now;
-      if ((now - entry.firstOrder) > windowMs) {
-        entry.count = 1;
-        entry.firstOrder = now;
-      }
-      this.ipOrderCounts.set(ip, entry);
+      const windowSec = Math.ceil(windowMs / 1000);
+      let count = 0;
+      let now = Date.now();
+      let firstOrder = now;
+      let redisSucceeded = false;
 
-      if (entry.count >= settings.ipOrderRestriction.maxOrders) {
-        this.ipOrderCounts.delete(ip);
-        this.logger.warn(`Auto order-blocking IP ${ip} (${entry.count} orders)`);
+      if (this.isRedisConnected && this.redis) {
+        const key = `ratelimit:order:${ip}`;
+        try {
+          const pipeline = this.redis.pipeline();
+          pipeline.incr(key);
+          pipeline.ttl(key);
+          const results = await pipeline.exec();
+
+          if (results && results[0] && results[1]) {
+            count = results[0][1] as number;
+            const ttl = results[1][1] as number;
+
+            if (count === 1 || ttl === -1) {
+              await this.redis.expire(key, windowSec);
+              firstOrder = now;
+            } else {
+              firstOrder = now - (windowMs - (ttl * 1000));
+            }
+            redisSucceeded = true;
+          }
+        } catch (err: any) {
+          this.logger.error(`Redis recordOrder failed, falling back: ${err.message}`);
+          this.isRedisConnected = false;
+        }
+      }
+
+      if (!redisSucceeded) {
+        const entry = this.ipOrderCountsFallback.get(ip) || { count: 0, firstOrder: now };
+        entry.count++;
+        if (entry.count === 1) entry.firstOrder = now;
+        if ((now - entry.firstOrder) > windowMs) {
+          entry.count = 1;
+          entry.firstOrder = now;
+        }
+        this.ipOrderCountsFallback.set(ip, entry);
+        count = entry.count;
+      }
+
+      if (count >= settings.ipOrderRestriction.maxOrders) {
+        if (this.isRedisConnected && this.redis) {
+          await this.redis.del(`ratelimit:order:${ip}`).catch(() => {});
+        } else {
+          this.ipOrderCountsFallback.delete(ip);
+        }
+        this.logger.warn(`Auto order-blocking IP ${ip} (${count} orders)`);
         await this.blockedEntries.createAutoBlock('ip', ip, 'order', settings.ipOrderRestriction.blockDurationMinutes);
       }
     }
@@ -117,17 +228,26 @@ export class SecurityService {
     return { ipBlocks: { total: ipActive, auto: ipAuto }, phoneBlocks: { total: phoneActive, auto: phoneAuto } };
   }
 
-  private cleanup() {
-    const now = Date.now();
-    for (const [ip, entry] of this.failedLogins.entries()) {
-      if (now - entry.firstAttempt > 600_000) {
-        this.failedLogins.delete(ip);
+  private async cleanup() {
+    try {
+      const settings = await this.blockSettings.getSettings();
+      const now = Date.now();
+
+      const loginWindowMs = (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
+      for (const [ip, entry] of this.failedLoginsFallback.entries()) {
+        if (now - entry.firstAttempt > loginWindowMs) {
+          this.failedLoginsFallback.delete(ip);
+        }
       }
-    }
-    for (const [ip, entry] of this.ipOrderCounts.entries()) {
-      if (now - entry.firstOrder > 3_600_000) {
-        this.ipOrderCounts.delete(ip);
+
+      const orderWindowMs = (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
+      for (const [ip, entry] of this.ipOrderCountsFallback.entries()) {
+        if (now - entry.firstOrder > orderWindowMs) {
+          this.ipOrderCountsFallback.delete(ip);
+        }
       }
+    } catch {
+      // If settings can't be fetched, skip cleanup this cycle
     }
   }
 }

@@ -8,13 +8,12 @@ import {
 } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
 import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
-// Generated Routes
 import { routeTree } from './routeTree.gen'
+import { GeneralError } from '@/features/errors/general-error'
 // Styles
 import './styles/index.css'
 
@@ -66,6 +65,7 @@ const queryClient = new QueryClient({
 const router = createRouter({
   routeTree,
   context: { queryClient, userRole: null },
+  defaultErrorComponent: GeneralError,
   // 'intent' = preload when user hovers/focuses a link. Previously this
   // caused many modulepreload links to be added to the initial HTML, which
   // slowed first paint on slow connections. Keep intent for in-app links but

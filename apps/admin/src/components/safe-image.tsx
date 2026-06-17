@@ -16,7 +16,7 @@ const PLACEHOLDER_DATA_URI =
     </svg>`,
   )
 
-interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+interface SafeImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   src?: string | null
   thumbWidth?: number
   thumbHeight?: number
@@ -59,7 +59,7 @@ export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, ...pro
 
   return (
     <img
-      src={finalSrc}
+      src={finalSrc || undefined}
       alt={alt || ''}
       className={className}
       onError={() => setFailed(true)}

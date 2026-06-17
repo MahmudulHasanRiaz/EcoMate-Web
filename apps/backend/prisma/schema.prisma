@@ -5,7 +5,6 @@ generator client {
 datasource db {
   provider          = "postgresql"
   url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum UserStatus {
@@ -70,6 +69,8 @@ model User {
   phoneNumber String
   password    String
   emailVerified Boolean  @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockoutUntil        DateTime?
   status      UserStatus @default(active)
   role        UserRole   @default(admin)
   createdAt   DateTime   @default(now())
@@ -401,6 +402,7 @@ model Order {
   @@index([courierConsignmentId])
   @@index([courierTrackingCode])
   @@index([paymentOptionType])
+  @@index([guestPhone])
 }
 
 model OrderItem {

@@ -65,8 +65,8 @@ export function CreateOrder() {
   const [officeNotes, setOfficeNotes] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
 
-  const customerSearchRef = useRef<ReturnType<typeof setTimeout>>()
-  const productSearchRef = useRef<ReturnType<typeof setTimeout>>()
+  const customerSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const productSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -244,8 +244,8 @@ export function CreateOrder() {
       discountType,
       customerNotes: customerNotes || null,
       officeNotes: officeNotes || null,
-      paymentMethod,
-      paymentMode,
+      paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,
+      gatewayCode: paymentMethod || undefined,
     }
 
     if (paymentMode === 'partial' && partialAmount) {

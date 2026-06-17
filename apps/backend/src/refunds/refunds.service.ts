@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -96,28 +97,37 @@ export class RefundsService {
       );
     }
 
-    const updated = await this.prisma.refund.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        processedBy,
-        processedAt: new Date(),
-        notes: dto.notes ?? refund.notes,
-      },
-      include: {
-        order: { select: { id: true, displayId: true } },
-        processor: { select: { id: true, firstName: true, lastName: true } },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.refund.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          processedBy,
+          processedAt: new Date(),
+          notes: dto.notes ?? refund.notes,
+        },
+        include: {
+          order: { select: { id: true, displayId: true } },
+          processor: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (dto.status === 'completed') {
+        await tx.order.update({
+          where: { id: updated.order.id },
+          data: { paymentStatus: 'REFUNDED' },
+        });
+
+        await this.inventoryService.restockOrderItems(
+          updated.order.id,
+          performedBy || processedBy,
+          'refund_restock',
+          false,
+          tx,
+        );
+      }
+
+      return updated;
     });
-
-    if (dto.status === 'completed') {
-      await this.inventoryService.restockOrderItems(
-        updated.order.id,
-        performedBy || processedBy,
-        'refund_restock',
-      );
-    }
-
-    return updated;
   }
 }

@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomInt } from 'crypto';
+import { randomInt, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { LoginDto } from './dto/login.dto';
@@ -75,12 +75,52 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
+    if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+      throw new UnauthorizedException(
+        'Account is temporarily locked due to too many failed login attempts. Please try again later.',
+      );
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
+      // Atomic increment - only if attempts < 5
+      await this.prisma.user.update({
+        where: { id: user.id, failedLoginAttempts: { lt: 4 } },
+        data: { failedLoginAttempts: { increment: 1 } },
+      });
+
+      // Check if this is the 5th attempt (update where attempts == 4 to lock)
+      const locked = await this.prisma.user.update({
+        where: { id: user.id, failedLoginAttempts: 4 },
+        data: {
+          failedLoginAttempts: 0,
+          lockoutUntil: new Date(Date.now() + 15 * 60 * 1000),
+        },
+      });
+
+      if (locked) {
+        throw new UnauthorizedException(
+          'Too many failed login attempts. Your account has been temporarily locked. Please try again later.',
+        );
+      }
+
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return this.generateTokens(user);
+    const tokens = await this.generateTokens(user);
+
+    // Reset failed login attempts on successful login
+    if (user.failedLoginAttempts > 0 || user.lockoutUntil) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+        },
+      });
+    }
+
+    return tokens;
   }
 
   async refresh(userId: string, refreshToken: string) {
@@ -209,19 +249,21 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (user) {
-      const otp = String(randomInt(100000, 999999));
-      const hashedOtp = await bcrypt.hash(otp, 10);
+      const rawToken = randomInt(100000, 999999).toString();
+      const hashedToken = createHash('sha256')
+        .update(rawToken + (process.env['JWT_SECRET'] || ''))
+        .digest('hex');
 
       await this.prisma.verificationToken.create({
         data: {
           email,
-          token: hashedOtp,
+          token: hashedToken,
           type: 'RESET_PASSWORD',
           expiresAt: new Date(Date.now() + 15 * 60 * 1000),
         },
       });
 
-      await this.emailService.sendOtp(email, otp);
+      await this.emailService.sendOtp(email, rawToken);
     }
     return { message: 'If the email exists, a reset code has been sent' };
   }
@@ -241,7 +283,10 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    const isOtpValid = await bcrypt.compare(otp, tokenRecord.token);
+    const hashedOtp = createHash('sha256')
+      .update(otp + (process.env['JWT_SECRET'] || ''))
+      .digest('hex');
+    const isOtpValid = hashedOtp === tokenRecord.token;
     if (!isOtpValid) {
       throw new BadRequestException('Invalid or expired OTP');
     }
@@ -307,7 +352,9 @@ export class AuthService {
     if (!user || user.emailVerified) return;
 
     const rawToken = randomInt(100000, 999999).toString();
-    const hashedToken = await bcrypt.hash(rawToken, 10);
+    const hashedToken = createHash('sha256')
+      .update(rawToken + (process.env['JWT_SECRET'] || ''))
+      .digest('hex');
 
     await this.prisma.verificationToken.create({
       data: {
@@ -322,21 +369,17 @@ export class AuthService {
   }
 
   async verifyEmail(token: string) {
-    const tokens = await this.prisma.verificationToken.findMany({
+    const hashedToken = createHash('sha256')
+      .update(token + (process.env['JWT_SECRET'] || ''))
+      .digest('hex');
+    const matched = await this.prisma.verificationToken.findFirst({
       where: {
+        token: hashedToken,
         type: 'EMAIL_VERIFICATION',
         usedAt: null,
         expiresAt: { gt: new Date() },
       },
     });
-
-    let matched: (typeof tokens)[0] | null = null;
-    for (const t of tokens) {
-      if (await bcrypt.compare(token, t.token)) {
-        matched = t;
-        break;
-      }
-    }
 
     if (!matched) {
       throw new BadRequestException('Invalid or expired verification token');

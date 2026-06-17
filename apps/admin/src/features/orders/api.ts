@@ -23,6 +23,8 @@ export interface OrderResponse {
     consignmentId?: string | null; trackingCode?: string | null;
     createdAt: string;
   }[];
+  selectedShippingOptionId?: string | null;
+  shippingChargeOverridden?: boolean;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };

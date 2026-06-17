@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 async function bootstrap() {
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
@@ -22,7 +23,7 @@ async function bootstrap() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "blob:", "https://*.r2.dev", "https://images.unsplash.com"],
         connectSrc: ["'self'", "https://*.r2.dev"],
@@ -81,6 +82,7 @@ async function bootstrap() {
     next();
   });
 
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.setGlobalPrefix('api', { exclude: ['/'] });
 
   const port = process.env['PORT'] || 4000;

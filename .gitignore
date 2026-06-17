@@ -25,3 +25,7 @@ coverage/
 
 # OS
 Thumbs.db
+
+# Databases
+*.db
+*.db-journal

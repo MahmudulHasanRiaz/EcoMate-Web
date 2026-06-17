@@ -76,8 +76,8 @@ export function SearchProvider({ children }: SearchProviderProps) {
   const [recentSearches, setRecentSearches] = useState<string[]>(
     loadRecentSearches,
   )
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
-  const abortRef = useRef<AbortController>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const abortRef = useRef<AbortController | undefined>(undefined)
 
   useEffect(() => {
     return () => {

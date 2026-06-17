@@ -461,7 +461,7 @@ function OrderDetailPage() {
               <Card><CardHeader className='pb-2'><CardTitle className='text-base flex items-center justify-between'>Edit <Button size='sm' onClick={handleSaveEdit}><Save className='h-3.5 w-3.5 mr-1' />Save</Button></CardTitle></CardHeader>
                 <CardContent className='space-y-3'>
                   <div>
-                    {shippingMode === 'options' && shippingOptions?.length > 0 ? (
+                    {shippingMode === 'options' && (shippingOptions?.length ?? 0) > 0 ? (
                       <div className="space-y-2">
                         <Label className='text-xs'>Shipping Option</Label>
                         <select

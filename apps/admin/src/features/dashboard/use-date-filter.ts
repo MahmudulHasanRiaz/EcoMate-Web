@@ -23,22 +23,22 @@ export function useDateFilter() {
 
   const setPreset = useCallback((key: DatePresetKey) => {
     navigate({
-      search: (prev: never) => {
-        const next = { ...(prev as Record<string, unknown>) }
+      search: ((prev: any) => {
+        const next = { ...prev }
         next.preset = key
         if (key !== 'custom') {
           delete next.start
           delete next.end
         }
-        return next as never
-      },
+        return next
+      }) as any,
       replace: true,
     })
   }, [navigate])
 
   const setCustomRange = useCallback((start: string, end: string) => {
     navigate({
-      search: (prev: never) => ({ ...(prev as Record<string, unknown>), preset: 'custom', start, end }) as never,
+      search: ((prev: any) => ({ ...prev, preset: 'custom', start, end })) as any,
       replace: true,
     })
   }, [navigate])

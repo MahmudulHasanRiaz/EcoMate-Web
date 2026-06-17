@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('$2a$12$hashedpassword'),
@@ -27,7 +28,7 @@ describe('AuthService', () => {
     firstName: 'John',
     lastName: 'Doe',
     username: 'johndoe',
-    phoneNumber: '+1234567890',
+    phoneNumber: '+8801712345678',
     password: '$2a$12$hashedpassword',
     status: 'active',
     createdAt: new Date('2025-01-01'),
@@ -72,12 +73,25 @@ describe('AuthService', () => {
               delete: jest.fn(),
               deleteMany: jest.fn(),
             },
+            verificationToken: {
+              create: jest.fn(),
+              findFirst: jest.fn(),
+              findUnique: jest.fn(),
+              update: jest.fn(),
+            },
           },
         },
         {
           provide: JwtService,
           useValue: {
             sign: jest.fn(),
+          },
+        },
+        {
+          provide: EmailService,
+          useValue: {
+            sendOtp: jest.fn().mockResolvedValue(undefined),
+            sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -99,7 +113,7 @@ describe('AuthService', () => {
       username: 'johndoe',
       email: 'test@example.com',
       password: 'password123',
-      phoneNumber: '+1234567890',
+      phoneNumber: '01712345678',
     };
 
     it('should register a new user successfully', async () => {
@@ -115,6 +129,9 @@ describe('AuthService', () => {
       (prisma.refreshToken.create as jest.Mock).mockResolvedValue(
         mockTokenRecord,
       );
+      (prisma.verificationToken.create as jest.Mock).mockResolvedValue({
+        id: 'verification-id',
+      });
 
       const result = await service.register(registerDto);
 
@@ -133,7 +150,7 @@ describe('AuthService', () => {
           lastName: registerDto.lastName,
           username: registerDto.username,
           email: registerDto.email,
-          phoneNumber: registerDto.phoneNumber,
+          phoneNumber: '+8801712345678',
           password: '$2a$12$hashedpassword',
         },
       });

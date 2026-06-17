@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Loader2, ArrowLeft, Shield, UserCheck, Users, CreditCard, Mail, Phone, Calendar, Clock, Activity } from 'lucide-react'
+import { Loader2, ArrowLeft, Shield, UserCheck, Users, CreditCard, Mail, Calendar, Clock, Activity } from 'lucide-react'
 import { usersApi } from '../api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { callTypes, roles } from '../data/data'
+import { callTypes } from '../data/data'
 
 const roleIcons: Record<string, typeof Shield> = {
   superadmin: Shield,

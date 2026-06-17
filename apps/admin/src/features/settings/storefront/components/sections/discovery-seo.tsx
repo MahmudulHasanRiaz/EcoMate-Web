@@ -33,7 +33,7 @@ export function DiscoverySeoSection({ hook }: Props) {
         const schema = FIELD_SCHEMAS[fieldKey]
         if (!schema) return null
 
-        if (schema.type === 'image' || schema.type === 'array') {
+        if (schema.type === 'image' || schema.type.startsWith('array-')) {
           return (
             <div key={fieldKey} className='space-y-1.5'>
               <label className='text-sm font-medium'>{schema.label}</label>

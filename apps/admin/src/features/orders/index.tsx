@@ -707,7 +707,7 @@ export function Orders() {
                                       <div className='text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>Payments</div>
                                       {o.payments.map((p) => {
                                         const gw = p.gatewayCode || p.method
-                                        const pm = paymentMethodLabel(gw)
+                                        const pm = paymentMethodLabel(gw || '')
                                         const ps = paymentStatusBadgeClass(p.status)
                                         return (
                                           <div key={p.id} className='flex items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-sm'>
