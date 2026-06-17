@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
-import { serverFetch } from '@/lib/api-server';
+import apiClient from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 
 interface OrderItem {
@@ -70,7 +70,7 @@ export default function OrdersPage() {
     setError(null);
     setOrder(null);
     try {
-      const data = await serverFetch<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
+      const { data } = await apiClient.get<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
       setOrder(data);
     } catch {
       setError('Order not found. Please check your order number.');

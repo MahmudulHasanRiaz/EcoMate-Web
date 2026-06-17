@@ -978,7 +978,7 @@ export class OrdersService {
       where: {
         OR: [
           { viewToken: viewTokenOrDisplayId },
-          { displayId: viewTokenOrDisplayId },
+          { displayId: { equals: viewTokenOrDisplayId, mode: 'insensitive' } },
         ],
       },
       include: {
