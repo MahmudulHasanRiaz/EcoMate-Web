@@ -796,8 +796,9 @@ async function main() {
         verifiedBy: order.status === 'Delivered' ? admin.id : null,
         verifiedAt: order.status === 'Delivered' ? new Date() : null,
       },
-    }
-    console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
+    });
+  }
+  console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
   }
 
   // ── Payment Options ──
