@@ -337,6 +337,7 @@ export default function CheckoutPage() {
   const [thana, setThana] = useState('');
   const [addressLine, setAddressLine] = useState('');
   const [customerNotes, setCustomerNotes] = useState('');
+  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
   const [isItemsExpanded, setIsItemsExpanded] = useState(false);
   const [isMobileSummaryOpen, setIsMobileSummaryOpen] = useState(false);
@@ -365,10 +366,14 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    const notes = readStorage('checkout_notes', '');
     setDistrict(readStorage('checkout_district', ''));
     setThana(readStorage('checkout_thana', ''));
     setAddressLine(readStorage('checkout_address', ''));
-    setCustomerNotes(readStorage('checkout_notes', ''));
+    setCustomerNotes(notes);
+    if (notes.trim().length > 0) {
+      setIsNotesExpanded(true);
+    }
     setGuestName(readStorage('checkout_guestName', ''));
     setGuestPhone(readStorage('checkout_guestPhone', ''));
     setPaymentOptionType((readStorage('checkout_paymentOptionType', 'CASH_ON_DELIVERY') as 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'));
@@ -713,7 +718,7 @@ export default function CheckoutPage() {
     return (
       <div className="space-y-2.5">
         {appliedCoupon?.valid ? (
-          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md px-3.5 py-2">
             <div>
               <span className="text-xs font-bold text-green-700">{appliedCoupon.coupon.code}</span>
               <span className="text-[10px] text-green-600 ml-2">
@@ -729,25 +734,25 @@ export default function CheckoutPage() {
               value={couponInput}
               onChange={e => setCouponInput(e.target.value)}
               placeholder="Discount code or gift voucher"
-              className="flex-1 border border-gray-200 rounded-md px-3.5 py-2 text-xs outline-none focus:border-brand-blue bg-white"
+              className="flex-1 border border-gray-250 rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 bg-white transition-all"
             />
             <button
               onClick={handleApplyCoupon}
               disabled={couponLoading}
-              className="bg-brand-blue text-white px-4 py-2 rounded-md text-xs font-bold uppercase transition-colors hover:bg-brand-blue/90 disabled:opacity-50 cursor-pointer"
+              className="bg-brand-blue text-white px-5 py-2.5 rounded-md text-xs font-bold uppercase transition-all hover:bg-brand-blue/90 disabled:opacity-50 cursor-pointer active:scale-[0.98] shadow-xs"
             >
               {couponLoading ? '...' : 'Apply'}
             </button>
           </div>
         )}
-        {couponError && <p className="text-red-500 text-[11px]">{couponError}</p>}
+        {couponError && <p className="text-red-500 text-[11px] font-medium">{couponError}</p>}
       </div>
     );
   };
 
   const renderPricingBreakdown = () => {
     return (
-      <div className="space-y-3 text-xs">
+      <div className="space-y-3.5 text-xs">
         <div className="flex justify-between items-center text-gray-500">
           <span>Subtotal</span>
           <span className="font-bold text-gray-800">{s}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
@@ -773,7 +778,7 @@ export default function CheckoutPage() {
         {appliedCoupon?.valid && discountAmount > 0 && (
           <div className="flex justify-between items-center text-green-600">
             <span>Discount ({appliedCoupon.coupon.code})</span>
-            <span className="font-bold">-{s}{discountAmount.toFixed(2)}</span>
+            <span className="font-bold text-green-700">-{s}{discountAmount.toFixed(2)}</span>
           </div>
         )}
         {paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount && parseFloat(partialAmount) > 0 && (
@@ -782,10 +787,10 @@ export default function CheckoutPage() {
             <span className="font-bold text-green-600">-{s}{parseFloat(partialAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
           </div>
         )}
-        <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2">
-          <span className="text-sm font-bold text-gray-800">Total</span>
-          <span className="text-sm font-bold text-gray-900">
-            <span className="text-[10px] text-gray-400 font-normal mr-1">{config.currency.code}</span>
+        <div className="flex justify-between items-center pt-3.5 border-t border-gray-200 mt-2">
+          <span className="text-sm font-bold text-gray-850">Total</span>
+          <span className="text-base font-black text-gray-900 flex items-baseline gap-1">
+            <span className="text-[10px] text-gray-450 font-normal">{config.currency.code}</span>
             {s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})}
           </span>
         </div>
@@ -798,9 +803,15 @@ export default function CheckoutPage() {
       <div className="space-y-4">
         <h2 className="text-base font-bold text-gray-805">Payment</h2>
         
-        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-2xs">
+        <div className="space-y-3">
           {hasCodGateway && (
-            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'CASH_ON_DELIVERY' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+            <label
+              className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-all border ${
+                paymentOptionType === 'CASH_ON_DELIVERY'
+                  ? 'border-brand-blue bg-brand-blue/[0.015] shadow-xs'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50'
+              }`}
+            >
               <div className="flex items-center gap-3">
                 <input
                   type="radio"
@@ -808,19 +819,25 @@ export default function CheckoutPage() {
                   value="CASH_ON_DELIVERY"
                   checked={paymentOptionType === 'CASH_ON_DELIVERY'}
                   onChange={() => setPaymentOptionType('CASH_ON_DELIVERY')}
-                  className="accent-brand-blue"
+                  className="accent-brand-blue h-4 w-4"
                 />
                 <div className="flex flex-col">
-                  <span className="text-xs font-bold text-gray-800">Cash on Delivery</span>
+                  <span className="text-xs font-bold text-gray-805">Cash on Delivery</span>
                   <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay with cash upon delivery</span>
                 </div>
               </div>
-              <Banknote size={16} className="text-gray-400" />
+              <Banknote size={16} className={paymentOptionType === 'CASH_ON_DELIVERY' ? 'text-brand-blue' : 'text-gray-400'} />
             </label>
           )}
 
           {hasFullPayment && (
-            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'FULL_PAYMENT' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+            <label
+              className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-all border ${
+                paymentOptionType === 'FULL_PAYMENT'
+                  ? 'border-brand-blue bg-brand-blue/[0.015] shadow-xs'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50'
+              }`}
+            >
               <div className="flex items-center gap-3">
                 <input
                   type="radio"
@@ -828,19 +845,30 @@ export default function CheckoutPage() {
                   value="FULL_PAYMENT"
                   checked={paymentOptionType === 'FULL_PAYMENT'}
                   onChange={() => setPaymentOptionType('FULL_PAYMENT')}
-                  className="accent-brand-blue"
+                  className="accent-brand-blue h-4 w-4"
                 />
                 <div className="flex flex-col">
-                  <span className="text-xs font-bold text-gray-800">Pay Online (Full)</span>
+                  <span className="text-xs font-bold text-gray-805">Pay Online (Full)</span>
                   <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay the full amount online</span>
                 </div>
               </div>
-              <CreditCard size={16} className="text-gray-400" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <PaymentLogo method="bkash" size="sm" />
+                <PaymentLogo method="nagad" size="sm" />
+                <PaymentLogo method="rocket" size="sm" />
+                <CreditCard size={16} className={paymentOptionType === 'FULL_PAYMENT' ? 'text-brand-blue ml-1' : 'text-gray-400 ml-1'} />
+              </div>
             </label>
           )}
 
           {hasPartialPayment && (
-            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'PARTIAL_PAYMENT' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+            <label
+              className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-all border ${
+                paymentOptionType === 'PARTIAL_PAYMENT'
+                  ? 'border-brand-blue bg-brand-blue/[0.015] shadow-xs'
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50'
+              }`}
+            >
               <div className="flex items-center gap-3">
                 <input
                   type="radio"
@@ -848,14 +876,19 @@ export default function CheckoutPage() {
                   value="PARTIAL_PAYMENT"
                   checked={paymentOptionType === 'PARTIAL_PAYMENT'}
                   onChange={() => setPaymentOptionType('PARTIAL_PAYMENT')}
-                  className="accent-brand-blue"
+                  className="accent-brand-blue h-4 w-4"
                 />
                 <div className="flex flex-col">
-                  <span className="text-xs font-bold text-gray-800">Pay Partial Online</span>
+                  <span className="text-xs font-bold text-gray-805">Pay Partial Online</span>
                   <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay a deposit online, rest on delivery</span>
                 </div>
               </div>
-              <CreditCard size={16} className="text-gray-400" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <PaymentLogo method="bkash" size="sm" />
+                <PaymentLogo method="nagad" size="sm" />
+                <PaymentLogo method="rocket" size="sm" />
+                <CreditCard size={16} className={paymentOptionType === 'PARTIAL_PAYMENT' ? 'text-brand-blue ml-1' : 'text-gray-400 ml-1'} />
+              </div>
             </label>
           )}
         </div>
@@ -882,8 +915,26 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-700 antialiased">
+      {/* Mobile Header (Logo & Back link) */}
+      <div className="bg-white border-b border-gray-100 py-3 lg:hidden">
+        <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
+          <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
+            {config.branding?.storeLogo ? (
+              <img src={config.branding.storeLogo} alt={config.store?.name || 'EcoMate'} className="h-6 w-auto object-contain" />
+            ) : (
+              <span className="text-base font-black tracking-tight text-gray-805">
+                {config.store?.name || 'EcoMate'}
+              </span>
+            )}
+          </Link>
+          <Link href="/cart" className="text-xs font-semibold text-brand-blue hover:underline flex items-center gap-1">
+            <ArrowLeft size={12} /> Back
+          </Link>
+        </div>
+      </div>
+
       {/* Mobile Sticky Summary Header */}
-      <div className="bg-[#fafafa] border-b border-gray-200 py-3.5 sticky top-0 z-30 lg:hidden">
+      <div className="bg-white/80 backdrop-blur-md border-b border-gray-200/80 py-3 sticky top-0 z-30 lg:hidden shadow-xs">
         <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
           <button
             onClick={() => setIsMobileSummaryOpen(!isMobileSummaryOpen)}
@@ -932,10 +983,10 @@ export default function CheckoutPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-screen">
           
           {/* Left Column - Forms (Contact, Shipping, Payment) */}
-          <div className="lg:col-span-7 px-4 py-6 md:py-10 lg:pr-12 xl:pr-16 space-y-8 bg-white">
+          <div className="lg:col-span-7 px-4 pt-6 pb-28 md:py-10 lg:pr-12 xl:pr-16 space-y-8 bg-white">
             
             {/* Header / Shop Title */}
-            <div className="flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
+            <div className="hidden lg:flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
               <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
                 {config.branding?.storeLogo ? (
                   <img src={config.branding.storeLogo} alt={config.store?.name || 'EcoMate'} className="h-8 w-auto object-contain" />
@@ -963,33 +1014,35 @@ export default function CheckoutPage() {
                   </span>
                 )}
               </div>
-              
+
               {!user && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  {/* Name Input (Second on Mobile, First on Desktop) */}
+                  <div className="order-2 md:order-1">
                     <input
                       type="text"
                       value={guestName}
                       onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }}
                       placeholder="Your Full Name *"
-                      className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue transition-all bg-white ${fieldErrors.guestName ? 'border-red-400' : 'border-gray-250'}`}
+                      className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 transition-all bg-white ${fieldErrors.guestName ? 'border-red-400' : 'border-gray-250'}`}
                     />
-                    {fieldErrors.guestName && <p className="text-red-500 text-[10px] mt-1">{fieldErrors.guestName}</p>}
+                    {fieldErrors.guestName && <p className="text-red-500 text-[10px] mt-1 font-semibold">{fieldErrors.guestName}</p>}
                   </div>
                   
-                  <div>
-                    <div className="flex">
-                      <div className={`border border-r-0 rounded-l-md px-3.5 py-2.5 bg-[#f8f9fa] text-gray-500 font-semibold text-xs transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-255'}`}>+880</div>
+                  {/* Phone Input (First on Mobile, Second on Desktop) */}
+                  <div className="order-1 md:order-2">
+                    <div className={`flex items-stretch h-11 rounded-md bg-white border transition-all focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/10 ${showPhoneError || fieldErrors.guestPhone ? 'border-red-400' : 'border-gray-250'}`}>
+                      <div className="px-3.5 bg-[#f8f9fa] text-gray-500 font-semibold text-xs border-r border-gray-200 flex items-center shrink-0 rounded-l-md">+880</div>
                       <input
                         type="tel"
                         value={guestPhone}
                         onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }}
                         placeholder="1X XXXX XXXX *"
-                        className={`w-full rounded-r-md px-3.5 py-2.5 text-xs outline-none transition-all bg-white ${showPhoneError || fieldErrors.guestPhone ? 'border-red-400 focus:border-red-500' : 'border-gray-250 focus:border-brand-blue'}`}
+                        className="w-full px-3.5 py-2 text-xs outline-none bg-transparent text-gray-800 font-medium placeholder-gray-400"
                       />
                     </div>
-                    {fieldErrors.guestPhone && <p className="text-red-500 text-[10px] mt-1">{fieldErrors.guestPhone}</p>}
-                    {showPhoneError && <p className="text-red-500 text-[10px] mt-1">Please enter a valid Bangladeshi phone number</p>}
+                    {fieldErrors.guestPhone && <p className="text-red-500 text-[10px] mt-1 font-semibold">{fieldErrors.guestPhone}</p>}
+                    {showPhoneError && <p className="text-red-500 text-[10px] mt-1 font-semibold">Please enter a valid Bangladeshi phone number</p>}
                   </div>
                 </div>
               )}
@@ -997,7 +1050,7 @@ export default function CheckoutPage() {
               {user && (
                 <div className="bg-[#f9fafb] rounded-lg p-3 border border-gray-100 flex items-center justify-between">
                   <div className="text-xs">
-                    <p className="font-bold text-gray-805">{[user.firstName, user.lastName].filter(Boolean).join(' ') || 'Logged in user'}</p>
+                    <p className="font-bold text-gray-855">{[user.firstName, user.lastName].filter(Boolean).join(' ') || 'Logged in user'}</p>
                     <p className="text-gray-400 font-medium mt-0.5">{user.phoneNumber || user.email}</p>
                   </div>
                   <span className="text-[10px] bg-green-50 text-green-600 font-bold border border-green-200 rounded px-1.5 py-0.5">Verified</span>
@@ -1016,7 +1069,7 @@ export default function CheckoutPage() {
                       <select
                         value={district}
                         onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
-                        className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue ${fieldErrors.district ? 'border-red-400' : 'border-gray-250'}`}
+                        className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.district ? 'border-red-400' : 'border-gray-250'}`}
                       >
                         <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
                         {districts.map(d => (
@@ -1025,7 +1078,7 @@ export default function CheckoutPage() {
                       </select>
                       <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                     </div>
-                    {fieldErrors.district && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.district}</p>}
+                    {fieldErrors.district && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.district}</p>}
                   </div>
                 )}
 
@@ -1035,7 +1088,7 @@ export default function CheckoutPage() {
                       <select
                         value={thana}
                         onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
-                        className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue ${fieldErrors.thana ? 'border-red-400' : 'border-gray-250'}`}
+                        className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.thana ? 'border-red-400' : 'border-gray-250'}`}
                       >
                         <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
                         {thanas.map(t => (
@@ -1044,7 +1097,7 @@ export default function CheckoutPage() {
                       </select>
                       <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                     </div>
-                    {fieldErrors.thana && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.thana}</p>}
+                    {fieldErrors.thana && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.thana}</p>}
                   </div>
                 )}
 
@@ -1054,9 +1107,9 @@ export default function CheckoutPage() {
                     onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
                     placeholder="Address detail (apartment, suite, unit, building, street) *"
                     rows={2}
-                    className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue resize-none bg-white ${fieldErrors.addressLine ? 'border-red-400' : 'border-gray-250'}`}
+                    className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 resize-none bg-white transition-all ${fieldErrors.addressLine ? 'border-red-400' : 'border-gray-250'}`}
                   />
-                  {fieldErrors.addressLine && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.addressLine}</p>}
+                  {fieldErrors.addressLine && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.addressLine}</p>}
                 </div>
               </div>
 
@@ -1106,17 +1159,38 @@ export default function CheckoutPage() {
             {renderPaymentSection()}
 
             {/* Notes */}
-            <div className="space-y-3">
-              <h2 className="text-base font-bold text-gray-800">Order notes <span className="font-normal text-xs text-gray-400">(Optional)</span></h2>
-              <textarea
-                value={customerNotes}
-                onChange={e => setCustomerNotes(e.target.value)}
-                placeholder="Notes about your order, e.g. special instructions for delivery."
-                rows={2}
-                className="w-full border border-gray-200 rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue resize-none bg-white"
-                maxLength={90}
-              />
-              <div className="text-[10px] text-gray-450 text-right">{customerNotes.length} / 90 characters</div>
+            <div className="space-y-2">
+              {!isNotesExpanded ? (
+                <button
+                  type="button"
+                  onClick={() => setIsNotesExpanded(true)}
+                  className="text-xs font-semibold text-brand-blue hover:text-brand-blue/80 transition-colors flex items-center gap-1 cursor-pointer outline-none"
+                >
+                  <Plus size={14} /> Add delivery instructions / order notes (optional)
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-xs font-bold text-gray-805 uppercase tracking-wider">Order notes</h2>
+                    <button
+                      type="button"
+                      onClick={() => { setIsNotesExpanded(false); setCustomerNotes(''); }}
+                      className="text-xs font-medium text-red-500 hover:text-red-600 flex items-center gap-0.5 cursor-pointer outline-none"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <textarea
+                    value={customerNotes}
+                    onChange={e => setCustomerNotes(e.target.value)}
+                    placeholder="Notes about your order, e.g. special instructions for delivery."
+                    rows={2}
+                    className="w-full border border-gray-250 rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 resize-none bg-white transition-all"
+                    maxLength={90}
+                  />
+                  <div className="text-[10px] text-gray-450 text-right">{customerNotes.length} / 90 characters</div>
+                </div>
+              )}
             </div>
 
             {/* Checkout Action Button */}
@@ -1137,7 +1211,11 @@ export default function CheckoutPage() {
                 <button
                   onClick={handlePlaceOrder}
                   disabled={!canSubmit}
-                  className={`w-full text-white font-bold h-12.5 rounded-md text-sm uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer shadow-md ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/10' : 'bg-gray-300 cursor-not-allowed'}`}
+                  className={`hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
+                    canSubmit 
+                      ? 'bg-brand-blue hover:bg-brand-blue/95 hover:shadow-lg hover:shadow-brand-blue/15 shadow-brand-blue/10' 
+                      : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
+                  }`}
                 >
                   {submitting ? 'Placing Order...' : 'Complete Order'}
                 </button>
@@ -1147,7 +1225,11 @@ export default function CheckoutPage() {
                 <button
                   onClick={handlePayNow}
                   disabled={!canSubmit}
-                  className={`w-full text-white font-bold h-12.5 rounded-md text-sm uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer shadow-md ${canSubmit ? 'bg-[#f59e0b] hover:bg-[#d97706] shadow-amber-500/10' : 'bg-gray-300 cursor-not-allowed'}`}
+                  className={`hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
+                    canSubmit 
+                      ? 'bg-amber-500 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/15 shadow-amber-500/10' 
+                      : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
+                  }`}
                 >
                   {submitting ? 'Processing...' : `Pay ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
                 </button>
@@ -1157,30 +1239,67 @@ export default function CheckoutPage() {
           </div>
 
           {/* Right Column - Desktop Order Summary (Items list, Coupon, Totals) */}
-          <div className="hidden lg:col-span-5 lg:block bg-[#fafafa] border-l border-gray-200 px-8 py-10 space-y-6">
-            <div className="sticky top-6 space-y-6">
+          <div className="hidden lg:col-span-5 lg:block bg-[#fafafa] border-l border-gray-200 px-8 py-10">
+            <div className="sticky top-6 space-y-6 max-w-[450px]">
               
               {/* Product List */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Order Items</h3>
+              <div className="border-b border-gray-200/80 pb-6">
                 {renderCartItems()}
               </div>
 
               {/* Coupon Section */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Coupon Discount</h3>
+              <div className="border-b border-gray-200/80 pb-6">
                 {renderCouponSection()}
               </div>
 
               {/* Cost Summary */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Price Details</h3>
+              <div className="pt-2">
                 {renderPricingBreakdown()}
               </div>
 
             </div>
           </div>
 
+        </div>
+      </div>
+
+      {/* Mobile Sticky Bottom CTA Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-t border-gray-200/80 px-4 py-3 flex items-center justify-between lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total</span>
+          <span className="text-sm font-black text-gray-805">
+            {s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})}
+          </span>
+        </div>
+        
+        <div className="w-3/5">
+          {paymentOptionType === 'CASH_ON_DELIVERY' && (
+            <button
+              onClick={handlePlaceOrder}
+              disabled={!canSubmit}
+              className={`w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
+                canSubmit 
+                  ? 'bg-brand-blue hover:bg-brand-blue/95 shadow-brand-blue/10' 
+                  : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
+              }`}
+            >
+              {submitting ? 'Placing...' : 'Complete Order'}
+            </button>
+          )}
+          
+          {(paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT') && (
+            <button
+              onClick={handlePayNow}
+              disabled={!canSubmit}
+              className={`w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
+                canSubmit 
+                  ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/10' 
+                  : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
+              }`}
+            >
+              {submitting ? 'Processing...' : `Pay ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
+            </button>
+          )}
         </div>
       </div>
 
