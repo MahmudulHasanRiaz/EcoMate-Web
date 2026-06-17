@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   faq: { items: [] },
   hours: { label: "", details: [] },
   company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
-  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false },
+  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false, paymentOptions: { FULL_PAYMENT: true, PARTIAL_PAYMENT: true, CASH_ON_DELIVERY: true } },
   districtCharges: {},
   shippingMode: 'options',
   shippingOptions: [],

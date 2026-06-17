@@ -401,6 +401,22 @@ export class SystemSettingsController {
         thanaEnabled: map['checkout_thana_enabled'] !== 'false',
         districtRequired: map['checkout_district_required'] === 'true',
         thanaRequired: map['checkout_thana_required'] === 'true',
+        paymentOptions: await (async () => {
+          const paymentOptions: Record<string, boolean> = {
+            FULL_PAYMENT: true,
+            PARTIAL_PAYMENT: true,
+            CASH_ON_DELIVERY: true,
+          };
+          try {
+            const opts = await this.prisma.paymentOption.findMany({
+              select: { type: true, enabled: true },
+            });
+            for (const o of opts) {
+              paymentOptions[o.type] = o.enabled;
+            }
+          } catch {}
+          return paymentOptions;
+        })(),
       },
       shippingMode,
       shippingOptions,

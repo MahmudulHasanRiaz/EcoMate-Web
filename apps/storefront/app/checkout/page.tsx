@@ -380,9 +380,9 @@ export default function CheckoutPage() {
   useEffect(() => {
     getGateways().then(list => setGateways(list)).catch(() => {});
   }, []);
-  const hasCodGateway = gateways.some(g => g.code === 'cash' && g.enabled);
-  const hasFullPayment = gateways.some(g => g.paymentOptionType === 'FULL_PAYMENT' && g.enabled);
-  const hasPartialPayment = gateways.some(g => g.paymentOptionType === 'PARTIAL_PAYMENT' && g.enabled);
+  const hasCodGateway = gateways.some(g => g.code === 'cash' && g.enabled) && (checkoutCfg?.paymentOptions?.CASH_ON_DELIVERY !== false);
+  const hasFullPayment = (checkoutCfg?.paymentOptions?.FULL_PAYMENT !== false) && gateways.some(g => g.code !== 'cash' && g.enabled);
+  const hasPartialPayment = (checkoutCfg?.paymentOptions?.PARTIAL_PAYMENT !== false) && gateways.some(g => g.code !== 'cash' && g.enabled);
 
   let deliveryCharge = 0;
   let noDeliveryError = '';
