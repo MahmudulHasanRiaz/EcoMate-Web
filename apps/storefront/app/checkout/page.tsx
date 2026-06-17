@@ -615,7 +615,24 @@ export default function CheckoutPage() {
       }
     }
     setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
+    
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      // Find the first error in visual order: Phone -> Name -> District -> Thana -> Address Detail
+      const visualOrder = ['guestPhone', 'guestName', 'district', 'thana', 'addressLine', 'shippingOption'];
+      const firstErrorField = visualOrder.find(k => k in errors);
+      if (firstErrorField) {
+        setTimeout(() => {
+          const element = document.getElementById(`checkout-${firstErrorField}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.focus();
+          }
+        }, 80);
+      }
+    }
+
+    return errorKeys.length === 0;
   };
 
   const handlePlaceOrder = async () => {
@@ -1020,6 +1037,7 @@ export default function CheckoutPage() {
                   {/* Name Input (Second on Mobile, First on Desktop) */}
                   <div className="order-2 md:order-1">
                     <input
+                      id="checkout-guestName"
                       type="text"
                       value={guestName}
                       onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }}
@@ -1034,6 +1052,7 @@ export default function CheckoutPage() {
                     <div className={`flex items-stretch h-11 rounded-md bg-white border transition-all focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/10 ${showPhoneError || fieldErrors.guestPhone ? 'border-red-400' : 'border-gray-250'}`}>
                       <div className="px-3.5 bg-[#f8f9fa] text-gray-500 font-semibold text-xs border-r border-gray-200 flex items-center shrink-0 rounded-l-md">+880</div>
                       <input
+                        id="checkout-guestPhone"
                         type="tel"
                         value={guestPhone}
                         onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }}
@@ -1067,6 +1086,7 @@ export default function CheckoutPage() {
                   <div className="space-y-1">
                     <div className="relative">
                       <select
+                        id="checkout-district"
                         value={district}
                         onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
                         className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.district ? 'border-red-400' : 'border-gray-250'}`}
@@ -1086,6 +1106,7 @@ export default function CheckoutPage() {
                   <div className="space-y-1">
                     <div className="relative">
                       <select
+                        id="checkout-thana"
                         value={thana}
                         onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
                         className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.thana ? 'border-red-400' : 'border-gray-250'}`}
@@ -1103,6 +1124,7 @@ export default function CheckoutPage() {
 
                 <div className="md:col-span-2">
                   <textarea
+                    id="checkout-addressLine"
                     value={addressLine}
                     onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
                     placeholder="Address detail (apartment, suite, unit, building, street) *"
@@ -1210,12 +1232,8 @@ export default function CheckoutPage() {
               {paymentOptionType === 'CASH_ON_DELIVERY' && (
                 <button
                   onClick={handlePlaceOrder}
-                  disabled={!canSubmit}
-                  className={`hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
-                    canSubmit 
-                      ? 'bg-brand-blue hover:bg-brand-blue/95 hover:shadow-lg hover:shadow-brand-blue/15 shadow-brand-blue/10' 
-                      : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
-                  }`}
+                  disabled={submitting}
+                  className="hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none bg-brand-blue hover:bg-brand-blue/95 hover:shadow-lg hover:shadow-brand-blue/15 shadow-brand-blue/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Placing Order...' : 'Complete Order'}
                 </button>
@@ -1224,12 +1242,8 @@ export default function CheckoutPage() {
               {(paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT') && (
                 <button
                   onClick={handlePayNow}
-                  disabled={!canSubmit}
-                  className={`hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
-                    canSubmit 
-                      ? 'bg-amber-500 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/15 shadow-amber-500/10' 
-                      : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
-                  }`}
+                  disabled={submitting}
+                  className="hidden lg:block w-full text-white font-bold h-12 rounded-md text-sm uppercase tracking-wider transition-all duration-250 active:scale-[0.99] cursor-pointer shadow-md outline-none bg-amber-500 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/15 shadow-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Processing...' : `Pay ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
                 </button>
@@ -1276,12 +1290,8 @@ export default function CheckoutPage() {
           {paymentOptionType === 'CASH_ON_DELIVERY' && (
             <button
               onClick={handlePlaceOrder}
-              disabled={!canSubmit}
-              className={`w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
-                canSubmit 
-                  ? 'bg-brand-blue hover:bg-brand-blue/95 shadow-brand-blue/10' 
-                  : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
-              }`}
+              disabled={submitting}
+              className="w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none bg-brand-blue hover:bg-brand-blue/95 shadow-brand-blue/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Placing...' : 'Complete Order'}
             </button>
@@ -1290,12 +1300,8 @@ export default function CheckoutPage() {
           {(paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT') && (
             <button
               onClick={handlePayNow}
-              disabled={!canSubmit}
-              className={`w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none ${
-                canSubmit 
-                  ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/10' 
-                  : 'bg-gray-100 text-gray-400 border border-gray-200/80 cursor-not-allowed shadow-none'
-              }`}
+              disabled={submitting}
+              className="w-full text-white font-bold h-10.5 rounded-md text-[11px] uppercase tracking-wider transition-all duration-200 active:scale-[0.99] cursor-pointer shadow-md outline-none bg-amber-500 hover:bg-amber-600 shadow-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Processing...' : `Pay ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
             </button>
