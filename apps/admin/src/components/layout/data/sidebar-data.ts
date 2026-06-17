@@ -44,7 +44,6 @@ export const sidebarData: SidebarData = {
           icon: ListTodo,
           items: [
             { title: 'All Orders', url: '/op/orders' },
-            { title: 'Import Orders', url: '/op/import-orders', icon: Upload },
             { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads' },
             { title: 'Reviews', url: '/op/reviews' },
           ],
