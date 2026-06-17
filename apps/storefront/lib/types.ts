@@ -77,6 +77,7 @@ export interface ComboItemDetails {
   variantLabel?: string;
   quantity: number;
   price?: number;
+  stock?: number;
   variants?: Variant[];
 }
 

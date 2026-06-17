@@ -15,6 +15,18 @@ async function getCombo(id: string) {
     ...data,
     price: salePrice ?? basePrice,
     originalPrice: salePrice != null && salePrice < basePrice ? basePrice : undefined,
+    items: data.items?.map((item: any) => ({
+      productId: item.productId,
+      productName: item.product?.name,
+      productType: item.product?.type,
+      productImage: item.variant?.image || item.product?.images?.[0] || null,
+      variantId: item.variantId,
+      variantLabel: item.variant?.sku,
+      quantity: item.quantity,
+      price: item.price ? Number(item.price) : undefined,
+      stock: item.variant ? item.variant.stock : item.product?.stock,
+      variants: item.product?.variants,
+    })) || [],
   };
 }
 

@@ -203,7 +203,7 @@ export class CombosService {
               },
             },
             variant: {
-              select: { id: true, sku: true, price: true, stock: true },
+              select: { id: true, sku: true, price: true, stock: true, image: true },
             },
           },
         },

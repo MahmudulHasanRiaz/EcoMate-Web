@@ -117,6 +117,19 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
 
   const allFlexibleReady = flexibleItemsWithStock.length === 0 || Object.keys(effectiveSelections).length === flexibleItemsWithStock.length;
 
+  const isComboOutOfStock = useMemo(() => {
+    for (const item of combo.items) {
+      const isFlexible = item.productType === 'variable' && !item.variantId;
+      if (!isFlexible) {
+        if ((item.stock ?? 0) <= 0) return true;
+      } else {
+        const hasInStockVariant = item.variants?.some(v => v.isActive && v.stock > 0);
+        if (!hasInStockVariant) return true;
+      }
+    }
+    return false;
+  }, [combo]);
+
   const hasOOSSelection = useMemo(() => {
     for (const [productId, variantId] of Object.entries(effectiveSelections)) {
       const item = combo.items.find((i) => i.productId === productId);
@@ -321,10 +334,12 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
 
             <button
               onClick={inCart ? () => removeFromCart(comboCartKey) : handleAddToCart}
-              disabled={!inCart && (!allFlexibleReady || hasOOSSelection)}
+              disabled={!inCart && (isComboOutOfStock || !allFlexibleReady || hasOOSSelection)}
               className={`w-full h-12 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors text-sm ${
                 inCart
                   ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : isComboOutOfStock
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : !allFlexibleReady
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : hasOOSSelection
@@ -333,7 +348,7 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
               }`}
             >
               <ShoppingBag size={18} />
-              {inCart ? 'REMOVE FROM CART' : !allFlexibleReady ? 'SELECT VARIANT(S)' : hasOOSSelection ? 'OUT OF STOCK' : 'ADD COMBO TO CART'}
+              {inCart ? 'REMOVE FROM CART' : isComboOutOfStock ? 'OUT OF STOCK' : !allFlexibleReady ? 'SELECT VARIANT(S)' : hasOOSSelection ? 'SELECTION OUT OF STOCK' : 'ADD COMBO TO CART'}
             </button>
           </div>
         </div>
