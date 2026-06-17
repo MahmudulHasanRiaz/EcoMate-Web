@@ -731,7 +731,7 @@ async function main() {
     const orderRecord = await prisma.order.create({
       data: {
         displayId,
-        customerId: customer.id,
+        customerId: customer!.id,
         statusId: orderStatusMap[order.status],
         subtotal: order.subtotal,
         shippingCharge: order.shippingCharge,
