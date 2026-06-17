@@ -128,7 +128,10 @@ export class OrdersService {
       if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
       if (query.dateTo) where.createdAt.lte = new Date(query.dateTo);
     }
-    const [data, total] = await Promise.all([
+    const statsWhere = { ...where };
+    delete statsWhere.statusId;
+
+    const [data, total, stats] = await Promise.all([
       this.prisma.order.findMany({
         where,
         skip: (page - 1) * perPage,
@@ -156,10 +159,27 @@ export class OrdersService {
         },
       }),
       this.prisma.order.count({ where }),
+      this.prisma.order.groupBy({
+        by: ['statusId'],
+        where: statsWhere,
+        _count: true,
+      }),
     ]);
+
+    const statusCounts = stats.reduce((acc, curr) => {
+      acc[curr.statusId] = curr._count;
+      return acc;
+    }, {} as Record<string, number>);
+
     return {
       data: data.map((o: any) => this.transformOrder(o)),
-      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+      meta: {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage),
+        statusCounts,
+      },
     };
   }
 

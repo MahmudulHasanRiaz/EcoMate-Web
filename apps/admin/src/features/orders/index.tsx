@@ -246,14 +246,8 @@ export function Orders() {
   const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all'
 
   const statusCountMap = useMemo(() => {
-    if (!data?.data) return {} as Record<string, number>
-    const map: Record<string, number> = {}
-    for (const o of data.data) {
-      const key = o.status?.name || 'Unknown'
-      map[key] = (map[key] || 0) + 1
-    }
-    return map
-  }, [data?.data])
+    return data?.meta?.statusCounts || {} as Record<string, number>
+  }, [data?.meta?.statusCounts])
 
   const totalRevenue = useMemo(() => {
     if (!data?.data) return 0
@@ -293,7 +287,7 @@ export function Orders() {
         <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
           {statusList.slice(0, 4).map((s: any) => {
             const color = getStatusColor(s.name, s.color)
-            const count = statusCountMap[s.name] || 0
+            const count = statusCountMap[s.id] || 0
             const isActive = statusFilter === s.id
             return (
               <button

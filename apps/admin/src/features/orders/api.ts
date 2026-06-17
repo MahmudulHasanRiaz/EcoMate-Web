@@ -31,7 +31,16 @@ export interface OrderResponse {
   shipment?: { id: string; trackingNo?: string | null; courier?: string | null; status: string } | null;
 }
 
-export interface PaginatedResponse<T> { data: T[]; meta: { total: number; page: number; perPage: number; totalPages: number } }
+export interface PaginatedResponse<T> {
+  data: T[]
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    totalPages: number
+    statusCounts?: Record<string, number>
+  }
+}
 
 export const ordersApi = {
   list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),
