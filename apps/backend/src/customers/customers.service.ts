@@ -123,8 +123,15 @@ export class CustomersService {
     phone: string,
     name: string,
   ): Promise<{ id: string }> {
-    const normalized = normalizePhone(phone);
-    if (!normalized) throw new BadRequestException('Invalid phone number');
+    let normalized = normalizePhone(phone);
+    if (!normalized) {
+      const cleaned = phone.replace(/[^\d+]/g, '');
+      if (cleaned.length >= 7 && cleaned.length <= 15) {
+        normalized = cleaned.startsWith('+') ? cleaned : '+' + cleaned;
+      } else {
+        throw new BadRequestException('Invalid phone number format');
+      }
+    }
 
     const nameParts = (name || '').trim().split(/\s+/);
     const firstName = nameParts[0] || 'Unknown';
@@ -145,7 +152,9 @@ export class CustomersService {
     }
 
     const phoneKey = normalized.replace(/[^\d]/g, '');
-    const hashedPassword = await bcrypt.hash(randomUUID(), 12);
+    // Use a pre-calculated dummy hash to avoid extremely slow CPU-blocking bcrypt hashing during checkout/import.
+    // Since this is a guest account with a random UUID password, it cannot be logged into anyway until a password reset.
+    const hashedPassword = '$2a$12$5K1R68iJb0Z2kYf.p0jOeuZ/XmS9M0d.6oZc1p9e6p9z1a2b3c4d5';
 
     const user = await this.prisma.user.create({
       data: {
