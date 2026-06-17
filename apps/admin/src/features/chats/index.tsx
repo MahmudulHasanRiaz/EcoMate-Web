@@ -22,7 +22,7 @@ import { Separator } from '@/components/ui/separator'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { NewChat } from './components/new-chat'
 import { type ChatUser, type Convo } from './data/chat-types'
@@ -66,7 +66,7 @@ export function Chats() {
     <>
       {/* ===== Top Heading ===== */}
       <Header>
-        <Search className='me-auto' />
+        <GlobalSearchBar className='me-auto' />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>

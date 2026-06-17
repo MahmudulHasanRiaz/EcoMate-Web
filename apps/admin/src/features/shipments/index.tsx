@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,7 +42,7 @@ export function Shipments() {
 
   return (
     <>
-      <Header fixed><Search className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
+      <Header fixed><GlobalSearchBar className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div><h2 className='text-2xl font-bold tracking-tight'>Shipments</h2><p className='text-muted-foreground'>Manage order shipments.</p></div>
         <Card><CardContent className='p-0'>

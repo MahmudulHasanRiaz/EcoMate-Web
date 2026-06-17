@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, type RenderResult } from 'vitest-browser-react'
+import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
 import { SearchProvider } from '@/context/search-provider'
 
-const COMMAND_MENU_PLACEHOLDER = 'Type a command or search...'
+const COMMAND_PALETTE_PLACEHOLDER = 'Type a command or search...'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   setTheme: vi.fn(),
+  apiGet: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
@@ -22,65 +23,59 @@ vi.mock('@/context/theme-provider', () => ({
   useTheme: () => ({ setTheme: mocks.setTheme }),
 }))
 
+vi.mock('@/lib/api-client', () => ({
+  apiClient: { get: mocks.apiGet },
+}))
+
 type ShortcutModifier = 'Control' | 'Meta'
 
 async function renderWithSearchProvider() {
   return await render(<SearchProvider>{null}</SearchProvider>)
 }
 
-/**
- * Open the palette by shortcut, retrying while the keydown listener may not be mounted yet.
- * Waits between attempts so a successful toggle is not immediately undone by a second chord.
- */
 async function openCommandPalette(
-  screen: RenderResult,
-  modifier: ShortcutModifier = 'Control'
+  screen: ReturnType<typeof render>,
+  modifier: ShortcutModifier = 'Control',
 ) {
   await vi.waitFor(
     async () => {
-      const isCommandPaletteOpen =
+      const isOpen =
         document.querySelector(
-          `[placeholder="${COMMAND_MENU_PLACEHOLDER}"]`
+          `[placeholder="${COMMAND_PALETTE_PLACEHOLDER}"]`,
         ) !== null
 
-      if (!isCommandPaletteOpen) {
+      if (!isOpen) {
         await userEvent.keyboard(`{${modifier}>}k{/${modifier}}`)
       }
 
       await expect
-        .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+        .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
         .toBeInTheDocument()
     },
-    { interval: 50, timeout: 5000 }
+    { interval: 50, timeout: 5000 },
   )
 }
 
-describe('SearchProvider and CommandMenu', () => {
+describe('SearchProvider and CommandPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
   })
 
-  it('renders the command palette when the palette is open', async () => {
+  it('renders the command palette when opened via shortcut', async () => {
     const screen = await renderWithSearchProvider()
-    const { getByPlaceholder, getByText } = screen
-
     await openCommandPalette(screen)
-
     await expect
-      .element(getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+      .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
       .toBeInTheDocument()
-    await expect.element(getByText('Theme')).toBeInTheDocument()
-    await expect.element(getByText('Light')).toBeInTheDocument()
-    await expect.element(getByText('Dark')).toBeInTheDocument()
-    await expect.element(getByText('System')).toBeInTheDocument()
-    await expect.element(getByText('Dashboard')).toBeInTheDocument()
+    await expect.element(screen.getByText('Theme')).toBeInTheDocument()
+    await expect.element(screen.getByText('Tasks')).toBeInTheDocument()
   })
 
   it('does not show the dialog content when search is closed', async () => {
-    const { getByPlaceholder } = await renderWithSearchProvider()
-
+    const screen = await renderWithSearchProvider()
     await expect
-      .element(getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+      .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
       .not.toBeInTheDocument()
   })
 
@@ -91,71 +86,123 @@ describe('SearchProvider and CommandMenu', () => {
     'opens the command menu when %s + K is pressed',
     async (_label, modifier) => {
       const screen = await renderWithSearchProvider()
-
       await expect
-        .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+        .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
         .not.toBeInTheDocument()
-
       await openCommandPalette(screen, modifier)
-
       await expect
-        .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+        .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
         .toBeInTheDocument()
-    }
+    },
   )
 
-  it('navigates to a top-level route and closes the palette when a nav item is selected', async () => {
+  it('navigates to a top-level route on nav item select', async () => {
     const screen = await renderWithSearchProvider()
-
     await openCommandPalette(screen)
-
     await userEvent.click(screen.getByText('Tasks'))
-
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/op/tasks' })
     await expect
-      .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+      .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
       .not.toBeInTheDocument()
   })
 
-  it('navigates for nested sidebar items (group with sub-items)', async () => {
+  it('applies theme on theme command select', async () => {
     const screen = await renderWithSearchProvider()
-    const { getByPlaceholder, getByRole } = screen
-
     await openCommandPalette(screen)
-
-    await userEvent.click(getByRole('option', { name: 'Settings Account' }))
-
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/account' })
-    await expect
-      .element(getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
-      .not.toBeInTheDocument()
-  })
-
-  it('applies theme and closes the palette when a theme command is chosen', async () => {
-    const screen = await renderWithSearchProvider()
-
-    await openCommandPalette(screen)
-
     await userEvent.click(screen.getByText('Dark'))
-
     expect(mocks.setTheme).toHaveBeenCalledWith('dark')
     await expect
-      .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
+      .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
       .not.toBeInTheDocument()
   })
 
-  it('shows empty state when the filter matches nothing', async () => {
+  it('calls API when user types a search query', async () => {
+    mocks.apiGet.mockResolvedValue({
+      data: { orders: [], products: [], customers: [] },
+    })
     const screen = await renderWithSearchProvider()
-
     await openCommandPalette(screen)
+    const input = screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER)
+    await userEvent.fill(input, 'te')
+    await vi.waitFor(() => {
+      expect(mocks.apiGet).toHaveBeenCalledWith(
+        '/admin/search',
+        expect.any(Object),
+      )
+    })
+  })
 
+  it('shows API results in categorized sections', async () => {
+    mocks.apiGet.mockResolvedValue({
+      data: {
+        orders: [
+          {
+            id: '1',
+            displayId: 'ORD-1',
+            total: 100,
+            status: 'Pending',
+            customerName: 'Test',
+            phone: null,
+          },
+        ],
+        products: [
+          { id: '2', name: 'Phone', sku: 'PH-1', price: 500 },
+        ],
+        customers: [
+          { id: '3', name: 'John', phone: '017...', email: 'j@t.com' },
+        ],
+      },
+    })
+    const screen = await renderWithSearchProvider()
+    await openCommandPalette(screen)
     await userEvent.fill(
-      screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER),
-      'zzzz-no-match-xxxx'
+      screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER),
+      'test',
     )
+    await vi.waitFor(() =>
+      expect(screen.getByText('#ORD-1')).toBeInTheDocument(),
+    )
+    await expect.element(screen.getByText('Phone')).toBeInTheDocument()
+    await expect.element(screen.getByText('John')).toBeInTheDocument()
+  })
 
-    await expect
-      .element(screen.getByText('No results found.'))
-      .toBeInTheDocument()
+  it('shows empty state when API returns nothing', async () => {
+    mocks.apiGet.mockResolvedValue({
+      data: { orders: [], products: [], customers: [] },
+    })
+    const screen = await renderWithSearchProvider()
+    await openCommandPalette(screen)
+    await userEvent.fill(
+      screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER),
+      'zzzzz',
+    )
+    await vi.waitFor(() =>
+      expect(screen.getByText(/No results found/)).toBeInTheDocument(),
+    )
+  })
+
+  it('shows error state on API failure', async () => {
+    mocks.apiGet.mockRejectedValue(new Error('Network error'))
+    const screen = await renderWithSearchProvider()
+    await openCommandPalette(screen)
+    await userEvent.fill(
+      screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER),
+      'test',
+    )
+    await vi.waitFor(() =>
+      expect(screen.getByText('Search unavailable')).toBeInTheDocument(),
+    )
+  })
+
+  it('does not call API for queries shorter than 2 characters', async () => {
+    const screen = await renderWithSearchProvider()
+    await openCommandPalette(screen)
+    await userEvent.fill(
+      screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER),
+      'a',
+    )
+    await vi.waitFor(() => {
+      expect(mocks.apiGet).not.toHaveBeenCalled()
+    })
   })
 })

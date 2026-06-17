@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,7 +49,7 @@ export function Payments() {
   return (
     <>
       <Header fixed>
-        <Search className='me-auto' />
+        <GlobalSearchBar className='me-auto' />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>

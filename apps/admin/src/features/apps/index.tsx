@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { apps } from './data/apps'
 
@@ -81,7 +81,7 @@ export function Apps() {
     <>
       {/* ===== Top Heading ===== */}
       <Header>
-        <Search className='me-auto' />
+        <GlobalSearchBar className='me-auto' />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>

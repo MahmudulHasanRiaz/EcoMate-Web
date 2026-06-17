@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -146,7 +146,7 @@ export function Tags() {
     <>
       <Header fixed>
         <div className='flex items-center gap-2 me-auto'>
-          <Search value={search} onChange={e => setSearch(e.target.value)} placeholder='Search tags...' />
+          <GlobalSearchBar value={search} onChange={e => setSearch(e.target.value)} placeholder='Search tags...' />
         </div>
         <ThemeSwitch /><ProfileDropdown />
       </Header>

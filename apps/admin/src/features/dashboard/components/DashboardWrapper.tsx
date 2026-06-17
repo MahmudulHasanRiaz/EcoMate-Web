@@ -10,7 +10,7 @@ import { opWidgets } from '../config/op-widgets'
 import { canAccess } from '../constants'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import type { RoleKey } from '../types'
@@ -40,7 +40,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
   return (
     <>
       <Header>
-        <Search className="me-auto" />
+        <GlobalSearchBar className="me-auto" />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>

@@ -83,7 +83,7 @@ export function CommandPalette() {
   const showApiSection = query.length >= 2 && !isLoading && !error
 
   return (
-    <CommandDialog modal open={open} onOpenChange={setOpen}>
+    <CommandDialog modal shouldFilter={false} open={open} onOpenChange={setOpen}>
       <CommandInput
         placeholder='Type a command or search...'
         value={query}

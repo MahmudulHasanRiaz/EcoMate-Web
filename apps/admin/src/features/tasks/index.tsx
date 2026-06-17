@@ -3,7 +3,7 @@ import type { PaginationState } from '@tanstack/react-table'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
+import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useTasksQuery } from './hooks'
 import { TasksDialogs } from './components/tasks-dialogs'
@@ -25,7 +25,7 @@ export function Tasks() {
   return (
     <TasksProvider>
       <Header fixed>
-        <Search className='me-auto' />
+        <GlobalSearchBar className='me-auto' />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
