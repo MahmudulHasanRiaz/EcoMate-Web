@@ -72,6 +72,11 @@ export async function getCategoriesServer(): Promise<Category[]> {
   return Array.isArray(data) ? data : data.data || [];
 }
 
+export async function getBrandsServer(): Promise<any[]> {
+  const data = await serverFetch<any>("/brands?activeOnly=true", { revalidate: 300 });
+  return Array.isArray(data) ? data : data.data || [];
+}
+
 export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]> {
   const res = await fetchProductsServer({
     isActive: true,

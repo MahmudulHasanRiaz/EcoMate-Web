@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
@@ -11,43 +11,8 @@ interface Brand {
   logo: string | null;
 }
 
-export default function BrandSection() {
+export default function BrandSection({ brands = [] }: { brands?: Brand[] }) {
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(process.env.NEXT_PUBLIC_API_URL + '/brands?activeOnly=true')
-      .then(res => res.json())
-      .then(data => {
-        setBrands(Array.isArray(data) ? data : data?.data || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to fetch brands", err);
-        setLoading(false);
-      });
-  }, []);
-
-  if (loading) {
-    return (
-      <section className="py-8 bg-[#fcfcfc]">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center justify-between mb-8 border-b border-gray-100 pb-2">
-            <h3 className="text-[18px] font-bold text-gray-800">Our Brands</h3>
-          </div>
-          <div className="flex justify-center py-8">
-            <div className="animate-pulse flex space-x-4">
-              <div className="rounded bg-slate-200 h-24 w-32"></div>
-              <div className="rounded bg-slate-200 h-24 w-32"></div>
-              <div className="rounded bg-slate-200 h-24 w-32"></div>
-              <div className="rounded bg-slate-200 h-24 w-32"></div>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   if (brands.length === 0) return null;
 
