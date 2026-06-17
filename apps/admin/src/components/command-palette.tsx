@@ -41,6 +41,7 @@ export function CommandPalette() {
   const {
     open,
     setOpen,
+    mode,
     query,
     results,
     isLoading,
@@ -85,7 +86,7 @@ export function CommandPalette() {
   return (
     <CommandDialog modal shouldFilter={false} open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder='Type a command or search...'
+        placeholder={mode === 'search' ? 'Search orders, products, customers...' : 'Type a command or search...'}
         value={query}
         onValueChange={search}
       />
@@ -264,8 +265,8 @@ export function CommandPalette() {
             </CommandGroup>
           )}
 
-          {/* Navigation + Theme (only when no query) */}
-          {query.length === 0 && !isLoading && !error && (
+          {/* Navigation + Theme (only in command mode with no query) */}
+          {mode === 'command' && query.length === 0 && !isLoading && !error && (
             <>
               {sidebarData.navGroups.map((group) => (
                 <CommandGroup

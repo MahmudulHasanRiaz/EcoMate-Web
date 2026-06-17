@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { apiClient } from '@/lib/api-client'
 import { CommandPalette } from '@/components/command-palette'
 
@@ -21,9 +21,14 @@ interface SearchResults {
   customers: SearchResultItem[]
 }
 
+type PaletteMode = 'search' | 'command'
+
 type SearchContextType = {
   open: boolean
   setOpen: React.Dispatch<React.SetStateAction<boolean>>
+  mode: PaletteMode
+  openSearch: () => void
+  openCommand: () => void
   query: string
   setQuery: React.Dispatch<React.SetStateAction<string>>
   results: SearchResults
@@ -59,6 +64,7 @@ type SearchProviderProps = {
 
 export function SearchProvider({ children }: SearchProviderProps) {
   const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<PaletteMode>('search')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResults>({
     orders: [],
@@ -84,11 +90,22 @@ export function SearchProvider({ children }: SearchProviderProps) {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
+        setMode('command')
         setOpen((o) => !o)
       }
     }
     document.addEventListener('keydown', down)
     return () => document.removeEventListener('keydown', down)
+  }, [])
+
+  const openSearch = useCallback(() => {
+    setMode('search')
+    setOpen(true)
+  }, [])
+
+  const openCommand = useCallback(() => {
+    setMode('command')
+    setOpen(true)
   }, [])
 
   useEffect(() => {
@@ -149,6 +166,9 @@ export function SearchProvider({ children }: SearchProviderProps) {
       value={{
         open,
         setOpen,
+        mode,
+        openSearch,
+        openCommand,
         query,
         setQuery,
         results,

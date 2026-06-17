@@ -7,7 +7,7 @@ export function GlobalSearchBar({
   className,
   ...props
 }: React.ComponentProps<'button'>) {
-  const { setOpen, open } = useSearch()
+  const { openSearch, open } = useSearch()
 
   return (
     <Button
@@ -19,7 +19,7 @@ export function GlobalSearchBar({
         'group relative h-8 w-full flex-1 justify-start rounded-md bg-muted/25 text-sm font-normal text-muted-foreground shadow-none hover:bg-accent sm:w-48 sm:pe-12 md:flex-none lg:w-64 xl:w-80',
         className,
       )}
-      onClick={() => setOpen(true)}
+      onClick={openSearch}
     >
       <SearchIcon
         aria-hidden='true'

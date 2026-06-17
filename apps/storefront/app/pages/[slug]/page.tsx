@@ -8,11 +8,12 @@ import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { pageMetadata } from "@/lib/metadata";
 
 interface PageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const page = await getCmsPageBySlug(params.slug);
+  const { slug } = await params;
+  const page = await getCmsPageBySlug(slug);
   if (!page) return pageMetadata("Page Not Found", "The page you are looking for does not exist.");
   return pageMetadata(
     `${page.title}`,
@@ -23,7 +24,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export const revalidate = 3600;
 
 export default async function CmsPageView({ params }: PageProps) {
-  const page = await getCmsPageBySlug(params.slug);
+  const { slug } = await params;
+  const page = await getCmsPageBySlug(slug);
   if (!page) notFound();
 
   const config = await getStorefrontConfigServer().catch(() => null);

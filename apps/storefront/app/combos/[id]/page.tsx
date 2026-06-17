@@ -12,8 +12,9 @@ async function getCombo(id: string) {
   return data;
 }
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const combo = await getCombo(params.id);
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const combo = await getCombo(id);
   if (!combo) return { title: 'Combo Not Found' };
   return {
     title: `${combo.name} — Fixed Plus`,
@@ -26,8 +27,9 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   };
 }
 
-export default async function ComboDetailPage({ params }: { params: { id: string } }) {
-  const combo = await getCombo(params.id);
+export default async function ComboDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const combo = await getCombo(id);
   if (!combo) notFound();
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-pulse bg-gray-200 h-64 w-full max-w-lg rounded-xl" /></div>}>

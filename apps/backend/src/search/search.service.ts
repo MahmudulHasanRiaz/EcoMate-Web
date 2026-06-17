@@ -66,7 +66,7 @@ export class SearchService {
        LEFT JOIN "User" u ON u.id = o."customerId"
        WHERE o.fts @@ to_tsquery('simple', $1)
        ORDER BY ts_rank(o.fts, to_tsquery('simple', $1)) DESC
-       LIMIT $2`,
+       LIMIT $2::int`,
       tsquery,
       limit,
     );
@@ -85,7 +85,7 @@ export class SearchService {
        FROM "Product"
        WHERE "isActive" = true AND fts @@ to_tsquery('simple', $1)
        ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC
-       LIMIT $2`,
+       LIMIT $2::int`,
       tsquery,
       limit,
     );
@@ -107,7 +107,7 @@ export class SearchService {
        FROM "User"
        WHERE role = 'customer' AND fts @@ to_tsquery('simple', $1)
        ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC
-       LIMIT $2`,
+       LIMIT $2::int`,
       tsquery,
       limit,
     );
