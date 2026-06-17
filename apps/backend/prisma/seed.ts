@@ -39,7 +39,7 @@ async function main() {
   });
   console.log(`  ✓ Super admin created: admin@ecomate.com / Admin@123`);
 
-  let customer = null;
+  let customer: any = null;
   if (seedDummyData) {
     // ── Customer User ──
   const customerPassword = await bcrypt.hash('Customer@123', 12);
