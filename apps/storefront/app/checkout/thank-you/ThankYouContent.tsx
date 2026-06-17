@@ -311,7 +311,7 @@ export default function ThankYouContent({
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
-                onClick={() => router.push('/orders')}
+                onClick={() => router.push(order?.displayId ? `/orders?id=${order.displayId}` : '/orders')}
                 className="bg-white border-2 border-brand-blue text-brand-blue px-6 py-2.5 rounded-lg font-bold text-[13px] uppercase tracking-wider hover:bg-brand-blue/5 transition-colors"
               >
                 View Order

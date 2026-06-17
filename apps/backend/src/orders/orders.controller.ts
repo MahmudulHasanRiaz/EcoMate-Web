@@ -102,8 +102,8 @@ export class OrdersController {
 
   @Public()
   @Get('public/:viewToken')
-  findByViewToken(@Param('viewToken') viewToken: string) {
-    return this.svc.findByViewToken(viewToken);
+  findByViewToken(@Param('viewToken') viewTokenOrDisplayId: string) {
+    return this.svc.findByViewToken(viewTokenOrDisplayId);
   }
 
   @Public()

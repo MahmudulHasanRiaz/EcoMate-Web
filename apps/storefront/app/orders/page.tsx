@@ -63,14 +63,14 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orderNumber.trim()) return;
+  const performSearch = async (num: string) => {
+    const trimmed = num.trim();
+    if (!trimmed) return;
     setLoading(true);
     setError(null);
     setOrder(null);
     try {
-      const data = await serverFetch<OrderData>(`/orders/public/${encodeURIComponent(orderNumber.trim())}`);
+      const data = await serverFetch<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
       setOrder(data);
     } catch {
       setError('Order not found. Please check your order number.');
@@ -78,6 +78,22 @@ export default function OrdersPage() {
       setLoading(false);
     }
   };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(orderNumber);
+  };
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('id');
+      if (id) {
+        setOrderNumber(id);
+        performSearch(id);
+      }
+    }
+  }, []);
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen pb-20 font-sans">

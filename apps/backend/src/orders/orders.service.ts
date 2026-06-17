@@ -973,9 +973,14 @@ export class OrdersService {
     });
   }
 
-  async findByViewToken(viewToken: string) {
+  async findByViewToken(viewTokenOrDisplayId: string) {
     const order = await this.prisma.order.findFirst({
-      where: { viewToken },
+      where: {
+        OR: [
+          { viewToken: viewTokenOrDisplayId },
+          { displayId: viewTokenOrDisplayId },
+        ],
+      },
       include: {
         customer: {
           select: {
