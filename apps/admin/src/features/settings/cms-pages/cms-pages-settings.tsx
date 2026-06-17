@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { cmsPagesApi, CmsPage, CreateCmsPageInput } from './cms-pages-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -255,14 +255,11 @@ export function CmsPagesSettings() {
               </div>
             </div>
             <div className='space-y-2'>
-              <Label htmlFor='page-content'>Content (HTML supported)</Label>
-              <Textarea
-                id='page-content'
+              <Label htmlFor='page-content'>Content</Label>
+              <RichTextEditor
                 value={form.content}
-                onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-                rows={14}
-                placeholder='<h2>Terms & Conditions</h2>&#10;<p>Your content here...</p>'
-                className='font-mono text-xs'
+                onChange={content => setForm(f => ({ ...f, content }))}
+                placeholder='<h2>Terms & Conditions</h2><p>Your content here...</p>'
               />
             </div>
             <div className='grid gap-4 md:grid-cols-3'>
