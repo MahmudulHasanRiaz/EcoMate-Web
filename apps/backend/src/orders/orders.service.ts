@@ -974,11 +974,15 @@ export class OrdersService {
   }
 
   async findByViewToken(viewTokenOrDisplayId: string) {
+    let queryStr = viewTokenOrDisplayId.trim();
+    if (queryStr.startsWith('#')) {
+      queryStr = queryStr.substring(1).trim();
+    }
     const order = await this.prisma.order.findFirst({
       where: {
         OR: [
-          { viewToken: viewTokenOrDisplayId },
-          { displayId: { equals: viewTokenOrDisplayId, mode: 'insensitive' } },
+          { viewToken: queryStr },
+          { displayId: { equals: queryStr, mode: 'insensitive' } },
         ],
       },
       include: {

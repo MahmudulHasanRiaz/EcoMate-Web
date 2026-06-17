@@ -64,7 +64,10 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const performSearch = async (num: string) => {
-    const trimmed = num.trim();
+    let trimmed = num.trim();
+    if (trimmed.startsWith('#')) {
+      trimmed = trimmed.substring(1).trim();
+    }
     if (!trimmed) return;
     setLoading(true);
     setError(null);
@@ -81,7 +84,13 @@ export default function OrdersPage() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch(orderNumber);
+    let trimmed = orderNumber.trim();
+    if (trimmed.startsWith('#')) {
+      trimmed = trimmed.substring(1).trim();
+    }
+    if (!trimmed) return;
+    router.replace(`/orders?id=${encodeURIComponent(trimmed)}`);
+    performSearch(trimmed);
   };
 
   React.useEffect(() => {
@@ -89,8 +98,12 @@ export default function OrdersPage() {
       const params = new URLSearchParams(window.location.search);
       const id = params.get('id');
       if (id) {
-        setOrderNumber(id);
-        performSearch(id);
+        let cleanId = id.trim();
+        if (cleanId.startsWith('#')) {
+          cleanId = cleanId.substring(1).trim();
+        }
+        setOrderNumber(cleanId);
+        performSearch(cleanId);
       }
     }
   }, []);
