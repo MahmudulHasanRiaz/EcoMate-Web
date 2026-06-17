@@ -18,7 +18,8 @@ const MIME_EXT_MAP: Record<string, string> = {
 };
 
 async function main() {
-  console.log('Seeding database...');
+  const seedDummyData = process.env.SEED_DUMMY_DATA !== 'false';
+  console.log(`Seeding database... (Dummy Data: ${seedDummyData})`);
 
   // ── Super Admin ──
   const adminPassword = await bcrypt.hash('Admin@123', 12);
@@ -38,7 +39,9 @@ async function main() {
   });
   console.log(`  ✓ Super admin created: admin@ecomate.com / Admin@123`);
 
-  // ── Customer User ──
+  let customer = null;
+  if (seedDummyData) {
+    // ── Customer User ──
   const customerPassword = await bcrypt.hash('Customer@123', 12);
   const customer = await prisma.user.upsert({
     where: { email: 'customer@example.com' },
@@ -55,6 +58,7 @@ async function main() {
     },
   });
   console.log(`  ✓ Customer created: customer@example.com / Customer@123`);
+  }
 
   // ── Order Statuses ──
   const statuses = [
@@ -105,7 +109,8 @@ async function main() {
   }
   console.log(`  ✓ ${statuses.length} order statuses created`);
 
-  // ── Categories ──
+  if (seedDummyData) {
+    // ── Categories ──
   const categoryData = [
     { name: 'Fruits & Vegetables', slug: 'fruits-vegetables', sortOrder: 1, isActive: true },
     { name: 'Dairy & Eggs', slug: 'dairy-eggs', sortOrder: 2, isActive: true },
@@ -791,9 +796,9 @@ async function main() {
         verifiedBy: order.status === 'Delivered' ? admin.id : null,
         verifiedAt: order.status === 'Delivered' ? new Date() : null,
       },
-    });
+    }
+    console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
   }
-  console.log(`  ✓ ${orderData.length} sample orders created with items and payments`);
 
   // ── Payment Options ──
   const paymentOptions = [
@@ -892,8 +897,9 @@ async function main() {
   }
   console.log(`  ✓ ${systemSettings.length} system settings created`);
 
-  // ── Download external images to local storage ──
-  console.log('\n  Downloading external product images...');
+  if (seedDummyData) {
+    // ── Download external images to local storage ──
+    console.log('\n  Downloading external product images...');
   let scanned = 0;
   let migrated = 0;
   let failed = 0;
@@ -991,10 +997,13 @@ async function main() {
   if (failed > 0) {
     console.log(`  ⚠ ${failed} image(s) failed — may still have external URLs in DB`);
   }
+  }
 
   console.log('\n✅ Database seeded successfully!');
   console.log('   Super Admin: admin@ecomate.com / Admin@123');
-  console.log('   Customer:    customer@example.com / Customer@123');
+  if (seedDummyData) {
+    console.log('   Customer:    customer@example.com / Customer@123');
+  }
 }
 
 main()
