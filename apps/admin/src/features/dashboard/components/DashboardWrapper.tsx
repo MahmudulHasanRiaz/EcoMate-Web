@@ -19,7 +19,6 @@ import type { RoleKey } from '../types'
 import { TodayKpiRow } from '../widgets/TodayKpiRow'
 import { PendingOrders } from '../widgets/PendingOrders'
 import { RecentOrders } from '../widgets/RecentOrders'
-import { QuickOrderSearch } from '../widgets/QuickOrderSearch'
 import { SystemAlerts } from '../widgets/SystemAlerts'
 import { ActivityLog } from '../widgets/ActivityLog'
 import { LowStockAlert } from '../widgets/LowStockAlert'
@@ -97,12 +96,6 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
             
             {/* Right 30% Column */}
             <div className="lg:col-span-3 space-y-6">
-              <QuickOrderSearch
-                dateRange={dateRange}
-                preset={preset}
-                userRole={userRole}
-                isLoading={false}
-              />
               <SystemAlerts
                 dateRange={dateRange}
                 preset={preset}
