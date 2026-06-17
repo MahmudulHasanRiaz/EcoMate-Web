@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift, Ruler,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload,
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -66,6 +66,7 @@ export const sidebarData: SidebarData = {
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
         { title: 'Analytics', url: '/mon/analytics', icon: Monitor },
         { title: 'User Management', url: '/mon/users', icon: Users },
+        { title: 'Pages', url: '/mon/pages', icon: FileText },
         { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck },
       ],
     },

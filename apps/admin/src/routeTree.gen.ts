@@ -56,6 +56,7 @@ import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
+import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
@@ -72,7 +73,6 @@ import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './route
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
-import { Route as AuthenticatedMonSettingsPagesIndexRouteImport } from './routes/_authenticated/mon/settings/pages/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
@@ -349,6 +349,12 @@ const AuthenticatedMonUsersIndexRoute =
     path: '/mon/users/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonPagesIndexRoute =
+  AuthenticatedMonPagesIndexRouteImport.update({
+    id: '/mon/pages/',
+    path: '/mon/pages/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonHelpCenterIndexRoute =
   AuthenticatedMonHelpCenterIndexRouteImport.update({
     id: '/mon/help-center/',
@@ -443,12 +449,6 @@ const AuthenticatedMonSettingsShippingIndexRoute =
     path: '/shipping/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedMonSettingsPagesIndexRoute =
-  AuthenticatedMonSettingsPagesIndexRouteImport.update({
-    id: '/pages/',
-    path: '/pages/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
 const AuthenticatedMonSettingsOrderStatusesIndexRoute =
   AuthenticatedMonSettingsOrderStatusesIndexRouteImport.update({
     id: '/order-statuses/',
@@ -533,6 +533,7 @@ export interface FileRoutesByFullPath {
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
@@ -567,7 +568,6 @@ export interface FileRoutesByFullPath {
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
-  '/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
@@ -607,6 +607,7 @@ export interface FileRoutesByTo {
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
@@ -641,7 +642,6 @@ export interface FileRoutesByTo {
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
-  '/mon/settings/pages': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
@@ -683,6 +683,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
@@ -717,7 +718,6 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
-  '/_authenticated/mon/settings/pages/': typeof AuthenticatedMonSettingsPagesIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
@@ -759,6 +759,7 @@ export interface FileRouteTypes {
     | '/mon/activity-logs/'
     | '/mon/analytics/'
     | '/mon/help-center/'
+    | '/mon/pages/'
     | '/mon/users/'
     | '/op/apps/'
     | '/op/attributes/'
@@ -793,7 +794,6 @@ export interface FileRouteTypes {
     | '/mon/settings/general/'
     | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
-    | '/mon/settings/pages/'
     | '/mon/settings/shipping/'
     | '/mon/settings/storage/'
     | '/mon/settings/storefront/'
@@ -833,6 +833,7 @@ export interface FileRouteTypes {
     | '/mon/activity-logs'
     | '/mon/analytics'
     | '/mon/help-center'
+    | '/mon/pages'
     | '/mon/users'
     | '/op/apps'
     | '/op/attributes'
@@ -867,7 +868,6 @@ export interface FileRouteTypes {
     | '/mon/settings/general'
     | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
-    | '/mon/settings/pages'
     | '/mon/settings/shipping'
     | '/mon/settings/storage'
     | '/mon/settings/storefront'
@@ -908,6 +908,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
     | '/_authenticated/mon/help-center/'
+    | '/_authenticated/mon/pages/'
     | '/_authenticated/mon/users/'
     | '/_authenticated/op/apps/'
     | '/_authenticated/op/attributes/'
@@ -942,7 +943,6 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
-    | '/_authenticated/mon/settings/pages/'
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/storefront/'
@@ -1299,6 +1299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/pages/': {
+      id: '/_authenticated/mon/pages/'
+      path: '/mon/pages'
+      fullPath: '/mon/pages/'
+      preLoaderRoute: typeof AuthenticatedMonPagesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/help-center/': {
       id: '/_authenticated/mon/help-center/'
       path: '/mon/help-center'
@@ -1411,13 +1418,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsShippingIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/mon/settings/pages/': {
-      id: '/_authenticated/mon/settings/pages/'
-      path: '/pages'
-      fullPath: '/mon/settings/pages/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsPagesIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
     '/_authenticated/mon/settings/order-statuses/': {
       id: '/_authenticated/mon/settings/order-statuses/'
       path: '/order-statuses'
@@ -1491,7 +1491,6 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
-  AuthenticatedMonSettingsPagesIndexRoute: typeof AuthenticatedMonSettingsPagesIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
@@ -1513,8 +1512,6 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsMenuIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
-    AuthenticatedMonSettingsPagesIndexRoute:
-      AuthenticatedMonSettingsPagesIndexRoute,
     AuthenticatedMonSettingsShippingIndexRoute:
       AuthenticatedMonSettingsShippingIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
@@ -1584,6 +1581,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
+  AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
   AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
   AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
   AuthenticatedOpAttributesIndexRoute: typeof AuthenticatedOpAttributesIndexRoute
@@ -1636,6 +1634,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonActivityLogsIndexRoute,
   AuthenticatedMonAnalyticsIndexRoute: AuthenticatedMonAnalyticsIndexRoute,
   AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
+  AuthenticatedMonPagesIndexRoute: AuthenticatedMonPagesIndexRoute,
   AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
   AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,
   AuthenticatedOpAttributesIndexRoute: AuthenticatedOpAttributesIndexRoute,

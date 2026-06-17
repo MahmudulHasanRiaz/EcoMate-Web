@@ -215,7 +215,7 @@ export function CmsPagesSettings() {
       </Card>
 
       <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DialogContent className='max-w-3xl max-h-[90vh] overflow-y-auto'>
+        <DialogContent className='max-w-5xl w-full max-h-[90vh] overflow-y-auto'>
           <DialogHeader>
             <DialogTitle>{editingId ? 'Edit Page' : 'New Page'}</DialogTitle>
             <DialogDescription>

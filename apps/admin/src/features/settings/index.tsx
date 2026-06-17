@@ -50,7 +50,6 @@ export function Settings() {
     {
       groupLabel: 'Content',
       items: [
-        { title: 'CMS Pages', href: '/mon/settings/pages', icon: <FileText size={18} /> },
         { title: 'Menu', href: '/mon/settings/menu', icon: <List size={18} /> },
         { title: 'Storage', href: '/mon/settings/storage', icon: <HardDrive size={18} /> },
       ],
