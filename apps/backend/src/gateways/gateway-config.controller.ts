@@ -14,7 +14,7 @@ export class GatewayConfigController {
   @Get()
   async findAll() {
     const gateways = await this.prisma.paymentGateway.findMany({
-      where: { enabled: true },
+      where: { enabled: true, paymentOption: { enabled: true } },
       orderBy: { sortOrder: 'asc' },
       include: { paymentOption: true },
     });
@@ -48,9 +48,14 @@ export class GatewayConfigController {
   @Roles('superadmin', 'admin')
   @Put('options/:type')
   async upsertOption(@Param('type') type: string, @Body() dto: any) {
+    const displayNames: Record<string, string> = {
+      FULL_PAYMENT: 'Full Payment',
+      PARTIAL_PAYMENT: 'Partial Payment',
+      CASH_ON_DELIVERY: 'Cash on Delivery',
+    }
     return this.prisma.paymentOption.upsert({
       where: { type: type as PaymentOptionType },
-      create: { type, ...dto },
+      create: { type, name: displayNames[type] || type, ...dto },
       update: dto,
     });
   }
