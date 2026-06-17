@@ -331,6 +331,7 @@ export default function CheckoutPage() {
     try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
   };
 
+  const [mounted, setMounted] = useState(false);
   const [districts, setDistricts] = useState<any[]>([]);
   const [thanas, setThanas] = useState<any[]>([]);
   const [district, setDistrict] = useState('');
@@ -377,6 +378,7 @@ export default function CheckoutPage() {
     setGuestName(readStorage('checkout_guestName', ''));
     setGuestPhone(readStorage('checkout_guestPhone', ''));
     setPaymentOptionType((readStorage('checkout_paymentOptionType', 'CASH_ON_DELIVERY') as 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'));
+    setMounted(true);
   }, []);
 
   const checkoutCfg = config.checkout;
@@ -636,7 +638,11 @@ export default function CheckoutPage() {
   };
 
   const handlePlaceOrder = async () => {
-    if (items.length === 0 || submitting) return;
+    if (items.length === 0) {
+      toast.error('Your cart is empty. Please add items to your cart.');
+      return;
+    }
+    if (submitting) return;
     if (!validateShipping()) {
       toast.error('Please fill in all required fields');
       return;
@@ -929,6 +935,36 @@ export default function CheckoutPage() {
       </div>
     );
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-blue animate-spin" />
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-xl border border-gray-150 max-w-md w-full text-center space-y-6 shadow-2xs">
+          <div className="w-16 h-16 bg-brand-blue/10 rounded-full flex items-center justify-center mx-auto text-brand-blue">
+            <Package2 size={32} />
+          </div>
+          <h1 className="text-xl font-bold text-gray-805">Your cart is empty</h1>
+          <p className="text-xs text-gray-500 font-medium">
+            You don't have any items in your shopping cart. Please add some products to checkout.
+          </p>
+          <Link
+            href="/"
+            className="block w-full bg-brand-blue hover:bg-brand-blue/95 text-white font-bold py-3.5 px-6 rounded-md text-xs uppercase tracking-wider transition-all duration-200 active:scale-[0.99] text-center shadow-md shadow-brand-blue/10"
+          >
+            Go Shopping
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-700 antialiased">
