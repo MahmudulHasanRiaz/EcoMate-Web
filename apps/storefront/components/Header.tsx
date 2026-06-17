@@ -3,14 +3,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
+import Link from 'next/link';
 
 export default function Header({}: {}) {
+  const pathname = usePathname();
+  if (pathname && pathname.startsWith('/checkout')) return null;
   const { cartCount, setIsCartOpen } = useCart();
   const { user } = useAuth();
   const router = useRouter();

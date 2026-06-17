@@ -2,11 +2,14 @@
 
 import React from 'react';
 import { MapPin, Phone, Mail } from 'lucide-react';
-import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
+import { usePathname } from "next/navigation";
+import Link from 'next/link';
 
 export default function Footer({}: {}) {
+  const pathname = usePathname();
+  if (pathname && pathname.startsWith('/checkout')) return null;
   const { config } = useStorefrontConfig();
   const { store, social, footer: footerConfig } = config;
 

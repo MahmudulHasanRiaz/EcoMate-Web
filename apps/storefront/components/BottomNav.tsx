@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 export default function BottomNav() {
   const { cartCount, setIsCartOpen } = useCart();
   const pathname = usePathname();
+  if (pathname && pathname.startsWith('/checkout')) return null;
   const navRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

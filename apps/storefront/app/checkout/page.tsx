@@ -35,48 +35,68 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   const s = currencySymbol || '৳';
   const key = getItemKey(item);
   return (
-    <div className="flex gap-4">
-      <div className="w-[60px] h-[60px] md:w-[80px] md:h-[80px] border border-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center p-1.5 bg-[#fcfcfc]">
-        <Image src={item.image || '/placeholder.svg'} alt={item.name} width={80} height={80} className="w-full h-full object-contain"
-          onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
+    <div className="flex gap-3 py-3.5 border-b border-gray-100 last:border-0 items-start">
+      {/* Thumbnail with Badge */}
+      <div className="relative flex-shrink-0">
+        <div className="w-14 h-14 border border-gray-200 rounded-md flex items-center justify-center p-1 bg-white">
+          <Image src={item.image || '/placeholder.svg'} alt={item.name} width={56} height={56} className="w-full h-full object-contain rounded"
+            onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
+        </div>
+        <span className="absolute -top-1.5 -right-1.5 bg-gray-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shadow-sm border border-white">
+          {item.quantity}
+        </span>
       </div>
-      <div className="flex-1">
-        <div className="flex justify-between items-start mb-2 pr-1">
-          <div className="min-w-0">
-            <h3 className="text-[13px] md:text-[14px] font-bold text-gray-800 leading-snug break-words">
-              {item.name}
-            </h3>
-            {(() => {
-              const attrText = formatAttributes(item.variantAttributes, item.variantLabel);
-              if (attrText) {
+
+      {/* Item Details */}
+      <div className="flex-1 min-w-0">
+        <h3 className="text-xs font-bold text-gray-800 leading-snug break-words">
+          {item.name}
+        </h3>
+        
+        {/* Attributes or Sub items */}
+        {item.isCombo ? (
+          item.comboItems && (
+            <div className="mt-1 space-y-0.5">
+              {item.comboItems.map((sub: any, idx: number) => {
+                const selAttrs = item.comboSelectionAttributes?.[sub.productId];
+                const selLabel = item.comboSelectionLabels?.[sub.productId];
+                const subAttrText = formatAttributes(selAttrs, selLabel);
                 return (
-                  <span className="block text-[11px] text-gray-500 font-normal mt-0.5">
-                    {attrText}
-                  </span>
+                  <div key={idx} className="text-[10px] text-gray-400 leading-tight">
+                    • {sub.productName} &times; {sub.quantity} {subAttrText && `(${subAttrText})`}
+                  </div>
                 );
-              }
-              if (item.variantId) {
-                return (
-                  <span className="block text-[11px] text-gray-400 font-normal mt-0.5">Variant selected</span>
-                );
-              }
-              return null;
-            })()}
+              })}
+            </div>
+          )
+        ) : (
+          (() => {
+            const attrText = formatAttributes(item.variantAttributes, item.variantLabel);
+            if (attrText) {
+              return (
+                <span className="block text-[10px] text-gray-400 mt-0.5 font-medium leading-tight">
+                  {attrText}
+                </span>
+              );
+            }
+            return null;
+          })()
+        )}
+
+        {/* Quantity Controls & Remove */}
+        <div className="flex items-center gap-2 mt-1.5">
+          <div className="flex items-center h-5.5 border border-gray-200 rounded bg-[#f9fafb] overflow-hidden">
+            <button onClick={() => updateQuantity(key, item.quantity - 1)} className="w-5 h-full flex items-center justify-center text-gray-500 hover:bg-gray-100 cursor-pointer"><Minus size={9} /></button>
+            <span className="w-7 h-full flex items-center justify-center bg-white text-[10px] font-bold text-gray-800">{item.quantity}</span>
+            <button onClick={() => updateQuantity(key, item.quantity + 1)} className="w-5 h-full flex items-center justify-center text-brand-blue hover:bg-gray-100 cursor-pointer"><Plus size={9} /></button>
           </div>
-          <button onClick={() => removeFromCart(key)} className="text-red-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full">
-            <X size={18} />
-          </button>
+          <button onClick={() => removeFromCart(key)} className="text-[10px] text-red-500 hover:text-red-650 font-bold ml-1 transition-colors cursor-pointer">Remove</button>
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center h-8 md:h-9 border border-gray-200 rounded-md bg-[#f8f9fa] overflow-hidden">
-            <button onClick={() => updateQuantity(key, item.quantity - 1)} className="w-8 h-full flex items-center justify-center text-gray-500 hover:bg-gray-100"><Minus size={14} /></button>
-            <span className="w-10 h-full flex items-center justify-center border-x border-gray-200 bg-white text-[13px] font-black text-gray-800">{item.quantity}</span>
-            <button onClick={() => updateQuantity(key, item.quantity + 1)} className="w-8 h-full flex items-center justify-center text-brand-blue hover:bg-gray-100"><Plus size={14} /></button>
-          </div>
-          <div className="font-black text-[15px] text-gray-800">
-            {s}{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-          </div>
-        </div>
+      </div>
+
+      {/* Price */}
+      <div className="text-xs font-bold text-gray-800 shrink-0 self-start mt-0.5">
+        {s}{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
       </div>
     </div>
   );
@@ -318,6 +338,8 @@ export default function CheckoutPage() {
   const [addressLine, setAddressLine] = useState('');
   const [customerNotes, setCustomerNotes] = useState('');
   const [isCouponExpanded, setIsCouponExpanded] = useState(false);
+  const [isItemsExpanded, setIsItemsExpanded] = useState(false);
+  const [isMobileSummaryOpen, setIsMobileSummaryOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
@@ -654,361 +676,511 @@ export default function CheckoutPage() {
 
   const s = config.currency.symbol || '৳';
 
+  const renderCartItems = () => {
+    if (items.length === 0) {
+      return <p className="text-gray-400 text-xs py-2">Your cart is empty.</p>;
+    }
+    
+    const maxVisible = 2;
+    const hasMore = items.length > maxVisible;
+    const visibleItems = isItemsExpanded ? items : items.slice(0, maxVisible);
+    
+    return (
+      <div className="divide-y divide-gray-100">
+        {visibleItems.map(item => (
+          <CheckoutItemRow
+            key={getItemKey(item)}
+            item={item}
+            removeFromCart={removeFromCart}
+            updateQuantity={updateQuantity}
+            currencySymbol={s}
+          />
+        ))}
+        {hasMore && (
+          <button
+            onClick={() => setIsItemsExpanded(!isItemsExpanded)}
+            className="w-full text-center py-2.5 text-xs text-brand-blue font-bold hover:underline flex items-center justify-center gap-1 mt-1 cursor-pointer"
+          >
+            {isItemsExpanded ? 'Show less' : `+ Show ${items.length - maxVisible} more item${items.length - maxVisible > 1 ? 's' : ''}`}
+            <ChevronDown size={12} className={`transform transition-transform ${isItemsExpanded ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderCouponSection = () => {
+    return (
+      <div className="space-y-2.5">
+        {appliedCoupon?.valid ? (
+          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md px-3 py-2">
+            <div>
+              <span className="text-xs font-bold text-green-700">{appliedCoupon.coupon.code}</span>
+              <span className="text-[10px] text-green-600 ml-2">
+                ({appliedCoupon.coupon.type === 'percentage' ? `${appliedCoupon.coupon.value}% off` : `${s}${appliedCoupon.coupon.value} off`})
+              </span>
+            </div>
+            <button onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700 text-xs font-bold cursor-pointer">Remove</button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={couponInput}
+              onChange={e => setCouponInput(e.target.value)}
+              placeholder="Discount code or gift voucher"
+              className="flex-1 border border-gray-200 rounded-md px-3.5 py-2 text-xs outline-none focus:border-brand-blue bg-white"
+            />
+            <button
+              onClick={handleApplyCoupon}
+              disabled={couponLoading}
+              className="bg-brand-blue text-white px-4 py-2 rounded-md text-xs font-bold uppercase transition-colors hover:bg-brand-blue/90 disabled:opacity-50 cursor-pointer"
+            >
+              {couponLoading ? '...' : 'Apply'}
+            </button>
+          </div>
+        )}
+        {couponError && <p className="text-red-500 text-[11px]">{couponError}</p>}
+      </div>
+    );
+  };
+
+  const renderPricingBreakdown = () => {
+    return (
+      <div className="space-y-3 text-xs">
+        <div className="flex justify-between items-center text-gray-500">
+          <span>Subtotal</span>
+          <span className="font-bold text-gray-800">{s}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+        </div>
+        <div className="flex justify-between items-center text-gray-500">
+          <span>Shipping</span>
+          <span className="font-bold text-gray-800">
+            {config.shippingMode === 'options' ? (
+              selectedShippingOptionId ? (
+                deliveryCharge === 0 ? 'Free' : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+              ) : (
+                <span className="text-gray-400 italic font-normal">Select shipping option</span>
+              )
+            ) : (
+              district ? (
+                deliveryCharge === 0 ? 'Free' : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+              ) : (
+                <span className="text-gray-400 italic font-normal">Calculated in next step</span>
+              )
+            )}
+          </span>
+        </div>
+        {appliedCoupon?.valid && discountAmount > 0 && (
+          <div className="flex justify-between items-center text-green-600">
+            <span>Discount ({appliedCoupon.coupon.code})</span>
+            <span className="font-bold">-{s}{discountAmount.toFixed(2)}</span>
+          </div>
+        )}
+        {paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount && parseFloat(partialAmount) > 0 && (
+          <div className="flex justify-between items-center text-gray-500">
+            <span>Paid Online</span>
+            <span className="font-bold text-green-600">-{s}{parseFloat(partialAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+          </div>
+        )}
+        <div className="flex justify-between items-center pt-3 border-t border-gray-200 mt-2">
+          <span className="text-sm font-bold text-gray-800">Total</span>
+          <span className="text-sm font-bold text-gray-900">
+            <span className="text-[10px] text-gray-400 font-normal mr-1">{config.currency.code}</span>
+            {s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPaymentSection = () => {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-base font-bold text-gray-805">Payment</h2>
+        
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-2xs">
+          {hasCodGateway && (
+            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'CASH_ON_DELIVERY' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name="paymentOption"
+                  value="CASH_ON_DELIVERY"
+                  checked={paymentOptionType === 'CASH_ON_DELIVERY'}
+                  onChange={() => setPaymentOptionType('CASH_ON_DELIVERY')}
+                  className="accent-brand-blue"
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-gray-800">Cash on Delivery</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay with cash upon delivery</span>
+                </div>
+              </div>
+              <Banknote size={16} className="text-gray-400" />
+            </label>
+          )}
+
+          {hasFullPayment && (
+            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'FULL_PAYMENT' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name="paymentOption"
+                  value="FULL_PAYMENT"
+                  checked={paymentOptionType === 'FULL_PAYMENT'}
+                  onChange={() => setPaymentOptionType('FULL_PAYMENT')}
+                  className="accent-brand-blue"
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-gray-800">Pay Online (Full)</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay the full amount online</span>
+                </div>
+              </div>
+              <CreditCard size={16} className="text-gray-400" />
+            </label>
+          )}
+
+          {hasPartialPayment && (
+            <label className={`flex items-center justify-between p-4 cursor-pointer transition-all border-b border-gray-200 last:border-0 ${paymentOptionType === 'PARTIAL_PAYMENT' ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name="paymentOption"
+                  value="PARTIAL_PAYMENT"
+                  checked={paymentOptionType === 'PARTIAL_PAYMENT'}
+                  onChange={() => setPaymentOptionType('PARTIAL_PAYMENT')}
+                  className="accent-brand-blue"
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-gray-800">Pay Partial Online</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5 font-medium">Pay a deposit online, rest on delivery</span>
+                </div>
+              </div>
+              <CreditCard size={16} className="text-gray-400" />
+            </label>
+          )}
+        </div>
+
+        {paymentOptionType === 'PARTIAL_PAYMENT' && (
+          <div className="bg-[#fafafa] border border-gray-200 rounded-lg p-4 space-y-2 mt-2">
+            <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block">Partial Payment Amount ({s})</label>
+            <input
+              type="number"
+              value={partialAmount}
+              onChange={e => setPartialAmount(e.target.value)}
+              placeholder="Enter amount to pay now"
+              max={totalWithDelivery}
+              className="w-full border border-gray-200 rounded-md px-3.5 py-2 text-xs outline-none focus:border-brand-blue bg-white font-semibold"
+            />
+            <p className="text-[11px] text-gray-500">
+              Remaining <span className="font-bold text-gray-850">{s}{Math.max(0, totalWithDelivery - (parseFloat(partialAmount) || 0)).toLocaleString('en-US', {minimumFractionDigits: 2})}</span> will be collected on delivery
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="bg-[#f2f4f8] min-h-screen pb-20 md:pb-12 font-sans">
-      <div className="bg-white md:bg-[#f8f9fa] border-b border-gray-100 py-6 md:py-10">
-        <div className="max-w-screen-xl mx-auto px-4 text-center">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Checkout</h1>
-          <nav className="flex items-center justify-center gap-2 text-[11px] md:text-[13px] text-gray-400 font-medium">
-            <Link href="/" className="hover:text-brand-blue">Home</Link>
-            <ChevronRight size={14} />
-            <span className="text-gray-600">Checkout</span>
-          </nav>
+    <div className="min-h-screen bg-white font-sans text-gray-700 antialiased">
+      {/* Mobile Sticky Summary Header */}
+      <div className="bg-[#fafafa] border-b border-gray-200 py-3.5 sticky top-0 z-30 lg:hidden">
+        <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
+          <button
+            onClick={() => setIsMobileSummaryOpen(!isMobileSummaryOpen)}
+            className="flex items-center gap-2 text-xs font-bold text-gray-805 outline-none cursor-pointer"
+          >
+            <Package2 size={16} className="text-gray-600" />
+            <span className="text-brand-blue">{isMobileSummaryOpen ? 'Hide order summary' : 'Show order summary'}</span>
+            <ChevronDown size={12} className={`text-brand-blue transform transition-transform duration-200 ${isMobileSummaryOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <div className="text-sm font-black text-gray-800">
+            {s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-screen-xl mx-auto px-4 md:py-8">
-        {!user && (
-          <div className="bg-white rounded-lg border border-gray-100 p-3 md:p-4 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-[14px] md:text-[15px] text-gray-700 font-medium">Have an account? Login for faster checkout</p>
-            <div className="flex gap-2 w-full md:w-auto">
-              <Link href="/account?redirect=/checkout" className="flex-1 md:flex-none inline-flex items-center justify-center border border-gray-200 text-gray-700 px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-gray-50">Login</Link>
-              <Link href="/account?redirect=/checkout" className="flex-1 md:flex-none inline-flex items-center justify-center bg-brand-blue text-white px-6 py-2 rounded-[4px] text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90">Register</Link>
-            </div>
-          </div>
-        )}
+      {/* Mobile Summary Expandable Panel */}
+      <AnimatePresence>
+        {isMobileSummaryOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden bg-[#fafafa] border-b border-gray-200 lg:hidden"
+          >
+            <div className="px-4 py-5 space-y-4">
+              {/* Product List */}
+              {renderCartItems()}
+              
+              {/* Coupon Section */}
+              <div className="border-t border-gray-200 pt-4">
+                {renderCouponSection()}
+              </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 space-y-6">
+              {/* Pricing Breakdown */}
+              <div className="border-t border-gray-200 pt-4">
+                {renderPricingBreakdown()}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Container */}
+      <div className="max-w-screen-xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-screen">
+          
+          {/* Left Column - Forms (Contact, Shipping, Payment) */}
+          <div className="lg:col-span-7 px-4 py-6 md:py-10 lg:pr-12 xl:pr-16 space-y-8 bg-white">
+            
+            {/* Header / Shop Title */}
+            <div className="flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
+              <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
+                {config.branding?.storeLogo ? (
+                  <img src={config.branding.storeLogo} alt={config.store?.name || 'EcoMate'} className="h-8 w-auto object-contain" />
+                ) : (
+                  <span className="text-xl font-black tracking-tight text-gray-800">
+                    {config.store?.name || 'EcoMate'}
+                  </span>
+                )}
+              </Link>
+              <Link href="/cart" className="text-xs font-semibold text-brand-blue hover:underline flex items-center gap-1">
+                <ArrowLeft size={12} /> Back to Cart
+              </Link>
+            </div>
+
             {/* Contact Information */}
-            <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6">
-                <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Contact Information</h2>
-                </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-base font-bold text-gray-800">Contact</h2>
                 {!user && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <input type="text" value={guestName} onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }} placeholder="Your Full Name *" className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue transition-all bg-[#fcfcfc]" />
-                    {fieldErrors.guestName && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestName}</p>}
-                    <div className="flex">
-                      <div className={`border border-r-0 rounded-l-md px-4 py-3 bg-[#f8f9fa] text-gray-600 font-bold text-[14px] transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-200'}`}>+880</div>
-                      <input type="tel" value={guestPhone} onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }} placeholder="1X XXXX XXXX"
-                        className={`w-full rounded-r-md px-4 py-3 text-[14px] outline-none transition-all bg-[#fcfcfc] ${showPhoneError ? 'border-red-400 focus:border-red-500' : 'border-gray-200 focus:border-brand-blue'}`} />
-                    </div>
-                    {fieldErrors.guestPhone && <p className="text-red-500 text-xs mt-1">{fieldErrors.guestPhone}</p>}
-                    {showPhoneError && <p className="text-red-500 text-[12px] mt-1.5">Please enter a valid Bangladeshi phone number</p>}
-                  </div>
+                  <span className="text-xs text-gray-500 font-medium">
+                    Already have an account?{" "}
+                    <Link href="/account?redirect=/checkout" className="text-brand-blue font-bold hover:underline cursor-pointer">
+                      Log in
+                    </Link>
+                  </span>
                 )}
               </div>
-            </div>
+              
+              {!user && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <input
+                      type="text"
+                      value={guestName}
+                      onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }}
+                      placeholder="Your Full Name *"
+                      className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue transition-all bg-white ${fieldErrors.guestName ? 'border-red-400' : 'border-gray-250'}`}
+                    />
+                    {fieldErrors.guestName && <p className="text-red-500 text-[10px] mt-1">{fieldErrors.guestName}</p>}
+                  </div>
+                  
+                  <div>
+                    <div className="flex">
+                      <div className={`border border-r-0 rounded-l-md px-3.5 py-2.5 bg-[#f8f9fa] text-gray-500 font-semibold text-xs transition-colors ${showPhoneError ? 'border-red-400' : 'border-gray-255'}`}>+880</div>
+                      <input
+                        type="tel"
+                        value={guestPhone}
+                        onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }}
+                        placeholder="1X XXXX XXXX *"
+                        className={`w-full rounded-r-md px-3.5 py-2.5 text-xs outline-none transition-all bg-white ${showPhoneError || fieldErrors.guestPhone ? 'border-red-400 focus:border-red-500' : 'border-gray-250 focus:border-brand-blue'}`}
+                      />
+                    </div>
+                    {fieldErrors.guestPhone && <p className="text-red-500 text-[10px] mt-1">{fieldErrors.guestPhone}</p>}
+                    {showPhoneError && <p className="text-red-500 text-[10px] mt-1">Please enter a valid Bangladeshi phone number</p>}
+                  </div>
+                </div>
+              )}
 
-            {/* Order Review */}
-            <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6">
-                <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Order review</h2>
+              {user && (
+                <div className="bg-[#f9fafb] rounded-lg p-3 border border-gray-100 flex items-center justify-between">
+                  <div className="text-xs">
+                    <p className="font-bold text-gray-805">{[user.firstName, user.lastName].filter(Boolean).join(' ') || 'Logged in user'}</p>
+                    <p className="text-gray-400 font-medium mt-0.5">{user.phoneNumber || user.email}</p>
+                  </div>
+                  <span className="text-[10px] bg-green-50 text-green-600 font-bold border border-green-200 rounded px-1.5 py-0.5">Verified</span>
                 </div>
-                <div className="space-y-6">
-                  {items.length === 0 ? (
-                    <p className="text-gray-500 text-sm py-4">Your cart is empty.</p>
-                  ) : (
-                    items.map(item => (
-                      <div key={getItemKey(item)} className="border border-gray-100 rounded-xl p-4 transition-colors hover:bg-[#fcfcfc]">
-                        {item.isCombo ? (
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 bg-brand-blue/5 px-2 py-1 rounded">
-                                <span className="text-[14px] font-bold text-gray-800">{item.name}</span>
-                              </div>
-                              <button onClick={() => removeFromCart(getItemKey(item))} className="text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-colors"><X size={18} /></button>
-                            </div>
-                            {item.comboItems && (
-                              <div className="space-y-2">
-                                {item.comboItems.map((sub: any, idx: number) => {
-                                  const selAttrs = item.comboSelectionAttributes?.[sub.productId];
-                                  const selLabel = item.comboSelectionLabels?.[sub.productId];
-                                  const subAttrText = formatAttributes(selAttrs, selLabel);
-                                  return (
-                                    <div key={idx} className="flex items-baseline text-[13px] pl-4 gap-2">
-                                      <span className="text-gray-600 font-medium break-words">{sub.productName}</span>
-                                      <span className="text-gray-400 shrink-0">&times;{sub.quantity}</span>
-                                      {subAttrText && <span className="text-brand-blue shrink-0">({subAttrText})</span>}
-                                      {idx === 0 && <span className="text-[#2ecc71] font-bold shrink-0 ml-auto">Included</span>}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            <div className="flex items-center justify-between pt-3 border-t border-gray-50">
-                              <span className="text-[12px] text-gray-400 font-bold uppercase">Combo Total</span>
-                              <span className="text-[15px] font-black text-brand-blue">{s}{item.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <CheckoutItemRow item={item} removeFromCart={removeFromCart} updateQuantity={updateQuantity} currencySymbol={s} />
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Shipping Address */}
-            <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6">
-                <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Shipping Address</h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {checkoutCfg?.districtEnabled !== false && (
-                    <>
-                      <div className="relative">
-                        <select value={district} onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
-                          className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.districtRequired ? 'border-gray-200' : 'border-gray-200'}`}>
-                          <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
-                          {districts.map(d => (
-                            <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                      </div>
-                      {fieldErrors.district && <p className="text-red-500 text-xs mt-1">{fieldErrors.district}</p>}
-                    </>
-                  )}
-                  {checkoutCfg?.thanaEnabled !== false && district && (
-                    <>
-                      <div className="relative">
-                        <select value={thana} onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
-                          className={`w-full border rounded-md px-4 py-3 text-[14px] outline-none appearance-none bg-[#fcfcfc] font-medium transition-all focus:border-brand-blue ${checkoutCfg?.thanaRequired ? 'border-gray-200' : 'border-gray-200'}`}>
-                          <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
-                          {thanas.map(t => (
-                            <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                      </div>
-                      {fieldErrors.thana && <p className="text-red-500 text-xs mt-1">{fieldErrors.thana}</p>}
-                    </>
-                  )}
-                  <div className="md:col-span-2">
-                    <textarea value={addressLine} onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
-                      placeholder="ex: House no. / building / street / area" rows={2}
-                      className="w-full border border-gray-200 rounded-md px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none bg-[#fcfcfc]" />
-                    {fieldErrors.addressLine && <p className="text-red-500 text-xs mt-1">{fieldErrors.addressLine}</p>}
+            <div className="space-y-4">
+              <h2 className="text-base font-bold text-gray-800">Delivery address</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {checkoutCfg?.districtEnabled !== false && (
+                  <div className="space-y-1">
+                    <div className="relative">
+                      <select
+                        value={district}
+                        onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
+                        className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue ${fieldErrors.district ? 'border-red-400' : 'border-gray-250'}`}
+                      >
+                        <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
+                        {districts.map(d => (
+                          <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    {fieldErrors.district && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.district}</p>}
                   </div>
+                )}
+
+                {checkoutCfg?.thanaEnabled !== false && district && (
+                  <div className="space-y-1">
+                    <div className="relative">
+                      <select
+                        value={thana}
+                        onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
+                        className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue ${fieldErrors.thana ? 'border-red-400' : 'border-gray-250'}`}
+                      >
+                        <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
+                        {thanas.map(t => (
+                          <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    {fieldErrors.thana && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.thana}</p>}
+                  </div>
+                )}
+
+                <div className="md:col-span-2">
+                  <textarea
+                    value={addressLine}
+                    onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
+                    placeholder="Address detail (apartment, suite, unit, building, street) *"
+                    rows={2}
+                    className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue resize-none bg-white ${fieldErrors.addressLine ? 'border-red-400' : 'border-gray-250'}`}
+                  />
+                  {fieldErrors.addressLine && <p className="text-red-500 text-[10px] mt-0.5">{fieldErrors.addressLine}</p>}
                 </div>
-                {config.shippingMode === 'options' && config.shippingOptions?.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    <label className="text-sm font-bold text-gray-700">Delivery Option</label>
+              </div>
+
+              {config.shippingMode === 'options' && config.shippingOptions?.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Shipping Method</label>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
                     {config.shippingOptions.map(opt => (
-                      <label key={opt.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${selectedShippingOptionId === opt.id ? 'border-brand-blue bg-brand-blue/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                      <label key={opt.id} className={`flex items-center justify-between p-3.5 border-b border-gray-200 last:border-0 cursor-pointer transition-colors ${selectedShippingOptionId === opt.id ? 'bg-brand-blue/5' : 'hover:bg-gray-50'}`}>
                         <div className="flex items-center gap-3">
-                          <input type="radio" name="shippingOption" value={opt.id} checked={selectedShippingOptionId === opt.id} onChange={() => { setSelectedShippingOptionId(opt.id); clearFieldError('shippingOption'); }} className="accent-brand-blue" />
-                          <span className="text-sm font-medium text-gray-800">{opt.name}</span>
+                          <input
+                            type="radio"
+                            name="shippingOption"
+                            value={opt.id}
+                            checked={selectedShippingOptionId === opt.id}
+                            onChange={() => { setSelectedShippingOptionId(opt.id); clearFieldError('shippingOption'); }}
+                            className="accent-brand-blue"
+                          />
+                          <span className="text-xs font-medium text-gray-800">{opt.name}</span>
                         </div>
-                        <span className="text-sm font-bold text-gray-800">{s}{opt.amount}</span>
+                        <span className="text-xs font-bold text-gray-800">{s}{opt.amount}</span>
                       </label>
                     ))}
                   </div>
-                )}
-                {fieldErrors.shippingOption && <p className="text-red-500 text-xs mt-1">{fieldErrors.shippingOption}</p>}
-                {config.shippingMode !== 'options' && district && deliveryCharge > 0 && !noDeliveryError && (
-                  <div className="mt-3 text-xs text-gray-400">
-                    Delivery charge for {district}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
-                    {cartTotal >= config.delivery.freeDeliveryMin && <span className="text-green-600 ml-2">(Free delivery on orders over {s}{config.delivery.freeDeliveryMin})</span>}
-                  </div>
-                )}
-                {noDeliveryError && (
-                  <div className="mt-2 flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-sm">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                    <span>{noDeliveryError}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right sidebar */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Payment Mode */}
-            <div className="bg-white rounded-lg border border-gray-100 relative shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6">
-                <div className="flex items-center gap-2 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[16px] md:text-[18px] font-bold text-gray-800">Payment</h2>
+                  {fieldErrors.shippingOption && <p className="text-red-500 text-[10px] mt-1">{fieldErrors.shippingOption}</p>}
                 </div>
+              )}
 
-                {/* Payment Mode Selection */}
-                <div className="space-y-2 mb-4">
-                  {hasCodGateway && (
-                    <div onClick={() => setPaymentOptionType('CASH_ON_DELIVERY')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'CASH_ON_DELIVERY' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center">
-                          <Banknote size={20} className="text-brand-blue" />
-                        </div>
-                        <span className="text-[13px] text-gray-800 font-bold">Cash On Delivery</span>
-                      </div>
-                      {paymentOptionType === 'CASH_ON_DELIVERY' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
-                    </div>
+              {config.shippingMode !== 'options' && district && deliveryCharge > 0 && !noDeliveryError && (
+                <p className="text-[10px] text-gray-400">
+                  Delivery cost for {district}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
+                  {cartTotal >= config.delivery.freeDeliveryMin && (
+                    <span className="text-green-600 ml-2 font-bold">(Free shipping on orders above {s}{config.delivery.freeDeliveryMin})</span>
                   )}
+                </p>
+              )}
 
-                  {hasFullPayment && (
-                    <div onClick={() => setPaymentOptionType('FULL_PAYMENT')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'FULL_PAYMENT' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-brand-blue rounded-md flex items-center justify-center">
-                          <CreditCard size={20} className="text-white" />
-                        </div>
-                        <span className="text-[13px] text-gray-800 font-bold">Pay Online (Full)</span>
-                      </div>
-                      {paymentOptionType === 'FULL_PAYMENT' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
-                    </div>
-                  )}
-
-                  {hasPartialPayment && (
-                    <div onClick={() => setPaymentOptionType('PARTIAL_PAYMENT')}
-                      className={`rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all ${paymentOptionType === 'PARTIAL_PAYMENT' ? 'border-2 border-brand-blue bg-brand-blue/5' : 'border border-gray-100 bg-[#fcfcfc] hover:border-brand-blue'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#f59e0b] rounded-md flex items-center justify-center">
-                          <CreditCard size={20} className="text-white" />
-                        </div>
-                        <span className="text-[13px] text-gray-800 font-bold">Pay Partial Online</span>
-                      </div>
-                      {paymentOptionType === 'PARTIAL_PAYMENT' && <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center"><ShieldCheck size={14} className="text-white" /></div>}
-                    </div>
-                  )}
-
-                  {paymentOptionType === 'PARTIAL_PAYMENT' && (
-                    <div className="mt-3">
-                      <label className="text-xs text-gray-500 font-medium mb-1 block">Partial Payment Amount ({s})</label>
-                      <input type="number" value={partialAmount} onChange={e => setPartialAmount(e.target.value)}
-                        placeholder="Enter amount to pay now"
-                        max={totalWithDelivery}
-                        className="w-full border border-gray-200 rounded-md px-4 py-2.5 text-[14px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
-                      <p className="text-xs text-gray-400 mt-1">Remaining {s}{Math.max(0, totalWithDelivery - (parseFloat(partialAmount) || 0)).toLocaleString('en-US', {minimumFractionDigits: 2})} will be collected on delivery</p>
-                    </div>
-                  )}
+              {noDeliveryError && (
+                <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-md px-3.5 py-2.5 text-xs font-medium">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{noDeliveryError}</span>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Order Summary */}
-            <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
-              <button onClick={() => setIsCouponExpanded(!isCouponExpanded)}
-                className="w-full p-4 md:p-6 flex justify-between items-center cursor-pointer group text-left outline-none">
-                <span className="text-[14px] md:text-[15px] font-bold text-gray-700 group-hover:text-brand-blue transition-colors">Have any coupon or gift voucher?</span>
-                <motion.div animate={{ rotate: isCouponExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                  <ChevronDown size={20} className="text-brand-blue" />
-                </motion.div>
-              </button>
-              <AnimatePresence>
-                {isCouponExpanded && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden bg-[#fcfcfc]">
-                    <div className="p-4 md:p-6 pt-0 md:pt-0 space-y-3">
-                      {appliedCoupon?.valid ? (
-                        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md px-4 py-2.5">
-                          <div>
-                            <span className="text-sm font-bold text-green-700">{appliedCoupon.coupon.code}</span>
-                            <span className="text-xs text-green-600 ml-2">
-                              ({appliedCoupon.coupon.type === 'percentage' ? `${appliedCoupon.coupon.value}% off` : `${s}${appliedCoupon.coupon.value} off`})
-                            </span>
-                          </div>
-                          <button onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700 text-sm font-bold">Remove</button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <input type="text" value={couponInput} onChange={e => setCouponInput(e.target.value)}
-                            placeholder="Enter Coupon" className="flex-1 border border-gray-200 rounded-md px-4 py-2 text-[14px] outline-none focus:border-brand-blue bg-white" />
-                          <button onClick={handleApplyCoupon} disabled={couponLoading}
-                            className="bg-brand-blue text-white px-4 py-2 rounded-md text-[13px] font-bold uppercase transition-colors hover:bg-brand-blue/90 disabled:opacity-50">
-                            {couponLoading ? '...' : 'Apply'}
-                          </button>
-                        </div>
-                      )}
-                      {couponError && <p className="text-red-500 text-xs">{couponError}</p>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <div className="p-4 md:p-6 space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-[14px] text-gray-500 font-medium">Sub total</span>
-                  <span className="text-[14px] text-gray-800 font-black">{s}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[14px] text-gray-500 font-medium">Delivery cost</span>
-                  <span className="text-[14px] text-gray-800 font-black">
-                    {config.shippingMode === 'options' ? (
-                      selectedShippingOptionId ? (
-                        deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
-                      ) : (
-                        <span className="text-gray-400 italic">Select option</span>
-                      )
-                    ) : (
-                      district ? (
-                        deliveryCharge === 0 ? `${s}0 (Free)` : `${s}${deliveryCharge.toLocaleString('en-US', {minimumFractionDigits: 2})}`
-                      ) : (
-                        <span className="text-gray-400 italic">Not selected</span>
-                      )
-                    )}
-                  </span>
-                </div>
-                {appliedCoupon?.valid && discountAmount > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span className="text-[14px] font-medium">Discount ({appliedCoupon.coupon.code})</span>
-                    <span className="text-[14px] font-black">-{s}{discountAmount.toFixed(2)}</span>
-                  </div>
-                )}
-                {paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount && parseFloat(partialAmount) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-[14px] text-gray-500 font-medium">Paid Online</span>
-                    <span className="text-[14px] text-green-600 font-black">-{s}{parseFloat(partialAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center pt-4 mt-4 border-t-2 border-dashed border-gray-100">
-                  <span className="text-[16px] font-black text-gray-900">Total</span>
-                  <span className="text-[16px] font-black text-gray-900">{s}{totalWithDelivery.toLocaleString('en-US', {minimumFractionDigits: 2})} {config.currency.code}</span>
-                </div>
-              </div>
-            </div>
+            {/* Payment Options */}
+            {renderPaymentSection()}
 
             {/* Notes */}
-            <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
-              <div className="p-4 md:p-6">
-                <div className="flex items-center gap-2 mb-4 border-l-4 border-brand-blue pl-3">
-                  <h2 className="text-[15px] font-bold text-gray-800">Special notes <span className="font-normal text-[12px] text-gray-400 ml-1">(Optional)</span></h2>
-                </div>
-                <textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)}
-                  className="w-full border border-gray-100 rounded-lg px-4 py-3 text-[14px] outline-none focus:border-brand-blue resize-none h-24 bg-[#fcfcfc]" maxLength={90} />
-                <div className="text-[11px] text-gray-400 mt-1 text-right">{customerNotes.length} / 90 characters</div>
-              </div>
+            <div className="space-y-3">
+              <h2 className="text-base font-bold text-gray-800">Order notes <span className="font-normal text-xs text-gray-400">(Optional)</span></h2>
+              <textarea
+                value={customerNotes}
+                onChange={e => setCustomerNotes(e.target.value)}
+                placeholder="Notes about your order, e.g. special instructions for delivery."
+                rows={2}
+                className="w-full border border-gray-200 rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue resize-none bg-white"
+                maxLength={90}
+              />
+              <div className="text-[10px] text-gray-450 text-right">{customerNotes.length} / 90 characters</div>
             </div>
 
-            {/* Submit */}
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 px-2">
-                <div className="w-5 h-5 rounded-full bg-brand-blue flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                  <ShieldCheck size={12} className="text-white" />
+            {/* Checkout Action Button */}
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <div className="flex items-start gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-brand-blue/10 flex items-center justify-center shrink-0 mt-0.5">
+                  <ShieldCheck size={10} className="text-brand-blue" />
                 </div>
-                <p className="text-[12px] md:text-[13px] text-gray-500 leading-relaxed">
-                  I have read and agree to the <span className="text-brand-blue font-bold cursor-pointer hover:underline">Terms and Conditions</span>, <span className="text-brand-blue font-bold cursor-pointer hover:underline">Privacy Policy</span> & <span className="text-brand-blue font-bold cursor-pointer hover:underline">Refund and Return Policy</span>.
+                <p className="text-[10px] text-gray-400 leading-normal">
+                  By placing order, you agree to EcoMate's{" "}
+                  <Link href="/terms-conditions" className="text-brand-blue hover:underline font-bold">Terms & Conditions</Link>,{" "}
+                  <Link href="/privacy-policy" className="text-brand-blue hover:underline font-bold">Privacy Policy</Link>, and{" "}
+                  <Link href="/refund-policy" className="text-brand-blue hover:underline font-bold">Return Policy</Link>.
                 </p>
               </div>
+
               {paymentOptionType === 'CASH_ON_DELIVERY' && (
-                <button onClick={handlePlaceOrder} disabled={!canSubmit}
-                  className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/20' : 'bg-gray-400 cursor-not-allowed'}`}>
-                  {submitting ? 'PLACING ORDER...' : 'PLACE ORDER'}
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={!canSubmit}
+                  className={`w-full text-white font-bold h-12.5 rounded-md text-sm uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer shadow-md ${canSubmit ? 'bg-brand-blue hover:bg-brand-blue/90 shadow-brand-blue/10' : 'bg-gray-300 cursor-not-allowed'}`}
+                >
+                  {submitting ? 'Placing Order...' : 'Complete Order'}
                 </button>
               )}
+              
               {(paymentOptionType === 'FULL_PAYMENT' || paymentOptionType === 'PARTIAL_PAYMENT') && (
-                <button onClick={handlePayNow} disabled={!canSubmit}
-                  className={`w-full text-white font-black h-14 rounded-lg text-[16px] uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${canSubmit ? 'bg-[#f59e0b] hover:bg-[#d97706] shadow-amber-500/20' : 'bg-gray-400 cursor-not-allowed'}`}>
-                  {submitting ? 'PROCESSING...' : `PAY ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
+                <button
+                  onClick={handlePayNow}
+                  disabled={!canSubmit}
+                  className={`w-full text-white font-bold h-12.5 rounded-md text-sm uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer shadow-md ${canSubmit ? 'bg-[#f59e0b] hover:bg-[#d97706] shadow-amber-500/10' : 'bg-gray-300 cursor-not-allowed'}`}
+                >
+                  {submitting ? 'Processing...' : `Pay ${s}${(paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery).toLocaleString('en-US', {minimumFractionDigits: 2})}`}
                 </button>
               )}
             </div>
+
           </div>
+
+          {/* Right Column - Desktop Order Summary (Items list, Coupon, Totals) */}
+          <div className="hidden lg:col-span-5 lg:block bg-[#fafafa] border-l border-gray-200 px-8 py-10 space-y-6">
+            <div className="sticky top-6 space-y-6">
+              
+              {/* Product List */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Order Items</h3>
+                {renderCartItems()}
+              </div>
+
+              {/* Coupon Section */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Coupon Discount</h3>
+                {renderCouponSection()}
+              </div>
+
+              {/* Cost Summary */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-2xs">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Price Details</h3>
+                {renderPricingBreakdown()}
+              </div>
+
+            </div>
+          </div>
+
         </div>
       </div>
 

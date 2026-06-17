@@ -183,7 +183,38 @@ export function GatewaySettings() {
                         </div>
                       </div>
                       <div className='flex items-center gap-4'>
-                        <Switch checked={d.enabled} onCheckedChange={(v) => { initGatewayEdit(g); setGatewayEditData(p => ({ ...p, [g.code]: { ...d, enabled: v } })) }} onClick={e => e.stopPropagation()} />
+                        <Switch 
+                          checked={d.enabled} 
+                          onCheckedChange={(v) => { 
+                            initGatewayEdit(g); 
+                            const currentMode = d.mode || g.mode || (g.type === 'api' ? 'sandbox' : 'personal');
+                            const currentPhone = d.phoneNumber || g.phoneNumber || '';
+                            const currentCreds = d.credentials || g.credentials || {};
+                            
+                            const updated = { 
+                              enabled: v, 
+                              mode: currentMode,
+                              phoneNumber: currentPhone,
+                              credentials: currentCreds
+                            };
+                            setGatewayEditData(p => ({ ...p, [g.code]: updated }));
+                            
+                            updateGatewayMut.mutate({ 
+                              code: g.code, 
+                              data: {
+                                name: g.name,
+                                type: g.type,
+                                paymentOptionType: g.paymentOptionType,
+                                enabled: v,
+                                mode: currentMode,
+                                phoneNumber: currentPhone,
+                                credentials: currentCreds,
+                                sortOrder: g.sortOrder,
+                              } 
+                            });
+                          }} 
+                          onClick={e => e.stopPropagation()} 
+                        />
                         {isOpen ? <ChevronUp className='h-4 w-4 text-muted-foreground' /> : <ChevronDown className='h-4 w-4 text-muted-foreground' />}
                       </div>
                     </div>

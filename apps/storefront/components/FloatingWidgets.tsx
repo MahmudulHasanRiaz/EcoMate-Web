@@ -5,8 +5,11 @@ import { MessageSquare, ShoppingBag, MessageCircle, Phone, X, MessageCircleMore 
 import { useCart } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { motion, AnimatePresence } from "motion/react";
+import { usePathname } from "next/navigation";
 
 export default function FloatingWidgets() {
+  const pathname = usePathname();
+  if (pathname && pathname.startsWith('/checkout')) return null;
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
   const { config } = useStorefrontConfig();
   const [isChatOpen, setIsChatOpen] = useState(false);
