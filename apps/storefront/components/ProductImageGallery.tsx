@@ -8,11 +8,12 @@ import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 interface Props {
   images: string[];
   productName: string;
+  badge?: string;
 }
 
 const AUTO_SLIDE_MS = 4000;
 
-export function ProductImageGallery({ images, productName }: Props) {
+export function ProductImageGallery({ images, productName, badge }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -195,6 +196,12 @@ export function ProductImageGallery({ images, productName }: Props) {
                 </div>
               ))}
             </div>
+            
+            {badge && (
+              <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full z-10 shadow-md">
+                {badge}
+              </div>
+            )}
 
             {/* Counter badge */}
             {hasMultiple && (
@@ -259,17 +266,23 @@ export function ProductImageGallery({ images, productName }: Props) {
               >
                 <Image
                   src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
-                  alt={`${productName} ${i + 1}`}
+                  alt={`${productName} image ${i + 1}`}
                   fill
-                  sizes="100vw"
-                  className="object-contain"
+                  priority={i === 0}
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover"
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   draggable={false}
-                  priority={i === 0}
                 />
               </div>
             ))}
           </div>
+          
+          {badge && (
+            <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full z-10 shadow-md">
+              {badge}
+            </div>
+          )}
 
           {/* Mobile counter */}
           {hasMultiple && (

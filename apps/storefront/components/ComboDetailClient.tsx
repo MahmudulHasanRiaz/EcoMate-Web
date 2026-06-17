@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Gift, ShoppingBag, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
+import { ProductImageGallery } from './ProductImageGallery';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
@@ -73,6 +74,17 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
   const router = useRouter();
   const { items, addToCart, updateQuantity, removeFromCart } = useCart();
   const [itemSelections, setItemSelections] = useState<ItemSelections>({});
+
+  const comboGallery = useMemo(() => {
+    const urls: string[] = [];
+    if (combo.image) urls.push(combo.image);
+    if (combo.images && Array.isArray(combo.images)) {
+      combo.images.forEach(img => {
+        if (!urls.includes(img)) urls.push(img);
+      });
+    }
+    return urls;
+  }, [combo.image, combo.images]);
 
   useEffect(() => {
     const initial: ItemSelections = {};
@@ -268,21 +280,24 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
 
       <div className="max-w-5xl mx-auto px-4">
         <div className="flex flex-col md:flex-row gap-8 mb-8">
-          <div className="md:w-1/2">
-            <div className="bg-gray-50 rounded-xl overflow-hidden relative h-72 md:h-96">
-              {combo.image ? (
-                <Image src={combo.image} alt={combo.name} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover"
-                  onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
-              ) : (
-                <div className="w-full h-72 md:h-96 flex items-center justify-center"><Gift className="w-20 h-20 text-gray-300" /></div>
-              )}
-              {savings > 0 && (
-                <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full">Save {savings}%</div>
-              )}
-            </div>
-          </div>
+            {comboGallery.length > 0 ? (
+              <ProductImageGallery 
+                images={comboGallery} 
+                productName={combo.name} 
+                badge={savings > 0 ? `Save ${savings}%` : undefined} 
+              />
+            ) : (
+              <div className="md:w-[45%]">
+                <div className="bg-gray-50 rounded-xl overflow-hidden relative h-72 md:h-[600px] flex items-center justify-center">
+                  <Gift className="w-20 h-20 text-gray-300" />
+                  {savings > 0 && (
+                    <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full">Save {savings}%</div>
+                  )}
+                </div>
+              </div>
+            )}
 
-          <div className="md:w-1/2 flex flex-col justify-center">
+            <div className="md:w-[55%] flex flex-col justify-center">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-3">{combo.name}</h1>
             {combo.shortDesc && <p className="text-gray-500 mb-4">{combo.shortDesc}</p>}
 

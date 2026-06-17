@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Pencil, Trash2, Package } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
-import { appUrl } from '@/lib/utils'
+import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { type ProductResponse } from '../api'
 
-const imgUrl = appUrl
+const imgUrl = mediaUrl
 
 export function productsColumns(
   onEdit: (row: ProductResponse) => void,

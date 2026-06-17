@@ -49,7 +49,8 @@ export default function Hero() {
                     src={slide.image || PLACEHOLDER_IMAGE}
                     alt={slide.alt || `Promotional banner ${index + 1}`}
                     fill
-                    sizes="100vw"
+                    sizes="(max-width: 768px) 100vw, 66vw"
+                    priority={index === 0}
                     className="object-cover"
                     onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}
                   />
@@ -109,6 +110,7 @@ export default function Hero() {
                 src={config.hero.secondaryBanner || PLACEHOLDER_IMAGE}
                 alt={config.hero.secondaryBannerAlt || 'Featured banner'}
                 fill
+                priority
                 sizes="(max-width: 768px) 0vw, 33vw"
                 className="object-cover"
                 onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE }}

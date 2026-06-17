@@ -72,14 +72,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [items, loaded]);
 
   const addToCart = useCallback((product: CartItem) => {
+    const qtyToAdd = product.quantity || 1;
     setItems((prev) => {
       const key = getItemKey(product);
       const existing = prev.find((item) => getItemKey(item) === key);
       return existing
-        ? prev.map((item) =>
-            getItemKey(item) === key ? { ...item, quantity: item.quantity + 1 } : item
-          )
-        : [...prev, { ...product, quantity: 1 }];
+        ? prev.map((item) => {
+            if (getItemKey(item) === key) {
+              const newQty = item.quantity + qtyToAdd;
+              const cappedQty = item.stock !== undefined ? Math.min(newQty, item.stock) : newQty;
+              return { ...item, quantity: cappedQty };
+            }
+            return item;
+          })
+        : [...prev, { ...product, quantity: product.stock !== undefined ? Math.min(qtyToAdd, product.stock) : qtyToAdd }];
     });
     if (!userDismissedRef.current) setIsCartOpen(true);
   }, []);
@@ -91,7 +97,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const updateQuantity = (productKey: string, quantity: number) => {
     if (quantity <= 0) { removeFromCart(productKey); return; }
     setItems((prev) =>
-      prev.map((item) => getItemKey(item) === productKey ? { ...item, quantity } : item)
+      prev.map((item) => {
+        if (getItemKey(item) === productKey) {
+          const cappedQty = item.stock !== undefined ? Math.min(quantity, item.stock) : quantity;
+          return { ...item, quantity: cappedQty };
+        }
+        return item;
+      })
     );
   };
 
