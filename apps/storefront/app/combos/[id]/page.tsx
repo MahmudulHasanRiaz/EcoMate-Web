@@ -9,7 +9,13 @@ async function getCombo(id: string) {
   const res = await fetch(`${API}/combos/${id}`, { next: { revalidate: 300 } });
   if (!res.ok) return null;
   const data = await res.json();
-  return data;
+  const basePrice = Number(data.basePrice);
+  const salePrice = data.salePrice ? Number(data.salePrice) : undefined;
+  return {
+    ...data,
+    price: salePrice ?? basePrice,
+    originalPrice: salePrice != null && salePrice < basePrice ? basePrice : undefined,
+  };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
