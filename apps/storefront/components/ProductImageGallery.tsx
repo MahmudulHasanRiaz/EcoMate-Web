@@ -19,7 +19,8 @@ export function ProductImageGallery({ images, productName }: Props) {
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const desktopScrollRef = useRef<HTMLDivElement>(null);
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
@@ -27,28 +28,39 @@ export function ProductImageGallery({ images, productName }: Props) {
 
   const hasMultiple = images.length > 1;
 
+  // Scroll main gallery to active index
+  const scrollTo = useCallback((index: number) => {
+    const desktopEl = desktopScrollRef.current;
+    if (desktopEl && desktopEl.clientWidth > 0) {
+      desktopEl.scrollTo({ left: desktopEl.clientWidth * index, behavior: 'smooth' });
+    }
+    const mobileEl = mobileScrollRef.current;
+    if (mobileEl && mobileEl.clientWidth > 0) {
+      mobileEl.scrollTo({ left: mobileEl.clientWidth * index, behavior: 'smooth' });
+    }
+    setActiveIndex(index);
+  }, []);
+
   // Auto-slide logic
   const startAutoPlay = useCallback(() => {
     if (!hasMultiple) return;
-    stopAutoPlay();
+    
+    if (progressRef.current) cancelAnimationFrame(progressRef.current);
     setProgress(0);
+    
     const startTime = Date.now();
     const tick = () => {
       const elapsed = Date.now() - startTime;
       const pct = Math.min((elapsed / AUTO_SLIDE_MS) * 100, 100);
       setProgress(pct);
       if (pct >= 100) {
-        setActiveIndex(prev => {
-          const next = (prev + 1) % images.length;
-          return next;
-        });
-        startAutoPlay();
-        return;
+        scrollTo((activeIndex + 1) % images.length);
+        return; // Do NOT recursively call startAutoPlay, useEffect handles it
       }
       progressRef.current = requestAnimationFrame(tick);
     };
     progressRef.current = requestAnimationFrame(tick);
-  }, [hasMultiple, images.length]);
+  }, [hasMultiple, images.length, activeIndex, scrollTo]);
 
   const stopAutoPlay = useCallback(() => {
     if (progressRef.current) cancelAnimationFrame(progressRef.current);
@@ -61,16 +73,10 @@ export function ProductImageGallery({ images, productName }: Props) {
     } else {
       stopAutoPlay();
     }
-    return stopAutoPlay;
+    return () => {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
   }, [activeIndex, isAutoPlaying, hasMultiple, lightboxOpen, startAutoPlay, stopAutoPlay]);
-
-  // Scroll main gallery to active index
-  const scrollTo = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({ left: el.clientWidth * index, behavior: 'smooth' });
-    setActiveIndex(index);
-  }, []);
 
   // Scroll thumbnail into view
   useEffect(() => {
@@ -82,8 +88,8 @@ export function ProductImageGallery({ images, productName }: Props) {
     }
   }, [activeIndex]);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
     if (!el) return;
     const newIndex = el.clientWidth > 0 ? Math.round(el.scrollLeft / el.clientWidth) : 0;
     const clamped = Math.max(0, Math.min(newIndex, images.length - 1));
@@ -135,7 +141,7 @@ export function ProductImageGallery({ images, productName }: Props) {
               {images.map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => { setActiveIndex(i); setIsAutoPlaying(true); }}
+                  onClick={() => { scrollTo(i); setIsAutoPlaying(true); }}
                   className={`relative flex-shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all duration-200 ${
                     i === activeIndex
                       ? 'border-brand-blue shadow-md shadow-brand-blue/20 scale-105'
@@ -165,7 +171,7 @@ export function ProductImageGallery({ images, productName }: Props) {
           {/* Main image */}
           <div className="relative flex-1 min-w-0">
             <div
-              ref={scrollRef}
+              ref={desktopScrollRef}
               onScroll={handleScroll}
               className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth rounded-2xl"
             >
@@ -237,7 +243,7 @@ export function ProductImageGallery({ images, productName }: Props) {
         {/* ── Mobile: Full-width carousel ── */}
         <div className="md:hidden relative">
           <div
-            ref={scrollRef}
+            ref={mobileScrollRef}
             onScroll={handleScroll}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
