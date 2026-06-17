@@ -32,7 +32,9 @@ export default function BrandSection({ brands = [] }: { brands?: Brand[] }) {
         
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {brands.map((brand) => {
-            const logoUrl = brand.logo ? (brand.logo.startsWith('http') ? brand.logo : `${process.env.NEXT_PUBLIC_MEDIA_URL}/${brand.logo}`) : PLACEHOLDER_IMAGE;
+            const baseUrl = process.env.NEXT_PUBLIC_MEDIA_URL || '';
+            let logoUrl = brand.logo ? (brand.logo.startsWith('http') ? brand.logo : `${baseUrl}/${brand.logo}`.replace(/(?<!:)\/+/g, '/')) : PLACEHOLDER_IMAGE;
+            if (logoUrl.startsWith('//')) logoUrl = logoUrl.substring(1);
             return (
               <div key={brand.id} className="bg-white border border-gray-100 rounded-lg p-6 flex items-center justify-center h-[100px] shadow-sm hover:shadow-md transition-shadow cursor-pointer">
                 <Image 
