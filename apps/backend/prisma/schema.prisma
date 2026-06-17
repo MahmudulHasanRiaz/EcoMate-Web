@@ -208,6 +208,18 @@ model ProductCategory {
   @@index([categoryId])
 }
 
+model Brand {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  logo        String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[] @relation("ProductBrand")
+}
+
 model Attribute {
   id        String           @id @default(uuid())
   name      String           @unique
@@ -247,6 +259,8 @@ model Product {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  brandId    String?
+  brand      Brand?             @relation("ProductBrand", fields: [brandId], references: [id], onDelete: SetNull)
   category   Category?          @relation("ProductCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   productCategories ProductCategory[]
   productTags ProductTag[]

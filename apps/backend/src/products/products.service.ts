@@ -106,6 +106,7 @@ export class ProductsService {
   }
 
   private readonly listInclude = {
+    brand: true,
     category: { select: { id: true, name: true, slug: true } },
     productCategories: {
       include: { category: { select: { id: true, name: true, slug: true } } },
@@ -128,6 +129,7 @@ export class ProductsService {
   };
 
   private readonly productInclude = {
+    brand: true,
     category: { select: { id: true, name: true, slug: true } },
     productCategories: {
       include: { category: { select: { id: true, name: true, slug: true } } },
@@ -296,6 +298,7 @@ export class ProductsService {
     const product = await this.prisma.product.findUnique({
       where: { slug },
       include: {
+        brand: true,
         category: true,
         variants: {
           include: {

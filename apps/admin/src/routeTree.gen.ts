@@ -51,6 +51,7 @@ import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
 import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_authenticated/op/categories/index'
 import { Route as AuthenticatedOpCampaignsIndexRouteImport } from './routes/_authenticated/op/campaigns/index'
+import { Route as AuthenticatedOpBrandsIndexRouteImport } from './routes/_authenticated/op/brands/index'
 import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authenticated/op/blocked/index'
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
@@ -318,6 +319,12 @@ const AuthenticatedOpCampaignsIndexRoute =
     path: '/op/campaigns/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpBrandsIndexRoute =
+  AuthenticatedOpBrandsIndexRouteImport.update({
+    id: '/op/brands/',
+    path: '/op/brands/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpBlockedIndexRoute =
   AuthenticatedOpBlockedIndexRouteImport.update({
     id: '/op/blocked/',
@@ -530,6 +537,7 @@ export interface FileRoutesByFullPath {
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
   '/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
+  '/op/brands/': typeof AuthenticatedOpBrandsIndexRoute
   '/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
@@ -603,6 +611,7 @@ export interface FileRoutesByTo {
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
   '/op/blocked': typeof AuthenticatedOpBlockedIndexRoute
+  '/op/brands': typeof AuthenticatedOpBrandsIndexRoute
   '/op/campaigns': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories': typeof AuthenticatedOpCategoriesIndexRoute
   '/op/chats': typeof AuthenticatedOpChatsIndexRoute
@@ -678,6 +687,7 @@ export interface FileRoutesById {
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
   '/_authenticated/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
+  '/_authenticated/op/brands/': typeof AuthenticatedOpBrandsIndexRoute
   '/_authenticated/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/_authenticated/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
   '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
@@ -753,6 +763,7 @@ export interface FileRouteTypes {
     | '/op/apps/'
     | '/op/attributes/'
     | '/op/blocked/'
+    | '/op/brands/'
     | '/op/campaigns/'
     | '/op/categories/'
     | '/op/chats/'
@@ -826,6 +837,7 @@ export interface FileRouteTypes {
     | '/op/apps'
     | '/op/attributes'
     | '/op/blocked'
+    | '/op/brands'
     | '/op/campaigns'
     | '/op/categories'
     | '/op/chats'
@@ -900,6 +912,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/apps/'
     | '/_authenticated/op/attributes/'
     | '/_authenticated/op/blocked/'
+    | '/_authenticated/op/brands/'
     | '/_authenticated/op/campaigns/'
     | '/_authenticated/op/categories/'
     | '/_authenticated/op/chats/'
@@ -1251,6 +1264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpCampaignsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/brands/': {
+      id: '/_authenticated/op/brands/'
+      path: '/op/brands'
+      fullPath: '/op/brands/'
+      preLoaderRoute: typeof AuthenticatedOpBrandsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/blocked/': {
       id: '/_authenticated/op/blocked/'
       path: '/op/blocked'
@@ -1568,6 +1588,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
   AuthenticatedOpAttributesIndexRoute: typeof AuthenticatedOpAttributesIndexRoute
   AuthenticatedOpBlockedIndexRoute: typeof AuthenticatedOpBlockedIndexRoute
+  AuthenticatedOpBrandsIndexRoute: typeof AuthenticatedOpBrandsIndexRoute
   AuthenticatedOpCampaignsIndexRoute: typeof AuthenticatedOpCampaignsIndexRoute
   AuthenticatedOpCategoriesIndexRoute: typeof AuthenticatedOpCategoriesIndexRoute
   AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
@@ -1619,6 +1640,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,
   AuthenticatedOpAttributesIndexRoute: AuthenticatedOpAttributesIndexRoute,
   AuthenticatedOpBlockedIndexRoute: AuthenticatedOpBlockedIndexRoute,
+  AuthenticatedOpBrandsIndexRoute: AuthenticatedOpBrandsIndexRoute,
   AuthenticatedOpCampaignsIndexRoute: AuthenticatedOpCampaignsIndexRoute,
   AuthenticatedOpCategoriesIndexRoute: AuthenticatedOpCategoriesIndexRoute,
   AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,

@@ -30,6 +30,8 @@ export interface Product {
   category: string;
   categoryId?: string;
   categorySlug?: string;
+  brand?: { id: string; name: string } | null;
+  brandId?: string;
   badge?: string;
   saveAmount?: number;
   isFeatured?: boolean;
@@ -107,6 +109,8 @@ export interface Combo {
   items: ComboItemDetails[];
   categoryId?: string;
   category?: { id: string; name: string } | null;
+  brandId?: string;
+  brand?: { id: string; name: string } | null;
   isActive?: boolean;
   isFeatured?: boolean;
   tags?: string[];

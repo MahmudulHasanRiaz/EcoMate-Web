@@ -26,6 +26,7 @@ export const sidebarData: SidebarData = {
             { title: 'All Products', url: '/op/products' },
             { title: 'Combos', url: '/op/combos', icon: Gift },
             { title: 'Categories', url: '/op/categories' },
+            { title: 'Brands', url: '/op/brands' },
             { title: 'Tags', url: '/op/tags' },
             { title: 'Attributes', url: '/op/attributes', icon: Palette },
             { title: 'Size Charts', url: '/op/size-charts', icon: Ruler },

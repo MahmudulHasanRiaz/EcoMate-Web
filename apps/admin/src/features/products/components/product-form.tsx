@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check } from 'lucide-react'
@@ -9,10 +9,11 @@ import { apiClient } from '@/lib/api-client'
 import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
-
+import { SearchableSelect } from '@/components/ui/searchable-select'
 const imgUrl = appUrl
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
+import { brandsApi } from '@/features/brands/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -39,6 +40,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   })
 
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => r.data?.data || []) })
+  const { data: brands } = useQuery({ queryKey: ['brands'], queryFn: () => brandsApi.list(true).then((r: any) => Array.isArray(r.data) ? r.data : r.data?.data || []) })
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
   const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
   const { data: allTags } = useQuery({ queryKey: ['tags'], queryFn: () => apiClient.get('/tags').then(r => r.data) })
@@ -60,6 +62,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     return flatten(cats || [], 0)
   }, [cats])
 
+  const brandOptions = useMemo(() => {
+    return (brands || []).map((b: any) => ({ label: b.name, value: b.id }))
+  }, [brands])
+
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [type, setType] = useState<string>('simple')
@@ -71,6 +77,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [stock, setStock] = useState('0')
   const [lowStockQty, setLowStockQty] = useState('')
   const [categoryIds, setCategoryIds] = useState<string[]>([])
+  const [brandId, setBrandId] = useState<string>('')
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
   const [manageStock, setManageStock] = useState(false)
@@ -120,6 +127,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setStock(String(currentRow.stock ?? 0))
       setLowStockQty(currentRow.lowStockQty != null ? String(currentRow.lowStockQty) : '')
       setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || [])
+      setBrandId(currentRow.brandId || '')
       setIsActive(currentRow.isActive ?? true)
       setIsFeatured(currentRow.isFeatured ?? false)
       setManageStock(currentRow.manageStock ?? false)
@@ -131,7 +139,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
-      setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
+      setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
       setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
       setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
@@ -183,7 +191,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
-    setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setIsActive(true); setIsFeatured(false);
+    setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 });
     setOverrideFormState({
@@ -264,6 +272,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       basePrice: parseFloat(basePrice) || 0, salePrice: salePrice ? parseFloat(salePrice) : undefined,
       sku: sku || undefined, type,
       categoryId: categoryIds[0] || undefined,
+      brandId: brandId || null,
       categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
       sizeChartId: sizeChartId || undefined,
@@ -392,6 +401,16 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                       value={categoryIds}
                       onChange={setCategoryIds}
                       placeholder='Search categories...'
+                      searchPlaceholder='Type to search...'
+                    />
+                  </div>
+                  <div className='space-y-1.5'>
+                    <Label>Brand</Label>
+                    <SearchableSelect
+                      options={brandOptions}
+                      value={brandId}
+                      onChange={setBrandId}
+                      placeholder='Search brands...'
                       searchPlaceholder='Type to search...'
                     />
                   </div>

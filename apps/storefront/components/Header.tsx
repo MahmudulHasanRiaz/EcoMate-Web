@@ -102,8 +102,6 @@ export default function Header({}: {}) {
                 <span className="hidden md:block text-[11px] font-medium group-hover:text-brand-blue">Cart</span>
               </button>
             </div>
-
-            <HeaderAction icon={<MoreVertical size={20} />} label="More" hideOnMobile />
           </div>
         </div>
 

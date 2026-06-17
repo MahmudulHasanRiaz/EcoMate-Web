@@ -11,7 +11,7 @@ export interface ProductResponse {
   description?: string | null; shortDesc?: string | null;
   basePrice: number | string; salePrice?: number | string | null;
   sku?: string | null; stock: number; lowStockQty?: number | null;
-  categoryId?: string | null; tags: any; images: any; seoMeta: any;
+  categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean; manageStock: boolean;
   createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;

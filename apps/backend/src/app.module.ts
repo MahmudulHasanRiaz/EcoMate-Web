@@ -10,6 +10,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { SettingsModule } from './settings/settings.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CategoriesModule } from './categories/categories.module';
+import { BrandsModule } from './brands/brands.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
@@ -60,6 +61,7 @@ import { SearchModule } from './search/search.module';
     SettingsModule,
     DashboardModule,
     CategoriesModule,
+    BrandsModule,
     AttributesModule,
     ProductsModule,
     OrdersModule,
