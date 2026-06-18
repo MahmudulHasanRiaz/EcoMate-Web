@@ -171,15 +171,3 @@ jobs:
             ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-admin:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Trigger Portainer Webhook
-        run: |
-          echo "Triggering Portainer stack redeploy..."
-          curl -sf -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" \
-            && echo "✅ Portainer webhook triggered successfully" \
-            || (echo "❌ Portainer webhook failed" && exit 1)

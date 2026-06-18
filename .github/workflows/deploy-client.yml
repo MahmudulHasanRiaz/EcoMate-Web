@@ -1,0 +1,36 @@
+name: Deploy to Client (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Select the client to deploy'
+        required: true
+        type: choice
+        options:
+          - FIXEDPLUS
+          - CLIENT_B
+          - CLIENT_C
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.client }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retrieve Webhook and Deploy
+        env:
+          CLIENT_NAME: ${{ github.event.inputs.client }}
+          # Dynamically access the secret using brackets: secrets['PORTAINER_WEBHOOK_FIXEDPLUS']
+          WEBHOOK_URL: ${{ secrets[format('PORTAINER_WEBHOOK_{0}', github.event.inputs.client)] }}
+        run: |
+          echo "Preparing deployment for client: $CLIENT_NAME"
+          
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "❌ Error: GitHub Secret 'PORTAINER_WEBHOOK_$CLIENT_NAME' is not configured!"
+            exit 1
+          fi
+          
+          echo "Triggering Portainer Stack Redeploy for $CLIENT_NAME..."
+          curl -sf -X POST "$WEBHOOK_URL" \
+            && echo "✅ Deployment triggered successfully for $CLIENT_NAME!" \
+            || (echo "❌ Webhook request failed for $CLIENT_NAME!" && exit 1)
