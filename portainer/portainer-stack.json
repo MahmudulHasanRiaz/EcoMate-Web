@@ -2,14 +2,13 @@
   "version": "2",
   "name": "ecomate",
   "description": "EcoMate E-Commerce Platform - Full Stack Deployment",
-  "note": "Deploy via Portainer UI. Fill in all required fields before deploying.",
+  "note": "Deploy via Portainer UI. Configure unique local ports if running multiple clients on the same server.",
   "repository": {
     "url": "https://github.com/your-org/ecomate-web",
     "stackfile": "docker-compose.yml"
   },
   "env": [
     { "name": "CLIENT_DOMAIN", "label": "⭐ Client Domain — e.g. example.com (NO https://)", "default": "" },
-    { "name": "TRAEFIK_ACME_EMAIL", "label": "⭐ Let's Encrypt Email (for SSL certificates)", "default": "" },
     { "name": "DOCKER_REGISTRY_OWNER", "label": "⭐ GitHub Username/Org (for Docker Registry images)", "default": "mahmudulhasanriaz" },
 
     { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
@@ -18,6 +17,10 @@
     { "name": "POSTGRES_PASSWORD", "label": "⭐ PostgreSQL Password (strong password)", "default": "" },
     { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
     { "name": "POSTGRES_DB", "label": "PostgreSQL Database", "default": "ecomate_web" },
+
+    { "name": "STOREFRONT_PORT", "label": "Storefront Host Port (localhost)", "default": "3000" },
+    { "name": "BACKEND_PORT", "label": "Backend Host Port (localhost)", "default": "4000" },
+    { "name": "ADMIN_PORT", "label": "Admin Host Port (localhost)", "default": "8080" },
 
     { "name": "CORS_ORIGIN", "label": "CORS Origins (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
     { "name": "APP_URL", "label": "App URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
