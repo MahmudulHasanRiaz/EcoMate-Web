@@ -11,6 +11,7 @@
     { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
     { "name": "POSTGRES_PASSWORD", "label": "PostgreSQL Password", "default": "postgres" },
     { "name": "POSTGRES_DB", "label": "PostgreSQL Database", "default": "ecomate_web" },
+    { "name": "TRAEFIK_ACME_EMAIL", "label": "Let's Encrypt Email (for SSL)", "default": "admin@example.com" },
     { "name": "JWT_SECRET", "label": "JWT Secret (change this!)", "default": "" },
     { "name": "JWT_REFRESH_SECRET", "label": "JWT Refresh Secret (change this!)", "default": "" },
     { "name": "CORS_ORIGIN", "label": "CORS Origins (comma separated)", "default": "https://mac.riaz.com.bd" },
