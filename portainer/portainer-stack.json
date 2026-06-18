@@ -10,6 +10,7 @@
   "env": [
     { "name": "CLIENT_DOMAIN", "label": "⭐ Client Domain — e.g. example.com (NO https://)", "default": "" },
     { "name": "TRAEFIK_ACME_EMAIL", "label": "⭐ Let's Encrypt Email (for SSL certificates)", "default": "" },
+    { "name": "DOCKER_REGISTRY_OWNER", "label": "⭐ GitHub Username/Org (for Docker Registry images)", "default": "mahmudulhasanriaz" },
 
     { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
     { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },

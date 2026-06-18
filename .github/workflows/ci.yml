@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -106,3 +106,80 @@ jobs:
         run: npm run build:skip-tsc
         env:
           VITE_API_URL: /api
+
+  build-and-push:
+    needs: [backend, storefront, admin]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Downcase registry owner
+        id: owner
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and push Backend image
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-backend:latest
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push Storefront image
+      - name: Build and push Storefront
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/storefront
+          file: apps/storefront/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-storefront:latest
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-storefront:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push Admin image
+      - name: Build and push Admin
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/admin
+          file: apps/admin/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-admin:latest
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-admin:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Trigger Portainer Webhook
+        run: |
+          echo "Triggering Portainer stack redeploy..."
+          curl -sf -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" \
+            && echo "✅ Portainer webhook triggered successfully" \
+            || (echo "❌ Portainer webhook failed" && exit 1)

@@ -51,9 +51,7 @@ services:
           memory: 64M
 
   backend:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -102,9 +100,7 @@ services:
           memory: 256M
 
   backend-migrate:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
     restart: on-failure
     networks:
       - ecomate-network
@@ -123,9 +119,7 @@ services:
           memory: 256M
 
   storefront:
-    build:
-      context: ./apps/storefront
-      dockerfile: Dockerfile
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-storefront:latest
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -157,9 +151,7 @@ services:
           memory: 256M
 
   admin:
-    build:
-      context: ./apps/admin
-      dockerfile: Dockerfile
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
     restart: unless-stopped
     networks:
       - ecomate-network
