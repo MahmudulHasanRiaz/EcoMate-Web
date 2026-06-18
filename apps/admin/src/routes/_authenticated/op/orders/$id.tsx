@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send } from 'lucide-react'
+import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send, AlertTriangle } from 'lucide-react'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -454,7 +454,93 @@ function OrderDetailPage() {
             </Card>
 
             <Card><CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCourier(!showCourier)}><CardTitle className='text-base flex items-center justify-between'><span className='flex items-center gap-1.5'><Truck className='h-4 w-4' /> Courier History</span>{showCourier ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}</CardTitle></CardHeader>
-              {showCourier && (courierLoading ? <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent> : courierData?.Summaries ? <CardContent className='space-y-2 text-sm'>{Object.entries(courierData.Summaries as Record<string, any>).map(([name, stats]: [string, any]) => <div key={name} className='flex justify-between'><span className='font-medium text-xs'>{name}</span><span className='text-xs'>{stats['Delivered Parcels'] || stats['Successful Delivery'] || 0}/{stats['Total Parcels'] || stats['Total Delivery'] || 0}</span></div>)}</CardContent> : <CardContent><p className='text-xs text-muted-foreground'>{courierData?.error || 'No data'}</p></CardContent>)}
+              {showCourier && (() => {
+                if (courierLoading) return <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent>;
+                
+                const isDummy = !!courierData?.error;
+                const summariesToUse = isDummy ? {
+                  "Steadfast (Dummy)": { "Total Parcels": 15, "Delivered Parcels": 12, "Canceled Parcels": 3 },
+                  "Pathao (Dummy)": { "Total Delivery": 8, "Successful Delivery": 5, "Canceled Delivery": 3 },
+                  "RedX (Dummy)": { "Total Parcels": 22, "Delivered Parcels": 15, "Canceled Parcels": 7 }
+                } : courierData?.Summaries;
+
+                if (summariesToUse) {
+                  return (
+                    <CardContent className='space-y-3 text-sm'>
+                      {isDummy && (
+                        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 text-xs px-3 py-2 rounded-md mb-2 flex items-center gap-1.5">
+                          <AlertTriangle className="h-4 w-4 shrink-0" /> 
+                          This is a dummy report for UI demonstration because the API is not connected. ({courierData?.error})
+                        </div>
+                      )}
+                      <div className={`space-y-3 ${isDummy ? 'opacity-90' : ''}`}>
+                        {(() => {
+                          const entries = Object.entries(summariesToUse as Record<string, any>);
+                          let overallDelivered = 0;
+                          let overallCancelled = 0;
+                          let overallTotal = 0;
+
+                          entries.forEach(([, stats]) => {
+                            overallDelivered += (stats['Delivered Parcels'] || stats['Successful Delivery'] || 0);
+                            overallCancelled += (stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0);
+                            overallTotal += (stats['Total Parcels'] || stats['Total Delivery'] || 0);
+                          });
+
+                          const overallSuccessRate = overallTotal > 0 ? Math.round((overallDelivered / overallTotal) * 100) : 0;
+                          const overallFailRate = overallTotal > 0 ? Math.round((overallCancelled / overallTotal) * 100) : 0;
+
+                          return (
+                            <div className='flex flex-col'>
+                              <div className='flex items-center justify-between border-b border-border/50 pb-2.5 mb-3'>
+                                <div className='font-bold text-sm uppercase tracking-wide text-foreground'>Overall Success Rate</div>
+                                <div className='font-medium text-[11px] text-muted-foreground bg-background px-2 py-1 rounded border shadow-sm'>Total Parcels: <strong className='text-foreground'>{overallTotal}</strong></div>
+                              </div>
+                              
+                              <div className='bg-muted/10 rounded-xl p-3 mb-4 border shadow-sm'>
+                                <div className='space-y-1.5'>
+                                  <div className='flex justify-between text-base font-black'>
+                                    <span className='text-emerald-600 dark:text-emerald-500'>{overallSuccessRate}%</span>
+                                    <span className='text-red-500'>{overallFailRate}%</span>
+                                  </div>
+                                  <div className='h-3 w-full rounded-full bg-muted overflow-hidden flex shadow-inner'>
+                                    <div className='h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500' style={{ width: `${overallSuccessRate}%` }} />
+                                    <div className='h-full bg-red-500 dark:bg-red-400 transition-all duration-500' style={{ width: `${overallFailRate}%` }} />
+                                  </div>
+                                  <div className='flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground pt-0.5'>
+                                    <span>{overallDelivered} Delivered</span>
+                                    <span>{overallCancelled} Cancelled</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className='bg-muted/20 rounded-xl border p-3'>
+                                <div className='text-xs font-bold text-muted-foreground mb-2.5 uppercase tracking-wide border-b border-border/50 pb-2'>Courier Breakdown</div>
+                                <div className='flex flex-wrap gap-2'>
+                                  {entries.map(([name, stats]) => {
+                                    const delivered = stats['Delivered Parcels'] || stats['Successful Delivery'] || 0;
+                                    const cancelled = stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0;
+                                    return (
+                                      <div key={name} className='flex items-center gap-2 bg-background border px-2.5 py-1.5 rounded-lg shadow-sm text-xs w-full sm:w-auto flex-1 min-w-[150px] justify-between'>
+                                        <span className='font-bold text-foreground'>{name.replace(' (Dummy)', '')}</span>
+                                        <div className='flex items-center gap-1.5 bg-muted/50 px-2 py-0.5 rounded border'>
+                                          <span className='text-emerald-600 dark:text-emerald-500 font-black' title='Delivered'>{delivered}</span>
+                                          <span className='text-muted-foreground/30'>/</span>
+                                          <span className='text-red-500 font-black' title='Cancelled'>{cancelled}</span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </CardContent>
+                  )
+                }
+                return <CardContent><p className='text-xs text-muted-foreground'>No data</p></CardContent>
+              })()}
             </Card>
 
             {editing ? (

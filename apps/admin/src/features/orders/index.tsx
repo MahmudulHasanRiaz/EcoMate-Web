@@ -161,6 +161,92 @@ function EmptyState({ search, statusFilter, onClear }: { search: string; statusF
   )
 }
 
+function CourierQuickView({ phone }: { phone: string }) {
+  const { data: courierData, isLoading } = useQuery({ 
+    queryKey: ['courier-search', phone], 
+    queryFn: () => apiClient.get(`/courier/search?phone=${phone}`).then(r => r.data),
+    enabled: !!phone
+  })
+
+  if (!phone) return null;
+  if (isLoading) return <div className='text-xs text-muted-foreground flex items-center gap-1.5 py-1'><Loader2 className='h-3 w-3 animate-spin' /> Loading courier history...</div>
+  
+  const isDummy = !!courierData?.error;
+  const summariesToUse = isDummy ? {
+    "Steadfast (Dummy)": { "Total Parcels": 15, "Delivered Parcels": 12, "Canceled Parcels": 3 },
+    "Pathao (Dummy)": { "Total Delivery": 8, "Successful Delivery": 5, "Canceled Delivery": 3 },
+    "RedX (Dummy)": { "Total Parcels": 22, "Delivered Parcels": 15, "Canceled Parcels": 7 }
+  } : courierData?.Summaries;
+
+  if (summariesToUse) {
+    const entries = Object.entries(summariesToUse as Record<string, any>);
+    if (entries.length === 0) return null;
+
+    let overallDelivered = 0;
+    let overallCancelled = 0;
+    let overallTotal = 0;
+
+    entries.forEach(([, stats]) => {
+      overallDelivered += (stats['Delivered Parcels'] || stats['Successful Delivery'] || 0);
+      overallCancelled += (stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0);
+      overallTotal += (stats['Total Parcels'] || stats['Total Delivery'] || 0);
+    });
+
+    const overallSuccessRate = overallTotal > 0 ? Math.round((overallDelivered / overallTotal) * 100) : 0;
+    const overallFailRate = overallTotal > 0 ? Math.round((overallCancelled / overallTotal) * 100) : 0;
+
+    return (
+      <div className='space-y-2 w-full mt-1.5'>
+        <div className='flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>
+          <Truck className='h-3 w-3' /> Courier Analytics
+          {isDummy && <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-[4px] text-[9px] lowercase tracking-normal">dummy preview</span>}
+        </div>
+        
+        <div className={`rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden ${isDummy ? 'opacity-90' : ''}`}>
+          <div className='bg-muted/30 px-3 py-2 border-b flex items-center justify-between'>
+             <div className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>Overall Success Rate</div>
+             <div className='text-[10px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border shadow-sm'>Total Parcels: <span className='text-foreground'>{overallTotal}</span></div>
+          </div>
+          <div className='p-3 space-y-3'>
+             <div className='space-y-1.5'>
+               <div className='flex justify-between text-sm font-black'>
+                 <span className='text-emerald-600 dark:text-emerald-500'>{overallSuccessRate}%</span>
+                 <span className='text-red-500'>{overallFailRate}%</span>
+               </div>
+               <div className='h-2.5 w-full rounded-full bg-muted overflow-hidden flex shadow-inner'>
+                 <div className='h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500' style={{ width: `${overallSuccessRate}%` }} />
+                 <div className='h-full bg-red-500 dark:bg-red-400 transition-all duration-500' style={{ width: `${overallFailRate}%` }} />
+               </div>
+               <div className='flex justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground'>
+                 <span>{overallDelivered} Delivered</span>
+                 <span>{overallCancelled} Cancelled</span>
+               </div>
+             </div>
+
+             <div className='flex flex-wrap gap-2 pt-2.5 border-t border-border/50'>
+               {entries.map(([name, stats]) => {
+                 const delivered = stats['Delivered Parcels'] || stats['Successful Delivery'] || 0;
+                 const cancelled = stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0;
+                 return (
+                   <div key={name} className='flex items-center gap-1.5 bg-muted/40 rounded-md px-2 py-1 text-[10px] border shadow-sm'>
+                     <span className='font-bold text-foreground'>{name.replace(' (Dummy)', '')}</span>
+                     <div className='flex items-center gap-1.5 bg-background px-1.5 py-0.5 rounded-sm border'>
+                       <span className='text-emerald-600 dark:text-emerald-500 font-bold' title='Delivered'>{delivered}</span>
+                       <span className='text-muted-foreground/30'>/</span>
+                       <span className='text-red-500 font-bold' title='Cancelled'>{cancelled}</span>
+                     </div>
+                   </div>
+                 )
+               })}
+             </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  return null;
+}
+
 export function Orders() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -663,6 +749,9 @@ export function Orders() {
                                           <Mail className='h-3.5 w-3.5 shrink-0' />
                                           <span className='truncate'>{o.customer.email}</span>
                                         </div>
+                                      )}
+                                      {(o.customer?.phoneNumber || o.guestPhone) && (
+                                        <CourierQuickView phone={(o.customer?.phoneNumber || o.guestPhone || '').replace(/[^\d]/g, '')} />
                                       )}
                                     </div>
                                   </div>
