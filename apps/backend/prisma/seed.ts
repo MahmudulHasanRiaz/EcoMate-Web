@@ -7,7 +7,11 @@ import { v4 as uuid } from 'uuid';
 import { createHash } from 'crypto';
 
 const prisma = new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL,
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
 });
 
 const MIME_EXT_MAP: Record<string, string> = {
