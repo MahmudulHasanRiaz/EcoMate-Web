@@ -9,8 +9,6 @@ on:
         type: choice
         options:
           - FIXEDPLUS
-          - CLIENT_B
-          - CLIENT_C
 
 jobs:
   deploy:
