@@ -86,14 +86,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    ports:
-      - "${BACKEND_PORT:-4000}:4000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=Host(`${CLIENT_DOMAIN:-mac.riaz.com.bd}`) && (PathPrefix(`/api`) || PathPrefix(`/uploads`) || PathPrefix(`/assets`))"
       - "traefik.http.routers.backend.entrypoints=websecure"
       - "traefik.http.routers.backend.tls.certresolver=myresolver"
       - "traefik.http.services.backend.loadbalancer.server.port=4000"
+      - "traefik.http.routers.backend.priority=20"
     deploy:
       resources:
         limits:
@@ -106,6 +105,7 @@ services:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
+    restart: on-failure
     networks:
       - ecomate-network
     environment:
@@ -141,14 +141,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-    ports:
-      - "${STOREFRONT_PORT:-3000}:3000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.storefront.rule=Host(`${CLIENT_DOMAIN:-mac.riaz.com.bd}`)"
       - "traefik.http.routers.storefront.entrypoints=websecure"
       - "traefik.http.routers.storefront.tls.certresolver=myresolver"
       - "traefik.http.services.storefront.loadbalancer.server.port=3000"
+      - "traefik.http.routers.storefront.priority=10"
     deploy:
       resources:
         limits:
@@ -174,14 +173,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    ports:
-      - "${ADMIN_PORT:-8080}:80"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.admin.rule=Host(`${CLIENT_DOMAIN:-mac.riaz.com.bd}`) && PathPrefix(`/admin`)"
       - "traefik.http.routers.admin.entrypoints=websecure"
       - "traefik.http.routers.admin.tls.certresolver=myresolver"
       - "traefik.http.services.admin.loadbalancer.server.port=80"
+      - "traefik.http.routers.admin.priority=20"
     deploy:
       resources:
         limits:
@@ -191,7 +189,7 @@ services:
           memory: 64M
 
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.3
     restart: unless-stopped
     networks:
       - ecomate-network

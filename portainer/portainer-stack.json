@@ -2,27 +2,34 @@
   "version": "2",
   "name": "ecomate",
   "description": "EcoMate E-Commerce Platform - Full Stack Deployment",
-  "note": "Deploy via Portainer UI. Create the stack with all env vars below.",
+  "note": "Deploy via Portainer UI. Fill in all required fields before deploying.",
   "repository": {
     "url": "https://github.com/your-org/ecomate-web",
     "stackfile": "docker-compose.yml"
   },
   "env": [
+    { "name": "CLIENT_DOMAIN", "label": "⭐ Client Domain — e.g. example.com (NO https://)", "default": "" },
+    { "name": "TRAEFIK_ACME_EMAIL", "label": "⭐ Let's Encrypt Email (for SSL certificates)", "default": "" },
+
+    { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
+    { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },
+
+    { "name": "POSTGRES_PASSWORD", "label": "⭐ PostgreSQL Password (strong password)", "default": "" },
     { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
-    { "name": "POSTGRES_PASSWORD", "label": "PostgreSQL Password", "default": "postgres" },
     { "name": "POSTGRES_DB", "label": "PostgreSQL Database", "default": "ecomate_web" },
-    { "name": "TRAEFIK_ACME_EMAIL", "label": "Let's Encrypt Email (for SSL)", "default": "admin@example.com" },
-    { "name": "JWT_SECRET", "label": "JWT Secret (change this!)", "default": "" },
-    { "name": "JWT_REFRESH_SECRET", "label": "JWT Refresh Secret (change this!)", "default": "" },
-    { "name": "CORS_ORIGIN", "label": "CORS Origins (comma separated)", "default": "https://mac.riaz.com.bd" },
-    { "name": "APP_URL", "label": "App URL", "default": "https://mac.riaz.com.bd" },
-    { "name": "STOREFRONT_URL", "label": "Storefront URL", "default": "https://mac.riaz.com.bd" },
-    { "name": "STORE_NEXT_PUBLIC_API_URL", "label": "Storefront API URL", "default": "https://mac.riaz.com.bd/api" },
-    { "name": "STORE_NEXT_PUBLIC_STOREFRONT_URL", "label": "Storefront Public URL", "default": "https://mac.riaz.com.bd" },
+
+    { "name": "CORS_ORIGIN", "label": "CORS Origins (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
+    { "name": "APP_URL", "label": "App URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
+    { "name": "STOREFRONT_URL", "label": "Storefront URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
+    { "name": "STORE_NEXT_PUBLIC_API_URL", "label": "Storefront API URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
+    { "name": "STORE_NEXT_PUBLIC_STOREFRONT_URL", "label": "Storefront Public URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
     { "name": "ADMIN_VITE_API_URL", "label": "Admin API URL", "default": "/api" },
-    { "name": "META_PIXEL_ID", "label": "Meta Pixel ID", "default": "" },
-    { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token", "default": "" },
-    { "name": "TIKTOK_PIXEL_CODE", "label": "TikTok Pixel Code", "default": "" },
-    { "name": "TIKTOK_ACCESS_TOKEN", "label": "TikTok Access Token", "default": "" }
+
+    { "name": "SEED_DUMMY_DATA", "label": "Seed Dummy Data on first deploy? (true/false)", "default": "false" },
+
+    { "name": "META_PIXEL_ID", "label": "Meta Pixel ID (Optional)", "default": "" },
+    { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token (Optional)", "default": "" },
+    { "name": "TIKTOK_PIXEL_CODE", "label": "TikTok Pixel Code (Optional)", "default": "" },
+    { "name": "TIKTOK_ACCESS_TOKEN", "label": "TikTok Access Token (Optional)", "default": "" }
   ]
 }
