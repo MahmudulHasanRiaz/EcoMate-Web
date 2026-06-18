@@ -55,7 +55,7 @@ services:
     networks:
       - ecomate-network
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-4000}:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     volumes:
       - uploads-data:/app/uploads
     environment:
@@ -118,7 +118,7 @@ services:
     networks:
       - ecomate-network
     ports:
-      - "127.0.0.1:${STOREFRONT_PORT:-3000}:3000"
+      - "${STOREFRONT_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api}
@@ -145,7 +145,7 @@ services:
     networks:
       - ecomate-network
     ports:
-      - "127.0.0.1:${ADMIN_PORT:-8080}:80"
+      - "${ADMIN_PORT:-8080}:80"
     environment:
       VITE_API_URL: ${ADMIN_VITE_API_URL:-/api}
     depends_on:
