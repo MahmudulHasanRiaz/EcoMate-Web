@@ -22,27 +22,28 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    defaults:
-      run:
-        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/backend/package-lock.json
-      
-      - name: Install dependencies
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (Root)
         run: npm ci
-      
+
       - name: Generate Prisma client
+        working-directory: apps/backend
         run: npx prisma generate
-      
+
       - name: Lint
+        working-directory: apps/backend
         run: npm run lint
-      
+
       - name: Run tests
+        working-directory: apps/backend
         run: npm test
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecomate_test
@@ -52,27 +53,28 @@ jobs:
 
   storefront:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/storefront
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/storefront/package-lock.json
-      
-      - name: Install dependencies
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (Root)
         run: npm ci
-      
+
       - name: Lint
+        working-directory: apps/storefront
         run: npm run lint
-      
+
       - name: Run tests
+        working-directory: apps/storefront
         run: npm test || true
-      
+
       - name: Build
+        working-directory: apps/storefront
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000/api
@@ -80,29 +82,30 @@ jobs:
 
   admin:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/admin
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/admin/package-lock.json
-      
-      - name: Install dependencies
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (Root)
         run: npm ci
-      
+
       - name: Lint
+        working-directory: apps/admin
         run: npm run lint
-      
+
       - name: Run tests
+        working-directory: apps/admin
         run: npm test || true
         env:
           VITE_API_URL: http://localhost:4000/api
-      
+
       - name: Build
+        working-directory: apps/admin
         run: npm run build:skip-tsc
         env:
           VITE_API_URL: /api
