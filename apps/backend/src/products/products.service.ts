@@ -200,7 +200,7 @@ export class ProductsService {
         perPage,
         totalPages: Math.ceil(total / perPage),
         nextCursor: null,
-        hasMore: false,
+        hasMore: page * perPage < total,
       },
     };
   }

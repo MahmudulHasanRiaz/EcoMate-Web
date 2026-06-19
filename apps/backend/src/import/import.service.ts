@@ -66,11 +66,22 @@ export class ImportService {
     this.logger.log(`CSV headers (${headers.length}): ${headers.join(', ')}`);
 
     const rows: CsvRowWithMeta[] = parsed.data
-      .map((data, i) => ({ rowNumber: i + 2, data }))
+      .map((data, i) => {
+        const row = { rowNumber: i + 2, data };
+        const sku = data.SKU?.trim();
+        const type = (data.Type || 'simple').toLowerCase().trim();
+        const isVariation = type.includes('variation');
+        if (!sku && !isVariation && data.ID?.trim()) {
+          data.SKU = `WOO-ID-${data.ID.trim()}`;
+        } else if (sku) {
+          data.SKU = sku;
+        }
+        return row;
+      })
       .filter((r) => r.data.SKU?.trim());
 
     if (rows.length === 0) {
-      throw new BadRequestException('No rows with SKU found in CSV');
+      throw new BadRequestException('No rows with SKU or ID found in CSV');
     }
 
     const summary: ImportSummary = {
@@ -242,8 +253,9 @@ export class ImportService {
       const type = (row.data.Type || 'simple').toLowerCase().trim();
       const parentVal = row.data.Parent?.trim() || '';
 
-      if (type === 'variation' && parentVal) {
-        const resolvedParentSku = idToSku[parentVal] || parentVal;
+      if (type.includes('variation') && parentVal) {
+        const cleanParentId = parentVal.replace(/^id:/i, '').trim();
+        const resolvedParentSku = idToSku[cleanParentId] || cleanParentId;
         if (!groups[resolvedParentSku]) groups[resolvedParentSku] = [];
         groups[resolvedParentSku].push(row);
       } else {
@@ -271,11 +283,11 @@ export class ImportService {
   ): Promise<void> {
     const parentRow =
       rows.find(
-        (r) => (r.data.Type || 'simple').toLowerCase() !== 'variation',
+        (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
       ) || rows[0];
 
     const variationRows = rows.filter(
-      (r) => (r.data.Type || 'simple').toLowerCase() === 'variation',
+      (r) => (r.data.Type || 'simple').toLowerCase().includes('variation'),
     );
 
     const parentSku = parentRow.data.SKU!.trim();
