@@ -1,6 +1,8 @@
 import {
   Controller,
   Post,
+  Get,
+  Param,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
@@ -9,14 +11,27 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ImportService } from './import.service';
 import { OrderImportService } from './order-import.service';
+import { ImportJobManager } from './import-job-manager';
 import { Roles } from '../common/decorators/roles.decorator';
+import * as Papa from 'papaparse';
 
 @Controller('import')
 export class ImportController {
   constructor(
     private readonly importService: ImportService,
     private readonly orderImportService: OrderImportService,
+    private readonly jobManager: ImportJobManager,
   ) {}
+
+  @Get('status/:jobId')
+  @Roles('superadmin', 'admin')
+  getJobStatus(@Param('jobId') jobId: string) {
+    const job = this.jobManager.getJob(jobId);
+    if (!job) {
+      throw new BadRequestException('Job not found');
+    }
+    return job;
+  }
 
   @Post('products')
   @Roles('superadmin', 'admin')
@@ -54,12 +69,52 @@ export class ImportController {
       throw new BadRequestException('CSV file is empty');
     }
 
-    const result = await this.importService.importFromCsv(csvContent, {
-      mode: mode === 'update' ? 'update' : 'create',
-      dryRun: dryRun === 'true',
-    });
+    // Basic CSV parse to estimate total count
+    let totalItems = 0;
+    try {
+      const parsed = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+      });
+      totalItems = parsed.data.filter((r: any) => r.SKU?.trim()).length;
+    } catch {
+      totalItems = 100;
+    }
 
-    return result;
+    const isDryRun = dryRun === 'true';
+    const job = this.jobManager.createJob('products', totalItems);
+
+    if (isDryRun) {
+      // For dry-runs, process synchronously as it only validates headers and has 0 DB writes or images downloaded
+      try {
+        const result = await this.importService.importFromCsv(csvContent, {
+          mode: mode === 'update' ? 'update' : 'create',
+          dryRun: true,
+        });
+        return { status: 'completed', summary: result.summary, errors: result.errors };
+      } catch (err) {
+        throw new BadRequestException((err as Error).message);
+      }
+    }
+
+    // Run actual import in background
+    this.importService
+      .importFromCsv(csvContent, {
+        mode: mode === 'update' ? 'update' : 'create',
+        dryRun: false,
+        onProgress: (processed) => {
+          this.jobManager.updateProgress(job.id, processed);
+        },
+      })
+      .then((result) => {
+        this.jobManager.completeJob(job.id, result.summary, result.errors);
+      })
+      .catch((err) => {
+        this.jobManager.failJob(job.id, err.message);
+      });
+
+    return { jobId: job.id, status: 'processing', message: 'Import started' };
   }
 
   @Post('orders')
@@ -94,7 +149,35 @@ export class ImportController {
       throw new BadRequestException('CSV file is empty');
     }
 
-    const result = await this.orderImportService.importFromCsv(csvContent);
-    return result;
+    // Basic CSV parse to estimate total count
+    let totalItems = 0;
+    try {
+      const parsed = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+      });
+      totalItems = parsed.data.filter((r: any) => r.order_id?.trim()).length;
+    } catch {
+      totalItems = 100;
+    }
+
+    const job = this.jobManager.createJob('orders', totalItems);
+
+    // Run in background
+    this.orderImportService
+      .importFromCsv(csvContent, {
+        onProgress: (processed) => {
+          this.jobManager.updateProgress(job.id, processed);
+        },
+      })
+      .then((result) => {
+        this.jobManager.completeJob(job.id, result.summary, result.errors);
+      })
+      .catch((err) => {
+        this.jobManager.failJob(job.id, err.message);
+      });
+
+    return { jobId: job.id, status: 'processing', message: 'Import started' };
   }
 }

@@ -39,7 +39,10 @@ export class OrderImportService {
     private readonly customersService: CustomersService,
   ) {}
 
-  async importFromCsv(csvContent: string): Promise<{
+  async importFromCsv(
+    csvContent: string,
+    opts: { onProgress?: (processed: number) => void } = {},
+  ): Promise<{
     summary: OrderImportSummary;
     errors: OrderImportError[];
   }> {
@@ -125,6 +128,7 @@ export class OrderImportService {
       }
     }
 
+    let processedCount = 0;
     // Process orders sequentially in batches to preserve order sequence and prevent race conditions
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
@@ -138,6 +142,14 @@ export class OrderImportService {
         summary,
         allErrors,
       );
+
+      processedCount += batch.length;
+      if (opts.onProgress) {
+        opts.onProgress(processedCount);
+      }
+
+      // Yield to the event loop between batches
+      await new Promise((resolve) => setTimeout(resolve, 5));
     }
 
     return { summary, errors: allErrors };

@@ -29,6 +29,29 @@ export interface ImportResult {
   errors: ImportError[]
 }
 
+export interface ImportUploadResponse {
+  jobId?: string
+  status?: string
+  message?: string
+  summary?: ImportSummary
+  errors?: ImportError[]
+}
+
+export interface ImportJobStatus {
+  id: string
+  type: 'products' | 'orders'
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: {
+    total: number
+    processed: number
+  }
+  summary: ImportSummary | null
+  errors: ImportError[]
+  error?: string
+  startedAt: string
+  completedAt?: string
+}
+
 export const importApi = {
   upload: (file: File, mode?: string, dryRun?: boolean) => {
     const formData = new FormData()
@@ -37,9 +60,12 @@ export const importApi = {
     if (mode) params.set('mode', mode)
     if (dryRun) params.set('dryRun', 'true')
     const qs = params.toString()
-    return apiClient.post<ImportResult>(`/import/products${qs ? `?${qs}` : ''}`, formData, {
+    return apiClient.post<ImportUploadResponse>(`/import/products${qs ? `?${qs}` : ''}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120000,
     })
+  },
+  getStatus: (jobId: string) => {
+    return apiClient.get<ImportJobStatus>(`/import/status/${jobId}`)
   },
 }

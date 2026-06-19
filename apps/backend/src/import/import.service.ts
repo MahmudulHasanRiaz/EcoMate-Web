@@ -20,6 +20,11 @@ interface ResolvedAttrs {
   values: Array<{ id: string; value: string }>;
 }
 
+interface CachedAttribute {
+  id: string;
+  values: Map<string, string>; // value.toLowerCase() -> id
+}
+
 @Injectable()
 export class ImportService {
   private readonly logger = new Logger(ImportService.name);
@@ -31,7 +36,11 @@ export class ImportService {
 
   async importFromCsv(
     csvContent: string,
-    opts: { mode?: 'create' | 'update'; dryRun?: boolean } = {},
+    opts: {
+      mode?: 'create' | 'update';
+      dryRun?: boolean;
+      onProgress?: (processed: number) => void;
+    } = {},
   ): Promise<{
     summary: ImportSummary;
     errors: ImportError[];
@@ -55,16 +64,6 @@ export class ImportService {
 
     const headers = parsed.meta?.fields || [];
     this.logger.log(`CSV headers (${headers.length}): ${headers.join(', ')}`);
-
-    // Log attribute-related columns found
-    const attrCols = headers.filter(
-      (h) => h.toLowerCase().includes('attribute') || h.toLowerCase().includes('attr '),
-    );
-    if (attrCols.length > 0) {
-      this.logger.log(`Attribute columns: ${attrCols.join(', ')}`);
-    } else {
-      this.logger.warn('No attribute columns found in CSV headers!');
-    }
 
     const rows: CsvRowWithMeta[] = parsed.data
       .map((data, i) => ({ rowNumber: i + 2, data }))
@@ -95,21 +94,108 @@ export class ImportService {
 
     const groups = this.groupByParent(rows);
     this.logger.log(
-      `Grouped ${rows.length} row(s) into ${Object.keys(groups).length} group(s): ` +
-      `${Object.entries(groups).map(([k, g]) => `${k}(${g.length})`).join(', ')}`,
+      `Grouped ${rows.length} row(s) into ${Object.keys(groups).length} group(s)`,
     );
 
-    for (const [groupKey, group] of Object.entries(groups)) {
+    if (dryRun) {
+      return { summary, errors: allErrors };
+    }
+
+    // --- Preload Caches to avoid DB lookups inside loops ---
+    this.logger.log('Preloading DB tables into local cache maps...');
+
+    // 1. Categories
+    const categories = await this.prisma.category.findMany();
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    const getCategoryPath = (catId: string | null): string => {
+      if (!catId) return '';
+      const parts: string[] = [];
+      let currentId: string | null = catId;
+      while (currentId) {
+        const cat = categoryMap.get(currentId);
+        if (!cat) break;
+        parts.unshift(cat.name);
+        currentId = cat.parentId;
+      }
+      return parts.join(' > ');
+    };
+    const categoryCacheByPath = new Map<string, string>();
+    for (const cat of categories) {
+      const path = getCategoryPath(cat.id);
+      categoryCacheByPath.set(path, cat.id);
+    }
+
+    // 2. Tags
+    const tags = await this.prisma.tag.findMany();
+    const tagCache = new Map(tags.map((t) => [t.slug, t.id]));
+
+    // 3. Attributes and values
+    const attributes = await this.prisma.attribute.findMany({
+      include: { values: true },
+    });
+    const attributeCache = new Map<string, CachedAttribute>();
+    for (const attr of attributes) {
+      const valMap = new Map<string, string>();
+      for (const v of attr.values) {
+        valMap.set(v.value.toLowerCase(), v.id);
+      }
+      attributeCache.set(attr.name.toLowerCase(), { id: attr.id, values: valMap });
+    }
+
+    // 4. Media URLs
+    const mediaItems = await this.prisma.media.findMany({
+      where: { sourceUrl: { not: null } },
+      select: { sourceUrl: true, url: true },
+    });
+    const mediaCache = new Map<string, string>();
+    for (const m of mediaItems) {
+      if (m.sourceUrl) {
+        mediaCache.set(m.sourceUrl.trim(), m.url);
+      }
+    }
+
+    // 5. Products (SKUs and Slugs)
+    const dbProducts = await this.prisma.product.findMany({
+      select: { id: true, sku: true, slug: true },
+    });
+    const productCache = new Map<string, string>();
+    const slugSet = new Set<string>();
+    for (const p of dbProducts) {
+      if (p.sku) productCache.set(p.sku.trim(), p.id);
+      if (p.slug) slugSet.add(p.slug);
+    }
+
+    // 6. Variants
+    const dbVariants = await this.prisma.productVariant.findMany({
+      select: { id: true, sku: true },
+    });
+    const variantCache = new Map<string, string>();
+    for (const v of dbVariants) {
+      if (v.sku) variantCache.set(v.sku.trim(), v.id);
+    }
+
+    this.logger.log('Caching completed. Starting import processing...');
+
+    let processedCount = 0;
+    const groupEntries = Object.entries(groups);
+
+    for (const [groupKey, group] of groupEntries) {
       if (!groupKey) continue;
-      if (dryRun) continue;
 
       try {
-        await this.processProductGroup(
+        await this.processProductGroupCached(
           groupKey,
           group,
           mode,
           summary,
           allErrors,
+          categoryCacheByPath,
+          tagCache,
+          attributeCache,
+          mediaCache,
+          productCache,
+          variantCache,
+          slugSet,
         );
       } catch (err) {
         const msg = (err as Error).message;
@@ -122,6 +208,14 @@ export class ImportService {
         });
         summary.errors++;
       }
+
+      processedCount++;
+      if (opts.onProgress) {
+        opts.onProgress(processedCount);
+      }
+
+      // Yield event loop to allow concurrent requests to run
+      await new Promise((resolve) => setTimeout(resolve, 5));
     }
 
     summary.imagesDownloaded = summary.imagesImported + summary.imagesReused;
@@ -161,12 +255,19 @@ export class ImportService {
     return groups;
   }
 
-  private async processProductGroup(
+  private async processProductGroupCached(
     groupKey: string,
     rows: CsvRowWithMeta[],
     mode: 'create' | 'update',
     summary: ImportSummary,
     errors: ImportError[],
+    categoryCacheByPath: Map<string, string>,
+    tagCache: Map<string, string>,
+    attributeCache: Map<string, CachedAttribute>,
+    mediaCache: Map<string, string>,
+    productCache: Map<string, string>,
+    variantCache: Map<string, string>,
+    slugSet: Set<string>,
   ): Promise<void> {
     const parentRow =
       rows.find(
@@ -178,28 +279,43 @@ export class ImportService {
     );
 
     const parentSku = parentRow.data.SKU!.trim();
+    const existingProductId = productCache.get(parentSku);
 
-    const existingProduct = await this.prisma.product.findFirst({
-      where: { sku: parentSku },
-    });
-
-    if (existingProduct && mode === 'create') {
+    if (existingProductId && mode === 'create') {
       this.logger.log(`Skipping existing SKU: ${parentSku} (create mode)`);
       summary.productsSkipped++;
       return;
     }
 
     let productId: string;
-
     const hasVariations = variationRows.length > 0;
 
-    if (existingProduct) {
-      await this.updateProduct(existingProduct.id, parentRow, summary, errors);
-      productId = existingProduct.id;
+    if (existingProductId) {
+      await this.updateProductCached(
+        existingProductId,
+        parentRow,
+        summary,
+        errors,
+        categoryCacheByPath,
+        tagCache,
+        mediaCache,
+        productCache,
+        slugSet,
+      );
+      productId = existingProductId;
     } else {
-      productId = await this.createProduct(parentRow, summary, errors, {
-        skipVariantGeneration: hasVariations,
-      });
+      productId = await this.createProductCached(
+        parentRow,
+        summary,
+        errors,
+        { skipVariantGeneration: hasVariations },
+        categoryCacheByPath,
+        tagCache,
+        attributeCache,
+        mediaCache,
+        productCache,
+        slugSet,
+      );
     }
 
     this.logger.log(
@@ -207,22 +323,31 @@ export class ImportService {
     );
 
     for (const vRow of variationRows) {
-      await this.processVariation(
+      await this.processVariationCached(
         productId,
         parentSku,
         vRow,
         mode,
         summary,
         errors,
+        attributeCache,
+        mediaCache,
+        variantCache,
       );
     }
   }
 
-  private async createProduct(
+  private async createProductCached(
     row: CsvRowWithMeta,
     summary: ImportSummary,
     errors: ImportError[],
-    options?: { skipVariantGeneration?: boolean },
+    options: { skipVariantGeneration?: boolean },
+    categoryCacheByPath: Map<string, string>,
+    tagCache: Map<string, string>,
+    attributeCache: Map<string, CachedAttribute>,
+    mediaCache: Map<string, string>,
+    productCache: Map<string, string>,
+    slugSet: Set<string>,
   ): Promise<string> {
     const data = row.data;
     const sku = data.SKU!.trim();
@@ -231,13 +356,13 @@ export class ImportService {
 
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
-    const tagIds = tags.length > 0 ? await this.resolveTags(tags, summary) : [];
+    const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
     const images = this.parseImages(data.Images);
 
-    const categoryId = await this.resolveCategories(categories, summary);
+    const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
 
     const name = data.Name?.trim() || sku;
-    const slug = data.Slug?.trim() || (await this.uniqueSlug(slugify(name)));
+    const slug = data.Slug?.trim() || this.uniqueSlugCached(slugify(name), slugSet);
 
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
@@ -261,7 +386,7 @@ export class ImportService {
 
     const attrs = this.extractAttributes(data);
     const resolvedAttrs =
-      attrs.length > 0 ? await this.resolveAttributes(attrs, summary) : [];
+      attrs.length > 0 ? await this.resolveAttributesCached(attrs, summary, attributeCache) : [];
 
     if (!isVariable && resolvedAttrs.length > 0) {
       seoMeta.attributes = resolvedAttrs.map((a) => ({
@@ -295,8 +420,11 @@ export class ImportService {
       },
     });
 
+    productCache.set(sku, product.id);
+    slugSet.add(product.slug);
+
     if (images.length > 0) {
-      await this.processProductImages(product.id, images, summary, errors);
+      await this.processProductImagesCached(product.id, images, summary, errors, mediaCache);
     }
 
     summary.productsCreated++;
@@ -306,25 +434,30 @@ export class ImportService {
       resolvedAttrs.length > 0 &&
       !options?.skipVariantGeneration
     ) {
-      await this.generateVariantCombinations(product.id, resolvedAttrs);
+      await this.generateVariantCombinationsCached(product.id, resolvedAttrs, product.sku || 'PRD', product.basePrice);
     }
 
     return product.id;
   }
 
-  private async updateProduct(
+  private async updateProductCached(
     productId: string,
     row: CsvRowWithMeta,
     summary: ImportSummary,
     errors: ImportError[],
+    categoryCacheByPath: Map<string, string>,
+    tagCache: Map<string, string>,
+    mediaCache: Map<string, string>,
+    productCache: Map<string, string>,
+    slugSet: Set<string>,
   ): Promise<void> {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
-    const tagIds = tags.length > 0 ? await this.resolveTags(tags, summary) : [];
+    const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
     const images = this.parseImages(data.Images);
 
-    const categoryId = await this.resolveCategories(categories, summary);
+    const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
@@ -365,7 +498,10 @@ export class ImportService {
         ? { deleteMany: {}, create: tagIds.map((id) => ({ tagId: id })) }
         : { deleteMany: {} };
     updateData.type = isVariable ? 'variable' : type;
-    if (slug) updateData.slug = slug;
+    if (slug) {
+      updateData.slug = slug;
+      slugSet.add(slug);
+    }
     updateData.seoMeta = seoMeta;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
@@ -377,40 +513,34 @@ export class ImportService {
     });
 
     if (images.length > 0) {
-      await this.processProductImages(productId, images, summary, errors);
+      await this.processProductImagesCached(productId, images, summary, errors, mediaCache);
     }
 
-    this.logger.log(
-      `Product ${productId}: updated (type=${type}, name=${data.Name?.trim() || '(unchanged)'}, ` +
-      `basePrice=${basePrice}, stock=${stock}, images=${images.length})`,
-    );
-
+    this.logger.log(`Product ${productId}: updated (type=${type})`);
     summary.productsUpdated++;
   }
 
-  private async processVariation(
+  private async processVariationCached(
     productId: string,
     parentSku: string,
     row: CsvRowWithMeta,
     mode: 'create' | 'update',
     summary: ImportSummary,
     errors: ImportError[],
+    attributeCache: Map<string, CachedAttribute>,
+    mediaCache: Map<string, string>,
+    variantCache: Map<string, string>,
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
     if (!varSku) {
-      this.logger.warn(
-        `Variation row ${row.rowNumber}: skipped — no SKU. ` +
-        `Available keys: ${Object.keys(data).slice(0, 20).join(', ')}`,
-      );
+      this.logger.warn(`Variation row ${row.rowNumber}: skipped — no SKU.`);
       return;
     }
 
-    const existing = await this.prisma.productVariant.findUnique({
-      where: { sku: varSku },
-    });
+    const existingId = variantCache.get(varSku);
 
-    if (existing && mode === 'create') {
+    if (existingId && mode === 'create') {
       summary.productsSkipped++;
       return;
     }
@@ -421,67 +551,41 @@ export class ImportService {
     const mainImage = images[0];
 
     const varAttrs = this.extractVariationAttributes(data);
-    if (varAttrs.length === 0) {
-      this.logger.warn(
-        `Variation SKU ${varSku}: no attributes extracted. ` +
-        `Available attr keys: ${Object.keys(data).filter(k => k.toLowerCase().includes('attr')).join(', ')}`,
-      );
-    } else {
-      this.logger.log(
-        `Variation SKU ${varSku}: extracted ${varAttrs.length} attribute(s): ` +
-        `${varAttrs.map(a => `${a.name}=${a.values.join(',')}`).join('; ')}`,
-      );
-    }
     const resolvedVarAttrs =
       varAttrs.length > 0
-        ? await this.resolveAttributes(varAttrs, summary)
+        ? await this.resolveAttributesCached(varAttrs, summary, attributeCache)
         : [];
 
-    if (resolvedVarAttrs.length > 0) {
-      this.logger.log(
-        `Variation SKU ${varSku}: resolved ${resolvedVarAttrs.length} attribute(s) from DB`,
-      );
-    }
-
-    this.logger.log(
-      `Variation SKU ${varSku}: images=${images.length}, mainImage=${mainImage || 'none'}, ` +
-      `price=${price ?? '??'}, stock=${stock}`,
-    );
-
-    if (existing) {
+    if (existingId) {
       const updateData: Record<string, unknown> = {};
       if (price !== undefined) updateData.price = price;
       updateData.stock = stock;
       if (mainImage) updateData.image = mainImage;
 
       await this.prisma.productVariant.update({
-        where: { id: existing.id },
+        where: { id: existingId },
         data: updateData,
       });
 
       if (mainImage) {
-        const ingested = await this.ingestImage(mainImage, summary, errors);
+        const ingested = await this.ingestImageCached(mainImage, summary, errors, mediaCache);
         if (ingested) {
-          await this.media.syncEntityImages('variant', existing.id, [ingested]);
-          this.logger.log(`Variation SKU ${varSku}: image synced`);
+          await this.media.syncEntityImages('variant', existingId, [ingested]);
         }
       }
 
       if (resolvedVarAttrs.length > 0) {
         await this.prisma.productVariantAttributeValue.deleteMany({
-          where: { variantId: existing.id },
+          where: { variantId: existingId },
         });
         await this.prisma.productVariantAttributeValue.createMany({
           data: resolvedVarAttrs.flatMap((attr) =>
             attr.values.map((av) => ({
-              variantId: existing.id,
+              variantId: existingId,
               attributeValueId: av.id,
             })),
           ),
         });
-        this.logger.log(
-          `Variation SKU ${varSku}: updated ${resolvedVarAttrs.length} attribute value(s) (update mode)`,
-        );
       }
 
       summary.productsUpdated++;
@@ -508,33 +612,29 @@ export class ImportService {
       },
     });
 
+    variantCache.set(varSku, variant.id);
+
     if (mainImage) {
-      const ingested = await this.ingestImage(mainImage, summary, errors);
+      const ingested = await this.ingestImageCached(mainImage, summary, errors, mediaCache);
       if (ingested) {
         await this.media.syncEntityImages('variant', variant.id, [ingested]);
-        this.logger.log(`Variation SKU ${varSku}: image synced`);
       }
-    }
-
-    if (resolvedVarAttrs.length > 0) {
-      this.logger.log(
-        `Variation SKU ${varSku}: created with ${resolvedVarAttrs.length} attribute value(s)`,
-      );
     }
 
     summary.variantsImported++;
   }
 
-  private async processProductImages(
+  private async processProductImagesCached(
     productId: string,
     urls: string[],
     summary: ImportSummary,
     errors: ImportError[],
+    mediaCache: Map<string, string>,
   ): Promise<void> {
     const resolved: string[] = [];
 
     for (const url of urls) {
-      const ingested = await this.ingestImage(url, summary, errors);
+      const ingested = await this.ingestImageCached(url, summary, errors, mediaCache);
       if (ingested) {
         resolved.push(ingested);
       }
@@ -550,35 +650,28 @@ export class ImportService {
         where: { id: productId },
         data: { images: synced as any },
       });
-      this.logger.log(`Product ${productId}: synced ${synced.length} image(s) (${resolved.length} resolved from ${urls.length} URL(s))`);
-    } else {
-      this.logger.warn(`Product ${productId}: 0 images resolved from ${urls.length} URL(s)`);
     }
   }
 
-  private async ingestImage(
+  private async ingestImageCached(
     url: string,
     summary: ImportSummary,
     errors: ImportError[],
+    mediaCache: Map<string, string>,
   ): Promise<string | null> {
     const trimmed = url.trim();
     if (!trimmed) return null;
 
-    const existing = await this.prisma.media.findFirst({
-      where: { sourceUrl: trimmed },
-      select: { url: true },
-    });
-
+    const existing = mediaCache.get(trimmed);
     if (existing) {
       summary.imagesReused++;
-      this.logger.log(`Image reused: ${trimmed} -> ${existing.url}`);
-      return existing.url;
+      return existing;
     }
 
     try {
       const result = await this.media.ingestFromUrl(trimmed);
       summary.imagesImported++;
-      this.logger.log(`Image downloaded: ${trimmed} -> ${result.url}`);
+      mediaCache.set(trimmed, result.url);
       return result.url;
     } catch (err) {
       const msg = `Image failed: ${(err as Error).message}`;
@@ -610,9 +703,10 @@ export class ImportService {
       });
   }
 
-  private async resolveCategories(
+  private async resolveCategoriesCached(
     categories: ParsedCategory[],
     summary: ImportSummary,
+    categoryCacheByPath: Map<string, string>,
   ): Promise<string | null> {
     if (categories.length === 0) return null;
 
@@ -623,17 +717,19 @@ export class ImportService {
       .filter(Boolean);
     let parentId: string | null = null;
     let lastId: string | null = null;
+    let currentPath = '';
 
     for (const seg of segments) {
-      const slug = slugify(seg);
-      let cat = await this.prisma.category.findFirst({
-        where: { slug, parentId },
-      });
+      currentPath = currentPath ? `${currentPath} > ${seg}` : seg;
+      const cachedId = categoryCacheByPath.get(currentPath);
 
-      if (cat) {
+      if (cachedId) {
         summary.categoriesReused++;
+        lastId = cachedId;
+        parentId = cachedId;
       } else {
-        cat = await this.prisma.category.create({
+        const slug = slugify(seg);
+        const cat = await this.prisma.category.create({
           data: {
             name: seg,
             slug,
@@ -643,31 +739,33 @@ export class ImportService {
           },
         });
         summary.categoriesCreated++;
+        categoryCacheByPath.set(currentPath, cat.id);
+        lastId = cat.id;
+        parentId = cat.id;
       }
-
-      lastId = cat.id;
-      parentId = cat.id;
     }
 
     return lastId;
   }
 
-  private async resolveTags(
+  private async resolveTagsCached(
     tagNames: string[],
     summary: ImportSummary,
+    tagCache: Map<string, string>,
   ): Promise<string[]> {
     const ids: string[] = [];
     for (const name of tagNames) {
       const slug = slugify(name);
-      const existing = await this.prisma.tag.findUnique({ where: { slug } });
-      if (existing) {
+      const cachedId = tagCache.get(slug);
+      if (cachedId) {
         summary.tagsReused++;
-        ids.push(existing.id);
+        ids.push(cachedId);
       } else {
         const created = await this.prisma.tag.create({
           data: { name, slug, productCount: 1 },
         });
         summary.tagsCreated++;
+        tagCache.set(slug, created.id);
         ids.push(created.id);
       }
     }
@@ -684,12 +782,10 @@ export class ImportService {
 
   private parseImages(value?: string): string[] {
     if (!value?.trim()) return [];
-    const parts = value
+    return value
       .split(/[|,]/)
       .map((s) => s.trim())
       .filter(Boolean);
-    this.logger.log(`parseImages: raw="${value}" -> ${parts.length} image(s): [${parts.join(', ')}]`);
-    return parts;
   }
 
   private extractAttributes(data: WooCommerceCsvRow): Array<{
@@ -753,30 +849,12 @@ export class ImportService {
       const name = data[nameKey]?.trim();
       const value = (data[valuesKey] || data[valuesKeyAlt])?.trim();
 
-      if (!name) {
-        this.logger.warn(
-          `extractVariationAttributes: attribute ${i} skipped — no name key found. ` +
-          `Checked "${nameKey}" (="${data[nameKey] ?? '(missing)'}")`,
-        );
-        continue;
-      }
-      if (!value) {
-        this.logger.warn(
-          `extractVariationAttributes: attribute "${name}" (attr ${i}) skipped — no value. ` +
-          `Checked "${valuesKey}" (="${data[valuesKey] ?? '(missing)'}") and ` +
-          `"${valuesKeyAlt}" (="${data[valuesKeyAlt] ?? '(missing)'}")`,
-        );
-        continue;
-      }
+      if (!name || !value) continue;
 
       const parsed = value
         .split(/[,|]/)
         .map((v) => v.trim())
         .filter(Boolean);
-
-      this.logger.log(
-        `extractVariationAttributes: attr ${i} name="${name}" rawValue="${value}" parsed=[${parsed.join(', ')}]`,
-      );
 
       attrs.push({
         name,
@@ -789,7 +867,7 @@ export class ImportService {
     return attrs;
   }
 
-  private async resolveAttributes(
+  private async resolveAttributesCached(
     attrs: Array<{
       name: string;
       values: string[];
@@ -797,6 +875,7 @@ export class ImportService {
       global: boolean;
     }>,
     summary: ImportSummary,
+    attributeCache: Map<string, CachedAttribute>,
   ): Promise<ResolvedAttrs[]> {
     const result: ResolvedAttrs[] = [];
 
@@ -808,18 +887,22 @@ export class ImportService {
         .replace(/[-_]+/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase())
         .trim();
+      const normalizedKey = normalizedName.toLowerCase();
 
-      let attribute = await this.prisma.attribute.findUnique({
-        where: { name: normalizedName },
-        include: { values: true },
-      });
+      let cachedAttr = attributeCache.get(normalizedKey);
 
-      if (!attribute) {
-        attribute = await this.prisma.attribute.create({
+      if (!cachedAttr) {
+        const attribute = await this.prisma.attribute.create({
           data: { name: normalizedName },
           include: { values: true },
         });
         summary.attributesImported++;
+
+        cachedAttr = {
+          id: attribute.id,
+          values: new Map(attribute.values.map((v) => [v.value.toLowerCase(), v.id])),
+        };
+        attributeCache.set(normalizedKey, cachedAttr);
       }
 
       const resolvedValues: Array<{ id: string; value: string }> = [];
@@ -827,22 +910,23 @@ export class ImportService {
       for (const rawVal of attr.values) {
         const v = rawVal.trim();
         if (!v) continue;
+        const valueKey = v.toLowerCase();
 
-        let av = attribute.values.find(
-          (av) => av.value.toLowerCase() === v.toLowerCase(),
-        );
+        let valId = cachedAttr.values.get(valueKey);
 
-        if (!av) {
-          av = await this.prisma.attributeValue.create({
+        if (!valId) {
+          const av = await this.prisma.attributeValue.create({
             data: {
               value: v,
-              sortOrder: attribute.values.length + resolvedValues.length,
-              attributeId: attribute.id,
+              sortOrder: cachedAttr.values.size,
+              attributeId: cachedAttr.id,
             },
           });
+          valId = av.id;
+          cachedAttr.values.set(valueKey, valId);
         }
 
-        resolvedValues.push({ id: av.id, value: av.value });
+        resolvedValues.push({ id: valId, value: v });
       }
 
       if (resolvedValues.length > 0) {
@@ -853,21 +937,18 @@ export class ImportService {
     return result;
   }
 
-  private async generateVariantCombinations(
+  private async generateVariantCombinationsCached(
     productId: string,
     resolvedAttrs: ResolvedAttrs[],
+    productSku: string,
+    productBasePrice: any,
   ): Promise<void> {
-    const product = await this.prisma.product.findUnique({
-      where: { id: productId },
-      select: { sku: true, basePrice: true },
-    });
-
     const valuesArrays = resolvedAttrs.map((a) => a.values);
     const combinations = this.cartesian(valuesArrays);
 
     for (const combo of combinations) {
       const suffix = combo.map((v) => v.value).join(' / ');
-      const varSku = `${product?.sku || 'PRD'}-${suffix
+      const varSku = `${productSku}-${suffix
         .replace(/\s+/g, '-')
         .replace(/\//g, '_')
         .toUpperCase()}`;
@@ -876,7 +957,7 @@ export class ImportService {
         data: {
           productId,
           sku: varSku,
-          price: product?.basePrice ?? undefined,
+          price: productBasePrice ?? undefined,
           stock: 0,
           attributeValues: {
             create: combo.map((v) => ({
@@ -895,13 +976,14 @@ export class ImportService {
     }
   }
 
-  private async uniqueSlug(base: string): Promise<string> {
+  private uniqueSlugCached(base: string, slugSet: Set<string>): string {
     let slug = base;
     let counter = 1;
-    while (await this.prisma.product.findUnique({ where: { slug } })) {
+    while (slugSet.has(slug)) {
       slug = `${base}-${counter}`;
       counter++;
     }
+    slugSet.add(slug);
     return slug;
   }
 
@@ -956,17 +1038,6 @@ export class ImportService {
     }
 
     return meta;
-  }
-
-  private parseManageStock(data: WooCommerceCsvRow): boolean {
-    const manageStockCol = data['Manage stock?'];
-    const stockQty = data.Stock?.trim();
-
-    if (manageStockCol !== undefined) {
-      return manageStockCol === '1' || manageStockCol.toLowerCase() === 'yes';
-    }
-
-    return !!stockQty;
   }
 
   private parsePrice(val?: string): number | undefined {
