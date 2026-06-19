@@ -19,11 +19,8 @@ const nextConfig: NextConfig = {
 };
 
 export default async function (phase: string) {
-  if (phase === PHASE_PRODUCTION_SERVER || phase === PHASE_PRODUCTION_BUILD) {
-    return nextConfig;
-  }
-
-  const apiUrl = process.env.API_URL || 'http://localhost:4000';
+  const isProd = phase === PHASE_PRODUCTION_SERVER || phase === PHASE_PRODUCTION_BUILD;
+  const apiUrl = process.env.API_URL || (isProd ? 'http://backend:4000' : 'http://localhost:4000');
 
   return {
     ...nextConfig,
@@ -52,7 +49,7 @@ export default async function (phase: string) {
       ];
     },
     async rewrites() {
-      return [
+      const list = [
         {
           source: '/api/:path*',
           destination: `${apiUrl}/api/:path*`,
@@ -65,15 +62,20 @@ export default async function (phase: string) {
           source: '/assets/:path*',
           destination: `${apiUrl}/assets/:path*`,
         },
-        {
-          source: '/admin',
-          destination: 'http://localhost:5173/admin/',
-        },
-        {
-          source: '/admin/:path*',
-          destination: 'http://localhost:5173/admin/:path*',
-        },
       ];
+      if (!isProd) {
+        list.push(
+          {
+            source: '/admin',
+            destination: 'http://localhost:5173/admin/',
+          },
+          {
+            source: '/admin/:path*',
+            destination: 'http://localhost:5173/admin/:path*',
+          }
+        );
+      }
+      return list;
     },
   };
 }
