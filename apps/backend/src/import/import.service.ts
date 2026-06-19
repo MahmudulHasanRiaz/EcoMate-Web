@@ -45,8 +45,11 @@ export class ImportService {
       transformHeader: (h) => h.trim(),
     });
 
-    if (parsed.errors.length > 0) {
-      const msg = parsed.errors[0].message;
+    const criticalErrors = parsed.errors.filter(
+      (e) => e.code !== 'TooFewFields' && e.code !== 'TooManyFields',
+    );
+    if (criticalErrors.length > 0) {
+      const msg = criticalErrors[0].message;
       throw new BadRequestException(`CSV parse error: ${msg}`);
     }
 

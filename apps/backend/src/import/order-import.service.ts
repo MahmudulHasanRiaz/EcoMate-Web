@@ -49,8 +49,11 @@ export class OrderImportService {
       transformHeader: (h) => h.trim(),
     });
 
-    if (parsed.errors.length > 0) {
-      throw new BadRequestException(`CSV parse error: ${parsed.errors[0].message}`);
+    const criticalErrors = parsed.errors.filter(
+      (e) => e.code !== 'TooFewFields' && e.code !== 'TooManyFields',
+    );
+    if (criticalErrors.length > 0) {
+      throw new BadRequestException(`CSV parse error: ${criticalErrors[0].message}`);
     }
 
     const summary: OrderImportSummary = {
