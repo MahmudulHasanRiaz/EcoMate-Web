@@ -192,6 +192,10 @@ export class ProductsService {
       }),
       this.prisma.product.count({ where }),
     ]);
+    const hasMore = page * perPage < total;
+    const last = data[data.length - 1];
+    const nextCursor =
+      hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
     return {
       data,
       meta: {
@@ -199,8 +203,8 @@ export class ProductsService {
         page,
         perPage,
         totalPages: Math.ceil(total / perPage),
-        nextCursor: null,
-        hasMore: page * perPage < total,
+        nextCursor,
+        hasMore,
       },
     };
   }

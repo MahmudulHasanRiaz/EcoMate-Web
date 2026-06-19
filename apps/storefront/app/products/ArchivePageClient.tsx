@@ -191,9 +191,15 @@ export default function ArchivePageClient({
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-6 md:gap-8">
-          <aside className={`fixed inset-0 z-[100] md:relative md:inset-auto md:z-0 md:w-64 lg:w-[280px] space-y-6 transition-transform duration-300 ${isFilterOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-            <div className="h-full bg-[#f8f9fa] md:bg-transparent overflow-y-auto md:overflow-visible p-6 md:p-0 flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-8">
+          <aside className={`
+            fixed inset-y-0 left-0 z-[100] w-80 max-w-[85vw] bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out
+            md:relative md:inset-auto md:z-0 md:w-64 lg:w-[280px] md:p-0 md:bg-transparent md:shadow-none md:transform-none md:translate-x-0
+            md:sticky md:top-24 md:max-h-[calc(100vh-8rem)] md:overflow-y-auto pr-2
+            [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full
+            ${isFilterOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}>
+            <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-[16px] font-bold text-gray-800 uppercase tracking-widest">Filters</h3>
                 <div className="flex items-center gap-4">
@@ -228,7 +234,7 @@ export default function ArchivePageClient({
                   </h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {categories.map((cat) => (
-                      <label key={cat.id} className="flex items-center justify-between cursor-pointer group">
+                      <label key={cat.id} className="flex items-center justify-between cursor-pointer group py-1">
                         <div className="flex items-center gap-3">
                           <input
                             type="radio"
@@ -238,8 +244,13 @@ export default function ArchivePageClient({
                               setSelectedCategorySlug(cat.slug);
                               applyFilters({ category: cat.slug });
                             }}
-                            className="w-3.5 h-3.5 text-brand-blue border-gray-300 focus:ring-brand-blue"
+                            className="sr-only"
                           />
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${selectedCategorySlug === cat.slug ? 'border-brand-blue bg-brand-blue scale-105' : 'border-gray-300 group-hover:border-gray-400'}`}>
+                            {selectedCategorySlug === cat.slug && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                            )}
+                          </div>
                           <span className={`text-[13px] transition-colors ${selectedCategorySlug === cat.slug ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{cat.name}</span>
                         </div>
                       </label>
