@@ -18,11 +18,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const request = context.switchToHttp().getRequest();
       const authHeader = request.headers?.authorization;
       if (authHeader?.startsWith('Bearer ')) {
-        const result = super.canActivate(context) as boolean | Promise<boolean>;
-        if (result instanceof Promise) {
-          return result.catch(() => true);
+        try {
+          const result = super.canActivate(context) as boolean | Promise<boolean>;
+          if (result instanceof Promise) {
+            return result.catch(() => true);
+          }
+          return result;
+        } catch (error) {
+          return true; // Ignore invalid token on public routes
         }
-        return result;
       }
       return true;
     }

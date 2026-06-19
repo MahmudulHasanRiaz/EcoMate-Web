@@ -63,25 +63,31 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    console.log(`[LOGIN ATTEMPT] Email: "${dto.email}", Password length: ${dto.password?.length}`);
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
+      console.log(`[LOGIN FAILED] User not found for email: "${dto.email}"`);
       throw new UnauthorizedException('Invalid email or password');
     }
 
     if (user.status !== 'active') {
+      console.log(`[LOGIN FAILED] User not active. Status: ${user.status}`);
       throw new UnauthorizedException('Account is not active');
     }
 
     if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+      console.log(`[LOGIN FAILED] User locked out until: ${user.lockoutUntil}`);
       throw new UnauthorizedException(
         'Account is temporarily locked due to too many failed login attempts. Please try again later.',
       );
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+    console.log(`[LOGIN ATTEMPT] Password valid? ${isPasswordValid}`);
+    
     if (!isPasswordValid) {
       // Atomic increment - only if attempts < 5
       await this.prisma.user.update({
