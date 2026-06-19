@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   allowedDevOrigins: ['mac.riaz.com.bd'],
   images: {
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn.example.com' },
       { protocol: 'http', hostname: 'localhost', port: '4000' },
