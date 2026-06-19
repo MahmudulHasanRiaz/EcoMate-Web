@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
 import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
@@ -52,6 +52,27 @@ export function Products() {
     perPage: pagination.pageSize,
     categoryId: filterCategoryId[0] || undefined,
   })
+
+  // Reset selection when pagination changes
+  useEffect(() => {
+    setSelectedIds([])
+  }, [pagination.pageIndex, pagination.pageSize])
+
+  // Handle page count reductions (e.g. after deletion) to avoid getting stuck on an empty page
+  const totalPages = data?.meta?.totalPages || 0
+  useEffect(() => {
+    if (totalPages > 0 && pagination.pageIndex >= totalPages) {
+      setPagination((prev) => ({
+        ...prev,
+        pageIndex: totalPages - 1,
+      }))
+    } else if (totalPages === 0 && pagination.pageIndex > 0) {
+      setPagination((prev) => ({
+        ...prev,
+        pageIndex: 0,
+      }))
+    }
+  }, [totalPages, pagination.pageIndex])
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => productsApi.delete(id),

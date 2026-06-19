@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { type SortingState, type VisibilityState, type PaginationState, type RowSelectionState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -22,6 +22,12 @@ export function ProductsTable({ data, pageCount, pagination, onPaginationChange,
     selectedIds.forEach(id => { sel[id] = true });
     return sel;
   })
+
+  useEffect(() => {
+    const sel: RowSelectionState = {};
+    selectedIds.forEach(id => { sel[id] = true });
+    setRowSelection(sel);
+  }, [selectedIds]);
 
   const columns = productsColumns(onEdit, onDelete, onToggleActive)
 
