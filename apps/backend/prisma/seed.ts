@@ -12,7 +12,7 @@ const prisma = new PrismaClient({
       url: process.env.DATABASE_URL,
     },
   },
-});
+} as any);
 
 const MIME_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
