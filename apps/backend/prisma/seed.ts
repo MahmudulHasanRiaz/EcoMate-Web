@@ -5,14 +5,13 @@ import { existsSync } from 'fs';
 import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
 import { createHash } from 'crypto';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
-    },
-  },
-} as any);
+const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 const MIME_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -49,7 +48,7 @@ async function main() {
   if (seedDummyData) {
     // ── Customer User ──
   const customerPassword = await bcrypt.hash('Customer@123', 12);
-  const customer = await prisma.user.upsert({
+  customer = await prisma.user.upsert({
     where: { email: 'customer@example.com' },
     update: {},
     create: {
@@ -1020,4 +1019,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
