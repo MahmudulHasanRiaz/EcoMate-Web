@@ -1,13 +1,11 @@
 "use client";
 
-import { Home, LayoutGrid, ShoppingBag, Search, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingBag, User } from "lucide-react";
 import Link from "next/link";
-import { useCart } from "@/context/CartContext";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 export default function BottomNav() {
-  const { cartCount, setIsCartOpen } = useCart();
   const pathname = usePathname();
   if (pathname && pathname.startsWith('/checkout')) return null;
   const navRef = useRef<HTMLDivElement>(null);
@@ -35,27 +33,12 @@ export default function BottomNav() {
             <LayoutGrid size={20} className="stroke-[2.5]" />
             <span className="text-[9px] font-medium mt-0.5">Menu</span>
           </button>
-          <button 
-            id="mobile-cart"
-            onClick={() => setIsCartOpen(true)}
-            className="flex flex-col items-center justify-center w-12 h-full text-gray-400 hover:text-gray-800 transition-all relative"
-          >
-            <div className="relative">
-              <ShoppingBag size={20} className="stroke-[2.5]" />
-              {cartCount > 0 && (
-                <div className="absolute -top-1.5 -right-2 bg-brand-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white box-content">
-                  {cartCount}
-                </div>
-              )}
-            </div>
-            <span className="text-[9px] font-medium mt-0.5">Cart</span>
-          </button>
           <Link 
             href="/products"
-            className="flex flex-col items-center justify-center w-12 h-full text-gray-400 hover:text-gray-800 transition-colors"
+            className={`flex flex-col items-center justify-center w-12 h-full transition-colors ${pathname === '/products' ? 'text-brand-blue' : 'text-gray-400 hover:text-gray-800'}`}
           >
-            <Search size={20} className="stroke-[2.5]" />
-            <span className="text-[9px] font-medium mt-0.5">Search</span>
+            <ShoppingBag size={20} className="stroke-[2.5]" />
+            <span className="text-[9px] font-medium mt-0.5">Shop</span>
           </Link>
           <Link 
             href="/account"

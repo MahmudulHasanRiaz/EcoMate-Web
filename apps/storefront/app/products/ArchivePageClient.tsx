@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from 'react';
-import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle, Plus, Minus } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getProducts } from '@/lib/api/products';
@@ -40,12 +40,35 @@ function buildCategoryTree(categories: Category[]) {
   return roots;
 }
 
+function hasSelectedDescendant(category: any, selectedSlug: string | null): boolean {
+  if (!selectedSlug) return false;
+  if (category.slug === selectedSlug) return true;
+  if (category.children?.length > 0) {
+    return category.children.some((child: any) => hasSelectedDescendant(child, selectedSlug));
+  }
+  return false;
+}
+
 function CategoryNode({ category, selectedSlug, onSelect, depth = 0 }: { category: any; selectedSlug: string | null; onSelect: (slug: string) => void; depth?: number }) {
   const isSelected = selectedSlug === category.slug;
+  const hasChildren = category.children?.length > 0;
+  
+  const containsSelected = React.useMemo(() => {
+    return hasSelectedDescendant(category, selectedSlug);
+  }, [category, selectedSlug]);
+
+  const [isExpanded, setIsExpanded] = React.useState(containsSelected);
+
+  React.useEffect(() => {
+    if (containsSelected) {
+      setIsExpanded(true);
+    }
+  }, [containsSelected]);
+
   return (
     <div className="flex flex-col">
-      <label className={`flex items-center justify-between cursor-pointer group py-1.5`} style={{ paddingLeft: `${depth * 16}px` }}>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between py-1" style={{ paddingLeft: `${depth * 12}px` }}>
+        <label className="flex items-center gap-2.5 cursor-pointer group flex-1">
           <input
             type="radio"
             name="category"
@@ -53,14 +76,24 @@ function CategoryNode({ category, selectedSlug, onSelect, depth = 0 }: { categor
             onChange={() => onSelect(category.slug)}
             className="sr-only"
           />
-          <div className={`w-4 h-4 rounded-full border flex-shrink-0 items-center justify-center transition-all ${isSelected ? 'border-brand-blue bg-brand-blue scale-105' : 'border-gray-300 group-hover:border-gray-400'}`}>
+          <div className={`w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'border-brand-blue bg-brand-blue scale-105 shadow-sm shadow-brand-blue/20' : 'border-gray-300 group-hover:border-gray-400 bg-white'}`}>
             {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
           </div>
-          <span className={`text-[13px] transition-colors ${isSelected ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{category.name}</span>
-        </div>
-      </label>
-      {category.children?.length > 0 && (
-        <div className="flex flex-col mt-0.5 border-l border-gray-100 ml-[7px]">
+          <span className={`text-[13px] select-none transition-colors ${isSelected ? 'font-semibold text-brand-blue' : 'text-gray-600 group-hover:text-gray-900 font-medium'}`}>{category.name}</span>
+        </label>
+        {hasChildren && (
+          <button 
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-700 mr-1"
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? <Minus size={13} strokeWidth={2.5} /> : <Plus size={13} strokeWidth={2.5} />}
+          </button>
+        )}
+      </div>
+      {hasChildren && isExpanded && (
+        <div className="flex flex-col mt-0.5 border-l border-gray-150 ml-[6px]">
           {category.children.map((child: any) => (
             <CategoryNode key={child.id} category={child} selectedSlug={selectedSlug} onSelect={onSelect} depth={depth + 1} />
           ))}
@@ -93,7 +126,9 @@ export default function ArchivePageClient({
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [selectedBrands, setSelectedBrands] = React.useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
   const [brandSearch, setBrandSearch] = React.useState('');
+  const [tagSearch, setTagSearch] = React.useState('');
   const [priceMin, setPriceMin] = React.useState(initialMinPrice);
   const [priceMax, setPriceMax] = React.useState(initialMaxPrice);
 
@@ -131,6 +166,16 @@ export default function ArchivePageClient({
   const brandOptions = useMemo(() => {
     const set = new Set<string>();
     for (const p of items || []) {
+      if (p?.brand?.name) {
+        set.add(p.brand.name);
+      }
+    }
+    return Array.from(set).sort();
+  }, [items]);
+
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of items || []) {
       if (!p) continue;
       for (const tag of p.tags || []) {
         if (typeof tag === 'string') set.add(tag);
@@ -142,13 +187,21 @@ export default function ArchivePageClient({
   const categoryTree = useMemo(() => buildCategoryTree(categories || []), [categories]);
 
   const visibleItems = useMemo(() => {
-    if (selectedBrands.length === 0) return items;
-    return items.filter((p) => {
-      const productBrands = (p.tags || []).map((t) => t.toLowerCase());
-      if (!selectedBrands.some((b) => productBrands.includes(b.toLowerCase()))) return false;
-      return true;
-    });
-  }, [items, selectedBrands]);
+    let filtered = items || [];
+    if (selectedBrands.length > 0) {
+      filtered = filtered.filter((p) => {
+        const productBrand = p.brand?.name?.toLowerCase();
+        return productBrand && selectedBrands.some((b) => b.toLowerCase() === productBrand);
+      });
+    }
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter((p) => {
+        const productTags = (p.tags || []).map((t) => t.toLowerCase());
+        return selectedTags.some((t) => productTags.includes(t.toLowerCase()));
+      });
+    }
+    return filtered;
+  }, [items, selectedBrands, selectedTags]);
 
   const applyFilters = (next: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string }) => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
@@ -188,6 +241,7 @@ export default function ArchivePageClient({
 
   const clearAll = () => {
     setSelectedBrands([]);
+    setSelectedTags([]);
     router.push('/products');
   };
 
@@ -262,25 +316,6 @@ export default function ArchivePageClient({
               <div className="bg-white border border-gray-100 md:rounded-[12px] shadow-[0_2px_12px_-4px_rgba(0,0,0,0.02)]">
                 <div className="p-5 border-b border-gray-100">
                   <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
-                    Search <ChevronDown size={14} className="text-gray-400"/>
-                  </h4>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') applyFilters({ search: searchQuery });
-                      }}
-                      placeholder="Search products..."
-                      className="w-full bg-gray-50 border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-5 border-b border-gray-100">
-                  <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
                     Categories <ChevronDown size={14} className="text-gray-400"/>
                   </h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
@@ -347,38 +382,79 @@ export default function ArchivePageClient({
                   </div>
                 </div>
 
-                <div className="p-5">
-                  <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
-                    Brands <ChevronDown size={14} className="text-gray-400"/>
-                  </h4>
-                  <div className="relative mb-4">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={brandSearch} onChange={(e) => setBrandSearch(e.target.value)} placeholder="Search brands..." className="w-full bg-[#f8f9fa] border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors" />
-                  </div>
-                  <div className="space-y-3 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
-                    {brandOptions.filter((b) => b.toLowerCase().includes(brandSearch.toLowerCase())).map((brand) => (
-                      <label key={brand} className="flex items-center justify-between cursor-pointer group">
-                        <div className="flex items-center gap-3">
-                          <div className="relative flex items-center justify-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedBrands.includes(brand)}
-                              onChange={() => toggleBrand(brand)}
-                              className="peer sr-only"
-                            />
-                            <div className="w-[18px] h-[18px] border border-gray-300 rounded-[4px] bg-white peer-checked:bg-brand-blue peer-checked:border-brand-blue transition-all"></div>
-                            <svg className="absolute w-[10px] h-[10px] text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" viewBox="0 0 14 14" fill="none">
-                              <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
+                {brandOptions.length > 0 && (
+                  <div className="p-5 border-b border-gray-100">
+                    <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
+                      Brands <ChevronDown size={14} className="text-gray-400"/>
+                    </h4>
+                    <div className="relative mb-4">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="text" value={brandSearch} onChange={(e) => setBrandSearch(e.target.value)} placeholder="Search brands..." className="w-full bg-[#f8f9fa] border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors" />
+                    </div>
+                    <div className="space-y-3 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
+                      {brandOptions.filter((b) => b.toLowerCase().includes(brandSearch.toLowerCase())).map((brand) => (
+                        <label key={brand} className="flex items-center justify-between cursor-pointer group">
+                          <div className="flex items-center gap-3">
+                            <div className="relative flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedBrands.includes(brand)}
+                                onChange={() => toggleBrand(brand)}
+                                className="peer sr-only"
+                              />
+                              <div className="w-[18px] h-[18px] border border-gray-300 rounded-[4px] bg-white peer-checked:bg-brand-blue peer-checked:border-brand-blue transition-all"></div>
+                              <svg className="absolute w-[10px] h-[10px] text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" viewBox="0 0 14 14" fill="none">
+                                <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                            <span className={`text-[13px] transition-colors ${selectedBrands.includes(brand) ? 'font-bold text-gray-900' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>
+                              {brand}
+                            </span>
                           </div>
-                          <span className={`text-[13px] transition-colors ${selectedBrands.includes(brand) ? 'font-bold text-gray-900' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>
-                            {brand}
-                          </span>
-                        </div>
-                      </label>
-                    ))}
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {tagOptions.length > 0 && (
+                  <div className="p-5">
+                    <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
+                      Tags <ChevronDown size={14} className="text-gray-400"/>
+                    </h4>
+                    <div className="relative mb-4">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="text" value={tagSearch} onChange={(e) => setTagSearch(e.target.value)} placeholder="Search tags..." className="w-full bg-[#f8f9fa] border border-gray-100 rounded-md py-2 pl-8 pr-3 text-[12px] outline-none focus:border-brand-blue transition-colors" />
+                    </div>
+                    <div className="space-y-3 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
+                      {tagOptions.filter((t) => t.toLowerCase().includes(tagSearch.toLowerCase())).map((tag) => (
+                        <label key={tag} className="flex items-center justify-between cursor-pointer group">
+                          <div className="flex items-center gap-3">
+                            <div className="relative flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedTags.includes(tag)}
+                                onChange={() => {
+                                  setSelectedTags((prev) =>
+                                    prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+                                  );
+                                }}
+                                className="peer sr-only"
+                              />
+                              <div className="w-[18px] h-[18px] border border-gray-300 rounded-[4px] bg-white peer-checked:bg-brand-blue peer-checked:border-brand-blue transition-all"></div>
+                              <svg className="absolute w-[10px] h-[10px] text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" viewBox="0 0 14 14" fill="none">
+                                <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                            <span className={`text-[13px] transition-colors ${selectedTags.includes(tag) ? 'font-bold text-gray-900' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>
+                              {tag}
+                            </span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </aside>

@@ -140,6 +140,10 @@ export class ImportService {
     const tags = await this.prisma.tag.findMany();
     const tagCache = new Map(tags.map((t) => [t.slug, t.id]));
 
+    // 2.5. Brands
+    const brands = await this.prisma.brand.findMany();
+    const brandCache = new Map(brands.map((b) => [b.slug, b.id]));
+
     // 3. Attributes and values
     const attributes = await this.prisma.attribute.findMany({
       include: { values: true },
@@ -221,6 +225,7 @@ export class ImportService {
           allErrors,
           categoryCacheByPath,
           tagCache,
+          brandCache,
           attributeCache,
           mediaCache,
           productCache,
@@ -297,6 +302,7 @@ export class ImportService {
     errors: ImportError[],
     categoryCacheByPath: Map<string, string>,
     tagCache: Map<string, string>,
+    brandCache: Map<string, string>,
     attributeCache: Map<string, CachedAttribute>,
     mediaCache: Map<string, string>,
     productCache: Map<string, string>,
@@ -332,6 +338,7 @@ export class ImportService {
         errors,
         categoryCacheByPath,
         tagCache,
+        brandCache,
         mediaCache,
         productCache,
         slugSet,
@@ -345,6 +352,7 @@ export class ImportService {
         { skipVariantGeneration: hasVariations },
         categoryCacheByPath,
         tagCache,
+        brandCache,
         attributeCache,
         mediaCache,
         productCache,
@@ -378,6 +386,7 @@ export class ImportService {
     options: { skipVariantGeneration?: boolean },
     categoryCacheByPath: Map<string, string>,
     tagCache: Map<string, string>,
+    brandCache: Map<string, string>,
     attributeCache: Map<string, CachedAttribute>,
     mediaCache: Map<string, string>,
     productCache: Map<string, string>,
@@ -392,6 +401,12 @@ export class ImportService {
     const tags = this.parseTags(data.Tags);
     const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
     const images = this.parseImages(data.Images);
+
+    const brandName = this.parseBrand(data.Brands);
+    let brandId: string | undefined = undefined;
+    if (brandName) {
+      brandId = await this.resolveBrandCached(brandName, brandCache);
+    }
 
     const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
 
@@ -441,6 +456,7 @@ export class ImportService {
         salePrice: salePrice ?? undefined,
         stock,
         categoryId: categoryId ?? undefined,
+        brandId: brandId ?? undefined,
         tags: tags as any,
         productTags:
           tagIds.length > 0
@@ -481,6 +497,7 @@ export class ImportService {
     errors: ImportError[],
     categoryCacheByPath: Map<string, string>,
     tagCache: Map<string, string>,
+    brandCache: Map<string, string>,
     mediaCache: Map<string, string>,
     productCache: Map<string, string>,
     slugSet: Set<string>,
@@ -490,6 +507,12 @@ export class ImportService {
     const tags = this.parseTags(data.Tags);
     const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
     const images = this.parseImages(data.Images);
+
+    const brandName = this.parseBrand(data.Brands);
+    let brandId: string | null = null;
+    if (brandName) {
+      brandId = await this.resolveBrandCached(brandName, brandCache);
+    }
 
     const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
@@ -526,6 +549,7 @@ export class ImportService {
     updateData.salePrice = salePrice ?? null;
     updateData.stock = stock;
     updateData.categoryId = categoryId ?? null;
+    updateData.brandId = brandId;
     updateData.tags = tags;
     updateData.productTags =
       tagIds.length > 0
@@ -804,6 +828,31 @@ export class ImportService {
       }
     }
     return ids;
+  }
+
+  private async resolveBrandCached(
+    brandName: string,
+    brandCache: Map<string, string>,
+  ): Promise<string> {
+    const slug = slugify(brandName.trim());
+    const cachedId = brandCache.get(slug);
+    if (cachedId) return cachedId;
+
+    const created = await this.prisma.brand.create({
+      data: {
+        name: brandName.trim(),
+        slug,
+        isActive: true,
+      },
+    });
+    brandCache.set(slug, created.id);
+    return created.id;
+  }
+
+  private parseBrand(value?: string): string | null {
+    if (!value?.trim()) return null;
+    const names = value.split(',').map((s) => s.trim()).filter(Boolean);
+    return names[0] || null;
   }
 
   private parseTags(value?: string): string[] {

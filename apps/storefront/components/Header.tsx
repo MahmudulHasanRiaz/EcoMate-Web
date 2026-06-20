@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
 import Link from 'next/link';
+import { HeaderSearch } from "./HeaderSearch";
 
 export default function Header({}: {}) {
   const pathname = usePathname();
@@ -54,21 +55,7 @@ export default function Header({}: {}) {
 
           {/* Search Bar - Desktop Centered */}
           <div className="hidden md:flex flex-1 max-w-lg mx-auto">
-            <div className="relative flex items-center w-full h-[40px] rounded-full border border-gray-200 bg-gray-50 focus-within:bg-white focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/10 transition-all">
-              <input
-                type="text"
-                placeholder="Search products..."
-                className="w-full h-full pl-5 pr-10 outline-none text-[14px] bg-transparent text-gray-700 font-medium rounded-full"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                    router.push(`/products?search=${encodeURIComponent((e.target as HTMLInputElement).value)}`);
-                  }
-                }}
-              />
-              <div className="absolute right-3 text-brand-blue pointer-events-none">
-                <Search size={18} strokeWidth={2} />
-              </div>
-            </div>
+            <HeaderSearch />
           </div>
 
           {/* Action Icons - Right */}
@@ -108,19 +95,7 @@ export default function Header({}: {}) {
         {/* Mobile Search */}
         {isMobileSearchOpen && (
           <div className="mt-3 md:hidden">
-            <div className="relative flex items-center w-full h-[40px] rounded-full border border-brand-blue/50 bg-white shadow-sm">
-              <input autoFocus type="text" placeholder="Search products..."
-                className="w-full h-full pl-5 pr-10 outline-none text-[14px] bg-transparent text-gray-700 font-normal rounded-full"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                    router.push(`/products?search=${encodeURIComponent((e.target as HTMLInputElement).value)}`);
-                    setIsMobileSearchOpen(false);
-                  }
-                }} />
-              <div className="absolute right-3 text-brand-blue pointer-events-none">
-                <Search size={18} strokeWidth={2} />
-              </div>
-            </div>
+            <HeaderSearch onCloseMobile={() => setIsMobileSearchOpen(false)} />
           </div>
         )}
       </div>
