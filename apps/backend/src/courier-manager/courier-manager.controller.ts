@@ -23,9 +23,30 @@ export class CourierManagerController {
 
   @Get('credentials')
   async listCredentials() {
-    return this.prisma.courierCredentials.findMany({
+    const existing = await this.prisma.courierCredentials.findMany({
       orderBy: { courier: 'asc' },
     });
+
+    const defaults = ['steadfast', 'pathao', 'redx', 'carrybee'];
+    const missing = defaults.filter(d => !existing.some(e => e.courier === d));
+
+    if (missing.length > 0) {
+      for (const courier of missing) {
+        await this.prisma.courierCredentials.create({
+          data: {
+            courier,
+            enabled: false,
+            mode: 'sandbox',
+            credentials: {},
+          },
+        });
+      }
+      return this.prisma.courierCredentials.findMany({
+        orderBy: { courier: 'asc' },
+      });
+    }
+
+    return existing;
   }
 
   @Get('cities')
