@@ -28,16 +28,40 @@ jobs:
           fi
           
           echo "Triggering Portainer Stack Redeploy for $CLIENT_NAME..."
-          # এখানে HTTP status code এবং response message দেখুন
-          HTTP_CODE=$(curl -w "%{http_code}" -s -o /tmp/response.txt -X POST -k "$WEBHOOK_URL")
-          RESPONSE=$(cat /tmp/response.txt)
-          
-          echo "HTTP Status Code: $HTTP_CODE"
-          echo "Response: $RESPONSE"
-          
+
+          # safer curl with timeout and retries; accept any 2xx HTTP status as success
+          RESPONSE_FILE=/tmp/response.txt
+          MAX_TRIES=3
+          TRY=1
+          HTTP_CODE=0
+
+          while [ $TRY -le $MAX_TRIES ]; do
+            echo "Attempt $TRY of $MAX_TRIES..."
+            HTTP_CODE=$(curl -w "%{http_code}" -s -S -o "$RESPONSE_FILE" -X POST -k --max-time 30 "$WEBHOOK_URL")
+            RESPONSE=$(cat "$RESPONSE_FILE" 2>/dev/null || true)
+
+            echo "HTTP Status Code: $HTTP_CODE"
+            echo "Response: $RESPONSE"
+
+            # success on any 2xx
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✅ Deployment triggered successfully for $CLIENT_NAME! (HTTP $HTTP_CODE)"
+              break
+            fi
+
+            # if not last try, backoff and retry
+            if [ $TRY -lt $MAX_TRIES ]; then
+              SLEEP_SEC=$((2 ** (TRY - 1)))
+              echo "Request failed (HTTP $HTTP_CODE). Retrying in ${SLEEP_SEC}s..."
+              sleep $SLEEP_SEC
+            fi
+
+            TRY=$((TRY + 1))
+          done
+
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Deployment triggered successfully for $CLIENT_NAME! (HTTP $HTTP_CODE)"
+            echo "✅ Deployment completed (HTTP $HTTP_CODE)."
           else
-            echo "❌ Webhook request failed for $CLIENT_NAME! (HTTP $HTTP_CODE)"
+            echo "❌ Webhook request failed for $CLIENT_NAME after ${MAX_TRIES} attempts! (HTTP $HTTP_CODE)"
             exit 1
           fi
