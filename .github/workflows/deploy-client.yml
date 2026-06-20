@@ -35,8 +35,8 @@ jobs:
           echo "HTTP Status Code: $HTTP_CODE"
           echo "Response: $RESPONSE"
           
-          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
-            echo "✅ Deployment triggered successfully for $CLIENT_NAME!"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Deployment triggered successfully for $CLIENT_NAME! (HTTP $HTTP_CODE)"
           else
             echo "❌ Webhook request failed for $CLIENT_NAME! (HTTP $HTTP_CODE)"
             exit 1
