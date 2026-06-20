@@ -72,43 +72,89 @@ function CategoryNode({ category, selectedSlug, onSelect, depth = 0 }: { categor
     }
   };
 
+  const isLevel1 = depth === 0;
+
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-1.5 py-0.5 group">
-        {hasChildren ? (
-          <button 
-            type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="w-5 h-5 flex items-center justify-center hover:bg-gray-100 rounded transition-colors text-gray-400 hover:text-gray-700 shrink-0"
-            aria-label={isExpanded ? "Collapse" : "Expand"}
-          >
-            <ChevronRight 
-              size={13} 
-              className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
-              strokeWidth={2.5}
-            />
-          </button>
-        ) : (
-          <div className="w-5 h-5 shrink-0" />
-        )}
-        
-        <button
-          type="button"
-          onClick={handleSelect}
-          className={`flex-1 text-left text-[13px] py-1.5 px-2.5 rounded-md transition-all duration-150 select-none ${
+      <div 
+        onClick={handleSelect}
+        className={`flex items-center justify-between py-1.5 px-2 rounded-lg transition-all duration-200 cursor-pointer group ${
+          isSelected 
+            ? 'bg-brand-blue/5 text-brand-blue font-semibold border-l-2 border-brand-blue rounded-l-none' 
+            : 'text-gray-650 hover:text-gray-900 hover:bg-gray-50/80'
+        }`}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Chevron (only for items with children) */}
+          {hasChildren ? (
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation(); // prevent triggering category selection
+                setIsExpanded(!isExpanded);
+              }}
+              className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-700 shrink-0"
+              aria-label={isExpanded ? "Collapse" : "Expand"}
+            >
+              <ChevronRight 
+                size={12} 
+                className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
+                strokeWidth={2.5}
+              />
+            </button>
+          ) : (
+            // Spacer to align with chevroned items
+            <div className="w-4 h-4 shrink-0" />
+          )}
+
+          {/* Checkbox (only for Level 1 categories) */}
+          {isLevel1 && (
+            <div className="relative flex items-center justify-center shrink-0">
+              <div className={`w-[15px] h-[15px] border rounded transition-all ${
+                isSelected 
+                  ? 'border-brand-blue bg-brand-blue' 
+                  : 'border-gray-300 group-hover:border-gray-400 bg-white'
+              }`}>
+                {isSelected && (
+                  <svg className="w-full h-full text-white p-0.5" viewBox="0 0 14 14" fill="none">
+                    <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Category Name */}
+          <span className={`text-[13px] select-none truncate ${
+            isSelected ? 'font-semibold text-brand-blue' : 'font-medium'
+          }`}>
+            {category.name}
+          </span>
+        </div>
+
+        {/* Product Count Badge */}
+        {category._count?.products !== undefined && (
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 min-w-[20px] text-center ${
             isSelected 
-              ? 'bg-brand-blue/5 text-brand-blue font-semibold border-l-2 border-brand-blue rounded-l-none' 
-              : 'text-gray-650 hover:text-gray-900 hover:bg-gray-50/80 font-medium'
-          }`}
-        >
-          {category.name}
-        </button>
+              ? 'bg-brand-blue/10 text-brand-blue' 
+              : 'bg-gray-100 text-gray-500'
+          }`}>
+            {category._count.products}
+          </span>
+        )}
       </div>
-      
+
+      {/* Subcategories (children) */}
       {hasChildren && isExpanded && (
-        <div className="flex flex-col mt-0.5 border-l border-gray-100 ml-[9px] pl-2">
+        <div className="flex flex-col mt-0.5 border-l border-brand-blue/20 ml-[9px] pl-2">
           {category.children.map((child: any) => (
-            <CategoryNode key={child.id} category={child} selectedSlug={selectedSlug} onSelect={onSelect} depth={depth + 1} />
+            <CategoryNode 
+              key={child.id} 
+              category={child} 
+              selectedSlug={selectedSlug} 
+              onSelect={onSelect} 
+              depth={depth + 1} 
+            />
           ))}
         </div>
       )}
@@ -329,7 +375,19 @@ export default function ArchivePageClient({
               <div className="bg-white border border-gray-100 md:rounded-[12px] shadow-[0_2px_12px_-4px_rgba(0,0,0,0.02)]">
                 <div className="p-5 border-b border-gray-100">
                   <h4 className="text-[13px] font-bold text-gray-800 mb-4 uppercase tracking-wider flex items-center justify-between">
-                    Categories <ChevronDown size={14} className="text-gray-400"/>
+                    <span>Categories</span>
+                    {selectedCategorySlug && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategorySlug(null);
+                          applyFilters({ category: '' });
+                        }}
+                        className="text-[11px] font-bold text-gray-400 hover:text-brand-blue normal-case transition-colors"
+                      >
+                        Clear all
+                      </button>
+                    )}
                   </h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {categoryTree.map((cat) => (
