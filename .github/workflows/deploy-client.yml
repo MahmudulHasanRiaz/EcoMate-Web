@@ -29,7 +29,7 @@ jobs:
           
           echo "Triggering Portainer Stack Redeploy for $CLIENT_NAME..."
           # এখানে HTTP status code এবং response message দেখুন
-          HTTP_CODE=$(curl -w "%{http_code}" -s -o /tmp/response.txt -X POST "$WEBHOOK_URL")
+          HTTP_CODE=$(curl -w "%{http_code}" -s -o /tmp/response.txt -X POST -k "$WEBHOOK_URL")
           RESPONSE=$(cat /tmp/response.txt)
           
           echo "HTTP Status Code: $HTTP_CODE"
