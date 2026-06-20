@@ -47,7 +47,17 @@ export class ProductsController {
       categoryId ||
       (category ? await this.svc.resolveCategorySlug(category) : undefined);
     const parsedHasStock = hasStock !== undefined ? hasStock === 'true' : undefined;
-    if (cursor) {
+    const isSortingActive = sort && sort !== 'default';
+
+    let parsedPage = page ? parseInt(page) : undefined;
+    if (isSortingActive && cursor) {
+      const pageFromCursor = parseInt(cursor);
+      if (!isNaN(pageFromCursor)) {
+        parsedPage = pageFromCursor;
+      }
+    }
+
+    if (cursor && !isSortingActive) {
       return this.svc.findAllCursor({
         cursor,
         perPage: perPage ? parseInt(perPage) : undefined,
@@ -67,7 +77,7 @@ export class ProductsController {
     const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
     const parsedMaxPrice = maxPrice ? parseFloat(maxPrice) : undefined;
     return this.svc.findAll({
-      page: page ? parseInt(page) : undefined,
+      page: parsedPage,
       perPage: perPage ? parseInt(perPage) : undefined,
       search,
       type,

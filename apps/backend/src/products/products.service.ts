@@ -228,8 +228,9 @@ export class ProductsService {
     ]);
     const hasMore = page * perPage < total;
     const last = data[data.length - 1];
-    const nextCursor =
-      hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
+    const nextCursor = query.sort
+      ? (hasMore ? String(page + 1) : null)
+      : (hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null);
     return {
       data,
       meta: {
