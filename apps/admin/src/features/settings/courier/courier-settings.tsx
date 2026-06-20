@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle } from 'lucide-react'
 
 const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
@@ -77,7 +77,7 @@ const defaultForm: CourierFormState = {
 
 export function CourierSettings() {
   const queryClient = useQueryClient()
-  const { data: creds, isLoading } = useQuery({
+  const { data: creds, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['courier-creds'],
     queryFn: () => courierApi.listCreds().then(r => r.data),
   })
@@ -85,6 +85,10 @@ export function CourierSettings() {
   const [forms, setForms] = useState<Record<string, CourierFormState>>({})
 
   const list = Array.isArray(creds) ? creds : (creds as Record<string, unknown>)?.data as unknown[] || []
+
+  useEffect(() => {
+    console.log('Courier credentials API response:', creds, 'Parsed list:', list)
+  }, [creds, list])
 
   useEffect(() => {
     if (list.length > 0) {
@@ -131,6 +135,52 @@ export function CourierSettings() {
   })
 
   if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
+
+  if (isError) {
+    return (
+      <div>
+        <div className='flex items-center justify-between mb-6'>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
+            <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
+          </div>
+        </div>
+        <div className='flex flex-col items-center justify-center p-8 border border-dashed rounded-lg bg-red-50/50 border-red-200 text-center max-w-lg mx-auto mt-8'>
+          <XCircle className='h-10 w-10 text-red-500 mb-3' />
+          <h3 className='text-base font-semibold text-red-900'>Failed to load courier credentials</h3>
+          <p className='text-sm text-red-700 mt-1 mb-4 font-mono text-xs'>
+            {(error as any)?.response?.data?.message || (error as any)?.message || 'An unknown error occurred while communicating with the backend API.'}
+          </p>
+          <Button size='sm' onClick={() => refetch()} className='gap-2'>
+            <RefreshCw className='h-3.5 w-3.5' /> Retry Connection
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (list.length === 0) {
+    return (
+      <div>
+        <div className='flex items-center justify-between mb-6'>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
+            <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
+          </div>
+        </div>
+        <div className='flex flex-col items-center justify-center p-8 border border-dashed rounded-lg bg-muted/30 text-center max-w-lg mx-auto mt-8'>
+          <AlertCircle className='h-10 w-10 text-muted-foreground mb-3' />
+          <h3 className='text-base font-semibold text-foreground'>No courier integrations found</h3>
+          <p className='text-sm text-muted-foreground mt-1 mb-4'>
+            The system could not find any couriers seeded in the database. Please ensure you have run the database seed script.
+          </p>
+          <Button size='sm' onClick={() => refetch()} variant='outline' className='gap-2'>
+            <RefreshCw className='h-3.5 w-3.5' /> Refresh
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   const handleSave = (courier: string) => {
     const f = forms[courier]

@@ -65,35 +65,48 @@ function CategoryNode({ category, selectedSlug, onSelect, depth = 0 }: { categor
     }
   }, [containsSelected]);
 
+  const handleSelect = () => {
+    onSelect(category.slug);
+    if (hasChildren) {
+      setIsExpanded(true);
+    }
+  };
+
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between py-1" style={{ paddingLeft: `${depth * 12}px` }}>
-        <label className="flex items-center gap-2.5 cursor-pointer group flex-1">
-          <input
-            type="radio"
-            name="category"
-            checked={isSelected}
-            onChange={() => onSelect(category.slug)}
-            className="sr-only"
-          />
-          <div className={`w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'border-brand-blue bg-brand-blue scale-105 shadow-sm shadow-brand-blue/20' : 'border-gray-300 group-hover:border-gray-400 bg-white'}`}>
-            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-          </div>
-          <span className={`text-[13px] select-none transition-colors ${isSelected ? 'font-semibold text-brand-blue' : 'text-gray-600 group-hover:text-gray-900 font-medium'}`}>{category.name}</span>
-        </label>
-        {hasChildren && (
+      <div className="flex items-center gap-1.5 py-0.5 group">
+        {hasChildren ? (
           <button 
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-700 mr-1"
+            className="w-5 h-5 flex items-center justify-center hover:bg-gray-100 rounded transition-colors text-gray-400 hover:text-gray-700 shrink-0"
             aria-label={isExpanded ? "Collapse" : "Expand"}
           >
-            {isExpanded ? <Minus size={13} strokeWidth={2.5} /> : <Plus size={13} strokeWidth={2.5} />}
+            <ChevronRight 
+              size={13} 
+              className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
+              strokeWidth={2.5}
+            />
           </button>
+        ) : (
+          <div className="w-5 h-5 shrink-0" />
         )}
+        
+        <button
+          type="button"
+          onClick={handleSelect}
+          className={`flex-1 text-left text-[13px] py-1.5 px-2.5 rounded-md transition-all duration-150 select-none ${
+            isSelected 
+              ? 'bg-brand-blue/5 text-brand-blue font-semibold border-l-2 border-brand-blue rounded-l-none' 
+              : 'text-gray-650 hover:text-gray-900 hover:bg-gray-50/80 font-medium'
+          }`}
+        >
+          {category.name}
+        </button>
       </div>
+      
       {hasChildren && isExpanded && (
-        <div className="flex flex-col mt-0.5 border-l border-gray-150 ml-[6px]">
+        <div className="flex flex-col mt-0.5 border-l border-gray-100 ml-[9px] pl-2">
           {category.children.map((child: any) => (
             <CategoryNode key={child.id} category={child} selectedSlug={selectedSlug} onSelect={onSelect} depth={depth + 1} />
           ))}
