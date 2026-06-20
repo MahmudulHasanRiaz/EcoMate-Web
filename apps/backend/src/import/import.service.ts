@@ -193,6 +193,25 @@ export class ImportService {
     for (const [groupKey, group] of groupEntries) {
       if (!groupKey) continue;
 
+      // Skip orphan variation groups:
+      // If none of the rows in the group are a parent (i.e. all are variations), 
+      // AND this product doesn't already exist in the DB, it's an orphan.
+      const hasParentRow = group.some(r => {
+        const type = (r.data.Type || 'simple').toLowerCase().trim();
+        return !type.includes('variation');
+      });
+      if (!hasParentRow && !productCache.has(groupKey)) {
+        this.logger.warn(`Skipping group ${groupKey}: contains only variations but no parent row exists in CSV or Database.`);
+        allErrors.push({
+          rowNumber: group[0].rowNumber,
+          sku: groupKey,
+          errorType: 'ORPHAN_VARIATIONS',
+          message: 'Skipped orphan variations because no parent product exists.',
+        });
+        summary.errors++;
+        continue;
+      }
+
       try {
         await this.processProductGroupCached(
           groupKey,

@@ -56,7 +56,7 @@ export class ProductsService {
   private buildWhere(query: {
     search?: string;
     type?: string;
-    categoryId?: string;
+    categoryIds?: string[];
     isActive?: boolean;
     isFeatured?: boolean;
     ids?: string[];
@@ -69,7 +69,19 @@ export class ProductsService {
         { sku: { contains: query.search, mode: 'insensitive' } },
       ];
     }
-    if (query.categoryId) where.categoryId = query.categoryId;
+    if (query.categoryIds && query.categoryIds.length > 0) {
+      const catCondition = {
+        OR: [
+          { categoryId: { in: query.categoryIds } },
+          { productCategories: { some: { categoryId: { in: query.categoryIds } } } },
+        ],
+      };
+      if (where.AND) {
+        where.AND.push(catCondition);
+      } else {
+        where.AND = [catCondition];
+      }
+    }
     if (query.type) where.type = query.type;
     if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
@@ -84,6 +96,22 @@ export class ProductsService {
       select: { id: true },
     });
     return cat?.id;
+  }
+
+  async getCategoryWithDescendants(categoryId: string): Promise<string[]> {
+    const ids = new Set<string>();
+    ids.add(categoryId);
+    let currentIds = [categoryId];
+    while (currentIds.length > 0) {
+      const children = await this.prisma.category.findMany({
+        where: { parentId: { in: currentIds } },
+        select: { id: true },
+      });
+      const childIds = children.map((c) => c.id).filter((id) => !ids.has(id));
+      childIds.forEach((id) => ids.add(id));
+      currentIds = childIds;
+    }
+    return Array.from(ids);
   }
 
   private decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
@@ -162,7 +190,13 @@ export class ProductsService {
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 24;
-    const where: any = this.buildWhere(query);
+    
+    let categoryIds: string[] | undefined = undefined;
+    if (query.categoryId) {
+      categoryIds = await this.getCategoryWithDescendants(query.categoryId);
+    }
+    
+    const where: any = this.buildWhere({ ...query, categoryIds });
     if (query.tagSlug) {
       where.tags = { has: query.tagSlug };
     }
@@ -230,9 +264,15 @@ export class ProductsService {
       (query.category
         ? await this.resolveCategorySlug(query.category)
         : undefined);
+        
+    let categoryIds: string[] | undefined = undefined;
+    if (effectiveCategoryId) {
+      categoryIds = await this.getCategoryWithDescendants(effectiveCategoryId);
+    }
+
     const filters = this.buildWhere({
       ...query,
-      categoryId: effectiveCategoryId,
+      categoryIds,
     });
     if (query.tagSlug) {
       filters.tags = { has: query.tagSlug };

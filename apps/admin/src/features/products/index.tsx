@@ -53,10 +53,10 @@ export function Products() {
     categoryId: filterCategoryId[0] || undefined,
   })
 
-  // Reset selection when pagination changes
+  // Reset selection when data changes (e.g., on pagination, search, or refresh)
   useEffect(() => {
     setSelectedIds([])
-  }, [pagination.pageIndex, pagination.pageSize])
+  }, [data])
 
   // Handle page count reductions (e.g. after deletion) to avoid getting stuck on an empty page
   const totalPages = data?.meta?.totalPages || 0

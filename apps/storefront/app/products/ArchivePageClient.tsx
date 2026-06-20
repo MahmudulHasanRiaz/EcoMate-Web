@@ -25,6 +25,51 @@ function SkeletonCard() {
   );
 }
 
+function buildCategoryTree(categories: Category[]) {
+  if (!Array.isArray(categories)) return [];
+  const map = new Map<string, Category & { children: any[] }>();
+  categories.forEach(c => map.set(c.id, { ...c, children: [] }));
+  const roots: any[] = [];
+  categories.forEach(c => {
+    if (c.parentId && map.has(c.parentId)) {
+      map.get(c.parentId)!.children.push(map.get(c.id));
+    } else {
+      roots.push(map.get(c.id));
+    }
+  });
+  return roots;
+}
+
+function CategoryNode({ category, selectedSlug, onSelect, depth = 0 }: { category: any; selectedSlug: string | null; onSelect: (slug: string) => void; depth?: number }) {
+  const isSelected = selectedSlug === category.slug;
+  return (
+    <div className="flex flex-col">
+      <label className={`flex items-center justify-between cursor-pointer group py-1.5`} style={{ paddingLeft: `${depth * 16}px` }}>
+        <div className="flex items-center gap-3">
+          <input
+            type="radio"
+            name="category"
+            checked={isSelected}
+            onChange={() => onSelect(category.slug)}
+            className="sr-only"
+          />
+          <div className={`w-4 h-4 rounded-full border flex-shrink-0 items-center justify-center transition-all ${isSelected ? 'border-brand-blue bg-brand-blue scale-105' : 'border-gray-300 group-hover:border-gray-400'}`}>
+            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+          </div>
+          <span className={`text-[13px] transition-colors ${isSelected ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{category.name}</span>
+        </div>
+      </label>
+      {category.children?.length > 0 && (
+        <div className="flex flex-col mt-0.5 border-l border-gray-100 ml-[7px]">
+          {category.children.map((child: any) => (
+            <CategoryNode key={child.id} category={child} selectedSlug={selectedSlug} onSelect={onSelect} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ArchivePageClient({
   initialItems,
   initialCursor,
@@ -85,11 +130,16 @@ export default function ArchivePageClient({
 
   const brandOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const p of items) {
-      for (const tag of p.tags || []) set.add(tag);
+    for (const p of items || []) {
+      if (!p) continue;
+      for (const tag of p.tags || []) {
+        if (typeof tag === 'string') set.add(tag);
+      }
     }
     return Array.from(set).sort();
   }, [items]);
+
+  const categoryTree = useMemo(() => buildCategoryTree(categories || []), [categories]);
 
   const visibleItems = useMemo(() => {
     if (selectedBrands.length === 0) return items;
@@ -141,10 +191,11 @@ export default function ArchivePageClient({
     router.push('/products');
   };
 
+  const safeCategories = Array.isArray(categories) ? categories : [];
   const currentCategorySlug = selectedCategorySlug || filters.category || '';
   const currentCategory =
-    categories.find((c) => c.slug === currentCategorySlug)?.name ||
-    categories.find((c) => c.id === currentCategorySlug)?.name ||
+    safeCategories.find((c) => c.slug === currentCategorySlug)?.name ||
+    safeCategories.find((c) => c.id === currentCategorySlug)?.name ||
     'Products';
 
   return (
@@ -233,27 +284,16 @@ export default function ArchivePageClient({
                     Categories <ChevronDown size={14} className="text-gray-400"/>
                   </h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
-                    {categories.map((cat) => (
-                      <label key={cat.id} className="flex items-center justify-between cursor-pointer group py-1">
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="radio"
-                            name="category"
-                            checked={selectedCategorySlug === cat.slug}
-                            onChange={() => {
-                              setSelectedCategorySlug(cat.slug);
-                              applyFilters({ category: cat.slug });
-                            }}
-                            className="sr-only"
-                          />
-                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${selectedCategorySlug === cat.slug ? 'border-brand-blue bg-brand-blue scale-105' : 'border-gray-300 group-hover:border-gray-400'}`}>
-                            {selectedCategorySlug === cat.slug && (
-                              <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                            )}
-                          </div>
-                          <span className={`text-[13px] transition-colors ${selectedCategorySlug === cat.slug ? 'font-bold text-brand-blue' : 'font-medium text-gray-600 group-hover:text-gray-900'}`}>{cat.name}</span>
-                        </div>
-                      </label>
+                    {categoryTree.map((cat) => (
+                      <CategoryNode
+                        key={cat.id}
+                        category={cat}
+                        selectedSlug={selectedCategorySlug}
+                        onSelect={(slug) => {
+                          setSelectedCategorySlug(slug);
+                          applyFilters({ category: slug });
+                        }}
+                      />
                     ))}
                   </div>
                 </div>
