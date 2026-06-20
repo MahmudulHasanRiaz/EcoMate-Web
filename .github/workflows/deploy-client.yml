@@ -18,7 +18,6 @@ jobs:
       - name: Retrieve Webhook and Deploy
         env:
           CLIENT_NAME: ${{ github.event.inputs.client }}
-          # Dynamically access the secret using brackets: secrets['PORTAINER_WEBHOOK_FIXEDPLUS']
           WEBHOOK_URL: ${{ secrets[format('PORTAINER_WEBHOOK_{0}', github.event.inputs.client)] }}
         run: |
           echo "Preparing deployment for client: $CLIENT_NAME"
@@ -29,6 +28,16 @@ jobs:
           fi
           
           echo "Triggering Portainer Stack Redeploy for $CLIENT_NAME..."
-          curl -sf -X POST "$WEBHOOK_URL" \
-            && echo "✅ Deployment triggered successfully for $CLIENT_NAME!" \
-            || (echo "❌ Webhook request failed for $CLIENT_NAME!" && exit 1)
+          # এখানে HTTP status code এবং response message দেখুন
+          HTTP_CODE=$(curl -w "%{http_code}" -s -o /tmp/response.txt -X POST "$WEBHOOK_URL")
+          RESPONSE=$(cat /tmp/response.txt)
+          
+          echo "HTTP Status Code: $HTTP_CODE"
+          echo "Response: $RESPONSE"
+          
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
+            echo "✅ Deployment triggered successfully for $CLIENT_NAME!"
+          else
+            echo "❌ Webhook request failed for $CLIENT_NAME! (HTTP $HTTP_CODE)"
+            exit 1
+          fi
