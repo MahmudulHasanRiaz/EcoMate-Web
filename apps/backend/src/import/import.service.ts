@@ -273,8 +273,11 @@ export class ImportService {
       const parentVal = row.data.Parent?.trim() || '';
 
       if (type.includes('variation') && parentVal) {
-        const cleanParentId = parentVal.replace(/^id:/i, '').trim();
-        const resolvedParentSku = idToSku[cleanParentId] || cleanParentId;
+        let resolvedParentSku = parentVal;
+        if (/^id:/i.test(parentVal)) {
+          const cleanParentId = parentVal.replace(/^id:/i, '').trim();
+          resolvedParentSku = idToSku[cleanParentId] || cleanParentId;
+        }
         if (!groups[resolvedParentSku]) groups[resolvedParentSku] = [];
         groups[resolvedParentSku].push(row);
       } else {
