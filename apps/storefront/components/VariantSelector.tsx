@@ -6,7 +6,8 @@ import type { Variant } from "@/lib/types";
 interface Props {
   variants: Variant[];
   selectedVariant: Variant | null;
-  onSelect: (variant: Variant) => void;
+  selectedAttrs?: Record<string, string>;
+  onSelect?: (variant: Variant | null) => void;
   onSelectAttr?: (attrName: string, value: string) => void;
   sizeGuideLabel?: string;
   onSizeGuideClick?: () => void;
@@ -50,7 +51,7 @@ function getColorValue(value: string): string {
   return colorMap[value.toLowerCase().trim()] || value;
 }
 
-export function VariantSelector({ variants, selectedVariant, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick }: Props) {
+export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick }: Props) {
   const attributeGroups = useMemo(() => {
     const groups: Record<string, { value: string; variant: Variant }[]> = {};
     for (const v of variants) {
@@ -75,22 +76,28 @@ export function VariantSelector({ variants, selectedVariant, onSelect, onSelectA
   const isSizeAttrName = (name: string) => isSizeAttr(name);
 
   function handleSelect(attrName: string, value: string): void {
-    const found = variants.find((v) =>
-      v.isActive &&
-      v.attributeValues.some((av) =>
-        av.attributeValue.attribute.name === attrName &&
-        av.attributeValue.value === value
-      )
-    );
-    if (found) {
-      onSelect(found);
-      onSelectAttr?.(attrName, value);
+    if (onSelectAttr) {
+      onSelectAttr(attrName, value);
+    } else {
+      const found = variants.find((v) =>
+        v.isActive &&
+        v.attributeValues.some((av) =>
+          av.attributeValue.attribute.name === attrName &&
+          av.attributeValue.value === value
+        )
+      );
+      if (found) {
+        onSelect?.(found);
+      }
     }
   }
 
-  function isSelected(v: Variant): boolean {
+  function isSelected(name: string, value: string, variant: Variant): boolean {
+    if (selectedAttrs) {
+      return selectedAttrs[name] === value;
+    }
     if (!selectedVariant) return false;
-    return v.id === selectedVariant.id;
+    return variant.id === selectedVariant.id;
   }
 
   if (attrNames.length === 0) return null;
@@ -118,7 +125,7 @@ export function VariantSelector({ variants, selectedVariant, onSelect, onSelectA
             <div className="flex flex-wrap gap-1.5">
               {attributeGroups[name].map(({ value, variant }) => {
                 const isActive = variant.stock > 0;
-                const selected = selectedVariant && isSelected(variant);
+                const selected = isSelected(name, value, variant);
 
                 if (isColorAttr) {
                   const colorVal = getColorValue(value);

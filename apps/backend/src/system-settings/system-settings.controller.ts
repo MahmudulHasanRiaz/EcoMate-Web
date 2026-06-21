@@ -445,6 +445,7 @@ export class SystemSettingsController {
         sizeChart: map['size_chart_enabled'] === 'true',
         hideOosFromArchive: map['hide_oos_products'] === 'true',
         maintenanceMode: map['maintenance_mode'] === 'true',
+        defaultVariantSelected: map['default_variant_selected'] !== 'false',
       },
     };
     this.cache.set('storefront:config', result);

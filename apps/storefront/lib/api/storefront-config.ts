@@ -122,6 +122,7 @@ export interface StorefrontConfig {
     sizeChart: boolean;
     hideOosFromArchive: boolean;
     maintenanceMode: boolean;
+    defaultVariantSelected: boolean;
   };
 }
 

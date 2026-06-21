@@ -278,6 +278,12 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       setSettingsLoaded(true);
       return;
     }
+    if (config.features.defaultVariantSelected === false) {
+      setSelectedVariant(null);
+      setSelectedAttrs({});
+      setSettingsLoaded(true);
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) {
       setSelectedVariant(activeVariants[0]);
@@ -304,6 +310,20 @@ export default function ProductDetailClient({ product }: { product: Product }) {
     );
     return [...names];
   }, [product.variants]);
+
+  const handleSelectAttr = (attrName: string, value: string) => {
+    const newAttrs = { ...selectedAttrs, [attrName]: value };
+    setSelectedAttrs(newAttrs);
+
+    if (Object.keys(newAttrs).length === allAttrNames.length) {
+      const match = activeVariants.find(v =>
+        v.attributeValues.every(av => newAttrs[av.attributeValue.attribute.name] === av.attributeValue.value)
+      );
+      setSelectedVariant(match || null);
+    } else {
+      setSelectedVariant(null);
+    }
+  };
 
   const effectiveStock = useMemo(() => {
     if (product.manageStock !== true) return undefined;
@@ -405,6 +425,18 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
   function handleAddToCart() {
     if (isOutOfStock) return;
+    if (isVariable && !selectedVariant) {
+      const missingAttrs = allAttrNames.filter(name => !selectedAttrs[name]);
+      if (missingAttrs.length > 0) {
+        const missingMsg = missingAttrs.map(name => {
+          if (name.toLowerCase().includes('color') || name.toLowerCase().includes('colour') || name.includes('রং') || name.includes('কালার')) return 'কালার';
+          if (name.toLowerCase().includes('size') || name.includes('সাইজ') || name.includes('মাপ')) return 'সাইজ';
+          return name;
+        }).join(' ও ');
+        toast.error(`${missingMsg} সিলেক্ট করুন`);
+        return;
+      }
+    }
     if (inCart) {
       updateQuantity(itemKey, 0);
     } else {
@@ -435,8 +467,16 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   function handleBuyNow() {
     if (isOutOfStock) return;
     if (isVariable && !selectedVariant) {
-      toast?.error?.('Please select a variant first') || alert('Please select a variant first')
-      return
+      const missingAttrs = allAttrNames.filter(name => !selectedAttrs[name]);
+      if (missingAttrs.length > 0) {
+        const missingMsg = missingAttrs.map(name => {
+          if (name.toLowerCase().includes('color') || name.toLowerCase().includes('colour') || name.includes('রং') || name.includes('কালার')) return 'কালার';
+          if (name.toLowerCase().includes('size') || name.includes('সাইজ') || name.includes('মাপ')) return 'সাইজ';
+          return name;
+        }).join(' ও ');
+        toast.error(`${missingMsg} সিলেক্ট করুন`);
+        return;
+      }
     }
     addToCart({
       id: product.id,
@@ -607,8 +647,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
             <VariantSelector
               variants={product.variants}
               selectedVariant={selectedVariant}
+              selectedAttrs={selectedAttrs}
               onSelect={setSelectedVariant}
-              onSelectAttr={(name, value) => setSelectedAttrs(prev => ({ ...prev, [name]: value }))}
+              onSelectAttr={handleSelectAttr}
               sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
               onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
             />
