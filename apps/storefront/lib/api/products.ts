@@ -89,6 +89,7 @@ export function transformBackendProduct(raw: any): Product {
     rating: raw.averageRating || raw.rating || 0,
     reviewCount: raw._count?.reviews ?? raw.reviewCount,
     averageRating: raw.averageRating || raw.rating || 0,
+    brand: raw.brand ? { id: raw.brand.id, name: raw.brand.name, slug: raw.brand.slug } : null,
   };
 }
 
@@ -99,6 +100,7 @@ export async function getProducts(params?: {
   categoryId?: string;
   category?: string;
   tagSlug?: string;
+  brandSlug?: string;
   minPrice?: number;
   maxPrice?: number;
   isActive?: boolean;

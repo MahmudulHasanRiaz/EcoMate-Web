@@ -20,6 +20,7 @@ export interface FetchProductsServerOpts {
   categoryId?: string;
   category?: string;
   tagSlug?: string;
+  brandSlug?: string;
   minPrice?: number;
   maxPrice?: number;
   isActive?: boolean;
@@ -39,6 +40,7 @@ function buildQuery(params: FetchProductsServerOpts): string {
   if (params.categoryId) sp.set("categoryId", params.categoryId);
   if (params.category) sp.set("category", params.category);
   if (params.tagSlug) sp.set("tagSlug", params.tagSlug);
+  if (params.brandSlug) sp.set("brandSlug", params.brandSlug);
   if (params.minPrice !== undefined) sp.set("minPrice", String(params.minPrice));
   if (params.maxPrice !== undefined) sp.set("maxPrice", String(params.maxPrice));
   if (params.isActive !== undefined) sp.set("isActive", String(params.isActive));

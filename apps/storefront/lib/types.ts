@@ -30,7 +30,7 @@ export interface Product {
   category: string;
   categoryId?: string;
   categorySlug?: string;
-  brand?: { id: string; name: string } | null;
+  brand?: { id: string; name: string; slug: string } | null;
   brandId?: string;
   badge?: string;
   saveAmount?: number;

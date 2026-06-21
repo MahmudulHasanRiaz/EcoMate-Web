@@ -13,7 +13,7 @@ export interface ArchivePageClientProps {
   initialCursor: string | null;
   initialHasMore: boolean;
   categories: Category[];
-  filters: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
+  filters: { search?: string; category?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
   hasStock?: boolean;
 }
 
@@ -184,8 +184,7 @@ export default function ArchivePageClient({
   const [sortBy, setSortBy] = React.useState(initialSort);
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
-  const [selectedBrands, setSelectedBrands] = React.useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+
   const [brandSearch, setBrandSearch] = React.useState('');
   const [tagSearch, setTagSearch] = React.useState('');
   const [priceMin, setPriceMin] = React.useState(initialMinPrice);
@@ -204,6 +203,7 @@ export default function ArchivePageClient({
           search: filters.search || undefined,
           category: filters.category || undefined,
           tagSlug: filters.tag || undefined,
+          brandSlug: filters.brand || undefined,
           minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
           maxPrice: filters.maxPrice ? parseFloat(filters.maxPrice) : undefined,
           sort:
@@ -245,24 +245,25 @@ export default function ArchivePageClient({
 
   const categoryTree = useMemo(() => buildCategoryTree(categories || []), [categories]);
 
-  const visibleItems = useMemo(() => {
-    let filtered = items || [];
-    if (selectedBrands.length > 0) {
-      filtered = filtered.filter((p) => {
-        const productBrand = p.brand?.name?.toLowerCase();
-        return productBrand && selectedBrands.some((b) => b.toLowerCase() === productBrand);
-      });
-    }
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter((p) => {
-        const productTags = (p.tags || []).map((t) => t.toLowerCase());
-        return selectedTags.some((t) => productTags.includes(t.toLowerCase()));
-      });
-    }
-    return filtered;
-  }, [items, selectedBrands, selectedTags]);
+  const selectedBrands = useMemo(() => {
+    if (!filters.brand) return [];
+    const match = items.find((p) => p.brand?.slug?.toLowerCase() === filters.brand?.toLowerCase());
+    return match?.brand?.name ? [match.brand.name] : [];
+  }, [filters.brand, items]);
 
-  const applyFilters = (next: { search?: string; category?: string; tag?: string; minPrice?: string; maxPrice?: string; sort?: string }) => {
+  const selectedTags = useMemo(() => {
+    if (!filters.tag) return [];
+    return tagOptions.filter((t) => {
+      const slug = t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      return slug === filters.tag;
+    });
+  }, [filters.tag, tagOptions]);
+
+  const visibleItems = useMemo(() => {
+    return items || [];
+  }, [items]);
+
+  const applyFilters = (next: { search?: string; category?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string }) => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (next.search !== undefined) {
       if (next.search) params.set('search', next.search);
@@ -275,6 +276,10 @@ export default function ArchivePageClient({
     if (next.tag !== undefined) {
       if (next.tag) params.set('tag', next.tag);
       else params.delete('tag');
+    }
+    if (next.brand !== undefined) {
+      if (next.brand) params.set('brand', next.brand);
+      else params.delete('brand');
     }
     if (next.minPrice !== undefined) {
       if (next.minPrice) params.set('minPrice', next.minPrice);
@@ -292,15 +297,35 @@ export default function ArchivePageClient({
     router.push(`/products${qs ? `?${qs}` : ''}`);
   };
 
-  const toggleBrand = (brand: string) => {
-    setSelectedBrands((prev) =>
-      prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
-    );
+  const toggleBrand = (brandName: string) => {
+    const match = items.find((p) => p.brand?.name?.toLowerCase() === brandName.toLowerCase());
+    const slug = match?.brand?.slug;
+    if (slug) {
+      if (filters.brand === slug) {
+        applyFilters({ brand: '' });
+      } else {
+        applyFilters({ brand: slug });
+      }
+    } else {
+      const fallbackSlug = brandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      if (filters.brand === fallbackSlug) {
+        applyFilters({ brand: '' });
+      } else {
+        applyFilters({ brand: fallbackSlug });
+      }
+    }
+  };
+
+  const toggleTag = (tagName: string) => {
+    const slug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (filters.tag === slug) {
+      applyFilters({ tag: '' });
+    } else {
+      applyFilters({ tag: slug });
+    }
   };
 
   const clearAll = () => {
-    setSelectedBrands([]);
-    setSelectedTags([]);
     router.push('/products');
   };
 
@@ -505,11 +530,7 @@ export default function ArchivePageClient({
                               <input
                                 type="checkbox"
                                 checked={selectedTags.includes(tag)}
-                                onChange={() => {
-                                  setSelectedTags((prev) =>
-                                    prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-                                  );
-                                }}
+                                onChange={() => toggleTag(tag)}
                                 className="peer sr-only"
                               />
                               <div className="w-[18px] h-[18px] border border-gray-300 rounded-[4px] bg-white peer-checked:bg-brand-blue peer-checked:border-brand-blue transition-all"></div>

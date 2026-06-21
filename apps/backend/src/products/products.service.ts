@@ -178,6 +178,7 @@ export class ProductsService {
     type?: string;
     categoryId?: string;
     tagSlug?: string;
+    brandSlug?: string;
     minPrice?: number;
     maxPrice?: number;
     isActive?: boolean;
@@ -198,7 +199,24 @@ export class ProductsService {
     
     const where: any = this.buildWhere({ ...query, categoryIds });
     if (query.tagSlug) {
-      where.tags = { has: query.tagSlug };
+      where.productTags = {
+        some: {
+          tag: {
+            slug: {
+              equals: query.tagSlug,
+              mode: 'insensitive',
+            },
+          },
+        },
+      };
+    }
+    if (query.brandSlug) {
+      where.brand = {
+        slug: {
+          equals: query.brandSlug,
+          mode: 'insensitive',
+        },
+      };
     }
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
       where.basePrice = {};
@@ -252,6 +270,7 @@ export class ProductsService {
     categoryId?: string;
     category?: string;
     tagSlug?: string;
+    brandSlug?: string;
     minPrice?: number;
     maxPrice?: number;
     isActive?: boolean;
@@ -276,7 +295,24 @@ export class ProductsService {
       categoryIds,
     });
     if (query.tagSlug) {
-      filters.tags = { has: query.tagSlug };
+      filters.productTags = {
+        some: {
+          tag: {
+            slug: {
+              equals: query.tagSlug,
+              mode: 'insensitive',
+            },
+          },
+        },
+      };
+    }
+    if (query.brandSlug) {
+      filters.brand = {
+        slug: {
+          equals: query.brandSlug,
+          mode: 'insensitive',
+        },
+      };
     }
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
       filters.basePrice = {};

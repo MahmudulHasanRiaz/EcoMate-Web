@@ -31,6 +31,114 @@ function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: stri
   return null;
 }
 
+interface SearchableSelectProps {
+  id?: string;
+  placeholder: string;
+  options: Array<{ name: string; nameBn?: string }>;
+  value: string;
+  onChange: (val: string) => void;
+  error?: boolean;
+}
+
+function SearchableSelect({
+  id,
+  placeholder,
+  options,
+  value,
+  onChange,
+  error,
+}: SearchableSelectProps) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const currentValueLabel = React.useMemo(() => {
+    if (!value) return '';
+    const found = options.find((opt) => opt.name === value);
+    if (!found) return value;
+    return found.nameBn ? `${found.name}-${found.nameBn}` : found.name;
+  }, [value, options]);
+
+  const filteredOptions = React.useMemo(() => {
+    if (!search) return options;
+    const q = search.toLowerCase();
+    return options.filter((opt) => {
+      const en = opt.name.toLowerCase();
+      const bn = opt.nameBn ? opt.nameBn.toLowerCase() : '';
+      return en.includes(q) || bn.includes(q);
+    });
+  }, [search, options]);
+
+  React.useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative">
+        <input
+          id={id}
+          type="text"
+          placeholder={placeholder}
+          value={isOpen ? search : currentValueLabel}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearch('');
+          }}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+          }}
+          className={`w-full h-11 border rounded-md pl-3.5 pr-10 text-xs outline-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${
+            error ? 'border-red-400' : 'border-gray-250'
+          }`}
+          autoComplete="off"
+        />
+        <ChevronDown
+          size={14}
+          className={`absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-transform duration-200 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+        />
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-[110] left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-md shadow-lg py-1">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((opt) => {
+              const label = opt.nameBn ? `${opt.name}-${opt.nameBn}` : opt.name;
+              return (
+                <button
+                  key={opt.name}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.name);
+                    setIsOpen(false);
+                    setSearch('');
+                  }}
+                  className={`w-full text-left px-4 py-2 text-xs font-medium hover:bg-brand-blue/5 hover:text-brand-blue transition-colors ${
+                    value === opt.name ? 'bg-brand-blue/10 text-brand-blue font-bold' : 'text-gray-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })
+          ) : (
+            <div className="px-4 py-2.5 text-xs text-muted-foreground italic">No results found</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
   const s = currencySymbol || '৳';
   const key = getItemKey(item);
@@ -1120,40 +1228,28 @@ export default function CheckoutPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {checkoutCfg?.districtEnabled !== false && (
                   <div className="space-y-1">
-                    <div className="relative">
-                      <select
-                        id="checkout-district"
-                        value={district}
-                        onChange={(e) => { setDistrict(e.target.value); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
-                        className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.district ? 'border-red-400' : 'border-gray-250'}`}
-                      >
-                        <option value="">{checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}</option>
-                        {districts.map(d => (
-                          <option key={d.name} value={d.name}>{d.nameBn || d.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
+                    <SearchableSelect
+                      id="checkout-district"
+                      placeholder={checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}
+                      options={districts}
+                      value={district}
+                      onChange={(val) => { setDistrict(val); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
+                      error={!!fieldErrors.district}
+                    />
                     {fieldErrors.district && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.district}</p>}
                   </div>
                 )}
 
                 {checkoutCfg?.thanaEnabled !== false && district && (
                   <div className="space-y-1">
-                    <div className="relative">
-                      <select
-                        id="checkout-thana"
-                        value={thana}
-                        onChange={(e) => { setThana(e.target.value); clearFieldError('thana'); scheduleLeadCapture(); }}
-                        className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none appearance-none bg-white font-medium transition-all focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 ${fieldErrors.thana ? 'border-red-400' : 'border-gray-250'}`}
-                      >
-                        <option value="">{checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}</option>
-                        {thanas.map(t => (
-                          <option key={t.name} value={t.name}>{t.nameBn || t.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
+                    <SearchableSelect
+                      id="checkout-thana"
+                      placeholder={checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}
+                      options={thanas}
+                      value={thana}
+                      onChange={(val) => { setThana(val); clearFieldError('thana'); scheduleLeadCapture(); }}
+                      error={!!fieldErrors.thana}
+                    />
                     {fieldErrors.thana && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.thana}</p>}
                   </div>
                 )}

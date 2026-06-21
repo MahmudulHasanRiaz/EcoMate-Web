@@ -6,6 +6,7 @@ type ProductsSearchParams = {
   search?: string;
   category?: string;
   tag?: string;
+  brand?: string;
   minPrice?: string;
   maxPrice?: string;
   sort?: string;
@@ -37,6 +38,7 @@ export default async function ProductsPage({
     search: sp.search || undefined,
     category: sp.category || undefined,
     tagSlug: sp.tag || undefined,
+    brandSlug: sp.brand || undefined,
     minPrice: sp.minPrice ? parseFloat(sp.minPrice) : undefined,
     maxPrice: sp.maxPrice ? parseFloat(sp.maxPrice) : undefined,
     sort: sortField,
