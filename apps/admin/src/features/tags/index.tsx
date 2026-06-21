@@ -33,6 +33,18 @@ interface TagItem {
   _count?: { products: number }
 }
 
+const getStorefrontUrl = () => {
+  if (typeof window === 'undefined') return ''
+  const { hostname, protocol } = window.location
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3000'
+  }
+  if (hostname.startsWith('admin.')) {
+    return `${protocol}//${hostname.substring(6)}`
+  }
+  return window.location.origin
+}
+
 export function Tags() {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -136,7 +148,8 @@ export function Tags() {
     t._count?.products ?? t.productCount ?? 0
 
   const copyTagLink = (slug: string, id: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/products?tag=${slug}`)
+    const storefrontUrl = getStorefrontUrl()
+    navigator.clipboard.writeText(`${storefrontUrl}/products?tag=${slug}`)
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }

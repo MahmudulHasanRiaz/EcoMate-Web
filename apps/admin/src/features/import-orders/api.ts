@@ -20,13 +20,39 @@ export interface OrderImportResult {
   errors: OrderImportError[]
 }
 
+export interface OrderImportUploadResponse {
+  jobId?: string
+  status?: string
+  message?: string
+  summary?: OrderImportSummary
+  errors?: OrderImportError[]
+}
+
+export interface OrderImportJobStatus {
+  id: string
+  type: 'products' | 'orders'
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: {
+    total: number
+    processed: number
+  }
+  summary: OrderImportSummary | null
+  errors: OrderImportError[]
+  error?: string
+  startedAt: string
+  completedAt?: string
+}
+
 export const importOrdersApi = {
   upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return apiClient.post<OrderImportResult>('/import/orders', formData, {
+    return apiClient.post<OrderImportUploadResponse>('/import/orders', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 300000,
+      timeout: 120000,
     })
+  },
+  getStatus: (jobId: string) => {
+    return apiClient.get<OrderImportJobStatus>(`/import/status/${jobId}`)
   },
 }

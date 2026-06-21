@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -13,7 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-import { importOrdersApi, type OrderImportResult } from './api'
+import { importOrdersApi, type OrderImportResult, type OrderImportJobStatus } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -27,15 +27,77 @@ export function ImportOrders() {
   const [file, setFile] = useState<File | null>(null)
   const [result, setResult] = useState<OrderImportResult | null>(null)
   const [showErrors, setShowErrors] = useState(false)
+  const [activeJob, setActiveJob] = useState<OrderImportJobStatus | null>(null)
+  const [polling, setPolling] = useState(false)
+
+  const pollingRef = useRef(false)
+
+  const pollStatus = async (jobId: string) => {
+    if (!pollingRef.current) return
+    try {
+      const response = await importOrdersApi.getStatus(jobId)
+      const job = response.data
+      setActiveJob(job)
+
+      if (job.status === 'completed') {
+        pollingRef.current = false
+        setPolling(false)
+        setResult({
+          summary: job.summary!,
+          errors: job.errors,
+        })
+        if (job.summary!.errors > 0) {
+          toast.warning(`Import completed with ${job.summary!.errors} error(s)`)
+        } else {
+          toast.success('Import completed successfully')
+        }
+      } else if (job.status === 'failed') {
+        pollingRef.current = false
+        setPolling(false)
+        toast.error(job.error || 'Import job failed')
+      } else {
+        // Keep polling
+        setTimeout(() => pollStatus(jobId), 2000)
+      }
+    } catch (err) {
+      pollingRef.current = false
+      setPolling(false)
+      toast.error('Failed to get import progress')
+    }
+  }
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      pollingRef.current = false
+    }
+  }, [])
 
   const uploadMut = useMutation({
     mutationFn: () => importOrdersApi.upload(file!),
     onSuccess: (r) => {
       const d = r.data
-      setResult(d)
-      if (d.summary.errors > 0) {
-        toast.warning(`Import completed with ${d.summary.errors} error(s)`)
+      if (d.jobId) {
+        // Actual import started in background
+        setResult(null)
+        setActiveJob({
+          id: d.jobId,
+          type: 'orders',
+          status: 'processing',
+          progress: { total: 100, processed: 0 },
+          summary: null,
+          errors: [],
+          startedAt: new Date().toISOString(),
+        })
+        setPolling(true)
+        pollingRef.current = true
+        pollStatus(d.jobId)
       } else {
+        // Fallback
+        setResult({
+          summary: d.summary!,
+          errors: d.errors || [],
+        })
         toast.success('Import completed successfully')
       }
     },
@@ -47,18 +109,23 @@ export function ImportOrders() {
     },
   })
 
+  const isImportRunning = !!(uploadMut.isPending || polling || (activeJob && (activeJob.status === 'pending' || activeJob.status === 'processing')));
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null
     setFile(f)
     setResult(null)
+    setActiveJob(null)
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    if (isImportRunning) return
     const f = e.dataTransfer.files?.[0] || null
     if (f && f.name.endsWith('.csv')) {
       setFile(f)
       setResult(null)
+      setActiveJob(null)
     } else {
       toast.error('Please drop a CSV file')
     }
@@ -132,7 +199,7 @@ export function ImportOrders() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 className='border-2 border-dashed rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer'
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => !isImportRunning && fileInputRef.current?.click()}
               >
                 <input
                   ref={fileInputRef}
@@ -140,6 +207,7 @@ export function ImportOrders() {
                   accept='.csv'
                   onChange={handleFileChange}
                   className='hidden'
+                  disabled={isImportRunning}
                 />
                 {file ? (
                   <div className='flex items-center justify-center gap-3'>
@@ -150,17 +218,20 @@ export function ImportOrders() {
                         {(file.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setFile(null)
-                        setResult(null)
-                      }}
-                    >
-                      <XCircle className='h-4 w-4' />
-                    </Button>
+                    {!isImportRunning && (
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setFile(null)
+                          setResult(null)
+                          setActiveJob(null)
+                        }}
+                      >
+                        <XCircle className='h-4 w-4' />
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className='text-muted-foreground'>
@@ -173,26 +244,51 @@ export function ImportOrders() {
 
               <Button
                 onClick={() => uploadMut.mutate()}
-                disabled={!file || uploadMut.isPending}
+                disabled={!file || isImportRunning}
                 className='w-full'
                 size='lg'
               >
-                {uploadMut.isPending ? (
+                {isImportRunning ? (
                   <Loader2 className='h-4 w-4 mr-2 animate-spin' />
                 ) : (
                   <Upload className='h-4 w-4 mr-2' />
                 )}
-                {uploadMut.isPending ? 'Importing...' : 'Start Import'}
+                {isImportRunning ? 'Importing...' : 'Start Import'}
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {uploadMut.isPending && (
-          <Card>
-            <CardContent className='p-8 flex flex-col items-center gap-3'>
+        {isImportRunning && (
+          <Card className="border-blue-200 bg-blue-50/20">
+            <CardContent className='p-8 flex flex-col items-center gap-4'>
               <Loader2 className='h-8 w-8 animate-spin text-primary' />
-              <p className='text-muted-foreground'>Processing orders... this may take a while for large files.</p>
+              <div className="w-full text-center">
+                <p className='font-semibold text-blue-900'>
+                  {uploadMut.isPending
+                    ? 'Uploading and parsing CSV...'
+                    : `Importing orders... (${activeJob?.progress.processed ?? 0} / ${activeJob?.progress.total ?? 0})`}
+                </p>
+                {activeJob && activeJob.progress.total > 0 && (
+                  <div className="mt-3 w-full bg-slate-200 rounded-full h-2.5 overflow-hidden max-w-md mx-auto">
+                    <div
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            2,
+                            ((activeJob.progress.processed ?? 0) / (activeJob.progress.total ?? 1)) * 100
+                          )
+                        )}%`,
+                      }}
+                    ></div>
+                  </div>
+                )}
+                <p className='text-xs text-muted-foreground mt-2'>
+                  The import is running securely in the background. You can safely stay on this page to monitor progress.
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}
