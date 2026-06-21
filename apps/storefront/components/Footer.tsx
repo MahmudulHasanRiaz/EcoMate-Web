@@ -9,8 +9,8 @@ import Link from 'next/link';
 
 export default function Footer({}: {}) {
   const pathname = usePathname();
-  if (pathname && pathname.startsWith('/checkout')) return null;
   const { config } = useStorefrontConfig();
+  if (pathname && pathname.startsWith('/checkout')) return null;
   const { store, social, footer: footerConfig } = config;
 
   const footerColumns = config.menu?.footer?.columns || [];

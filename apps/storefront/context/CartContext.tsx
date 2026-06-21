@@ -51,7 +51,7 @@ export function getItemKey(item: { id: string; variantId?: string; comboSelectio
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>(() => loadCart());
   const [loaded, setLoaded] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const userDismissedRef = useRef(false);
@@ -63,7 +63,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    setItems(loadCart());
     setLoaded(true);
   }, []);
 

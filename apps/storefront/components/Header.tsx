@@ -13,12 +13,13 @@ import { HeaderSearch } from "./HeaderSearch";
 
 export default function Header({}: {}) {
   const pathname = usePathname();
-  if (pathname && pathname.startsWith('/checkout')) return null;
   const { cartCount, setIsCartOpen } = useCart();
   const { user } = useAuth();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { config } = useStorefrontConfig();
+
+  if (pathname && pathname.startsWith('/checkout')) return null;
 
   const navItems = config.menu?.header?.items || [];
 

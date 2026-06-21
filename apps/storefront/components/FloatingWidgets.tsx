@@ -9,10 +9,11 @@ import { usePathname } from "next/navigation";
 
 export default function FloatingWidgets() {
   const pathname = usePathname();
-  if (pathname && pathname.startsWith('/checkout')) return null;
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
   const { config } = useStorefrontConfig();
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  if (pathname && pathname.startsWith('/checkout')) return null;
 
   const wa = config.social.whatsapp.replace(/[^0-9]/g, '');
   const phoneDigits = config.store.phone.replace(/[^0-9]/g, '');

@@ -25,7 +25,9 @@ export default function RelatedProducts({ product }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    Promise.resolve().then(() => {
+      if (!cancelled) setLoading(true);
+    });
 
     async function fetch() {
       try {

@@ -19,11 +19,21 @@ export function useProducts(params?: { page?: number; perPage?: number; search?:
   const [meta, setMeta] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    setLoading(true);
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) setLoading(true);
+    });
     getProducts({ isActive: true, ...params }).then((res) => {
-      setProducts(res.data);
-      setMeta(res.meta);
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (active) {
+        setProducts(res.data);
+        setMeta(res.meta);
+      }
+    }).catch(() => {}).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.page, params?.perPage, params?.search, params?.categoryId, params?.sort, params?.order]);
   return { products, meta, loading };

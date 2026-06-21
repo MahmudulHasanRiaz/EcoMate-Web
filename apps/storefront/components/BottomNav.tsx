@@ -7,7 +7,6 @@ import { useEffect, useRef } from "react";
 
 export default function BottomNav() {
   const pathname = usePathname();
-  if (pathname && pathname.startsWith('/checkout')) return null;
   const navRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -15,6 +14,8 @@ export default function BottomNav() {
       navRef.current.style.display = 'none';
     }
   }, [pathname]);
+
+  if (pathname && pathname.startsWith('/checkout')) return null;
 
   return (
     <div ref={navRef} className="fixed bottom-4 left-0 right-0 z-50 md:hidden flex justify-center pointer-events-none px-4 pb-safe">

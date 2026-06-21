@@ -101,14 +101,27 @@ export async function fetchCombosServer(
   opts: FetchCombosServerOpts = {},
 ): Promise<ServerCombosResponse> {
   const url = `/combos${buildQuery(opts)}`;
-  const data = await serverFetch<any>(url, { revalidate: 60 });
-  return {
-    data: (data.data || []).map(transformBackendCombo),
-    meta: {
-      total: data.meta?.total ?? 0,
-      perPage: data.meta?.perPage ?? opts.perPage ?? 12,
-      nextCursor: data.meta?.nextCursor ?? null,
-      hasMore: Boolean(data.meta?.hasMore),
-    },
-  };
+  try {
+    const data = await serverFetch<any>(url, { revalidate: 60 });
+    return {
+      data: (data.data || []).map(transformBackendCombo),
+      meta: {
+        total: data.meta?.total ?? 0,
+        perPage: data.meta?.perPage ?? opts.perPage ?? 12,
+        nextCursor: data.meta?.nextCursor ?? null,
+        hasMore: Boolean(data.meta?.hasMore),
+      },
+    };
+  } catch (err) {
+    console.error(`Failed to fetch combos from backend: ${url}`, err);
+    return {
+      data: [],
+      meta: {
+        total: 0,
+        perPage: opts.perPage ?? 12,
+        nextCursor: null,
+        hasMore: false,
+      },
+    };
+  }
 }

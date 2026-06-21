@@ -28,11 +28,10 @@ function saveIds(ids: string[]) {
 }
 
 export function WishlistProvider({ children }: { children: React.ReactNode }) {
-  const [ids, setIds] = useState<string[]>([]);
+  const [ids, setIds] = useState<string[]>(() => loadIds());
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setIds(loadIds());
     setLoaded(true);
   }, []);
 

@@ -57,26 +57,49 @@ export async function fetchProductsServer(
   opts: FetchProductsServerOpts = {},
 ): Promise<ServerProductsResponse> {
   const url = `/products${buildQuery(opts)}`;
-  const data = await serverFetch<any>(url, { revalidate: 60 });
-  return {
-    data: (data.data || []).map(transformBackendProduct),
-    meta: {
-      total: data.meta?.total ?? 0,
-      perPage: data.meta?.perPage ?? opts.perPage ?? 24,
-      nextCursor: data.meta?.nextCursor ?? null,
-      hasMore: Boolean(data.meta?.hasMore),
-    },
-  };
+  try {
+    const data = await serverFetch<any>(url, { revalidate: 60 });
+    return {
+      data: (data.data || []).map(transformBackendProduct),
+      meta: {
+        total: data.meta?.total ?? 0,
+        perPage: data.meta?.perPage ?? opts.perPage ?? 24,
+        nextCursor: data.meta?.nextCursor ?? null,
+        hasMore: Boolean(data.meta?.hasMore),
+      },
+    };
+  } catch (err) {
+    console.error(`Failed to fetch products from backend: ${url}`, err);
+    return {
+      data: [],
+      meta: {
+        total: 0,
+        perPage: opts.perPage ?? 24,
+        nextCursor: null,
+        hasMore: false,
+      },
+    };
+  }
 }
 
 export async function getCategoriesServer(): Promise<Category[]> {
-  const data = await serverFetch<any>("/categories", { revalidate: 300 });
-  return Array.isArray(data) ? data : data.data || [];
+  try {
+    const data = await serverFetch<any>("/categories", { revalidate: 300 });
+    return Array.isArray(data) ? data : data.data || [];
+  } catch (err) {
+    console.error("Failed to fetch categories from backend:", err);
+    return [];
+  }
 }
 
 export async function getBrandsServer(): Promise<any[]> {
-  const data = await serverFetch<any>("/brands?activeOnly=true", { revalidate: 300 });
-  return Array.isArray(data) ? data : data.data || [];
+  try {
+    const data = await serverFetch<any>("/brands?activeOnly=true", { revalidate: 300 });
+    return Array.isArray(data) ? data : data.data || [];
+  } catch (err) {
+    console.error("Failed to fetch brands from backend:", err);
+    return [];
+  }
 }
 
 export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]> {
@@ -110,6 +133,11 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
 }
 
 export async function getProductBySlugServer(slug: string): Promise<Product | null> {
-  const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
-  return data ? transformBackendProduct(data) : null;
+  try {
+    const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
+    return data ? transformBackendProduct(data) : null;
+  } catch (err) {
+    console.error(`Failed to fetch product by slug ${slug} from backend:`, err);
+    return null;
+  }
 }
