@@ -90,48 +90,18 @@ export class OrderImportService {
 
     const statusCache = await this.ensureStatuses();
 
-    // Pre-fetch all products and variants to avoid DB calls in the loop
-    const [dbProducts, dbVariants] = await Promise.all([
-      this.prisma.product.findMany({
-        select: { id: true, name: true, sku: true },
-      }),
-      this.prisma.productVariant.findMany({
-        select: { id: true, productId: true, sku: true },
-      }),
-    ]);
-
-    const variantSkuMap = new Map<string, { id: string; productId: string }>();
-    for (const v of dbVariants) {
-      if (v.sku) {
-        variantSkuMap.set(v.sku.trim().toLowerCase(), { id: v.id, productId: v.productId });
-      }
-    }
-
-    const productSkuMap = new Map<string, string>();
-    const productNameMap = new Map<string, string>();
-    for (const p of dbProducts) {
-      if (p.sku) {
-        productSkuMap.set(p.sku.trim().toLowerCase(), p.id);
-      }
-      productNameMap.set(p.name.trim().toLowerCase(), p.id);
-    }
-
-    // Pre-fetch existing customers to avoid lookup queries
-    const dbCustomers = await this.prisma.user.findMany({
-      where: { role: 'customer' },
-      select: { id: true, phoneNumber: true },
-    });
-    const customerPhoneMap = new Map<string, string>();
-    for (const c of dbCustomers) {
-      if (c.phoneNumber) {
-        customerPhoneMap.set(c.phoneNumber, c.id);
-      }
-    }
-
     let processedCount = 0;
     // Process orders sequentially in batches to preserve order sequence and prevent race conditions
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
+      
+      const {
+        variantSkuMap,
+        productSkuMap,
+        productNameMap,
+        customerPhoneMap,
+      } = await this.preloadBatchEntities(batch);
+
       await this.processBatch(
         batch,
         statusCache,
@@ -153,6 +123,104 @@ export class OrderImportService {
     }
 
     return { summary, errors: allErrors };
+  }
+
+  private async preloadBatchEntities(batch: OrderImportRow[]) {
+    const itemSkus = new Set<string>();
+    const itemNames = new Set<string>();
+
+    for (const row of batch) {
+      for (const item of row.items) {
+        if (item.sku) {
+          itemSkus.add(item.sku.trim().toLowerCase());
+        }
+        if (item.name) {
+          itemNames.add(item.name.trim().toLowerCase());
+        }
+      }
+    }
+
+    const phones = new Set<string>();
+    for (const row of batch) {
+      if (row.billingPhone) {
+        let normalized = normalizePhone(row.billingPhone);
+        if (!normalized) {
+          const cleaned = row.billingPhone.replace(/[^\d+]/g, '');
+          if (cleaned.length >= 7 && cleaned.length <= 15) {
+            normalized = cleaned.startsWith('+') ? cleaned : '+' + cleaned;
+          }
+        }
+        if (normalized) {
+          phones.add(normalized);
+        }
+        phones.add(row.billingPhone.trim());
+      }
+    }
+
+    const skuList = Array.from(itemSkus);
+    const nameList = Array.from(itemNames);
+    const phoneList = Array.from(phones);
+
+    const [dbProducts, dbVariants, dbCustomers] = await Promise.all([
+      skuList.length > 0 || nameList.length > 0
+        ? this.prisma.product.findMany({
+            where: {
+              OR: [
+                skuList.length > 0 ? { sku: { in: skuList, mode: 'insensitive' } } : {},
+                nameList.length > 0 ? { name: { in: nameList, mode: 'insensitive' } } : {},
+              ].filter((cond) => Object.keys(cond).length > 0) as any,
+            },
+            select: { id: true, name: true, sku: true },
+          })
+        : [],
+      skuList.length > 0
+        ? this.prisma.productVariant.findMany({
+            where: {
+              sku: { in: skuList, mode: 'insensitive' },
+            },
+            select: { id: true, productId: true, sku: true },
+          })
+        : [],
+      phoneList.length > 0
+        ? this.prisma.user.findMany({
+            where: {
+              role: 'customer',
+              phoneNumber: { in: phoneList },
+            },
+            select: { id: true, phoneNumber: true },
+          })
+        : [],
+    ]);
+
+    const variantSkuMap = new Map<string, { id: string; productId: string }>();
+    for (const v of dbVariants) {
+      if (v.sku) {
+        variantSkuMap.set(v.sku.trim().toLowerCase(), { id: v.id, productId: v.productId });
+      }
+    }
+
+    const productSkuMap = new Map<string, string>();
+    const productNameMap = new Map<string, string>();
+    for (const p of dbProducts) {
+      if (p.sku) {
+        productSkuMap.set(p.sku.trim().toLowerCase(), p.id);
+      }
+      productNameMap.set(p.name.trim().toLowerCase(), p.id);
+    }
+
+    const customerPhoneMap = new Map<string, string>();
+    for (const c of dbCustomers) {
+      if (c.phoneNumber) {
+        customerPhoneMap.set(c.phoneNumber, c.id);
+      }
+    }
+
+    return {
+      variantSkuMap,
+      productSkuMap,
+      productNameMap,
+      customerPhoneMap,
+    };
   }
 
   private async processBatch(

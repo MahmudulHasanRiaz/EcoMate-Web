@@ -15,6 +15,16 @@ import { ImportJobManager } from './import-job-manager';
 import { Roles } from '../common/decorators/roles.decorator';
 import * as Papa from 'papaparse';
 
+function estimateCsvRows(content: string): number {
+  let count = 0;
+  let idx = -1;
+  while ((idx = content.indexOf('\n', idx + 1)) !== -1) {
+    count++;
+  }
+  return Math.max(1, count - 1); // Exclude header row
+}
+
+
 @Controller('import')
 export class ImportController {
   constructor(
@@ -69,18 +79,7 @@ export class ImportController {
       throw new BadRequestException('CSV file is empty');
     }
 
-    // Basic CSV parse to estimate total count
-    let totalItems = 0;
-    try {
-      const parsed = Papa.parse(csvContent, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.trim(),
-      });
-      totalItems = parsed.data.filter((r: any) => r.SKU?.trim()).length;
-    } catch {
-      totalItems = 100;
-    }
+    const totalItems = estimateCsvRows(csvContent);
 
     const isDryRun = dryRun === 'true';
     const job = this.jobManager.createJob('products', totalItems);
@@ -149,18 +148,7 @@ export class ImportController {
       throw new BadRequestException('CSV file is empty');
     }
 
-    // Basic CSV parse to estimate total count
-    let totalItems = 0;
-    try {
-      const parsed = Papa.parse(csvContent, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.trim(),
-      });
-      totalItems = parsed.data.filter((r: any) => r.order_id?.trim()).length;
-    } catch {
-      totalItems = 100;
-    }
+    const totalItems = estimateCsvRows(csvContent);
 
     const job = this.jobManager.createJob('orders', totalItems);
 
