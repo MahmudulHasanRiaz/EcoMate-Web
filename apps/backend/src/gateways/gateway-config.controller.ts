@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Put, Post, Delete, Body, Param, Query, OnApplicationBootstrap } from '@nestjs/common';
 import { PaymentOptionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -6,8 +6,50 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { normalizePhone } from '../common/utils/phone-utils';
 
 @Controller('gateways')
-export class GatewayConfigController {
+export class GatewayConfigController implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
+
+  async onApplicationBootstrap() {
+    try {
+      await this.ensureStandardGateways();
+    } catch (err) {
+      console.error('Failed to auto-seed payment gateways:', err);
+    }
+  }
+
+  async ensureStandardGateways() {
+    // 1. Ensure payment options
+    const paymentOptions = [
+      { type: PaymentOptionType.FULL_PAYMENT, name: 'Full Payment', description: 'Pay the full order amount online', enabled: true, sortOrder: 1 },
+      { type: PaymentOptionType.PARTIAL_PAYMENT, name: 'Partial Payment', description: 'Pay a partial amount online, rest on delivery', enabled: true, sortOrder: 2 },
+      { type: PaymentOptionType.CASH_ON_DELIVERY, name: 'Cash on Delivery', description: 'Pay in cash when order is delivered', enabled: true, sortOrder: 3 },
+    ];
+    for (const opt of paymentOptions) {
+      await this.prisma.paymentOption.upsert({
+        where: { type: opt.type },
+        create: opt,
+        update: {},
+      });
+    }
+
+    // 2. Ensure gateways
+    const gateways = [
+      { code: 'cash', name: 'Cash', type: 'cash', paymentOptionType: PaymentOptionType.CASH_ON_DELIVERY, enabled: true, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 1 },
+      { code: 'bkash', name: 'bKash (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000000', credentials: {}, sortOrder: 2 },
+      { code: 'nagad', name: 'Nagad (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000001', credentials: {}, sortOrder: 3 },
+      { code: 'rocket', name: 'Rocket (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000002', credentials: {}, sortOrder: 4 },
+      { code: 'upay', name: 'Upay (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 5 },
+      { code: 'cellfin', name: 'Cellfin (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 6 },
+      { code: 'bkash_pgw', name: 'bKash PGW (API)', type: 'api', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'sandbox', phoneNumber: null, credentials: { appKey: '', appSecret: '', username: '', password: '' }, sortOrder: 7 },
+    ];
+    for (const g of gateways) {
+      await this.prisma.paymentGateway.upsert({
+        where: { code: g.code },
+        create: g,
+        update: {},
+      });
+    }
+  }
 
   // ============ PUBLIC: Storefront fetches enabled gateways ============
   @Public()

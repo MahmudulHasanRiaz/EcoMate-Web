@@ -28,7 +28,8 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   shippingMode: 'options',
   shippingOptions: [],
   shippingZones: [],
-  features: { sizeChart: false, hideOosFromArchive: false },
+  features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false },
+  homepageSections: [],
 };
 
 function getBootstrappedConfig(): StorefrontConfig | undefined {

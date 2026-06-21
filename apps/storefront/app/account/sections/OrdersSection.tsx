@@ -5,6 +5,7 @@ import { Package, Loader2, ChevronRight } from 'lucide-react';
 import { getMyOrders } from '@/lib/api/orders';
 import { OrderDetailSection } from './OrderDetailSection';
 import type { Order } from '@/lib/types';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 const TABS = [
   { key: '', label: 'All' },
@@ -14,6 +15,7 @@ const TABS = [
 ];
 
 export function OrdersSection() {
+  const { config } = useStorefrontConfig();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +83,7 @@ export function OrdersSection() {
                   {new Date(order.createdAt).toLocaleDateString('bn-BD', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {order.items?.length || 0} item(s) — ৳{Number(order.total).toLocaleString()}
+                  {order.items?.length || 0} item(s) — {config.currency.symbol}{Number(order.total).toLocaleString()}
                 </p>
               </div>
               <div className="flex items-center gap-3">

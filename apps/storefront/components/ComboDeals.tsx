@@ -5,10 +5,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getCombos } from '@/lib/api/combos';
 import type { Combo } from '@/lib/types';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { PLACEHOLDER_IMAGE, COMBO_BLUR_DATA_URL } from "@/lib/constants";
 import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 
 export default function ComboDeals() {
+  const { config } = useStorefrontConfig();
   const [combos, setCombos] = useState<Combo[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const aspect = useCatalogImageStyle('combo');
@@ -81,8 +83,8 @@ export default function ComboDeals() {
                   <div className="p-4 flex flex-col flex-1">
                     <h4 className="text-[14px] md:text-[15px] font-bold text-gray-800 mb-2 line-clamp-1 group-hover:text-brand-blue transition-colors">{combo.name}</h4>
                     <div className="flex items-center gap-2 mb-4">
-                      <span className="text-brand-blue font-black text-[15px] md:text-[16px]">৳{combo.price.toLocaleString()}</span>
-                      {combo.originalPrice && <span className="text-gray-300 text-[12px] line-through font-medium">৳{combo.originalPrice.toLocaleString()}</span>}
+                      <span className="text-brand-blue font-black text-[15px] md:text-[16px]">{config.currency.symbol}{combo.price.toLocaleString()}</span>
+                      {combo.originalPrice && <span className="text-gray-300 text-[12px] line-through font-medium">{config.currency.symbol}{combo.originalPrice.toLocaleString()}</span>}
                     </div>
                     <span className="w-full bg-[#f8f9fa] text-gray-700 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all group-hover:bg-brand-blue group-hover:text-white border border-gray-100 block text-center pointer-events-none">
                       View Details

@@ -281,7 +281,22 @@ export class SystemSettingsController {
       }));
     } catch {}
 
+    let homepageSections: any[] = [];
+    try {
+      homepageSections = JSON.parse(map['homepage_sections'] || '[]');
+    } catch {
+      homepageSections = [];
+    }
+    if (!Array.isArray(homepageSections) || homepageSections.length === 0) {
+      homepageSections = [
+        { id: '1', title: 'Featured Gadgets', type: 'featured', limit: 4, enabled: true },
+        { id: '2', title: 'New Arrivals', type: 'new_arrivals', limit: 4, enabled: true },
+        { id: '3', title: 'Popular Items', type: 'popular', limit: 4, enabled: true },
+      ];
+    }
+
     const result = {
+      homepageSections,
       store: {
         name: map['store_name'] || 'EcoMate',
         tagline: map['store_tagline'] || '',
@@ -429,6 +444,7 @@ export class SystemSettingsController {
       features: {
         sizeChart: map['size_chart_enabled'] === 'true',
         hideOosFromArchive: map['hide_oos_products'] === 'true',
+        maintenanceMode: map['maintenance_mode'] === 'true',
       },
     };
     this.cache.set('storefront:config', result);

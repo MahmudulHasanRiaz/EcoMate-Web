@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import { getProducts } from '@/lib/api/products';
 import type { Product } from '@/lib/types';
 import Link from 'next/link';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 export function HeaderSearch({ onCloseMobile }: { onCloseMobile?: () => void }) {
+  const { config } = useStorefrontConfig();
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Product[]>([]);
@@ -131,7 +133,7 @@ export function HeaderSearch({ onCloseMobile }: { onCloseMobile?: () => void }) 
                 </div>
                 <div className="space-y-0.5">
                   {suggestions.map((product) => {
-                    const priceSym = '৳';
+                    const priceSym = config.currency.symbol || '৳';
                     return (
                       <Link
                         key={product.id}

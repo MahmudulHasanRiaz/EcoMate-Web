@@ -110,9 +110,18 @@ export interface StorefrontConfig {
   shippingOptions: { id: string; name: string; amount: number; sortOrder: number }[];
   shippingZones: { id: string; type: 'custom_amount' | 'no_delivery'; amount: number | null; districts: string[]; label: string | null }[];
   catalogImageRatio?: CatalogImageRatio;
+  homepageSections?: {
+    id: string;
+    title: string;
+    type: 'featured' | 'new_arrivals' | 'popular' | 'category';
+    categoryId?: string;
+    limit: number;
+    enabled: boolean;
+  }[];
   features: {
     sizeChart: boolean;
     hideOosFromArchive: boolean;
+    maintenanceMode: boolean;
   };
 }
 

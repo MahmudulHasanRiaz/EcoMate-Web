@@ -143,11 +143,16 @@ export class DashboardService {
     const orders = await this.prisma.order.groupBy({
       by: ['statusId'],
       _count: true,
+      _sum: { total: true },
       where: { ...this.dateFilter(startDate, endDate) },
     });
     const statuses = await this.prisma.orderStatus.findMany();
     const statusMap = new Map(statuses.map(s => [s.id, s.name]));
-    return orders.map(o => ({ status: statusMap.get(o.statusId) || 'Unknown', count: o._count }));
+    return orders.map(o => ({
+      status: statusMap.get(o.statusId) || 'Unknown',
+      count: o._count,
+      totalAmount: Number(o._sum.total || 0),
+    }));
   }
 
   async getRevenueByPaymentMethod(startDate?: string, endDate?: string) {

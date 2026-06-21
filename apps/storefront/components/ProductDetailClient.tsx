@@ -345,14 +345,16 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   }, []);
 
   useEffect(() => {
-    if (product.slug) {
+    if (config.features.sizeChart && product.slug) {
       setSizeChartLoading(true);
       apiClient.get(`/size-charts/by-product/${product.slug}`)
         .then(res => setSizeChartData(res.data))
         .catch(() => {})
         .finally(() => setSizeChartLoading(false));
+    } else {
+      setSizeChartData(null);
     }
-  }, [product.slug]);
+  }, [product.slug, config.features.sizeChart]);
 
   useEffect(() => {
     if (!reviews && product.slug) {

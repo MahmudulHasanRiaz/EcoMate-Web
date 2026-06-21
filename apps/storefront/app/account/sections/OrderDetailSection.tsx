@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Package, Loader2 } from 'lucide-react';
 import { getMyOrderById } from '@/lib/api/orders';
 import type { Order } from '@/lib/types';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 export function OrderDetailSection({ orderId, onBack }: { orderId: string; onBack: () => void }) {
+  const { config } = useStorefrontConfig();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +47,7 @@ export function OrderDetailSection({ orderId, onBack }: { orderId: string; onBac
 
       <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
         <div><span className="text-gray-500">Date:</span> <span className="font-medium ml-1">{new Date(order.createdAt).toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
-        <div><span className="text-gray-500">Total:</span> <span className="font-medium ml-1">৳{Number(order.total).toLocaleString()}</span></div>
+        <div><span className="text-gray-500">Total:</span> <span className="font-medium ml-1">{config.currency.symbol}{Number(order.total).toLocaleString()}</span></div>
       </div>
 
       <h4 className="font-semibold text-gray-700 mb-3">Items</h4>
@@ -57,9 +59,9 @@ export function OrderDetailSection({ orderId, onBack }: { orderId: string; onBac
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-800 truncate">{item.product?.name || 'Product'}</p>
-              <p className="text-xs text-gray-500">Qty: {item.quantity} x ৳{Number(item.price).toLocaleString()}</p>
+              <p className="text-xs text-gray-500">Qty: {item.quantity} x {config.currency.symbol}{Number(item.price).toLocaleString()}</p>
             </div>
-            <p className="text-sm font-semibold text-gray-800">৳{(item.quantity * Number(item.price)).toLocaleString()}</p>
+            <p className="text-sm font-semibold text-gray-800">{config.currency.symbol}{(item.quantity * Number(item.price)).toLocaleString()}</p>
           </div>
         ))}
       </div>

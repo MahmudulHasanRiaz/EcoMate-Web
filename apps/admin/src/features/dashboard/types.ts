@@ -81,6 +81,7 @@ export interface TopProduct {
 export interface StatusCount {
   status: string
   count: number
+  totalAmount?: number
 }
 
 export interface RevenueByMethod {

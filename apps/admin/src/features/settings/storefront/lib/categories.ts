@@ -17,8 +17,6 @@ export type SectionId =
   | 'discovery-social'
   | 'commerce-checkout'
   | 'commerce-order'
-  | 'content-navigation'
-  | 'menu-categories'
   | 'catalog-display'
 
 export interface SectionMeta {
@@ -60,8 +58,8 @@ export const CATEGORIES: CategoryMeta[] = [
   {
     id: 'content',
     label: 'Content',
-    description: 'Navigation, menu categories, FAQ, hours, about page',
-    sections: ['content-faq', 'content-hours', 'content-about', 'content-navigation', 'menu-categories'],
+    description: 'FAQ, hours, and about page content settings',
+    sections: ['content-faq', 'content-hours', 'content-about'],
   },
   {
     id: 'discovery',
@@ -198,22 +196,7 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     icon: ImageIcon,
     fields: ['catalogImageRatio', 'hide_oos_products'],
   },
-  'content-navigation': {
-    id: 'content-navigation',
-    categoryId: 'content',
-    title: 'Content Navigation',
-    description: 'Header and footer navigation links.',
-    icon: Layout,
-    fields: ['navigation_items'],
-  },
-  'menu-categories': {
-    id: 'menu-categories',
-    categoryId: 'content',
-    title: 'Menu Categories',
-    description: 'Categories display ordering in storefront navigation.',
-    icon: List,
-    fields: ['menu_categories'],
-  },
+
 }
 
 export function getSectionById(id: SectionId): SectionMeta {

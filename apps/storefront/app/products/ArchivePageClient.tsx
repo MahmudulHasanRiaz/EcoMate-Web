@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle, Plus, Minus } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getProducts } from '@/lib/api/products';
 import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
 import type { Product, Category } from '@/lib/types';
@@ -170,6 +171,7 @@ export default function ArchivePageClient({
   filters,
   hasStock,
 }: ArchivePageClientProps) {
+  const { config } = useStorefrontConfig();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialSearch = filters.search || '';
@@ -436,7 +438,7 @@ export default function ArchivePageClient({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 border border-gray-200 rounded-md py-2 px-3 flex items-center gap-1 bg-gray-50 focus-within:border-brand-blue focus-within:bg-white transition-colors">
-                        <span className="text-gray-400 text-[13px] font-medium font-mono">৳</span>
+                        <span className="text-gray-400 text-[13px] font-medium font-mono">{config.currency.symbol}</span>
                         <input
                           type="number"
                           value={priceMin}
@@ -448,7 +450,7 @@ export default function ArchivePageClient({
                       </div>
                       <span className="text-gray-300 font-bold flex-shrink-0">-</span>
                       <div className="flex-1 border border-gray-200 rounded-md py-2 px-3 flex items-center gap-1 bg-gray-50 focus-within:border-brand-blue focus-within:bg-white transition-colors">
-                        <span className="text-gray-400 text-[13px] font-medium font-mono">৳</span>
+                        <span className="text-gray-400 text-[13px] font-medium font-mono">{config.currency.symbol}</span>
                         <input
                           type="number"
                           value={priceMax}

@@ -13,8 +13,6 @@ import { VisualsFooterSection } from '@/features/settings/storefront/components/
 import { ContentFaqSection } from '@/features/settings/storefront/components/sections/content-faq'
 import { ContentHoursSection } from '@/features/settings/storefront/components/sections/content-hours'
 import { ContentAboutSection } from '@/features/settings/storefront/components/sections/content-about'
-import { ContentNavigationSection } from '@/features/settings/storefront/components/sections/content-navigation'
-import { MenuCategoriesSection } from '@/features/settings/storefront/components/sections/menu-categories'
 import { DiscoverySeoSection } from '@/features/settings/storefront/components/sections/discovery-seo'
 import { DiscoverySocialSection } from '@/features/settings/storefront/components/sections/discovery-social'
 import { CommerceCheckoutSection } from '@/features/settings/storefront/components/sections/commerce-checkout'
@@ -141,8 +139,7 @@ export function StorefrontSettings() {
           <ContentFaqSection hook={hook} />
           <ContentHoursSection hook={hook} />
           <ContentAboutSection hook={hook} />
-          <ContentNavigationSection hook={hook} />
-          <MenuCategoriesSection hook={hook} />
+
           <DiscoverySeoSection hook={hook} />
           <DiscoverySocialSection hook={hook} />
           <CommerceCheckoutSection hook={hook} />

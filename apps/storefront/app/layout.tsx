@@ -131,14 +131,35 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
             />
             <TrackingScripts />
-            <Header />
-            <CartDrawer />
-            <MobileMenu />
-            <main className="flex-1 pb-24 md:pb-0">{children}</main>
-            <Footer />
-            <BottomNav />
-            <FloatingWidgets />
-            <FlyCartLayer />
+            {initialConfig?.features?.maintenanceMode ? (
+              <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
+                <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)] transition-all hover:shadow-[0_12px_40px_rgb(0,0,0,0.05)]">
+                  <div className="w-16 h-16 bg-[#0089CD]/10 text-[#0089CD] rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className="w-8 h-8">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                    </svg>
+                  </div>
+                  <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">Under Maintenance</h1>
+                  <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                    {initialConfig?.store?.name || 'EcoMate'} is currently undergoing scheduled updates to serve you better. We'll be back shortly. Thank you for your patience!
+                  </p>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-4 py-2 rounded-full inline-block">
+                    Coming Back Soon
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Header />
+                <CartDrawer />
+                <MobileMenu />
+                <main className="flex-1 pb-24 md:pb-0">{children}</main>
+                <Footer />
+                <BottomNav />
+                <FloatingWidgets />
+                <FlyCartLayer />
+              </>
+            )}
             <Toaster
               position="top-right"
               richColors
