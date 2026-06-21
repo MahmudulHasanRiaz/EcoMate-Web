@@ -149,7 +149,7 @@ export function Tags() {
 
   const copyTagLink = (slug: string, id: string) => {
     const storefrontUrl = getStorefrontUrl()
-    navigator.clipboard.writeText(`${storefrontUrl}/tag/${slug}`)
+    navigator.clipboard.writeText(`${storefrontUrl}/products/tags/${slug}`)
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }

@@ -1,4 +1,4 @@
-import ProductsPage from "../../products/page";
+import ProductsPage from "../../page";
 
 interface TagPageProps {
   params: Promise<{ slug: string }>;
