@@ -10,7 +10,7 @@ export interface VariantAttribute {
 
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: CartItem) => void;
+  addToCart: (product: CartItem, skipOpen?: boolean) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   cartCount: number;
@@ -70,7 +70,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (loaded) saveCart(items);
   }, [items, loaded]);
 
-  const addToCart = useCallback((product: CartItem) => {
+  const addToCart = useCallback((product: CartItem, skipOpen?: boolean) => {
     const qtyToAdd = product.quantity || 1;
     setItems((prev) => {
       const key = getItemKey(product);
@@ -86,7 +86,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           })
         : [...prev, { ...product, quantity: product.stock !== undefined ? Math.min(qtyToAdd, product.stock) : qtyToAdd }];
     });
-    if (!userDismissedRef.current) setIsCartOpen(true);
+    if (!skipOpen && !userDismissedRef.current) setIsCartOpen(true);
   }, []);
 
   const removeFromCart = (productKey: string) => {

@@ -489,7 +489,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       variantLabel,
       variantAttributes,
       stock: displayStock,
-    });
+    }, true);
     router.push('/checkout');
   }
 
