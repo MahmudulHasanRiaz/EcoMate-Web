@@ -73,7 +73,7 @@ export default function CategoryList() {
             ref={scrollRef}
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
-            className="flex overflow-x-auto gap-4 md:gap-6 pb-6 scrollbar-hide snap-x"
+            className="flex overflow-x-auto gap-4 md:gap-6 pb-6 hide-scrollbar snap-x"
           >
             {categories.map((category) => (
               <CategoryItem key={category.id} category={category} imgErrors={imgErrors} setImgErrors={setImgErrors} />
@@ -93,17 +93,18 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
   return (
     <Link
       href={`/products?category=${category.slug}`}
-      className="flex flex-col items-center gap-2 min-w-[95px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
+      className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
     >
-      <div className="w-[95px] h-[95px] md:w-[120px] md:h-[120px] bg-white rounded-[24px] md:rounded-[32px] shadow-[0_4px_16px_rgba(0,0,0,0.04)] flex items-center justify-center overflow-hidden group-hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-shadow">
+      <div className="relative w-[85px] h-[85px] md:w-[120px] md:h-[120px] bg-white rounded-full shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-[0_8px_25px_rgba(0,137,205,0.15)] group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
+        <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         <img
           src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (category.image || PLACEHOLDER_IMAGE)}
           alt={category.name}
-          className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out relative z-10"
           onError={() => setImgErrors(prev => ({ ...prev, [category.id]: true }))}
         />
       </div>
-      <span className="text-[13px] md:text-[14px] font-medium text-gray-800 text-center leading-tight mt-1">
+      <span className="text-[12px] md:text-[14px] font-semibold text-gray-700 text-center block w-full truncate group-hover:text-brand-blue transition-colors px-1" title={category.name}>
         {category.name}
       </span>
     </Link>
