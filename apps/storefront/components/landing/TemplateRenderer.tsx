@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { Product } from "@/lib/types";
 
 interface SectionProps {
   section: any;
   index: number;
-  products?: Product[];
+  products?: any[];
 }
 
 function HeroSection({ section }: SectionProps) {
@@ -100,23 +99,76 @@ function FeaturedGridSection({ section, products = [] }: SectionProps) {
   );
 }
 
-function CheckoutFormSection({ section }: SectionProps) {
-  const [submitted, setSubmitted] = useState(false);
+function CheckoutFormSection({ section, products = [] }: SectionProps) {
+  const [step, setStep] = useState<"form" | "submitting" | "success" | "error">("form");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setErrorMsg("");
+
+    const form = e.currentTarget;
+    const name = (form.elements.namedItem("name") as HTMLInputElement).value;
+    const phone = (form.elements.namedItem("phone") as HTMLInputElement).value;
+    const address = (form.elements.namedItem("address") as HTMLTextAreaElement).value;
+    const payment = (form.elements.namedItem("payment") as HTMLSelectElement).value;
+
     window.EcoMate?.track?.("Lead", { section: "checkout" });
-    window.EcoMate?.track?.("InitiateCheckout", {});
-    setSubmitted(true);
+
+    if (!name || !phone) {
+      setErrorMsg("Name and phone are required");
+      return;
+    }
+
+    setStep("submitting");
+
+    // Build order items from assigned products
+    const items = products.length > 0
+      ? products.map((p: any) => ({
+          productId: p.id,
+          quantity: 1,
+          price: Number(p.salePrice || p.basePrice || 0),
+        }))
+      : [];
+
+    const payload: Record<string, any> = {
+      items: items.length > 0 ? items : [{ productId: "placeholder", quantity: 1, price: 0 }],
+      guestName: name,
+      guestPhone: phone,
+      shippingAddress: { fullAddress: address },
+      paymentOptionType: payment === "cod" ? "CASH_ON_DELIVERY" : payment === "bkash" ? "FULL_PAYMENT" : "FULL_PAYMENT",
+      gatewayCode: payment || "cash",
+    };
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Order failed (${res.status})`);
+      }
+
+      const order = await res.json();
+      window.EcoMate?.track?.("InitiateCheckout", { orderId: order.id });
+      setStep("success");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to place order. Please try again.");
+      setStep("form");
+    }
   };
 
-  if (submitted) {
+  if (step === "success") {
     return (
       <section className="py-16 md:py-24 bg-white">
         <div className="max-w-lg mx-auto px-6 text-center">
           <div className="text-5xl mb-4">✅</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Order Received!</h2>
-          <p className="text-gray-500">We will contact you shortly to confirm your order.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Order Placed!</h2>
+          <p className="text-gray-500 mb-6">We will contact you shortly to confirm your order.</p>
+          <p className="text-xs text-gray-400">Check your order status using your phone number.</p>
         </div>
       </section>
     );
@@ -127,14 +179,19 @@ function CheckoutFormSection({ section }: SectionProps) {
       <div className="max-w-lg mx-auto px-6">
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">{section.title || "Order Now"}</h2>
         <p className="text-gray-500 text-center mb-8">Fill in your details to place your order</p>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{errorMsg}</div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="text" placeholder="Your Full Name" required
+          <input type="text" name="name" placeholder="Your Full Name" required
             className="w-full px-4 py-3.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-sm" />
-          <input type="tel" placeholder="Phone Number" required
+          <input type="tel" name="phone" placeholder="Phone Number" required
             className="w-full px-4 py-3.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-sm" />
-          <textarea placeholder="Full Address" required rows={3}
+          <textarea name="address" placeholder="Full Address" required rows={3}
             className="w-full px-4 py-3.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-sm resize-none" />
-          <select
+          <select name="payment"
             className="w-full px-4 py-3.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-sm bg-white"
           >
             <option value="">Select Payment Method</option>
@@ -142,10 +199,12 @@ function CheckoutFormSection({ section }: SectionProps) {
             <option value="bkash">bKash</option>
             <option value="nagad">Nagad</option>
           </select>
-          <button type="submit"
-            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-indigo-700 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+          <button
+            type="submit"
+            disabled={step === "submitting"}
+            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
           >
-            {section.submitText || "Place Order"}
+            {step === "submitting" ? "Placing Order..." : section.submitText || "Place Order"}
           </button>
         </form>
       </div>
@@ -206,13 +265,14 @@ export default function LandingTemplateRenderer({
   return (
     <div className="min-h-screen font-sans antialiased">
       {sections.map((section: any, i: number) => {
+        const sectionProps = { section, index: i, products };
         switch (section.type) {
-          case "hero": return <HeroSection key={i} section={section} index={i} />;
-          case "features": return <FeaturesSection key={i} section={section} index={i} />;
-          case "featured-grid": return <FeaturedGridSection key={i} section={section} index={i} products={products} />;
-          case "checkout-form": return <CheckoutFormSection key={i} section={section} index={i} />;
-          case "trust-badges": return <TrustBadgesSection key={i} section={section} index={i} />;
-          case "cta-footer": return <CTASection key={i} section={section} index={i} />;
+          case "hero": return <HeroSection key={i} {...sectionProps} />;
+          case "features": return <FeaturesSection key={i} {...sectionProps} />;
+          case "featured-grid": return <FeaturedGridSection key={i} {...sectionProps} />;
+          case "checkout-form": return <CheckoutFormSection key={i} {...sectionProps} />;
+          case "trust-badges": return <TrustBadgesSection key={i} {...sectionProps} />;
+          case "cta-footer": return <CTASection key={i} {...sectionProps} />;
           default: return null;
         }
       })}
