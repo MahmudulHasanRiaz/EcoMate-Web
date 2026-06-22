@@ -105,7 +105,7 @@ export default function Header({}: {}) {
       {navItems.length > 0 && (
         <div className="hidden md:block bg-brand-blue/[0.03] border-t border-brand-blue/10">
           <div className="max-w-screen-xl mx-auto px-4">
-            <nav className="flex items-center gap-0.5 h-11">
+            <nav className="flex flex-wrap items-center gap-x-1 gap-y-1 min-h-[44px] py-1.5">
               {navItems.map((item: any) => (
                 <NavItem key={item.id} item={item} />
               ))}
@@ -145,7 +145,9 @@ function NavItem({ item }: { item: any }) {
     <div className="relative" onMouseEnter={show} onMouseLeave={hide}>
       <Link
         href={getHref(item)}
-        className="flex items-center gap-1 px-3 py-1.5 text-[13px] font-medium text-gray-600 hover:text-brand-blue transition-colors rounded-md hover:bg-brand-blue/5"
+        className={`flex items-center gap-1 px-3 py-2 text-[14px] font-medium transition-colors whitespace-nowrap rounded-md ${
+          isOpen ? 'text-brand-blue bg-white shadow-sm' : 'text-gray-700 hover:text-brand-blue hover:bg-brand-blue/5'
+        }`}
       >
         {item.label}
         {hasChildren && (

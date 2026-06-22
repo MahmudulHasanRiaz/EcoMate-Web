@@ -48,6 +48,7 @@ interface Category {
   id: string
   name: string
   slug: string
+  parentId?: string | null
 }
 
 function genId(): string {
@@ -76,10 +77,10 @@ function columnItem(): FooterColumn {
 
 function flattenCats(list: any[]): Category[] {
   const out: Category[] = []
-  function walk(arr: any[]) {
+  function walk(arr: any[], parentId?: string | null) {
     for (const c of arr) {
-      out.push({ id: c.id, name: c.name, slug: c.slug })
-      if (c.children?.length) walk(c.children)
+      out.push({ id: c.id, name: c.name, slug: c.slug, parentId: c.parentId || parentId })
+      if (c.children?.length) walk(c.children, c.id)
     }
   }
   walk(list)
@@ -128,22 +129,58 @@ export function MenuSettings() {
 
   useEffect(() => {
     if (!ready || categories.length === 0) return
+
+    const mergeMissingCategories = (items: MenuItem[], missingCats: Category[]): MenuItem[] => {
+      const existingMap = new Map<string, MenuItem>()
+      const walk = (arr: MenuItem[]) => {
+        for (const item of arr) {
+          if (item.type === 'category' && item.categoryId) existingMap.set(item.categoryId, item)
+          walk(item.children)
+        }
+      }
+      walk(items)
+
+      const newNodesMap = new Map<string, MenuItem>()
+      missingCats.forEach(c => newNodesMap.set(c.id, catItem(c)))
+
+      const rootNodes: MenuItem[] = []
+      missingCats.forEach(c => {
+        const node = newNodesMap.get(c.id)!
+        if (c.parentId) {
+          if (existingMap.has(c.parentId)) existingMap.get(c.parentId)!.children.push(node)
+          else if (newNodesMap.has(c.parentId)) newNodesMap.get(c.parentId)!.children.push(node)
+          else rootNodes.push(node)
+        } else {
+          rootNodes.push(node)
+        }
+      })
+      return [...items, ...rootNodes]
+    }
+
     setConfig(prev => {
       const next = { ...prev }
       for (const key of ['header', 'mobile'] as const) {
         const s = next[key]
-        const existing = new Set(s.items.filter(i => i.type === 'category' && i.categoryId).map(i => i.categoryId))
+        const existing = new Set<string>()
+        const collectExisting = (arr: MenuItem[]) => {
+          for (const i of arr) {
+            if (i.type === 'category' && i.categoryId) existing.add(i.categoryId)
+            collectExisting(i.children)
+          }
+        }
+        collectExisting(s.items)
+
         if (s.mode === 'include' && s.showAllCategories) {
           const missing = categories.filter(c => !existing.has(c.id))
           if (missing.length > 0) {
-            next[key] = { ...s, items: [...s.items, ...missing.map(catItem)] }
+            next[key] = { ...s, items: mergeMissingCategories(s.items, missing) }
           }
         } else if (s.mode === 'exclude') {
           const missing = categories
             .filter(c => !s.excludedCategories.includes(c.id))
             .filter(c => !existing.has(c.id))
           if (missing.length > 0) {
-            next[key] = { ...s, items: [...s.items, ...missing.map(catItem)] }
+            next[key] = { ...s, items: mergeMissingCategories(s.items, missing) }
           }
         }
       }

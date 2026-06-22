@@ -340,13 +340,12 @@ export default function ArchivePageClient({
 
   return (
     <div className="bg-white min-h-screen pb-20 font-sans">
-      <div className="bg-gradient-to-r from-gray-50 to-white py-3 md:py-5 border-b border-gray-100">
-        <div className="max-w-screen-xl mx-auto px-4 flex flex-col md:flex-row md:items-center justify-between gap-1 md:gap-4">
-          <h1 className="text-[18px] md:text-[22px] font-bold text-gray-900 truncate">{currentCategory}</h1>
-          <nav className="flex items-center gap-1 text-[12px] md:text-[13px] text-gray-500 font-medium">
-            <button onClick={() => router.push('/')} className="hover:text-brand-blue cursor-pointer transition-colors">Home</button>
-            <ChevronRight size={12} className="opacity-50 mx-0.5" strokeWidth={2} />
-            <span className="text-brand-blue truncate max-w-[150px] md:max-w-none">{currentCategory}</span>
+      <div className="bg-gray-50/80 border-b border-gray-100 py-2.5 md:py-4">
+        <div className="max-w-screen-xl mx-auto px-4">
+          <nav className="flex items-center gap-1.5 text-[12px] md:text-[14px] text-gray-500 font-medium">
+            <button onClick={() => router.push('/')} className="hover:text-brand-blue transition-colors">Home</button>
+            <ChevronRight size={14} className="opacity-40" strokeWidth={2} />
+            <h1 className="text-gray-900 font-bold truncate text-[13px] md:text-[16px] m-0">{currentCategory}</h1>
           </nav>
         </div>
       </div>
