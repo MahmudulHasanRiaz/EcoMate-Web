@@ -249,7 +249,7 @@ function TrustBar({ config }: { config: any }) {
   );
 }
 
-export default function ProductDetailClient({ product }: { product: Product }) {
+export default function ProductDetailClient({ product, defaultColor }: { product: Product; defaultColor?: string }) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
@@ -269,11 +269,65 @@ export default function ProductDetailClient({ product }: { product: Product }) {
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
   const activeVariants = product.variants?.filter((v) => v.isActive && v.stock > 0) || [];
 
+  const COLOR_ATTR_KEYWORDS = ['color', 'colour', 'clr', 'কালার', 'কালার্', 'রং', 'রঙ', 'ক্‌লার'];
+
+  const colorAttrName = useMemo(() => {
+    if (!defaultColor) return null;
+    const names = new Set<string>();
+    product.variants?.forEach(v =>
+      v.attributeValues?.forEach(av => names.add(av.attributeValue.attribute.name))
+    );
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      if (COLOR_ATTR_KEYWORDS.some(k => lower.includes(k))) {
+        return name;
+      }
+    }
+    return null;
+  }, [product.variants, defaultColor]);
+
   const [selectedVariant, setSelectedVariant] = useState<Variant | null>(null);
-  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
+  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>(
+    () => {
+      if (!colorAttrName || !defaultColor) return {};
+      // Find matching color value case-insensitively among variants
+      const colorValues = new Set<string>();
+      product.variants?.forEach(v =>
+        v.attributeValues?.forEach(av => {
+          if (av.attributeValue.attribute.name === colorAttrName) {
+            colorValues.add(av.attributeValue.value);
+          }
+        })
+      );
+      // exact match first
+      if (colorValues.has(defaultColor)) {
+        return { [colorAttrName]: defaultColor };
+      }
+      // case-insensitive fallback
+      const ci = [...colorValues].find(v => v.toLowerCase() === defaultColor.toLowerCase());
+      if (ci) return { [colorAttrName]: ci };
+      return {};
+    }
+  );
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
+    if (colorAttrName && defaultColor) {
+      // defaultColor pre-selected — skip auto-select, user picks size
+      // But if all attrs already selected (color-only product), find matching variant
+      const allNames = new Set<string>();
+      product.variants?.forEach(v =>
+        v.attributeValues?.forEach(av => allNames.add(av.attributeValue.attribute.name))
+      );
+      if (Object.keys(selectedAttrs).length === allNames.size) {
+        const match = activeVariants.find(v =>
+          v.attributeValues.every(av => selectedAttrs[av.attributeValue.attribute.name] === av.attributeValue.value)
+        );
+        if (match) setSelectedVariant(match);
+      }
+      setSettingsLoaded(true);
+      return;
+    }
     if (!isVariable || activeVariants.length === 0) {
       setSettingsLoaded(true);
       return;
@@ -576,6 +630,55 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               {sections?.tagline && (
                 <p className="text-[15px] text-brand-blue italic leading-relaxed mb-3">{sections.tagline}</p>
               )}
+              {/* Color variants nav — show color swatches linking to colors page */}
+              {(() => {
+                if (!colorAttrName && !isVariable) return null;
+                const colorVals = new Set<string>();
+                product.variants?.forEach(v => v.attributeValues?.forEach(av => {
+                  const n = av.attributeValue.attribute.name.toLowerCase();
+                  if (COLOR_ATTR_KEYWORDS.some(k => n.includes(k))) colorVals.add(av.attributeValue.value);
+                }));
+                if (colorVals.size < 2) return null;
+                const colorMap: Record<string, string> = {
+                  'red': '#EF4444', 'green': '#22C55E', 'blue': '#3B82F6', 'black': '#000000',
+                  'white': '#FFFFFF', 'gray': '#6B7280', 'grey': '#6B7280', 'navy': '#1E3A5F',
+                  'pink': '#EC4899', 'purple': '#A855F7', 'yellow': '#EAB308', 'orange': '#F97316',
+                  'brown': '#78350F', 'teal': '#0D9488', 'maroon': '#800000', 'cream': '#FFFDD0',
+                  'beige': '#F5F5DC', 'khaki': '#C3B091', 'olive': '#808000', 'wine': '#722F37',
+                  'gold': '#FFD700', 'silver': '#C0C0C0', 'sky': '#87CEEB', 'coral': '#FF7F50',
+                };
+                return (
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[12px] text-gray-400">Colors:</span>
+                    <div className="flex items-center gap-1">
+                      {[...colorVals].slice(0, 5).map(c => (
+                        <Link
+                          key={c}
+                          href={`/products/${product.slug}/colors?color=${encodeURIComponent(c)}`}
+                          className="w-5 h-5 rounded-full ring-1 ring-gray-300 hover:ring-2 hover:ring-brand-blue transition-all"
+                          style={{ backgroundColor: colorMap[c.toLowerCase().trim()] || '#CBD5E1' }}
+                          title={`View ${c}`}
+                          aria-label={`View ${c} color`}
+                        />
+                      ))}
+                      {colorVals.size > 5 && (
+                        <Link
+                          href={`/products/${product.slug}/colors`}
+                          className="text-[11px] text-gray-400 hover:text-brand-blue ml-1 font-medium"
+                        >
+                          +{colorVals.size - 5} more
+                        </Link>
+                      )}
+                    </div>
+                    <Link
+                      href={`/products/${product.slug}/colors`}
+                      className="text-[11px] text-brand-blue hover:underline ml-1 font-medium"
+                    >
+                      All Colors
+                    </Link>
+                  </div>
+                );
+              })()}
             </div>
             <button onClick={handleWishlistToggle}
               className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
@@ -644,15 +747,52 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           )}
 
           {isVariable && product.variants && (
-            <VariantSelector
-              variants={product.variants}
-              selectedVariant={selectedVariant}
-              selectedAttrs={selectedAttrs}
-              onSelect={setSelectedVariant}
-              onSelectAttr={handleSelectAttr}
-              sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
-              onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
-            />
+            colorAttrName && defaultColor ? (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[13px] text-gray-700 font-medium">Color:</span>
+                  <button
+                    className="w-7 h-7 rounded-full ring-2 ring-brand-blue ring-offset-1"
+                    style={{
+                      backgroundColor: (() => {
+                        const m: Record<string, string> = {
+                          'red': '#EF4444', 'green': '#22C55E', 'blue': '#3B82F6', 'black': '#000000',
+                          'white': '#FFFFFF', 'gray': '#6B7280', 'grey': '#6B7280', 'navy': '#1E3A5F',
+                          'pink': '#EC4899', 'purple': '#A855F7', 'yellow': '#EAB308', 'orange': '#F97316',
+                          'brown': '#78350F', 'teal': '#0D9488', 'maroon': '#800000', 'cream': '#FFFDD0',
+                          'beige': '#F5F5DC', 'khaki': '#C3B091', 'olive': '#808000', 'wine': '#722F37',
+                          'gold': '#FFD700', 'silver': '#C0C0C0', 'sky': '#87CEEB', 'coral': '#FF7F50',
+                        };
+                        return m[defaultColor.toLowerCase().trim()] || '#CBD5E1';
+                      })()
+                    }}
+                    title={defaultColor}
+                    aria-label={defaultColor}
+                  />
+                  <span className="text-[13px] text-gray-500">{defaultColor}</span>
+                </div>
+                <VariantSelector
+                  variants={product.variants}
+                  selectedVariant={selectedVariant}
+                  selectedAttrs={selectedAttrs}
+                  onSelect={setSelectedVariant}
+                  onSelectAttr={handleSelectAttr}
+                  hiddenAttributes={[colorAttrName]}
+                  sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
+                  onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
+                />
+              </div>
+            ) : (
+              <VariantSelector
+                variants={product.variants}
+                selectedVariant={selectedVariant}
+                selectedAttrs={selectedAttrs}
+                onSelect={setSelectedVariant}
+                onSelectAttr={handleSelectAttr}
+                sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
+                onSizeGuideClick={sizeChartData ? () => setSizeChartOpen(true) : undefined}
+              />
+            )
           )}
 
           {!isVariable && (sizeChartLoading || sizeChartData) && (

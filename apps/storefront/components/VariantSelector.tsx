@@ -11,6 +11,7 @@ interface Props {
   onSelectAttr?: (attrName: string, value: string) => void;
   sizeGuideLabel?: string;
   onSizeGuideClick?: () => void;
+  hiddenAttributes?: string[];
 }
 
 const SIZE_ORDER: Record<string, number> = {
@@ -19,7 +20,7 @@ const SIZE_ORDER: Record<string, number> = {
   'এস': 0, 'এম': 1, 'এল': 2, 'এক্সএল': 3, 'ডাব্লিউএক্সএল': 4,
 };
 
-const COLOR_KEYWORDS = ['color', 'colour', 'রং', 'কালার', 'ক্‌লার'];
+const COLOR_KEYWORDS = ['color', 'colour', 'clr', 'কালার', 'কালার্', 'রং', 'রঙ', 'ক্‌লার'];
 const SIZE_KEYWORDS = ['size', 'সাইজ', 'আকার', 'মাপ'];
 
 function sortValues(values: string[]): string[] {
@@ -48,16 +49,17 @@ function getColorValue(value: string): string {
     'beige': '#F5F5DC', 'khaki': '#C3B091', 'olive': '#808000', 'wine': '#722F37',
     'gold': '#FFD700', 'silver': '#C0C0C0', 'sky': '#87CEEB', 'coral': '#FF7F50',
   };
-  return colorMap[value.toLowerCase().trim()] || value;
+  return colorMap[value.toLowerCase().trim()] || '#CBD5E1';
 }
 
-export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick }: Props) {
+export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick, hiddenAttributes }: Props) {
   const attributeGroups = useMemo(() => {
     const groups: Record<string, { value: string; variant: Variant }[]> = {};
     for (const v of variants) {
       if (!v.isActive) continue;
       for (const av of v.attributeValues) {
         const attr = av.attributeValue.attribute;
+        if (hiddenAttributes?.includes(attr.name)) continue;
         if (!groups[attr.name]) groups[attr.name] = [];
         if (!groups[attr.name].some((g) => g.value === av.attributeValue.value)) {
           groups[attr.name].push({ value: av.attributeValue.value, variant: v });
@@ -69,7 +71,7 @@ export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSe
         .map(v => ({ value: v, variant: groups[name].find(g => g.value === v)!.variant }));
     }
     return groups;
-  }, [variants]);
+  }, [variants, hiddenAttributes]);
 
   const attrNames = Object.keys(attributeGroups);
   const isColor = (name: string) => isColorAttr(name);

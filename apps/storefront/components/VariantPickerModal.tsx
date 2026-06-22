@@ -16,7 +16,7 @@ const SIZE_ORDER: Record<string, number> = {
   'এস': 0, 'এম': 1, 'এল': 2, 'এক্সএল': 3, 'ডাব্লিউএক্সএল': 4,
 };
 
-const COLOR_KEYWORDS = ['color', 'colour', 'রং', 'কালার', 'ক্‌লার'];
+const COLOR_KEYWORDS = ['color', 'colour', 'clr', 'কালার', 'কালার্', 'রং', 'রঙ', 'ক্‌লার'];
 const SIZE_KEYWORDS = ['size', 'সাইজ', 'আকার', 'মাপ'];
 
 function sortValues(values: string[]): string[] {
