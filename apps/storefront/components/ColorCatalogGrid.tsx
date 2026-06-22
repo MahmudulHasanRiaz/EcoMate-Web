@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { VariantPickerModal } from "@/components/VariantPickerModal";
 import type { Product, Variant } from "@/lib/types";
 
 const COLOR_KEYWORDS = ['color', 'colour', 'clr', 'কালার', 'কালার্', 'রং', 'রঙ', 'ক্‌লার'];
@@ -58,6 +59,18 @@ function getBestImage(product: Product, variant: Variant): string {
   return variant.image || product.image || PLACEHOLDER_IMAGE;
 }
 
+function findColorAttrName(variants: Variant[]): string | null {
+  for (const v of variants) {
+    for (const av of v.attributeValues) {
+      const n = av.attributeValue.attribute.name.toLowerCase();
+      if (COLOR_KEYWORDS.some(k => n.includes(k))) {
+        return av.attributeValue.attribute.name;
+      }
+    }
+  }
+  return null;
+}
+
 interface Props {
   product: Product;
 }
@@ -66,8 +79,16 @@ export default function ColorCatalogGrid({ product }: Props) {
   const { config } = useStorefrontConfig();
   const variants = product.variants || [];
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const [modalColor, setModalColor] = useState<string | null>(null);
 
   const colorEntries = useMemo(() => buildColorEntries(variants), [variants]);
+  const colorAttrName = useMemo(() => findColorAttrName(variants), [variants]);
+
+  const handleAddToCart = useCallback((e: React.MouseEvent, colorValue: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setModalColor(colorValue);
+  }, []);
 
   if (colorEntries.length === 0) {
     return (
@@ -94,7 +115,7 @@ export default function ColorCatalogGrid({ product }: Props) {
       </div>
 
       <h1 className="text-[22px] md:text-[28px] font-semibold text-gray-900 mb-2">{product.name}</h1>
-      <p className="text-[14px] text-gray-500 mb-8">Available in {colorEntries.length} colors — select your color to see available sizes</p>
+      <p className="text-[14px] text-gray-500 mb-8">Available in {colorEntries.length} colors</p>
 
       {/* Color Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-5">
@@ -108,7 +129,7 @@ export default function ColorCatalogGrid({ product }: Props) {
           return (
             <div
               key={entry.colorValue}
-              className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col group transition-all hover:shadow-lg hover:border-brand-blue/30"
+              className="bg-white rounded-[8px] border border-gray-200 overflow-hidden flex flex-col group transition-all hover:shadow-lg hover:border-brand-blue/30"
             >
               {/* Image */}
               <Link href={linkUrl} className="relative aspect-square bg-gray-50 overflow-hidden">
@@ -117,7 +138,7 @@ export default function ColorCatalogGrid({ product }: Props) {
                   alt={`${product.name} - ${entry.colorValue}`}
                   fill
                   sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
-                  className="object-contain p-2 transition-transform duration-500 group-hover:scale-110"
+                  className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
                   onError={() => setImgErrors(prev => ({ ...prev, [entry.colorValue]: true }))}
                 />
                 {!entry.hasStock && (
@@ -130,19 +151,19 @@ export default function ColorCatalogGrid({ product }: Props) {
               </Link>
 
               {/* Info */}
-              <div className="p-3 flex flex-col flex-1">
+              <div className="p-2 md:p-3 flex flex-col flex-1">
                 {/* Color swatch + name */}
                 <div className="flex items-center gap-2 mb-2">
                   <span
-                    className="w-5 h-5 rounded-full ring-1 ring-gray-300 flex-shrink-0"
+                    className="w-4 h-4 rounded-full ring-1 ring-gray-300 flex-shrink-0"
                     style={{ backgroundColor: colorVal }}
                   />
-                  <span className="text-[13px] font-semibold text-gray-800">{entry.colorValue}</span>
+                  <span className="text-[12px] font-medium text-gray-800">{entry.colorValue}</span>
                 </div>
 
                 {/* Price */}
                 <div className="flex items-center gap-1.5 mb-3">
-                  <span className="text-[16px] font-bold text-brand-blue">
+                  <span className="text-[15px] font-bold text-brand-blue">
                     {config.currency.symbol}{(entry.variant.price || product.price).toLocaleString()}
                   </span>
                   {product.originalPrice && product.originalPrice > (entry.variant.price || product.price) && (
@@ -152,19 +173,28 @@ export default function ColorCatalogGrid({ product }: Props) {
                   )}
                 </div>
 
-                {/* CTA */}
-                <Link
-                  href={linkUrl}
-                  className="mt-auto w-full h-9 bg-brand-blue text-white text-[12px] font-bold rounded-lg flex items-center justify-center gap-1.5 hover:bg-brand-blue-dark transition-colors"
+                {/* CTA — matches normal product card style */}
+                <button
+                  onClick={(e) => handleAddToCart(e, entry.colorValue)}
+                  disabled={!entry.hasStock}
+                  className="mt-auto w-full h-[34px] md:h-[40px] bg-white text-brand-blue font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all"
                 >
-                  <Eye size={15} strokeWidth={2.5} />
-                  Choose
-                </Link>
+                  <ShoppingCart size={16} strokeWidth={2.5} />
+                  {entry.hasStock ? 'ADD TO CART' : 'OUT OF STOCK'}
+                </button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Variant picker modal — opens with color pre-selected */}
+      <VariantPickerModal
+        product={product}
+        open={!!modalColor}
+        onClose={() => setModalColor(null)}
+        initialAttrs={modalColor && colorAttrName ? { [colorAttrName]: modalColor } : undefined}
+      />
     </div>
   );
 }

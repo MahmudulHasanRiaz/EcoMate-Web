@@ -79,12 +79,13 @@ interface Props {
   open: boolean;
   onClose: () => void;
   flyTarget?: { x: number; y: number };
+  initialAttrs?: Record<string, string>;
 }
 
-export function VariantPickerModal({ product, open, onClose, flyTarget }: Props) {
+export function VariantPickerModal({ product, open, onClose, flyTarget, initialAttrs }: Props) {
   const { addToCart, setIsCartOpen } = useCart();
   const { config } = useStorefrontConfig();
-  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>({});
+  const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>(() => initialAttrs || {});
   const [imageError, setImageError] = useState(false);
 
   const variants = product.variants || [];
