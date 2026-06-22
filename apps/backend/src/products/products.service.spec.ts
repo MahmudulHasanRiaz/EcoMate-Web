@@ -102,6 +102,10 @@ describe('ProductsService', () => {
               create: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
               update: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
             },
+            category: {
+              findMany: jest.fn().mockResolvedValue([]),
+              findUnique: jest.fn().mockResolvedValue({ id: 'cat-1', name: 'Test Category', slug: 'test-category' }),
+            },
           },
         },
         {
@@ -187,7 +191,18 @@ describe('ProductsService', () => {
 
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { categoryId: 'cat-1', type: 'simple', isActive: true },
+          where: expect.objectContaining({
+            AND: [
+              {
+                OR: [
+                  { categoryId: { in: ['cat-1'] } },
+                  { productCategories: { some: { categoryId: { in: ['cat-1'] } } } },
+                ],
+              },
+            ],
+            type: 'simple',
+            isActive: true,
+          }),
         }),
       );
     });
