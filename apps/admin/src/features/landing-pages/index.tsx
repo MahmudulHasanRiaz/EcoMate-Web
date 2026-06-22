@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X } from 'lucide-react'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -25,6 +25,9 @@ export function LandingPages() {
   const [editRow, setEditRow] = useState<LandingPage | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LandingPage | null>(null)
   const [tab, setTab] = useState('general')
+  const [page, setPage] = useState(1)
+  const [hasUnsaved, setHasUnsaved] = useState(false)
+  const [closeConfirm, setCloseConfirm] = useState(false)
 
   // Form state
   const [title, setTitle] = useState('')
@@ -49,15 +52,16 @@ export function LandingPages() {
   const comboSearchRefDiv = useRef<HTMLDivElement>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['landing-pages'],
-    queryFn: () => landingPagesApi.list().then(r => r.data),
+    queryKey: ['landing-pages', page],
+    queryFn: () => landingPagesApi.list({ page, perPage: 10 }).then(r => r.data),
   })
 
   const pages = (data as any)?.data || []
+  const totalPages = (data as any)?.meta?.totalPages || 1
 
   const createMut = useMutation({
     mutationFn: landingPagesApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); setFormOpen(false); reset(); toast.success('Landing page created'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); setFormOpen(false); reset(); toast.success('Landing page created'); setHasUnsaved(false); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -83,11 +87,29 @@ export function LandingPages() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Unpublished'); },
   })
 
+  const cloneMut = useMutation({
+    mutationFn: (row: LandingPage) => landingPagesApi.create({
+      title: `Copy of ${row.title}`,
+      slug: `${row.slug}-copy-${Date.now()}`.slice(0, 60),
+      pageType: row.pageType,
+      templateId: row.templateId,
+      sections: row.sections,
+      customHtml: row.customHtml,
+      productIds: Array.isArray(row.productIds) ? row.productIds : [],
+      comboIds: Array.isArray(row.comboIds) ? row.comboIds : [],
+    }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Duplicated'); },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
   const isPending = createMut.isPending || updateMut.isPending
+
+  // Mark form as dirty when any field changes
+  const markDirty = () => { if (!hasUnsaved) setHasUnsaved(true) }
 
   const reset = () => {
     setTitle(''); setSlug(''); setPageType('template'); setTemplateId('clothing'); setSections([])
-    setCustomHtml(''); setSelectedProducts([]); setSelectedCombos([]); setTab('general'); setEditRow(null)
+    setCustomHtml(''); setSelectedProducts([]); setSelectedCombos([]); setTab('general'); setEditRow(null); setHasUnsaved(false)
   }
 
   const openEdit = (row: LandingPage) => {
@@ -307,6 +329,9 @@ export function LandingPages() {
                             <Globe className='h-4 w-4 text-green-600' />
                           </Button>
                         )}
+                        <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='Duplicate' onClick={() => cloneMut.mutate(p)}>
+                          <Copy className='h-4 w-4' />
+                        </Button>
                         <Button variant='ghost' size='sm' className='h-8 w-8 p-0 text-destructive' title='Delete'
                           onClick={() => setDeleteTarget(p)}>
                           <Trash2 className='h-4 w-4' />
@@ -318,11 +343,24 @@ export function LandingPages() {
               </tbody>
             </table>
           )}
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className='flex items-center justify-between px-4 py-3 border-t bg-muted/20'>
+              <span className='text-xs text-muted-foreground'>Page {page} of {totalPages}</span>
+              <div className='flex gap-1'>
+                <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
+                <Button variant='outline' size='sm' disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
         </div>
       </Main>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={formOpen} onOpenChange={(v) => { if (!v) { setFormOpen(false); reset(); } }}>
+      <Dialog open={formOpen} onOpenChange={(v) => {
+        if (!v && hasUnsaved) { setCloseConfirm(true); return }
+        if (!v) { setFormOpen(false); reset(); }
+      }}>
         <DialogContent className='!max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col p-0'>
           <DialogHeader className='px-6 pt-6 pb-0'>
             <DialogTitle>{editRow ? `Edit: ${editRow.title}` : 'New Landing Page'}</DialogTitle>
@@ -341,11 +379,11 @@ export function LandingPages() {
               <TabsContent value='general' className='mt-0 space-y-4'>
                 <div className='space-y-1.5'>
                   <Label>Page Title *</Label>
-                  <Input value={title} onChange={e => { setTitle(e.target.value); if (!editRow) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Summer Sale 2026' />
+                  <Input value={title} onChange={e => { setTitle(e.target.value); markDirty(); if (!editRow) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Summer Sale 2026' />
                 </div>
                 <div className='space-y-1.5'>
                   <Label>Slug *</Label>
-                  <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder='summer-sale-2026' />
+                  <Input value={slug} onChange={e => { setSlug(e.target.value); markDirty(); }} placeholder='summer-sale-2026' />
                   <p className='text-xs text-muted-foreground'>URL: /landing/{slug || 'slug'}</p>
                 </div>
                 <div className='space-y-1.5'>
@@ -433,8 +471,20 @@ export function LandingPages() {
                               )}
                               {sec.productId !== undefined && (
                                 <div className='space-y-1'>
-                                  <Label className='text-xs'>Product ID</Label>
-                                  <Input className='h-8 text-xs' value={sec.productId || ''} onChange={e => updateSection(i, 'productId', e.target.value)} placeholder='uuid' />
+                                  <Label className='text-xs'>Product</Label>
+                                  <select
+                                    className='w-full rounded-md border px-2 py-1.5 text-xs bg-background h-8'
+                                    value={sec.productId || ''}
+                                    onChange={e => updateSection(i, 'productId', e.target.value)}
+                                  >
+                                    <option value=''>None (use page-level products)</option>
+                                    {selectedProducts.map(p => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                    {sec.productId && !selectedProducts.find(p => p.id === sec.productId) && (
+                                      <option value={sec.productId} disabled>{sec.productId.slice(0, 12)}...</option>
+                                    )}
+                                  </select>
                                 </div>
                               )}
                               {sec.image !== undefined && (
@@ -626,6 +676,16 @@ export function LandingPages() {
         destructive
         isLoading={deleteMut.isPending}
         handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={closeConfirm}
+        onOpenChange={() => setCloseConfirm(false)}
+        title='Unsaved Changes'
+        desc='You have unsaved changes. Are you sure you want to close?'
+        confirmText='Discard'
+        destructive
+        handleConfirm={() => { setCloseConfirm(false); setFormOpen(false); reset(); }}
       />
     </>
   )
