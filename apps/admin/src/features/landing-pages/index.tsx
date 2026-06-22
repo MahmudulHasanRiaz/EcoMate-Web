@@ -67,7 +67,7 @@ export function LandingPages() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => landingPagesApi.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Saved'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Saved'); setHasUnsaved(false); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -141,6 +141,8 @@ export function LandingPages() {
 
   const handleSave = () => {
     if (!title || !slug) { toast.error('Title and slug are required'); return }
+    if (!/^[a-z0-9-]+$/.test(slug)) { toast.error('Slug must be lowercase alphanumeric with dashes only'); return }
+    if (pageType === 'custom' && !customHtml.trim()) { toast.error('Custom HTML is empty. Paste your code or switch to Template mode.'); return }
     const payload = {
       title, slug, pageType, templateId: pageType === 'template' ? templateId : undefined,
       sections: pageType === 'template' ? sections : undefined,
