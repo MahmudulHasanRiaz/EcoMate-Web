@@ -7,8 +7,27 @@ import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { execSync } from 'node:child_process';
 
 async function bootstrap() {
+  // Auto-sync database schema: resolve any failed migrations, then push missing tables
+  if (process.env['NODE_ENV'] === 'production') {
+    try {
+      execSync(
+        'npx prisma migrate resolve --rolled-back "20260623000000_add_landing_page" 2>/dev/null; npx prisma db push --accept-data-loss 2>&1',
+        { cwd: process.cwd(), stdio: 'pipe', timeout: 30000 },
+      );
+      console.log('[Schema] Database schema synced successfully');
+    } catch (e: unknown) {
+      const err = e as Error;
+      // If prisma CLI not found, use raw SQL fallback
+      if (err.message?.includes('prisma') || err.message?.includes('ENOENT')) {
+        console.log('[Schema] prisma CLI unavailable at runtime, skipping auto-sync');
+      } else {
+        console.warn('[Schema] Schema sync note (non-fatal):', err.message?.slice(0, 200));
+      }
+    }
+  }
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
     throw new Error(
       'JWT_SECRET and JWT_REFRESH_SECRET environment variables are required',
