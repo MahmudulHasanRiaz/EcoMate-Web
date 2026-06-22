@@ -278,22 +278,42 @@ function HeaderAction({ icon, label, count, hideOnMobile, onClick, href }: { ico
 
 function NavSlider({ children }: { children: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  
   const [isHovered, setIsHovered] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  
+  const currentX = useRef(0);
+  const startX = useRef(0);
+  const initialX = useRef(0);
+  const speed = useRef(0.5); // pixels per frame
+  const isPointerDown = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const track = trackRef.current;
+    if (!container || !track) return;
 
     let animationFrameId: number;
-    let scrollSpeed = 0.5; // pixels per frame
 
     const step = () => {
-      if (!isHovered && container.scrollWidth > container.clientWidth) {
-        container.scrollLeft += scrollSpeed;
-        if (container.scrollLeft >= container.scrollWidth - container.clientWidth) {
-          scrollSpeed = -0.5; // Reverse direction
-        } else if (container.scrollLeft <= 0) {
-          scrollSpeed = 0.5; // Reverse direction
+      if (!isHovered && !isPointerDown.current) {
+        const maxScroll = track.scrollWidth - container.clientWidth;
+        if (maxScroll > 0) {
+          currentX.current -= speed.current; // Move left
+          
+          if (-currentX.current >= maxScroll) {
+            speed.current = -0.5; // Reverse to right
+            currentX.current = -maxScroll;
+          } else if (currentX.current <= 0 && -currentX.current <= 0) {
+            speed.current = 0.5; // Reverse to left
+            currentX.current = 0;
+          }
+          
+          track.style.transform = `translateX(${currentX.current}px)`;
+        } else {
+           currentX.current = 0;
+           track.style.transform = `translateX(0px)`;
         }
       }
       animationFrameId = requestAnimationFrame(step);
@@ -304,18 +324,73 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     return () => cancelAnimationFrame(animationFrameId);
   }, [isHovered]);
 
+  const handlePointerDown = (e: React.PointerEvent) => {
+    isPointerDown.current = true;
+    startX.current = e.clientX;
+    initialX.current = currentX.current;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isPointerDown.current) return;
+    const track = trackRef.current;
+    const container = containerRef.current;
+    if (!track || !container) return;
+
+    const dx = e.clientX - startX.current;
+    if (Math.abs(dx) > 5) {
+      setIsDragging(true); // actually dragged
+    }
+
+    let newX = initialX.current + dx;
+    
+    const maxScroll = track.scrollWidth - container.clientWidth;
+    if (maxScroll > 0) {
+       if (newX > 0) newX = 0;
+       if (newX < -maxScroll) newX = -maxScroll;
+       currentX.current = newX;
+       track.style.transform = `translateX(${newX}px)`;
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    isPointerDown.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    setTimeout(() => setIsDragging(false), 50);
+  };
+
   return (
     <div 
-      className="relative overflow-hidden w-full flex items-center min-h-[44px]"
+      className="relative w-full flex items-center min-h-[44px]"
+      style={{ overflowX: 'clip', overflowY: 'visible' }}
       onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        isPointerDown.current = false;
+        setIsDragging(false);
+      }}
     >
       <div 
         ref={containerRef}
-        className="flex items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth w-full select-none py-1.5"
-        style={{ scrollBehavior: 'auto', WebkitOverflowScrolling: 'touch' }}
+        className="w-full relative"
       >
-        {children}
+        <div 
+          ref={trackRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClickCapture={(e) => {
+            if (isDragging) {
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }}
+          className={`flex items-center gap-1 w-max py-1.5 cursor-grab active:cursor-grabbing touch-pan-y`}
+          style={{ willChange: 'transform' }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
