@@ -34,9 +34,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [tab, setTab] = useState('general')
 
   const { data: fullProduct } = useQuery({
-    queryKey: ['product', currentRow?.id],
-    queryFn: () => productsApi.get(currentRow!.id).then(r => r.data),
-    enabled: isEdit && !!currentRow?.id,
+    queryKey: ['product', currentRow?.id || createdProductId],
+    queryFn: () => productsApi.get(currentRow?.id || createdProductId!).then(r => r.data),
+    enabled: (isEdit && !!currentRow?.id) || !!createdProductId,
   })
 
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : (r.data as any)?.data || []) })
@@ -99,7 +99,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [variantPickerOpen, setVariantPickerOpen] = useState(false)
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; stock: number }>({ open: false, stock: 0 })
+  const [regenerateConfirm, setRegenerateConfirm] = useState(false)
   const [manageStockJustToggled, setManageStockJustToggled] = useState(false)
+  const [createdProductId, setCreatedProductId] = useState<string | null>(null)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -194,6 +196,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 });
+    setCreatedProductId(null); setRegenerateConfirm(false);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -203,7 +206,19 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const createMut = useMutation({
     mutationFn: productsApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); onOpenChange(false); reset(); toast.success('Product created'); },
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      const createdId = res.data?.id || res.id;
+      if (type === 'variable' && selectedAttrs.length > 0 && createdId) {
+        setCreatedProductId(createdId);
+        setTab('variants');
+        toast.success('Product created. Now configure variants.');
+      } else {
+        onOpenChange(false);
+        reset();
+        toast.success('Product created');
+      }
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -215,7 +230,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const genVariantMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.generateVariants(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Variants generated'); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (currentRow?.id) queryClient.invalidateQueries({ queryKey: ['product', currentRow.id] });
+      toast.success('Variants generated');
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
@@ -314,10 +333,17 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   }
 
   const handleGenerateVariants = () => {
-    if (!currentRow || selectedAttrs.length === 0) return
+    const productId = currentRow?.id || createdProductId
+    if (!productId || selectedAttrs.length === 0) return
+    // If variants already exist, warn about regeneration
+    if (variantList.length > 0 && !regenerateConfirm) {
+      setRegenerateConfirm(true)
+      return
+    }
+    setRegenerateConfirm(false)
     const allValueIds = Object.values(selectedValues).flat()
     genVariantMut.mutate({
-      id: currentRow.id,
+      id: productId,
       data: {
         attributeIds: selectedAttrs,
         attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
@@ -679,12 +705,12 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             </TabsContent>
 
             <TabsContent value='variants' className='mt-0 space-y-6'>
-              {!currentRow ? (
+              {type !== 'variable' ? (
                 <div className='bg-muted/20 rounded-lg p-8 text-center space-y-3'>
                   <Package className='h-10 w-10 text-muted-foreground mx-auto' />
                   <div>
-                    <h3 className='font-medium'>Create the product first</h3>
-                    <p className='text-sm text-muted-foreground'>Fill in the General tab and save the product, then come back to configure its variants.</p>
+                    <h3 className='font-medium'>Variable product only</h3>
+                    <p className='text-sm text-muted-foreground'>Switch product type to <strong>Variable Product</strong> in the General tab to configure variants.</p>
                   </div>
                 </div>
               ) : (
@@ -759,11 +785,54 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
                     <div className='border-t pt-5'>
                       <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1'>Step 2: Generate</h3>
+                      {/* Generation preview */}
+                      {selectedAttrs.length > 0 && (() => {
+                        const counts: { attr: string; values: string; count: number }[] = []
+                        let total = 1
+                        for (const attrId of selectedAttrs) {
+                          const attr = (attrs || []).find((a: any) => a.id === attrId)
+                          if (!attr) continue
+                          const vals = selectedValues[attrId]
+                          const activeValues = vals?.length
+                            ? attr.values.filter((v: any) => vals.includes(v.id))
+                            : (attr.values || [])
+                          const count = activeValues.length || 0
+                          if (count > 0) {
+                            counts.push({ attr: attr.name, values: activeValues.map((v: any) => v.value).join(', '), count })
+                            total *= count
+                          }
+                        }
+                        const defaultPrice = basePrice ? parseFloat(basePrice) : undefined
+                        const defaultStock = 10
+                        return (
+                          <div className='mt-3 bg-muted/20 rounded-lg p-4 space-y-2'>
+                            <div className='flex items-center justify-between'>
+                              <span className='text-sm font-medium'>Expected combinations: <strong>{total}</strong></span>
+                              <span className='text-xs text-muted-foreground'>Each variant gets default stock: {defaultStock}</span>
+                            </div>
+                            {defaultPrice && <p className='text-xs text-muted-foreground'>Default price: ৳{defaultPrice.toFixed(2)} per variant</p>}
+                            {counts.map(c => (
+                              <div key={c.attr} className='text-xs text-muted-foreground'>
+                                <span className='font-medium text-foreground'>{c.attr}</span>: {c.values} ({c.count})
+                              </div>
+                            ))}
+                            {total > 50 && (
+                              <p className='text-xs text-amber-600 font-medium'>⚠ Large combination set ({total} variants). Consider narrowing your attribute selection.</p>
+                            )}
+                          </div>
+                        )
+                      })()}
                       <div className='flex items-center gap-4 mt-3'>
-                        <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
-                          {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
-                          Generate Variants
-                        </Button>
+                        {!currentRow && !createdProductId ? (
+                          <div className='text-sm text-muted-foreground bg-muted/30 rounded-md px-4 py-2'>
+                            Configure attributes above, then <strong>save the product first</strong> to enable variant generation.
+                          </div>
+                        ) : (
+                          <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
+                            {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                            Generate Variants
+                          </Button>
+                        )}
                         <span className='text-xs text-muted-foreground'>
                           {selectedAttrs.length > 0
                             ? `Generates all combinations of selected attributes`
@@ -929,6 +998,25 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
           </div>
         </div>
       )}
+
+      {regenerateConfirm && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setRegenerateConfirm(false)}>
+          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <h3 className='font-semibold text-lg'>Regenerate Variants?</h3>
+            <p className='text-sm text-muted-foreground'>
+              This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.
+            </p>
+            <div className='flex justify-end gap-2'>
+              <Button variant='outline' onClick={() => setRegenerateConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant='destructive' onClick={handleGenerateVariants}>
+                Delete & Regenerate
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 }
@@ -957,8 +1045,30 @@ function VariantRow({
   const saveEdit = () => {
     if (!editing) return
     const field = editing as 'price' | 'stock' | 'sku'
-    const parsed = field === 'price' ? parseFloat(editValue) : field === 'stock' ? parseInt(editValue) : editValue
-    onUpdate({ [field]: parsed })
+    if (field === 'sku') {
+      if (!editValue.trim()) {
+        toast.error('SKU cannot be empty')
+        cancelEdit()
+        return
+      }
+      onUpdate({ sku: editValue.trim() })
+    } else if (field === 'price') {
+      const val = parseFloat(editValue)
+      if (isNaN(val) || val < 0) {
+        toast.error('Price must be a valid positive number')
+        cancelEdit()
+        return
+      }
+      onUpdate({ price: val })
+    } else if (field === 'stock') {
+      const val = parseInt(editValue)
+      if (isNaN(val) || val < 0) {
+        toast.error('Stock must be a valid non-negative number')
+        cancelEdit()
+        return
+      }
+      onUpdate({ stock: val })
+    }
     setEditing(null)
   }
 
@@ -1008,11 +1118,19 @@ function VariantRow({
           )}
         </div>
 
-        {/* Stock (read-only) */}
+        {/* Stock (editable inline) */}
         <div className='min-w-0'>
           <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
-          <Badge variant='outline' className='text-xs cursor-default'>{variant.stock}</Badge>
-          <p className='text-[10px] text-muted-foreground mt-0.5'>Adjust via Inventory</p>
+          {editing === 'stock' ? (
+            <div className='flex items-center gap-1'>
+              <Input type='number' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-20' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+            </div>
+          ) : (
+            <button onClick={() => startEdit('stock', variant.stock)} className='flex items-center gap-1 group'>
+              <Badge variant={variant.stock > 0 ? 'secondary' : 'destructive'} className='text-xs cursor-pointer'>{variant.stock}</Badge>
+              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
+            </button>
+          )}
         </div>
       </div>
     </div>
