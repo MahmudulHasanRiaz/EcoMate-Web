@@ -50,27 +50,71 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
         const categories = await getCategoriesServer();
         const shownCategories = categories.filter((c: any) => c.showInMenu !== false);
 
+        const cloneItems = (items: any[]): any[] => {
+          return items.map(item => ({
+            ...item,
+            children: item.children ? cloneItems(item.children) : []
+          }));
+        };
+
         const injectCategories = (section: any) => {
           if (!section || !section.showAllCategories) return section;
-          const existingCatIds = new Set(
-            (section.items || [])
-              .filter((i: any) => i.type === 'category' && i.categoryId)
-              .map((i: any) => i.categoryId)
-          );
-          const excludedIds = new Set(section.excludedCategories || []);
           
-          const toAdd = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id));
-          const newItems = toAdd.map(c => ({
-            id: `cat-${c.id}`,
-            type: 'category',
-            label: c.name,
-            categoryId: c.id,
-            children: []
-          }));
+          const itemsClone = cloneItems(section.items || []);
+          
+          const existingCatIds = new Set<string>();
+          const menuNodesByCatId = new Map<string, any>();
+          
+          const walkMenu = (items: any[]) => {
+            for (const item of items) {
+              if (item.type === 'category' && item.categoryId) {
+                existingCatIds.add(item.categoryId);
+                menuNodesByCatId.set(item.categoryId, item);
+              }
+              if (item.children) walkMenu(item.children);
+            }
+          };
+          walkMenu(itemsClone);
+
+          const excludedIds = new Set(section.excludedCategories || []);
+          const categoriesToInject = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id));
+          
+          const injectedNodesByCatId = new Map<string, any>();
+          categoriesToInject.forEach(c => {
+            injectedNodesByCatId.set(c.id, {
+              id: `cat-${c.id}`,
+              type: 'category',
+              label: c.name,
+              categoryId: c.id,
+              children: []
+            });
+          });
+          
+          const rootInjectedItems: any[] = [];
+
+          categoriesToInject.forEach(c => {
+            const node = injectedNodesByCatId.get(c.id);
+            if (!node) return;
+            
+            if (c.parentId) {
+               if (menuNodesByCatId.has(c.parentId)) {
+                 const parentMenuNode = menuNodesByCatId.get(c.parentId);
+                 parentMenuNode.children = parentMenuNode.children || [];
+                 parentMenuNode.children.push(node);
+               } else if (injectedNodesByCatId.has(c.parentId)) {
+                 const parentInjectedNode = injectedNodesByCatId.get(c.parentId);
+                 parentInjectedNode.children.push(node);
+               } else {
+                 rootInjectedItems.push(node);
+               }
+            } else {
+               rootInjectedItems.push(node);
+            }
+          });
 
           return {
             ...section,
-            items: [...(section.items || []), ...newItems]
+            items: [...itemsClone, ...rootInjectedItems]
           };
         };
 
