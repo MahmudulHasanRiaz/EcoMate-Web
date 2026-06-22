@@ -64,4 +64,5 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   catalogImageRatio:             { label: 'Catalog Image Ratio', type: 'text', hint: 'JSON — managed via Catalog Display section' },
   hide_oos_products:             { label: 'Hide Out of Stock Products', type: 'switch', hint: 'When enabled, products with zero stock are hidden from the archive/catalog listing' },
   default_variant_selected:      { label: 'Default Variant Selection', type: 'switch', hint: 'When enabled, the first variant of a product is automatically selected by default on the storefront. When disabled, the user must explicitly select color/size/attributes.' },
+  show_reviews:                  { label: 'Show Product Reviews', type: 'switch', hint: 'Toggle product reviews on/off on the product details page.' },
 }

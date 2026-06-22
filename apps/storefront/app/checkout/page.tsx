@@ -61,10 +61,19 @@ function SearchableSelect({
 
   const filteredOptions = React.useMemo(() => {
     if (!search) return options;
-    const q = search.toLowerCase();
+    
+    const normalizeBengali = (str: string) => {
+      return str
+        .replace(/\u09AF\u09BC/g, '\u09DF') // য + ় -> য়
+        .replace(/\u09A1\u09BC/g, '\u09DC') // ড + ় -> ড়
+        .replace(/\u09A2\u09BC/g, '\u09DD') // ঢ + ় -> ঢ়
+        .toLowerCase();
+    };
+
+    const q = normalizeBengali(search);
     return options.filter((opt) => {
       const en = opt.name.toLowerCase();
-      const bn = opt.nameBn ? opt.nameBn.toLowerCase() : '';
+      const bn = opt.nameBn ? normalizeBengali(opt.nameBn) : '';
       return en.includes(q) || bn.includes(q);
     });
   }, [search, options]);
@@ -1185,7 +1194,7 @@ export default function CheckoutPage() {
                       type="text"
                       value={guestName}
                       onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }}
-                      placeholder="Your Full Name *"
+                      placeholder="আপনার পূর্ণ নাম লিখুন *"
                       className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 transition-all bg-white ${fieldErrors.guestName ? 'border-red-400' : 'border-gray-250'}`}
                     />
                     {fieldErrors.guestName && <p className="text-red-500 text-[10px] mt-1 font-semibold">{fieldErrors.guestName}</p>}
@@ -1200,7 +1209,7 @@ export default function CheckoutPage() {
                         type="tel"
                         value={guestPhone}
                         onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }}
-                        placeholder="1X XXXX XXXX *"
+                        placeholder="মোবাইল নম্বর দিন *"
                         className="w-full px-3.5 py-2 text-xs outline-none bg-transparent text-gray-800 font-medium placeholder-gray-400"
                       />
                     </div>
@@ -1230,7 +1239,7 @@ export default function CheckoutPage() {
                   <div className="space-y-1">
                     <SearchableSelect
                       id="checkout-district"
-                      placeholder={checkoutCfg?.districtRequired ? 'Select District *' : 'Select District (Optional)'}
+                      placeholder={checkoutCfg?.districtRequired ? 'জেলা সিলেক্ট করুন *' : 'জেলা সিলেক্ট করুন (ঐচ্ছিক)'}
                       options={districts}
                       value={district}
                       onChange={(val) => { setDistrict(val); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
@@ -1244,7 +1253,7 @@ export default function CheckoutPage() {
                   <div className="space-y-1">
                     <SearchableSelect
                       id="checkout-thana"
-                      placeholder={checkoutCfg?.thanaRequired ? 'Select Thana/Upazila *' : 'Select Thana/Upazila (Optional)'}
+                      placeholder={checkoutCfg?.thanaRequired ? 'থানা/উপজেলা সিলেক্ট করুন *' : 'থানা/উপজেলা সিলেক্ট করুন (ঐচ্ছিক)'}
                       options={thanas}
                       value={thana}
                       onChange={(val) => { setThana(val); clearFieldError('thana'); scheduleLeadCapture(); }}
@@ -1259,7 +1268,7 @@ export default function CheckoutPage() {
                     id="checkout-addressLine"
                     value={addressLine}
                     onChange={e => { setAddressLine(e.target.value); clearFieldError('addressLine'); }}
-                    placeholder="Address detail (apartment, suite, unit, building, street) *"
+                    placeholder="আপনার সম্পূর্ণ ঠিকানা লিখুন (যেমন: গ্রাম, ইউনিয়ন/ওয়ার্ড, সড়ক নং, বাসা/রুম নং) *"
                     rows={2}
                     className={`w-full border rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 resize-none bg-white transition-all ${fieldErrors.addressLine ? 'border-red-400' : 'border-gray-250'}`}
                   />
@@ -1320,7 +1329,7 @@ export default function CheckoutPage() {
                   onClick={() => setIsNotesExpanded(true)}
                   className="text-xs font-semibold text-brand-blue hover:text-brand-blue/80 transition-colors flex items-center gap-1 cursor-pointer outline-none"
                 >
-                  <Plus size={14} /> Add delivery instructions / order notes (optional)
+                  <Plus size={14} /> ডেলিভারি নির্দেশনা বা অর্ডার নোট যোগ করুন (ঐচ্ছিক)
                 </button>
               ) : (
                 <div className="space-y-3">
@@ -1337,7 +1346,7 @@ export default function CheckoutPage() {
                   <textarea
                     value={customerNotes}
                     onChange={e => setCustomerNotes(e.target.value)}
-                    placeholder="Notes about your order, e.g. special instructions for delivery."
+                    placeholder="অর্ডার সম্পর্কে কোনো বিশেষ ডেলিভারি নির্দেশনা বা নোট থাকলে লিখুন (ঐচ্ছিক)..."
                     rows={2}
                     className="w-full border border-gray-250 rounded-md px-3.5 py-2.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 resize-none bg-white transition-all"
                     maxLength={90}

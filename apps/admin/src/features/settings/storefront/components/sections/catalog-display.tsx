@@ -151,7 +151,7 @@ export function CatalogDisplaySection({ hook }: Props) {
     return { mode: 'preset', preset, scope }
   }, [mode, preset, customWidth, customHeight, scope])
 
-  const lastSavedAt = hook.lastSavedMap.catalogImageRatio || hook.lastSavedMap.hide_oos_products || hook.lastSavedMap.default_variant_selected || null
+  const lastSavedAt = hook.lastSavedMap.catalogImageRatio || hook.lastSavedMap.hide_oos_products || hook.lastSavedMap.default_variant_selected || hook.lastSavedMap.show_reviews || null
 
   return (
     <SectionShell
@@ -285,6 +285,15 @@ export function CatalogDisplaySection({ hook }: Props) {
         schema={FIELD_SCHEMAS.default_variant_selected}
         value={hook.values.default_variant_selected ?? 'true'}
         onChange={v => hook.setValue('default_variant_selected', v as string)}
+      />
+
+      <Separator />
+
+      <Field
+        fieldKey='show_reviews'
+        schema={FIELD_SCHEMAS.show_reviews}
+        value={hook.values.show_reviews ?? 'true'}
+        onChange={v => hook.setValue('show_reviews', v as string)}
       />
     </SectionShell>
   )

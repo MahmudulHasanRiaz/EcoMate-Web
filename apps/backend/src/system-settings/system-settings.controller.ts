@@ -446,6 +446,7 @@ export class SystemSettingsController {
         hideOosFromArchive: map['hide_oos_products'] === 'true',
         maintenanceMode: map['maintenance_mode'] === 'true',
         defaultVariantSelected: map['default_variant_selected'] !== 'false',
+        showReviews: map['show_reviews'] !== 'false',
       },
     };
     this.cache.set('storefront:config', result);

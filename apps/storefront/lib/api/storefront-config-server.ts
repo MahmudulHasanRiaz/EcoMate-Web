@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   shippingMode: 'options',
   shippingOptions: [],
   shippingZones: [],
-  features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true },
+  features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
   homepageSections: [
     { id: '1', title: 'Featured Gadgets', type: 'featured', limit: 4, enabled: true },
     { id: '2', title: 'New Arrivals', type: 'new_arrivals', limit: 4, enabled: true },

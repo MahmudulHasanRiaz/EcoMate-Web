@@ -123,6 +123,7 @@ export interface StorefrontConfig {
     hideOosFromArchive: boolean;
     maintenanceMode: boolean;
     defaultVariantSelected: boolean;
+    showReviews: boolean;
   };
 }
 

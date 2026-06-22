@@ -813,7 +813,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           )}
         </div>
 
-        <ReviewsSection reviews={reviews} productId={product.id} />
+        {config.features.showReviews !== false && (
+          <ReviewsSection reviews={reviews} productId={product.id} />
+        )}
 
         {videoUrl && videoPos === 5 && (
           <VideoEmbed url={videoUrl} />
