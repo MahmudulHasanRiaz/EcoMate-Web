@@ -54,6 +54,7 @@ export const sidebarData: SidebarData = {
         { title: 'Shipments', url: '/op/shipments', icon: Truck },
         { title: 'Refunds', url: '/op/refunds', icon: RefreshCw },
         { title: 'Coupons', url: '/op/coupons', icon: Percent },
+        { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck },
         { title: 'Media Gallery', url: '/op/media', icon: Monitor },
       ],

@@ -1,0 +1,479 @@
+import { useState } from 'react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2 } from 'lucide-react'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { ProfileDropdown } from '@/components/profile-dropdown'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { landingPagesApi, type LandingPage } from './api'
+
+export function LandingPages() {
+  const queryClient = useQueryClient()
+  const [formOpen, setFormOpen] = useState(false)
+  const [editRow, setEditRow] = useState<LandingPage | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<LandingPage | null>(null)
+  const [tab, setTab] = useState('general')
+
+  // Form state
+  const [title, setTitle] = useState('')
+  const [slug, setSlug] = useState('')
+  const [pageType, setPageType] = useState<string>('template')
+  const [templateId, setTemplateId] = useState('clothing')
+  const [sections, setSections] = useState<any[]>([])
+  const [customHtml, setCustomHtml] = useState('')
+  const [productIds, setProductIds] = useState<string>('')
+  const [comboIds, setComboIds] = useState<string>('')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['landing-pages'],
+    queryFn: () => landingPagesApi.list().then(r => r.data),
+  })
+
+  const pages = (data as any)?.data || []
+
+  const createMut = useMutation({
+    mutationFn: landingPagesApi.create,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); setFormOpen(false); reset(); toast.success('Landing page created'); },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => landingPagesApi.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Saved'); },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: landingPagesApi.delete,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); setDeleteTarget(null); toast.success('Deleted'); },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
+  const publishMut = useMutation({
+    mutationFn: landingPagesApi.publish,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Published'); },
+  })
+
+  const unpublishMut = useMutation({
+    mutationFn: landingPagesApi.unpublish,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Unpublished'); },
+  })
+
+  const isPending = createMut.isPending || updateMut.isPending
+
+  const reset = () => {
+    setTitle(''); setSlug(''); setPageType('template'); setTemplateId('clothing'); setSections([])
+    setCustomHtml(''); setProductIds(''); setComboIds(''); setTab('general'); setEditRow(null)
+  }
+
+  const openEdit = (row: LandingPage) => {
+    setEditRow(row)
+    setTitle(row.title); setSlug(row.slug); setPageType(row.pageType)
+    setTemplateId(row.templateId || 'clothing')
+    setSections(row.sections || [])
+    setCustomHtml(row.customHtml || '')
+    setProductIds(Array.isArray(row.productIds) ? row.productIds.join(', ') : '')
+    setComboIds(Array.isArray(row.comboIds) ? row.comboIds.join(', ') : '')
+    setFormOpen(true)
+    setTab('general')
+  }
+
+  const handleSave = () => {
+    if (!title || !slug) { toast.error('Title and slug are required'); return }
+    const payload = {
+      title, slug, pageType, templateId: pageType === 'template' ? templateId : undefined,
+      sections: pageType === 'template' ? sections : undefined,
+      customHtml: pageType === 'custom' ? customHtml : undefined,
+      productIds: productIds ? productIds.split(',').map(s => s.trim()).filter(Boolean) : [],
+      comboIds: comboIds ? comboIds.split(',').map(s => s.trim()).filter(Boolean) : [],
+    }
+    if (editRow) {
+      updateMut.mutate({ id: editRow.id, data: payload })
+    } else {
+      createMut.mutate(payload)
+    }
+  }
+
+  // Template section builder
+  const updateSection = (index: number, field: string, value: any) => {
+    setSections(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
+  }
+
+  const defaultSections = [
+    { type: 'hero', title: '', subtitle: '', image: '', ctaText: 'Shop Now', productId: '' },
+    { type: 'features', title: 'Features', items: [{ text: '' }, { text: '' }, { text: '' }] },
+    { type: 'featured-grid', title: 'Products', productIds: [] },
+    { type: 'checkout-form', title: 'Order Now', submitText: 'Place Order', productId: '' },
+    { type: 'trust-badges', title: 'Why Choose Us' },
+    { type: 'cta-footer', title: 'Limited Offer', subtitle: 'Order now before stock runs out', ctaText: 'Order Now' },
+  ]
+
+  return (
+    <>
+      <Header fixed>
+        <div className='ms-auto flex items-center gap-2'>
+          <ThemeSwitch /><ProfileDropdown />
+        </div>
+      </Header>
+      <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
+        <div className='flex flex-wrap items-end justify-between gap-2'>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>Landing Pages</h2>
+            <p className='text-muted-foreground'>Create sales pages and campaign landing pages.</p>
+          </div>
+          <Button onClick={() => { reset(); setFormOpen(true); }}>
+            <Plus className='h-4 w-4 mr-1' /> Add Landing Page
+          </Button>
+        </div>
+
+        {/* List table */}
+        <div className='border rounded-lg overflow-hidden'>
+          {isLoading ? (
+            <div className='flex items-center justify-center py-16 text-muted-foreground'>
+              <Loader2 className='h-5 w-5 animate-spin mr-2' /> Loading...
+            </div>
+          ) : pages.length === 0 ? (
+            <div className='text-center py-16 text-muted-foreground'>
+              <Layout className='h-10 w-10 mx-auto mb-3 opacity-40' />
+              <p className='text-sm'>No landing pages yet</p>
+              <Button variant='outline' size='sm' className='mt-3' onClick={() => { reset(); setFormOpen(true); }}>
+                Create your first page
+              </Button>
+            </div>
+          ) : (
+            <table className='w-full text-sm'>
+              <thead className='bg-muted/50 border-b'>
+                <tr>
+                  <th className='text-left px-4 py-3 font-medium'>Title</th>
+                  <th className='text-left px-4 py-3 font-medium'>Slug</th>
+                  <th className='text-left px-4 py-3 font-medium'>Type</th>
+                  <th className='text-left px-4 py-3 font-medium'>Status</th>
+                  <th className='text-left px-4 py-3 font-medium'>Updated</th>
+                  <th className='text-right px-4 py-3 font-medium'>Actions</th>
+                </tr>
+              </thead>
+              <tbody className='divide-y'>
+                {pages.map((p: LandingPage) => (
+                  <tr key={p.id} className='hover:bg-muted/10 transition-colors'>
+                    <td className='px-4 py-3 font-medium'>{p.title}</td>
+                    <td className='px-4 py-3 text-muted-foreground'>/landing/{p.slug}</td>
+                    <td className='px-4 py-3'>
+                      <Badge variant='outline' className='text-xs'>{p.pageType}</Badge>
+                    </td>
+                    <td className='px-4 py-3'>
+                      {p.isActive && !p.isDraft ? (
+                        <Badge variant='default' className='bg-green-600 text-xs'>Published</Badge>
+                      ) : (
+                        <Badge variant='secondary' className='text-xs'>Draft</Badge>
+                      )}
+                    </td>
+                    <td className='px-4 py-3 text-muted-foreground text-xs'>
+                      {new Date(p.updatedAt).toLocaleDateString()}
+                    </td>
+                    <td className='px-4 py-3 text-right'>
+                      <div className='flex items-center justify-end gap-1'>
+                        {p.isActive && !p.isDraft && (
+                          <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='View'
+                            onClick={() => window.open(`/landing/${p.slug}`, '_blank')}>
+                            <ExternalLink className='h-4 w-4' />
+                          </Button>
+                        )}
+                        <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='Edit' onClick={() => openEdit(p)}>
+                          <Pencil className='h-4 w-4' />
+                        </Button>
+                        {p.isActive && !p.isDraft ? (
+                          <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='Unpublish'
+                            onClick={() => unpublishMut.mutate(p.id)}>
+                            <GlobeOff className='h-4 w-4 text-amber-600' />
+                          </Button>
+                        ) : (
+                          <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='Publish'
+                            onClick={() => publishMut.mutate(p.id)}>
+                            <Globe className='h-4 w-4 text-green-600' />
+                          </Button>
+                        )}
+                        <Button variant='ghost' size='sm' className='h-8 w-8 p-0 text-destructive' title='Delete'
+                          onClick={() => setDeleteTarget(p)}>
+                          <Trash2 className='h-4 w-4' />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Main>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={formOpen} onOpenChange={(v) => { if (!v) { setFormOpen(false); reset(); } }}>
+        <DialogContent className='!max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col p-0'>
+          <DialogHeader className='px-6 pt-6 pb-0'>
+            <DialogTitle>{editRow ? `Edit: ${editRow.title}` : 'New Landing Page'}</DialogTitle>
+            <DialogDescription>Configure your sales page content and tracking.</DialogDescription>
+          </DialogHeader>
+
+          <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
+            <TabsList className='px-6 justify-start rounded-none border-b'>
+              <TabsTrigger value='general'>General</TabsTrigger>
+              <TabsTrigger value='content'>Content</TabsTrigger>
+              <TabsTrigger value='products'>Products</TabsTrigger>
+            </TabsList>
+
+            <div className='flex-1 overflow-y-auto px-6 py-4'>
+              {/* General Tab */}
+              <TabsContent value='general' className='mt-0 space-y-4'>
+                <div className='space-y-1.5'>
+                  <Label>Page Title *</Label>
+                  <Input value={title} onChange={e => { setTitle(e.target.value); if (!editRow) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Summer Sale 2026' />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Slug *</Label>
+                  <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder='summer-sale-2026' />
+                  <p className='text-xs text-muted-foreground'>URL: /landing/{slug || 'slug'}</p>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Page Type</Label>
+                  <div className='flex gap-3'>
+                    <button
+                      onClick={() => setPageType('template')}
+                      className={`flex-1 flex items-center gap-2 rounded-lg border-2 p-3 text-sm transition-colors ${
+                        pageType === 'template' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground'
+                      }`}
+                    >
+                      <Layout className='h-5 w-5' />
+                      <div className='text-left'>
+                        <p className='font-medium'>Template</p>
+                        <p className='text-xs text-muted-foreground'>Pre-built sections, edit content</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setPageType('custom')}
+                      className={`flex-1 flex items-center gap-2 rounded-lg border-2 p-3 text-sm transition-colors ${
+                        pageType === 'custom' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground'
+                      }`}
+                    >
+                      <Code className='h-5 w-5' />
+                      <div className='text-left'>
+                        <p className='font-medium'>Custom Code</p>
+                        <p className='text-xs text-muted-foreground'>Full HTML control</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {pageType === 'template' && (
+                  <div className='space-y-1.5'>
+                    <Label>Template</Label>
+                    <select value={templateId} onChange={e => setTemplateId(e.target.value)}
+                      className='w-full rounded-md border px-3 py-2 text-sm bg-background'>
+                      <option value='clothing'>Clothing Sales Page</option>
+                    </select>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Content Tab */}
+              <TabsContent value='content' className='mt-0 space-y-4'>
+                {pageType === 'template' ? (
+                  <div className='space-y-4'>
+                    <div className='flex items-center justify-between'>
+                      <p className='text-sm font-medium'>Template Sections</p>
+                      <Button variant='outline' size='sm' onClick={() => setSections(JSON.parse(JSON.stringify(defaultSections)))} disabled={sections.length > 0}>
+                        Load Default Sections
+                      </Button>
+                    </div>
+                    {sections.length === 0 ? (
+                      <div className='text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg'>
+                        <p className='text-sm'>No sections configured</p>
+                        <Button variant='outline' size='sm' className='mt-3' onClick={() => setSections(JSON.parse(JSON.stringify(defaultSections)))}>
+                          Load Default Sections
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className='space-y-3'>
+                        {sections.map((sec, i) => (
+                          <div key={i} className='border rounded-lg p-4 space-y-3'>
+                            <div className='flex items-center justify-between'>
+                              <Badge variant='outline' className='text-xs uppercase'>{sec.type}</Badge>
+                              <span className='text-xs text-muted-foreground'>Section {i + 1}</span>
+                            </div>
+                            <div className='grid grid-cols-2 gap-3'>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>Title</Label>
+                                <Input className='h-8 text-xs' value={sec.title || ''} onChange={e => updateSection(i, 'title', e.target.value)} placeholder='Section title' />
+                              </div>
+                              {sec.subtitle !== undefined && (
+                                <div className='space-y-1'>
+                                  <Label className='text-xs'>Subtitle</Label>
+                                  <Input className='h-8 text-xs' value={sec.subtitle || ''} onChange={e => updateSection(i, 'subtitle', e.target.value)} placeholder='Subtitle' />
+                                </div>
+                              )}
+                              {sec.ctaText !== undefined && (
+                                <div className='space-y-1'>
+                                  <Label className='text-xs'>Button Text</Label>
+                                  <Input className='h-8 text-xs' value={sec.ctaText || ''} onChange={e => updateSection(i, 'ctaText', e.target.value)} placeholder='Shop Now' />
+                                </div>
+                              )}
+                              {sec.productId !== undefined && (
+                                <div className='space-y-1'>
+                                  <Label className='text-xs'>Product ID</Label>
+                                  <Input className='h-8 text-xs' value={sec.productId || ''} onChange={e => updateSection(i, 'productId', e.target.value)} placeholder='uuid' />
+                                </div>
+                              )}
+                              {sec.image !== undefined && (
+                                <div className='space-y-1 col-span-2'>
+                                  <Label className='text-xs'>Image URL</Label>
+                                  <Input className='h-8 text-xs' value={sec.image || ''} onChange={e => updateSection(i, 'image', e.target.value)} placeholder='https://...' />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className='space-y-4'>
+                    <div className='flex items-center justify-between'>
+                      <div>
+                        <p className='text-sm font-medium'>Custom HTML</p>
+                        <p className='text-xs text-muted-foreground'>Paste your AI-generated HTML code here. Use <code className='bg-muted px-1 rounded'>window.EcoMate.track()</code> for events.</p>
+                      </div>
+                      <PromptReferenceModal />
+                    </div>
+                    <Textarea
+                      value={customHtml}
+                      onChange={e => setCustomHtml(e.target.value)}
+                      rows={24}
+                      placeholder='<html>...</html>'
+                      className='font-mono text-xs leading-relaxed'
+                    />
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Products Tab */}
+              <TabsContent value='products' className='mt-0 space-y-4'>
+                <div className='space-y-1.5'>
+                  <Label>Product IDs</Label>
+                  <Input value={productIds} onChange={e => setProductIds(e.target.value)} placeholder='uuid-1, uuid-2, uuid-3' />
+                  <p className='text-xs text-muted-foreground'>Comma-separated product UUIDs assigned to this page.</p>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Combo IDs</Label>
+                  <Input value={comboIds} onChange={e => setComboIds(e.target.value)} placeholder='uuid-1, uuid-2' />
+                  <p className='text-xs text-muted-foreground'>Comma-separated combo UUIDs.</p>
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+
+          <div className='border-t px-6 py-3 flex justify-between items-center'>
+            {editRow && (
+              <div className='flex gap-2'>
+                {editRow.isActive && !editRow.isDraft ? (
+                  <Button variant='outline' size='sm' onClick={() => unpublishMut.mutate(editRow.id)}>
+                    <GlobeOff className='h-4 w-4 mr-1' /> Unpublish
+                  </Button>
+                ) : (
+                  <Button variant='outline' size='sm' className='text-green-600 border-green-600' onClick={() => publishMut.mutate(editRow.id)}>
+                    <Globe className='h-4 w-4 mr-1' /> Publish
+                  </Button>
+                )}
+              </div>
+            )}
+            <div className='flex gap-2 ms-auto'>
+              <Button variant='outline' onClick={() => { setFormOpen(false); reset(); }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={!title || !slug || isPending}>
+                {isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1' /> : null}
+                {editRow ? 'Save' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={() => setDeleteTarget(null)}
+        title='Delete Landing Page'
+        desc={`Are you sure you want to delete "${deleteTarget?.title}"?`}
+        confirmText='Delete'
+        destructive
+        isLoading={deleteMut.isPending}
+        handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+    </>
+  )
+}
+
+function PromptReferenceModal() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant='outline' size='sm' onClick={() => setOpen(true)}>
+        <Code className='h-4 w-4 mr-1' /> Prompt Reference
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className='max-w-lg'>
+          <DialogHeader>
+            <DialogTitle>Custom Code Prompt Reference</DialogTitle>
+          </DialogHeader>
+          <div className='space-y-4 text-sm'>
+            <p>Use this prompt with any AI to generate your landing page:</p>
+            <div className='bg-muted rounded-lg p-4 space-y-2'>
+              <p className='font-medium'>Example Prompt:</p>
+              <p className='text-xs text-muted-foreground leading-relaxed border-l-2 border-primary pl-3 italic'>
+                "Create a modern sales landing page for a clothing brand in Bangladesh.
+                Target audience: young adults in Dhaka. Must include: hero section with CTA,
+                product grid, order form with name/phone/address/payment selection,
+                trust badges (COD, free delivery), testimonials.
+                Use Tailwind CSS CDN. Mobile responsive.
+                Use window.EcoMate.track('ViewContent', {{productId: '...'}}) for product clicks.
+                Use window.EcoMate.track('Lead', {{}}) when the user submits the order form.
+                Use window.EcoMate.track('AddToCart', {{productId: '...'}}) for add to cart buttons.
+                One file only — single HTML file. Bengali language preferred."
+              </p>
+            </div>
+            <div className='space-y-2'>
+              <p className='font-medium'>Tracking API:</p>
+              <ul className='text-xs space-y-1 text-muted-foreground'>
+                <li><code className='bg-muted px-1 rounded'>PageView</code> — fired automatically</li>
+                <li><code className='bg-muted px-1 rounded'>ViewContent</code> — product view</li>
+                <li><code className='bg-muted px-1 rounded'>AddToCart</code> — add to cart click</li>
+                <li><code className='bg-muted px-1 rounded'>Lead</code> — form submission</li>
+                <li><code className='bg-muted px-1 rounded'>InitiateCheckout</code> — checkout start</li>
+                <li><code className='bg-muted px-1 rounded'>Purchase</code> — order complete</li>
+              </ul>
+              <p className='text-xs text-muted-foreground mt-2'>Usage: <code className='bg-muted px-1 rounded'>window.EcoMate.track('EventName', {})</code></p>
+            </div>
+            <Button variant='outline' size='sm' onClick={() => {
+              navigator.clipboard.writeText(`Create a modern sales landing page for a clothing brand in Bangladesh. Target audience: young adults. Include: hero section with CTA, product grid, order form with name/phone/address/payment, trust badges, testimonials. Use Tailwind CSS CDN. Mobile responsive. Use window.EcoMate.track() for events. One single HTML file.`)
+              toast.success('Prompt copied')
+            }}>
+              Copy Example Prompt
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

@@ -808,3 +808,22 @@ model ProductTag {
 
   @@id([productId, tagId])
 }
+
+model LandingPage {
+  id           String    @id @default(uuid())
+  title        String
+  slug         String    @unique
+  pageType     String    @default("template")
+  templateId   String?
+  sections     Json?     @default("[]")
+  customHtml   String?   @db.Text
+  customCss    String?   @db.Text
+  productIds   Json?     @default("[]")
+  comboIds     Json?     @default("[]")
+  trackingJson Json?     @default("{}")
+  isActive     Boolean   @default(false)
+  isDraft      Boolean   @default(true)
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
