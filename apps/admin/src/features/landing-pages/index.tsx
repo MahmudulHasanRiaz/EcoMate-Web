@@ -39,7 +39,14 @@ export function LandingPages() {
   const [productResults, setProductResults] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
   const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [comboSearch, setComboSearch] = useState('')
+  const [comboResults, setComboResults] = useState<any[]>([])
+  const [combosSearching, setCombosSearching] = useState(false)
+  const [showComboDropdown, setShowComboDropdown] = useState(false)
   const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const comboSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const productSearchRef = useRef<HTMLDivElement>(null)
+  const comboSearchRefDiv = useRef<HTMLDivElement>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['landing-pages'],
@@ -89,8 +96,23 @@ export function LandingPages() {
     setTemplateId(row.templateId || 'clothing')
     setSections(row.sections || [])
     setCustomHtml(row.customHtml || '')
-    setSelectedProducts(Array.isArray(row.productIds) ? row.productIds.map((id: string) => ({ id, name: id })) : [])
-    setSelectedCombos(Array.isArray(row.comboIds) ? row.comboIds.map((id: string) => ({ id, name: id })) : [])
+    // Resolve product names from IDs
+    const pIds = Array.isArray(row.productIds) ? row.productIds : []
+    if (pIds.length > 0) {
+      apiClient.get('/products', { params: { ids: pIds.slice(0, 20).join(','), perPage: 20 } })
+        .then(res => {
+          const items = (res.data as any)?.data || []
+          setSelectedProducts(pIds.map((id: string) => {
+            const found = items.find((p: any) => p.id === id)
+            return { id, name: found?.name || id.slice(0, 8) + '...' }
+          }))
+        })
+        .catch(() => setSelectedProducts(pIds.map((id: string) => ({ id, name: id.slice(0, 8) + '...' }))))
+    } else {
+      setSelectedProducts([])
+    }
+    const cIds = Array.isArray(row.comboIds) ? row.comboIds : []
+    setSelectedCombos(cIds.map((id: string) => ({ id, name: id.slice(0, 8) + '...' })))
     setFormOpen(true)
     setTab('general')
   }
@@ -139,6 +161,49 @@ export function LandingPages() {
   const removeProduct = (id: string) => {
     setSelectedProducts(prev => prev.filter(p => p.id !== id))
   }
+
+  // Combo search with debounce
+  useEffect(() => {
+    if (!comboSearch || comboSearch.length < 2) { setComboResults([]); setShowComboDropdown(false); return }
+    clearTimeout(comboSearchRef.current)
+    comboSearchRef.current = setTimeout(() => {
+      setCombosSearching(true)
+      apiClient.get('/combos', { params: { search: comboSearch, perPage: 8, isActive: true } })
+        .then(res => {
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.data || []
+          setComboResults(items)
+          setShowComboDropdown(items.length > 0)
+        })
+        .catch(() => {})
+        .finally(() => setCombosSearching(false))
+    }, 300)
+    return () => { clearTimeout(comboSearchRef.current) }
+  }, [comboSearch])
+
+  const addCombo = (c: any) => {
+    if (!selectedCombos.find(sc => sc.id === c.id)) {
+      setSelectedCombos(prev => [...prev, { id: c.id, name: c.name }])
+    }
+    setComboSearch(''); setShowComboDropdown(false)
+  }
+
+  const removeCombo = (id: string) => {
+    setSelectedCombos(prev => prev.filter(c => c.id !== id))
+  }
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (productSearchRef.current && !productSearchRef.current.contains(e.target as Node)) {
+        setShowProductDropdown(false)
+      }
+      if (comboSearchRefDiv.current && !comboSearchRefDiv.current.contains(e.target as Node)) {
+        setShowComboDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   // Template section builder
   const updateSection = (index: number, field: string, value: any) => {
@@ -405,10 +470,10 @@ export function LandingPages() {
               </TabsContent>
 
               {/* Products Tab */}
-              <TabsContent value='products' className='mt-0 space-y-4'>
+              <TabsContent value='products' className='mt-0 space-y-6'>
                 <div className='space-y-1.5'>
                   <Label>Assigned Products</Label>
-                  <div className='relative'>
+                  <div className='relative' ref={productSearchRef}>
                     <div className='flex items-center border rounded-md px-3 py-2 bg-background'>
                       <Search className='h-4 w-4 text-muted-foreground mr-2 shrink-0' />
                       <input
@@ -445,19 +510,79 @@ export function LandingPages() {
                     )}
                   </div>
                   {selectedProducts.length > 0 && (
-                    <div className='flex flex-wrap gap-1.5 mt-2'>
+                    <div className='flex flex-wrap items-center gap-1.5 mt-2'>
                       {selectedProducts.map(p => (
-                        <Badge key={p.id} variant='secondary' className='gap-1 pr-1'>
-                          {p.name}
-                          <button onClick={() => removeProduct(p.id)} className='ml-0.5 hover:text-destructive'>
+                        <Badge key={p.id} variant='secondary' className='gap-1 pr-1 text-xs max-w-[200px]'>
+                          <span className='truncate'>{p.name}</span>
+                          <button onClick={() => removeProduct(p.id)} className='ml-0.5 hover:text-destructive shrink-0'>
                             <X className='h-3 w-3' />
                           </button>
                         </Badge>
                       ))}
+                      {selectedProducts.length > 1 && (
+                        <button onClick={() => setSelectedProducts([])} className='text-[11px] text-muted-foreground hover:text-destructive ml-1'>
+                          Clear all
+                        </button>
+                      )}
                     </div>
                   )}
                   {selectedProducts.length === 0 && (
-                    <p className='text-xs text-muted-foreground'>No products assigned. Search and select products above.</p>
+                    <p className='text-xs text-muted-foreground'>Search and select products above.</p>
+                  )}
+                </div>
+
+                <div className='border-t pt-4 space-y-1.5'>
+                  <Label>Assigned Combos</Label>
+                  <div className='relative' ref={comboSearchRefDiv}>
+                    <div className='flex items-center border rounded-md px-3 py-2 bg-background'>
+                      <Search className='h-4 w-4 text-muted-foreground mr-2 shrink-0' />
+                      <input
+                        type='text'
+                        value={comboSearch}
+                        onChange={e => setComboSearch(e.target.value)}
+                        placeholder='Search combos by name...'
+                        className='flex-1 text-sm bg-transparent outline-none border-0 p-0'
+                      />
+                      {combosSearching && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
+                    </div>
+                    {showComboDropdown && (
+                      <div className='absolute z-50 top-full mt-1 left-0 right-0 bg-background border rounded-md shadow-lg max-h-60 overflow-y-auto'>
+                        {comboResults.map((c: any) => (
+                          <button
+                            key={c.id}
+                            type='button'
+                            onClick={() => addCombo(c)}
+                            className='w-full flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50 text-left transition-colors'
+                          >
+                            <div className='min-w-0 flex-1'>
+                              <p className='font-medium truncate'>{c.name}</p>
+                              <p className='text-xs text-muted-foreground'>৳{Number(c.basePrice || 0).toLocaleString()}</p>
+                            </div>
+                            <Plus className='h-4 w-4 shrink-0 text-muted-foreground' />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {selectedCombos.length > 0 && (
+                    <div className='flex flex-wrap items-center gap-1.5 mt-2'>
+                      {selectedCombos.map(c => (
+                        <Badge key={c.id} variant='secondary' className='gap-1 pr-1 text-xs max-w-[200px]'>
+                          <span className='truncate'>{c.name}</span>
+                          <button onClick={() => removeCombo(c.id)} className='ml-0.5 hover:text-destructive shrink-0'>
+                            <X className='h-3 w-3' />
+                          </button>
+                        </Badge>
+                      ))}
+                      {selectedCombos.length > 1 && (
+                        <button onClick={() => setSelectedCombos([])} className='text-[11px] text-muted-foreground hover:text-destructive ml-1'>
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {selectedCombos.length === 0 && (
+                    <p className='text-xs text-muted-foreground'>Search and select combos above.</p>
                   )}
                 </div>
               </TabsContent>
