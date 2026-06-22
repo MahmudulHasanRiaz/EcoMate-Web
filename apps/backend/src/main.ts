@@ -8,24 +8,52 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { execSync } from 'node:child_process';
+import { PrismaClient } from '@prisma/client';
 
 async function bootstrap() {
-  // Auto-sync database schema: resolve any failed migrations, then push missing tables
+  // Auto-sync database schema: resolve failed migration + create missing tables
   if (process.env['NODE_ENV'] === 'production') {
+    // Method 1: via prisma CLI (resolve failed migration then db push)
     try {
       execSync(
         'npx prisma migrate resolve --rolled-back "20260623000000_add_landing_page" 2>/dev/null; npx prisma db push --accept-data-loss 2>&1',
         { cwd: process.cwd(), stdio: 'pipe', timeout: 30000 },
       );
       console.log('[Schema] Database schema synced successfully');
-    } catch (e: unknown) {
-      const err = e as Error;
-      // If prisma CLI not found, use raw SQL fallback
-      if (err.message?.includes('prisma') || err.message?.includes('ENOENT')) {
-        console.log('[Schema] prisma CLI unavailable at runtime, skipping auto-sync');
-      } else {
-        console.warn('[Schema] Schema sync note (non-fatal):', err.message?.slice(0, 200));
-      }
+    } catch {
+      console.log('[Schema] prisma CLI sync skipped');
+    }
+    // Method 2: raw SQL fallback via PrismaClient (always runs, creates LandingPage if missing)
+    try {
+      const fallbackClient = new PrismaClient();
+      await fallbackClient.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "LandingPage" (
+          "id" TEXT NOT NULL,
+          "title" TEXT NOT NULL,
+          "slug" TEXT NOT NULL,
+          "pageType" TEXT NOT NULL DEFAULT 'template',
+          "templateId" TEXT,
+          "sections" JSONB DEFAULT '[]',
+          "customHtml" TEXT,
+          "customCss" TEXT,
+          "productIds" JSONB DEFAULT '[]',
+          "comboIds" JSONB DEFAULT '[]',
+          "trackingJson" JSONB DEFAULT '{}',
+          "isActive" BOOLEAN NOT NULL DEFAULT false,
+          "isDraft" BOOLEAN NOT NULL DEFAULT true,
+          "publishedAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          CONSTRAINT "LandingPage_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await fallbackClient.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "LandingPage_slug_key" ON "LandingPage"("slug")`
+      );
+      await fallbackClient.$disconnect();
+      console.log('[Schema] LandingPage table ready');
+    } catch {
+      console.log('[Schema] Table already exists');
     }
   }
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
