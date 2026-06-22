@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateLandingPageDto, UpdateLandingPageDto } from './dto/landing-page.dto';
 
@@ -40,6 +40,9 @@ export class LandingPagesService {
   }
 
   async create(dto: CreateLandingPageDto) {
+    if (!dto.title || !dto.slug) {
+      throw new BadRequestException('Title and slug are required');
+    }
     return this.prisma.landingPage.create({
       data: {
         title: dto.title,
