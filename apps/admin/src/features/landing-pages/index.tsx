@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2 } from 'lucide-react'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -11,13 +11,13 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { landingPagesApi, type LandingPage } from './api'
+import { apiClient } from '@/lib/api-client'
 
 export function LandingPages() {
   const queryClient = useQueryClient()
@@ -33,8 +33,13 @@ export function LandingPages() {
   const [templateId, setTemplateId] = useState('clothing')
   const [sections, setSections] = useState<any[]>([])
   const [customHtml, setCustomHtml] = useState('')
-  const [productIds, setProductIds] = useState<string>('')
-  const [comboIds, setComboIds] = useState<string>('')
+  const [selectedProducts, setSelectedProducts] = useState<{ id: string; name: string }[]>([])
+  const [selectedCombos, setSelectedCombos] = useState<{ id: string; name: string }[]>([])
+  const [productSearch, setProductSearch] = useState('')
+  const [productResults, setProductResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const { data, isLoading } = useQuery({
     queryKey: ['landing-pages'],
@@ -75,7 +80,7 @@ export function LandingPages() {
 
   const reset = () => {
     setTitle(''); setSlug(''); setPageType('template'); setTemplateId('clothing'); setSections([])
-    setCustomHtml(''); setProductIds(''); setComboIds(''); setTab('general'); setEditRow(null)
+    setCustomHtml(''); setSelectedProducts([]); setSelectedCombos([]); setTab('general'); setEditRow(null)
   }
 
   const openEdit = (row: LandingPage) => {
@@ -84,8 +89,8 @@ export function LandingPages() {
     setTemplateId(row.templateId || 'clothing')
     setSections(row.sections || [])
     setCustomHtml(row.customHtml || '')
-    setProductIds(Array.isArray(row.productIds) ? row.productIds.join(', ') : '')
-    setComboIds(Array.isArray(row.comboIds) ? row.comboIds.join(', ') : '')
+    setSelectedProducts(Array.isArray(row.productIds) ? row.productIds.map((id: string) => ({ id, name: id })) : [])
+    setSelectedCombos(Array.isArray(row.comboIds) ? row.comboIds.map((id: string) => ({ id, name: id })) : [])
     setFormOpen(true)
     setTab('general')
   }
@@ -96,14 +101,43 @@ export function LandingPages() {
       title, slug, pageType, templateId: pageType === 'template' ? templateId : undefined,
       sections: pageType === 'template' ? sections : undefined,
       customHtml: pageType === 'custom' ? customHtml : undefined,
-      productIds: productIds ? productIds.split(',').map(s => s.trim()).filter(Boolean) : [],
-      comboIds: comboIds ? comboIds.split(',').map(s => s.trim()).filter(Boolean) : [],
+      productIds: selectedProducts.map(p => p.id),
+      comboIds: selectedCombos.map(c => c.id),
     }
     if (editRow) {
       updateMut.mutate({ id: editRow.id, data: payload })
     } else {
       createMut.mutate(payload)
     }
+  }
+
+  // Product search with debounce
+  useEffect(() => {
+    if (!productSearch || productSearch.length < 2) { setProductResults([]); setShowProductDropdown(false); return }
+    clearTimeout(searchRef.current)
+    searchRef.current = setTimeout(() => {
+      setSearching(true)
+      apiClient.get('/products', { params: { search: productSearch, perPage: 8, isActive: true } })
+        .then(res => {
+          const items = (res.data as any)?.data || []
+          setProductResults(items)
+          setShowProductDropdown(items.length > 0)
+        })
+        .catch(() => {})
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => { clearTimeout(searchRef.current) }
+  }, [productSearch])
+
+  const addProduct = (p: any) => {
+    if (!selectedProducts.find(sp => sp.id === p.id)) {
+      setSelectedProducts(prev => [...prev, { id: p.id, name: p.name }])
+    }
+    setProductSearch(''); setShowProductDropdown(false)
+  }
+
+  const removeProduct = (id: string) => {
+    setSelectedProducts(prev => prev.filter(p => p.id !== id))
   }
 
   // Template section builder
@@ -373,14 +407,58 @@ export function LandingPages() {
               {/* Products Tab */}
               <TabsContent value='products' className='mt-0 space-y-4'>
                 <div className='space-y-1.5'>
-                  <Label>Product IDs</Label>
-                  <Input value={productIds} onChange={e => setProductIds(e.target.value)} placeholder='uuid-1, uuid-2, uuid-3' />
-                  <p className='text-xs text-muted-foreground'>Comma-separated product UUIDs assigned to this page.</p>
-                </div>
-                <div className='space-y-1.5'>
-                  <Label>Combo IDs</Label>
-                  <Input value={comboIds} onChange={e => setComboIds(e.target.value)} placeholder='uuid-1, uuid-2' />
-                  <p className='text-xs text-muted-foreground'>Comma-separated combo UUIDs.</p>
+                  <Label>Assigned Products</Label>
+                  <div className='relative'>
+                    <div className='flex items-center border rounded-md px-3 py-2 bg-background'>
+                      <Search className='h-4 w-4 text-muted-foreground mr-2 shrink-0' />
+                      <input
+                        type='text'
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        placeholder='Search products by name...'
+                        className='flex-1 text-sm bg-transparent outline-none border-0 p-0'
+                      />
+                      {searching && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
+                    </div>
+                    {showProductDropdown && (
+                      <div className='absolute z-50 top-full mt-1 left-0 right-0 bg-background border rounded-md shadow-lg max-h-60 overflow-y-auto'>
+                        {productResults.map((p: any) => (
+                          <button
+                            key={p.id}
+                            type='button'
+                            onClick={() => addProduct(p)}
+                            className='w-full flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50 text-left transition-colors'
+                          >
+                            {p.images?.[0] ? (
+                              <img src={p.images[0]} alt='' className='w-8 h-8 rounded object-cover bg-muted' />
+                            ) : (
+                              <div className='w-8 h-8 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground'>?</div>
+                            )}
+                            <div className='min-w-0 flex-1'>
+                              <p className='font-medium truncate'>{p.name}</p>
+                              <p className='text-xs text-muted-foreground'>৳{Number(p.basePrice || 0).toLocaleString()}</p>
+                            </div>
+                            <Plus className='h-4 w-4 shrink-0 text-muted-foreground' />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {selectedProducts.length > 0 && (
+                    <div className='flex flex-wrap gap-1.5 mt-2'>
+                      {selectedProducts.map(p => (
+                        <Badge key={p.id} variant='secondary' className='gap-1 pr-1'>
+                          {p.name}
+                          <button onClick={() => removeProduct(p.id)} className='ml-0.5 hover:text-destructive'>
+                            <X className='h-3 w-3' />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {selectedProducts.length === 0 && (
+                    <p className='text-xs text-muted-foreground'>No products assigned. Search and select products above.</p>
+                  )}
                 </div>
               </TabsContent>
             </div>
