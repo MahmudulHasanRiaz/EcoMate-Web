@@ -1146,6 +1146,43 @@ export class OrdersService {
     return this.transformOrder(order);
   }
 
+  async findByPhone(phone: string) {
+    const normalized = normalizePhone(phone);
+    if (!normalized) {
+      throw new BadRequestException('Invalid Bangladeshi phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.');
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        OR: [
+          { guestPhone: normalized },
+          { customer: { phoneNumber: normalized } },
+        ],
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
+        },
+        items: {
+          include: {
+            product: { select: { name: true, slug: true, images: true } },
+          },
+        },
+        status: true,
+        payments: true,
+        shipment: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return orders.map((order) => this.transformOrder(order));
+  }
+
   async rotateViewToken(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },

@@ -42,7 +42,11 @@ export class UsersService {
       where.status = query.status;
     }
     if (query.role) {
-      where.role = query.role;
+      if (query.role === 'all_except_customer') {
+        where.role = { not: 'customer' };
+      } else if (query.role !== 'all') {
+        where.role = query.role;
+      }
     }
 
     const orderBy: any = {};

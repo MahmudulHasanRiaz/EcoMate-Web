@@ -10,17 +10,25 @@ import { UsersDialogs } from './components/users-dialogs'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider } from './components/users-provider'
 import { UsersTable } from './components/users-table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export function Users() {
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
   })
+  const [roleFilter, setRoleFilter] = useState<string>('all_except_customer')
 
   const { data, isLoading } = useUsersQuery({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
+    role: roleFilter,
   })
+
+  const handleRoleChange = (val: string) => {
+    setRoleFilter(val)
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }
 
   return (
     <UsersProvider>
@@ -40,6 +48,24 @@ export function Users() {
           </div>
           <UsersPrimaryButtons />
         </div>
+
+        <div className='flex items-center gap-2'>
+          <Select value={roleFilter} onValueChange={handleRoleChange}>
+            <SelectTrigger className='w-[240px]'>
+              <SelectValue placeholder='Select Role' />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value='all_except_customer'>All (Customer Excluded)</SelectItem>
+              <SelectItem value='all'>All Users</SelectItem>
+              <SelectItem value='superadmin'>Super Admin</SelectItem>
+              <SelectItem value='admin'>Admin</SelectItem>
+              <SelectItem value='cashier'>Cashier</SelectItem>
+              <SelectItem value='manager'>Manager</SelectItem>
+              <SelectItem value='customer'>Customer</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <UsersTable
           data={data?.data || []}
           pageCount={data?.meta?.totalPages || 0}

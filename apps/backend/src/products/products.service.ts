@@ -234,12 +234,21 @@ export class ProductsService {
         },
       ];
     }
+    let orderBy: any = { [query.sort || 'createdAt']: query.order || 'desc' };
+    if (query.sort === 'popularity') {
+      orderBy = {
+        orderItems: {
+          _count: query.order || 'desc',
+        },
+      };
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip: (page - 1) * perPage,
         take: perPage,
-        orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
+        orderBy,
         include: this.listInclude,
       }),
       this.prisma.product.count({ where }),

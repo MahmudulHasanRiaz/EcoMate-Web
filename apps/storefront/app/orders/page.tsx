@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight } from 'lucide-react';
+import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight, ArrowLeft } from 'lucide-react';
 import Image from 'next/image';
 import apiClient from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
+import { formatPrice } from '@/lib/utils';
 
 interface OrderItem {
   id: string;
@@ -42,6 +43,7 @@ interface OrderData {
   } | null;
   timeline: TimelineEntry[];
   customer?: { firstName: string; lastName: string; phoneNumber: string };
+  total: number;
 }
 
 function formatDate(iso: string) {
@@ -56,10 +58,21 @@ function formatTime(iso: string) {
   });
 }
 
+function isPhoneNumber(input: string): boolean {
+  const cleaned = input.replace(/[^\d+]/g, '');
+  return (
+    (cleaned.startsWith('+8801') && cleaned.length === 14) ||
+    (cleaned.startsWith('8801') && cleaned.length === 13) ||
+    (cleaned.startsWith('01') && cleaned.length === 11) ||
+    (cleaned.startsWith('1') && cleaned.length === 10 && /^1[3-9]/.test(cleaned))
+  );
+}
+
 export default function OrdersPage() {
   const router = useRouter();
   const [orderNumber, setOrderNumber] = useState('');
   const [order, setOrder] = useState<OrderData | null>(null);
+  const [ordersList, setOrdersList] = useState<OrderData[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,12 +85,24 @@ export default function OrdersPage() {
     setLoading(true);
     setError(null);
     setOrder(null);
+    setOrdersList(null);
     try {
-      const { data } = await apiClient.get<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
-      setOrder(data);
+      if (isPhoneNumber(trimmed)) {
+        const { data } = await apiClient.get<OrderData[]>(`/orders/public/phone/${encodeURIComponent(trimmed)}`);
+        if (!data || data.length === 0) {
+          setError('No orders found for this phone number.');
+        } else if (data.length === 1) {
+          setOrder(data[0]);
+        } else {
+          setOrdersList(data);
+        }
+      } else {
+        const { data } = await apiClient.get<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
+        setOrder(data);
+      }
     } catch (err: any) {
       console.error('Search error details:', err?.response?.data || err?.message || err);
-      setError(err?.response?.data?.message || 'Order not found. Please check your order number.');
+      setError(err?.response?.data?.message || 'Order not found. Please check your order number or phone number.');
     } finally {
       setLoading(false);
     }
@@ -180,7 +205,17 @@ export default function OrdersPage() {
         )}
 
         {order && !loading && !error && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
+            {ordersList && ordersList.length > 1 && (
+              <button
+                onClick={() => setOrder(null)}
+                className="flex items-center gap-2 text-gray-600 hover:text-brand-blue transition-colors font-medium text-[14px] bg-white px-4 py-2.5 rounded-xl border border-gray-100 shadow-sm self-start"
+              >
+                <ArrowLeft size={16} />
+                <span>Back to search results</span>
+              </button>
+            )}
+
             {/* Order Status Header */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
               <div className="flex items-center gap-4">
@@ -281,6 +316,77 @@ export default function OrdersPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {ordersList && !order && !loading && !error && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <h3 className="text-gray-800 text-lg font-bold">Orders Found</h3>
+                <p className="text-gray-500 text-[14px]">We found {ordersList.length} orders matching your phone number.</p>
+              </div>
+              <div className="text-brand-blue text-sm font-semibold bg-brand-blue/10 px-4 py-2 rounded-full">
+                Phone: {orderNumber}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {ordersList.map((item) => (
+                <div 
+                  key={item.id}
+                  onClick={() => setOrder(item)}
+                  className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col md:flex-row md:items-center justify-between gap-6 border-l-4 border-l-brand-blue"
+                >
+                  <div className="flex-1 space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-bold text-gray-800 text-lg group-hover:text-brand-blue transition-colors">
+                        {item.displayId}
+                      </span>
+                      <span 
+                        className="text-[12px] px-2.5 py-0.5 rounded-full font-semibold border"
+                        style={{ 
+                          borderColor: item.status.color || '#e2e8f0', 
+                          color: item.status.color || '#4a5568',
+                          backgroundColor: (item.status.color ? item.status.color + '10' : '#f7fafc')
+                        }}
+                      >
+                        {item.status.name}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-[14px] text-gray-500">
+                      <div className="flex items-center gap-1.5">
+                        <Clock size={16} />
+                        <span>{formatDate(item.createdAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Package size={16} />
+                        <span>
+                          {item.items.reduce((total, it) => total + it.quantity, 0)} {item.items.reduce((total, it) => total + it.quantity, 0) > 1 ? 'items' : 'item'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-gray-600 line-clamp-1">
+                      {item.items.map(it => `${it.product.name} (x${it.quantity})`).join(', ')}
+                    </div>
+                  </div>
+
+                  <div className="flex md:flex-col justify-between items-start md:items-end gap-2 border-t md:border-t-0 pt-4 md:pt-0">
+                    <div>
+                      <span className="text-gray-400 text-[12px] block">Total Amount</span>
+                      <span className="font-extrabold text-gray-900 text-lg">
+                        {formatPrice(item.total)}
+                      </span>
+                    </div>
+                    <span className="text-brand-blue font-semibold text-[14px] flex items-center gap-1 group-hover:translate-x-1 transition-transform mt-2">
+                      Track Details <ChevronRight size={16} />
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -124,9 +124,8 @@ export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
 export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
   const res = await fetchProductsServer({
     isActive: true,
-    isFeatured: true,
     perPage,
-    sort: 'updatedAt',
+    sort: 'popularity',
     order: 'desc',
   });
   return res.data;

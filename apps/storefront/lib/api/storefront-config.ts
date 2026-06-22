@@ -115,6 +115,7 @@ export interface StorefrontConfig {
     title: string;
     type: 'featured' | 'new_arrivals' | 'popular' | 'category';
     categoryId?: string;
+    categorySort?: 'default' | 'new_arrivals' | 'popular';
     limit: number;
     enabled: boolean;
   }[];

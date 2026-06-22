@@ -101,6 +101,12 @@ export class OrdersController {
   }
 
   @Public()
+  @Get('public/phone/:phone')
+  findByPhone(@Param('phone') phone: string) {
+    return this.svc.findByPhone(phone);
+  }
+
+  @Public()
   @Get('public/:viewToken')
   findByViewToken(@Param('viewToken') viewTokenOrDisplayId: string) {
     return this.svc.findByViewToken(viewTokenOrDisplayId);

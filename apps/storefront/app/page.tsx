@@ -38,10 +38,21 @@ export default async function HomePage() {
       } else if (sec.type === 'popular') {
         products = await getPopularItemsServer(limit);
       } else if (sec.type === 'category' && sec.categoryId) {
+        let sort: string | undefined;
+        let order: string | undefined;
+        if (sec.categorySort === 'new_arrivals') {
+          sort = 'createdAt';
+          order = 'desc';
+        } else if (sec.categorySort === 'popular') {
+          sort = 'popularity';
+          order = 'desc';
+        }
         const res = await fetchProductsServer({
           categoryId: sec.categoryId,
           isActive: true,
           perPage: limit,
+          sort,
+          order,
         });
         products = res.data;
       }

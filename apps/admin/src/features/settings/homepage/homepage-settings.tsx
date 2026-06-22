@@ -17,6 +17,7 @@ interface HomepageSection {
   title: string
   type: 'featured' | 'new_arrivals' | 'popular' | 'category'
   categoryId?: string
+  categorySort?: 'default' | 'new_arrivals' | 'popular'
   limit: number
   enabled: boolean
 }
@@ -168,7 +169,7 @@ export function HomepageSettings() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="px-6 pb-6 pt-0 grid gap-4 md:grid-cols-2 lg:grid-cols-4 items-end">
+            <CardContent className="px-6 pb-6 pt-0 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 items-end">
               <div className="space-y-2">
                 <Label htmlFor={`title-${section.id}`}>Section Title</Label>
                 <Input
@@ -195,34 +196,65 @@ export function HomepageSettings() {
               </div>
 
               {section.type === 'category' ? (
-                <div className="space-y-2">
-                  <Label>Category</Label>
-                  <Select
-                    value={section.categoryId || ''}
-                    onValueChange={val => updateSection(section.id, { categoryId: val })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(categories || []).map(cat => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Select
+                      value={section.categoryId || ''}
+                      onValueChange={val => updateSection(section.id, { categoryId: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(categories || []).map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Filter / Sort</Label>
+                    <Select
+                      value={section.categorySort || 'default'}
+                      onValueChange={val => updateSection(section.id, { categorySort: val as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">Default</SelectItem>
+                        <SelectItem value="new_arrivals">New Arrivals</SelectItem>
+                        <SelectItem value="popular">Popular Items</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               ) : (
-                <div className="space-y-2 opacity-40 select-none pointer-events-none">
-                  <Label>Category</Label>
-                  <Select disabled value="">
-                    <SelectTrigger>
-                      <SelectValue placeholder="N/A" />
-                    </SelectTrigger>
-                    <SelectContent />
-                  </Select>
-                </div>
+                <>
+                  <div className="space-y-2 opacity-40 select-none pointer-events-none">
+                    <Label>Category</Label>
+                    <Select disabled value="">
+                      <SelectTrigger>
+                        <SelectValue placeholder="N/A" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2 opacity-40 select-none pointer-events-none">
+                    <Label>Filter / Sort</Label>
+                    <Select disabled value="default">
+                      <SelectTrigger>
+                        <SelectValue placeholder="N/A" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+                </>
               )}
 
               <div className="flex items-center justify-between gap-4">

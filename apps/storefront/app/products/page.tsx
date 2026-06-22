@@ -21,8 +21,8 @@ export default async function ProductsPage({
   const sp = await searchParams;
   const sort = sp.sort;
   const order =
-    sort === "price-low" ? "asc" : sort === "price-high" ? "desc" : undefined;
-  const sortField = sort === "price-low" || sort === "price-high" ? "basePrice" : undefined;
+    sort === "price-low" ? "asc" : (sort === "price-high" || sort === "newest" || sort === "popularity") ? "desc" : undefined;
+  const sortField = sort === "price-low" || sort === "price-high" ? "basePrice" : sort === "newest" ? "createdAt" : sort === "popularity" ? "popularity" : undefined;
 
   const [config, categories] = await Promise.all([
     getStorefrontConfigServer().catch(() => null),
