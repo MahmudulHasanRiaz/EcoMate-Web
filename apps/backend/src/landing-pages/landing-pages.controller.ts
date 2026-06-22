@@ -11,7 +11,6 @@ import {
 import { LandingPagesService } from './landing-pages.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import type { CreateLandingPageDto, UpdateLandingPageDto } from './dto/landing-page.dto';
 
 @Controller('landing-pages')
 export class LandingPagesController {
@@ -46,14 +45,14 @@ export class LandingPagesController {
 
   @Roles('superadmin', 'admin')
   @Post()
-  create(@Body() dto: CreateLandingPageDto) {
-    return this.svc.create(dto);
+  create(@Body() body: Record<string, any>) {
+    return this.svc.create(body);
   }
 
   @Roles('superadmin', 'admin')
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateLandingPageDto) {
-    return this.svc.update(id, dto);
+  update(@Param('id') id: string, @Body() body: Record<string, any>) {
+    return this.svc.update(id, body);
   }
 
   @Roles('superadmin', 'admin')

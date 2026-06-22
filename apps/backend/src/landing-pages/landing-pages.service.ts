@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { CreateLandingPageDto, UpdateLandingPageDto } from './dto/landing-page.dto';
 
 @Injectable()
 export class LandingPagesService {
@@ -55,9 +54,9 @@ export class LandingPagesService {
     });
   }
 
-  async create(dto: CreateLandingPageDto) {
+  async create(dto: Record<string, any>) {
     if (!dto.title || !dto.slug) {
-      throw new BadRequestException('Title and slug are required');
+      throw new BadRequestException('Page title and URL slug are both required');
     }
     this.validateSlug(dto.slug);
     try {
@@ -80,7 +79,7 @@ export class LandingPagesService {
     }
   }
 
-  async update(id: string, dto: UpdateLandingPageDto) {
+  async update(id: string, dto: Record<string, any>) {
     await this.findById(id);
     if (dto.slug !== undefined) {
       this.validateSlug(dto.slug);
