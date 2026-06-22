@@ -19,17 +19,4 @@ CREATE TABLE "LandingPage" (
     CONSTRAINT "LandingPage_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "LandingPage_slug_key" ON "LandingPage"("slug");
-
--- Add missing indexes (schema drift from current schema)
-CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
-CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");
-
-CREATE UNIQUE INDEX IF NOT EXISTS "UserSettings_userId_key" ON "UserSettings"("userId");
-ALTER TABLE "UserSettings" ADD CONSTRAINT IF NOT EXISTS "UserSettings_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
-CREATE INDEX IF NOT EXISTS "VerificationToken_email_type_idx" ON "VerificationToken"("email", "type");
-CREATE INDEX IF NOT EXISTS "VerificationToken_token_type_idx" ON "VerificationToken"("token", "type");
-
-CREATE INDEX IF NOT EXISTS "reviews_productId_idx" ON "reviews"("productId");
-ALTER TABLE "reviews" ADD CONSTRAINT IF NOT EXISTS "reviews_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+CREATE UNIQUE INDEX "LandingPage_slug_key" ON "LandingPage"("slug");
