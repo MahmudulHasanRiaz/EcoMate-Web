@@ -38,6 +38,12 @@ export class LandingPagesController {
     return this.svc.findPublishedBySlug(slug);
   }
 
+  @Public()
+  @Get('preview/:slug')
+  findPreview(@Param('slug') slug: string) {
+    return this.svc.findBySlug(slug);
+  }
+
   @Roles('superadmin', 'admin')
   @Post()
   create(@Body() dto: CreateLandingPageDto) {

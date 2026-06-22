@@ -389,6 +389,9 @@ export function LandingPages() {
           <div className='border-t px-6 py-3 flex justify-between items-center'>
             {editRow && (
               <div className='flex gap-2'>
+                <Button variant='outline' size='sm' onClick={() => window.open(`/landing/${editRow.slug}?preview=true`, '_blank')}>
+                  <ExternalLink className='h-4 w-4 mr-1' /> Preview
+                </Button>
                 {editRow.isActive && !editRow.isDraft ? (
                   <Button variant='outline' size='sm' onClick={() => unpublishMut.mutate(editRow.id)}>
                     <GlobeOff className='h-4 w-4 mr-1' /> Unpublish

@@ -639,6 +639,22 @@ export class OrdersService {
       data: { id: order.id, displayId: order.displayId },
     });
 
+    // Fire Purchase if mode is "instant" — re-fetch with relations for tracking payload
+    if (initialStatus) {
+      const orderWithItems = await this.prisma.order.findUnique({
+        where: { id: order.id },
+        include: {
+          items: {
+            include: { product: { select: { id: true, name: true } } },
+          },
+          payments: true,
+        },
+      });
+      if (orderWithItems) {
+        this.firePurchaseIfModeMatches(initialStatus.name, orderWithItems as any, 'system').catch(() => {});
+      }
+    }
+
     return order;
   }
 

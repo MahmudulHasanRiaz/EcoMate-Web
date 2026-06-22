@@ -21,18 +21,27 @@ interface LandingData {
   trackingJson: Record<string, any>;
 }
 
-async function getLanding(slug: string): Promise<LandingData | null> {
+async function getLanding(slug: string, preview?: boolean): Promise<LandingData | null> {
   try {
-    return await serverFetch(`/landing-pages/published/${encodeURIComponent(slug)}`);
+    const endpoint = preview
+      ? `/landing-pages/preview/${encodeURIComponent(slug)}`
+      : `/landing-pages/published/${encodeURIComponent(slug)}`;
+    return await serverFetch(endpoint);
   } catch {
     return null;
   }
 }
 
-export default async function LandingPage(props: { params: Promise<{ slug: string }> }) {
-  const { slug } = await props.params;
+export default async function LandingPage(props: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string }>;
+}) {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  const { slug } = params;
+  const isPreview = searchParams?.preview === "true";
+
   const [page, storefrontConfig] = await Promise.all([
-    getLanding(slug),
+    getLanding(slug, isPreview),
     getStorefrontConfigServer().catch(() => null),
   ]);
 
@@ -60,6 +69,12 @@ export default async function LandingPage(props: { params: Promise<{ slug: strin
 
   return (
     <>
+      {isPreview && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-center text-xs py-1 font-medium">
+          Preview Mode — This page is not published
+        </div>
+      )}
+
       {/* Inline tracking — minimal, fires once per event */}
       <script
         dangerouslySetInnerHTML={{
@@ -89,14 +104,13 @@ export default async function LandingPage(props: { params: Promise<{ slug: strin
                   }).catch(function(){});
                 }
               };
-              /* Fire PageView once */
               window.EcoMate.track('PageView', {});
             })();
           `,
         }}
       />
 
-      {/* Template mode — receives pre-fetched products */}
+      {/* Template mode */}
       {page.pageType === "template" && (
         <LandingTemplateRenderer
           sections={page.sections || []}
@@ -104,7 +118,7 @@ export default async function LandingPage(props: { params: Promise<{ slug: strin
         />
       )}
 
-      {/* Custom code mode — raw HTML */}
+      {/* Custom code mode */}
       {page.pageType === "custom" && (
         <LandingCustomRenderer
           html={page.customHtml || ""}
