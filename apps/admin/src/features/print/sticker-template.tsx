@@ -1,11 +1,20 @@
 import Barcode from 'react-barcode'
 import { User, Phone, MapPin } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(0)
 
 export function StickerTemplate({ order }: { order: any }) {
   if (!order) return null
+
+  const { data: settings } = useQuery({
+    queryKey: ['storefront-config'],
+    queryFn: () => apiClient.get('/system-settings/storefront').then(r => r.data)
+  })
+  const storeName = settings?.store?.name || 'Store'
+  const storePhone = settings?.store?.phone || '01800000000'
 
   return (
     <div className="sticker-container">
@@ -23,8 +32,8 @@ export function StickerTemplate({ order }: { order: any }) {
         .sticker-container .divider { border-top: 1px dashed #ccc; margin: 2mm 0; }
       `}</style>
 
-      <div className="font-bold text-xs text-center mb-1">EcoMate</div>
-      <div className="text-[8px] text-center text-muted-foreground mb-1">01800000000</div>
+      <div className="font-bold text-xs text-center mb-1">{storeName}</div>
+      <div className="text-[8px] text-center text-muted-foreground mb-1">{storePhone}</div>
 
       <div className="divider" />
 

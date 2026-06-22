@@ -490,7 +490,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       variantAttributes,
       stock: displayStock,
     }, true);
-    router.push('/checkout');
+    window.location.href = '/checkout';
   }
 
   function handleWishlistToggle() {

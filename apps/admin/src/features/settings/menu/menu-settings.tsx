@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import {
   Loader2, Save, Plus, Trash2, GripVertical, Link, FolderTree,
-  ChevronRight, ChevronDown, Edit2, X, Check, Smartphone, Layout, Columns3, List,
+  ChevronRight, ChevronDown, Edit2, X, Check, Smartphone, Layout, Columns3, List, CornerUpLeft
 } from 'lucide-react'
 
 interface MenuItem {
@@ -299,7 +299,12 @@ function MenuSectionBuilder({ section, onChange, categories }: {
               No menu items yet. Select categories above or add custom links.
             </p>
           ) : (
-            <MenuItemList items={section.items} onChange={items => onChange({ ...section, items })} categories={categories} />
+            <MenuItemList 
+              items={section.items} 
+              onChange={items => onChange({ ...section, items })} 
+              categories={categories} 
+              onExtractToRoot={(item) => onChange({ ...section, items: [...section.items, item] })}
+            />
           )}
           <Button variant="outline" size="sm" className="mt-2" onClick={() => onChange({ ...section, items: [...section.items, customItem()] })}>
             <Plus className="h-4 w-4 mr-1" /> Add Custom Link
@@ -388,11 +393,12 @@ function CategoryPicker({ mode, categories, selectedIds, excludedIds, showAllCat
   )
 }
 
-function MenuItemList({ items, onChange, categories, depth = 0 }: {
+function MenuItemList({ items, onChange, categories, depth = 0, onExtractToRoot }: {
   items: MenuItem[]
   onChange: (items: MenuItem[]) => void
   categories: Category[]
   depth?: number
+  onExtractToRoot?: (item: MenuItem) => void
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
@@ -480,6 +486,10 @@ function MenuItemList({ items, onChange, categories, depth = 0 }: {
           onUpdate={v => update(idx, v)}
           onDelete={() => remove(idx)}
           onChildrenChange={c => updateChildren(idx, c)}
+          onExtractToRoot={onExtractToRoot ? () => {
+             remove(idx);
+             onExtractToRoot(item);
+          } : undefined}
           categories={categories}
           depth={depth}
           isDragging={dragIdx === idx}
@@ -496,11 +506,12 @@ function MenuItemList({ items, onChange, categories, depth = 0 }: {
   )
 }
 
-function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, depth, isDragging, isNestTarget, dragHandlers, onDrop }: {
+function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, onExtractToRoot, categories, depth, isDragging, isNestTarget, dragHandlers, onDrop }: {
   item: MenuItem
   onUpdate: (item: MenuItem) => void
   onDelete: () => void
   onChildrenChange: (children: MenuItem[]) => void
+  onExtractToRoot?: () => void
   categories: Category[]
   depth: number
   isDragging: boolean
@@ -594,13 +605,22 @@ function MenuItemRow({ item, onUpdate, onDelete, onChildrenChange, categories, d
             )}
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditing(true)}><Edit2 className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onChildrenChange([...item.children, customItem()])}><Plus className="h-3.5 w-3.5" /></Button>
+            {depth > 0 && onExtractToRoot && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-amber-600" title="Extract to Main Menu" onClick={onExtractToRoot}><CornerUpLeft className="h-3.5 w-3.5" /></Button>
+            )}
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
           </>
         )}
       </div>
 
       {expanded && item.children.length > 0 && (
-        <MenuItemList items={item.children} onChange={onChildrenChange} categories={categories} depth={depth + 1} />
+        <MenuItemList 
+           items={item.children} 
+           onChange={onChildrenChange} 
+           categories={categories} 
+           depth={depth + 1} 
+           onExtractToRoot={onExtractToRoot}
+        />
       )}
     </div>
   )

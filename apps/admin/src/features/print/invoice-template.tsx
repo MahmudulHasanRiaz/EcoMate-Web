@@ -1,9 +1,18 @@
 import Barcode from 'react-barcode'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(2)
 
 export function InvoiceTemplate({ order }: { order: any }) {
+  const { data: settings } = useQuery({
+    queryKey: ['storefront-config'],
+    queryFn: () => apiClient.get('/system-settings/storefront').then(r => r.data)
+  })
+  const storeName = settings?.store?.name || 'Store'
+  const storePhone = settings?.store?.phone || '01800000000'
+  const storeAddress = settings?.store?.address || 'Dhaka, Bangladesh'
   if (!order) return null
 
   const subtotal = order.items?.reduce((s: number, i: any) => s + nm(i.price) * i.quantity, 0) || 0
@@ -21,9 +30,9 @@ export function InvoiceTemplate({ order }: { order: any }) {
 
       <div className="flex items-start justify-between border-b-2 border-black pb-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">EcoMate</h1>
-          <p className="text-xs text-muted-foreground">01800000000</p>
-          <p className="text-xs text-muted-foreground">Dhaka, Bangladesh</p>
+          <h1 className="text-2xl font-bold tracking-tight">{storeName}</h1>
+          <p className="text-xs text-muted-foreground">{storePhone}</p>
+          <p className="text-xs text-muted-foreground">{storeAddress}</p>
           <p className="text-xs text-muted-foreground mt-1">TRN: 123456789</p>
         </div>
         <div className="text-right">
@@ -108,7 +117,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
       )}
 
       <div className="text-center text-[10px] text-muted-foreground mt-8 pt-4 border-t">
-        <p className="font-medium text-black mb-0.5">EcoMate — Sustainable Shopping</p>
+        <p className="font-medium text-black mb-0.5">{storeName} — Thank You for Shopping</p>
         <p>This is a computer-generated invoice. No signature required.</p>
       </div>
     </div>

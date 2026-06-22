@@ -8,6 +8,7 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { trackEvent } from "@/lib/tracking";
 import type { Product, Variant } from "@/lib/types";
+import { toast } from "sonner";
 
 const SIZE_ORDER: Record<string, number> = {
   'S': 0, 'M': 1, 'L': 2, 'XL': 3, 'XXL': 4, 'XXXL': 5,
@@ -99,7 +100,19 @@ export function VariantPickerModal({ product, open, onClose, flyTarget }: Props)
   const isAllSelected = attrNames.length > 0 && attrNames.every(name => selectedAttrs[name]);
 
   const handleAdd = () => {
-    if (!matchingVariant || matchingVariant.stock <= 0) return;
+    if (!matchingVariant) {
+      const missingAttrs = attrNames.filter(name => !selectedAttrs[name]);
+      if (missingAttrs.length > 0) {
+        const missingMsg = missingAttrs.map(name => {
+          if (COLOR_KEYWORDS.some(k => name.toLowerCase().includes(k))) return 'কালার';
+          if (SIZE_KEYWORDS.some(k => name.toLowerCase().includes(k))) return 'সাইজ';
+          return name;
+        }).join(' ও ');
+        toast.error(`${missingMsg} সিলেক্ট করুন`);
+      }
+      return;
+    }
+    if (matchingVariant.stock <= 0) return;
     const variantLabel = matchingVariant.attributeValues
       .map(av => `${av.attributeValue.attribute.name}: ${av.attributeValue.value}`)
       .join(', ');
@@ -245,7 +258,7 @@ export function VariantPickerModal({ product, open, onClose, flyTarget }: Props)
 
           <button
             onClick={handleAdd}
-            disabled={!matchingVariant || matchingVariant.stock <= 0}
+            disabled={matchingVariant ? matchingVariant.stock <= 0 : false}
             className="w-full h-11 bg-brand-blue text-white font-bold text-sm rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue/90 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all"
           >
             <ShoppingCart size={18} strokeWidth={2.5} />

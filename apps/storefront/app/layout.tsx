@@ -116,7 +116,7 @@ export default async function RootLayout({
         <meta name="theme-color" content="#0089CD" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="EcoMate" />
+        <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
       </head>
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
         {initialConfig ? (
@@ -141,7 +141,7 @@ export default async function RootLayout({
                   </div>
                   <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">Under Maintenance</h1>
                   <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                    {initialConfig?.store?.name || 'EcoMate'} is currently undergoing scheduled updates to serve you better. We'll be back shortly. Thank you for your patience!
+                    {initialConfig?.store?.name || 'Store'} is currently undergoing scheduled updates to serve you better. We'll be back shortly. Thank you for your patience!
                   </p>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-4 py-2 rounded-full inline-block">
                     Coming Back Soon

@@ -67,6 +67,13 @@ function SearchableSelect({
         .replace(/\u09AF\u09BC/g, '\u09DF') // য + ় -> য়
         .replace(/\u09A1\u09BC/g, '\u09DC') // ড + ় -> ড়
         .replace(/\u09A2\u09BC/g, '\u09DD') // ঢ + ় -> ঢ়
+        // Now remove all remaining Nuktas so that exact matches aren't strict on dots
+        .replace(/\u09BC/g, '')
+        // Convert য় to য, ড় to ড, ঢ় to ঢ for fuzzy matching
+        .replace(/\u09DF/g, '\u09AF') // য় -> য
+        .replace(/\u09DC/g, '\u09A1') // ড় -> ড
+        .replace(/\u09DD/g, '\u09A2') // ঢ় -> ঢ
+        .replace(/\u0981/g, '') // remove candrabindu
         .toLowerCase();
     };
 
@@ -1090,10 +1097,10 @@ export default function CheckoutPage() {
         <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
           <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
             {config.branding?.storeLogo ? (
-              <img src={config.branding.storeLogo} alt={config.store?.name || 'EcoMate'} className="h-6 w-auto object-contain" />
+              <img src={config.branding.storeLogo} alt={config.store?.name || 'Store'} className="h-6 w-auto object-contain" />
             ) : (
               <span className="text-base font-black tracking-tight text-gray-805">
-                {config.store?.name || 'EcoMate'}
+                {config.store?.name || 'Store'}
               </span>
             )}
           </Link>
@@ -1159,10 +1166,10 @@ export default function CheckoutPage() {
             <div className="hidden lg:flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
               <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
                 {config.branding?.storeLogo ? (
-                  <img src={config.branding.storeLogo} alt={config.store?.name || 'EcoMate'} className="h-8 w-auto object-contain" />
+                  <img src={config.branding.storeLogo} alt={config.store?.name || 'Store'} className="h-8 w-auto object-contain" />
                 ) : (
                   <span className="text-xl font-black tracking-tight text-gray-800">
-                    {config.store?.name || 'EcoMate'}
+                    {config.store?.name || 'Store'}
                   </span>
                 )}
               </Link>
@@ -1363,7 +1370,7 @@ export default function CheckoutPage() {
                   <ShieldCheck size={10} className="text-brand-blue" />
                 </div>
                 <p className="text-[10px] text-gray-400 leading-normal">
-                  By placing order, you agree to EcoMate's{" "}
+                  By placing order, you agree to {config.store?.name || 'Store'}'s{" "}
                   <Link href="/terms-conditions" className="text-brand-blue hover:underline font-bold">Terms & Conditions</Link>,{" "}
                   <Link href="/privacy-policy" className="text-brand-blue hover:underline font-bold">Privacy Policy</Link>, and{" "}
                   <Link href="/refund-policy" className="text-brand-blue hover:underline font-bold">Return Policy</Link>.

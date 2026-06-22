@@ -340,13 +340,13 @@ export default function ArchivePageClient({
 
   return (
     <div className="bg-white min-h-screen pb-20 font-sans">
-      <div className="bg-[#f5f5f5] py-3 md:py-4 border-b border-gray-100">
-        <div className="max-w-screen-xl mx-auto px-4 flex items-center justify-between">
-          <h1 className="text-[17px] md:text-[18px] font-medium text-gray-800">{currentCategory}</h1>
-          <nav className="flex items-center gap-1 text-[13px] text-gray-500 font-normal">
+      <div className="bg-gradient-to-r from-gray-50 to-white py-3 md:py-5 border-b border-gray-100">
+        <div className="max-w-screen-xl mx-auto px-4 flex flex-col md:flex-row md:items-center justify-between gap-1 md:gap-4">
+          <h1 className="text-[18px] md:text-[22px] font-bold text-gray-900 truncate">{currentCategory}</h1>
+          <nav className="flex items-center gap-1 text-[12px] md:text-[13px] text-gray-500 font-medium">
             <button onClick={() => router.push('/')} className="hover:text-brand-blue cursor-pointer transition-colors">Home</button>
-            <ChevronRight size={12} className="opacity-70 mx-1" strokeWidth={2} />
-            <span className="text-gray-800">{currentCategory}</span>
+            <ChevronRight size={12} className="opacity-50 mx-0.5" strokeWidth={2} />
+            <span className="text-brand-blue truncate max-w-[150px] md:max-w-none">{currentCategory}</span>
           </nav>
         </div>
       </div>

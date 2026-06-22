@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { serverFetch } from "../api-server";
 import type { StorefrontConfig } from "./storefront-config";
+import { getCategoriesServer } from "./products-server";
 
 const DEFAULT_CONFIG: StorefrontConfig = {
   store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
@@ -37,9 +38,48 @@ const DEFAULT_CONFIG: StorefrontConfig = {
 
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
   try {
-    return await serverFetch<StorefrontConfig>("/system-settings/storefront", {
+    const config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
       next: { revalidate: 300 },
     });
+
+    if (config?.menu) {
+      const headerShowAll = config.menu.header?.showAllCategories;
+      const mobileShowAll = config.menu.mobile?.showAllCategories;
+
+      if (headerShowAll || mobileShowAll) {
+        const categories = await getCategoriesServer();
+        const shownCategories = categories.filter((c: any) => c.showInMenu !== false);
+
+        const injectCategories = (section: any) => {
+          if (!section || !section.showAllCategories) return section;
+          const existingCatIds = new Set(
+            (section.items || [])
+              .filter((i: any) => i.type === 'category' && i.categoryId)
+              .map((i: any) => i.categoryId)
+          );
+          const excludedIds = new Set(section.excludedCategories || []);
+          
+          const toAdd = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id));
+          const newItems = toAdd.map(c => ({
+            id: `cat-${c.id}`,
+            type: 'category',
+            label: c.name,
+            categoryId: c.id,
+            children: []
+          }));
+
+          return {
+            ...section,
+            items: [...(section.items || []), ...newItems]
+          };
+        };
+
+        if (headerShowAll) config.menu.header = injectCategories(config.menu.header);
+        if (mobileShowAll) config.menu.mobile = injectCategories(config.menu.mobile);
+      }
+    }
+
+    return config;
   } catch (err) {
     console.error("Failed to fetch storefront config from backend:", err);
     return DEFAULT_CONFIG;
