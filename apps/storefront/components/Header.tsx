@@ -101,15 +101,15 @@ export default function Header({}: {}) {
         )}
       </div>
 
-      {/* Desktop Navigation - Modern Minimal */}
+      {/* Desktop Navigation - Modern Auto-Sliding */}
       {navItems.length > 0 && (
         <div className="hidden md:block bg-brand-blue/[0.03] border-t border-brand-blue/10">
           <div className="max-w-screen-xl mx-auto px-4">
-            <nav className="flex flex-wrap items-center gap-x-1 gap-y-1 min-h-[44px] py-1.5">
+            <NavSlider>
               {navItems.map((item: any) => (
                 <NavItem key={item.id} item={item} />
               ))}
-            </nav>
+            </NavSlider>
           </div>
         </div>
       )}
@@ -273,5 +273,50 @@ function HeaderAction({ icon, label, count, hideOnMobile, onClick, href }: { ico
     >
       {content}
     </button>
+  );
+}
+
+function NavSlider({ children }: { children: React.ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let animationFrameId: number;
+    let scrollSpeed = 0.5; // pixels per frame
+
+    const step = () => {
+      if (!isHovered && container.scrollWidth > container.clientWidth) {
+        container.scrollLeft += scrollSpeed;
+        if (container.scrollLeft >= container.scrollWidth - container.clientWidth) {
+          scrollSpeed = -0.5; // Reverse direction
+        } else if (container.scrollLeft <= 0) {
+          scrollSpeed = 0.5; // Reverse direction
+        }
+      }
+      animationFrameId = requestAnimationFrame(step);
+    };
+
+    animationFrameId = requestAnimationFrame(step);
+
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isHovered]);
+
+  return (
+    <div 
+      className="relative overflow-hidden w-full flex items-center min-h-[44px]"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div 
+        ref={containerRef}
+        className="flex items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth w-full select-none py-1.5"
+        style={{ scrollBehavior: 'auto', WebkitOverflowScrolling: 'touch' }}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
