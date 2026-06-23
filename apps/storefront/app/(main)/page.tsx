@@ -1,11 +1,11 @@
 import { Fragment } from 'react';
 import type { Product } from "@/lib/types";
-import Hero from "../components/Hero";
-import CategoryList from "../components/CategoryList";
-import ProductSection from "../components/ProductSection";
-import BrandSection from "../components/BrandSection";
-import ComboDeals from "../components/ComboDeals";
-import Testimonials from "../components/Testimonials";
+import Hero from "@/components/Hero";
+import CategoryList from "@/components/CategoryList";
+import ProductSection from "@/components/ProductSection";
+import BrandSection from "@/components/BrandSection";
+import ComboDeals from "@/components/ComboDeals";
+import Testimonials from "@/components/Testimonials";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer, getBrandsServer, fetchProductsServer } from "@/lib/api/products-server";
 

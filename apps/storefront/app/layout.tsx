@@ -5,19 +5,11 @@ import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { StorefrontConfigProvider } from "@/context/StorefrontConfigContext";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import BottomNav from "@/components/BottomNav";
-import CartDrawer from "@/components/CartDrawer";
-import MobileMenu from "@/components/MobileMenu";
-import FloatingWidgets from "@/components/FloatingWidgets";
-import FlyCartLayer from "@/components/FlyCartLayer";
 import TrackingScripts from "@/components/TrackingScripts";
 import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
-import { headers } from "next/headers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -82,13 +74,6 @@ export default async function RootLayout({
     initialConfig = await getStorefrontConfigServer();
   } catch {}
 
-  // Check if this is a landing page (no main app chrome)
-  let isLanding = false;
-  try {
-    const h = await headers();
-    isLanding = h.get('x-is-landing') === 'true';
-  } catch {}
-
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
 
   const jsonLd = {
@@ -143,7 +128,7 @@ export default async function RootLayout({
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
                 <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)] transition-all hover:shadow-[0_12px_40px_rgb(0,0,0,0.05)]">
                   <div className="w-16 h-16 bg-[#0089CD]/10 text-[#0089CD] rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className="w-8 h-8">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
                       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                     </svg>
                   </div>
@@ -156,19 +141,8 @@ export default async function RootLayout({
                   </div>
                 </div>
               </div>
-            ) : isLanding ? (
-              <>{children}</>
             ) : (
-              <>
-                <Header />
-                <CartDrawer />
-                <MobileMenu />
-                <main className="flex-1 pb-24 md:pb-0">{children}</main>
-                <Footer />
-                <BottomNav />
-                <FloatingWidgets />
-                <FlyCartLayer />
-              </>
+              children
             )}
             <Toaster
               position="top-right"

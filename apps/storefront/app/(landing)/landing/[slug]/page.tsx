@@ -3,9 +3,9 @@ import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { serverFetch } from "@/lib/api-server";
 import LandingTemplateRenderer from "@/components/landing/TemplateRenderer";
 import LandingCustomRenderer from "@/components/landing/CustomRenderer";
+import type { Metadata } from "next";
 
 export const revalidate = 300;
-export const dynamic = "force-dynamic";
 
 interface LandingData {
   id: string;
@@ -30,6 +30,33 @@ async function getLanding(slug: string, preview?: boolean): Promise<LandingData 
   } catch {
     return null;
   }
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const page: LandingData | null = await getLanding(slug);
+  const config = await getStorefrontConfigServer().catch(() => null);
+
+  if (!page) return {};
+
+  const ogImage = page.trackingJson?.ogImage || config?.branding?.storefrontOgImage;
+
+  return {
+    title: `${page.title} — ${config?.store?.name || "Offer"}`,
+    description: page.title,
+    openGraph: {
+      title: page.title,
+      description: page.title,
+      images: ogImage ? [ogImage] : undefined,
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: page.title,
+      description: page.title,
+      images: ogImage ? [ogImage] : undefined,
+    },
+  };
 }
 
 export default async function LandingPage(props: {
