@@ -115,6 +115,7 @@ export default async function LandingPage(props: {
         <LandingTemplateRenderer
           sections={page.sections || []}
           products={products}
+          primaryColor={(page.trackingJson as any)?.primaryColor}
         />
       )}
 

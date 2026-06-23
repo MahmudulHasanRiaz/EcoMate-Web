@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy } from 'lucide-react'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy, Eye, EyeOff } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -46,6 +46,7 @@ export function LandingPages() {
   const [comboResults, setComboResults] = useState<any[]>([])
   const [combosSearching, setCombosSearching] = useState(false)
   const [showComboDropdown, setShowComboDropdown] = useState(false)
+  const [primaryColor, setPrimaryColor] = useState('#3730a3')
   const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const comboSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productSearchRef = useRef<HTMLDivElement>(null)
@@ -149,6 +150,7 @@ export function LandingPages() {
       customHtml: pageType === 'custom' ? customHtml : undefined,
       productIds: selectedProducts.map(p => p.id),
       comboIds: selectedCombos.map(c => c.id),
+      trackingJson: { primaryColor },
     }
     if (editRow) {
       updateMut.mutate({ id: editRow.id, data: payload })
@@ -427,6 +429,14 @@ export function LandingPages() {
                     </select>
                   </div>
                 )}
+                <div className='space-y-1.5'>
+                  <Label>Brand Primary Color</Label>
+                  <div className='flex items-center gap-2'>
+                    <input type='color' value={primaryColor} onChange={e => setPrimaryColor(e.target.value)}
+                      className='w-10 h-10 rounded cursor-pointer border' />
+                    <span className='text-xs text-muted-foreground'>{primaryColor}</span>
+                  </div>
+                </div>
               </TabsContent>
 
               {/* Content Tab */}
@@ -452,7 +462,16 @@ export function LandingPages() {
                           <div key={i} className='border rounded-lg p-4 space-y-3'>
                             <div className='flex items-center justify-between'>
                               <Badge variant='outline' className='text-xs uppercase'>{sec.type}</Badge>
-                              <span className='text-xs text-muted-foreground'>Section {i + 1}</span>
+                              <div className='flex items-center gap-2'>
+                                <button
+                                  onClick={() => updateSection(i, 'hidden', !sec.hidden)}
+                                  className={`text-xs p-1 rounded transition-colors ${sec.hidden ? 'text-muted-foreground' : 'text-foreground'}`}
+                                  title={sec.hidden ? 'Show section' : 'Hide section'}
+                                >
+                                  {sec.hidden ? <EyeOff className='h-3.5 w-3.5' /> : <Eye className='h-3.5 w-3.5' />}
+                                </button>
+                                <span className='text-xs text-muted-foreground'>Section {i + 1}</span>
+                              </div>
                             </div>
                             <div className='grid grid-cols-2 gap-3'>
                               <div className='space-y-1'>

@@ -13,7 +13,7 @@ export function middleware(request: NextRequest) {
       "img-src 'self' data: blob: https: http:",
       "font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com",
       "connect-src 'self'",
-      "frame-src 'none'",
+      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
