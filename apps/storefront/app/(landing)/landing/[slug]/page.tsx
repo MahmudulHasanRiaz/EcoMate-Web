@@ -123,7 +123,7 @@ export default async function LandingPage(props: {
                   customData: Object.assign({}, data || {}, { url: location.href, source: 'landing' })
                 };
                 if (navigator.sendBeacon) {
-                  navigator.sendBeacon('/api/tracking/events', JSON.stringify(payload));
+                  navigator.sendBeacon('/api/tracking/events', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
                 } else {
                   fetch('/api/tracking/events', {
                     method: 'POST', headers: {'Content-Type':'application/json'},

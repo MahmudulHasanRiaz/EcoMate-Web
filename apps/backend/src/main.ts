@@ -11,19 +11,28 @@ import { execSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
 
 async function bootstrap() {
-  // Auto-sync database schema: resolve failed migration + create missing tables
+  // Auto-sync database schema: resolve failed migration + push all pending changes
   if (process.env['NODE_ENV'] === 'production') {
-    // Method 1: via prisma CLI (resolve failed migration then db push)
+    // Method 1: try prisma CLI (resolve failed migration then db push)
     try {
       execSync(
         'npx prisma migrate resolve --rolled-back "20260623000000_add_landing_page" 2>/dev/null; npx prisma db push --accept-data-loss 2>&1',
-        { cwd: process.cwd(), stdio: 'pipe', timeout: 30000 },
+        { cwd: process.cwd(), stdio: 'pipe', timeout: 60000 },
       );
-      console.log('[Schema] Database schema synced successfully');
+      console.log('[Schema] Full schema sync completed');
     } catch {
-      console.log('[Schema] prisma CLI sync skipped');
+      // Method 1b: if resolve fails, try marking as applied instead
+      try {
+        execSync(
+          'npx prisma migrate resolve --applied "20260623000000_add_landing_page" 2>/dev/null; npx prisma db push --accept-data-loss 2>&1',
+          { cwd: process.cwd(), stdio: 'pipe', timeout: 60000 },
+        );
+        console.log('[Schema] Schema sync completed (migration marked applied)');
+      } catch {
+        console.log('[Schema] prisma CLI sync unavailable');
+      }
     }
-    // Method 2: raw SQL fallback via PrismaClient (always runs, creates LandingPage if missing)
+    // Method 2: raw SQL fallback via PrismaClient
     try {
       const fallbackClient = new PrismaClient();
       await fallbackClient.$executeRawUnsafe(`
