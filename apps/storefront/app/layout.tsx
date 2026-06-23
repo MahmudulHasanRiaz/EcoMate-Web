@@ -17,6 +17,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
+import { headers } from "next/headers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -79,6 +80,13 @@ export default async function RootLayout({
   let initialConfig: StorefrontConfig | undefined;
   try {
     initialConfig = await getStorefrontConfigServer();
+  } catch {}
+
+  // Check if this is a landing page (no main app chrome)
+  let isLanding = false;
+  try {
+    const h = await headers();
+    isLanding = h.get('x-is-landing') === 'true';
   } catch {}
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
@@ -148,6 +156,8 @@ export default async function RootLayout({
                   </div>
                 </div>
               </div>
+            ) : isLanding ? (
+              <>{children}</>
             ) : (
               <>
                 <Header />

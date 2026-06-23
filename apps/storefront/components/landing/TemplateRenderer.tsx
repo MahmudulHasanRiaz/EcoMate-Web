@@ -74,7 +74,9 @@ function FeaturedGridSection({ section, products = [] }: SectionProps) {
       <div className="max-w-6xl mx-auto px-6">
         <h2 className="text-3xl md:text-4xl font-bold text-center text-gray-900 mb-12">{section.title || "Our Products"}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-          {products.map((p: any, i: number) => (
+          {products.map((p: any, i: number) => {
+            const price = parseFloat(String(p.salePrice || p.basePrice || p.price || 0));
+            return (
             <div key={p.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow">
               <div className="aspect-square bg-gray-100 relative">
                 {p.images?.[0] && <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />}
@@ -82,7 +84,7 @@ function FeaturedGridSection({ section, products = [] }: SectionProps) {
               <div className="p-4">
                 <h3 className="font-semibold text-gray-900 text-sm mb-1">{p.name}</h3>
                 <p className="text-lg font-bold text-indigo-600">
-                  ৳{(p.salePrice ? Number(p.salePrice) : Number(p.basePrice)).toLocaleString()}
+                  ৳{price.toLocaleString('en-BD')}
                 </p>
                 <button
                   onClick={() => window.EcoMate?.track?.("AddToCart", { productId: p.id, name: p.name })}
@@ -92,7 +94,8 @@ function FeaturedGridSection({ section, products = [] }: SectionProps) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -123,16 +126,22 @@ function CheckoutFormSection({ section, products = [] }: SectionProps) {
     setStep("submitting");
 
     // Build order items from assigned products
-    const items = products.length > 0
-      ? products.map((p: any) => ({
-          productId: p.id,
-          quantity: 1,
-          price: Number(p.salePrice || p.basePrice || 0),
-        }))
-      : [];
+    const items = products
+      .filter((p: any) => p.id)
+      .map((p: any) => ({
+        productId: p.id,
+        quantity: 1,
+        price: parseFloat(String(p.salePrice || p.basePrice || p.price || 0)),
+      }));
+
+    if (items.length === 0) {
+      setErrorMsg("No products assigned to this page. Please contact support.");
+      setStep("form");
+      return;
+    }
 
     const payload: Record<string, any> = {
-      items: items.length > 0 ? items : [{ productId: "placeholder", quantity: 1, price: 0 }],
+      items,
       guestName: name,
       guestPhone: phone,
       shippingAddress: { fullAddress: address },
