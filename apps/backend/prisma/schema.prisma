@@ -1153,8 +1153,76 @@ model Employee {
 
   department  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   designation Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  salaryStructures SalaryStructure[]
+  payslips         Payslip[]
 
   @@index([departmentId])
   @@index([designationId])
   @@index([status])
+}
+
+enum PayslipStatus {
+  draft
+  approved
+  paid
+  cancelled
+}
+
+model SalaryStructure {
+  id                String   @id @default(uuid())
+  employeeId        String
+  basicSalary       Decimal  @db.Decimal(10, 2)
+  houseAllowance    Decimal  @default(0) @db.Decimal(10, 2)
+  medicalAllowance  Decimal  @default(0) @db.Decimal(10, 2)
+  transportAllowance Decimal @default(0) @db.Decimal(10, 2)
+  otherAllowance    Decimal  @default(0) @db.Decimal(10, 2)
+  taxDeduction      Decimal  @default(0) @db.Decimal(10, 2)
+  insuranceDeduction Decimal @default(0) @db.Decimal(10, 2)
+  otherDeduction    Decimal  @default(0) @db.Decimal(10, 2)
+  totalEarnings     Decimal  @db.Decimal(10, 2)
+  totalDeductions   Decimal  @default(0) @db.Decimal(10, 2)
+  netSalary         Decimal  @db.Decimal(10, 2)
+  effectiveFrom     DateTime @default(now())
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+}
+
+model Payslip {
+  id              String        @id @default(uuid())
+  employeeId      String
+  periodStart     DateTime
+  periodEnd       DateTime
+  totalEarnings   Decimal       @db.Decimal(10, 2)
+  totalDeductions Decimal       @default(0) @db.Decimal(10, 2)
+  netPay          Decimal       @db.Decimal(10, 2)
+  status          PayslipStatus @default(draft)
+  generatedAt     DateTime      @default(now())
+  paidAt          DateTime?
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  items    PayslipItem[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+}
+
+model PayslipItem {
+  id        String  @id @default(uuid())
+  payslipId String
+  type      String
+  label     String
+  amount    Decimal @db.Decimal(10, 2)
+
+  payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@index([payslipId])
 }

@@ -41,6 +41,7 @@ import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
+import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authenticated/op/payroll/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
 import { Route as AuthenticatedOpNotificationsIndexRouteImport } from './routes/_authenticated/op/notifications/index'
@@ -51,6 +52,7 @@ import { Route as AuthenticatedOpImportProductsIndexRouteImport } from './routes
 import { Route as AuthenticatedOpImportOrdersIndexRouteImport } from './routes/_authenticated/op/import-orders/index'
 import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_authenticated/op/help-center/index'
 import { Route as AuthenticatedOpExpensesIndexRouteImport } from './routes/_authenticated/op/expenses/index'
+import { Route as AuthenticatedOpEmployeesIndexRouteImport } from './routes/_authenticated/op/employees/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
 import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
@@ -268,6 +270,12 @@ const AuthenticatedOpProductsIndexRoute =
     path: '/op/products/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpPayrollIndexRoute =
+  AuthenticatedOpPayrollIndexRouteImport.update({
+    id: '/op/payroll/',
+    path: '/op/payroll/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpPaymentsIndexRoute =
   AuthenticatedOpPaymentsIndexRouteImport.update({
     id: '/op/payments/',
@@ -326,6 +334,12 @@ const AuthenticatedOpExpensesIndexRoute =
   AuthenticatedOpExpensesIndexRouteImport.update({
     id: '/op/expenses/',
     path: '/op/expenses/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpEmployeesIndexRoute =
+  AuthenticatedOpEmployeesIndexRouteImport.update({
+    id: '/op/employees/',
+    path: '/op/employees/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpCustomersIndexRoute =
@@ -609,6 +623,7 @@ export interface FileRoutesByFullPath {
   '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
   '/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -619,6 +634,7 @@ export interface FileRoutesByFullPath {
   '/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
+  '/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
@@ -692,6 +708,7 @@ export interface FileRoutesByTo {
   '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/employees': typeof AuthenticatedOpEmployeesIndexRoute
   '/op/expenses': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -702,6 +719,7 @@ export interface FileRoutesByTo {
   '/op/notifications': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
+  '/op/payroll': typeof AuthenticatedOpPayrollIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/referrals': typeof AuthenticatedOpReferralsIndexRoute
@@ -777,6 +795,7 @@ export interface FileRoutesById {
   '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/_authenticated/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
   '/_authenticated/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/_authenticated/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/_authenticated/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -787,6 +806,7 @@ export interface FileRoutesById {
   '/_authenticated/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
+  '/_authenticated/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/_authenticated/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/_authenticated/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
@@ -862,6 +882,7 @@ export interface FileRouteTypes {
     | '/op/combos/'
     | '/op/coupons/'
     | '/op/customers/'
+    | '/op/employees/'
     | '/op/expenses/'
     | '/op/help-center/'
     | '/op/import-orders/'
@@ -872,6 +893,7 @@ export interface FileRouteTypes {
     | '/op/notifications/'
     | '/op/orders/'
     | '/op/payments/'
+    | '/op/payroll/'
     | '/op/products/'
     | '/op/purchases/'
     | '/op/referrals/'
@@ -945,6 +967,7 @@ export interface FileRouteTypes {
     | '/op/combos'
     | '/op/coupons'
     | '/op/customers'
+    | '/op/employees'
     | '/op/expenses'
     | '/op/help-center'
     | '/op/import-orders'
@@ -955,6 +978,7 @@ export interface FileRouteTypes {
     | '/op/notifications'
     | '/op/orders'
     | '/op/payments'
+    | '/op/payroll'
     | '/op/products'
     | '/op/purchases'
     | '/op/referrals'
@@ -1029,6 +1053,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
+    | '/_authenticated/op/employees/'
     | '/_authenticated/op/expenses/'
     | '/_authenticated/op/help-center/'
     | '/_authenticated/op/import-orders/'
@@ -1039,6 +1064,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/notifications/'
     | '/_authenticated/op/orders/'
     | '/_authenticated/op/payments/'
+    | '/_authenticated/op/payroll/'
     | '/_authenticated/op/products/'
     | '/_authenticated/op/purchases/'
     | '/_authenticated/op/referrals/'
@@ -1311,6 +1337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpProductsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/payroll/': {
+      id: '/_authenticated/op/payroll/'
+      path: '/op/payroll'
+      fullPath: '/op/payroll/'
+      preLoaderRoute: typeof AuthenticatedOpPayrollIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/payments/': {
       id: '/_authenticated/op/payments/'
       path: '/op/payments'
@@ -1379,6 +1412,13 @@ declare module '@tanstack/react-router' {
       path: '/op/expenses'
       fullPath: '/op/expenses/'
       preLoaderRoute: typeof AuthenticatedOpExpensesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/employees/': {
+      id: '/_authenticated/op/employees/'
+      path: '/op/employees'
+      fullPath: '/op/employees/'
+      preLoaderRoute: typeof AuthenticatedOpEmployeesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/customers/': {
@@ -1780,6 +1820,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
+  AuthenticatedOpEmployeesIndexRoute: typeof AuthenticatedOpEmployeesIndexRoute
   AuthenticatedOpExpensesIndexRoute: typeof AuthenticatedOpExpensesIndexRoute
   AuthenticatedOpHelpCenterIndexRoute: typeof AuthenticatedOpHelpCenterIndexRoute
   AuthenticatedOpImportOrdersIndexRoute: typeof AuthenticatedOpImportOrdersIndexRoute
@@ -1790,6 +1831,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpNotificationsIndexRoute: typeof AuthenticatedOpNotificationsIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
+  AuthenticatedOpPayrollIndexRoute: typeof AuthenticatedOpPayrollIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
   AuthenticatedOpPurchasesIndexRoute: typeof AuthenticatedOpPurchasesIndexRoute
   AuthenticatedOpReferralsIndexRoute: typeof AuthenticatedOpReferralsIndexRoute
@@ -1841,6 +1883,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
+  AuthenticatedOpEmployeesIndexRoute: AuthenticatedOpEmployeesIndexRoute,
   AuthenticatedOpExpensesIndexRoute: AuthenticatedOpExpensesIndexRoute,
   AuthenticatedOpHelpCenterIndexRoute: AuthenticatedOpHelpCenterIndexRoute,
   AuthenticatedOpImportOrdersIndexRoute: AuthenticatedOpImportOrdersIndexRoute,
@@ -1853,6 +1896,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpNotificationsIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
+  AuthenticatedOpPayrollIndexRoute: AuthenticatedOpPayrollIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
   AuthenticatedOpPurchasesIndexRoute: AuthenticatedOpPurchasesIndexRoute,
   AuthenticatedOpReferralsIndexRoute: AuthenticatedOpReferralsIndexRoute,

@@ -60,6 +60,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { EmployeesModule } from './employees/employees.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { PayrollModule } from './payroll/payroll.module';
 
 @Module({
   imports: [
@@ -116,6 +117,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     ReferralsModule,
     CampaignsModule,
     EmployeesModule,
+    PayrollModule,
   ],
   controllers: [OrderStatusController],
   providers: [
