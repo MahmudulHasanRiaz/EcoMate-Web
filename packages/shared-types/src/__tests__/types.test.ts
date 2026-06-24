@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FEATURES, type PlanType, type ResourceLimits, type FeatureFlag, type LicenseToken } from '../license-types';
+import { FEATURES, type PlanType, type FeatureFlag, type LicenseToken, PLAN_TYPES, isPlanType } from '../license-types';
 import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
@@ -33,7 +33,21 @@ describe('shared-types', () => {
   });
 
   describe('PlanType', () => {
-    it('allows valid plan values', () => {
+    it('includes all expected values', () => {
+      expect(PLAN_TYPES).toEqual(['essential', 'growth', 'enterprise', 'ultimate', 'custom']);
+    });
+
+    it('isPlanType validates correct values', () => {
+      expect(isPlanType('enterprise')).toBe(true);
+      expect(isPlanType('ultimate')).toBe(true);
+    });
+
+    it('isPlanType rejects invalid values', () => {
+      expect(isPlanType('premium')).toBe(false);
+      expect(isPlanType('')).toBe(false);
+    });
+
+    it('allows valid plan values in array', () => {
       const plans: PlanType[] = ['essential', 'growth', 'enterprise', 'ultimate', 'custom'];
       expect(plans).toContain('essential');
       expect(plans).toContain('growth');

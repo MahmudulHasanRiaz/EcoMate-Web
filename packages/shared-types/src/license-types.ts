@@ -10,6 +10,12 @@ export interface LicenseToken {
 
 export type PlanType = 'essential' | 'growth' | 'enterprise' | 'ultimate' | 'custom';
 
+export const PLAN_TYPES: readonly PlanType[] = ['essential', 'growth', 'enterprise', 'ultimate', 'custom'] as const;
+
+export function isPlanType(v: string): v is PlanType {
+  return PLAN_TYPES.includes(v as PlanType);
+}
+
 export interface ResourceLimits {
   cpus: number;
   memory: string;
