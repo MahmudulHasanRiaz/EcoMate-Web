@@ -724,8 +724,8 @@ function PromptReferenceModal() {
       content: "Products are assigned via UUID. Build your UI around this JS object:\n\nwindow.products = [\n  {\n    id: 'uuid-here',\n    name: 'Premium Cotton Shirt',\n    price: 990,\n    compareAtPrice: 1290,\n    image: 'https://cdn.example.com/shirt.jpg',\n    variants: [\n      { id: 'v1', label: 'S', price: 990, stock: 10 },\n      { id: 'v2', label: 'M', price: 990, stock: 25 }\n    ]\n  }\n]\n\nRead from window.products (injected by the platform). If single product, window.products has 1 item. If multiple, iterate."
     },
     {
-      title: "Order API — Request & Response",
-      content: "POST /api/orders (rate limit: 5/min/IP)\n\nRequest:\n{\n  items: [{ productId: 'uuid', variantId: 'uuid?', quantity: 1, price: 990 }],\n  guestName: 'Customer Name',\n  guestPhone: '01712345678',\n  shippingAddress: { fullAddress: 'House 12, Dhaka', deliveryZone: 'Inside Dhaka' },\n  paymentOptionType: 'CASH_ON_DELIVERY', // or FULL_PAYMENT, PARTIAL_PAYMENT\n  gatewayCode: 'cod' // or bkash, nagad, rocket\n}\n\nSuccess (200):\n{ id: 'order-uuid', displayId: 'ORD-240623-0001' }\n\nError (400/409):\n{ message: 'Error description', statusCode: 400 }"
+      title: "EcoMate SDK — The ONLY API You Need",
+      content: "AI code must ONLY use the EcoMate SDK. Never call backend APIs directly.\n\nwindow.EcoMate.products — array of assigned products [{ id, name, price, compareAtPrice, image, variants: [{ id, label, price, stock }] }]\n\nwindow.EcoMate.track(event, data) — tracking. Available events with EXACT trigger conditions:\n• PageView: auto on load. DO NOT call manually.\n• ViewContent: ONCE per section via IntersectionObserver. Payload: { productId, section? }\n• AddToCart: ONCE per add action (variant select OR + click, NOT qty change). Payload: { productId, variantId?, quantity, price }\n• Lead: ONCE after form validation, before submit. Payload: { phone }\n• InitiateCheckout: ONCE after API success. Payload: { orderId }\n• Purchase: server-side. NEVER call from frontend.\n\nwindow.EcoMate.checkout.submit(data) — creates order. Returns Promise. Data: { items: [{productId, variantId?, quantity, price}], name, phone, address, deliveryZone, payment, gatewayCode }\n\nwindow.EcoMate.theme — { primary: '#4f46e5', currency: '৳' }\n\nSECURITY: Never create own fetch() calls. Never access localStorage, sessionStorage, cookies, eval. Never create own order form or checkout logic — use EcoMate SDK."
     },
     {
       title: "Tracking — Events & Exact Payloads",
@@ -759,7 +759,7 @@ Target audience: young adults in Dhaka, mobile-first, Bengali language.
 REQUIRED SECTIONS:
 1. Hero — gradient background, headline, CTA button (scrolls to #checkout)
 2. Feature badges — COD, Free Delivery, Easy Returns, Authentic — using emoji icons
-3. Product showcase — render window.products with image, name, price, compareAtPrice.
+3. Product showcase — render EcoMate.products with image, name, price, compareAtPrice.
    Include Color selector (swatches), Size selector (S/M/L/XL pills), Quantity stepper (− 1 +).
    Show stock availability. Update displayed price when variant changes.
 4. Checkout — use <div id="ecomate-checkout-mount"></div> for built-in order form
@@ -771,25 +771,28 @@ CHECKOUT UI:
 - Delivery zone toggle: Inside Dhaka (+60) / Outside Dhaka (+120)
 - Order summary showing: product price + delivery charge = total
 - Phone validation: 01XXXXXXXXX (11 digits), inline red error text
-- Submit button: "অর্ডার কনফার্ম করুন", shows "প্লেসিং অর্ডার..." while submitting
+- Submit button: "অর্ডার কনফার্ম করুন", shows loading state while submitting
+- Use EcoMate.checkout.submit() to create orders (NOT raw fetch)
 - On success: show order confirmation with displayId
-- On error: show error message, keep form data
+- On error: show error message, keep form data intact
 
-TRACKING (implement ALL with dedup flag):
+TRACKING (use ONLY EcoMate SDK, implement ALL with dedup flag):
 - PageView: auto, do not call manually
-- ViewContent: IntersectionObserver per product section
-- AddToCart: on variant select or + click (NOT quantity change)
-- Lead: on form submit (after validation, before POST)
-- InitiateCheckout: after API returns 200
+- ViewContent: IntersectionObserver per product section, fire ONCE
+- AddToCart: on variant select or + click (NOT quantity change), fire ONCE
+- Lead: on form submit (after validation, before submitting), fire ONCE
+- InitiateCheckout: after checkout.submit() resolves successfully, fire ONCE
 - Each event fires EXACTLY ONCE per page visit — use var tracked = {} to dedup
 
-TECHNICAL:
+TECHNICAL CONSTRAINTS (MUST FOLLOW):
+- Use ONLY EcoMate SDK — never raw fetch(), never POST /api/orders directly
+- Never access localStorage, sessionStorage, cookies, or eval
+- Never create own order form — use <div id="ecomate-checkout-mount">
 - Tailwind CSS CDN, Noto Sans Bengali font
 - Single HTML file, mobile-first responsive
-- POST /api/orders with correct JSON payload
 - Loading state on submit button, prevent double-click
-- Show success message with displayId on 200
-- Show inline red error box on 400/500
+- Show success message with displayId on success
+- Show inline red error box on failure
 - Use IntersectionObserver for scroll-based events
 - No placeholder logic — all tracking calls fully implemented`
 

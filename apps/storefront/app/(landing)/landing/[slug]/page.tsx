@@ -134,7 +134,7 @@ export default async function LandingPage(props: {
                   }).catch(function(){});
                 }
               };
-              window.EcoMate.track('PageView', {});
+              if(!window.__ecoMatePageView){window.__ecoMatePageView=true;window.EcoMate.track('PageView', {});}
             })();
           `,
         }}
@@ -155,6 +155,9 @@ export default async function LandingPage(props: {
           html={page.customHtml || ""}
           css={page.customCss || ""}
           products={products}
+          pixelId={pixelId}
+          tiktokCode={tiktokCode}
+          currency={storefrontConfig?.currency?.code || "BDT"}
         />
       )}
     </>
