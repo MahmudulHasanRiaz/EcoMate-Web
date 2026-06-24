@@ -1088,3 +1088,73 @@ model ReferralReward {
 
   @@index([referralId])
 }
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  internship
+}
+
+enum EmployeeStatus {
+  active
+  inactive
+  terminated
+  resigned
+}
+
+model Department {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?    @db.Text
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  employees Employee[]
+}
+
+model Designation {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  slug      String     @unique
+  level     Int        @default(0)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  employees Employee[]
+}
+
+model Employee {
+  id               String          @id @default(uuid())
+  userId           String?
+  employeeId       String          @unique
+  firstName        String
+  lastName         String
+  email            String          @unique
+  phone            String?
+  departmentId     String?
+  designationId    String?
+  employmentType   EmploymentType  @default(full_time)
+  status           EmployeeStatus  @default(active)
+  joiningDate      DateTime
+  exitDate         DateTime?
+  salary           Decimal?        @db.Decimal(10, 2)
+  bankAccountNo    String?
+  bankName         String?
+  address          String?
+  city             String?
+  emergencyContact String?
+  notes            String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  department  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designation Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([status])
+}

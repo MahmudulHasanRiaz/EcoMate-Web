@@ -58,6 +58,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
+import { EmployeesModule } from './employees/employees.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 
 @Module({
@@ -114,6 +115,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     NotificationsModule,
     ReferralsModule,
     CampaignsModule,
+    EmployeesModule,
   ],
   controllers: [OrderStatusController],
   providers: [
