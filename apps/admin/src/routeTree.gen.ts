@@ -41,6 +41,7 @@ import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
 import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
+import { Route as AuthenticatedOpLandingPagesIndexRouteImport } from './routes/_authenticated/op/landing-pages/index'
 import { Route as AuthenticatedOpInventoryIndexRouteImport } from './routes/_authenticated/op/inventory/index'
 import { Route as AuthenticatedOpImportProductsIndexRouteImport } from './routes/_authenticated/op/import-products/index'
 import { Route as AuthenticatedOpImportOrdersIndexRouteImport } from './routes/_authenticated/op/import-orders/index'
@@ -258,6 +259,12 @@ const AuthenticatedOpMediaIndexRoute =
   AuthenticatedOpMediaIndexRouteImport.update({
     id: '/op/media/',
     path: '/op/media/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpLandingPagesIndexRoute =
+  AuthenticatedOpLandingPagesIndexRouteImport.update({
+    id: '/op/landing-pages/',
+    path: '/op/landing-pages/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpInventoryIndexRoute =
@@ -556,6 +563,7 @@ export interface FileRoutesByFullPath {
   '/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
   '/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
+  '/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
@@ -631,6 +639,7 @@ export interface FileRoutesByTo {
   '/op/import-orders': typeof AuthenticatedOpImportOrdersIndexRoute
   '/op/import-products': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory': typeof AuthenticatedOpInventoryIndexRoute
+  '/op/landing-pages': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media': typeof AuthenticatedOpMediaIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
@@ -708,6 +717,7 @@ export interface FileRoutesById {
   '/_authenticated/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
   '/_authenticated/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/_authenticated/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
+  '/_authenticated/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
@@ -785,6 +795,7 @@ export interface FileRouteTypes {
     | '/op/import-orders/'
     | '/op/import-products/'
     | '/op/inventory/'
+    | '/op/landing-pages/'
     | '/op/media/'
     | '/op/orders/'
     | '/op/payments/'
@@ -860,6 +871,7 @@ export interface FileRouteTypes {
     | '/op/import-orders'
     | '/op/import-products'
     | '/op/inventory'
+    | '/op/landing-pages'
     | '/op/media'
     | '/op/orders'
     | '/op/payments'
@@ -936,6 +948,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/import-orders/'
     | '/_authenticated/op/import-products/'
     | '/_authenticated/op/inventory/'
+    | '/_authenticated/op/landing-pages/'
     | '/_authenticated/op/media/'
     | '/_authenticated/op/orders/'
     | '/_authenticated/op/payments/'
@@ -1205,6 +1218,13 @@ declare module '@tanstack/react-router' {
       path: '/op/media'
       fullPath: '/op/media/'
       preLoaderRoute: typeof AuthenticatedOpMediaIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/landing-pages/': {
+      id: '/_authenticated/op/landing-pages/'
+      path: '/op/landing-pages'
+      fullPath: '/op/landing-pages/'
+      preLoaderRoute: typeof AuthenticatedOpLandingPagesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/inventory/': {
@@ -1620,6 +1640,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpImportOrdersIndexRoute: typeof AuthenticatedOpImportOrdersIndexRoute
   AuthenticatedOpImportProductsIndexRoute: typeof AuthenticatedOpImportProductsIndexRoute
   AuthenticatedOpInventoryIndexRoute: typeof AuthenticatedOpInventoryIndexRoute
+  AuthenticatedOpLandingPagesIndexRoute: typeof AuthenticatedOpLandingPagesIndexRoute
   AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
@@ -1674,6 +1695,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpImportProductsIndexRoute:
     AuthenticatedOpImportProductsIndexRoute,
   AuthenticatedOpInventoryIndexRoute: AuthenticatedOpInventoryIndexRoute,
+  AuthenticatedOpLandingPagesIndexRoute: AuthenticatedOpLandingPagesIndexRoute,
   AuthenticatedOpMediaIndexRoute: AuthenticatedOpMediaIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,

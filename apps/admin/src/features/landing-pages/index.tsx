@@ -714,50 +714,48 @@ export function LandingPages() {
 
 function PromptReferenceModal() {
   const [open, setOpen] = useState(false)
+  const promptSections = [
+    { title: "Architecture", content: "Your HTML is injected at /landing/[slug] with NO main app JS/CSS. Tailwind CSS CDN, Google Fonts available. CSP allows inline scripts/styles, images from any URL. CSP blocks external scripts and iframes (YouTube allowed)." },
+    { title: "Product Assignment", content: "Products are assigned to this page by UUID. Product data (name, image, price) is available server-side. The built-in checkout form mounts at <div id='ecomate-checkout-mount'> — include this in your HTML. If omitted, you must implement order submission via the API yourself." },
+    { title: "Order API — POST /api/orders", content: "Rate limit: 5/min/IP. Payload: { items: [{ productId: 'uuid' (required), variantId: 'uuid' (optional), quantity: 1 (required positive int), price: 1250 (required per unit) }], guestName: 'string' (required), guestPhone: '01XXXXXXXXX' (required BD format), shippingAddress: { fullAddress: '...' }, paymentOptionType: 'CASH_ON_DELIVERY' | 'FULL_PAYMENT' | 'PARTIAL_PAYMENT', gatewayCode: 'cod' | 'bkash' | 'nagad' | 'rocket' }. Security: IP/phone blocking enforced server-side. Phone must be valid BD format: starts with 01, 11 digits." },
+    { title: "Tracking — window.EcoMate.track(event, data)", content: "Events fire ONCE per page load. Never call same event twice — subsequent calls ignored.\n• PageView: fires automatically. Do NOT call manually.\n• ViewContent: CTA click, product view. Data: { section: 'hero'|'products'|'cta', productId? }.\n• AddToCart: product selection, qty increment. Data: { productId, name }.\n• Lead: form submit OR phone blur. Data: { phone? }.\n• InitiateCheckout: after POST /api/orders returns 200. Data: { orderId }.\n• Purchase: fired server-side. Do NOT fire from frontend.\nEach button fires EXACTLY ONE event. Example: \"Buy Now\" fires only Lead, not Lead+AddToCart+ViewContent." },
+    { title: "Incomplete Order Tracking", content: "Track abandoned checkouts by firing Lead on phone/name input blur: window.EcoMate.track('Lead', { phone: input.value }). This is automatic if using <div id='ecomate-checkout-mount'>. For custom forms, implement yourself." },
+    { title: "Output Format", content: "Single HTML file. Must include: DOCTYPE, CDN links in <head>, body content, <div id='ecomate-checkout-mount'> for checkout, inline <script> for API calls + tracking." },
+  ];
+
+  const examplePrompt = `Create a modern sales landing page for a clothing brand in Bangladesh. Target audience: young adults in Dhaka, mobile-first. Include: hero section with gradient background + CTA (scrolls to #checkout), feature badges (COD/Free Delivery/Returns/Authentic), product showcase with assigned product data, order form using <div id="ecomate-checkout-mount"></div>, trust badges, footer. Technical: Tailwind CSS CDN, mobile responsive, Noto Sans Bengali font, one single HTML file. All interactive elements call window.EcoMate.track() — each event fires EXACTLY ONCE. Form POSTs to /api/orders with correct JSON payload. Phone validation: 01XXXXXXXXX format with inline error. Delivery zone (Inside Dhaka 60tk / Outside 120tk).`
+
   return (
     <>
       <Button variant='outline' size='sm' onClick={() => setOpen(true)}>
         <Code className='h-4 w-4 mr-1' /> Prompt Reference
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className='max-w-lg'>
+        <DialogContent className='max-w-2xl max-h-[85vh] overflow-y-auto'>
           <DialogHeader>
-            <DialogTitle>Custom Code Prompt Reference</DialogTitle>
+            <DialogTitle>Custom Code — Full Integration Guide</DialogTitle>
+            <DialogDescription>Give this to any AI to generate a fully integrated landing page.</DialogDescription>
           </DialogHeader>
           <div className='space-y-4 text-sm'>
-            <p>Use this prompt with any AI to generate your landing page:</p>
-            <div className='bg-muted rounded-lg p-4 space-y-2'>
-              <p className='font-medium'>Example Prompt:</p>
-              <p className='text-xs text-muted-foreground leading-relaxed border-l-2 border-primary pl-3 italic'>
-                "Create a modern sales landing page for a clothing brand in Bangladesh.
-                Target audience: young adults in Dhaka. Must include: hero section with CTA,
-                product grid, order form with name/phone/address/payment selection,
-                trust badges (COD, free delivery), testimonials.
-                Use Tailwind CSS CDN. Mobile responsive.
-                Use window.EcoMate.track('ViewContent', {{productId: '...'}}) for product clicks.
-                Use window.EcoMate.track('Lead', {{}}) when the user submits the order form.
-                Use window.EcoMate.track('AddToCart', {{productId: '...'}}) for add to cart buttons.
-                One file only — single HTML file. Bengali language preferred."
-              </p>
+            {promptSections.map((sec, i) => (
+              <div key={i} className='bg-muted/20 rounded-lg p-4 space-y-1'>
+                <h4 className='font-semibold text-xs uppercase tracking-wider text-muted-foreground'>{sec.title}</h4>
+                <p className='text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap'>{sec.content}</p>
+              </div>
+            ))}
+
+            <div className='border-t pt-4'>
+              <h4 className='font-semibold text-sm mb-2'>Complete Example Prompt</h4>
+              <div className='bg-muted rounded-lg p-3 mb-3'>
+                <p className='text-xs text-muted-foreground leading-relaxed border-l-2 border-primary pl-3 italic whitespace-pre-wrap'>{examplePrompt}</p>
+              </div>
+              <Button variant='default' size='sm' onClick={() => {
+                navigator.clipboard.writeText(examplePrompt)
+                toast.success('Full prompt copied to clipboard')
+              }}>
+                <Code className='h-4 w-4 mr-1' /> Copy Full Prompt
+              </Button>
             </div>
-            <div className='space-y-2'>
-              <p className='font-medium'>Tracking API:</p>
-              <ul className='text-xs space-y-1 text-muted-foreground'>
-                <li><code className='bg-muted px-1 rounded'>PageView</code> — fired automatically</li>
-                <li><code className='bg-muted px-1 rounded'>ViewContent</code> — product view</li>
-                <li><code className='bg-muted px-1 rounded'>AddToCart</code> — add to cart click</li>
-                <li><code className='bg-muted px-1 rounded'>Lead</code> — form submission</li>
-                <li><code className='bg-muted px-1 rounded'>InitiateCheckout</code> — checkout start</li>
-                <li><code className='bg-muted px-1 rounded'>Purchase</code> — order complete</li>
-              </ul>
-              <p className='text-xs text-muted-foreground mt-2'>Usage: <code className='bg-muted px-1 rounded'>window.EcoMate.track('EventName', {})</code></p>
-            </div>
-            <Button variant='outline' size='sm' onClick={() => {
-              navigator.clipboard.writeText(`Create a modern sales landing page for a clothing brand in Bangladesh. Target audience: young adults. Include: hero section with CTA, product grid, order form with name/phone/address/payment, trust badges, testimonials. Use Tailwind CSS CDN. Mobile responsive. Use window.EcoMate.track() for events. One single HTML file.`)
-              toast.success('Prompt copied')
-            }}>
-              Copy Example Prompt
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

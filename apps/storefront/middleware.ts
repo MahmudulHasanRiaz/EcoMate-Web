@@ -6,13 +6,14 @@ export function middleware(request: NextRequest) {
 
   // Apply strict CSP only to landing pages
   if (pathname.startsWith("/landing/")) {
+    const isDev = process.env.NODE_ENV !== "production";
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com https://fonts.cdnfonts.com",
       "img-src 'self' data: blob: https: http:",
       "font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com",
-      "connect-src 'self'",
+      `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
       "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
       "object-src 'none'",
       "base-uri 'self'",

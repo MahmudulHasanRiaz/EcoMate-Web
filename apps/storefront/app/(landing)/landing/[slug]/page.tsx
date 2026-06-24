@@ -4,6 +4,7 @@ import { serverFetch } from "@/lib/api-server";
 import LandingTemplateRenderer from "@/components/landing/TemplateRenderer";
 import LandingCustomRenderer from "@/components/landing/CustomRenderer";
 import type { Metadata } from "next";
+import Script from "next/script";
 
 export const revalidate = 300;
 
@@ -103,7 +104,9 @@ export default async function LandingPage(props: {
       )}
 
       {/* Inline tracking — minimal, fires once per event */}
-      <script
+      <Script
+        id="ecomate-tracking-init"
+        strategy="afterInteractive"
         dangerouslySetInnerHTML={{
           __html: `
             window.EcoMate = window.EcoMate || {};
@@ -151,6 +154,7 @@ export default async function LandingPage(props: {
         <LandingCustomRenderer
           html={page.customHtml || ""}
           css={page.customCss || ""}
+          products={products}
         />
       )}
     </>

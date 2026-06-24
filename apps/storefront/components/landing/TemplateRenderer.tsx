@@ -313,7 +313,7 @@ function DynamicProductSection({ section, products = [] }: SectionProps) {
   );
 }
 
-function CheckoutFormSection({ section }: SectionProps) {
+export function CheckoutFormSection({ section }: SectionProps) {
   const [step, setStep] = useState<"form" | "submitting" | "success" | "error">("form");
   const [errorMsg, setErrorMsg] = useState("");
   const [phoneRaw, setPhoneRaw] = useState("");
