@@ -7,12 +7,24 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# Obfuscation stage
+FROM node:22-alpine AS obfuscator
+WORKDIR /app
+RUN npm install -g javascript-obfuscator@^4.1.1
+COPY --from=builder /app/dist ./dist
+COPY obfuscator.config.json ./
+RUN javascript-obfuscator dist/ \
+    --output dist-obfuscated/ \
+    --config obfuscator.config.json && \
+    rm -rf dist && \
+    mv dist-obfuscated dist
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+COPY --from=obfuscator /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/public ./public

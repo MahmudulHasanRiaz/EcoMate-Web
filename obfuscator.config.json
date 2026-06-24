@@ -1,0 +1,13 @@
+{
+  "controlFlowFlattening": true,
+  "controlFlowFlatteningThreshold": 0.75,
+  "stringArrayEncoding": ["base64"],
+  "stringArrayThreshold": 0.8,
+  "deadCodeInjection": true,
+  "deadCodeInjectionThreshold": 0.4,
+  "selfDefending": true,
+  "disableConsoleOutput": false,
+  "renameGlobals": false,
+  "reservedStrings": ["\\bEcoMate\\b", "\\bhandle\\b", "\\bapp\\b"],
+  "reservedNames": ["\\becomate\\b", "\\bapp\\b", "\\bmodule\\b", "\\bservice\\b"]
+}
