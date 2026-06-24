@@ -3,7 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { FeatureFlagsService, FeatureGuard } from '@ecomate/feature-flags';
+import { FeatureGuard } from '@ecomate/feature-flags';
+import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -98,10 +99,10 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     SecurityModule,
     SearchModule,
     LandingPagesModule,
+    LicenseModule,
   ],
   controllers: [OrderStatusController],
   providers: [
-    FeatureFlagsService,
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({
