@@ -52,6 +52,7 @@ import { BlockSettingsModule } from './block-settings/block-settings.module';
 import { SecurityModule } from './security/security.module';
 import { SearchModule } from './search/search.module';
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -100,6 +101,7 @@ import { LandingPagesModule } from './landing-pages/landing-pages.module';
     SearchModule,
     LandingPagesModule,
     LicenseModule,
+    QueueModule,
   ],
   controllers: [OrderStatusController],
   providers: [
