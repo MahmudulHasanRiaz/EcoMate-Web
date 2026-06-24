@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+export { REQUIRES_FEATURE_KEY, RequiresFeature } from './decorator';
+export { FeatureGuard } from './guard';
 
 export interface LicenseInfo {
   valid: boolean;
