@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { join } from 'path';
-import { NestExpressApplication } from '@nestjs/platform-express';
-import cookieParser from 'cookie-parser';
-import { json, urlencoded } from 'express';
-import helmet from 'helmet';
-import compression from 'compression';
+import { NestFastifyApplication } from '@nestjs/platform-fastify';
+import helmet from '@fastify/helmet';
+import compress from '@fastify/compress';
+import cookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { execSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
@@ -71,10 +71,10 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule);
   app.enableShutdownHooks();
 
-  app.use(helmet({
+  await app.register(helmet, {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     contentSecurityPolicy: {
       directives: {
@@ -88,32 +88,32 @@ async function bootstrap() {
         frameSrc: ["'none'"],
       },
     },
-  }));
-
-  app.use(compression());
-
-  app.use(json({ limit: '1mb' }));
-  app.use(urlencoded({ limit: '1mb', extended: true }));
-
-  app.use('/uploads', (req, res, next) => {
-    const contentType = req.headers['content-type'];
-    if (contentType && !contentType.startsWith('image/')) {
-      console.warn(`Non-image upload attempt: ${req.method} ${req.originalUrl} (${contentType})`);
-    }
-    next();
   });
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+  await app.register(compress);
+
+  app.getHttpAdapter().getInstance().addHook('onRequest', async (request, reply) => {
+    if (request.url.startsWith('/uploads/') && (request.method === 'POST' || request.method === 'PUT')) {
+      const contentType = request.headers['content-type'];
+      if (contentType && !contentType.startsWith('image/')) {
+        console.warn(`Non-image upload attempt: ${request.method} ${request.url} (${contentType})`);
+      }
+    }
+  });
+
+  await app.register(fastifyStatic, {
+    root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
-    maxAge: '1y',
+    maxAge: 365 * 24 * 60 * 60 * 1000,
     immutable: true,
-  } as any);
-  app.useStaticAssets(join(process.cwd(), 'public'), {
+  });
+  await app.register(fastifyStatic, {
+    root: join(process.cwd(), 'public'),
     prefix: '/assets/',
-    maxAge: '1y',
+    maxAge: 365 * 24 * 60 * 60 * 1000,
     immutable: true,
-  } as any);
-  app.use(cookieParser());
+  });
+  await app.register(cookie);
 
   app.enableCors({
     origin: process.env['CORS_ORIGIN']
@@ -129,13 +129,9 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  app.use((req, res, next) => {
-    const start = Date.now();
-    res.on('finish', () => {
-      const duration = Date.now() - start;
-      console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
-    });
-    next();
+  app.getHttpAdapter().getInstance().addHook('onResponse', async (request, reply) => {
+    const duration = reply.elapsedTime.toFixed(0);
+    console.log(`${request.method} ${request.url} ${reply.statusCode} ${duration}ms`);
   });
 
   app.useGlobalFilters(new GlobalExceptionFilter());
