@@ -2,7 +2,8 @@ import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift, Ruler,
   Users, ShieldCheck, HelpCircle, Percent,
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
-  Building2, ShoppingCart, Receipt, Bell
+  Building2, ShoppingCart, Receipt, Bell,
+  Megaphone, UserPlus
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -59,6 +60,8 @@ export const sidebarData: SidebarData = {
         { title: 'Suppliers', url: '/op/suppliers', icon: Building2 },
         { title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart },
         { title: 'Expenses', url: '/op/expenses', icon: Receipt },
+        { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
+        { title: 'Referrals', url: '/op/referrals', icon: UserPlus },
         { title: 'Notifications', url: '/op/notifications', icon: Bell },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck },

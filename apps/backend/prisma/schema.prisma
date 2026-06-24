@@ -86,6 +86,7 @@ model User {
   assignedLeads  CheckoutLead[] @relation("CheckoutLeadAssignedTo")
   assignedByMe   CheckoutLead[] @relation("CheckoutLeadAssignedBy")
   convertedLeads CheckoutLead[] @relation("CheckoutLeadConvertedBy")
+  referrals     Referral[]
 }
 
 model VerificationToken {
@@ -408,6 +409,8 @@ model Order {
   shipment     Shipment?
   dispatchLogs CourierDispatchLog[]
   refunds      Refund[]
+  couponUsages CouponUsage[]
+  referralLeads ReferralLead[]
 
   @@index([customerId])
   @@index([statusId])
@@ -526,6 +529,50 @@ model ShippingZoneGroup {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  subject   String
+  body      String   @db.Text
+  variables Json?    @default("[]")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns EmailCampaign[]
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  cancelled
+}
+
+model EmailCampaign {
+  id            String         @id @default(uuid())
+  name          String
+  subject       String
+  templateId    String?
+  content       String?        @db.Text
+  recipients    Json?          @default("[]")
+  segmentFilter Json?          @default("{}")
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  status        CampaignStatus @default(draft)
+  totalSent     Int            @default(0)
+  totalFailed   Int            @default(0)
+  createdBy     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  template EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model SystemSetting {
@@ -664,18 +711,38 @@ model CourierDispatchLog {
 }
 
 model Coupon {
-  id            String    @id @default(uuid())
-  code          String    @unique
-  type          String    @default("flat")
-  value         Decimal   @db.Decimal(10, 2)
-  minOrderValue Decimal?  @db.Decimal(10, 2)
-  maxUses       Int?
-  usedCount     Int       @default(0)
-  startsAt      DateTime?
-  expiresAt     DateTime?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  type               String    @default("flat")
+  value              Decimal   @db.Decimal(10, 2)
+  minOrderValue      Decimal?  @db.Decimal(10, 2)
+  maxUses            Int?
+  usedCount          Int       @default(0)
+  maxUsesPerCustomer Int?
+  percentageCap      Decimal?  @db.Decimal(5, 2)
+  startsAt           DateTime?
+  expiresAt          DateTime?
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  usages CouponUsage[]
+}
+
+model CouponUsage {
+  id       String   @id @default(uuid())
+  couponId String
+  orderId  String
+  userId   String?
+  discount Decimal  @db.Decimal(10, 2)
+  usedAt   DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id])
+
+  @@index([couponId])
+  @@index([orderId])
+  @@index([userId])
 }
 
 model Refund {
@@ -969,4 +1036,55 @@ model NotificationLog {
   @@index([channel, status])
   @@index([recipient])
   @@index([sentAt])
+}
+
+model Referral {
+  id            String    @id @default(uuid())
+  code          String    @unique
+  referrerId    String
+  totalReferrals Int      @default(0)
+  totalReward   Decimal   @default(0) @db.Decimal(10, 2)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  referrer User       @relation(fields: [referrerId], references: [id])
+  leads    ReferralLead[]
+  rewards  ReferralReward[]
+
+  @@index([referrerId])
+  @@index([code])
+}
+
+model ReferralLead {
+  id         String    @id @default(uuid())
+  referralId String
+  phone      String
+  name       String?
+  status     String    @default("pending")
+  orderId    String?
+  rewardAmount Decimal? @db.Decimal(10, 2)
+  rewardGiven Boolean  @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  referral Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([referralId])
+  @@index([phone])
+  @@index([status])
+}
+
+model ReferralReward {
+  id          String   @id @default(uuid())
+  referralId  String
+  type        String   @default("coupon")
+  amount      Decimal  @db.Decimal(10, 2)
+  description String?
+  givenAt     DateTime @default(now())
+
+  referral Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+
+  @@index([referralId])
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Param,
   BadRequestException,
@@ -12,6 +13,7 @@ import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import * as nodemailer from 'nodemailer';
 
 interface HeroSlide {
   image: string;
@@ -533,5 +535,62 @@ export class SystemSettingsController {
     });
     this.cache.delete('storefront:config');
     return { key, value };
+  }
+
+  @Get('smtp')
+  @Roles('superadmin', 'admin')
+  async getSmtpSettings() {
+    const keys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { key: { in: keys } },
+    });
+    const map: Record<string, string> = {};
+    for (const s of settings) map[s.key] = s.value;
+    if (map['smtp_pass']) map['smtp_pass'] = '********';
+    return map;
+  }
+
+  @Put('smtp')
+  @Roles('superadmin', 'admin')
+  async updateSmtpSettings(@Body() body: Record<string, string>) {
+    const allowedKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
+    for (const key of allowedKeys) {
+      if (body[key] !== undefined) {
+        await this.prisma.systemSetting.upsert({
+          where: { key },
+          create: { key, value: body[key] },
+          update: { value: body[key] },
+        });
+      }
+    }
+    return { success: true };
+  }
+
+  @Post('smtp/test')
+  @Roles('superadmin', 'admin')
+  async testSmtp() {
+    const smtpHost = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_host' } });
+    const smtpPort = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_port' } });
+    const smtpUser = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_user' } });
+    const smtpPass = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_pass' } });
+    const fromEmail = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_email' } });
+    const fromName = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_name' } });
+
+    if (!smtpHost?.value) {
+      throw new BadRequestException('SMTP not configured');
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpHost.value,
+      port: parseInt(smtpPort?.value || '587'),
+      secure: smtpPort?.value === '465',
+      auth: smtpUser?.value ? {
+        user: smtpUser.value,
+        pass: smtpPass?.value || '',
+      } : undefined,
+    });
+
+    await transporter.verify();
+    return { success: true, message: 'SMTP connection verified' };
   }
 }

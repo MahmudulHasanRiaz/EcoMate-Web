@@ -1,5 +1,5 @@
 export type FieldType =
-  | 'text' | 'email' | 'tel' | 'url'
+  | 'text' | 'email' | 'tel' | 'url' | 'password'
   | 'textarea'
   | 'switch'
   | 'image'

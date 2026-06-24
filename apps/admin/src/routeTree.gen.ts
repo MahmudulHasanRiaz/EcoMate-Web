@@ -38,6 +38,7 @@ import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
 import { Route as AuthenticatedOpReviewsIndexRouteImport } from './routes/_authenticated/op/reviews/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
+import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
@@ -78,6 +79,7 @@ import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
@@ -246,6 +248,12 @@ const AuthenticatedOpRefundsIndexRoute =
   AuthenticatedOpRefundsIndexRouteImport.update({
     id: '/op/refunds/',
     path: '/op/refunds/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpReferralsIndexRoute =
+  AuthenticatedOpReferralsIndexRouteImport.update({
+    id: '/op/referrals/',
+    path: '/op/referrals/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpPurchasesIndexRoute =
@@ -486,6 +494,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
     path: '/storage/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsSmtpIndexRoute =
+  AuthenticatedMonSettingsSmtpIndexRouteImport.update({
+    id: '/smtp/',
+    path: '/smtp/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsShippingIndexRoute =
   AuthenticatedMonSettingsShippingIndexRouteImport.update({
     id: '/shipping/',
@@ -607,6 +621,7 @@ export interface FileRoutesByFullPath {
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
+  '/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
   '/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
@@ -625,6 +640,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
+  '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -688,6 +704,7 @@ export interface FileRoutesByTo {
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases': typeof AuthenticatedOpPurchasesIndexRoute
+  '/op/referrals': typeof AuthenticatedOpReferralsIndexRoute
   '/op/refunds': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
@@ -706,6 +723,7 @@ export interface FileRoutesByTo {
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
+  '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -771,6 +789,7 @@ export interface FileRoutesById {
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/_authenticated/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
+  '/_authenticated/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
   '/_authenticated/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/_authenticated/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
@@ -789,6 +808,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
+  '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -854,6 +874,7 @@ export interface FileRouteTypes {
     | '/op/payments/'
     | '/op/products/'
     | '/op/purchases/'
+    | '/op/referrals/'
     | '/op/refunds/'
     | '/op/reviews/'
     | '/op/shipments/'
@@ -872,6 +893,7 @@ export interface FileRouteTypes {
     | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/shipping/'
+    | '/mon/settings/smtp/'
     | '/mon/settings/storage/'
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
@@ -935,6 +957,7 @@ export interface FileRouteTypes {
     | '/op/payments'
     | '/op/products'
     | '/op/purchases'
+    | '/op/referrals'
     | '/op/refunds'
     | '/op/reviews'
     | '/op/shipments'
@@ -953,6 +976,7 @@ export interface FileRouteTypes {
     | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
     | '/mon/settings/shipping'
+    | '/mon/settings/smtp'
     | '/mon/settings/storage'
     | '/mon/settings/storefront'
     | '/mon/settings/system'
@@ -1017,6 +1041,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/payments/'
     | '/_authenticated/op/products/'
     | '/_authenticated/op/purchases/'
+    | '/_authenticated/op/referrals/'
     | '/_authenticated/op/refunds/'
     | '/_authenticated/op/reviews/'
     | '/_authenticated/op/shipments/'
@@ -1035,6 +1060,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/shipping/'
+    | '/_authenticated/mon/settings/smtp/'
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
@@ -1262,6 +1288,13 @@ declare module '@tanstack/react-router' {
       path: '/op/refunds'
       fullPath: '/op/refunds/'
       preLoaderRoute: typeof AuthenticatedOpRefundsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/referrals/': {
+      id: '/_authenticated/op/referrals/'
+      path: '/op/referrals'
+      fullPath: '/op/referrals/'
+      preLoaderRoute: typeof AuthenticatedOpReferralsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/purchases/': {
@@ -1544,6 +1577,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/smtp/': {
+      id: '/_authenticated/mon/settings/smtp/'
+      path: '/smtp'
+      fullPath: '/mon/settings/smtp/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSmtpIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/shipping/': {
       id: '/_authenticated/mon/settings/shipping/'
       path: '/shipping'
@@ -1633,6 +1673,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
+  AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
@@ -1657,6 +1698,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
     AuthenticatedMonSettingsShippingIndexRoute:
       AuthenticatedMonSettingsShippingIndexRoute,
+    AuthenticatedMonSettingsSmtpIndexRoute:
+      AuthenticatedMonSettingsSmtpIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:
@@ -1749,6 +1792,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
   AuthenticatedOpPurchasesIndexRoute: typeof AuthenticatedOpPurchasesIndexRoute
+  AuthenticatedOpReferralsIndexRoute: typeof AuthenticatedOpReferralsIndexRoute
   AuthenticatedOpRefundsIndexRoute: typeof AuthenticatedOpRefundsIndexRoute
   AuthenticatedOpReviewsIndexRoute: typeof AuthenticatedOpReviewsIndexRoute
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
@@ -1811,6 +1855,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
   AuthenticatedOpPurchasesIndexRoute: AuthenticatedOpPurchasesIndexRoute,
+  AuthenticatedOpReferralsIndexRoute: AuthenticatedOpReferralsIndexRoute,
   AuthenticatedOpRefundsIndexRoute: AuthenticatedOpRefundsIndexRoute,
   AuthenticatedOpReviewsIndexRoute: AuthenticatedOpReviewsIndexRoute,
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,

@@ -1,27 +1,17 @@
-import { IsString, IsOptional, IsNumber, IsBoolean } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import { CreateCouponDto } from './create-coupon.dto';
 
-export class UpdateCouponDto {
-  @IsOptional()
-  @IsString()
+export class UpdateCouponDto extends PartialType(CreateCouponDto) {
+  @IsOptional() @IsString()
   code?: string;
 
-  @IsOptional()
-  @IsString()
+  @IsOptional() @IsString()
   type?: string;
 
-  @IsOptional()
-  @IsNumber()
+  @IsOptional() @IsNumber() @Min(0)
   value?: number;
 
   @IsOptional()
-  @IsBoolean()
   isActive?: boolean;
-
-  @IsOptional()
-  @IsNumber()
-  minOrderValue?: number;
-
-  @IsOptional()
-  @IsNumber()
-  maxUses?: number;
 }

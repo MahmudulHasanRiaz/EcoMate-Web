@@ -11,6 +11,7 @@ import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { CouponsService } from '../coupons/coupons.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -36,6 +37,7 @@ export class OrdersService {
     private readonly inventoryService: InventoryService,
     private readonly blockedEntries: BlockedEntriesService,
     private readonly security: SecurityService,
+    private readonly couponsService: CouponsService,
   ) {}
 
   private parseTimeline(timeline: unknown): any[] {
@@ -478,34 +480,17 @@ export class OrdersService {
         dto.discountType,
       );
 
-      let couponCode: string | null = null;
       if (dto.couponCode) {
         const coupons = await tx.$queryRawUnsafe<any[]>(
-          'SELECT id, "isActive", "maxUses", "usedCount", "expiresAt", "startsAt", "minOrderValue" FROM "Coupon" WHERE code = $1 FOR UPDATE',
+          'SELECT "minOrderValue" FROM "Coupon" WHERE code = $1 FOR UPDATE',
           dto.couponCode,
         );
         const coupon = coupons[0];
-        if (!coupon || !coupon.isActive) {
-          throw new BadRequestException('Invalid or inactive coupon code');
-        }
-        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
-          throw new BadRequestException('Coupon usage limit reached');
-        }
-        if (coupon.expiresAt && new Date() > new Date(coupon.expiresAt)) {
-          throw new BadRequestException('Coupon has expired');
-        }
-        if (coupon.startsAt && new Date() < new Date(coupon.startsAt)) {
-          throw new BadRequestException('Coupon is not yet active');
-        }
-        if (
-          coupon.minOrderValue &&
-          Number(subtotal) < Number(coupon.minOrderValue)
-        ) {
+        if (coupon?.minOrderValue && Number(subtotal) < Number(coupon.minOrderValue)) {
           throw new BadRequestException(
             `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
           );
         }
-        couponCode = dto.couponCode;
       }
 
       if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
@@ -620,19 +605,16 @@ export class OrdersService {
         });
       }
 
-      if (couponCode) {
-        await tx.coupon.update({
-          where: { code: couponCode },
-          data: { usedCount: { increment: 1 } },
-        });
-      }
-
       await this.deductStock(tx, dto.items, displayId);
 
       return created;
     });
 
     this.security.recordOrder(dto.guestPhone || '', clientIp || '');
+
+    if (dto.couponCode) {
+      await this.couponsService.apply(dto.couponCode, order.id, undefined, dto.discount || 0);
+    }
 
     this.events.emit({
       type: 'order.created',

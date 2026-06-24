@@ -8,6 +8,7 @@ import { CustomersService } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
+import { CouponsService } from '../coupons/coupons.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -179,6 +180,13 @@ describe('OrdersService', () => {
           useValue: {
             findOrderBlockedIp: jest.fn().mockResolvedValue(null),
             findBlockedPhone: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: CouponsService,
+          useValue: {
+            validate: jest.fn().mockResolvedValue({ valid: true, coupon: { type: 'flat', value: 50, minOrderValue: null } }),
+            apply: jest.fn().mockResolvedValue({ success: true, discount: 50 }),
           },
         },
         {

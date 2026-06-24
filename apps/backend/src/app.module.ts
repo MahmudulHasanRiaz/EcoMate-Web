@@ -57,6 +57,8 @@ import { PurchasesModule } from './purchases/purchases.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReferralsModule } from './referrals/referrals.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 
 @Module({
   imports: [
@@ -110,6 +112,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     PurchasesModule,
     ExpensesModule,
     NotificationsModule,
+    ReferralsModule,
+    CampaignsModule,
   ],
   controllers: [OrderStatusController],
   providers: [

@@ -60,6 +60,17 @@ export function Field({ fieldKey, schema, value, onChange, disabled, placeholder
           />
         )
 
+      case 'password':
+        return (
+          <Input
+            {...inputProps}
+            type='password'
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder ?? schema.placeholder}
+          />
+        )
+
       case 'tel':
         return (
           <Input

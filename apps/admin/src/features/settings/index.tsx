@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List } from 'lucide-react'
+import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List, Mail } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -46,6 +46,7 @@ export function Settings() {
         { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },
         { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
         { title: 'Tracking & Analytics', href: '/mon/settings/tracking', icon: <Radio size={18} /> },
+        { title: 'SMTP / Email', href: '/mon/settings/smtp', icon: <Mail size={18} /> },
       ],
     },
     {
