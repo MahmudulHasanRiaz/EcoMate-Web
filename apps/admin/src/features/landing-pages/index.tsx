@@ -715,15 +715,83 @@ export function LandingPages() {
 function PromptReferenceModal() {
   const [open, setOpen] = useState(false)
   const promptSections = [
-    { title: "Architecture", content: "Your HTML is injected at /landing/[slug] with NO main app JS/CSS. Tailwind CSS CDN, Google Fonts available. CSP allows inline scripts/styles, images from any URL. CSP blocks external scripts and iframes (YouTube allowed)." },
-    { title: "Product Assignment", content: "Products are assigned to this page by UUID. Product data (name, image, price) is available server-side. The built-in checkout form mounts at <div id='ecomate-checkout-mount'> — include this in your HTML. If omitted, you must implement order submission via the API yourself." },
-    { title: "Order API — POST /api/orders", content: "Rate limit: 5/min/IP. Payload: { items: [{ productId: 'uuid' (required), variantId: 'uuid' (optional), quantity: 1 (required positive int), price: 1250 (required per unit) }], guestName: 'string' (required), guestPhone: '01XXXXXXXXX' (required BD format), shippingAddress: { fullAddress: '...' }, paymentOptionType: 'CASH_ON_DELIVERY' | 'FULL_PAYMENT' | 'PARTIAL_PAYMENT', gatewayCode: 'cod' | 'bkash' | 'nagad' | 'rocket' }. Security: IP/phone blocking enforced server-side. Phone must be valid BD format: starts with 01, 11 digits." },
-    { title: "Tracking — window.EcoMate.track(event, data)", content: "Events fire ONCE per page load. Never call same event twice — subsequent calls ignored.\n• PageView: fires automatically. Do NOT call manually.\n• ViewContent: CTA click, product view. Data: { section: 'hero'|'products'|'cta', productId? }.\n• AddToCart: product selection, qty increment. Data: { productId, name }.\n• Lead: form submit OR phone blur. Data: { phone? }.\n• InitiateCheckout: after POST /api/orders returns 200. Data: { orderId }.\n• Purchase: fired server-side. Do NOT fire from frontend.\nEach button fires EXACTLY ONE event. Example: \"Buy Now\" fires only Lead, not Lead+AddToCart+ViewContent." },
-    { title: "Incomplete Order Tracking", content: "Track abandoned checkouts by firing Lead on phone/name input blur: window.EcoMate.track('Lead', { phone: input.value }). This is automatic if using <div id='ecomate-checkout-mount'>. For custom forms, implement yourself." },
-    { title: "Output Format", content: "Single HTML file. Must include: DOCTYPE, CDN links in <head>, body content, <div id='ecomate-checkout-mount'> for checkout, inline <script> for API calls + tracking." },
+    {
+      title: "Architecture & Limits",
+      content: "Landing page at /landing/[slug] — NO main app JS. Available: Tailwind CSS CDN, Google Fonts. CSP: inline scripts allowed, images from any URL, YouTube iframes allowed. BLOCKED: external JS files, other iframes, object/embed. Your output is a single self-contained HTML file."
+    },
+    {
+      title: "Product Data Model",
+      content: "Products are assigned via UUID. Build your UI around this JS object:\n\nwindow.products = [\n  {\n    id: 'uuid-here',\n    name: 'Premium Cotton Shirt',\n    price: 990,\n    compareAtPrice: 1290,\n    image: 'https://cdn.example.com/shirt.jpg',\n    variants: [\n      { id: 'v1', label: 'S', price: 990, stock: 10 },\n      { id: 'v2', label: 'M', price: 990, stock: 25 }\n    ]\n  }\n]\n\nRead from window.products (injected by the platform). If single product, window.products has 1 item. If multiple, iterate."
+    },
+    {
+      title: "Order API — Request & Response",
+      content: "POST /api/orders (rate limit: 5/min/IP)\n\nRequest:\n{\n  items: [{ productId: 'uuid', variantId: 'uuid?', quantity: 1, price: 990 }],\n  guestName: 'Customer Name',\n  guestPhone: '01712345678',\n  shippingAddress: { fullAddress: 'House 12, Dhaka', deliveryZone: 'Inside Dhaka' },\n  paymentOptionType: 'CASH_ON_DELIVERY', // or FULL_PAYMENT, PARTIAL_PAYMENT\n  gatewayCode: 'cod' // or bkash, nagad, rocket\n}\n\nSuccess (200):\n{ id: 'order-uuid', displayId: 'ORD-240623-0001' }\n\nError (400/409):\n{ message: 'Error description', statusCode: 400 }"
+    },
+    {
+      title: "Tracking — Events & Exact Payloads",
+      content: "Timeline scope: these limits apply per single page visit (not lifetime).\n\nPageView — fires automatically on page load. DO NOT call manually.\n\nViewContent — fires ONCE per section, the first time it becomes visible.\nUse IntersectionObserver: new IntersectionObserver(entries => { if (entry.isIntersecting && !fired) { EcoMate.track('ViewContent', { productId: p.id }); fired = true; } })\nPayload: { productId: string, section?: string }\n\nAddToCart — fires ONCE per add action (click variant pill, tap +). NOT on quantity change.\nPayload: { productId: string, variantId?: string, quantity: number, price: number }\n\nLead — fires ONCE after successful form field validation AND before the POST request.\nPayload: { phone: string }\n\nInitiateCheckout — fires ONCE after POST /api/orders returns 200.\nPayload: { orderId: string }\n\nPurchase — fired server-side. Do NOT fire from frontend.\n\nCRITICAL: Implement a local dedup flag per event:\nvar tracked = {};\nfunction trackOnce(event, data) { if (tracked[event]) return; tracked[event] = true; EcoMate.track(event, data); }\n\nExample: user clicks CTA → fires ViewContent. User scrolls to product → IntersectionObserver fires ViewContent again but BLOCKED by dedup flag. User submits order → fires Lead (only once even if validate fires multiple times). API success → fires InitiateCheckout. Total: 3 fire calls, 3 distinct events."
+    },
+    {
+      title: "UI Requirements — States & Error Handling",
+      content: "CRITICAL: Every interactive element needs 4 states:\n1. IDLE — default appearance\n2. LOADING — disable button, show spinner/text change (e.g., 'Placing Order...'), prevent double-click\n3. SUCCESS — show order confirmation with displayId from API response\n4. ERROR — show inline error message (red box, not alert()), keep form data intact\n\nPhone validation: require 11 digits starting with 01. Show inline <p class='text-red-500 text-xs'> error below the input, not an alert().\nPrevent double submission: disable submit button immediately on click, re-enable on error."
+    },
+    {
+      title: "Clothing-Specific UI (Size, Color, Quantity)",
+      content: "Include for each product:\n- Color selector: row of colored circles/swatches, click to select (not dropdown)\n- Size selector: row of pill buttons (S/M/L/XL), click to select (not dropdown)\n- Quantity stepper: − 1 + row, min 1, max stock\n- Show stock for selected variant: 'Only X left' if stock <= 5\n- If variant has different price, update displayed price on selection\n- Default: select first available variant, quantity = 1"
+    },
+    {
+      title: "Bangladesh-Specific Checkout UX",
+      content: "- Default payment method: Cash on Delivery (COD), shown as first/selected option\n- Delivery zone selector: radio buttons or pill toggle, NOT dropdown\n  'ঢাকার ভিতরে (+৬০টাকা)' / 'ঢাকার বাইরে (+১২০টাকা)'\n- Delivery charge auto-updates total when zone changes\n- Order summary box (above the form):\n    Product price: ৳990\n    Delivery: +৳60\n    —————————\n    Total: ৳1,050\n- Phone field placeholder: '01XXXXXXXXX'\n- Submit button: full-width, indigo/blue color, 'অর্ডার কনফার্ম করুন' in Bengali"
+    },
+    {
+      title: "Incomplete Order (Abandoned Checkout)",
+      content: "Track users who start filling but don't submit:\n- Add onblur handler to phone input: window.EcoMate.track('Lead', { phone: input.value })\n- This fires EVEN if user never clicks submit.\n- If using <div id='ecomate-checkout-mount'>, this is handled automatically."
+    },
+    {
+      title: "Output Structure",
+      content: "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset='UTF-8'>\n  <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n  <script src='https://cdn.tailwindcss.com'></script>\n  <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali' rel='stylesheet'>\n  <style>/* your custom CSS */</style>\n</head>\n<body class='font-[Noto_Sans_Bengali]'>\n  <!-- Hero, features, product grid, etc -->\n  <div id='ecomate-checkout-mount'></div>\n  <!-- Trust badges, footer -->\n  <script>\n    // Product data available via window.products\n    // Track user interactions\n    // Order form submission\n  </script>\n</body>\n</html>"
+    },
   ];
 
-  const examplePrompt = `Create a modern sales landing page for a clothing brand in Bangladesh. Target audience: young adults in Dhaka, mobile-first. Include: hero section with gradient background + CTA (scrolls to #checkout), feature badges (COD/Free Delivery/Returns/Authentic), product showcase with assigned product data, order form using <div id="ecomate-checkout-mount"></div>, trust badges, footer. Technical: Tailwind CSS CDN, mobile responsive, Noto Sans Bengali font, one single HTML file. All interactive elements call window.EcoMate.track() — each event fires EXACTLY ONCE. Form POSTs to /api/orders with correct JSON payload. Phone validation: 01XXXXXXXXX format with inline error. Delivery zone (Inside Dhaka 60tk / Outside 120tk).`
+  const examplePrompt = `Create a modern sales landing page for a clothing brand in Bangladesh.
+Target audience: young adults in Dhaka, mobile-first, Bengali language.
+
+REQUIRED SECTIONS:
+1. Hero — gradient background, headline, CTA button (scrolls to #checkout)
+2. Feature badges — COD, Free Delivery, Easy Returns, Authentic — using emoji icons
+3. Product showcase — render window.products with image, name, price, compareAtPrice.
+   Include Color selector (swatches), Size selector (S/M/L/XL pills), Quantity stepper (− 1 +).
+   Show stock availability. Update displayed price when variant changes.
+4. Checkout — use <div id="ecomate-checkout-mount"></div> for built-in order form
+5. Trust badges section
+6. Footer with contact info
+
+CHECKOUT UI:
+- Cash on Delivery selected by default
+- Delivery zone toggle: Inside Dhaka (+60) / Outside Dhaka (+120)
+- Order summary showing: product price + delivery charge = total
+- Phone validation: 01XXXXXXXXX (11 digits), inline red error text
+- Submit button: "অর্ডার কনফার্ম করুন", shows "প্লেসিং অর্ডার..." while submitting
+- On success: show order confirmation with displayId
+- On error: show error message, keep form data
+
+TRACKING (implement ALL with dedup flag):
+- PageView: auto, do not call manually
+- ViewContent: IntersectionObserver per product section
+- AddToCart: on variant select or + click (NOT quantity change)
+- Lead: on form submit (after validation, before POST)
+- InitiateCheckout: after API returns 200
+- Each event fires EXACTLY ONCE per page visit — use var tracked = {} to dedup
+
+TECHNICAL:
+- Tailwind CSS CDN, Noto Sans Bengali font
+- Single HTML file, mobile-first responsive
+- POST /api/orders with correct JSON payload
+- Loading state on submit button, prevent double-click
+- Show success message with displayId on 200
+- Show inline red error box on 400/500
+- Use IntersectionObserver for scroll-based events
+- No placeholder logic — all tracking calls fully implemented`
 
   return (
     <>
