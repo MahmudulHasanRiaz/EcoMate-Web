@@ -52,7 +52,11 @@ import { BlockSettingsModule } from './block-settings/block-settings.module';
 import { SecurityModule } from './security/security.module';
 import { SearchModule } from './search/search.module';
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
+import { PurchasesModule } from './purchases/purchases.module';
+import { ExpensesModule } from './expenses/expenses.module';
 import { QueueModule } from './queue/queue.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -102,6 +106,10 @@ import { QueueModule } from './queue/queue.module';
     LandingPagesModule,
     LicenseModule,
     QueueModule,
+    SuppliersModule,
+    PurchasesModule,
+    ExpensesModule,
+    NotificationsModule,
   ],
   controllers: [OrderStatusController],
   providers: [

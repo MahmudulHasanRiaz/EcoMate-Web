@@ -33,19 +33,23 @@ import { Route as AuthenticatedMonSettingsRouteRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpTransactionsIndexRouteImport } from './routes/_authenticated/op/transactions/index'
 import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authenticated/op/tasks/index'
 import { Route as AuthenticatedOpTagsIndexRouteImport } from './routes/_authenticated/op/tags/index'
+import { Route as AuthenticatedOpSuppliersIndexRouteImport } from './routes/_authenticated/op/suppliers/index'
 import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_authenticated/op/size-charts/index'
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
 import { Route as AuthenticatedOpReviewsIndexRouteImport } from './routes/_authenticated/op/reviews/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
+import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
+import { Route as AuthenticatedOpNotificationsIndexRouteImport } from './routes/_authenticated/op/notifications/index'
 import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
 import { Route as AuthenticatedOpLandingPagesIndexRouteImport } from './routes/_authenticated/op/landing-pages/index'
 import { Route as AuthenticatedOpInventoryIndexRouteImport } from './routes/_authenticated/op/inventory/index'
 import { Route as AuthenticatedOpImportProductsIndexRouteImport } from './routes/_authenticated/op/import-products/index'
 import { Route as AuthenticatedOpImportOrdersIndexRouteImport } from './routes/_authenticated/op/import-orders/index'
 import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_authenticated/op/help-center/index'
+import { Route as AuthenticatedOpExpensesIndexRouteImport } from './routes/_authenticated/op/expenses/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
 import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
@@ -63,6 +67,7 @@ import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
 import { Route as AuthenticatedOpOrdersCreateRouteImport } from './routes/_authenticated/op/orders/create'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
+import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/_authenticated/op/inventory/valuation'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
@@ -213,6 +218,12 @@ const AuthenticatedOpTagsIndexRoute =
     path: '/op/tags/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpSuppliersIndexRoute =
+  AuthenticatedOpSuppliersIndexRouteImport.update({
+    id: '/op/suppliers/',
+    path: '/op/suppliers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpSizeChartsIndexRoute =
   AuthenticatedOpSizeChartsIndexRouteImport.update({
     id: '/op/size-charts/',
@@ -237,6 +248,12 @@ const AuthenticatedOpRefundsIndexRoute =
     path: '/op/refunds/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpPurchasesIndexRoute =
+  AuthenticatedOpPurchasesIndexRouteImport.update({
+    id: '/op/purchases/',
+    path: '/op/purchases/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpProductsIndexRoute =
   AuthenticatedOpProductsIndexRouteImport.update({
     id: '/op/products/',
@@ -253,6 +270,12 @@ const AuthenticatedOpOrdersIndexRoute =
   AuthenticatedOpOrdersIndexRouteImport.update({
     id: '/op/orders/',
     path: '/op/orders/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpNotificationsIndexRoute =
+  AuthenticatedOpNotificationsIndexRouteImport.update({
+    id: '/op/notifications/',
+    path: '/op/notifications/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpMediaIndexRoute =
@@ -289,6 +312,12 @@ const AuthenticatedOpHelpCenterIndexRoute =
   AuthenticatedOpHelpCenterIndexRouteImport.update({
     id: '/op/help-center/',
     path: '/op/help-center/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpExpensesIndexRoute =
+  AuthenticatedOpExpensesIndexRouteImport.update({
+    id: '/op/expenses/',
+    path: '/op/expenses/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpCustomersIndexRoute =
@@ -392,6 +421,12 @@ const AuthenticatedOpOrdersIdRoute = AuthenticatedOpOrdersIdRouteImport.update({
   path: '/op/orders/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpInventoryValuationRoute =
+  AuthenticatedOpInventoryValuationRouteImport.update({
+    id: '/op/inventory/valuation',
+    path: '/op/inventory/valuation',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryOverviewRoute =
   AuthenticatedOpInventoryOverviewRouteImport.update({
     id: '/op/inventory/overview',
@@ -542,6 +577,7 @@ export interface FileRoutesByFullPath {
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -559,19 +595,23 @@ export interface FileRoutesByFullPath {
   '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
   '/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media/': typeof AuthenticatedOpMediaIndexRoute
+  '/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
+  '/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
   '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
@@ -618,6 +658,7 @@ export interface FileRoutesByTo {
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -635,19 +676,23 @@ export interface FileRoutesByTo {
   '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/expenses': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders': typeof AuthenticatedOpImportOrdersIndexRoute
   '/op/import-products': typeof AuthenticatedOpImportProductsIndexRoute
   '/op/inventory': typeof AuthenticatedOpInventoryIndexRoute
   '/op/landing-pages': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media': typeof AuthenticatedOpMediaIndexRoute
+  '/op/notifications': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
+  '/op/purchases': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/refunds': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews': typeof AuthenticatedOpReviewsIndexRoute
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/op/suppliers': typeof AuthenticatedOpSuppliersIndexRoute
   '/op/tags': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
@@ -696,6 +741,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/_authenticated/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -713,19 +759,23 @@ export interface FileRoutesById {
   '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/_authenticated/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/_authenticated/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/_authenticated/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
   '/_authenticated/op/import-products/': typeof AuthenticatedOpImportProductsIndexRoute
   '/_authenticated/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/_authenticated/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
+  '/_authenticated/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
+  '/_authenticated/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/_authenticated/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/_authenticated/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/_authenticated/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
+  '/_authenticated/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
   '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
@@ -774,6 +824,7 @@ export interface FileRouteTypes {
     | '/mon/users/$id'
     | '/op/customers/$id'
     | '/op/inventory/overview'
+    | '/op/inventory/valuation'
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/mon/activity-logs/'
@@ -791,19 +842,23 @@ export interface FileRouteTypes {
     | '/op/combos/'
     | '/op/coupons/'
     | '/op/customers/'
+    | '/op/expenses/'
     | '/op/help-center/'
     | '/op/import-orders/'
     | '/op/import-products/'
     | '/op/inventory/'
     | '/op/landing-pages/'
     | '/op/media/'
+    | '/op/notifications/'
     | '/op/orders/'
     | '/op/payments/'
     | '/op/products/'
+    | '/op/purchases/'
     | '/op/refunds/'
     | '/op/reviews/'
     | '/op/shipments/'
     | '/op/size-charts/'
+    | '/op/suppliers/'
     | '/op/tags/'
     | '/op/tasks/'
     | '/op/transactions/'
@@ -850,6 +905,7 @@ export interface FileRouteTypes {
     | '/mon/users/$id'
     | '/op/customers/$id'
     | '/op/inventory/overview'
+    | '/op/inventory/valuation'
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/mon/activity-logs'
@@ -867,19 +923,23 @@ export interface FileRouteTypes {
     | '/op/combos'
     | '/op/coupons'
     | '/op/customers'
+    | '/op/expenses'
     | '/op/help-center'
     | '/op/import-orders'
     | '/op/import-products'
     | '/op/inventory'
     | '/op/landing-pages'
     | '/op/media'
+    | '/op/notifications'
     | '/op/orders'
     | '/op/payments'
     | '/op/products'
+    | '/op/purchases'
     | '/op/refunds'
     | '/op/reviews'
     | '/op/shipments'
     | '/op/size-charts'
+    | '/op/suppliers'
     | '/op/tags'
     | '/op/tasks'
     | '/op/transactions'
@@ -927,6 +987,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/users/$id'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/inventory/overview'
+    | '/_authenticated/op/inventory/valuation'
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
     | '/_authenticated/mon/activity-logs/'
@@ -944,19 +1005,23 @@ export interface FileRouteTypes {
     | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
+    | '/_authenticated/op/expenses/'
     | '/_authenticated/op/help-center/'
     | '/_authenticated/op/import-orders/'
     | '/_authenticated/op/import-products/'
     | '/_authenticated/op/inventory/'
     | '/_authenticated/op/landing-pages/'
     | '/_authenticated/op/media/'
+    | '/_authenticated/op/notifications/'
     | '/_authenticated/op/orders/'
     | '/_authenticated/op/payments/'
     | '/_authenticated/op/products/'
+    | '/_authenticated/op/purchases/'
     | '/_authenticated/op/refunds/'
     | '/_authenticated/op/reviews/'
     | '/_authenticated/op/shipments/'
     | '/_authenticated/op/size-charts/'
+    | '/_authenticated/op/suppliers/'
     | '/_authenticated/op/tags/'
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
@@ -1164,6 +1229,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpTagsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/suppliers/': {
+      id: '/_authenticated/op/suppliers/'
+      path: '/op/suppliers'
+      fullPath: '/op/suppliers/'
+      preLoaderRoute: typeof AuthenticatedOpSuppliersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/size-charts/': {
       id: '/_authenticated/op/size-charts/'
       path: '/op/size-charts'
@@ -1192,6 +1264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpRefundsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/purchases/': {
+      id: '/_authenticated/op/purchases/'
+      path: '/op/purchases'
+      fullPath: '/op/purchases/'
+      preLoaderRoute: typeof AuthenticatedOpPurchasesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/products/': {
       id: '/_authenticated/op/products/'
       path: '/op/products'
@@ -1211,6 +1290,13 @@ declare module '@tanstack/react-router' {
       path: '/op/orders'
       fullPath: '/op/orders/'
       preLoaderRoute: typeof AuthenticatedOpOrdersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/notifications/': {
+      id: '/_authenticated/op/notifications/'
+      path: '/op/notifications'
+      fullPath: '/op/notifications/'
+      preLoaderRoute: typeof AuthenticatedOpNotificationsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/media/': {
@@ -1253,6 +1339,13 @@ declare module '@tanstack/react-router' {
       path: '/op/help-center'
       fullPath: '/op/help-center/'
       preLoaderRoute: typeof AuthenticatedOpHelpCenterIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/expenses/': {
+      id: '/_authenticated/op/expenses/'
+      path: '/op/expenses'
+      fullPath: '/op/expenses/'
+      preLoaderRoute: typeof AuthenticatedOpExpensesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/customers/': {
@@ -1372,6 +1465,13 @@ declare module '@tanstack/react-router' {
       path: '/op/orders/$id'
       fullPath: '/op/orders/$id'
       preLoaderRoute: typeof AuthenticatedOpOrdersIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/inventory/valuation': {
+      id: '/_authenticated/op/inventory/valuation'
+      path: '/op/inventory/valuation'
+      fullPath: '/op/inventory/valuation'
+      preLoaderRoute: typeof AuthenticatedOpInventoryValuationRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/inventory/overview': {
@@ -1619,6 +1719,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
+  AuthenticatedOpInventoryValuationRoute: typeof AuthenticatedOpInventoryValuationRoute
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
@@ -1636,19 +1737,23 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
+  AuthenticatedOpExpensesIndexRoute: typeof AuthenticatedOpExpensesIndexRoute
   AuthenticatedOpHelpCenterIndexRoute: typeof AuthenticatedOpHelpCenterIndexRoute
   AuthenticatedOpImportOrdersIndexRoute: typeof AuthenticatedOpImportOrdersIndexRoute
   AuthenticatedOpImportProductsIndexRoute: typeof AuthenticatedOpImportProductsIndexRoute
   AuthenticatedOpInventoryIndexRoute: typeof AuthenticatedOpInventoryIndexRoute
   AuthenticatedOpLandingPagesIndexRoute: typeof AuthenticatedOpLandingPagesIndexRoute
   AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
+  AuthenticatedOpNotificationsIndexRoute: typeof AuthenticatedOpNotificationsIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
+  AuthenticatedOpPurchasesIndexRoute: typeof AuthenticatedOpPurchasesIndexRoute
   AuthenticatedOpRefundsIndexRoute: typeof AuthenticatedOpRefundsIndexRoute
   AuthenticatedOpReviewsIndexRoute: typeof AuthenticatedOpReviewsIndexRoute
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
   AuthenticatedOpSizeChartsIndexRoute: typeof AuthenticatedOpSizeChartsIndexRoute
+  AuthenticatedOpSuppliersIndexRoute: typeof AuthenticatedOpSuppliersIndexRoute
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
@@ -1672,6 +1777,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
+  AuthenticatedOpInventoryValuationRoute:
+    AuthenticatedOpInventoryValuationRoute,
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedMonActivityLogsIndexRoute:
@@ -1690,6 +1797,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
+  AuthenticatedOpExpensesIndexRoute: AuthenticatedOpExpensesIndexRoute,
   AuthenticatedOpHelpCenterIndexRoute: AuthenticatedOpHelpCenterIndexRoute,
   AuthenticatedOpImportOrdersIndexRoute: AuthenticatedOpImportOrdersIndexRoute,
   AuthenticatedOpImportProductsIndexRoute:
@@ -1697,13 +1805,17 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpInventoryIndexRoute: AuthenticatedOpInventoryIndexRoute,
   AuthenticatedOpLandingPagesIndexRoute: AuthenticatedOpLandingPagesIndexRoute,
   AuthenticatedOpMediaIndexRoute: AuthenticatedOpMediaIndexRoute,
+  AuthenticatedOpNotificationsIndexRoute:
+    AuthenticatedOpNotificationsIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
+  AuthenticatedOpPurchasesIndexRoute: AuthenticatedOpPurchasesIndexRoute,
   AuthenticatedOpRefundsIndexRoute: AuthenticatedOpRefundsIndexRoute,
   AuthenticatedOpReviewsIndexRoute: AuthenticatedOpReviewsIndexRoute,
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
   AuthenticatedOpSizeChartsIndexRoute: AuthenticatedOpSizeChartsIndexRoute,
+  AuthenticatedOpSuppliersIndexRoute: AuthenticatedOpSuppliersIndexRoute,
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,

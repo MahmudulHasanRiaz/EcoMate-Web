@@ -35,4 +35,9 @@ export const FEATURES: Record<string, FeatureFlag> = {
   'advanced-reports': { key: 'advanced-reports', enabled: true, planMin: 'enterprise' },
   'coupons': { key: 'coupons', enabled: true, planMin: 'growth' },
   'custom-reports': { key: 'custom-reports', enabled: true, planMin: 'ultimate' },
+  'supplier-management': { key: 'supplier-management', enabled: true, planMin: 'growth' },
+  'purchase-management': { key: 'purchase-management', enabled: true, planMin: 'growth' },
+  'expense-management': { key: 'expense-management', enabled: true, planMin: 'growth' },
+  'inventory-advance': { key: 'inventory-advance', enabled: true, planMin: 'enterprise' },
+  'notification-gateway': { key: 'notification-gateway', enabled: true, planMin: 'growth' },
 };

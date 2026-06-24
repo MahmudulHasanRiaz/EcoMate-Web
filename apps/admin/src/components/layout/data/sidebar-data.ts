@@ -1,7 +1,8 @@
 import {
   LayoutDashboard, Monitor, ListTodo, Package, Palette, Gift, Ruler,
   Users, ShieldCheck, HelpCircle, Percent,
-  RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText
+  RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
+  Building2, ShoppingCart, Receipt, Bell
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -38,6 +39,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'All Inventory', url: '/op/inventory' },
             { title: 'Stock Overview', url: '/op/inventory/overview' },
+            { title: 'Valuation', url: '/op/inventory/valuation' },
           ],
         },
         {
@@ -54,6 +56,10 @@ export const sidebarData: SidebarData = {
         { title: 'Shipments', url: '/op/shipments', icon: Truck },
         { title: 'Refunds', url: '/op/refunds', icon: RefreshCw },
         { title: 'Coupons', url: '/op/coupons', icon: Percent },
+        { title: 'Suppliers', url: '/op/suppliers', icon: Building2 },
+        { title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart },
+        { title: 'Expenses', url: '/op/expenses', icon: Receipt },
+        { title: 'Notifications', url: '/op/notifications', icon: Bell },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck },
         { title: 'Media Gallery', url: '/op/media', icon: Monitor },
