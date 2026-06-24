@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keygen
+      POSTGRES_USER: keygen
+      POSTGRES_PASSWORD: ${KEYGEN_DB_PASSWORD}
+    volumes:
+      - keygen-db:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U keygen
+      interval: 10s
+    restart: unless-stopped
+
+  keygen:
+    image: ghcr.io/keygen-sh/keygen-api:latest
+    environment:
+      DATABASE_URL: postgresql://keygen:${KEYGEN_DB_PASSWORD}@postgres:5432/keygen
+      KEYGEN_SECRET_KEY: ${KEYGEN_SECRET_KEY}
+      KEYGEN_HOST: ${KEYGEN_HOST}
+      KEYGEN_ACCOUNT_ID: ${KEYGEN_ACCOUNT_ID}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  keygen-db:
