@@ -26,6 +26,11 @@ coverage/
 # OS
 Thumbs.db
 
+# Client overlay configs (not committed)
+clients/*
+!clients/.gitkeep
+!clients/client-example/
+
 # Databases
 *.db
 *.db-journal
