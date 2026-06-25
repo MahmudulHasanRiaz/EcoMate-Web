@@ -89,22 +89,31 @@ export class AuthService {
     console.log(`[LOGIN ATTEMPT] Password valid? ${isPasswordValid}`);
     
     if (!isPasswordValid) {
-      // Atomic increment - only if attempts < 5
-      await this.prisma.user.update({
-        where: { id: user.id, failedLoginAttempts: { lt: 4 } },
-        data: { failedLoginAttempts: { increment: 1 } },
-      });
-
-      // Check if this is the 5th attempt (update where attempts == 4 to lock)
-      const locked = await this.prisma.user.update({
-        where: { id: user.id, failedLoginAttempts: 4 },
+      // Increment failed attempts in one atomic operation
+      // If this is the 5th attempt (attempts was 4), also lock the account
+      const result = await this.prisma.user.updateMany({
+        where: {
+          id: user.id,
+          failedLoginAttempts: { lt: 4 },
+        },
         data: {
-          failedLoginAttempts: 0,
-          lockoutUntil: new Date(Date.now() + 15 * 60 * 1000),
+          failedLoginAttempts: { increment: 1 },
+          ...(user.failedLoginAttempts === 3
+            ? { lockoutUntil: new Date(Date.now() + 15 * 60 * 1000) }
+            : {}),
         },
       });
 
-      if (locked) {
+      // If result.count === 0, either user doesn't exist or attempts >= 4
+      if (result.count === 0) {
+        // Already at the limit — account should already be locked
+        throw new UnauthorizedException(
+          'Too many failed login attempts. Your account has been temporarily locked. Please try again later.',
+        );
+      }
+
+      // If this was the lockout trigger attempt
+      if (user.failedLoginAttempts === 3) {
         throw new UnauthorizedException(
           'Too many failed login attempts. Your account has been temporarily locked. Please try again later.',
         );
