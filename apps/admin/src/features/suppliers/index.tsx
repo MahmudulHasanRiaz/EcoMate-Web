@@ -193,7 +193,7 @@ export function Suppliers() {
               <Label>Slug</Label>
               <Input value={form.slug} onChange={e => setForm(f => ({ ...f, slug: e.target.value }))} />
             </div>
-            <div className='grid grid-cols-2 gap-4'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
               <div className='grid gap-2'>
                 <Label>Contact Person</Label>
                 <Input value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} placeholder='e.g. John Doe' />
@@ -203,7 +203,7 @@ export function Suppliers() {
                 <Input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder='e.g. john@example.com' />
               </div>
             </div>
-            <div className='grid grid-cols-2 gap-4'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
               <div className='grid gap-2'>
                 <Label>Phone</Label>
                 <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder='e.g. +880 1234 567890' />
@@ -217,7 +217,7 @@ export function Suppliers() {
               <Label>Address</Label>
               <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder='e.g. 123, Gulshan Avenue' />
             </div>
-            <div className='grid grid-cols-2 gap-4'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
               <div className='grid gap-2'>
                 <Label>City</Label>
                 <Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder='e.g. Dhaka' />

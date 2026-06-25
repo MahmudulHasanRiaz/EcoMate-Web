@@ -346,7 +346,7 @@ export function Expenses() {
                 </SelectContent>
               </Select>
             </div>
-            <div className='grid grid-cols-2 gap-3'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
               <div className='grid gap-2'>
                 <Label>Amount</Label>
                 <Input
@@ -376,7 +376,7 @@ export function Expenses() {
                 onChange={e => setForm(f => ({ ...f, expenseDate: e.target.value }))}
               />
             </div>
-            <div className='grid grid-cols-2 gap-3'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
               <div className='grid gap-2'>
                 <Label>Payment Method (optional)</Label>
                 <Input
