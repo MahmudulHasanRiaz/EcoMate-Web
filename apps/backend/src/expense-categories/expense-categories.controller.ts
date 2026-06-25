@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ExpenseCategoriesService } from './expense-categories.service';
 import { CreateExpenseCategoryDto, UpdateExpenseCategoryDto } from './dto/expense-category.dto';
@@ -14,7 +14,7 @@ export class ExpenseCategoriesController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
@@ -24,12 +24,12 @@ export class ExpenseCategoriesController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateExpenseCategoryDto) {
+  async update(@Param('id') id: string, @Body() dto: UpdateExpenseCategoryDto) {
     return this.svc.update(id, dto);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
 }

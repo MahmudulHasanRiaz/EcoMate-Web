@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
 import { expenseCategoriesApi, type ExpenseCategoryResponse } from './api'
+import { accountingApi } from '@/features/accounting/api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -14,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -39,7 +41,7 @@ export function ExpenseCategories() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ExpenseCategoryResponse | null>(null)
-  const [form, setForm] = useState({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0 })
+  const [form, setForm] = useState({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '' })
   const [deleteTarget, setDeleteTarget] = useState<ExpenseCategoryResponse | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -48,6 +50,12 @@ export function ExpenseCategories() {
   })
 
   const categories = Array.isArray(data) ? data : []
+
+  const { data: accounts } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountingApi.getAccountTree().then(r => r.data),
+  })
+  const expenseAccounts = Array.isArray(accounts) ? accounts.flatMap((a: any) => [a, ...(a.children || [])]).filter((a: any) => a.type === 'expense' && !a.isGroup) : []
 
   const createMut = useMutation({
     mutationFn: (d: any) => expenseCategoriesApi.create(d),
@@ -68,7 +76,7 @@ export function ExpenseCategories() {
   })
 
   function resetForm() {
-    setForm({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0 })
+    setForm({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '' })
   }
 
   function openCreate() {
@@ -85,6 +93,7 @@ export function ExpenseCategories() {
       description: cat.description || '',
       color: cat.color || '#6B7280',
       sortOrder: cat.sortOrder,
+      accountId: cat.accountId || '',
     })
     setDialogOpen(true)
   }
@@ -96,6 +105,7 @@ export function ExpenseCategories() {
       description: form.description || undefined,
       color: form.color || undefined,
       sortOrder: form.sortOrder,
+      accountId: form.accountId || undefined,
     }
     if (editing) {
       updateMut.mutate({ id: editing.id, d: payload })
@@ -135,6 +145,7 @@ export function ExpenseCategories() {
                     <TableHead className='w-10'>#</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Slug</TableHead>
+                    <TableHead>Account</TableHead>
                     <TableHead>Color</TableHead>
                     <TableHead className='text-center'>Expenses</TableHead>
                     <TableHead>Status</TableHead>
@@ -152,6 +163,11 @@ export function ExpenseCategories() {
                         </div>
                       </TableCell>
                       <TableCell className='text-sm text-muted-foreground font-mono'>{cat.slug}</TableCell>
+                      <TableCell>
+                        {cat.account
+                          ? <span className='text-xs font-mono bg-muted px-1.5 py-0.5 rounded'>{cat.account.code} - {cat.account.name}</span>
+                          : <span className='text-xs text-muted-foreground'>—</span>}
+                      </TableCell>
                       <TableCell>
                         <code className='text-xs bg-muted px-1.5 py-0.5 rounded'>{cat.color || CATEGORY_COLORS[cat.slug] || '—'}</code>
                       </TableCell>
@@ -235,6 +251,25 @@ export function ExpenseCategories() {
                   onChange={e => setForm(f => ({ ...f, sortOrder: parseInt(e.target.value) || 0 }))}
                 />
               </div>
+            </div>
+            <div className='grid gap-2'>
+              <Label>Chart of Accounts Mapping (optional)</Label>
+              <Select
+                value={form.accountId}
+                onValueChange={v => setForm(f => ({ ...f, accountId: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder='No account mapped' />
+                </SelectTrigger>
+                <SelectContent>
+                  {expenseAccounts.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} - {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className='text-xs text-muted-foreground'>Expense entries will auto-debit this account when accounting is enabled.</p>
             </div>
           </div>
           <DialogFooter>

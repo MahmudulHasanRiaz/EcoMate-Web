@@ -40,23 +40,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const payload = typeof message === 'string' ? { message } : (message as object);
     const body = { ...payload, timestamp: new Date().toISOString(), path: request.url };
 
+    // Fastify-style (reply.code().send())
+    if (typeof response.code === 'function' && typeof response.send === 'function') {
+      response.code(status).send(body);
+      return;
+    }
+
+    // Express-style (response.status().json())
     try {
-      // Try Express-style response
       if (typeof response.status === 'function' && typeof response.json === 'function') {
         response.status(status).json(body);
         return;
       }
     } catch {
-      // Fall through to raw send
+      // ignore — not Express
     }
 
-    // Fallback: Fastify-style or raw response
+    // Raw Node.js response
     try {
       response.statusCode = status;
       response.setHeader?.('Content-Type', 'application/json');
       response.end?.(JSON.stringify(body));
     } catch {
-      // Last resort — can't send response
       this.logger.error('Failed to send error response');
     }
   }

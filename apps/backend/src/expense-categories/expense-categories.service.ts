@@ -6,23 +6,28 @@ import { CreateExpenseCategoryDto, UpdateExpenseCategoryDto } from './dto/expens
 export class ExpenseCategoriesService {
   constructor(private prisma: PrismaService) {}
 
+  private include = {
+    _count: { select: { expenses: true } },
+    account: { select: { id: true, code: true, name: true } },
+  };
+
   async create(dto: CreateExpenseCategoryDto) {
     const existing = await this.prisma.expenseCategory.findUnique({ where: { slug: dto.slug } });
     if (existing) throw new ConflictException(`Category with slug "${dto.slug}" already exists`);
-    return this.prisma.expenseCategory.create({ data: dto });
+    return this.prisma.expenseCategory.create({ data: dto, include: this.include });
   }
 
   async findAll() {
     return this.prisma.expenseCategory.findMany({
       orderBy: { sortOrder: 'asc' },
-      include: { _count: { select: { expenses: true } } },
+      include: this.include,
     });
   }
 
   async findOne(id: string) {
     const cat = await this.prisma.expenseCategory.findUnique({
       where: { id },
-      include: { _count: { select: { expenses: true } } },
+      include: this.include,
     });
     if (!cat) throw new NotFoundException(`Expense category ${id} not found`);
     return cat;
@@ -39,7 +44,7 @@ export class ExpenseCategoriesService {
         throw new ConflictException(`Category with slug "${dto.slug}" already exists`);
       }
     }
-    return this.prisma.expenseCategory.update({ where: { id }, data: dto });
+    return this.prisma.expenseCategory.update({ where: { id }, data: dto, include: this.include });
   }
 
   async remove(id: string) {

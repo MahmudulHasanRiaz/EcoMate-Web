@@ -6,7 +6,7 @@ import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
-  async createEntry(dto: CreateJournalEntryDto) {
+  async createEntry(dto: CreateJournalEntryDto, userId?: string) {
     if (!dto.lines || dto.lines.length === 0) {
       throw new BadRequestException('Journal entry must have at least one line');
     }
@@ -64,6 +64,7 @@ export class AccountingService {
         totalDebit,
         totalCredit,
         referenceNo: dto.referenceNo,
+        createdBy: userId,
         lines: {
           create: dto.lines.map(line => ({
             accountId: line.accountId,
@@ -131,9 +132,9 @@ export class AccountingService {
               COALESCE(SUM(jel.debit), 0) as total_debit,
               COALESCE(SUM(jel.credit), 0) as total_credit
        FROM "Account" a
-       LEFT JOIN "JournalEntryLine" jel ON jel.account_id = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel.entry_id AND je.period_id = $1
-       WHERE a.is_active = true
+       LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       WHERE a."isActive" = true
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
       periodId,
@@ -156,9 +157,9 @@ export class AccountingService {
       `SELECT a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(jel.debit - jel.credit), 0) as balance
        FROM "Account" a
-       LEFT JOIN "JournalEntryLine" jel ON jel.account_id = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel.entry_id AND je.period_id = $1
-       WHERE a.type IN ('income', 'expense') AND a.is_active = true
+       LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       WHERE a.type IN ('income', 'expense') AND a."isActive" = true
        GROUP BY a.id, a.code, a.name
        ORDER BY a.code`,
       periodId,
@@ -192,9 +193,9 @@ export class AccountingService {
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(jel.debit - jel.credit), 0) as balance
        FROM "Account" a
-       LEFT JOIN "JournalEntryLine" jel ON jel.account_id = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel.entry_id AND je.period_id = $1
-       WHERE a.type IN ('asset', 'liability', 'equity') AND a.is_active = true
+       LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       WHERE a.type IN ('asset', 'liability', 'equity') AND a."isActive" = true
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
       periodId,

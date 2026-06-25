@@ -7,7 +7,7 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 export class AccountsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateAccountDto) {
+  async create(dto: CreateAccountDto, userId?: string) {
     const existing = await this.prisma.account.findUnique({ where: { code: dto.code } });
     if (existing) throw new ConflictException(`Account with code ${dto.code} already exists`);
 
@@ -18,7 +18,7 @@ export class AccountsService {
     }
 
     return this.prisma.account.create({
-      data: dto,
+      data: { ...dto, createdBy: userId },
       include: { children: true },
     });
   }

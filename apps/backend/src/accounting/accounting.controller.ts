@@ -1,16 +1,19 @@
-import { Controller, Get, Post, Body, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { AccountingService } from './accounting.service';
+import { AccountingEnabledGuard } from './accounting-enabled.guard';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('accounting')
 @Roles('superadmin', 'admin')
+@UseGuards(AccountingEnabledGuard)
 export class AccountingController {
   constructor(private readonly accountingService: AccountingService) {}
 
   @Post('entries')
-  createEntry(@Body() dto: CreateJournalEntryDto) {
-    return this.accountingService.createEntry(dto);
+  createEntry(@Body() dto: CreateJournalEntryDto, @CurrentUser() user?: any) {
+    return this.accountingService.createEntry(dto, user?.sub);
   }
 
   @Get('entries')

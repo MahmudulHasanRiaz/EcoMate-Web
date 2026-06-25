@@ -39,6 +39,10 @@ export class CreateExpenseCategoryDto {
   @IsNumber()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
 }
 
 export class UpdateExpenseCategoryDto {
@@ -81,4 +85,8 @@ export class UpdateExpenseCategoryDto {
   @IsNumber()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
 }

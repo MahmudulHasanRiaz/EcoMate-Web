@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Receipt } from 'lucide-react'
 import { expensesApi, type ExpenseResponse } from './api'
 import { expenseCategoriesApi } from '@/features/expense-categories/api'
+import { accountingApi } from '@/features/accounting/api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -39,6 +40,7 @@ export function Expenses() {
     taxAmount: '',
     expenseDate: '',
     paymentMethod: '',
+    paymentAccountId: '',
     referenceNo: '',
     notes: '',
   })
@@ -49,6 +51,18 @@ export function Expenses() {
     queryFn: () => expenseCategoriesApi.list().then(r => r.data),
   })
   const allCategories = Array.isArray(categories) ? categories.filter(c => c.isActive) : []
+
+  const { data: accounts } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountingApi.listAccounts().then(r => r.data),
+  })
+  const allAccounts = Array.isArray(accounts) ? accounts : []
+  // Also fetch account tree for structured view
+  const { data: accountTree } = useQuery({
+    queryKey: ['accounts-tree'],
+    queryFn: () => accountingApi.getAccountTree().then(r => r.data),
+  })
+  const paymentAccounts = Array.isArray(accountTree) ? accountTree.flatMap((a: any) => [a, ...(a.children || [])]) : []
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['expenses-summary'],
@@ -97,7 +111,7 @@ export function Expenses() {
   })
 
   function resetForm() {
-    setForm({ description: '', categoryId: '', amount: '', taxAmount: '', expenseDate: '', paymentMethod: '', referenceNo: '', notes: '' })
+    setForm({ description: '', categoryId: '', amount: '', taxAmount: '', expenseDate: '', paymentMethod: '', paymentAccountId: '', referenceNo: '', notes: '' })
   }
 
   function openCreate() {
@@ -115,6 +129,7 @@ export function Expenses() {
       taxAmount: expense.taxAmount ? String(expense.taxAmount) : '',
       expenseDate: expense.expenseDate.slice(0, 10),
       paymentMethod: expense.paymentMethod || '',
+      paymentAccountId: expense.paymentAccountId || '',
       referenceNo: expense.referenceNo || '',
       notes: expense.notes || '',
     })
@@ -129,6 +144,7 @@ export function Expenses() {
       taxAmount: form.taxAmount ? parseFloat(form.taxAmount) : undefined,
       expenseDate: form.expenseDate,
       paymentMethod: form.paymentMethod || undefined,
+      paymentAccountId: form.paymentAccountId || undefined,
       referenceNo: form.referenceNo || undefined,
       notes: form.notes || undefined,
     }
@@ -260,7 +276,11 @@ export function Expenses() {
                         </Badge>
                       </TableCell>
                       <TableCell className='text-right font-mono'>{formatCurrency(expense.amount)}</TableCell>
-                      <TableCell className='text-muted-foreground'>{expense.paymentMethod || '—'}</TableCell>
+                      <TableCell className='text-muted-foreground'>
+                        {expense.paymentAccount
+                          ? <span className='font-mono text-xs'>{expense.paymentAccount.name}</span>
+                          : expense.paymentMethod || '—'}
+                      </TableCell>
                       <TableCell>
                         <div className='flex gap-1'>
                           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(expense)}>
@@ -385,13 +405,32 @@ export function Expenses() {
             </div>
             <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
               <div className='grid gap-2'>
-                <Label>Payment Method (optional)</Label>
+                <Label>Payment Account</Label>
+                <Select
+                  value={form.paymentAccountId}
+                  onValueChange={v => setForm(f => ({ ...f, paymentAccountId: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder='Select account' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(paymentAccounts || []).map((acct: any) => (
+                      <SelectItem key={acct.id} value={acct.id}>
+                        {acct.code} - {acct.name} ({acct.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='grid gap-2'>
+                <Label>Payment Method (free-text)</Label>
                 <Input
                   value={form.paymentMethod}
                   onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
                   placeholder='Cash, Bank, Card...'
                 />
               </div>
+            </div>
               <div className='grid gap-2'>
                 <Label>Reference No. (optional)</Label>
                 <Input

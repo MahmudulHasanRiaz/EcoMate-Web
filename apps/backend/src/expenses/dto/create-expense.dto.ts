@@ -34,6 +34,10 @@ export class CreateExpenseDto {
 
   @IsOptional()
   @IsString()
+  paymentAccountId?: string;
+
+  @IsOptional()
+  @IsString()
   referenceNo?: string;
 
   @IsOptional()

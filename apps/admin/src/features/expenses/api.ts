@@ -4,11 +4,15 @@ export interface ExpenseResponse {
   id: string
   description: string
   categoryId: string
-  category: { id: string; name: string; slug: string; color?: string | null }
+  category: { id: string; name: string; slug: string; color?: string | null; account?: { id: string; code: string; name: string } | null }
   amount: number
   taxAmount?: number | null
   expenseDate: string
   paymentMethod?: string | null
+  paymentAccountId?: string | null
+  paymentAccount?: { id: string; code: string; name: string } | null
+  journalEntryId?: string | null
+  journalEntry?: any
   referenceNo?: string | null
   notes?: string | null
   receiptUrl?: string | null
@@ -21,7 +25,7 @@ export interface PaginatedResponse<T> {
 }
 
 export interface CategorySummary {
-  category: { id: string; name: string; slug: string }
+  category: { id: string; name: string; slug: string; account?: { id: string; code: string; name: string } | null }
   total: number
   count: number
 }
@@ -37,6 +41,7 @@ export const expensesApi = {
     taxAmount?: number
     expenseDate: string
     paymentMethod?: string
+    paymentAccountId?: string
     referenceNo?: string
     notes?: string
   }) => apiClient.post<ExpenseResponse>('/expenses', data),
@@ -48,6 +53,7 @@ export const expensesApi = {
     taxAmount: number
     expenseDate: string
     paymentMethod: string
+    paymentAccountId: string
     referenceNo: string
     notes: string
   }>) => apiClient.put<ExpenseResponse>(`/expenses/${id}`, data),

@@ -15,6 +15,7 @@ interface GeneralValues {
   admin_email: string
   pagination_default: string
   size_chart_enabled: string
+  accounting_enabled: string
 }
 
 const DEFAULT_VALUES: GeneralValues = {
@@ -26,6 +27,7 @@ const DEFAULT_VALUES: GeneralValues = {
   admin_email: '',
   pagination_default: '20',
   size_chart_enabled: 'false',
+  accounting_enabled: 'false',
 }
 
 export function GeneralSettings() {
@@ -50,6 +52,7 @@ export function GeneralSettings() {
       admin_email: settingsData.admin_email ?? '',
       pagination_default: settingsData.pagination_default ?? '20',
       size_chart_enabled: settingsData.size_chart_enabled ?? 'false',
+      accounting_enabled: settingsData.accounting_enabled ?? 'false',
     }
     setValues(extracted)
     setOriginalValues(extracted)
@@ -99,6 +102,7 @@ export function GeneralSettings() {
     admin_email: { label: 'Admin Email', type: 'email', placeholder: 'admin@example.com' },
     pagination_default: { label: 'Default Pagination', type: 'text', placeholder: '20' },
     size_chart_enabled: { label: 'Size Chart', type: 'switch', hint: 'Enable size chart feature on the storefront' },
+    accounting_enabled: { label: 'Accounting Module', type: 'switch', hint: 'Enable double-entry accounting. When on, expenses auto-create journal entries.' },
   }
 
   return (

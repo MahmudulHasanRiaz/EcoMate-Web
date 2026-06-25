@@ -929,8 +929,11 @@ model ExpenseCategory {
   sortOrder   Int       @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  accountId   String?
+  account     Account?  @relation(fields: [accountId], references: [id])
   expenses    Expense[]
 
+  @@index([accountId])
   @@map("expense_categories")
 }
 
@@ -1008,22 +1011,28 @@ model PurchaseItem {
 }
 
 model Expense {
-  id            String          @id @default(uuid())
-  description   String
-  categoryId    String
-  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
-  amount        Decimal         @db.Decimal(10, 2)
-  taxAmount     Decimal         @default(0) @db.Decimal(10, 2)
-  expenseDate   DateTime
-  paymentMethod String?
-  referenceNo   String?
-  notes         String?         @db.Text
-  receiptUrl    String?
-  createdBy     String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id              String          @id @default(uuid())
+  description     String
+  categoryId      String
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id])
+  amount          Decimal         @db.Decimal(10, 2)
+  taxAmount       Decimal         @default(0) @db.Decimal(10, 2)
+  expenseDate     DateTime
+  paymentMethod   String?         // kept for backward compat (pre-accounting)
+  paymentAccountId String?
+  paymentAccount  Account?  @relation(fields: [paymentAccountId], references: [id])
+  journalEntryId  String?         @unique
+  journalEntry    JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  referenceNo     String?
+  notes           String?         @db.Text
+  receiptUrl      String?
+  createdBy       String?
+  updatedBy       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([categoryId])
+  @@index([paymentAccountId])
   @@index([expenseDate])
   @@index([createdAt])
 }
@@ -1263,6 +1272,8 @@ model Account {
   description String?     @db.Text
   isActive    Boolean     @default(true)
   isGroup     Boolean     @default(false)
+  createdBy   String?
+  updatedBy   String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -1270,6 +1281,8 @@ model Account {
   children        Account[]            @relation("AccountHierarchy")
   openingBalances OpeningBalance[]
   journalLines    JournalEntryLine[]
+  expenseCategory ExpenseCategory[]
+  expensePayments Expense[]
 
   @@index([type])
   @@index([parentId])
@@ -1291,11 +1304,13 @@ model FinancialPeriod {
 }
 
 model OpeningBalance {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   accountId String
   periodId  String
-  debit     Decimal @default(0) @db.Decimal(14, 2)
-  credit    Decimal @default(0) @db.Decimal(14, 2)
+  debit     Decimal  @default(0) @db.Decimal(14, 2)
+  credit    Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   account Account          @relation(fields: [accountId], references: [id])
   period  FinancialPeriod  @relation(fields: [periodId], references: [id])
@@ -1314,23 +1329,28 @@ model JournalEntry {
   totalCredit Decimal      @db.Decimal(14, 2)
   isOpening   Boolean      @default(false)
   referenceNo String?
+  createdBy   String?
+  updatedBy   String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   period FinancialPeriod @relation(fields: [periodId], references: [id])
   lines  JournalEntryLine[]
+  expense Expense?
 
   @@index([periodId])
   @@index([entryDate])
 }
 
 model JournalEntryLine {
-  id          String  @id @default(uuid())
+  id          String       @id @default(uuid())
   entryId     String
   accountId   String
-  debit       Decimal @default(0) @db.Decimal(14, 2)
-  credit      Decimal @default(0) @db.Decimal(14, 2)
+  debit       Decimal      @default(0) @db.Decimal(14, 2)
+  credit      Decimal      @default(0) @db.Decimal(14, 2)
   description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   entry   JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   account Account      @relation(fields: [accountId], references: [id])
