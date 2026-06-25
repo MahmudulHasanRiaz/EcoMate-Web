@@ -9,5 +9,6 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    shadowDatabaseUrl: process.env["DATABASE_URL"]?.replace(/ecomate_web$/, "ecomate_web_shadow"),
   },
 });
