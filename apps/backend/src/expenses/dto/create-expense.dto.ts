@@ -1,25 +1,30 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, IsDate, Min } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ExpenseCategory } from '@prisma/client';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsPositive, IsDate, IsDefined, IsUrl, Min, Max } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 export class CreateExpenseDto {
+  @Transform(({ value }) => value?.trim())
   @IsString()
   @IsNotEmpty()
   description: string;
 
-  @IsEnum(ExpenseCategory)
-  category: ExpenseCategory;
+  @IsString()
+  @IsNotEmpty()
+  categoryId: string;
 
+  @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @IsPositive()
+  @Min(0.01)
   amount: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   taxAmount?: number;
 
   @Type(() => Date)
+  @IsDefined()
   @IsDate()
   expenseDate: Date;
 
@@ -37,5 +42,6 @@ export class CreateExpenseDto {
 
   @IsOptional()
   @IsString()
+  @IsUrl({ require_protocol: true, protocols: ['https', 'http'] })
   receiptUrl?: string;
 }

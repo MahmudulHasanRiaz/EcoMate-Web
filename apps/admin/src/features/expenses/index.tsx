@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Receipt } from 'lucide-react'
-import { expensesApi, EXPENSE_CATEGORIES, type ExpenseResponse, type ExpenseCategory } from './api'
+import { expensesApi, type ExpenseResponse } from './api'
+import { expenseCategoriesApi } from '@/features/expense-categories/api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -17,12 +18,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 
-const CATEGORY_LABELS: Record<ExpenseCategory, string> = Object.fromEntries(
-  EXPENSE_CATEGORIES.map(c => [c.value, c.label])
-) as Record<ExpenseCategory, string>
-
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', minimumFractionDigits: 2 }).format(amount)
 }
 
 function formatDate(dateStr: string) {
@@ -37,7 +34,7 @@ export function Expenses() {
   const [editing, setEditing] = useState<ExpenseResponse | null>(null)
   const [form, setForm] = useState({
     description: '',
-    category: '' as ExpenseCategory | '',
+    categoryId: '',
     amount: '',
     taxAmount: '',
     expenseDate: '',
@@ -46,6 +43,12 @@ export function Expenses() {
     notes: '',
   })
   const [deleteTarget, setDeleteTarget] = useState<ExpenseResponse | null>(null)
+
+  const { data: categories } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseCategoriesApi.list().then(r => r.data),
+  })
+  const allCategories = Array.isArray(categories) ? categories.filter(c => c.isActive) : []
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['expenses-summary'],
@@ -94,7 +97,7 @@ export function Expenses() {
   })
 
   function resetForm() {
-    setForm({ description: '', category: '', amount: '', taxAmount: '', expenseDate: '', paymentMethod: '', referenceNo: '', notes: '' })
+    setForm({ description: '', categoryId: '', amount: '', taxAmount: '', expenseDate: '', paymentMethod: '', referenceNo: '', notes: '' })
   }
 
   function openCreate() {
@@ -107,7 +110,7 @@ export function Expenses() {
     setEditing(expense)
     setForm({
       description: expense.description,
-      category: expense.category,
+      categoryId: expense.categoryId,
       amount: String(expense.amount),
       taxAmount: expense.taxAmount ? String(expense.taxAmount) : '',
       expenseDate: expense.expenseDate.slice(0, 10),
@@ -121,7 +124,7 @@ export function Expenses() {
   function handleSave() {
     const payload = {
       description: form.description,
-      category: form.category as ExpenseCategory,
+      categoryId: form.categoryId,
       amount: parseFloat(form.amount) || 0,
       taxAmount: form.taxAmount ? parseFloat(form.taxAmount) : undefined,
       expenseDate: form.expenseDate,
@@ -141,25 +144,8 @@ export function Expenses() {
   const listData = data?.data || []
   const totalPages = data?.meta?.totalPages || 1
 
-  const categoryBadgeClass = (cat: ExpenseCategory) => {
-    const map: Partial<Record<ExpenseCategory, string>> = {
-      utilities: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-      rent: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-      salaries: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-      marketing: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-      supplies: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-      maintenance: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-      travel: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
-      shipping: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
-      taxes: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
-      insurance: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
-      software: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
-      food_and_beverages: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300',
-      office_expenses: 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300',
-      professional_fees: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-      other: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300',
-    }
-    return map[cat] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+  const getCategoryInfo = (catId: string) => {
+    return allCategories.find(c => c.id === catId) || { name: 'Unknown', color: '#6B7280', slug: 'unknown' }
   }
 
   return (
@@ -202,9 +188,17 @@ export function Expenses() {
             <CardContent>
               <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3'>
                 {summaryData.map(s => (
-                  <div key={s.category} className='rounded-lg border p-3'>
-                    <Badge variant='secondary' className={categoryBadgeClass(s.category)}>
-                      {CATEGORY_LABELS[s.category]}
+                  <div key={s.category.id} className='rounded-lg border p-3'>
+                    <Badge
+                      variant='secondary'
+                      className='text-xs'
+                      style={{
+                        backgroundColor: getCategoryInfo(s.category.id).color + '20' || '#f0f0f0',
+                        color: getCategoryInfo(s.category.id).color || '#666',
+                        borderColor: getCategoryInfo(s.category.id).color || '#ddd',
+                      }}
+                    >
+                      {s.category.name}
                     </Badge>
                     <div className='mt-2'>
                       <span className='text-sm font-semibold'>{formatCurrency(s.total)}</span>
@@ -253,8 +247,16 @@ export function Expenses() {
                       <TableCell className='whitespace-nowrap'>{formatDate(expense.expenseDate)}</TableCell>
                       <TableCell className='font-medium'>{expense.description}</TableCell>
                       <TableCell>
-                        <Badge variant='secondary' className={categoryBadgeClass(expense.category)}>
-                          {CATEGORY_LABELS[expense.category]}
+                        <Badge
+                          variant='secondary'
+                          className='text-xs'
+                          style={{
+                            backgroundColor: (expense.category?.color || '#6B7280') + '20',
+                            color: expense.category?.color || '#6B7280',
+                            borderColor: expense.category?.color || '#6B7280',
+                          }}
+                        >
+                          {expense.category?.name || expense.categoryId.slice(0, 8)}
                         </Badge>
                       </TableCell>
                       <TableCell className='text-right font-mono'>{formatCurrency(expense.amount)}</TableCell>
@@ -333,15 +335,20 @@ export function Expenses() {
             <div className='grid gap-2'>
               <Label>Category</Label>
               <Select
-                value={form.category}
-                onValueChange={v => setForm(f => ({ ...f, category: v as ExpenseCategory }))}
+                value={form.categoryId}
+                onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder='Select category' />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXPENSE_CATEGORIES.map(c => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  {allCategories.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span className='flex items-center gap-2'>
+                        <span className='h-2 w-2 rounded-full inline-block' style={{ backgroundColor: c.color || '#6B7280' }} />
+                        {c.name}
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -408,7 +415,7 @@ export function Expenses() {
             <Button variant='outline' onClick={() => { setDialogOpen(false); setEditing(null) }}>Cancel</Button>
             <Button
               onClick={handleSave}
-              disabled={!form.description || !form.category || !form.amount || !form.expenseDate || createMut.isPending || updateMut.isPending}
+              disabled={!form.description || !form.categoryId || !form.amount || !form.expenseDate || createMut.isPending || updateMut.isPending}
             >
               {editing ? 'Save Changes' : 'Create Expense'}
             </Button>

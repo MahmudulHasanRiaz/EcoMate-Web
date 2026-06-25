@@ -1,44 +1,10 @@
 import { apiClient } from '@/lib/api-client'
 
-export type ExpenseCategory =
-  | 'utilities'
-  | 'rent'
-  | 'salaries'
-  | 'marketing'
-  | 'supplies'
-  | 'maintenance'
-  | 'travel'
-  | 'shipping'
-  | 'taxes'
-  | 'insurance'
-  | 'software'
-  | 'food_and_beverages'
-  | 'office_expenses'
-  | 'professional_fees'
-  | 'other'
-
-export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: 'utilities', label: 'Utilities' },
-  { value: 'rent', label: 'Rent' },
-  { value: 'salaries', label: 'Salaries' },
-  { value: 'marketing', label: 'Marketing' },
-  { value: 'supplies', label: 'Supplies' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'travel', label: 'Travel' },
-  { value: 'shipping', label: 'Shipping' },
-  { value: 'taxes', label: 'Taxes' },
-  { value: 'insurance', label: 'Insurance' },
-  { value: 'software', label: 'Software' },
-  { value: 'food_and_beverages', label: 'Food & Beverages' },
-  { value: 'office_expenses', label: 'Office Expenses' },
-  { value: 'professional_fees', label: 'Professional Fees' },
-  { value: 'other', label: 'Other' },
-]
-
 export interface ExpenseResponse {
   id: string
   description: string
-  category: ExpenseCategory
+  categoryId: string
+  category: { id: string; name: string; slug: string; color?: string | null }
   amount: number
   taxAmount?: number | null
   expenseDate: string
@@ -55,7 +21,7 @@ export interface PaginatedResponse<T> {
 }
 
 export interface CategorySummary {
-  category: ExpenseCategory
+  category: { id: string; name: string; slug: string }
   total: number
   count: number
 }
@@ -66,7 +32,7 @@ export const expensesApi = {
 
   create: (data: {
     description: string
-    category: ExpenseCategory
+    categoryId: string
     amount: number
     taxAmount?: number
     expenseDate: string
@@ -77,7 +43,7 @@ export const expensesApi = {
 
   update: (id: string, data: Partial<{
     description: string
-    category: ExpenseCategory
+    categoryId: string
     amount: number
     taxAmount: number
     expenseDate: string

@@ -52,6 +52,7 @@ import { Route as AuthenticatedOpImportProductsIndexRouteImport } from './routes
 import { Route as AuthenticatedOpImportOrdersIndexRouteImport } from './routes/_authenticated/op/import-orders/index'
 import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_authenticated/op/help-center/index'
 import { Route as AuthenticatedOpExpensesIndexRouteImport } from './routes/_authenticated/op/expenses/index'
+import { Route as AuthenticatedOpExpenseCategoriesIndexRouteImport } from './routes/_authenticated/op/expense-categories/index'
 import { Route as AuthenticatedOpEmployeesIndexRouteImport } from './routes/_authenticated/op/employees/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
@@ -337,6 +338,12 @@ const AuthenticatedOpExpensesIndexRoute =
   AuthenticatedOpExpensesIndexRouteImport.update({
     id: '/op/expenses/',
     path: '/op/expenses/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpExpenseCategoriesIndexRoute =
+  AuthenticatedOpExpenseCategoriesIndexRouteImport.update({
+    id: '/op/expense-categories/',
+    path: '/op/expense-categories/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpEmployeesIndexRoute =
@@ -648,6 +655,7 @@ export interface FileRoutesByFullPath {
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
+  '/op/expense-categories/': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -736,6 +744,7 @@ export interface FileRoutesByTo {
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
   '/op/employees': typeof AuthenticatedOpEmployeesIndexRoute
+  '/op/expense-categories': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/op/expenses': typeof AuthenticatedOpExpensesIndexRoute
   '/op/help-center': typeof AuthenticatedOpHelpCenterIndexRoute
   '/op/import-orders': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -826,6 +835,7 @@ export interface FileRoutesById {
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/_authenticated/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
+  '/_authenticated/op/expense-categories/': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/_authenticated/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
   '/_authenticated/op/help-center/': typeof AuthenticatedOpHelpCenterIndexRoute
   '/_authenticated/op/import-orders/': typeof AuthenticatedOpImportOrdersIndexRoute
@@ -916,6 +926,7 @@ export interface FileRouteTypes {
     | '/op/coupons/'
     | '/op/customers/'
     | '/op/employees/'
+    | '/op/expense-categories/'
     | '/op/expenses/'
     | '/op/help-center/'
     | '/op/import-orders/'
@@ -1004,6 +1015,7 @@ export interface FileRouteTypes {
     | '/op/coupons'
     | '/op/customers'
     | '/op/employees'
+    | '/op/expense-categories'
     | '/op/expenses'
     | '/op/help-center'
     | '/op/import-orders'
@@ -1093,6 +1105,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
     | '/_authenticated/op/employees/'
+    | '/_authenticated/op/expense-categories/'
     | '/_authenticated/op/expenses/'
     | '/_authenticated/op/help-center/'
     | '/_authenticated/op/import-orders/'
@@ -1451,6 +1464,13 @@ declare module '@tanstack/react-router' {
       path: '/op/expenses'
       fullPath: '/op/expenses/'
       preLoaderRoute: typeof AuthenticatedOpExpensesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/expense-categories/': {
+      id: '/_authenticated/op/expense-categories/'
+      path: '/op/expense-categories'
+      fullPath: '/op/expense-categories/'
+      preLoaderRoute: typeof AuthenticatedOpExpenseCategoriesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/employees/': {
@@ -1884,6 +1904,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
   AuthenticatedOpEmployeesIndexRoute: typeof AuthenticatedOpEmployeesIndexRoute
+  AuthenticatedOpExpenseCategoriesIndexRoute: typeof AuthenticatedOpExpenseCategoriesIndexRoute
   AuthenticatedOpExpensesIndexRoute: typeof AuthenticatedOpExpensesIndexRoute
   AuthenticatedOpHelpCenterIndexRoute: typeof AuthenticatedOpHelpCenterIndexRoute
   AuthenticatedOpImportOrdersIndexRoute: typeof AuthenticatedOpImportOrdersIndexRoute
@@ -1951,6 +1972,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
   AuthenticatedOpEmployeesIndexRoute: AuthenticatedOpEmployeesIndexRoute,
+  AuthenticatedOpExpenseCategoriesIndexRoute:
+    AuthenticatedOpExpenseCategoriesIndexRoute,
   AuthenticatedOpExpensesIndexRoute: AuthenticatedOpExpensesIndexRoute,
   AuthenticatedOpHelpCenterIndexRoute: AuthenticatedOpHelpCenterIndexRoute,
   AuthenticatedOpImportOrdersIndexRoute: AuthenticatedOpImportOrdersIndexRoute,

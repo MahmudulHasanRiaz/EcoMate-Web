@@ -60,7 +60,14 @@ export const sidebarData: SidebarData = {
         { title: 'Coupons', url: '/op/coupons', icon: Percent },
         { title: 'Suppliers', url: '/op/suppliers', icon: Building2 },
         { title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart },
-        { title: 'Expenses', url: '/op/expenses', icon: Receipt },
+        {
+          title: 'Expenses',
+          icon: Receipt,
+          items: [
+            { title: 'All Expenses', url: '/op/expenses' },
+            { title: 'Categories', url: '/op/expense-categories' },
+          ],
+        },
         {
           title: 'Accounting',
           icon: BookOpen,

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, Query, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
 import { ExpensesService } from './expenses.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -14,23 +14,6 @@ export class ExpensesController {
     return this.expensesService.create(createExpenseDto);
   }
 
-  @Get()
-  findAll(
-    @Query('page') page?: string,
-    @Query('perPage') perPage?: string,
-    @Query('category') category?: string,
-    @Query('fromDate') fromDate?: string,
-    @Query('toDate') toDate?: string,
-  ) {
-    return this.expensesService.findAll(
-      page ? parseInt(page, 10) : 1,
-      perPage ? parseInt(perPage, 10) : 10,
-      category,
-      fromDate,
-      toDate,
-    );
-  }
-
   @Get('summary')
   getSummary(
     @Query('fromDate') fromDate?: string,
@@ -39,18 +22,33 @@ export class ExpensesController {
     return this.expensesService.getSummary(fromDate, toDate);
   }
 
+  @Get()
+  findAll(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+  ) {
+    const p = page ? parseInt(page, 10) : 1;
+    const pp = perPage ? parseInt(perPage, 10) : 10;
+    if (isNaN(p) || p < 1) throw new BadRequestException('Invalid page');
+    if (isNaN(pp) || pp < 1) throw new BadRequestException('Invalid perPage');
+    return this.expensesService.findAll(p, pp, categoryId, fromDate, toDate);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.expensesService.findOne(id);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateExpenseDto: UpdateExpenseDto) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateExpenseDto: UpdateExpenseDto) {
     return this.expensesService.update(id, updateExpenseDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.expensesService.remove(id);
   }
 }

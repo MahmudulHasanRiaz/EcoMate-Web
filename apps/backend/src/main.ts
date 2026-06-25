@@ -64,6 +64,80 @@ async function bootstrap() {
     } catch {
       console.log('[Schema] Table already exists');
     }
+    // Migrate ExpenseCategory from enum to model (production-safe data migration)
+    try {
+      const ecClient = new PrismaClient();
+      // Create expense_categories table if not exists
+      await ecClient.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "expense_categories" (
+          "id" TEXT NOT NULL,
+          "name" TEXT NOT NULL,
+          "slug" TEXT NOT NULL,
+          "description" TEXT,
+          "icon" TEXT,
+          "color" TEXT,
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "sortOrder" INTEGER NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          CONSTRAINT "expense_categories_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await ecClient.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "expense_categories_slug_key" ON "expense_categories"("slug")`
+      );
+      // Seed categories only if table is empty
+      await ecClient.$executeRawUnsafe(`
+        INSERT INTO "expense_categories" ("id", "name", "slug", "color", "sortOrder", "updatedAt")
+        SELECT * FROM (VALUES
+          ('cat-utilities', 'Utilities', 'utilities', '#3B82F6', 1, NOW()),
+          ('cat-rent', 'Rent', 'rent', '#8B5CF6', 2, NOW()),
+          ('cat-salaries', 'Salaries', 'salaries', '#10B981', 3, NOW()),
+          ('cat-marketing', 'Marketing', 'marketing', '#F97316', 4, NOW()),
+          ('cat-supplies', 'Supplies', 'supplies', '#EAB308', 5, NOW()),
+          ('cat-maintenance', 'Maintenance', 'maintenance', '#EF4444', 6, NOW()),
+          ('cat-travel', 'Travel', 'travel', '#6366F1', 7, NOW()),
+          ('cat-shipping', 'Shipping', 'shipping', '#14B8A6', 8, NOW()),
+          ('cat-taxes', 'Taxes', 'taxes', '#F43F5E', 9, NOW()),
+          ('cat-insurance', 'Insurance', 'insurance', '#06B6D4', 10, NOW()),
+          ('cat-software', 'Software', 'software', '#8B5CF6', 11, NOW()),
+          ('cat-food_and_beverages', 'Food & Beverages', 'food_and_beverages', '#EC4899', 12, NOW()),
+          ('cat-office_expenses', 'Office Expenses', 'office_expenses', '#64748B', 13, NOW()),
+          ('cat-professional_fees', 'Professional Fees', 'professional_fees', '#D97706', 14, NOW()),
+          ('cat-other', 'Other', 'other', '#6B7280', 15, NOW())
+        ) AS v
+        WHERE NOT EXISTS (SELECT 1 FROM "expense_categories")
+      `);
+      // Add categoryId column if not exists (nullable for backfill)
+      await ecClient.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "expenses" ADD COLUMN "categoryId" TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+      `);
+      // Backfill: map old category enum value to new categoryId
+      await ecClient.$executeRawUnsafe(`
+        UPDATE "expenses"
+        SET "categoryId" = 'cat-' || "category"::text
+        WHERE "categoryId" IS NULL AND "category" IS NOT NULL
+      `);
+      // Make categoryId NOT NULL after backfill
+      await ecClient.$executeRawUnsafe(`
+        ALTER TABLE "expenses" ALTER COLUMN "categoryId" SET NOT NULL
+      `);
+      // Drop old category column
+      await ecClient.$executeRawUnsafe(`
+        ALTER TABLE "expenses" DROP COLUMN IF EXISTS "category"
+      `);
+      // Drop old enum type
+      await ecClient.$executeRawUnsafe(`
+        DROP TYPE IF EXISTS "ExpenseCategory"
+      `);
+      await ecClient.$disconnect();
+      console.log('[Schema] ExpenseCategory migration completed');
+    } catch (e) {
+      console.log('[Schema] ExpenseCategory migration skipped or already done:', (e as Error).message?.slice(0, 100));
+    }
   }
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
     throw new Error(

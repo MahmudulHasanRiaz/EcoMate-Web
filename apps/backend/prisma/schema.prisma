@@ -918,22 +918,20 @@ enum PurchaseStatus {
   cancelled
 }
 
-enum ExpenseCategory {
-  utilities
-  rent
-  salaries
-  marketing
-  supplies
-  maintenance
-  travel
-  shipping
-  taxes
-  insurance
-  software
-  food_and_beverages
-  office_expenses
-  professional_fees
-  other
+model ExpenseCategory {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?   @db.Text
+  icon        String?
+  color       String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expenses    Expense[]
+
+  @@map("expense_categories")
 }
 
 model Supplier {
@@ -1012,7 +1010,8 @@ model PurchaseItem {
 model Expense {
   id            String          @id @default(uuid())
   description   String
-  category      ExpenseCategory
+  categoryId    String
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
   amount        Decimal         @db.Decimal(10, 2)
   taxAmount     Decimal         @default(0) @db.Decimal(10, 2)
   expenseDate   DateTime
@@ -1024,7 +1023,7 @@ model Expense {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  @@index([category])
+  @@index([categoryId])
   @@index([expenseDate])
   @@index([createdAt])
 }
