@@ -1,0 +1,58 @@
+import { Controller, Get, Post, Body, Param, Delete, Query } from '@nestjs/common';
+import { AccountingService } from './accounting.service';
+import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
+import { Roles } from '../common/decorators/roles.decorator';
+
+@Controller('accounting')
+@Roles('superadmin', 'admin')
+export class AccountingController {
+  constructor(private readonly accountingService: AccountingService) {}
+
+  @Post('entries')
+  createEntry(@Body() dto: CreateJournalEntryDto) {
+    return this.accountingService.createEntry(dto);
+  }
+
+  @Get('entries')
+  findAllEntries(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('periodId') periodId?: string,
+  ) {
+    return this.accountingService.findAllEntries(
+      page ? parseInt(page, 10) : 1,
+      perPage ? parseInt(perPage, 10) : 10,
+      periodId,
+    );
+  }
+
+  @Get('entries/:id')
+  getEntry(@Param('id') id: string) {
+    return this.accountingService.getEntry(id);
+  }
+
+  @Delete('entries/:id')
+  deleteEntry(@Param('id') id: string) {
+    return this.accountingService.deleteEntry(id);
+  }
+
+  @Get('reports/trial-balance')
+  trialBalance(@Query('periodId') periodId: string) {
+    return this.accountingService.trialBalance(periodId);
+  }
+
+  @Get('reports/profit-and-loss')
+  profitAndLoss(@Query('periodId') periodId: string) {
+    return this.accountingService.profitAndLoss(periodId);
+  }
+
+  @Get('reports/balance-sheet')
+  balanceSheet(@Query('periodId') periodId: string) {
+    return this.accountingService.balanceSheet(periodId);
+  }
+
+  @Get('reports/ledger/:accountId')
+  accountLedger(@Param('accountId') accountId: string, @Query('periodId') periodId?: string) {
+    return this.accountingService.accountLedger(accountId, periodId);
+  }
+}
