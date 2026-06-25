@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { purchasesApi, type PurchaseResponse, type PurchaseItem, type GrnResponse } from './api'
@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt, ChevronDown } from 'lucide-react'
 
 const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string; className: string }> = {
   draft: { variant: 'outline', label: 'Draft', className: 'text-gray-500 border-gray-300 dark:border-gray-600 bg-gray-100/50 dark:bg-gray-800/50' },
@@ -297,11 +297,11 @@ function ReceiveGrnDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-w-2xl'>
+      <DialogContent className='max-w-4xl'>
         <DialogHeader>
           <DialogTitle>Receive Items — {purchase.referenceNo}</DialogTitle>
         </DialogHeader>
-        <div className='space-y-3 py-2 max-h-[60vh] overflow-y-auto'>
+        <div className='space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-2'>
           <p className='text-xs text-muted-foreground'>
             প্রতিটি আইটেমের জন্য কতটা রিসিভ করছেন তা দিন। Accepted = ভালো কন্ডিশনে পাওয়া, Rejected = খারাপ/ড্যামেজড।
           </p>
@@ -310,29 +310,36 @@ function ReceiveGrnDialog({
             const cost = purchase.costingLots?.[0]?.unitCost
               ? Number(purchase.costingLots[0].unitCost)
               : (item.totalBill && item.quantity ? Number(item.totalBill) / item.quantity : 0)
+            
+            const imgUrl = item.product?.images?.[0]?.url || item.product?.images?.[0] || ''
             return (
-              <div key={item.id} className='rounded-lg border p-3 space-y-2'>
-                    <div className='flex items-center gap-2'>
-                      {item.product?.images?.[0] && (
-                        <img src={item.product.images[0]?.url || item.product.images[0]} alt='' className='w-8 h-8 rounded object-cover bg-muted' />
-                      )}
-                      <div>
-                        <p className='text-sm font-medium'>{item.product?.name || item.productId.slice(0, 8)}</p>
-                        {item.variant && <p className='text-xs text-muted-foreground'>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>}
+              <div key={item.id} className='rounded-lg border p-3 flex items-center gap-4 bg-muted/10'>
+                <div className='flex items-center gap-3 w-2/5 flex-shrink-0'>
+                  <div className='w-12 h-12 rounded-md bg-muted overflow-hidden flex-shrink-0 border'>
+                    {imgUrl ? (
+                      <img src={imgUrl} alt='' className='w-full h-full object-cover' />
+                    ) : (
+                      <div className='h-full w-full flex items-center justify-center text-muted-foreground'>
+                        <Package className='h-5 w-5' />
                       </div>
-                    </div>
-                <div className='flex items-center justify-between'>
-                  <div>
-                    <p className='text-xs text-muted-foreground'>
-                      Ordered: {item.quantity} ৳{fmt(item.unitPrice)}/unit | Total: ৳{fmt(item.totalBill || item.totalPrice)}
-                    </p>
-                    {cost > 0 && (
-                      <p className='text-xs text-green-600'>Expected unit cost: ৳{cost.toFixed(2)}</p>
                     )}
                   </div>
+                  <div className='min-w-0 flex-1'>
+                    <p className='text-sm font-medium truncate' title={item.product?.name}>{item.product?.name || item.productId.slice(0, 8)}</p>
+                    <div className='flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground'>
+                      <span className='font-medium text-foreground'>Ordered: {item.quantity}</span>
+                      <span>•</span>
+                      <span>৳{fmt(item.unitPrice)}/unit</span>
+                      <span>•</span>
+                      <span>Total: ৳{fmt(item.totalBill || item.totalPrice)}</span>
+                    </div>
+                    {item.variant && <p className='text-xs text-muted-foreground truncate'>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>}
+                    {cost > 0 && <p className='text-xs text-green-600 truncate'>Expected cost: ৳{cost.toFixed(2)}</p>}
+                  </div>
                 </div>
-                <div className='grid grid-cols-3 gap-2'>
-                  <div className='space-y-1'>
+
+                <div className='flex-1 grid grid-cols-3 gap-3'>
+                  <div className='space-y-1.5'>
                     <Label className='text-xs'>Received</Label>
                     <Input
                       type='number'
@@ -345,12 +352,12 @@ function ReceiveGrnDialog({
                         }))
                       }}
                       onFocus={() => initItem(item.id)}
-                      className='h-8 text-xs'
+                      className='h-9 text-sm'
                       min={0}
                       max={item.quantity}
                     />
                   </div>
-                  <div className='space-y-1'>
+                  <div className='space-y-1.5'>
                     <Label className='text-xs'>Accepted</Label>
                     <Input
                       type='number'
@@ -363,11 +370,11 @@ function ReceiveGrnDialog({
                         }))
                       }}
                       onFocus={() => initItem(item.id)}
-                      className='h-8 text-xs'
+                      className='h-9 text-sm'
                       min={0}
                     />
                   </div>
-                  <div className='space-y-1'>
+                  <div className='space-y-1.5'>
                     <Label className='text-xs'>Rejected</Label>
                     <Input
                       type='number'
@@ -380,7 +387,7 @@ function ReceiveGrnDialog({
                         }))
                       }}
                       onFocus={() => initItem(item.id)}
-                      className='h-8 text-xs'
+                      className='h-9 text-sm'
                       min={0}
                     />
                   </div>
@@ -483,6 +490,7 @@ export function Purchases() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [receiveDialog, setReceiveDialog] = useState<PurchaseResponse | null>(null)
   const [grnViewDialog, setGrnViewDialog] = useState<PurchaseResponse | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const emptyForm = {
     referenceNo: '',
@@ -663,6 +671,7 @@ export function Purchases() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className='w-8'></TableHead>
                   <TableHead>Reference No</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Status</TableHead>
@@ -674,15 +683,25 @@ export function Purchases() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className='text-center py-8'>
+                    <TableCell colSpan={7} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto' />
                     </TableCell>
                   </TableRow>
                 ) : list.length ? (
                   list.map((p: PurchaseResponse) => {
                     const sc = getStatusConfig(p.status)
+                    const isExpanded = expandedId === p.id
                     return (
-                      <TableRow key={p.id}>
+                      <Fragment key={p.id}>
+                      <TableRow className={isExpanded ? 'bg-muted/30' : ''}>
+                        <TableCell className='w-8'>
+                          <button
+                            onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                            className='p-0.5 hover:bg-muted rounded transition-colors'
+                          >
+                            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </button>
+                        </TableCell>
                         <TableCell className='font-mono text-sm font-semibold'>
                           {p.referenceNo}
                         </TableCell>
@@ -751,6 +770,65 @@ export function Purchases() {
                           </div>
                         </TableCell>
                       </TableRow>
+                      {isExpanded && (
+                        <TableRow className='hover:bg-transparent'>
+                          <TableCell colSpan={7} className='p-0 border-b'>
+                            <div className='bg-muted/20 px-4 py-3 space-y-2'>
+                              {p.items.length === 0 ? (
+                                <p className='text-sm text-muted-foreground text-center py-4'>No items</p>
+                              ) : (
+                                p.items.map((item: PurchaseItem, idx: number) => {
+                                  const imgs = item.product?.images ? (Array.isArray(item.product.images) ? item.product.images : []) : []
+                                  const imgUrl = imgs[0]?.url || imgs[0] || ''
+                                  const variantStr = item.variant?.attributeValues?.map(av => av.attributeValue.value).join(' / ')
+                                  return (
+                                    <div key={item.id} className='flex items-center gap-3 rounded-lg border bg-background p-2.5'>
+                                      <div className='flex items-center justify-center w-6 text-xs text-muted-foreground font-medium'>
+                                        {idx + 1}
+                                      </div>
+                                      <div className='h-11 w-11 rounded-md bg-muted overflow-hidden border flex-shrink-0'>
+                                        {imgUrl ? (
+                                          <img src={imgUrl} alt='' className='h-full w-full object-cover' />
+                                        ) : (
+                                          <div className='h-full w-full flex items-center justify-center text-muted-foreground'>
+                                            <Package className='h-4 w-4' />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className='flex-1 min-w-0'>
+                                        <p className='text-sm font-medium truncate'>{item.product?.name || item.productId.slice(0, 8)}</p>
+                                        <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+                                          {variantStr && <span>{variantStr}</span>}
+                                          {item.product?.sku && <span>SKU: {item.product.sku}</span>}
+                                        </div>
+                                      </div>
+                                      <div className='flex items-center gap-4 text-xs shrink-0'>
+                                        <div className='text-right'>
+                                          <p className='text-muted-foreground'>Qty</p>
+                                          <p className='font-medium'>{item.quantity}</p>
+                                        </div>
+                                        <div className='text-right'>
+                                          <p className='text-muted-foreground'>Unit Price</p>
+                                          <p className='font-medium'>৳{fmt(item.unitPrice)}</p>
+                                        </div>
+                                        <div className='text-right'>
+                                          <p className='text-muted-foreground'>Total</p>
+                                          <p className='font-medium'>৳{fmt(item.totalBill || item.totalPrice)}</p>
+                                        </div>
+                                        <div className='text-right'>
+                                          <p className='text-muted-foreground'>Received</p>
+                                          <p className='font-medium'>{item.receivedQty || 0}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                })
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      </Fragment>
                     )
                   })
                 ) : (
