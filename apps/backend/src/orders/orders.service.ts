@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
-import { InventoryService } from '../inventory/inventory.service';
+import { StockService } from '../stock/stock.service';
 import { CouponsService } from '../coupons/coupons.service';
 import {
   CreateOrderDto,
@@ -34,7 +34,7 @@ export class OrdersService {
     private readonly tracking: TrackingService,
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
-    private readonly inventoryService: InventoryService,
+    private readonly stockService: StockService,
     private readonly blockedEntries: BlockedEntriesService,
     private readonly security: SecurityService,
     private readonly couponsService: CouponsService,
@@ -605,7 +605,17 @@ export class OrdersService {
         });
       }
 
-      await this.deductStock(tx, dto.items, displayId);
+      for (const item of dto.items) {
+        await this.stockService.reserve({
+          productId: item.productId,
+          variantId: item.variantId,
+          comboId: item.comboId,
+          comboSelection: item.comboSelection,
+          quantity: item.quantity,
+          reference: displayId,
+          tx,
+        });
+      }
 
       return created;
     });
@@ -728,14 +738,18 @@ export class OrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.items && dto.items.length > 0) {
-        // Restock old items
-        await this.deductStock(tx, order.items.map(i => ({
-          productId: i.productId || undefined,
-          variantId: i.variantId || undefined,
-          comboId: i.comboId || undefined,
-          comboSelection: (i.comboSelection as Record<string, string>) || undefined,
-          quantity: i.quantity,
-        })), `restock-${order.displayId}`, true);
+        // Release old items
+        for (const item of order.items) {
+          await this.stockService.release({
+            productId: item.productId || undefined,
+            variantId: item.variantId || undefined,
+            comboId: item.comboId || undefined,
+            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            quantity: item.quantity,
+            reference: order.displayId,
+            tx,
+          });
+        }
 
         await tx.orderItem.deleteMany({ where: { orderId: id } });
         await tx.orderItem.createMany({
@@ -750,8 +764,18 @@ export class OrdersService {
           })),
         });
 
-        // Deduct stock for new items
-        await this.deductStock(tx, dto.items, order.displayId);
+        // Reserve stock for new items
+        for (const item of dto.items) {
+          await this.stockService.reserve({
+            productId: item.productId,
+            variantId: item.variantId,
+            comboId: item.comboId,
+            comboSelection: item.comboSelection,
+            quantity: item.quantity,
+            reference: order.displayId,
+            tx,
+          });
+        }
       }
 
       if (dto.customerInfo && order.customerId) {
@@ -901,14 +925,37 @@ export class OrdersService {
 
     if (newStatus.name === 'Cancelled') {
       try {
-        await this.inventoryService.restockOrderItems(
-          id,
-          performedBy || userId,
-          'cancellation_restock',
-        );
+        const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+        for (const item of cancelItems) {
+          await this.stockService.release({
+            productId: item.productId || undefined,
+            variantId: item.variantId || undefined,
+            comboId: item.comboId || undefined,
+            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            quantity: item.quantity,
+            reference: order.displayId,
+          });
+        }
       } catch (err) {
-        // Log but don't block status change
-        this.logger.error(`Failed to restock cancelled order ${id}:`, err);
+        this.logger.error(`Failed to release stock for cancelled order ${id}:`, err);
+      }
+    }
+
+    if (newStatus.name === 'Delivered') {
+      try {
+        const deliverItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+        for (const item of deliverItems) {
+          await this.stockService.deduct({
+            productId: item.productId || undefined,
+            variantId: item.variantId || undefined,
+            comboId: item.comboId || undefined,
+            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            quantity: item.quantity,
+            reference: order.displayId,
+          });
+        }
+      } catch (err) {
+        this.logger.error(`Failed to deduct stock for delivered order ${id}:`, err);
       }
     }
 
@@ -1066,9 +1113,24 @@ export class OrdersService {
       if (targetStatus.name === 'Cancelled') {
         for (const id of validIds) {
           try {
-            await this.inventoryService.restockOrderItems(id, userId, 'cancellation_restock');
+            const cancelledOrder = await this.prisma.order.findUnique({
+              where: { id },
+              select: { displayId: true },
+            });
+            if (!cancelledOrder) continue;
+            const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+            for (const item of cancelItems) {
+              await this.stockService.release({
+                productId: item.productId || undefined,
+                variantId: item.variantId || undefined,
+                comboId: item.comboId || undefined,
+                comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+                quantity: item.quantity,
+                reference: cancelledOrder.displayId,
+              });
+            }
           } catch (err) {
-            this.logger.error(`Failed to restock cancelled order ${id}:`, err);
+            this.logger.error(`Failed to release stock for cancelled order ${id}:`, err);
           }
         }
       }
@@ -1241,13 +1303,19 @@ export class OrdersService {
     });
 
     try {
-      await this.inventoryService.restockOrderItems(
-        orderId,
-        'customer',
-        'cancellation_restock',
-      );
+      const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId } });
+      for (const item of cancelItems) {
+        await this.stockService.release({
+          productId: item.productId || undefined,
+          variantId: item.variantId || undefined,
+          comboId: item.comboId || undefined,
+          comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+          quantity: item.quantity,
+          reference: order.displayId,
+        });
+      }
     } catch (err) {
-      this.logger.error(`Failed to restock cancelled order ${orderId}:`, err);
+      this.logger.error(`Failed to release stock for cancelled order ${orderId}:`, err);
     }
 
     return updated;
@@ -1267,6 +1335,41 @@ export class OrdersService {
       updated += 1;
     }
     return { updated, total: orders.length };
+  }
+
+  async backfillDisplayIds() {
+    const orders = await this.prisma.order.findMany({
+      where: { displayId: null },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    let updated = 0;
+    for (const o of orders) {
+      if (o.displayId) continue;
+      const id = await this.generateDisplayIdForDate(o.createdAt);
+      await this.prisma.order.update({
+        where: { id: o.id },
+        data: { displayId: id },
+      });
+      updated += 1;
+    }
+    return { updated, total: orders.length };
+  }
+
+  private async generateDisplayIdForDate(date: Date): Promise<string> {
+    const yy = String(date.getFullYear()).slice(2);
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${yy}${mm}${dd}`;
+    const prefix = `ORD-${dateStr}`;
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.orderCounter.upsert({
+        where: { date: dateStr },
+        create: { date: dateStr, seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
+    });
   }
 
   private async firePurchaseIfModeMatches(
@@ -1358,193 +1461,5 @@ export class OrdersService {
     }
   }
 
-  private async deductStock(
-    tx: Prisma.TransactionClient,
-    items: {
-      productId?: string;
-      variantId?: string;
-      comboId?: string;
-      comboSelection?: Record<string, string>;
-      quantity: number;
-    }[],
-    displayId: string,
-    isRestock = false,
-  ) {
-    const standaloneProductIds = items
-      .filter((i) => i.productId && !i.comboId)
-      .map((i) => i.productId!);
-    const standaloneVariantIds = items
-      .filter((i) => i.variantId && !i.comboId)
-      .map((i) => i.variantId!);
 
-    const comboIds = items.filter((i) => i.comboId).map((i) => i.comboId!);
-    const combos = comboIds.length > 0 ? await tx.combo.findMany({
-      where: { id: { in: comboIds } },
-      include: { items: true },
-    }) : [];
-    const comboMap = new Map(combos.map((c) => [c.id, c]));
-
-    const productIdsToLock = new Set<string>(standaloneProductIds);
-    const variantIdsToLock = new Set<string>(standaloneVariantIds);
-
-    for (const item of items) {
-      if (item.comboId) {
-        const combo = comboMap.get(item.comboId);
-        if (!combo) {
-          throw new BadRequestException(`Combo not found during stock deduction`);
-        }
-        for (const ci of combo.items) {
-          productIdsToLock.add(ci.productId);
-          const effectiveVariantId =
-            ci.variantId ||
-            item.comboSelection?.[ci.productId] ||
-            null;
-          if (effectiveVariantId) {
-            variantIdsToLock.add(effectiveVariantId);
-          }
-        }
-      }
-    }
-
-    const sortedProductIds = Array.from(productIdsToLock).sort();
-    const sortedVariantIds = Array.from(variantIdsToLock).sort();
-
-    // Perform SELECT FOR UPDATE on PostgreSQL
-    if (sortedProductIds.length > 0) {
-      await tx.$queryRawUnsafe(
-        `SELECT id FROM "Product" WHERE id IN (${sortedProductIds.map((_, i) => `$${i + 1}`).join(', ')}) FOR UPDATE`,
-        ...sortedProductIds
-      );
-    }
-    if (sortedVariantIds.length > 0) {
-      await tx.$queryRawUnsafe(
-        `SELECT id FROM "ProductVariant" WHERE id IN (${sortedVariantIds.map((_, i) => `$${i + 1}`).join(', ')}) FOR UPDATE`,
-        ...sortedVariantIds
-      );
-    }
-
-    const products =
-      sortedProductIds.length > 0
-        ? await tx.product.findMany({
-            where: { id: { in: sortedProductIds }, manageStock: true },
-            select: { id: true, type: true, stock: true, manageStock: true },
-          })
-        : [];
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
-    const variants =
-      sortedVariantIds.length > 0
-        ? await tx.productVariant.findMany({
-            where: {
-              id: { in: sortedVariantIds },
-              product: { manageStock: true },
-            },
-            select: { id: true, stock: true, productId: true },
-          })
-        : [];
-    const variantMap = new Map(variants.map((v) => [v.id, v]));
-
-    for (const item of items) {
-      if (item.comboId) {
-        const combo = comboMap.get(item.comboId);
-        if (!combo) continue;
-        for (const ci of combo.items) {
-          const qty = ci.quantity * item.quantity;
-          const effectiveVariantId =
-            ci.variantId ||
-            item.comboSelection?.[ci.productId] ||
-            null;
-
-          if (effectiveVariantId) {
-            const v = variantMap.get(effectiveVariantId);
-            if (v && v.stock < qty) {
-              throw new BadRequestException(
-                `Insufficient stock for variant of product "${ci.productId}". Available: ${v.stock}, requested: ${qty}.`,
-              );
-            }
-            if (v) {
-              await tx.productVariant.update({
-                where: { id: effectiveVariantId },
-                data: { stock: isRestock ? { increment: qty } : { decrement: qty } },
-              });
-              v.stock += isRestock ? qty : -qty;
-            }
-          }
-
-          const p = productMap.get(ci.productId);
-          if (p && p.manageStock && p.stock < qty) {
-            throw new BadRequestException(
-              `Insufficient stock for product "${ci.productId}". Available: ${p.stock}, requested: ${qty}.`,
-            );
-          }
-          if (p && p.manageStock) {
-            await tx.product.update({
-              where: { id: ci.productId },
-              data: { stock: isRestock ? { increment: qty } : { decrement: qty } },
-            });
-            p.stock += isRestock ? qty : -qty;
-          }
-          await tx.inventoryLog.create({
-            data: {
-              productId: ci.productId,
-              variantId: effectiveVariantId,
-              comboId: item.comboId,
-              quantity: isRestock ? qty : -qty,
-              type: isRestock ? 'restock' : 'combo_order',
-              reason: isRestock ? `Restock from Order ${displayId}` : `Combo in Order ${displayId}`,
-              createdAt: new Date(),
-            },
-          });
-        }
-      } else {
-        const variant = item.variantId ? variantMap.get(item.variantId) : null;
-        if (variant && variant.stock < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient stock for product variant. Available: ${variant.stock}, requested: ${item.quantity}.`,
-          );
-        }
-        if (item.variantId && variant) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { stock: isRestock ? { increment: item.quantity } : { decrement: item.quantity } },
-          });
-          variant.stock += isRestock ? item.quantity : -item.quantity;
-        }
-
-        const product = item.productId ? productMap.get(item.productId) : null;
-        if (
-          product &&
-          product.manageStock &&
-          (!item.variantId || product.type === 'simple') &&
-          product.stock < item.quantity
-        ) {
-          throw new BadRequestException(
-            `Insufficient stock for product "${item.productId}". Available: ${product.stock}, requested: ${item.quantity}.`,
-          );
-        }
-        if (
-          product &&
-          product.manageStock &&
-          (!item.variantId || product.type === 'simple')
-        ) {
-          await tx.product.update({
-            where: { id: item.productId! },
-            data: { stock: isRestock ? { increment: item.quantity } : { decrement: item.quantity } },
-          });
-          product.stock += isRestock ? item.quantity : -item.quantity;
-        }
-
-        await tx.inventoryLog.create({
-          data: {
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: isRestock ? item.quantity : -item.quantity,
-            type: isRestock ? 'restock' : 'order_placed',
-            reason: isRestock ? `Restock from Order ${displayId}` : `Order ${displayId}`,
-            createdAt: new Date(),
-          },
-        });
-      }
-    }
-  }
 }

@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { purchasesApi, type PurchaseResponse, type PurchaseItem } from './api'
+import { purchasesApi, type PurchaseResponse, type PurchaseItem, type GrnResponse } from './api'
+import { suppliersApi } from '@/features/suppliers/api'
+import { productsApi } from '@/features/products/api'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -15,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, Plus, Pencil, Trash2, Eye, Package, X, SearchIcon } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt } from 'lucide-react'
 
 const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string; className: string }> = {
   draft: { variant: 'outline', label: 'Draft', className: 'text-gray-500 border-gray-300 dark:border-gray-600 bg-gray-100/50 dark:bg-gray-800/50' },
@@ -51,21 +54,51 @@ function PurchaseForm({
   editing,
   form,
   setForm,
+  suppliers,
+  products,
 }: {
   editing: PurchaseResponse | null
   form: {
-    referenceNo: string
     supplierId: string
     orderDate: string
     notes: string
-    items: { productId: string; quantity: string; unitPrice: string }[]
+    referenceNo: string
+    items: { productId: string; quantity: string; totalBill: string }[]
   }
   setForm: (f: any) => void
+  suppliers: { id: string; name: string; phone?: string | null }[]
+  products: { id: string; name: string; images: any; sku?: string | null }[]
 }) {
+  const supplierOptions = useMemo(() =>
+    suppliers.map(s => ({ id: s.id, label: s.name, subLabel: s.phone || undefined })),
+    [suppliers],
+  )
+
+  const productOptions = useMemo(() =>
+    products.map(p => {
+      const imgs = Array.isArray(p.images) ? p.images : []
+      const imgUrl = imgs[0]?.url || imgs[0] || ''
+      return {
+        id: p.id,
+        label: p.name,
+        subLabel: p.sku || undefined,
+        icon: imgUrl ? (
+          <img src={imgUrl} alt='' className='h-7 w-7 rounded object-cover' />
+        ) : undefined,
+      }
+    }),
+    [products],
+  )
+
+  const productMap = useMemo(() => {
+    const m = new Map(products.map(p => [p.id, p]))
+    return m
+  }, [products])
+
   const addItem = () => {
     setForm((prev: typeof form) => ({
       ...prev,
-      items: [...prev.items, { productId: '', quantity: '1', unitPrice: '0' }],
+      items: [...prev.items, { productId: '', quantity: '1', totalBill: '0' }],
     }))
   }
 
@@ -84,90 +117,139 @@ function PurchaseForm({
   }
 
   return (
-    <>
+    <div className='space-y-5'>
+      <div className='grid grid-cols-2 gap-4'>
+        <div className='space-y-1.5'>
+          <Label>Supplier <span className='text-destructive'>*</span></Label>
+          <SearchableSelect
+            options={supplierOptions}
+            value={form.supplierId}
+            onChange={v => setForm((prev: typeof form) => ({ ...prev, supplierId: v }))}
+            placeholder='Search & select supplier...'
+            searchPlaceholder='Type supplier name...'
+            emptyMessage='No suppliers found'
+            triggerClassName='h-9'
+          />
+        </div>
+        <div className='space-y-1.5'>
+          <Label>Order Date</Label>
+          <Input
+            type='date'
+            value={form.orderDate}
+            onChange={e => setForm((prev: typeof form) => ({ ...prev, orderDate: e.target.value }))}
+            className='h-9'
+          />
+        </div>
+      </div>
+
       <div className='space-y-1.5'>
-        <Label>Reference No</Label>
+        <Label>Vendor Invoice Ref <span className='text-xs text-muted-foreground'>(optional — আপনার সরবরাহকারীর দেয়া ইনভয়েস নম্বর)</span></Label>
         <Input
           value={form.referenceNo}
           onChange={e => setForm((prev: typeof form) => ({ ...prev, referenceNo: e.target.value }))}
-          placeholder='e.g. PO-2024-001'
+          placeholder='e.g. INV-2024-001'
+          className='h-9'
         />
-      </div>
+        <p className='text-xs text-muted-foreground'>System PO number (PO-YYMMDD-XXXX) auto-generated on save.</p>
+
       <div className='space-y-1.5'>
-        <Label>Supplier ID</Label>
-        <Input
-          value={form.supplierId}
-          onChange={e => setForm((prev: typeof form) => ({ ...prev, supplierId: e.target.value }))}
-          placeholder='Enter supplier ID'
-        />
-      </div>
-      <div className='space-y-1.5'>
-        <Label>Order Date</Label>
-        <Input
-          type='date'
-          value={form.orderDate}
-          onChange={e => setForm((prev: typeof form) => ({ ...prev, orderDate: e.target.value }))}
-        />
-      </div>
-      <div className='space-y-1.5'>
-        <Label>Items</Label>
-        <div className='space-y-2'>
-          {form.items.map((item, idx) => (
-            <div key={idx} className='flex items-end gap-2'>
-              <div className='flex-1 space-y-1'>
-                <Label className='text-xs'>Product ID</Label>
-                <Input
-                  value={item.productId}
-                  onChange={e => updateItem(idx, 'productId', e.target.value)}
-                  placeholder='Product ID'
-                  className='h-8 text-xs'
-                />
+        <div className='flex items-center justify-between'>
+          <Label>Items <span className='text-destructive'>*</span></Label>
+          {form.items.length > 0 && (
+            <span className='text-xs text-muted-foreground'>
+              Total: ৳{form.items.reduce((s, i) => s + (Number(i.totalBill) || 0), 0).toFixed(2)}
+            </span>
+          )}
+        </div>
+        <div className='space-y-3'>
+          {form.items.map((item, idx) => {
+            const prod = productMap.get(item.productId)
+            const imgs = prod?.images ? (Array.isArray(prod.images) ? prod.images : []) : []
+            const imgUrl = imgs[0]?.url || imgs[0] || ''
+            const qty = Number(item.quantity) || 0
+            const bill = Number(item.totalBill) || 0
+            const unitCost = qty > 0 ? bill / qty : 0
+
+            return (
+              <div key={idx} className='rounded-lg border p-3 space-y-3 bg-muted/20'>
+                <div className='flex items-start gap-3'>
+                  <div className='h-14 w-14 rounded-md bg-muted flex-shrink-0 overflow-hidden border'>
+                    {imgUrl ? (
+                      <img src={imgUrl} alt='' className='h-full w-full object-cover' />
+                    ) : (
+                      <div className='h-full w-full flex items-center justify-center text-muted-foreground'>
+                        <Package className='h-5 w-5' />
+                      </div>
+                    )}
+                  </div>
+                  <div className='flex-1 min-w-0'>
+                    <SearchableSelect
+                      options={productOptions}
+                      value={item.productId}
+                      onChange={v => updateItem(idx, 'productId', v)}
+                      placeholder='Search & select product...'
+                      searchPlaceholder='Type product name or SKU...'
+                      emptyMessage='No products found'
+                      triggerClassName='h-9 text-sm'
+                      className='w-[320px]'
+                    />
+                  </div>
+                  <Button variant='ghost' size='icon' className='h-8 w-8 shrink-0 mt-0.5' onClick={() => removeItem(idx)}>
+                    <X className='h-4 w-4' />
+                  </Button>
+                </div>
+                <div className='grid grid-cols-3 gap-3'>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Quantity</Label>
+                    <Input
+                      type='number'
+                      value={item.quantity}
+                      onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                      className='h-8 text-sm'
+                      min={1}
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Total Bill (৳)</Label>
+                    <Input
+                      type='number'
+                      value={item.totalBill}
+                      onChange={e => updateItem(idx, 'totalBill', e.target.value)}
+                      className='h-8 text-sm'
+                      min={0}
+                      step='0.01'
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Unit Cost</Label>
+                    <div className='h-8 flex items-center px-3 rounded-md border bg-muted/50 text-sm font-medium'>
+                      {unitCost > 0 ? `৳${unitCost.toFixed(2)}` : '—'}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className='w-20 space-y-1'>
-                <Label className='text-xs'>Qty</Label>
-                <Input
-                  type='number'
-                  value={item.quantity}
-                  onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                  className='h-8 text-xs'
-                  min={1}
-                />
-              </div>
-              <div className='w-24 space-y-1'>
-                <Label className='text-xs'>Unit Price</Label>
-                <Input
-                  type='number'
-                  value={item.unitPrice}
-                  onChange={e => updateItem(idx, 'unitPrice', e.target.value)}
-                  className='h-8 text-xs'
-                  min={0}
-                  step='0.01'
-                />
-              </div>
-              <Button variant='ghost' size='icon' className='h-8 w-8 shrink-0' onClick={() => removeItem(idx)}>
-                <X className='h-3.5 w-3.5' />
-              </Button>
-            </div>
-          ))}
+            )
+          })}
           <Button variant='outline' size='sm' onClick={addItem} className='w-full'>
             <Plus className='h-3.5 w-3.5 mr-1' /> Add Item
           </Button>
         </div>
       </div>
+
       <div className='space-y-1.5'>
-        <Label>Notes</Label>
+        <Label>Notes <span className='text-xs text-muted-foreground'>(optional)</span></Label>
         <Textarea
           value={form.notes}
           onChange={e => setForm((prev: typeof form) => ({ ...prev, notes: e.target.value }))}
-          placeholder='Optional notes...'
-          rows={3}
+          placeholder='Additional notes...'
+          rows={2}
         />
       </div>
-    </>
+    </div>
   )
 }
 
-function ReceiveItemsDialog({
+function ReceiveGrnDialog({
   open,
   onOpenChange,
   purchase,
@@ -176,57 +258,207 @@ function ReceiveItemsDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
   purchase: PurchaseResponse | null
-  onReceive: (items: { itemId: string; receivedQty: number }[]) => void
+  onReceive: (items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[], notes?: string) => void
 }) {
-  const [received, setReceived] = useState<Record<string, string>>({})
+  const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string }>>({})
+  const [notes, setNotes] = useState('')
 
   if (!purchase) return null
 
+  const handleReceive = () => {
+    const items = Object.entries(received)
+      .filter(([, v]) => v.receivedQty && Number(v.receivedQty) > 0)
+      .map(([itemId, v]) => {
+        const item = purchase.items.find((i: PurchaseItem) => i.id === itemId)
+        return {
+          purchaseItemId: itemId,
+          productId: item?.productId || '',
+          receivedQty: Number(v.receivedQty || 0),
+          acceptedQty: Number(v.acceptedQty || v.receivedQty || 0),
+          rejectedQty: Number(v.rejectedQty || 0),
+        }
+      })
+    if (items.length === 0) {
+      toast.error('Enter at least one item quantity')
+      return
+    }
+    onReceive(items, notes || undefined)
+  }
+
+  const initItem = (itemId: string) => {
+    if (!received[itemId]) {
+      setReceived(prev => ({
+        ...prev,
+        [itemId]: { receivedQty: '', acceptedQty: '', rejectedQty: '0' },
+      }))
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className='max-w-2xl'>
         <DialogHeader>
-          <DialogTitle>Receive Items - {purchase.referenceNo}</DialogTitle>
+          <DialogTitle>Receive Items — {purchase.referenceNo}</DialogTitle>
         </DialogHeader>
-        <div className='space-y-3 py-2'>
-          {purchase.items.map((item: PurchaseItem) => (
-            <div key={item.id} className='flex items-center gap-3 rounded-lg border p-3'>
-              <div className='flex-1 min-w-0'>
-                <p className='text-sm font-medium truncate'>Product: {item.productId}</p>
-                <p className='text-xs text-muted-foreground'>Ordered: {item.quantity} x ৳{fmt(item.unitPrice)}</p>
+        <div className='space-y-3 py-2 max-h-[60vh] overflow-y-auto'>
+          <p className='text-xs text-muted-foreground'>
+            প্রতিটি আইটেমের জন্য কতটা রিসিভ করছেন তা দিন। Accepted = ভালো কন্ডিশনে পাওয়া, Rejected = খারাপ/ড্যামেজড।
+          </p>
+          {purchase.items.map((item: PurchaseItem) => {
+            const r = received[item.id] || { receivedQty: '', acceptedQty: '', rejectedQty: '0' }
+            const cost = purchase.costingLots?.[0]?.unitCost
+              ? Number(purchase.costingLots[0].unitCost)
+              : (item.totalBill && item.quantity ? Number(item.totalBill) / item.quantity : 0)
+            return (
+              <div key={item.id} className='rounded-lg border p-3 space-y-2'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-sm font-medium'>Product: {item.productId}</p>
+                    <p className='text-xs text-muted-foreground'>
+                      Ordered: {item.quantity} ৳{fmt(item.unitPrice)}/unit | Total: ৳{fmt(item.totalBill || item.totalPrice)}
+                    </p>
+                    {cost > 0 && (
+                      <p className='text-xs text-green-600'>Expected unit cost: ৳{cost.toFixed(2)}</p>
+                    )}
+                  </div>
+                </div>
+                <div className='grid grid-cols-3 gap-2'>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Received</Label>
+                    <Input
+                      type='number'
+                      value={r.receivedQty}
+                      onChange={e => {
+                        const val = e.target.value
+                        setReceived(prev => ({
+                          ...prev,
+                          [item.id]: { ...prev[item.id] || { acceptedQty: '', rejectedQty: '0' }, receivedQty: val },
+                        }))
+                      }}
+                      onFocus={() => initItem(item.id)}
+                      className='h-8 text-xs'
+                      min={0}
+                      max={item.quantity}
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Accepted</Label>
+                    <Input
+                      type='number'
+                      value={r.acceptedQty}
+                      onChange={e => {
+                        const val = e.target.value
+                        setReceived(prev => ({
+                          ...prev,
+                          [item.id]: { ...prev[item.id] || { receivedQty: '', rejectedQty: '0' }, acceptedQty: val },
+                        }))
+                      }}
+                      onFocus={() => initItem(item.id)}
+                      className='h-8 text-xs'
+                      min={0}
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label className='text-xs'>Rejected</Label>
+                    <Input
+                      type='number'
+                      value={r.rejectedQty}
+                      onChange={e => {
+                        const val = e.target.value
+                        setReceived(prev => ({
+                          ...prev,
+                          [item.id]: { ...prev[item.id] || { receivedQty: '', acceptedQty: '' }, rejectedQty: val },
+                        }))
+                      }}
+                      onFocus={() => initItem(item.id)}
+                      className='h-8 text-xs'
+                      min={0}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className='w-24 space-y-1'>
-                <Label className='text-xs'>Receive</Label>
-                <Input
-                  type='number'
-                  value={received[item.id] ?? ''}
-                  onChange={e =>
-                    setReceived(prev => ({ ...prev, [item.id]: e.target.value }))
-                  }
-                  placeholder='Qty'
-                  className='h-8 text-xs'
-                  min={0}
-                  max={item.quantity}
-                />
-              </div>
-            </div>
-          ))}
+            )
+          })}
+          <div className='space-y-1'>
+            <Label className='text-xs'>GRN Notes</Label>
+            <Textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder='Optional notes for this GRN...'
+              rows={2}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant='outline' onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => {
-            const items = Object.entries(received)
-              .filter(([, qty]) => qty && Number(qty) > 0)
-              .map(([itemId, qty]) => ({ itemId, receivedQty: Number(qty) }))
-            if (items.length === 0) {
-              toast.error('Enter at least one item quantity')
-              return
-            }
-            onReceive(items)
-          }}>
-            <Package className='h-4 w-4 mr-1' /> Receive Items
+          <Button onClick={handleReceive}>
+            <Package className='h-4 w-4 mr-1' /> Create GRN & Receive
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function GrnViewDialog({
+  open,
+  onOpenChange,
+  purchase,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  purchase: PurchaseResponse | null
+}) {
+  const { data: grns } = useQuery({
+    queryKey: ['purchase-grns', purchase?.id],
+    queryFn: () => purchasesApi.getGrns(purchase!.id).then(r => r.data),
+    enabled: !!purchase,
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className='max-w-3xl'>
+        <DialogHeader>
+          <DialogTitle>GRNs — {purchase?.referenceNo}</DialogTitle>
+        </DialogHeader>
+        {grns?.length === 0 ? (
+          <div className='text-center py-8 text-muted-foreground'>No GRNs yet</div>
+        ) : (
+          <div className='space-y-3 max-h-[60vh] overflow-y-auto'>
+            {grns?.map((grn: GrnResponse) => (
+              <div key={grn.id} className='rounded-lg border p-3'>
+                <div className='flex items-center justify-between mb-2'>
+                  <span className='font-mono text-sm font-semibold'>{grn.grnNumber}</span>
+                  <Badge variant='outline' className='text-xs'>{grn.status}</Badge>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className='text-xs'>Product</TableHead>
+                      <TableHead className='text-xs text-right'>Received</TableHead>
+                      <TableHead className='text-xs text-right'>Accepted</TableHead>
+                      <TableHead className='text-xs text-right'>Rejected</TableHead>
+                      <TableHead className='text-xs text-right'>Unit Cost</TableHead>
+                      <TableHead className='text-xs text-right'>Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grn.items.map((gitem: any) => (
+                      <TableRow key={gitem.id}>
+                        <TableCell className='text-xs'>{gitem.productId}</TableCell>
+                        <TableCell className='text-xs text-right'>{gitem.receivedQty}</TableCell>
+                        <TableCell className='text-xs text-right'>{gitem.acceptedQty}</TableCell>
+                        <TableCell className='text-xs text-right'>{gitem.rejectedQty}</TableCell>
+                        <TableCell className='text-xs text-right'>৳{fmt(gitem.unitCost)}</TableCell>
+                        <TableCell className='text-xs text-right'>৳{fmt(gitem.totalCost)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -241,15 +473,28 @@ export function Purchases() {
   const [editing, setEditing] = useState<PurchaseResponse | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [receiveDialog, setReceiveDialog] = useState<PurchaseResponse | null>(null)
+  const [grnViewDialog, setGrnViewDialog] = useState<PurchaseResponse | null>(null)
 
   const emptyForm = {
     referenceNo: '',
     supplierId: '',
     orderDate: new Date().toISOString().slice(0, 10),
     notes: '',
-    items: [{ productId: '', quantity: '1', unitPrice: '0' }],
+    items: [{ productId: '', quantity: '1', totalBill: '0' }],
   }
   const [form, setForm] = useState(emptyForm)
+
+  const { data: suppliers } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => suppliersApi.list().then(r => Array.isArray(r.data) ? r.data : r.data?.data || []),
+  })
+  const allSuppliers = Array.isArray(suppliers) ? suppliers : []
+
+  const { data: productsData } = useQuery({
+    queryKey: ['products-list'],
+    queryFn: () => productsApi.list({ perPage: 200 }).then(r => r.data.data),
+  })
+  const allProducts = Array.isArray(productsData) ? productsData : []
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchases', page, search],
@@ -296,12 +541,12 @@ export function Purchases() {
   })
 
   const receiveMut = useMutation({
-    mutationFn: ({ id, items }: { id: string; items: { itemId: string; receivedQty: number }[] }) =>
-      purchasesApi.receiveItems(id, items),
+    mutationFn: ({ id, items, notes }: { id: string; items: any[]; notes?: string }) =>
+      purchasesApi.createGrn(id, { items, notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
       setReceiveDialog(null)
-      toast.success('Items received')
+      toast.success('Items received via GRN')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error receiving items'),
   })
@@ -322,19 +567,15 @@ export function Purchases() {
       items: p.items.map(i => ({
         productId: i.productId,
         quantity: String(i.quantity),
-        unitPrice: String(i.unitPrice),
+        totalBill: String(i.totalBill || i.totalPrice || 0),
       })),
     })
     setOpen(true)
   }
 
   const handleSave = () => {
-    if (!form.referenceNo.trim()) {
-      toast.error('Reference No is required')
-      return
-    }
     if (!form.supplierId.trim()) {
-      toast.error('Supplier ID is required')
+      toast.error('Please select a supplier')
       return
     }
     const items = form.items
@@ -342,18 +583,20 @@ export function Purchases() {
       .map(i => ({
         productId: i.productId.trim(),
         quantity: Number(i.quantity) || 1,
-        unitPrice: Number(i.unitPrice) || 0,
+        totalBill: Number(i.totalBill) || 0,
       }))
     if (items.length === 0) {
       toast.error('At least one item is required')
       return
     }
-    const payload = {
-      referenceNo: form.referenceNo.trim(),
+    const payload: any = {
       supplierId: form.supplierId.trim(),
-      orderDate: form.orderDate,
+      orderDate: form.orderDate || undefined,
       notes: form.notes.trim() || undefined,
       items,
+    }
+    if (form.referenceNo.trim()) {
+      payload.referenceNo = form.referenceNo.trim()
     }
     if (editing) {
       updateMut.mutate({ id: editing.id, data: payload })
@@ -416,7 +659,7 @@ export function Purchases() {
                   <TableHead>Status</TableHead>
                   <TableHead className='text-right'>Total</TableHead>
                   <TableHead>Order Date</TableHead>
-                  <TableHead className='w-24'></TableHead>
+                  <TableHead className='w-28'></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -467,6 +710,15 @@ export function Purchases() {
                                 <Package className='h-3.5 w-3.5' />
                               </Button>
                             )}
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='h-7 w-7'
+                              onClick={() => setGrnViewDialog(p)}
+                              title='View GRNs'
+                            >
+                              <Receipt className='h-3.5 w-3.5' />
+                            </Button>
                             {(p.status === 'draft' || p.status === 'ordered') && (
                               <Button
                                 variant='ghost'
@@ -530,12 +782,21 @@ export function Purchases() {
       </Main>
 
       <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); setEditing(null) } }}>
-        <DialogContent className='max-w-lg'>
+        <DialogContent className='max-w-3xl'>
           <DialogHeader>
-            <DialogTitle>{editing ? 'Edit Purchase Order' : 'New Purchase Order'}</DialogTitle>
+            <DialogTitle className='text-lg'>{editing ? 'Edit Purchase Order' : 'New Purchase Order'}</DialogTitle>
+            <p className='text-xs text-muted-foreground'>
+              সাপ্লায়ার সিলেক্ট করুন, প্রোডাক্ট ও কোয়ান্টিটি দিন, মোট বিল দিন। সিস্টেম অটো কস্টিং প্রাইস ক্যালকুলেট করবে।
+            </p>
           </DialogHeader>
-          <div className='space-y-4 py-2 max-h-[60vh] overflow-y-auto'>
-            <PurchaseForm editing={editing} form={form} setForm={setForm} />
+          <div className='max-h-[65vh] overflow-y-auto pr-1'>
+            <PurchaseForm
+              editing={editing}
+              form={form}
+              setForm={setForm}
+              suppliers={allSuppliers}
+              products={allProducts}
+            />
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => { setOpen(false); setEditing(null) }}>
@@ -548,7 +809,7 @@ export function Purchases() {
               {(createMut.isPending || updateMut.isPending) && (
                 <Loader2 className='animate-spin h-4 w-4 mr-1' />
               )}
-              {editing ? 'Update' : 'Create'}
+              {editing ? 'Update' : 'Create Purchase Order'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -574,15 +835,21 @@ export function Purchases() {
         </DialogContent>
       </Dialog>
 
-      <ReceiveItemsDialog
+      <ReceiveGrnDialog
         open={!!receiveDialog}
         onOpenChange={v => { if (!v) setReceiveDialog(null) }}
         purchase={receiveDialog}
-        onReceive={(items) => {
+        onReceive={(items, notes) => {
           if (receiveDialog) {
-            receiveMut.mutate({ id: receiveDialog.id, items })
+            receiveMut.mutate({ id: receiveDialog.id, items, notes })
           }
         }}
+      />
+
+      <GrnViewDialog
+        open={!!grnViewDialog}
+        onOpenChange={v => { if (!v) setGrnViewDialog(null) }}
+        purchase={grnViewDialog}
       />
     </>
   )

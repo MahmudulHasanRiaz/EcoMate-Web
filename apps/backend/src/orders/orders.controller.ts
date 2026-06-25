@@ -100,6 +100,12 @@ export class OrdersController {
     return this.svc.backfillViewTokens();
   }
 
+  @Roles('superadmin', 'admin')
+  @Post('backfill-display-ids')
+  backfillDisplayIds() {
+    return this.svc.backfillDisplayIds();
+  }
+
   @Public()
   @Get('public/phone/:phone')
   findByPhone(@Param('phone') phone: string) {

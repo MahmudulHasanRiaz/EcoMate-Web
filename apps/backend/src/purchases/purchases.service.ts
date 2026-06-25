@@ -1,12 +1,21 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stock/stock.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { CreateGrnDto } from './dto/create-grn.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { PurchaseStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PurchasesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private stockService: StockService,
+  ) {}
 
   private async generateReferenceNo(): Promise<string> {
     const now = new Date();
@@ -30,41 +39,86 @@ export class PurchasesService {
     return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
-  async create(dto: CreatePurchaseDto) {
-    const existing = await this.prisma.purchase.findUnique({
-      where: { referenceNo: dto.referenceNo },
+  private async generateGrnNumber(): Promise<string> {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const prefix = `GRN-${yy}${mm}${dd}-`;
+
+    const last = await this.prisma.goodsReceiptNote.findFirst({
+      where: { grnNumber: { startsWith: prefix } },
+      orderBy: { grnNumber: 'desc' },
+      select: { grnNumber: true },
     });
 
-    if (existing) {
-      throw new ConflictException('Purchase with this reference number already exists');
+    let seq = 1;
+    if (last) {
+      const parts = last.grnNumber.split('-');
+      seq = parseInt(parts[parts.length - 1], 10) + 1;
     }
 
-    const referenceNo = dto.referenceNo || (await this.generateReferenceNo());
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
+
+  private async generateLotNumber(): Promise<string> {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const prefix = `LOT-${yy}${mm}${dd}-`;
+
+    const last = await this.prisma.costingLot.findFirst({
+      where: { lotNumber: { startsWith: prefix } },
+      orderBy: { lotNumber: 'desc' },
+      select: { lotNumber: true },
+    });
+
+    let seq = 1;
+    if (last) {
+      const parts = last.lotNumber.split('-');
+      seq = parseInt(parts[parts.length - 1], 10) + 1;
+    }
+
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
+
+  async create(dto: CreatePurchaseDto) {
+    // Always generate a system PO number — user's reference goes into notes
+    const poNumber = await this.generateReferenceNo();
+    const vendorRef = dto.referenceNo || '';
+    const notesWithRef = vendorRef
+      ? `Vendor Ref: ${vendorRef}\n${dto.notes || ''}`
+      : (dto.notes || '');
 
     return this.prisma.$transaction(async (tx) => {
       const items = dto.items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId,
-        description: item.description,
         quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: new Prisma.Decimal(item.quantity * item.unitPrice),
+        unitPrice: new Prisma.Decimal(item.totalBill / item.quantity),
+        totalPrice: new Prisma.Decimal(item.totalBill),
+        totalBill: new Prisma.Decimal(item.totalBill),
         receivedQty: 0,
       }));
+
+      const subtotal = dto.items.reduce((sum, item) => sum + item.totalBill, 0);
 
       return tx.purchase.create({
         data: {
           supplierId: dto.supplierId,
-          referenceNo,
-          orderDate: dto.orderDate || new Date(),
-          expectedDate: dto.expectedDate,
-          status: dto.status || PurchaseStatus.draft,
-          subtotal: dto.subtotal,
-          taxAmount: dto.taxAmount || 0,
-          discount: dto.discount || 0,
-          total: dto.total,
-          paidAmount: dto.paidAmount || 0,
-          notes: dto.notes,
+          referenceNo: poNumber,
+          orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
+          expectedDate: dto.expectedDate
+            ? new Date(dto.expectedDate)
+            : undefined,
+          status: PurchaseStatus.ordered,
+          subtotal: new Prisma.Decimal(subtotal),
+          taxAmount: 0,
+          discount: 0,
+          total: new Prisma.Decimal(subtotal),
+          paidAmount: 0,
+          notes: notesWithRef,
           items: {
             create: items,
           },
@@ -78,7 +132,7 @@ export class PurchasesService {
   }
 
   async findAll(page = 1, perPage = 10, status?: string, supplierId?: string) {
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (status) where.status = status;
     if (supplierId) where.supplierId = supplierId;
@@ -92,6 +146,7 @@ export class PurchasesService {
         include: {
           supplier: true,
           items: true,
+          grns: true,
         },
       }),
       this.prisma.purchase.count({ where }),
@@ -119,6 +174,12 @@ export class PurchasesService {
             variant: true,
           },
         },
+        costingLots: true,
+        grns: {
+          include: {
+            items: true,
+          },
+        },
       },
     });
 
@@ -130,86 +191,200 @@ export class PurchasesService {
   }
 
   async update(id: string, dto: UpdatePurchaseDto) {
-    await this.findOne(id);
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
-    if (dto.referenceNo) {
-      const existing = await this.prisma.purchase.findUnique({
-        where: { referenceNo: dto.referenceNo },
-      });
-      if (existing && existing.id !== id) {
-        throw new ConflictException('Purchase with this reference number already exists');
-      }
+    if (!purchase) {
+      throw new NotFoundException(`Purchase with ID ${id} not found`);
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const { items, ...purchaseData } = dto;
+      const data: Record<string, unknown> = {};
 
-      if (items) {
+      if (dto.supplierId !== undefined) data.supplierId = dto.supplierId;
+      if (dto.orderDate !== undefined) data.orderDate = new Date(dto.orderDate);
+      if (dto.expectedDate !== undefined)
+        data.expectedDate = new Date(dto.expectedDate);
+      if (dto.notes !== undefined) data.notes = dto.notes;
+
+      if (dto.items) {
         await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
 
-        const newItems = items.map((item) => ({
+        const newItems = dto.items.map((item) => ({
           purchaseId: id,
           productId: item.productId,
           variantId: item.variantId,
-          description: item.description,
           quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: new Prisma.Decimal(item.quantity * item.unitPrice),
+          unitPrice: new Prisma.Decimal(item.totalBill / item.quantity),
+          totalPrice: new Prisma.Decimal(item.totalBill),
+          totalBill: new Prisma.Decimal(item.totalBill),
           receivedQty: 0,
         }));
 
         await tx.purchaseItem.createMany({ data: newItems });
+
+        const subtotal = dto.items.reduce(
+          (sum, item) => sum + item.totalBill,
+          0,
+        );
+        data.subtotal = new Prisma.Decimal(subtotal);
+        data.total = new Prisma.Decimal(subtotal);
       }
 
       return tx.purchase.update({
         where: { id },
-        data: purchaseData,
+        data,
         include: {
           supplier: true,
           items: true,
+          grns: true,
         },
       });
     });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException(`Purchase with ID ${id} not found`);
+    }
+
     return this.prisma.purchase.delete({ where: { id } });
   }
 
-  async receiveItems(
-    purchaseId: string,
-    items: { itemId: string; receivedQty: number }[],
-  ) {
-    const purchase = await this.findOne(purchaseId);
+  async createGrn(purchaseId: string, dto: CreateGrnDto, userId?: string) {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id: purchaseId },
+      include: { items: true },
+    });
 
-    if (purchase.status === PurchaseStatus.cancelled) {
-      throw new ConflictException('Cannot receive items for a cancelled purchase');
+    if (!purchase) {
+      throw new NotFoundException(`Purchase with ID ${purchaseId} not found`);
     }
 
+    if (purchase.status === PurchaseStatus.cancelled) {
+      throw new ConflictException('Cannot create GRN for a cancelled purchase');
+    }
+
+    const grnNumber = await this.generateGrnNumber();
+
     return this.prisma.$transaction(async (tx) => {
-      for (const item of items) {
-        const purchaseItem = await tx.purchaseItem.findUnique({
-          where: { id: item.itemId },
-        });
+      const itemIds = dto.items.map((i) => i.purchaseItemId);
+      const purchaseItems = await tx.purchaseItem.findMany({
+        where: { id: { in: itemIds }, purchaseId },
+      });
 
-        if (!purchaseItem || purchaseItem.purchaseId !== purchaseId) {
-          throw new NotFoundException(`Purchase item with ID ${item.itemId} not found`);
-        }
+      const piMap = new Map(purchaseItems.map((pi) => [pi.id, pi]));
 
-        const newReceivedQty = purchaseItem.receivedQty + item.receivedQty;
-
-        if (newReceivedQty > purchaseItem.quantity) {
-          throw new ConflictException(
-            `Received quantity (${newReceivedQty}) cannot exceed ordered quantity (${purchaseItem.quantity}) for item ${item.itemId}`,
+      for (const d of dto.items) {
+        const pi = piMap.get(d.purchaseItemId);
+        if (!pi) {
+          throw new NotFoundException(
+            `Purchase item ${d.purchaseItemId} not found in purchase`,
           );
         }
 
+        const newReceivedQty = pi.receivedQty + d.receivedQty;
+        if (newReceivedQty > pi.quantity) {
+          throw new ConflictException(
+            `Received qty (${newReceivedQty}) exceeds ordered qty (${pi.quantity}) for item ${d.purchaseItemId}`,
+          );
+        }
+      }
+
+      const grn = await tx.goodsReceiptNote.create({
+        data: {
+          grnNumber,
+          purchaseId,
+          receivedBy: userId,
+          status: 'received',
+          notes: dto.notes,
+          items: {
+            create: dto.items.map((d) => {
+              const pi = piMap.get(d.purchaseItemId)!;
+              const unitCost = new Prisma.Decimal(
+                Number(pi.totalBill) / Number(pi.quantity),
+              );
+              return {
+                purchaseItemId: d.purchaseItemId,
+                productId: d.productId,
+                variantId: d.variantId,
+                expectedQty: pi.quantity,
+                receivedQty: d.receivedQty,
+                acceptedQty: d.acceptedQty,
+                rejectedQty: d.rejectedQty,
+                unitCost,
+                totalCost: unitCost.mul(d.acceptedQty),
+              };
+            }),
+          },
+        },
+        include: { items: true },
+      });
+
+      for (const d of dto.items) {
         await tx.purchaseItem.update({
-          where: { id: item.itemId },
-          data: { receivedQty: newReceivedQty },
+          where: { id: d.purchaseItemId },
+          data: { receivedQty: { increment: d.receivedQty } },
         });
       }
+
+      for (const d of dto.items) {
+        if (d.acceptedQty <= 0) continue;
+
+        const pi = piMap.get(d.purchaseItemId)!;
+        const unitCost = new Prisma.Decimal(
+          Number(pi.totalBill) / Number(pi.quantity),
+        );
+        const lotNumber = await this.generateLotNumber();
+
+        await tx.costingLot.create({
+          data: {
+            purchaseId,
+            grnId: grn.id,
+            productId: d.productId,
+            variantId: d.variantId,
+            lotNumber,
+            unitCost,
+            totalCost: unitCost.mul(d.acceptedQty),
+            quantity: d.acceptedQty,
+            remainingQty: d.acceptedQty,
+          },
+        });
+      }
+
+      for (const d of dto.items) {
+        if (d.acceptedQty <= 0) continue;
+
+        await this.stockService.add({
+          productId: d.productId,
+          variantId: d.variantId,
+          quantity: d.acceptedQty,
+          reference: `GRN-${grnNumber}`,
+          performedBy: userId,
+          tx,
+        });
+      }
+
+      const grnTotalCost = dto.items.reduce((sum, d) => {
+        const pi = piMap.get(d.purchaseItemId)!;
+        const unitCost = Number(pi.totalBill) / Number(pi.quantity);
+        return sum + unitCost * d.acceptedQty;
+      }, 0);
+
+      await tx.supplier.update({
+        where: { id: purchase.supplierId },
+        data: {
+          totalPurchases: { increment: new Prisma.Decimal(grnTotalCost) },
+          balance: { increment: new Prisma.Decimal(grnTotalCost) },
+        },
+      });
 
       const allItems = await tx.purchaseItem.findMany({
         where: { purchaseId },
@@ -227,27 +402,54 @@ export class PurchasesService {
         newStatus = purchase.status;
       }
 
-      return tx.purchase.update({
+      await tx.purchase.update({
         where: { id: purchaseId },
         data: { status: newStatus },
-        include: {
-          supplier: true,
-          items: true,
-        },
       });
+
+      return grn;
     });
   }
 
-  async updateStatus(id: string, status: PurchaseStatus) {
-    await this.findOne(id);
+  async getGrns(purchaseId: string) {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id: purchaseId },
+      select: { id: true },
+    });
 
-    return this.prisma.purchase.update({
-      where: { id },
-      data: { status },
+    if (!purchase) {
+      throw new NotFoundException(`Purchase with ID ${purchaseId} not found`);
+    }
+
+    return this.prisma.goodsReceiptNote.findMany({
+      where: { purchaseId },
       include: {
-        supplier: true,
         items: true,
+        costingLots: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getGrn(grnId: string) {
+    const grn = await this.prisma.goodsReceiptNote.findUnique({
+      where: { id: grnId },
+      include: {
+        items: true,
+        costingLots: true,
+        purchase: {
+          include: {
+            supplier: true,
+            items: true,
+          },
+        },
       },
     });
+
+    if (!grn) {
+      throw new NotFoundException(`GRN with ID ${grnId} not found`);
+    }
+
+    return grn;
   }
 }
