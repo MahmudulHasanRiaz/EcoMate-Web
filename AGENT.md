@@ -156,6 +156,41 @@ MANDATORY:
 
 ---
 
+# SCHEMA MIGRATION RULES (OVERRIDES ALL OTHER APPROACHES)
+
+## HARD RULE — AI agents AND developers MUST obey:
+
+**Every single change to `schema.prisma` REQUIRES an equivalent Prisma migration file (`prisma/migrations/`) generated via `npx prisma migrate dev --name <descriptive-name>`.**
+
+This is NON-NEGOTIABLE. Exceptions: local-only development databases with no production deployment history.
+
+## Rationale
+
+- `prisma db push --accept-data-loss` is FORBIDDEN for schema delivery. It silently drops columns/tables, has no rollback, and creates irreversible drift between Prisma client and database.
+- Migration files are version-controlled, reversible (`prisma migrate diff`), auditable, and can be reviewed in PRs.
+- A schema change without a migration == data loss waiting to happen.
+
+## Workflow for ANY schema change
+
+1. Edit `schema.prisma`
+2. Run `npx prisma migrate dev --name <short-description-of-change>`
+3. Review the generated migration SQL in `prisma/migrations/<timestamp>_<name>/migration.sql`
+4. Commit BOTH the schema change AND the migration directory
+5. For production: `npx prisma migrate deploy` (NEVER `db push`)
+
+## Special cases
+
+- **Adding optional nullable columns only**: migration is still required (generates empty/safe SQL)
+- **Renaming fields**: use a two-step migration (add new → backfill → drop old) — write the migration SQL manually if Prisma cannot infer intent
+- **Prod with existing data**: generate migration against a staging DB first, verify rollback, then apply to production
+- **Hotfix that needs instant schema change**: generate migration, apply via `prisma migrate deploy`, never via raw SQL on production console
+
+## CI enforcement
+
+CI/CD pipeline MUST reject PRs that modify `schema.prisma` without a corresponding new migration directory in `prisma/migrations/`.
+
+---
+
 # FINAL QUALITY STANDARD
 
 EcoMate is NOT a demo project.
