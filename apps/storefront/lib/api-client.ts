@@ -31,7 +31,7 @@ apiClient.interceptors.response.use(
   (res) => res,
   async (error) => {
     const req = error.config;
-    if (error.response?.status === 401 && !req._retry && req.url !== "/auth/refresh") {
+    if (error.response?.status === 401 && !req._retry && req.url !== "/auth/refresh" && req.url !== "/auth/login") {
       const now = Date.now();
       if (now - lastRefreshAttempt < REFRESH_COOLDOWN) {
         return Promise.reject(error);
