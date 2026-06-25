@@ -34,3 +34,7 @@ clients/*
 # Databases
 *.db
 *.db-journal
+
+# Temp / scratch
+scratch/
+query_*.js
