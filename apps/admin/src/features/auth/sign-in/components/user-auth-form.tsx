@@ -6,7 +6,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
-import { apiClient } from '@/lib/api-client'
+import axios from 'axios'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -55,10 +55,11 @@ export function UserAuthForm({
     setIsLoading(true)
 
     try {
-      const response = await apiClient.post('/auth/login', {
-        email: data.email,
-        password: data.password,
-      })
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/auth/login`,
+        { email: data.email, password: data.password },
+        { withCredentials: true, headers: { 'Content-Type': 'application/json' } },
+      )
 
       auth.setUser(response.data.user)
       auth.setAccessToken(response.data.accessToken)
@@ -70,9 +71,9 @@ export function UserAuthForm({
     } catch (error: any) {
       let message = error.response?.data?.message
       if (!message) {
-        message = error.request
-          ? 'Server not responding. Check your connection.'
-          : 'Network error. Please try again.'
+        message = error.response
+          ? `Server error (${error.response.status})`
+          : 'Network error. Please check your connection.'
       }
       toast.error(message)
     } finally {
