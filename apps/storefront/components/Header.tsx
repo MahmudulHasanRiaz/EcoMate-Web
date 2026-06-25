@@ -135,7 +135,7 @@ function NavItem({ item }: { item: any }) {
   }, []);
 
   const getHref = (it: any) => {
-    if (it.type === 'category') return `/products?category=${it.categoryId || it.id}`;
+    if (it.type === 'category') return `/products?categoryId=${it.categoryId || it.id}`;
     return it.url || '/';
   };
 
@@ -195,7 +195,7 @@ function SubMenuItem({ item }: { item: any }) {
   }, []);
 
   const getHref = (it: any) => {
-    if (it.type === 'category') return `/products?category=${it.categoryId || it.id}`;
+    if (it.type === 'category') return `/products?categoryId=${it.categoryId || it.id}`;
     return it.url || '/';
   };
 

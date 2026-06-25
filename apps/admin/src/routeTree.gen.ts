@@ -72,6 +72,7 @@ import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
 import { Route as AuthenticatedOpOrdersCreateRouteImport } from './routes/_authenticated/op/orders/create'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
+import { Route as AuthenticatedOpInventoryWarehousesRouteImport } from './routes/_authenticated/op/inventory/warehouses'
 import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/_authenticated/op/inventory/valuation'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
@@ -459,6 +460,12 @@ const AuthenticatedOpOrdersIdRoute = AuthenticatedOpOrdersIdRouteImport.update({
   path: '/op/orders/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpInventoryWarehousesRoute =
+  AuthenticatedOpInventoryWarehousesRouteImport.update({
+    id: '/op/inventory/warehouses',
+    path: '/op/inventory/warehouses',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryValuationRoute =
   AuthenticatedOpInventoryValuationRouteImport.update({
     id: '/op/inventory/valuation',
@@ -636,6 +643,7 @@ export interface FileRoutesByFullPath {
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
+  '/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -725,6 +733,7 @@ export interface FileRoutesByTo {
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
+  '/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -816,6 +825,7 @@ export interface FileRoutesById {
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
+  '/_authenticated/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
@@ -907,6 +917,7 @@ export interface FileRouteTypes {
     | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
+    | '/op/inventory/warehouses'
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/mon/activity-logs/'
@@ -996,6 +1007,7 @@ export interface FileRouteTypes {
     | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
+    | '/op/inventory/warehouses'
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/mon/activity-logs'
@@ -1086,6 +1098,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/inventory/valuation'
+    | '/_authenticated/op/inventory/warehouses'
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
     | '/_authenticated/mon/activity-logs/'
@@ -1606,6 +1619,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/warehouses': {
+      id: '/_authenticated/op/inventory/warehouses'
+      path: '/op/inventory/warehouses'
+      fullPath: '/op/inventory/warehouses'
+      preLoaderRoute: typeof AuthenticatedOpInventoryWarehousesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/inventory/valuation': {
       id: '/_authenticated/op/inventory/valuation'
       path: '/op/inventory/valuation'
@@ -1885,6 +1905,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpInventoryValuationRoute: typeof AuthenticatedOpInventoryValuationRoute
+  AuthenticatedOpInventoryWarehousesRoute: typeof AuthenticatedOpInventoryWarehousesRoute
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
@@ -1952,6 +1973,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpInventoryValuationRoute:
     AuthenticatedOpInventoryValuationRoute,
+  AuthenticatedOpInventoryWarehousesRoute:
+    AuthenticatedOpInventoryWarehousesRoute,
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedMonActivityLogsIndexRoute:

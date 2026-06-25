@@ -176,8 +176,8 @@ function FooterColumn({ title, items }: { title: string, items: any[] }) {
       <h4 className="font-bold text-[14px] text-gray-800 mb-4">{title}</h4>
       <ul className="space-y-2.5">
         {items.map((item: any) => {
-          const href = item.type === 'category' 
-            ? `/products?category=${item.categoryId || item.id}`
+          const href = item.type === 'category'
+            ? `/products?categoryId=${item.categoryId || item.id}`
             : item.url;
           if (href) {
             return (

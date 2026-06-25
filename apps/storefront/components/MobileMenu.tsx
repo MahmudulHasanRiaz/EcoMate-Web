@@ -108,7 +108,7 @@ function MobileNavItem({ item, onClose, level = 0 }: { item: any; onClose: () =>
   const hasChildren = item.children?.length > 0;
 
   const getHref = (it: any) => {
-    if (it.type === 'category') return `/products?category=${it.categoryId || it.id}`;
+    if (it.type === 'category') return `/products?categoryId=${it.categoryId || it.id}`;
     return it.url || '/';
   };
 

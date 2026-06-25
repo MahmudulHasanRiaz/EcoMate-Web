@@ -75,7 +75,12 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing..
       editor.chain().focus().extendMarkRange('link').unsetLink().run()
       return
     }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+    // Auto-add https:// for external links without protocol
+    // so example.com → https://example.com instead of relative path
+    const hasProtocol = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url)
+    const isRelative = url.startsWith('/') || url.startsWith('#') || url.startsWith('?')
+    const finalUrl = !hasProtocol && !isRelative ? `https://${url}` : url
+    editor.chain().focus().extendMarkRange('link').setLink({ href: finalUrl }).run()
   }, [editor])
 
   if (!editor) return null
