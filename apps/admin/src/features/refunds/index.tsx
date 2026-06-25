@@ -63,7 +63,7 @@ export function Refunds() {
                refunds.length ? refunds.map((r: any) => (
                 <TableRow key={r.id}>
                   <TableCell className='font-medium'>৳{Number(r.amount).toFixed(2)}</TableCell>
-                  <TableCell className='font-mono text-sm'>{r.orderId ? r.orderId.slice(0,8) : '—'}</TableCell>
+                  <TableCell className='font-mono text-sm'>{r.order?.displayId || r.orderId?.slice(0,8) || '—'}</TableCell>
                   <TableCell className='text-sm max-w-48 truncate'>{r.reason || '—'}</TableCell>
                   <TableCell>
                     <Badge className={r.status === 'approved' ? 'bg-green-500' : r.status === 'rejected' ? 'bg-destructive' : r.status === 'completed' ? 'bg-blue-500' : ''}>{r.status}</Badge>

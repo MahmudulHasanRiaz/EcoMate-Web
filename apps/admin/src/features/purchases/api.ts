@@ -9,6 +9,8 @@ export interface PurchaseItem {
   totalPrice: number
   totalBill: number
   receivedQty: number
+  product?: { id: string; name: string; images: any; sku?: string | null }
+  variant?: { id: string; sku?: string | null; attributeValues?: { attributeValue: { value: string } }[] }
 }
 
 export interface PurchaseResponse {
@@ -35,6 +37,7 @@ export interface GrnItemResponse {
   rejectedQty: number
   unitCost: number
   totalCost: number
+  purchaseItem?: { product?: { id: string; name: string; images: any } }
 }
 
 export interface GrnResponse {

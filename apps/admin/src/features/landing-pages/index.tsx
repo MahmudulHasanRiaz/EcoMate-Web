@@ -399,7 +399,7 @@ export function LandingPages() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
             {sec.productId && !selectedProducts.find(p => p.id === sec.productId) && (
-              <option value={sec.productId} disabled>{sec.productId.slice(0, 12)}...</option>
+              <option value={sec.productId} disabled>Unavailable product</option>
             )}
           </select>
         </div>,

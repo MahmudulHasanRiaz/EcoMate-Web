@@ -312,9 +312,17 @@ function ReceiveGrnDialog({
               : (item.totalBill && item.quantity ? Number(item.totalBill) / item.quantity : 0)
             return (
               <div key={item.id} className='rounded-lg border p-3 space-y-2'>
+                    <div className='flex items-center gap-2'>
+                      {item.product?.images?.[0] && (
+                        <img src={item.product.images[0]?.url || item.product.images[0]} alt='' className='w-8 h-8 rounded object-cover bg-muted' />
+                      )}
+                      <div>
+                        <p className='text-sm font-medium'>{item.product?.name || item.productId.slice(0, 8)}</p>
+                        {item.variant && <p className='text-xs text-muted-foreground'>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>}
+                      </div>
+                    </div>
                 <div className='flex items-center justify-between'>
                   <div>
-                    <p className='text-sm font-medium'>Product: {item.productId}</p>
                     <p className='text-xs text-muted-foreground'>
                       Ordered: {item.quantity} ৳{fmt(item.unitPrice)}/unit | Total: ৳{fmt(item.totalBill || item.totalPrice)}
                     </p>
@@ -446,7 +454,7 @@ function GrnViewDialog({
                   <TableBody>
                     {grn.items.map((gitem: any) => (
                       <TableRow key={gitem.id}>
-                        <TableCell className='text-xs'>{gitem.productId}</TableCell>
+                        <TableCell className='text-xs'>{gitem.purchaseItem?.product?.name || gitem.productId.slice(0, 8)}</TableCell>
                         <TableCell className='text-xs text-right'>{gitem.receivedQty}</TableCell>
                         <TableCell className='text-xs text-right'>{gitem.acceptedQty}</TableCell>
                         <TableCell className='text-xs text-right'>{gitem.rejectedQty}</TableCell>
@@ -680,7 +688,7 @@ export function Purchases() {
                         </TableCell>
                         <TableCell>
                           {p.supplier?.name || (
-                            <span className='text-muted-foreground text-sm'>Supplier #{p.supplierId.slice(0, 8)}</span>
+                            <span className='text-muted-foreground text-sm'>Unknown Supplier</span>
                           )}
                         </TableCell>
                         <TableCell>
