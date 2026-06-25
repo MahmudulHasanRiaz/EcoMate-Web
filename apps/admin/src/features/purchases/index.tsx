@@ -255,14 +255,20 @@ function ReceiveGrnDialog({
   onOpenChange,
   purchase,
   onReceive,
+  products = [],
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   purchase: PurchaseResponse | null
   onReceive: (items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[], notes?: string) => void
+  products?: any[]
 }) {
   const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string }>>({})
   const [notes, setNotes] = useState('')
+
+  const productMap = useMemo(() => {
+    return new Map(products.map(p => [p.id, p]))
+  }, [products])
 
   if (!purchase) return null
 
@@ -297,7 +303,7 @@ function ReceiveGrnDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-w-4xl'>
+      <DialogContent className='max-w-4xl sm:max-w-4xl'>
         <DialogHeader>
           <DialogTitle>Receive Items — {purchase.referenceNo}</DialogTitle>
         </DialogHeader>
@@ -311,10 +317,12 @@ function ReceiveGrnDialog({
               ? Number(purchase.costingLots[0].unitCost)
               : (item.totalBill && item.quantity ? Number(item.totalBill) / item.quantity : 0)
             
-            const imgUrl = item.product?.images?.[0]?.url || item.product?.images?.[0] || ''
+            const product = productMap.get(item.productId) || item.product
+            const imgUrl = product?.images?.[0]?.url || product?.images?.[0] || ''
+            const sku = product?.sku || item.product?.sku || ''
             return (
-              <div key={item.id} className='rounded-lg border p-3 flex items-center gap-4 bg-muted/10'>
-                <div className='flex items-center gap-3 w-2/5 flex-shrink-0'>
+              <div key={item.id} className='rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 bg-muted/10'>
+                <div className='flex items-center gap-3 w-full sm:w-2/5 sm:flex-shrink-0'>
                   <div className='w-12 h-12 rounded-md bg-muted overflow-hidden flex-shrink-0 border'>
                     {imgUrl ? (
                       <img src={imgUrl} alt='' className='w-full h-full object-cover' />
@@ -325,20 +333,26 @@ function ReceiveGrnDialog({
                     )}
                   </div>
                   <div className='min-w-0 flex-1'>
-                    <p className='text-sm font-medium truncate' title={item.product?.name}>{item.product?.name || item.productId.slice(0, 8)}</p>
-                    <div className='flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground'>
+                    <p className='text-sm font-medium truncate' title={product?.name}>{product?.name || item.productId.slice(0, 8)}</p>
+                    <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-xs text-muted-foreground'>
                       <span className='font-medium text-foreground'>Ordered: {item.quantity}</span>
+                      {sku && (
+                        <>
+                          <span>•</span>
+                          <span>SKU: {sku}</span>
+                        </>
+                      )}
                       <span>•</span>
                       <span>৳{fmt(item.unitPrice)}/unit</span>
-                      <span>•</span>
-                      <span>Total: ৳{fmt(item.totalBill || item.totalPrice)}</span>
+                      <span className='hidden sm:inline'>•</span>
+                      <span className='hidden sm:inline'>Total: ৳{fmt(item.totalBill || item.totalPrice)}</span>
                     </div>
                     {item.variant && <p className='text-xs text-muted-foreground truncate'>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>}
                     {cost > 0 && <p className='text-xs text-green-600 truncate'>Expected cost: ৳{cost.toFixed(2)}</p>}
                   </div>
                 </div>
 
-                <div className='flex-1 grid grid-cols-3 gap-3'>
+                <div className='w-full sm:flex-1 grid grid-cols-3 gap-3'>
                   <div className='space-y-1.5'>
                     <Label className='text-xs'>Received</Label>
                     <Input
@@ -512,6 +526,10 @@ export function Purchases() {
     queryFn: () => productsApi.list({ perPage: 200 }).then(r => r.data.data),
   })
   const allProducts = Array.isArray(productsData) ? productsData : []
+
+  const productMap = useMemo(() => {
+    return new Map(allProducts.map(p => [p.id, p]))
+  }, [allProducts])
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchases', page, search],
@@ -778,9 +796,11 @@ export function Purchases() {
                                 <p className='text-sm text-muted-foreground text-center py-4'>No items</p>
                               ) : (
                                 p.items.map((item: PurchaseItem, idx: number) => {
-                                  const imgs = item.product?.images ? (Array.isArray(item.product.images) ? item.product.images : []) : []
+                                  const product = productMap.get(item.productId) || item.product
+                                  const imgs = product?.images ? (Array.isArray(product.images) ? product.images : []) : []
                                   const imgUrl = imgs[0]?.url || imgs[0] || ''
                                   const variantStr = item.variant?.attributeValues?.map(av => av.attributeValue.value).join(' / ')
+                                  const sku = product?.sku || item.product?.sku || ''
                                   return (
                                     <div key={item.id} className='flex items-center gap-3 rounded-lg border bg-background p-2.5'>
                                       <div className='flex items-center justify-center w-6 text-xs text-muted-foreground font-medium'>
@@ -796,10 +816,10 @@ export function Purchases() {
                                         )}
                                       </div>
                                       <div className='flex-1 min-w-0'>
-                                        <p className='text-sm font-medium truncate'>{item.product?.name || item.productId.slice(0, 8)}</p>
+                                        <p className='text-sm font-medium truncate'>{product?.name || item.productId.slice(0, 8)}</p>
                                         <div className='flex items-center gap-2 text-xs text-muted-foreground'>
                                           {variantStr && <span>{variantStr}</span>}
-                                          {item.product?.sku && <span>SKU: {item.product.sku}</span>}
+                                          {sku && <span>SKU: {sku}</span>}
                                         </div>
                                       </div>
                                       <div className='flex items-center gap-4 text-xs shrink-0'>
@@ -926,6 +946,7 @@ export function Purchases() {
         open={!!receiveDialog}
         onOpenChange={v => { if (!v) setReceiveDialog(null) }}
         purchase={receiveDialog}
+        products={allProducts}
         onReceive={(items, notes) => {
           if (receiveDialog) {
             receiveMut.mutate({ id: receiveDialog.id, items, notes })
