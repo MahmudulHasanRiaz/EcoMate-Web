@@ -63,6 +63,7 @@ import { Route as AuthenticatedOpBrandsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authenticated/op/blocked/index'
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
+import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
 import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
@@ -73,6 +74,8 @@ import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/_authenticated/op/inventory/valuation'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
+import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
+import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
@@ -402,6 +405,12 @@ const AuthenticatedOpAppsIndexRoute =
     path: '/op/apps/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpAccountingIndexRoute =
+  AuthenticatedOpAccountingIndexRouteImport.update({
+    id: '/op/accounting/',
+    path: '/op/accounting/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonUsersIndexRoute =
   AuthenticatedMonUsersIndexRouteImport.update({
     id: '/mon/users/',
@@ -459,6 +468,18 @@ const AuthenticatedOpCustomersIdRoute =
   AuthenticatedOpCustomersIdRouteImport.update({
     id: '/op/customers/$id',
     path: '/op/customers/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAccountingReportsRoute =
+  AuthenticatedOpAccountingReportsRouteImport.update({
+    id: '/op/accounting/reports',
+    path: '/op/accounting/reports',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAccountingJournalEntriesRoute =
+  AuthenticatedOpAccountingJournalEntriesRouteImport.update({
+    id: '/op/accounting/journal-entries',
+    path: '/op/accounting/journal-entries',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
@@ -603,6 +624,8 @@ export interface FileRoutesByFullPath {
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
+  '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -613,6 +636,7 @@ export interface FileRoutesByFullPath {
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
+  '/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
   '/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
@@ -688,6 +712,8 @@ export interface FileRoutesByTo {
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
+  '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -698,6 +724,7 @@ export interface FileRoutesByTo {
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
+  '/op/accounting': typeof AuthenticatedOpAccountingIndexRoute
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
   '/op/attributes': typeof AuthenticatedOpAttributesIndexRoute
   '/op/blocked': typeof AuthenticatedOpBlockedIndexRoute
@@ -775,6 +802,8 @@ export interface FileRoutesById {
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
+  '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -785,6 +814,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
+  '/_authenticated/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
   '/_authenticated/op/attributes/': typeof AuthenticatedOpAttributesIndexRoute
   '/_authenticated/op/blocked/': typeof AuthenticatedOpBlockedIndexRoute
@@ -862,6 +892,8 @@ export interface FileRouteTypes {
     | '/mon/'
     | '/op/'
     | '/mon/users/$id'
+    | '/op/accounting/journal-entries'
+    | '/op/accounting/reports'
     | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
@@ -872,6 +904,7 @@ export interface FileRouteTypes {
     | '/mon/help-center/'
     | '/mon/pages/'
     | '/mon/users/'
+    | '/op/accounting/'
     | '/op/apps/'
     | '/op/attributes/'
     | '/op/blocked/'
@@ -947,6 +980,8 @@ export interface FileRouteTypes {
     | '/mon'
     | '/op'
     | '/mon/users/$id'
+    | '/op/accounting/journal-entries'
+    | '/op/accounting/reports'
     | '/op/customers/$id'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
@@ -957,6 +992,7 @@ export interface FileRouteTypes {
     | '/mon/help-center'
     | '/mon/pages'
     | '/mon/users'
+    | '/op/accounting'
     | '/op/apps'
     | '/op/attributes'
     | '/op/blocked'
@@ -1033,6 +1069,8 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
     | '/_authenticated/mon/users/$id'
+    | '/_authenticated/op/accounting/journal-entries'
+    | '/_authenticated/op/accounting/reports'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/inventory/valuation'
@@ -1043,6 +1081,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/help-center/'
     | '/_authenticated/mon/pages/'
     | '/_authenticated/mon/users/'
+    | '/_authenticated/op/accounting/'
     | '/_authenticated/op/apps/'
     | '/_authenticated/op/attributes/'
     | '/_authenticated/op/blocked/'
@@ -1491,6 +1530,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpAppsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/accounting/': {
+      id: '/_authenticated/op/accounting/'
+      path: '/op/accounting'
+      fullPath: '/op/accounting/'
+      preLoaderRoute: typeof AuthenticatedOpAccountingIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/users/': {
       id: '/_authenticated/mon/users/'
       path: '/mon/users'
@@ -1559,6 +1605,20 @@ declare module '@tanstack/react-router' {
       path: '/op/customers/$id'
       fullPath: '/op/customers/$id'
       preLoaderRoute: typeof AuthenticatedOpCustomersIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/accounting/reports': {
+      id: '/_authenticated/op/accounting/reports'
+      path: '/op/accounting/reports'
+      fullPath: '/op/accounting/reports'
+      preLoaderRoute: typeof AuthenticatedOpAccountingReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/accounting/journal-entries': {
+      id: '/_authenticated/op/accounting/journal-entries'
+      path: '/op/accounting/journal-entries'
+      fullPath: '/op/accounting/journal-entries'
+      preLoaderRoute: typeof AuthenticatedOpAccountingJournalEntriesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/users/$id': {
@@ -1800,6 +1860,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
+  AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
+  AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpInventoryValuationRoute: typeof AuthenticatedOpInventoryValuationRoute
@@ -1810,6 +1872,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
   AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
   AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
+  AuthenticatedOpAccountingIndexRoute: typeof AuthenticatedOpAccountingIndexRoute
   AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
   AuthenticatedOpAttributesIndexRoute: typeof AuthenticatedOpAttributesIndexRoute
   AuthenticatedOpBlockedIndexRoute: typeof AuthenticatedOpBlockedIndexRoute
@@ -1861,6 +1924,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
+  AuthenticatedOpAccountingJournalEntriesRoute:
+    AuthenticatedOpAccountingJournalEntriesRoute,
+  AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpInventoryValuationRoute:
@@ -1873,6 +1939,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
   AuthenticatedMonPagesIndexRoute: AuthenticatedMonPagesIndexRoute,
   AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
+  AuthenticatedOpAccountingIndexRoute: AuthenticatedOpAccountingIndexRoute,
   AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,
   AuthenticatedOpAttributesIndexRoute: AuthenticatedOpAttributesIndexRoute,
   AuthenticatedOpBlockedIndexRoute: AuthenticatedOpBlockedIndexRoute,

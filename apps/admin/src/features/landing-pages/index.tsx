@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy, Eye, EyeOff } from 'lucide-react'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -51,6 +51,8 @@ export function LandingPages() {
   const comboSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productSearchRef = useRef<HTMLDivElement>(null)
   const comboSearchRefDiv = useRef<HTMLDivElement>(null)
+  const sectionAddRef = useRef<HTMLDivElement>(null)
+  const [showSectionMenu, setShowSectionMenu] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['landing-pages', page],
@@ -144,10 +146,10 @@ export function LandingPages() {
     if (!title || !slug) { toast.error('Title and slug are required'); return }
     if (!/^[a-z0-9-]+$/.test(slug)) { toast.error('Slug must be lowercase alphanumeric with dashes only'); return }
     if (pageType === 'custom' && !customHtml.trim()) { toast.error('Custom HTML is empty. Paste your code or switch to Template mode.'); return }
-    const payload = {
-      title, slug, pageType, templateId: pageType === 'template' ? templateId : undefined,
-      sections: pageType === 'template' ? sections : undefined,
-      customHtml: pageType === 'custom' ? customHtml : undefined,
+    const payload: Record<string, any> = {
+      title, slug, pageType, templateId: pageType === 'template' ? templateId : null,
+      sections: pageType === 'template' ? sections : null,
+      customHtml: pageType === 'custom' ? customHtml : null,
       productIds: selectedProducts.map(p => p.id),
       comboIds: selectedCombos.map(c => c.id),
       trackingJson: { primaryColor },
@@ -226,6 +228,9 @@ export function LandingPages() {
       if (comboSearchRefDiv.current && !comboSearchRefDiv.current.contains(e.target as Node)) {
         setShowComboDropdown(false)
       }
+      if (sectionAddRef.current && !sectionAddRef.current.contains(e.target as Node)) {
+        setShowSectionMenu(false)
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -240,14 +245,277 @@ export function LandingPages() {
     })
   }
 
-  const defaultSections = [
-    { type: 'hero', title: '', subtitle: '', image: '', ctaText: 'Shop Now', productId: '' },
-    { type: 'features', title: 'Features', items: [{ text: '' }, { text: '' }, { text: '' }] },
-    { type: 'featured-grid', title: 'Products', productIds: [] },
-    { type: 'checkout-form', title: 'Order Now', submitText: 'Place Order', productId: '' },
-    { type: 'trust-badges', title: 'Why Choose Us' },
-    { type: 'cta-footer', title: 'Limited Offer', subtitle: 'Order now before stock runs out', ctaText: 'Order Now' },
-  ]
+  const SECTION_TYPES: Record<string, { label: string; icon: string; default: any }> = {
+    hero: { label: 'Hero Banner', icon: '🖼️', default: { type: 'hero', title: 'Premium Collection', subtitle: '', image: '', ctaText: 'Shop Now', badgeText: '', offerEndsAt: '', stockCount: 0 } },
+    features: { label: 'Features Grid', icon: '✨', default: { type: 'features', title: 'Why Choose Us', items: [{ text: 'Feature 1', icon: '✓' }, { text: 'Feature 2', icon: '✓' }, { text: 'Feature 3', icon: '✓' }] } },
+    'product-info': { label: 'Product Info', icon: '📋', default: { type: 'product-info', title: 'Product Details', items: [{ title: 'Feature', text: 'Description' }] } },
+    'featured-grid': { label: 'Product Grid', icon: '🏷️', default: { type: 'featured-grid', title: 'Our Products', productIds: [] } },
+    'checkout-form': { label: 'Checkout Form', icon: '📝', default: { type: 'checkout-form', title: 'Order Now', submitText: 'Place Order', productId: '' } },
+    'trust-badges': { label: 'Trust Badges', icon: '✅', default: { type: 'trust-badges', title: 'Why Shop With Us', items: [{ icon: '🚚', label: 'Free Delivery' }, { icon: '💳', label: 'Cash on Delivery' }, { icon: '🔄', label: 'Easy Returns' }, { icon: '🔒', label: 'Secure Payment' }] } },
+    'cta-footer': { label: 'CTA Footer', icon: '🎯', default: { type: 'cta-footer', title: 'Limited Time Offer', subtitle: 'Order now before stock runs out', ctaText: 'Order Now', badgeText: '', offerEndsAt: '', stockCount: 0 } },
+    'image-gallery': { label: 'Image Gallery', icon: '🖼️', default: { type: 'image-gallery', title: 'Gallery', images: [''] } },
+    'video-embed': { label: 'Video Embed', icon: '🎬', default: { type: 'video-embed', title: 'Watch', videoUrl: '' } },
+    testimonials: { label: 'Testimonials', icon: '💬', default: { type: 'testimonials', title: 'What Our Customers Say', items: [{ name: 'Customer', text: 'Great product!', rating: 5 }] } },
+    'review-slider': { label: 'Review Slider', icon: '⭐', default: { type: 'review-slider', title: 'Reviews', items: [{ image: '', title: 'Review', text: 'Amazing!', rating: 5 }] } },
+    faq: { label: 'FAQ', icon: '❓', default: { type: 'faq', title: 'FAQs', items: [{ question: 'Question?', answer: 'Answer here.' }] } },
+  }
+
+  const addSection = (type: string) => {
+    const config = SECTION_TYPES[type]
+    if (!config) return
+    setSections(prev => [...prev, JSON.parse(JSON.stringify(config.default))])
+    markDirty()
+  }
+
+  const removeSection = (index: number) => {
+    setSections(prev => prev.filter((_, i) => i !== index))
+    markDirty()
+  }
+
+  const moveSection = (index: number, direction: 'up' | 'down') => {
+    setSections(prev => {
+      const next = [...prev]
+      const target = direction === 'up' ? index - 1 : index + 1
+      if (target < 0 || target >= next.length) return prev
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+    markDirty()
+  }
+
+  const renderSectionFields = (sec: any, i: number) => {
+    const fields: React.ReactElement[] = [
+      <div className='space-y-1' key='title'>
+        <Label className='text-xs'>Title</Label>
+        <Input className='h-8 text-xs' value={sec.title || ''} onChange={e => updateSection(i, 'title', e.target.value)} placeholder='Section title' />
+      </div>,
+    ]
+
+    if (sec.subtitle !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='subtitle'>
+          <Label className='text-xs'>Subtitle</Label>
+          <Input className='h-8 text-xs' value={sec.subtitle || ''} onChange={e => updateSection(i, 'subtitle', e.target.value)} placeholder='Subtitle' />
+        </div>,
+      )
+    }
+
+    if (sec.ctaText !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='ctaText'>
+          <Label className='text-xs'>Button Text</Label>
+          <Input className='h-8 text-xs' value={sec.ctaText || ''} onChange={e => updateSection(i, 'ctaText', e.target.value)} placeholder='Shop Now' />
+        </div>,
+      )
+    }
+
+    if (sec.badgeText !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='badgeText'>
+          <Label className='text-xs'>Badge Text</Label>
+          <Input className='h-8 text-xs' value={sec.badgeText || ''} onChange={e => updateSection(i, 'badgeText', e.target.value)} placeholder='Limited Offer' />
+        </div>,
+      )
+    }
+
+    if (sec.offerEndsAt !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='offerEndsAt'>
+          <Label className='text-xs'>Offer End Date</Label>
+          <Input className='h-8 text-xs' value={sec.offerEndsAt || ''} onChange={e => updateSection(i, 'offerEndsAt', e.target.value)} placeholder='2026-07-31' />
+        </div>,
+      )
+    }
+
+    if (sec.stockCount !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='stockCount'>
+          <Label className='text-xs'>Stock Count</Label>
+          <Input className='h-8 text-xs' type='number' value={sec.stockCount ?? 0} onChange={e => updateSection(i, 'stockCount', parseInt(e.target.value) || 0)} placeholder='0' />
+        </div>,
+      )
+    }
+
+    if (sec.image !== undefined && !Array.isArray(sec.image)) {
+      fields.push(
+        <div className='space-y-1 col-span-2' key='image'>
+          <Label className='text-xs'>Image URL</Label>
+          <Input className='h-8 text-xs' value={sec.image || ''} onChange={e => updateSection(i, 'image', e.target.value)} placeholder='https://...' />
+        </div>,
+      )
+    }
+
+    if (sec.images !== undefined && Array.isArray(sec.images)) {
+      fields.push(
+        <div className='space-y-2 col-span-2' key='images'>
+          <Label className='text-xs'>Images</Label>
+          {sec.images.map((img: string, imgI: number) => (
+            <div key={imgI} className='flex items-center gap-2'>
+              <Input className='h-8 text-xs flex-1' value={img} onChange={e => {
+                const next = [...sec.images]
+                next[imgI] = e.target.value
+                updateSection(i, 'images', next)
+              }} placeholder='https://...' />
+              <button type='button' onClick={() => {
+                const next = sec.images.filter((_: any, j: number) => j !== imgI)
+                updateSection(i, 'images', next)
+              }} className='text-xs p-1 rounded hover:bg-destructive/10 text-destructive shrink-0'>
+                <X className='h-3.5 w-3.5' />
+              </button>
+            </div>
+          ))}
+          <Button variant='outline' size='sm' className='text-xs' onClick={() => updateSection(i, 'images', [...sec.images, ''])}>
+            <Plus className='h-3 w-3 mr-1' /> Add Image
+          </Button>
+        </div>,
+      )
+    }
+
+    if (sec.videoUrl !== undefined) {
+      fields.push(
+        <div className='space-y-1 col-span-2' key='videoUrl'>
+          <Label className='text-xs'>Video URL</Label>
+          <Input className='h-8 text-xs' value={sec.videoUrl || ''} onChange={e => updateSection(i, 'videoUrl', e.target.value)} placeholder='https://youtube.com/...' />
+        </div>,
+      )
+    }
+
+    if (sec.submitText !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='submitText'>
+          <Label className='text-xs'>Submit Button Text</Label>
+          <Input className='h-8 text-xs' value={sec.submitText || ''} onChange={e => updateSection(i, 'submitText', e.target.value)} placeholder='Place Order' />
+        </div>,
+      )
+    }
+
+    if (sec.productId !== undefined) {
+      fields.push(
+        <div className='space-y-1' key='productId'>
+          <Label className='text-xs'>Product</Label>
+          <select className='w-full rounded-md border px-2 py-1.5 text-xs bg-background h-8' value={sec.productId || ''} onChange={e => updateSection(i, 'productId', e.target.value)}>
+            <option value=''>None (use page-level products)</option>
+            {selectedProducts.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            {sec.productId && !selectedProducts.find(p => p.id === sec.productId) && (
+              <option value={sec.productId} disabled>{sec.productId.slice(0, 12)}...</option>
+            )}
+          </select>
+        </div>,
+      )
+    }
+
+    if (sec.productIds !== undefined && Array.isArray(sec.productIds)) {
+      fields.push(
+        <div className='space-y-1 col-span-2' key='productIds'>
+          <Label className='text-xs'>Product IDs</Label>
+          <div className='flex flex-wrap gap-1.5'>
+            {sec.productIds.map((pid: string, pi: number) => {
+              const p = selectedProducts.find(sp => sp.id === pid)
+              return (
+                <Badge key={pi} variant='secondary' className='gap-1 pr-1 text-xs'>
+                  <span className='truncate max-w-[120px]'>{p?.name || pid.slice(0, 8) + '...'}</span>
+                  <button type='button' onClick={() => updateSection(i, 'productIds', sec.productIds.filter((_: any, j: number) => j !== pi))} className='ml-0.5 hover:text-destructive'>
+                    <X className='h-3 w-3' />
+                  </button>
+                </Badge>
+              )
+            })}
+          </div>
+          <div className='relative'>
+            <input type='text' placeholder='Type product ID and press Enter...'
+              className='w-full rounded-md border px-2 py-1.5 text-xs bg-background h-8'
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const val = (e.target as HTMLInputElement).value.trim()
+                  if (val && !sec.productIds.includes(val)) {
+                    updateSection(i, 'productIds', [...sec.productIds, val])
+                  }
+                  ;(e.target as HTMLInputElement).value = ''
+                }
+              }}
+            />
+          </div>
+        </div>,
+      )
+    }
+
+    if (sec.items !== undefined && Array.isArray(sec.items)) {
+      const first = sec.items[0]
+      const isIconText = first && 'icon' in first && 'text' in first && !('title' in first) && !('name' in first) && !('question' in first) && !('image' in first)
+      const isTitleText = first && 'title' in first && 'text' in first && !('icon' in first)
+      const isNameText = first && 'name' in first && 'text' in first && !('image' in first) && !('question' in first)
+      const isImageTitleText = first && 'image' in first && 'title' in first && 'text' in first
+      const isQuestionAnswer = first && 'question' in first && 'answer' in first
+
+      fields.push(
+        <div className='space-y-2 col-span-2' key='items'>
+          <Label className='text-xs'>Items</Label>
+          {sec.items.map((item: any, itemI: number) => (
+            <div key={itemI} className='border rounded p-2 space-y-2'>
+              <div className='flex items-center justify-between'>
+                <span className='text-xs text-muted-foreground'>Item #{itemI + 1}</span>
+                <button type='button' onClick={() => {
+                  const next = sec.items.filter((_: any, j: number) => j !== itemI)
+                  updateSection(i, 'items', next)
+                }} className='text-xs p-1 rounded hover:bg-destructive/10 text-destructive'>
+                  <X className='h-3 w-3' />
+                </button>
+              </div>
+              {isIconText && (
+                <div className='grid grid-cols-2 gap-2'>
+                  <Input className='h-8 text-xs' value={item.icon || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], icon: e.target.value }; updateSection(i, 'items', next) }} placeholder='Icon' />
+                  <Input className='h-8 text-xs' value={item.text || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], text: e.target.value }; updateSection(i, 'items', next) }} placeholder='Feature text' />
+                </div>
+              )}
+              {isTitleText && (
+                <div className='grid grid-cols-2 gap-2'>
+                  <Input className='h-8 text-xs' value={item.title || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], title: e.target.value }; updateSection(i, 'items', next) }} placeholder='Title' />
+                  <Input className='h-8 text-xs' value={item.text || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], text: e.target.value }; updateSection(i, 'items', next) }} placeholder='Description' />
+                </div>
+              )}
+              {isNameText && (
+                <div className='grid grid-cols-3 gap-2'>
+                  <Input className='h-8 text-xs' value={item.name || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], name: e.target.value }; updateSection(i, 'items', next) }} placeholder='Name' />
+                  <Input className='h-8 text-xs' value={item.text || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], text: e.target.value }; updateSection(i, 'items', next) }} placeholder='Review' />
+                  <Input className='h-8 text-xs' type='number' min={1} max={5} value={item.rating ?? 5} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], rating: parseInt(e.target.value) || 5 }; updateSection(i, 'items', next) }} placeholder='Rating' />
+                </div>
+              )}
+              {isImageTitleText && (
+                <div className='grid grid-cols-2 gap-2'>
+                  <Input className='h-8 text-xs' value={item.image || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], image: e.target.value }; updateSection(i, 'items', next) }} placeholder='Image URL' />
+                  <Input className='h-8 text-xs' value={item.title || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], title: e.target.value }; updateSection(i, 'items', next) }} placeholder='Title' />
+                  <Input className='h-8 text-xs' value={item.text || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], text: e.target.value }; updateSection(i, 'items', next) }} placeholder='Review' />
+                  <Input className='h-8 text-xs' type='number' min={1} max={5} value={item.rating ?? 5} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], rating: parseInt(e.target.value) || 5 }; updateSection(i, 'items', next) }} placeholder='Rating' />
+                </div>
+              )}
+              {isQuestionAnswer && (
+                <div className='space-y-2'>
+                  <Input className='h-8 text-xs' value={item.question || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], question: e.target.value }; updateSection(i, 'items', next) }} placeholder='Question' />
+                  <Textarea className='text-xs' rows={2} value={item.answer || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], answer: e.target.value }; updateSection(i, 'items', next) }} placeholder='Answer' />
+                </div>
+              )}
+            </div>
+          ))}
+          <Button variant='outline' size='sm' className='text-xs' onClick={() => {
+            let newItem: any
+            if (isIconText) newItem = { icon: '✓', text: '' }
+            else if (isTitleText) newItem = { title: '', text: '' }
+            else if (isNameText) newItem = { name: '', text: '', rating: 5 }
+            else if (isImageTitleText) newItem = { image: '', title: '', text: '', rating: 5 }
+            else if (isQuestionAnswer) newItem = { question: '', answer: '' }
+            else newItem = { text: '' }
+            updateSection(i, 'items', [...sec.items, newItem])
+          }}>
+            <Plus className='h-3 w-3 mr-1' /> Add Item
+          </Button>
+        </div>,
+      )
+    }
+
+    return fields
+  }
 
   return (
     <>
@@ -444,76 +712,64 @@ export function LandingPages() {
                 {pageType === 'template' ? (
                   <div className='space-y-4'>
                     <div className='flex items-center justify-between'>
-                      <p className='text-sm font-medium'>Template Sections</p>
-                      <Button variant='outline' size='sm' onClick={() => setSections(JSON.parse(JSON.stringify(defaultSections)))} disabled={sections.length > 0}>
-                        Load Default Sections
-                      </Button>
+                      <p className='text-sm font-medium'>Template Sections ({sections.length})</p>
+                      <div className='relative' ref={sectionAddRef}>
+                        <Button variant='outline' size='sm' onClick={() => setShowSectionMenu(!showSectionMenu)}>
+                          <Plus className='h-4 w-4 mr-1' /> Add Section
+                        </Button>
+                        {showSectionMenu && (
+                          <div className='absolute right-0 top-full mt-1 z-50 bg-background border rounded-lg shadow-lg min-w-[200px] max-h-60 overflow-y-auto'>
+                            {Object.entries(SECTION_TYPES).map(([type, config]) => (
+                              <button
+                                key={type}
+                                type='button'
+                                onClick={() => { addSection(type); setShowSectionMenu(false) }}
+                                className='w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/50 text-left transition-colors'
+                              >
+                                <span>{config.icon}</span>
+                                <span>{config.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {sections.length === 0 ? (
                       <div className='text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg'>
                         <p className='text-sm'>No sections configured</p>
-                        <Button variant='outline' size='sm' className='mt-3' onClick={() => setSections(JSON.parse(JSON.stringify(defaultSections)))}>
-                          Load Default Sections
-                        </Button>
+                        <p className='text-xs mt-1'>Add sections to build your landing page.</p>
                       </div>
                     ) : (
                       <div className='space-y-3'>
                         {sections.map((sec, i) => (
                           <div key={i} className='border rounded-lg p-4 space-y-3'>
                             <div className='flex items-center justify-between'>
-                              <Badge variant='outline' className='text-xs uppercase'>{sec.type}</Badge>
                               <div className='flex items-center gap-2'>
-                                <button
-                                  onClick={() => updateSection(i, 'hidden', !sec.hidden)}
-                                  className={`text-xs p-1 rounded transition-colors ${sec.hidden ? 'text-muted-foreground' : 'text-foreground'}`}
-                                  title={sec.hidden ? 'Show section' : 'Hide section'}
-                                >
+                                <Badge variant='outline' className='text-xs uppercase'>{SECTION_TYPES[sec.type]?.label || sec.type}</Badge>
+                                <span className='text-xs text-muted-foreground'>#{i + 1}</span>
+                              </div>
+                              <div className='flex items-center gap-1'>
+                                <button type='button' onClick={() => moveSection(i, 'up')} disabled={i === 0} className='text-xs p-1 rounded hover:bg-muted/50 transition-colors disabled:opacity-30' title='Move up'>
+                                  <ChevronUp className='h-3.5 w-3.5' />
+                                </button>
+                                <button type='button' onClick={() => moveSection(i, 'down')} disabled={i === sections.length - 1} className='text-xs p-1 rounded hover:bg-muted/50 transition-colors disabled:opacity-30' title='Move down'>
+                                  <ChevronDown className='h-3.5 w-3.5' />
+                                </button>
+                                <button type='button' onClick={() => updateSection(i, 'hidden', !sec.hidden)} className={`text-xs p-1 rounded transition-colors ${sec.hidden ? 'text-muted-foreground' : 'text-foreground'}`} title={sec.hidden ? 'Show section' : 'Hide section'}>
                                   {sec.hidden ? <EyeOff className='h-3.5 w-3.5' /> : <Eye className='h-3.5 w-3.5' />}
                                 </button>
-                                <span className='text-xs text-muted-foreground'>Section {i + 1}</span>
+                                <button type='button' onClick={() => removeSection(i)} className='text-xs p-1 rounded hover:bg-destructive/10 text-destructive transition-colors' title='Remove section'>
+                                  <Trash2 className='h-3.5 w-3.5' />
+                                </button>
                               </div>
                             </div>
-                            <div className='grid grid-cols-2 gap-3'>
-                              <div className='space-y-1'>
-                                <Label className='text-xs'>Title</Label>
-                                <Input className='h-8 text-xs' value={sec.title || ''} onChange={e => updateSection(i, 'title', e.target.value)} placeholder='Section title' />
+                            {sec.hidden && (
+                              <div className='bg-muted/30 rounded px-3 py-2'>
+                                <p className='text-xs text-muted-foreground'>This section is hidden and will not appear on the published page.</p>
                               </div>
-                              {sec.subtitle !== undefined && (
-                                <div className='space-y-1'>
-                                  <Label className='text-xs'>Subtitle</Label>
-                                  <Input className='h-8 text-xs' value={sec.subtitle || ''} onChange={e => updateSection(i, 'subtitle', e.target.value)} placeholder='Subtitle' />
-                                </div>
-                              )}
-                              {sec.ctaText !== undefined && (
-                                <div className='space-y-1'>
-                                  <Label className='text-xs'>Button Text</Label>
-                                  <Input className='h-8 text-xs' value={sec.ctaText || ''} onChange={e => updateSection(i, 'ctaText', e.target.value)} placeholder='Shop Now' />
-                                </div>
-                              )}
-                              {sec.productId !== undefined && (
-                                <div className='space-y-1'>
-                                  <Label className='text-xs'>Product</Label>
-                                  <select
-                                    className='w-full rounded-md border px-2 py-1.5 text-xs bg-background h-8'
-                                    value={sec.productId || ''}
-                                    onChange={e => updateSection(i, 'productId', e.target.value)}
-                                  >
-                                    <option value=''>None (use page-level products)</option>
-                                    {selectedProducts.map(p => (
-                                      <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                    {sec.productId && !selectedProducts.find(p => p.id === sec.productId) && (
-                                      <option value={sec.productId} disabled>{sec.productId.slice(0, 12)}...</option>
-                                    )}
-                                  </select>
-                                </div>
-                              )}
-                              {sec.image !== undefined && (
-                                <div className='space-y-1 col-span-2'>
-                                  <Label className='text-xs'>Image URL</Label>
-                                  <Input className='h-8 text-xs' value={sec.image || ''} onChange={e => updateSection(i, 'image', e.target.value)} placeholder='https://...' />
-                                </div>
-                              )}
+                            )}
+                            <div className='grid grid-cols-2 gap-3'>
+                              {renderSectionFields(sec, i)}
                             </div>
                           </div>
                         ))}

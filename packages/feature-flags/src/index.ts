@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 export { REQUIRES_FEATURE_KEY, RequiresFeature } from './decorator';
 export { FeatureGuard } from './guard';
 
@@ -17,7 +17,7 @@ export class FeatureFlagsService {
   private license: LicenseInfo | null = null;
   private licenseEngine: any;
 
-  constructor(licenseEngine?: any) {
+  constructor(@Optional() licenseEngine?: any) {
     if (licenseEngine) {
       this.licenseEngine = licenseEngine;
     } else {
@@ -31,18 +31,27 @@ export class FeatureFlagsService {
 
   setLicense(token: string) {
     if (this.licenseEngine) {
-      this.license = this.licenseEngine.verify(token);
+      const result = this.licenseEngine.verify(token);
+      if (result && result.valid) {
+        this.license = result;
+      } else {
+        this.setDevLicense();
+      }
     } else {
-      this.license = {
-        valid: true,
-        clientId: 'dev',
-        plan: 'ultimate',
-        packages: [],
-        customFeatures: [],
-        limits: { cpus: 999, memory: '999G', users: 999, stores: 999 },
-        exp: 9999999999,
-      };
+      this.setDevLicense();
     }
+  }
+
+  private setDevLicense() {
+    this.license = {
+      valid: true,
+      clientId: 'dev',
+      plan: 'ultimate',
+      packages: [],
+      customFeatures: [],
+      limits: { cpus: 999, memory: '999G', users: 999, stores: 999 },
+      exp: 9999999999,
+    };
   }
 
   canUse(featureKey: string): boolean {

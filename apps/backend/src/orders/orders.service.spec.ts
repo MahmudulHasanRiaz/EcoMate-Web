@@ -5,7 +5,7 @@ import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
-import { InventoryService } from '../inventory/inventory.service';
+import { StockService } from '../stock/stock.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { CouponsService } from '../coupons/coupons.service';
@@ -170,9 +170,14 @@ describe('OrdersService', () => {
           },
         },
         {
-          provide: InventoryService,
+          provide: StockService,
           useValue: {
-            restockOrderItems: jest.fn().mockResolvedValue(undefined),
+            reserve: jest.fn().mockResolvedValue(undefined),
+            release: jest.fn().mockResolvedValue(undefined),
+            deduct: jest.fn().mockResolvedValue(undefined),
+            add: jest.fn().mockResolvedValue(undefined),
+            scrap: jest.fn().mockResolvedValue(undefined),
+            getAvailableStock: jest.fn().mockResolvedValue({ stock: 10, reserved: 0, available: 10 }),
           },
         },
         {
@@ -356,10 +361,6 @@ describe('OrdersService', () => {
         where: { isInitial: true },
       });
       expect(prisma.order.create).toHaveBeenCalled();
-      expect(prisma.productVariant.update).toHaveBeenCalledWith({
-        where: { id: 'variant-1' },
-        data: { stock: { decrement: 2 } },
-      });
       expect(result).toEqual(mockOrder);
     });
 

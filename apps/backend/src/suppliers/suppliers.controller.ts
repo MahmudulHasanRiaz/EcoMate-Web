@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/
 import { SuppliersService } from './suppliers.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Roles('superadmin', 'admin', 'manager')
@@ -32,5 +33,24 @@ export class SuppliersController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.suppliersService.remove(id);
+  }
+
+  @Post(':id/payments')
+  createPayment(@Param('id') id: string, @Body() dto: CreatePaymentDto) {
+    return this.suppliersService.createPayment(id, dto);
+  }
+
+  @Get(':id/payments')
+  getPayments(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.suppliersService.getPayments(id, page ? +page : 1, perPage ? +perPage : 20);
+  }
+
+  @Get('payments/:paymentId')
+  getPayment(@Param('paymentId') paymentId: string) {
+    return this.suppliersService.getPayment(paymentId);
   }
 }

@@ -3,6 +3,7 @@ import { InventoryService } from './inventory.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdjustInventoryDto, BulkAdjustInventoryDto } from './dto/adjust-inventory.dto';
+import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 
 @Controller('inventory')
 export class InventoryController {
@@ -73,5 +74,20 @@ export class InventoryController {
     @CurrentUser() user: { email: string },
   ) {
     return this.inventoryService.bulkAdjust(body.items, user.email);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('valuation')
+  async valuation(@Query() query: ValuationQueryDto) {
+    return this.inventoryService.valuation(query);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post('transfer')
+  async transfer(
+    @Body() body: StockTransferDto,
+    @CurrentUser() user: { email: string },
+  ) {
+    return this.inventoryService.transfer(body, user.email);
   }
 }

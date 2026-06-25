@@ -1,9 +1,18 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Patch, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { CreateGrnDto } from './dto/create-grn.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { Roles } from '../common/decorators/roles.decorator';
-import { PurchaseStatus } from '@prisma/client';
 
 @Controller('purchases')
 @Roles('superadmin', 'admin', 'manager')
@@ -11,8 +20,8 @@ export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService) {}
 
   @Post()
-  create(@Body() createPurchaseDto: CreatePurchaseDto) {
-    return this.purchasesService.create(createPurchaseDto);
+  create(@Body() dto: CreatePurchaseDto) {
+    return this.purchasesService.create(dto);
   }
 
   @Get()
@@ -36,8 +45,8 @@ export class PurchasesController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updatePurchaseDto: UpdatePurchaseDto) {
-    return this.purchasesService.update(id, updatePurchaseDto);
+  update(@Param('id') id: string, @Body() dto: UpdatePurchaseDto) {
+    return this.purchasesService.update(id, dto);
   }
 
   @Delete(':id')
@@ -45,19 +54,18 @@ export class PurchasesController {
     return this.purchasesService.remove(id);
   }
 
-  @Post(':id/receive')
-  receiveItems(
-    @Param('id') id: string,
-    @Body() body: { items: { itemId: string; receivedQty: number }[] },
-  ) {
-    return this.purchasesService.receiveItems(id, body.items);
+  @Post(':id/grn')
+  createGrn(@Param('id') id: string, @Body() dto: CreateGrnDto) {
+    return this.purchasesService.createGrn(id, dto);
   }
 
-  @Patch(':id/status')
-  updateStatus(
-    @Param('id') id: string,
-    @Body() body: { status: PurchaseStatus },
-  ) {
-    return this.purchasesService.updateStatus(id, body.status);
+  @Get(':id/grns')
+  getGrns(@Param('id') id: string) {
+    return this.purchasesService.getGrns(id);
+  }
+
+  @Get('grn/:grnId')
+  getGrn(@Param('grnId') grnId: string) {
+    return this.purchasesService.getGrn(grnId);
   }
 }

@@ -469,7 +469,7 @@ function CampaignsTab() {
             </div>
             <div className='grid gap-2'>
               <Label>Subject</Label>
-              <Input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder='Don\'t miss our summer sale!' />
+              <Input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="Don't miss our summer sale!" />
             </div>
             <div className='grid gap-2'>
               <Label>Template (optional)</Label>

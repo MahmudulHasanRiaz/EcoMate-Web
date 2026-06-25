@@ -3,7 +3,7 @@ import {
   Users, ShieldCheck, HelpCircle, Percent,
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
   Building2, ShoppingCart, Receipt, Bell,
-  Megaphone, UserPlus, UserCog, DollarSign
+  Megaphone, UserPlus, UserCog, DollarSign, BookOpen
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -41,6 +41,7 @@ export const sidebarData: SidebarData = {
             { title: 'All Inventory', url: '/op/inventory' },
             { title: 'Stock Overview', url: '/op/inventory/overview' },
             { title: 'Valuation', url: '/op/inventory/valuation' },
+            { title: 'Warehouses', url: '/op/inventory/warehouses', icon: Building2 },
           ],
         },
         {
@@ -60,6 +61,15 @@ export const sidebarData: SidebarData = {
         { title: 'Suppliers', url: '/op/suppliers', icon: Building2 },
         { title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart },
         { title: 'Expenses', url: '/op/expenses', icon: Receipt },
+        {
+          title: 'Accounting',
+          icon: BookOpen,
+          items: [
+            { title: 'Chart of Accounts', url: '/op/accounting' },
+            { title: 'Journal Entries', url: '/op/accounting/journal-entries' },
+            { title: 'Reports', url: '/op/accounting/reports' },
+          ],
+        },
         { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus },
         { title: 'Employees', url: '/op/employees', icon: UserCog },

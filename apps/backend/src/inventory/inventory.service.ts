@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 
 @Injectable()
 export class InventoryService {
@@ -522,5 +523,99 @@ export class InventoryService {
       }
     }
     return { results, totalAdjusted: results.filter((r) => r.success).length };
+  }
+
+  async valuation(query: ValuationQueryDto) {
+    const where: any = { isActive: true };
+    if (query.categoryId) where.categoryId = query.categoryId;
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { sku: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const products = await this.prisma.product.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        stock: true,
+        basePrice: true,
+        salePrice: true,
+        variants: {
+          select: {
+            id: true,
+            sku: true,
+            stock: true,
+            price: true,
+          },
+        },
+      },
+    });
+
+    let totalValue = 0;
+    let totalStock = 0;
+    const items: any[] = [];
+
+    for (const product of products) {
+      if (product.variants.length > 0) {
+        for (const v of product.variants) {
+          const price = Number(v.price || product.basePrice);
+          totalValue += price * v.stock;
+          totalStock += v.stock;
+          items.push({
+            id: v.id,
+            type: 'variant',
+            sku: v.sku,
+            stock: v.stock,
+            unitPrice: price,
+            totalValue: price * v.stock,
+          });
+        }
+      } else {
+        const price = Number(product.salePrice || product.basePrice);
+        totalValue += price * product.stock;
+        totalStock += product.stock;
+        items.push({
+          id: product.id,
+          type: 'product',
+          name: product.name,
+          sku: product.sku,
+          stock: product.stock,
+          unitPrice: price,
+          totalValue: price * product.stock,
+        });
+      }
+    }
+
+    return { items, totalValue, totalStock, count: items.length };
+  }
+
+  async transfer(dto: StockTransferDto, performedBy?: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: dto.productId },
+      select: { id: true, name: true, stock: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+
+    await this.prisma.inventoryLog.create({
+      data: {
+        productId: dto.productId,
+        quantity: 0,
+        type: 'transfer',
+        reason: `Transferred ${dto.quantity} units from ${dto.sourceLocation} to ${dto.destinationLocation}${dto.notes ? ': ' + dto.notes : ''}`,
+        performedBy,
+      },
+    });
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      quantity: dto.quantity,
+      source: dto.sourceLocation,
+      destination: dto.destinationLocation,
+    };
   }
 }

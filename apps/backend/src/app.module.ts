@@ -60,7 +60,12 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { EmployeesModule } from './employees/employees.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { StockModule } from './stock/stock.module';
+import { FinancialPeriodsModule } from './financial-periods/financial-periods.module';
+import { OpeningBalancesModule } from './opening-balances/opening-balances.module';
+import { AccountingModule } from './accounting/accounting.module';
 
 @Module({
   imports: [
@@ -118,6 +123,11 @@ import { PayrollModule } from './payroll/payroll.module';
     CampaignsModule,
     EmployeesModule,
     PayrollModule,
+    FinancialPeriodsModule,
+    OpeningBalancesModule,
+    AccountsModule,
+    AccountingModule,
+    StockModule,
   ],
   controllers: [OrderStatusController],
   providers: [

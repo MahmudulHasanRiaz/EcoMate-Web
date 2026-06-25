@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { join } from 'path';
-import { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { NestFastifyApplication, FastifyAdapter } from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
@@ -71,7 +71,10 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule);
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(),
+  );
   app.enableShutdownHooks();
 
   await app.register(helmet, {
@@ -112,6 +115,7 @@ async function bootstrap() {
     prefix: '/assets/',
     maxAge: 365 * 24 * 60 * 60 * 1000,
     immutable: true,
+    decorateReply: false,
   });
   await app.register(cookie);
 

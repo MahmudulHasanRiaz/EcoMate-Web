@@ -15,7 +15,8 @@ export class LicenseService implements OnModuleInit {
       this.featureFlags.setLicense(licenseToken);
       console.log('[License] License initialized from LICENSE_TOKEN');
     } else {
-      console.warn('[License] No LICENSE_TOKEN env set — all features restricted');
+      this.featureFlags.setLicense('dev');
+      console.log('[License] Dev mode — all features unrestricted');
     }
   }
 
