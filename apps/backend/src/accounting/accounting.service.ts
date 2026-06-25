@@ -123,6 +123,15 @@ export class AccountingService {
   async deleteEntry(id: string) {
     const entry = await this.prisma.journalEntry.findUnique({ where: { id } });
     if (!entry) throw new NotFoundException(`Journal entry with ID ${id} not found`);
+
+    // Check if linked to an expense
+    const linkedExpense = await this.prisma.expense.findUnique({ where: { journalEntryId: id } });
+    if (linkedExpense) {
+      throw new BadRequestException(
+        `Cannot delete journal entry linked to expense "${linkedExpense.description.slice(0, 50)}". Delete the expense first.`,
+      );
+    }
+
     return this.prisma.journalEntry.delete({ where: { id } });
   }
 
@@ -154,34 +163,37 @@ export class AccountingService {
 
   async profitAndLoss(periodId: string) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT a.id as account_id, a.code as account_code, a.name as account_name,
+      `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(jel.debit - jel.credit), 0) as balance
        FROM "Account" a
        LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
        LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
        WHERE a.type IN ('income', 'expense') AND a."isActive" = true
-       GROUP BY a.id, a.code, a.name
+       GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
       periodId,
     );
 
-    const accounts: any[] = [];
+    const incomeAccounts: any[] = [];
+    const expenseAccounts: any[] = [];
     let totalIncome = 0;
     let totalExpense = 0;
 
     for (const row of rows) {
-      const account = await this.prisma.account.findUnique({ where: { id: row.account_id } });
       const balance = Number(row.balance);
-      accounts.push({ ...row, balance });
-      if (account?.type === 'income') {
+      const entry = { ...row, balance };
+      if (row.type === 'income') {
+        incomeAccounts.push(entry);
         totalIncome += Math.abs(balance);
-      } else if (account?.type === 'expense') {
+      } else if (row.type === 'expense') {
+        expenseAccounts.push(entry);
         totalExpense += Math.abs(balance);
       }
     }
 
     return {
-      accounts,
+      incomeAccounts,
+      expenseAccounts,
       totalIncome,
       totalExpense,
       netProfit: totalIncome - totalExpense,
@@ -201,23 +213,30 @@ export class AccountingService {
       periodId,
     );
 
-    const accounts = rows.map((row: any) => ({
-      ...row,
-      balance: Number(row.balance),
-    }));
-
+    const assetAccounts: any[] = [];
+    const liabilityAccounts: any[] = [];
+    const equityAccounts: any[] = [];
     let totalAssets = 0;
     let totalLiabilities = 0;
     let totalEquity = 0;
 
-    for (const account of accounts) {
-      const absBalance = Math.abs(account.balance);
-      if (account.type === 'asset') totalAssets += absBalance;
-      else if (account.type === 'liability') totalLiabilities += absBalance;
-      else if (account.type === 'equity') totalEquity += absBalance;
+    for (const row of rows) {
+      const balance = Number(row.balance);
+      const absBalance = Math.abs(balance);
+      const entry = { ...row, balance };
+      if (row.type === 'asset') {
+        assetAccounts.push(entry);
+        totalAssets += absBalance;
+      } else if (row.type === 'liability') {
+        liabilityAccounts.push(entry);
+        totalLiabilities += absBalance;
+      } else if (row.type === 'equity') {
+        equityAccounts.push(entry);
+        totalEquity += absBalance;
+      }
     }
 
-    return { accounts, totalAssets, totalLiabilities, totalEquity };
+    return { assetAccounts, liabilityAccounts, equityAccounts, totalAssets, totalLiabilities, totalEquity };
   }
 
   async accountLedger(accountId: string, periodId?: string) {
@@ -245,6 +264,9 @@ export class AccountingService {
       credit: Number(line.credit),
     }));
 
-    return { account, entries };
+    const totalDebit = entries.reduce((sum: number, e: any) => sum + e.debit, 0);
+    const totalCredit = entries.reduce((sum: number, e: any) => sum + e.credit, 0);
+
+    return { account, entries, totalDebit, totalCredit };
   }
 }

@@ -58,18 +58,34 @@ export interface TrialBalanceResponse {
   totalCredit: number
 }
 
+export interface PLRow {
+  type: string
+  account_id: string
+  account_code: string
+  account_name: string
+  balance: number
+}
+
 export interface PLResponse {
-  incomeAccounts: TrialBalanceRow[]
-  expenseAccounts: TrialBalanceRow[]
+  incomeAccounts: PLRow[]
+  expenseAccounts: PLRow[]
   totalIncome: number
   totalExpense: number
   netProfit: number
 }
 
+export interface BSRow {
+  type: string
+  account_id: string
+  account_code: string
+  account_name: string
+  balance: number
+}
+
 export interface BalanceSheetResponse {
-  assetAccounts: TrialBalanceRow[]
-  liabilityAccounts: TrialBalanceRow[]
-  equityAccounts: TrialBalanceRow[]
+  assetAccounts: BSRow[]
+  liabilityAccounts: BSRow[]
+  equityAccounts: BSRow[]
   totalAssets: number
   totalLiabilities: number
   totalEquity: number

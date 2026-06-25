@@ -24,8 +24,27 @@ export class ExpensesService {
     const cat = await this.prisma.expenseCategory.findUnique({ where: { id: createExpenseDto.categoryId } });
     if (!cat) throw new NotFoundException(`Expense category ${createExpenseDto.categoryId} not found`);
 
+    // Validate paymentAccountId is asset-type if provided
+    if (createExpenseDto.paymentAccountId) {
+      const acct = await this.prisma.account.findUnique({ where: { id: createExpenseDto.paymentAccountId } });
+      if (!acct) throw new NotFoundException(`Payment account ${createExpenseDto.paymentAccountId} not found`);
+      if (acct.type !== 'asset') throw new BadRequestException('Payment account must be an Asset-type account (Cash/Bank)');
+    }
+
     // Check accounting_enabled
     const accountingEnabled = await this.isAccountingEnabled();
+
+    // Warn if accounting enabled but no financial period exists
+    if (accountingEnabled && cat.accountId && createExpenseDto.paymentAccountId) {
+      const periodExists = await this.prisma.financialPeriod.findFirst({
+        where: { startDate: { lte: createExpenseDto.expenseDate }, endDate: { gte: createExpenseDto.expenseDate } },
+      });
+      if (!periodExists) {
+        throw new BadRequestException(
+          'No open financial period covers this expense date. Create a financial period in Chart of Accounts first.',
+        );
+      }
+    }
 
     // Create expense in transaction — if accounting is active, generate journal entry too
     const expense = await this.prisma.$transaction(async (tx) => {
@@ -122,8 +141,14 @@ export class ExpensesService {
     await this.prisma.$transaction(async (tx) => {
       await tx.expense.update({ where: { id }, data: { ...updateExpenseDto, updatedBy: userId } });
 
-      // If expense has a journal entry and amount changed, update it
-      if (existing.journalEntryId && updateExpenseDto.amount != null) {
+      // If expense has a journal entry and amount or taxAmount changed, update it
+      const amountChanged = updateExpenseDto.amount != null && Number(updateExpenseDto.amount) !== Number(existing.amount);
+      const taxChanged = updateExpenseDto.taxAmount != null && Number(updateExpenseDto.taxAmount) !== Number(existing.taxAmount ?? 0);
+      if (existing.journalEntryId && (amountChanged || taxChanged)) {
+        const newAmount = Number(updateExpenseDto.amount ?? existing.amount);
+        const newTaxAmount = Number(updateExpenseDto.taxAmount ?? existing.taxAmount ?? 0);
+        const newTotal = newAmount + newTaxAmount;
+
         const cat = await tx.expenseCategory.findUnique({
           where: { id: updateExpenseDto.categoryId || existing.categoryId },
         });
@@ -133,8 +158,8 @@ export class ExpensesService {
           await tx.journalEntry.update({
             where: { id: existing.journalEntryId },
             data: {
-              totalDebit: updateExpenseDto.amount,
-              totalCredit: updateExpenseDto.amount,
+              totalDebit: newTotal,
+              totalCredit: newTotal,
               description: updateExpenseDto.description || existing.description,
               updatedAt: new Date(),
               updatedBy: userId,
@@ -150,13 +175,13 @@ export class ExpensesService {
           if (drLine) {
             await tx.journalEntryLine.update({
               where: { id: drLine.id },
-              data: { debit: updateExpenseDto.amount, credit: 0 },
+              data: { debit: newTotal, credit: 0 },
             });
           }
           if (crLine) {
             await tx.journalEntryLine.update({
               where: { id: crLine.id },
-              data: { credit: updateExpenseDto.amount, debit: 0 },
+              data: { credit: newTotal, debit: 0 },
             });
           }
         }

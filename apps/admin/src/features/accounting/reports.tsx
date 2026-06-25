@@ -155,7 +155,7 @@ function ProfitLossTab({ periodId }: { periodId: string }) {
                 income.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell>{row.account_name}</TableCell>
-                    <TableCell className='text-right font-mono'>{formatCurrency(parseFloat(row.total_credit) - parseFloat(row.total_debit))}</TableCell>
+                    <TableCell className='text-right font-mono'>{formatCurrency(Math.abs(Number(row.balance) || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -185,7 +185,7 @@ function ProfitLossTab({ periodId }: { periodId: string }) {
                 expenses.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell>{row.account_name}</TableCell>
-                    <TableCell className='text-right font-mono'>{formatCurrency(parseFloat(row.total_debit) - parseFloat(row.total_credit))}</TableCell>
+                    <TableCell className='text-right font-mono'>{formatCurrency(Math.abs(Number(row.balance) || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -258,7 +258,7 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
                 assets.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell>{row.account_name}</TableCell>
-                    <TableCell className='text-right font-mono'>{formatCurrency(parseFloat(row.total_debit) - parseFloat(row.total_credit))}</TableCell>
+                    <TableCell className='text-right font-mono'>{formatCurrency(Math.abs(Number(row.balance) || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -288,7 +288,7 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
                 liabilities.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell>{row.account_name}</TableCell>
-                    <TableCell className='text-right font-mono'>{formatCurrency(parseFloat(row.total_credit) - parseFloat(row.total_debit))}</TableCell>
+                    <TableCell className='text-right font-mono'>{formatCurrency(Math.abs(Number(row.balance) || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -318,7 +318,7 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
                 equity.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell>{row.account_name}</TableCell>
-                    <TableCell className='text-right font-mono'>{formatCurrency(parseFloat(row.total_credit) - parseFloat(row.total_debit))}</TableCell>
+                    <TableCell className='text-right font-mono'>{formatCurrency(Math.abs(Number(row.balance) || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -349,28 +349,18 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
   )
 }
 
-function AccountLedgerTab({ periodId }: { periodId: string }) {
-  const { data: accountsData } = useQuery({
-    queryKey: ['accounts-flat'],
-    queryFn: () => accountingApi.listAccounts({ perPage: 200 }).then(r => r.data),
-  })
-
-  const [selectedAccountId, setSelectedAccountId] = useState('')
-
+function AccountLedgerTab({ periodId, accountId: selectedAccountId }: { periodId: string; accountId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['account-ledger', selectedAccountId, periodId],
     queryFn: () => accountingApi.accountLedger(selectedAccountId, periodId || undefined).then(r => r.data),
     enabled: !!selectedAccountId,
   })
 
-  const accountsList = Array.isArray(accountsData?.data) ? accountsData.data : []
-  const accountsByType = groupAccountsByType(accountsList)
-
   if (!selectedAccountId) {
     return (
       <div className='flex flex-col items-center justify-center py-12 text-muted-foreground'>
         <FileText className='h-10 w-10 mb-2' />
-        <p>Select an account to view ledger</p>
+        <p>Select an account above to view ledger</p>
       </div>
     )
   }
@@ -520,7 +510,7 @@ export function Reports() {
                 </SelectContent>
               </Select>
             </div>
-            <AccountLedgerTab periodId={selectedPeriodId} />
+            <AccountLedgerTab periodId={selectedPeriodId} accountId={selectedLedgerAccountId} />
           </TabsContent>
         </Tabs>
       </Main>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Receipt } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Receipt, BookOpen } from 'lucide-react'
 import { expensesApi, type ExpenseResponse } from './api'
 import { expenseCategoriesApi } from '@/features/expense-categories/api'
 import { accountingApi } from '@/features/accounting/api'
@@ -39,7 +39,6 @@ export function Expenses() {
     amount: '',
     taxAmount: '',
     expenseDate: '',
-    paymentMethod: '',
     paymentAccountId: '',
     referenceNo: '',
     notes: '',
@@ -62,7 +61,7 @@ export function Expenses() {
     queryKey: ['accounts-tree'],
     queryFn: () => accountingApi.getAccountTree().then(r => r.data),
   })
-  const paymentAccounts = Array.isArray(accountTree) ? accountTree.flatMap((a: any) => [a, ...(a.children || [])]) : []
+  const paymentAccounts = Array.isArray(accountTree) ? accountTree.flatMap((a: any) => [a, ...(a.children || [])]).filter((a: any) => a.type === 'asset' && !a.isGroup) : []
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['expenses-summary'],
@@ -111,7 +110,7 @@ export function Expenses() {
   })
 
   function resetForm() {
-    setForm({ description: '', categoryId: '', amount: '', taxAmount: '', expenseDate: '', paymentMethod: '', paymentAccountId: '', referenceNo: '', notes: '' })
+    setForm({ description: '', categoryId: '', amount: '', taxAmount: '', expenseDate: '', paymentAccountId: '', referenceNo: '', notes: '' })
   }
 
   function openCreate() {
@@ -128,7 +127,6 @@ export function Expenses() {
       amount: String(expense.amount),
       taxAmount: expense.taxAmount ? String(expense.taxAmount) : '',
       expenseDate: expense.expenseDate.slice(0, 10),
-      paymentMethod: expense.paymentMethod || '',
       paymentAccountId: expense.paymentAccountId || '',
       referenceNo: expense.referenceNo || '',
       notes: expense.notes || '',
@@ -143,7 +141,6 @@ export function Expenses() {
       amount: parseFloat(form.amount) || 0,
       taxAmount: form.taxAmount ? parseFloat(form.taxAmount) : undefined,
       expenseDate: form.expenseDate,
-      paymentMethod: form.paymentMethod || undefined,
       paymentAccountId: form.paymentAccountId || undefined,
       referenceNo: form.referenceNo || undefined,
       notes: form.notes || undefined,
@@ -240,6 +237,7 @@ export function Expenses() {
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead className='text-right'>Amount</TableHead>
+                  <TableHead className='text-center'>JE</TableHead>
                   <TableHead>Payment Method</TableHead>
                   <TableHead className='w-[80px]'></TableHead>
                 </TableRow>
@@ -247,13 +245,13 @@ export function Expenses() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className='text-center py-8'>
+                    <TableCell colSpan={7} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto text-muted-foreground' />
                     </TableCell>
                   </TableRow>
                 ) : listData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className='text-center py-8 text-muted-foreground'>
+                    <TableCell colSpan={7} className='text-center py-8 text-muted-foreground'>
                       No expenses found
                     </TableCell>
                   </TableRow>
@@ -276,6 +274,14 @@ export function Expenses() {
                         </Badge>
                       </TableCell>
                       <TableCell className='text-right font-mono'>{formatCurrency(expense.amount)}</TableCell>
+                      <TableCell className='text-center'>
+                        {expense.journalEntry ? (
+                          <Badge variant='outline' className='text-xs gap-1 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400'>
+                            <BookOpen className='h-3 w-3' />
+                            JE
+                          </Badge>
+                        ) : <span className='text-muted-foreground text-xs'>—</span>}
+                      </TableCell>
                       <TableCell className='text-muted-foreground'>
                         {expense.paymentAccount
                           ? <span className='font-mono text-xs'>{expense.paymentAccount.name}</span>
@@ -403,15 +409,15 @@ export function Expenses() {
                 onChange={e => setForm(f => ({ ...f, expenseDate: e.target.value }))}
               />
             </div>
-            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
-              <div className='grid gap-2'>
-                <Label>Payment Account</Label>
+            <div className='grid gap-2'>
+              <Label>Payment Account</Label>
+              {paymentAccounts && paymentAccounts.length > 0 ? (
                 <Select
                   value={form.paymentAccountId}
                   onValueChange={v => setForm(f => ({ ...f, paymentAccountId: v }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder='Select account' />
+                    <SelectValue placeholder='Select account (source of funds)' />
                   </SelectTrigger>
                   <SelectContent>
                     {(paymentAccounts || []).map((acct: any) => (
@@ -421,15 +427,14 @@ export function Expenses() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className='grid gap-2'>
-                <Label>Payment Method (free-text)</Label>
-                <Input
-                  value={form.paymentMethod}
-                  onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
-                  placeholder='Cash, Bank, Card...'
-                />
-              </div>
+              ) : accountTree ? (
+                <p className='text-xs text-muted-foreground'>No asset accounts found. Create one in Chart of Accounts.</p>
+              ) : (
+                <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+                  <Loader2 className='animate-spin h-3.5 w-3.5' />
+                  Loading accounts...
+                </div>
+              )}
             </div>
               <div className='grid gap-2'>
                 <Label>Reference No. (optional)</Label>
@@ -439,7 +444,6 @@ export function Expenses() {
                   placeholder='INV-001'
                 />
               </div>
-            </div>
             <div className='grid gap-2'>
               <Label>Notes (optional)</Label>
               <textarea
