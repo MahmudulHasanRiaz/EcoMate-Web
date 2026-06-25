@@ -218,7 +218,7 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
                   {orderSummary.recentOrders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className='font-mono text-xs'>
-                        {order.id}
+                        {order.displayId || order.id.slice(0, 8)}
                       </TableCell>
                       <TableCell>
                         <Badge

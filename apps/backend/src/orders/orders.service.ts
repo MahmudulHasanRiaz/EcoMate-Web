@@ -1337,41 +1337,6 @@ export class OrdersService {
     return { updated, total: orders.length };
   }
 
-  async backfillDisplayIds() {
-    const orders = await this.prisma.order.findMany({
-      where: { displayId: null },
-      select: { id: true, createdAt: true },
-      orderBy: { createdAt: 'asc' },
-    });
-    let updated = 0;
-    for (const o of orders) {
-      if (o.displayId) continue;
-      const id = await this.generateDisplayIdForDate(o.createdAt);
-      await this.prisma.order.update({
-        where: { id: o.id },
-        data: { displayId: id },
-      });
-      updated += 1;
-    }
-    return { updated, total: orders.length };
-  }
-
-  private async generateDisplayIdForDate(date: Date): Promise<string> {
-    const yy = String(date.getFullYear()).slice(2);
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    const dateStr = `${yy}${mm}${dd}`;
-    const prefix = `ORD-${dateStr}`;
-    return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
-        update: { seq: { increment: 1 } },
-      });
-      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
-    });
-  }
-
   private async firePurchaseIfModeMatches(
     statusName: string,
     order: any,
