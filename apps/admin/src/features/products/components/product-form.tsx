@@ -32,6 +32,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const queryClient = useQueryClient()
   const isEdit = mode === 'edit'
   const [tab, setTab] = useState('general')
+  const [createdProductId, setCreatedProductId] = useState<string | null>(null)
 
   const { data: fullProduct } = useQuery({
     queryKey: ['product', currentRow?.id || createdProductId],
@@ -101,7 +102,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; stock: number }>({ open: false, stock: 0 })
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
   const [manageStockJustToggled, setManageStockJustToggled] = useState(false)
-  const [createdProductId, setCreatedProductId] = useState<string | null>(null)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
