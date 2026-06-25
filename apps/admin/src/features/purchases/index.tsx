@@ -151,6 +151,7 @@ function PurchaseForm({
           className='h-9'
         />
         <p className='text-xs text-muted-foreground'>System PO number (PO-YYMMDD-XXXX) auto-generated on save.</p>
+        </div>
 
       <div className='space-y-1.5'>
         <div className='flex items-center justify-between'>
