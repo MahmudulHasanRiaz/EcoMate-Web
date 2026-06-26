@@ -15,7 +15,7 @@ export default function Footer({}: {}) {
 
   const footerColumns = config.menu?.footer?.columns || [];
 
-  const defaultColumns = footerColumns.length > 0 ? [] : [
+  const defaultColumns = [
     { id: 'info', title: 'Information', items: [
       { id: 'abt', type: 'custom', label: 'About us', url: '/about' },
       { id: 'cnt', type: 'custom', label: 'Contact us', url: '/support' },
@@ -52,7 +52,21 @@ export default function Footer({}: {}) {
     ]},
   ];
 
-  const columns = footerColumns.length > 0 ? footerColumns : defaultColumns;
+  // Merge admin columns with defaults, cap at 4
+  const columns = (() => {
+    if (footerColumns.length === 0) return defaultColumns;
+    const merged = [...footerColumns];
+    for (const def of defaultColumns) {
+      if (merged.length >= 4) break;
+      // Don't duplicate same-title columns
+      if (!merged.some(c => c.title === def.title)) {
+        merged.push(def);
+      }
+    }
+    return merged;
+  })();
+
+  const colCount = columns.length;
 
   return (
     <footer className="bg-white pt-16 pb-20 md:pb-8 border-t border-gray-100">
@@ -110,7 +124,7 @@ export default function Footer({}: {}) {
           </div>
 
           {/* Columns */}
-          <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-3 gap-8 md:gap-4">
+          <div className={`grid grid-cols-2 md:col-span-3 gap-8 md:gap-4 ${colCount === 1 ? 'md:grid-cols-1' : colCount === 2 ? 'md:grid-cols-2' : colCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
             {columns.map((col: any) => (
               <FooterColumn key={col.id} title={col.title} items={col.items} />
             ))}
