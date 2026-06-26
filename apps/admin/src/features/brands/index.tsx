@@ -103,7 +103,7 @@ export function Brands() {
       </Main>
 
       {/* Dialog for Create/Edit */}
-      <Dialog open={showCreate || !!editing} onOpenChange={o => { if (!o) { setShowCreate(false); setEditing(null) } }}>
+      <Dialog open={(showCreate || !!editing) && !pickerOpen} onOpenChange={o => { if (!o && !pickerOpen) { setShowCreate(false); setEditing(null) } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit Brand' : 'Add Brand'}</DialogTitle>

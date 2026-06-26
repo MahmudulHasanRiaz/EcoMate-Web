@@ -176,7 +176,7 @@ export function SizeCharts() {
         </CardContent></Card>
       </Main>
 
-      <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); setEditing(null) } }}>
+      <Dialog open={open && !pickerOpen} onOpenChange={v => { if (!v && !pickerOpen) { setOpen(false); setEditing(null) } }}>
         <DialogContent className='max-w-3xl max-h-[90vh] overflow-y-auto'>
           <DialogHeader><DialogTitle>{editing ? 'Edit Size Chart' : 'New Size Chart'}</DialogTitle></DialogHeader>
           <div className='space-y-4 py-2'>

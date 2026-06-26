@@ -244,7 +244,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
   const saving = createMut.isPending || updateMut.isPending
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open && !pickerOpen} onOpenChange={(v) => { if (pickerOpen) return; onOpenChange(v); }}>
       <DialogContent className='!max-w-6xl max-h-[95vh] overflow-hidden flex flex-col p-0'>
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? 'Edit Combo' : 'Create Combo'}</DialogTitle>
