@@ -23,8 +23,6 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
   const desktopScrollRef = useRef<HTMLDivElement>(null);
   const mobileScrollRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
-  const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
   const progressRef = useRef<number>(0);
 
   const hasMultiple = images.length > 1;
@@ -97,22 +95,6 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
     if (clamped !== activeIndex) setActiveIndex(clamped);
   }, [activeIndex, images.length]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    touchEndX.current = e.touches[0].clientX;
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    const diff = touchStartX.current - touchEndX.current;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0 && activeIndex < images.length - 1) scrollTo(activeIndex + 1);
-      else if (diff < 0 && activeIndex > 0) scrollTo(activeIndex - 1);
-    }
-  }, [activeIndex, images.length, scrollTo]);
-
   const goNext = useCallback(() => {
     if (activeIndex < images.length - 1) scrollTo(activeIndex + 1);
   }, [activeIndex, images.length, scrollTo]);
@@ -179,7 +161,7 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
               {images.map((img, i) => (
                 <div
                   key={i}
-                  className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative cursor-zoom-in"
+                  className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative cursor-pointer"
                   style={{ aspectRatio: '4/5' }}
                   onClick={() => setLightboxOpen(true)}
                 >
@@ -252,9 +234,6 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
           <div
             ref={mobileScrollRef}
             onScroll={handleScroll}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
             className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth"
           >
             {images.map((img, i) => (
@@ -270,7 +249,7 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
                   fill
                   priority={i === 0}
                   sizes="(max-width: 768px) 100vw, 50vw"
-                  className="object-cover"
+                  className="object-contain"
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   draggable={false}
                 />
@@ -321,13 +300,28 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
             <X size={28} />
           </button>
 
-          <div className="relative w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
+          <div className="relative w-full h-full flex items-center justify-center overflow-hidden select-none"
+            onClick={e => e.stopPropagation()}
+            onTouchStart={(e) => { const t = e.target as HTMLElement; t.dataset.touchStartX = String(e.touches[0].clientX); }}
+            onTouchMove={(e) => { const t = e.target as HTMLElement; t.dataset.touchEndX = String(e.touches[0].clientX); }}
+            onTouchEnd={(e) => {
+              const t = e.currentTarget;
+              const start = parseFloat(t.dataset.touchStartX || '0');
+              const end = parseFloat(t.dataset.touchEndX || '0');
+              const diff = start - end;
+              if (Math.abs(diff) > 50) {
+                if (diff > 0 && lightboxIndex < images.length - 1) setLightboxIndex(lightboxIndex + 1);
+                else if (diff < 0 && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
+              }
+            }}
+          >
             <Image
               src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
               alt={productName}
               width={800} height={800}
-              className="max-w-[95vw] max-h-[90vh] object-contain select-none"
+              className="max-w-[95vw] max-h-[90vh] object-contain"
               draggable={false}
+              priority
             />
           </div>
 
