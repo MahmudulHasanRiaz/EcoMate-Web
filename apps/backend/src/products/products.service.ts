@@ -219,9 +219,18 @@ export class ProductsService {
       };
     }
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      where.basePrice = {};
-      if (query.minPrice !== undefined) where.basePrice.gte = query.minPrice;
-      if (query.maxPrice !== undefined) where.basePrice.lte = query.maxPrice;
+      const priceFilter: any = {};
+      if (query.minPrice !== undefined) priceFilter.gte = query.minPrice;
+      if (query.maxPrice !== undefined) priceFilter.lte = query.maxPrice;
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { type: { not: 'variable' }, basePrice: priceFilter },
+            { type: 'variable', variants: { some: { price: priceFilter } } },
+          ],
+        },
+      ];
     }
     if (query.hasStock === true) {
       where.AND = [
@@ -324,9 +333,18 @@ export class ProductsService {
       };
     }
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      filters.basePrice = {};
-      if (query.minPrice !== undefined) filters.basePrice.gte = query.minPrice;
-      if (query.maxPrice !== undefined) filters.basePrice.lte = query.maxPrice;
+      const priceFilter: any = {};
+      if (query.minPrice !== undefined) priceFilter.gte = query.minPrice;
+      if (query.maxPrice !== undefined) priceFilter.lte = query.maxPrice;
+      filters.AND = [
+        ...(filters.AND || []),
+        {
+          OR: [
+            { type: { not: 'variable' }, basePrice: priceFilter },
+            { type: 'variable', variants: { some: { price: priceFilter } } },
+          ],
+        },
+      ];
     }
     if (query.hasStock === true) {
       filters.AND = [

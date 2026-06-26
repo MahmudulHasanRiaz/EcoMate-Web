@@ -1,6 +1,6 @@
 export function formatPrice(price: number | string, symbol = "৳"): string {
   const num = typeof price === "string" ? parseFloat(price) : price;
-  return symbol + Number(num.toFixed(2)).toLocaleString("en-BD");
+  return symbol + Number(num.toFixed(2)).toLocaleString();
 }
 
 export function slugify(str: string): string {

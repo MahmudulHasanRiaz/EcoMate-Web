@@ -44,13 +44,17 @@ export function transformBackendProduct(raw: any): Product {
   let displayBasePrice: number;
 
   if (isVar && variants.length > 0) {
-    const prices = variants.filter((v) => v.price > 0).map((v) => v.price);
-    const minPrice = prices.length > 0 ? Math.min(...prices) : rawBasePrice;
+    // Variable product: price = min variant price, original = basePrice or rawOriginalPrice
+    const prices = variants.map((v) => v.price);
+    const minPrice = Math.min(...prices);
     displayPrice = minPrice;
-    displayBasePrice = minPrice;
+    displayBasePrice = rawBasePrice;
     displaySalePrice = undefined;
-    displayOriginalPrice = rawOriginalPrice && rawOriginalPrice > minPrice ? rawOriginalPrice : undefined;
+    displayOriginalPrice = minPrice < rawBasePrice
+      ? rawBasePrice
+      : (rawOriginalPrice && rawOriginalPrice > minPrice ? rawOriginalPrice : undefined);
   } else {
+    // Simple product: price = salePrice or basePrice, original = basePrice when sale is lower
     displayPrice = rawSalePrice || rawBasePrice;
     displayBasePrice = rawBasePrice;
     displaySalePrice = rawSalePrice;
@@ -72,7 +76,7 @@ export function transformBackendProduct(raw: any): Product {
     category: raw.category?.name || "",
     categoryId: raw.categoryId || undefined,
     categorySlug: raw.category?.slug || undefined,
-    badge: raw.isFeatured ? "Featured" : displaySalePrice ? "Sale" : undefined,
+    badge: raw.isFeatured ? "Featured" : displayOriginalPrice ? "Sale" : undefined,
     saveAmount: displayOriginalPrice ? displayOriginalPrice - displayPrice : undefined,
     isFeatured: raw.isFeatured,
     description: raw.description || "",

@@ -81,7 +81,11 @@ export class SearchService {
       price: string;
     };
     const rows = await this.prisma.$queryRawUnsafe<ProductRow[]>(
-      `SELECT id, name, sku, COALESCE("salePrice", "basePrice")::text AS price
+      `SELECT id, name, sku,
+        CASE
+          WHEN type = 'variable' THEN COALESCE((SELECT MIN(price) FROM "ProductVariant" WHERE "productId" = id AND price IS NOT NULL), "basePrice")
+          ELSE COALESCE("salePrice", "basePrice")
+        END::text AS price
        FROM "Product"
        WHERE "isActive" = true AND fts @@ to_tsquery('simple', $1)
        ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC

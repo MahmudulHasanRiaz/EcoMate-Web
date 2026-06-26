@@ -603,7 +603,7 @@ export class ImportService {
       return;
     }
 
-    const price = this.parsePrice(data['Regular price']);
+    const price = this.parsePrice(data['Sale price']) ?? this.parsePrice(data['Regular price']);
     const stock = this.parseInt(data.Stock) ?? 0;
     const images = this.parseImages(data.Images);
     const mainImage = images[0];

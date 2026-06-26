@@ -148,7 +148,7 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       variantAttributes: variantAttrs,
       name: `${product.name} - ${variantLabel}`,
       price: matchingVariant.price,
-      originalPrice: matchingVariant.price < product.price ? product.price : undefined,
+      originalPrice: matchingVariant.price < (product.originalPrice || product.basePrice) ? (product.originalPrice || product.basePrice) : undefined,
       image: matchingVariant.image || product.image,
       quantity: 1,
       slug: product.slug,
@@ -191,8 +191,8 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
               <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">{product.name}</h3>
               <div className="flex items-center gap-1.5 mt-1.5">
                 <span className="text-lg font-black text-brand-blue">{config.currency.symbol}{displayPrice.toLocaleString()}</span>
-                {matchingVariant && matchingVariant.price < product.price && (
-                  <span className="text-sm text-gray-300 line-through">{config.currency.symbol}{product.price.toLocaleString()}</span>
+                {matchingVariant && (product.originalPrice || product.basePrice) && matchingVariant.price < (product.originalPrice || product.basePrice) && (
+                  <span className="text-sm text-gray-300 line-through">{config.currency.symbol}{(product.originalPrice || product.basePrice).toLocaleString()}</span>
                 )}
               </div>
               {matchingVariant && matchingVariant.stock > 0 && matchingVariant.stock <= 10 && (

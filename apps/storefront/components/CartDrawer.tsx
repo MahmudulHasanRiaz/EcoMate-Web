@@ -25,8 +25,10 @@ function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: stri
 function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
   const [upsells, setUpsells] = useState<any[]>([]);
   const { addToCart } = useCart();
+  const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
   const s = currencySymbol;
+const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   useEffect(() => {
     getProducts({ isFeatured: true, perPage: 6, isActive: true })
@@ -37,6 +39,10 @@ function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
   if (upsells.length === 0) return null;
 
   const handleAdd = (p: any) => {
+    if (p.type === 'variable') {
+      router.push(p.slug ? `/products/${p.slug}` : `/products/${p.id}`);
+      return;
+    }
     addToCart({ id: p.id, name: p.name, price: p.price, originalPrice: p.salePrice || p.originalPrice, image: p.image, quantity: 1, slug: p.slug, category: p.category });
   };
 
@@ -58,7 +64,7 @@ function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
             </div>
             <div className="flex-1 flex flex-col justify-center min-w-0">
               <h4 className="text-[12px] font-medium text-gray-800 leading-snug mb-1 line-clamp-2">{p.name}</h4>
-              <p className="text-[12px] text-gray-500 mb-2">{s}{p.price?.toLocaleString()}.00</p>
+              <p className="text-[12px] text-gray-500 mb-2">{s}{fmt(p.price || 0)}</p>
               <button onClick={() => handleAdd(p)}
                 className="bg-[#ea7024] text-white text-[11px] px-4 py-1.5 rounded-full font-medium hover:bg-[#d66520] transition-colors w-fit">
                 + Add
@@ -75,6 +81,7 @@ export default function CartDrawer() {
   const { items, updateQuantity, removeFromCart, cartTotal, isCartOpen, setIsCartOpen } = useCart();
   const { config } = useStorefrontConfig();
   const s = config.currency.symbol;
+  const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
 
@@ -227,10 +234,10 @@ export default function CartDrawer() {
                       </div>
                       
                       <div className="font-sans text-[13px] text-gray-800 whitespace-nowrap hidden sm:block">
-                        &times; {s}{item.price.toLocaleString()}.00 
+                        &times; {s}{fmt(item.price)}
                       </div>
                       <div className="font-sans text-[13px] font-medium text-gray-900 whitespace-nowrap">
-                        = {s}{(item.price * item.quantity).toLocaleString()}.00
+                        = {s}{fmt(item.price * item.quantity)}
                       </div>
                     </div>
                   </div>
@@ -256,7 +263,7 @@ export default function CartDrawer() {
           <div className="p-4 bg-[#f8f9fa] border-t border-gray-100">
             <div className="flex justify-between items-center mb-4 px-1">
               <span className="text-[16px] text-gray-800 font-medium tracking-wide">Total:</span>
-              <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{cartTotal.toLocaleString()}.00</span>
+              <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{fmt(cartTotal)}</span>
             </div>
             
             <button 
