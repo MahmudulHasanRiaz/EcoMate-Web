@@ -17,7 +17,7 @@ export class CategoriesService {
   ) {}
 
   async findMenuCategories() {
-    const cached = this.cache.get<any[]>('categories:menu');
+    const cached = await this.cache.get<any[]>('categories:menu');
     if (cached) return cached;
     const data = await this.prisma.category.findMany({
       where: { showInMenu: true, isActive: true },
@@ -34,7 +34,7 @@ export class CategoriesService {
   }
 
   async findAll() {
-    const cached = this.cache.get<any[]>('categories:all');
+    const cached = await this.cache.get<any[]>('categories:all');
     if (cached) return cached;
     const data = await this.prisma.category.findMany({
       include: { children: true, _count: { select: { products: true } } },

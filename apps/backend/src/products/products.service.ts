@@ -383,7 +383,7 @@ export class ProductsService {
 
   async findBySlug(slug: string) {
     const cacheKey = `product:slug:${slug}`;
-    const cached = this.cache.get<any>(cacheKey);
+    const cached = await this.cache.get<any>(cacheKey);
     if (cached) return cached;
     const product = await this.prisma.product.findUnique({
       where: { slug },

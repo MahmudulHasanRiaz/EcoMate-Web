@@ -215,7 +215,7 @@ export class SystemSettingsController {
   @Public()
   @Get('storefront')
   async getStorefrontConfig() {
-    const cached = this.cache.get<any>('storefront:config');
+    const cached = await this.cache.get<any>('storefront:config');
     if (cached) return cached;
     const settings = await this.prisma.systemSetting.findMany();
     const map: Record<string, string> = {};
