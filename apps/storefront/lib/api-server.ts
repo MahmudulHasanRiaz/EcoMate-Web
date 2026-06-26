@@ -15,7 +15,8 @@ export async function serverFetch<T = unknown>(
       ...fetchOptions,
     });
     if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
-    return res.json();
+    const text = await res.text();
+    return text ? JSON.parse(text) : null as unknown as T;
   } finally {
     clearTimeout(timeout);
   }

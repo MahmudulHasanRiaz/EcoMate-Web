@@ -42,6 +42,8 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
       next: { revalidate: 300 },
     });
 
+    if (!config) return DEFAULT_CONFIG;
+
     if (config?.menu) {
       const headerShowAll = config.menu.header?.showAllCategories;
       const mobileShowAll = config.menu.mobile?.showAllCategories;
@@ -59,12 +61,12 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
 
         const injectCategories = (section: any) => {
           if (!section || !section.showAllCategories) return section;
-          
+
           const itemsClone = cloneItems(section.items || []);
-          
+
           const existingCatIds = new Set<string>();
           const menuNodesByCatId = new Map<string, any>();
-          
+
           const walkMenu = (items: any[]) => {
             for (const item of items) {
               if (item.type === 'category' && item.categoryId) {
@@ -78,7 +80,7 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
 
           const excludedIds = new Set(section.excludedCategories || []);
           const categoriesToInject = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id));
-          
+
           const injectedNodesByCatId = new Map<string, any>();
           categoriesToInject.forEach(c => {
             injectedNodesByCatId.set(c.id, {
@@ -89,13 +91,13 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
               children: []
             });
           });
-          
+
           const rootInjectedItems: any[] = [];
 
           categoriesToInject.forEach(c => {
             const node = injectedNodesByCatId.get(c.id);
             if (!node) return;
-            
+
             if (c.parentId) {
                if (menuNodesByCatId.has(c.parentId)) {
                  const parentMenuNode = menuNodesByCatId.get(c.parentId);

@@ -4,6 +4,7 @@ import ArchivePageClient from "./ArchivePageClient";
 
 type ProductsSearchParams = {
   search?: string;
+  categoryId?: string;
   category?: string;
   tag?: string;
   brand?: string;
@@ -36,6 +37,7 @@ export default async function ProductsPage({
     isActive: true,
     hasStock: hideOos || undefined,
     search: sp.search || undefined,
+    categoryId: sp.categoryId || undefined,
     category: sp.category || undefined,
     tagSlug: sp.tag || undefined,
     brandSlug: sp.brand || undefined,

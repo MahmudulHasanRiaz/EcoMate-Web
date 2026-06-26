@@ -14,7 +14,7 @@ export interface ArchivePageClientProps {
   initialCursor: string | null;
   initialHasMore: boolean;
   categories: Category[];
-  filters: { search?: string; category?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
+  filters: { search?: string; category?: string; categoryId?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
   hasStock?: boolean;
 }
 
@@ -175,7 +175,10 @@ export default function ArchivePageClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialSearch = filters.search || '';
-  const initialCategory = filters.category || '';
+  const categoryFromId = filters.categoryId
+    ? categories.find(c => c.id === filters.categoryId)?.slug || null
+    : null;
+  const initialCategory = categoryFromId || filters.category || '';
   const initialTag = filters.tag || '';
   const initialMinPrice = filters.minPrice || '';
   const initialMaxPrice = filters.maxPrice || '';

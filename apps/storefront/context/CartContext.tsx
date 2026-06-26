@@ -51,19 +51,21 @@ export function getItemKey(item: { id: string; variantId?: string; comboSelectio
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(() => loadCart());
+  const [items, setItems] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const userDismissedRef = useRef(false);
+
+  // Load cart from localStorage after hydration to avoid SSR mismatch
+  useEffect(() => {
+    setItems(loadCart());
+    setLoaded(true);
+  }, []);
 
   const handleSetIsCartOpen = useCallback((open: boolean) => {
     if (!open) userDismissedRef.current = true;
     else userDismissedRef.current = false;
     setIsCartOpen(open);
-  }, []);
-
-  useEffect(() => {
-    setLoaded(true);
   }, []);
 
   useEffect(() => {
