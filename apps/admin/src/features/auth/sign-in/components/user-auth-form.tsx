@@ -54,20 +54,37 @@ export function UserAuthForm({
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/auth/login`,
-        { email: data.email, password: data.password },
-        { withCredentials: true, headers: { 'Content-Type': 'application/json' } },
-      )
+      // Retry on network errors (ECONNREFUSED during backend startup race)
+      for (let attempt = 0; attempt <= 3; attempt++) {
+        try {
+          const response = await axios.post(
+            `${API_URL}/auth/login`,
+            { email: data.email, password: data.password },
+            { withCredentials: true, headers: { 'Content-Type': 'application/json' } },
+          )
 
-      auth.setUser(response.data.user)
-      auth.setAccessToken(response.data.accessToken)
+          auth.setUser(response.data.user)
+          auth.setAccessToken(response.data.accessToken)
 
-      const targetPath = redirectTo || '/'
-      navigate({ to: targetPath, replace: true })
+          const targetPath = redirectTo || '/'
+          navigate({ to: targetPath, replace: true })
 
-      toast.success(`Welcome back!`)
+          toast.success(`Welcome back!`)
+          return
+        } catch (error: any) {
+          // Only retry on network errors (no response from server)
+          if (attempt < 3 && !error.response) {
+            const delay = 500 * Math.pow(2, attempt)
+            console.warn(`[login] Retry ${attempt + 1}/3 in ${delay}ms`)
+            await new Promise((r) => setTimeout(r, delay))
+            continue
+          }
+          throw error
+        }
+      }
     } catch (error: any) {
       let message = error.response?.data?.message
       if (!message) {
