@@ -71,7 +71,17 @@ export class CacheService implements OnModuleDestroy {
     this.store.delete(key);
   }
 
-  invalidateByPrefix(prefix: string): void {
+  async invalidateByPrefix(prefix: string): Promise<void> {
+    if (this.redis) {
+      try {
+        let cursor = '0';
+        do {
+          const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
+          if (keys.length) await this.redis.del(...keys);
+          cursor = nextCursor;
+        } while (cursor !== '0');
+      } catch { /* fall through to memory */ }
+    }
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) this.store.delete(key);
     }

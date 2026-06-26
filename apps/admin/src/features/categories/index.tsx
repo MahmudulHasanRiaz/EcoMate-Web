@@ -103,7 +103,8 @@ export function Categories() {
           </Card>
         )}
 
-        <Dialog open={showCreate || !!editing} onOpenChange={() => { setShowCreate(false); setEditing(null); }}>
+        // ── Dialog ──
+<Dialog open={showCreate || !!editing} onOpenChange={(open) => { if (!open) { setShowCreate(false); setEditing(null); } }}>
           <DialogContent>
             <DialogHeader><DialogTitle>{editing ? 'Edit Category' : 'New Category'}</DialogTitle></DialogHeader>
             <div className='space-y-3'>

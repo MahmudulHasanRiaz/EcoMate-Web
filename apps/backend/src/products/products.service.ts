@@ -406,7 +406,7 @@ export class ProductsService {
       },
     });
     if (!product) throw new NotFoundException('Product not found');
-    this.cache.set(cacheKey, product);
+    await this.cache.set(cacheKey, product);
     return product;
   }
 
@@ -498,7 +498,7 @@ export class ProductsService {
     });
 
     await this.syncTags(dto.tags || [], product.id);
-    this.cache.invalidateByPrefix('product:');
+    await this.cache.invalidateByPrefix('product:');
 
     if (dto.images?.length) {
       const synced = await this.media.syncEntityImages(
@@ -617,7 +617,7 @@ export class ProductsService {
       }
     }
 
-    this.cache.invalidateByPrefix('product:');
+    await this.cache.invalidateByPrefix('product:');
     return product;
   }
 
@@ -632,7 +632,7 @@ export class ProductsService {
       await this.media.detachAll('variant', v.id);
     }
     await this.media.detachAll('product', id);
-    this.cache.invalidateByPrefix('product:');
+    await this.cache.invalidateByPrefix('product:');
     try {
       await this.prisma.product.delete({ where: { id } });
     } catch (e: any) {

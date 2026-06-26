@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle, Plus, Minus } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -194,6 +194,9 @@ export default function ArchivePageClient({
   const [tagSearch, setTagSearch] = React.useState('');
   const [priceMin, setPriceMin] = React.useState(initialMinPrice);
   const [priceMax, setPriceMax] = React.useState(initialMaxPrice);
+  const [navigating, setNavigating] = React.useState(false);
+
+  useEffect(() => { setNavigating(false); }, [filters]);
 
   const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
     useInfiniteScroll<Product>({
@@ -299,6 +302,7 @@ export default function ArchivePageClient({
       else params.delete('sort');
     }
     const qs = params.toString();
+    setNavigating(true);
     router.push(`/products${qs ? `?${qs}` : ''}`);
   };
 
@@ -331,6 +335,7 @@ export default function ArchivePageClient({
   };
 
   const clearAll = () => {
+    setNavigating(true);
     router.push('/products');
   };
 
@@ -556,7 +561,15 @@ export default function ArchivePageClient({
             </div>
           </aside>
 
-          <main className="flex-1">
+          <main className="flex-1 relative">
+            {navigating && (
+              <div className="absolute inset-0 bg-white/70 z-10 flex items-center justify-center rounded-lg">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-brand-blue" />
+                  <span className="text-sm text-gray-500 font-medium">Updating…</span>
+                </div>
+              </div>
+            )}
             {visibleItems.length === 0 && !isLoading ? (
               <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-gray-200">
                 <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300"><Search size={40} /></div>

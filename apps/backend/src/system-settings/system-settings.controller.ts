@@ -451,7 +451,7 @@ export class SystemSettingsController {
         showReviews: map['show_reviews'] !== 'false',
       },
     };
-    this.cache.set('storefront:config', result);
+    await this.cache.set('storefront:config', result);
     return result;
   }
 
@@ -533,7 +533,7 @@ export class SystemSettingsController {
       create: { key, value },
       update: { value },
     });
-    this.cache.delete('storefront:config');
+    await this.cache.delete('storefront:config');
     return { key, value };
   }
 

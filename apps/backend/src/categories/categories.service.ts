@@ -29,7 +29,7 @@ export class CategoriesService {
       },
       orderBy: { menuSortOrder: 'asc' },
     });
-    this.cache.set('categories:menu', data);
+    await this.cache.set('categories:menu', data);
     return data;
   }
 
@@ -40,7 +40,7 @@ export class CategoriesService {
       include: { children: true, _count: { select: { products: true } } },
       orderBy: { sortOrder: 'asc' },
     });
-    this.cache.set('categories:all', data);
+    await this.cache.set('categories:all', data);
     return data;
   }
 
@@ -64,7 +64,7 @@ export class CategoriesService {
     if (existing) throw new ConflictException('Slug already exists');
 
     const created = await this.prisma.category.create({ data: dto as any });
-    this.cache.invalidateByPrefix('categories:');
+    await this.cache.invalidateByPrefix('categories:');
 
     if (dto.image) {
       const [resolved] = await this.media.syncEntityImages(
@@ -97,7 +97,7 @@ export class CategoriesService {
       where: { id },
       data: dto as any,
     });
-    this.cache.invalidateByPrefix('categories:');
+    await this.cache.invalidateByPrefix('categories:');
 
     if (dto.image !== undefined) {
       const urls = dto.image ? [dto.image] : [];
