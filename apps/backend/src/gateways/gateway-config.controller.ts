@@ -3,6 +3,7 @@ import { PaymentOptionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { normalizePhone } from '../common/utils/phone-utils';
 
 @Controller('gateways')
@@ -75,6 +76,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
   // ============ ADMIN: Payment Options CRUD ============
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Get('options')
   async findAllOptions() {
     return this.prisma.paymentOption.findMany({
@@ -88,6 +90,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Put('options/:type')
   async upsertOption(@Param('type') type: string, @Body() dto: any) {
     const displayNames: Record<string, string> = {
@@ -104,6 +107,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
   // ============ ADMIN: Payment Gateways CRUD ============
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Get('admin')
   async findAllAdmin(@Query('optionType') optionType?: string) {
     const where = optionType ? { paymentOptionType: optionType as PaymentOptionType } : {};
@@ -128,6 +132,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Post()
   async createGateway(@Body() dto: any) {
     const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
@@ -147,6 +152,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Put(':code')
   async upsertGateway(@Param('code') code: string, @Body() dto: any) {
     const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
@@ -178,6 +184,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
   // ============ ADMIN: Product Payment Option Overrides ============
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Get('product-overrides/:productId')
   async findProductOverrides(@Param('productId') productId: string) {
     return this.prisma.productPaymentOption.findMany({
@@ -187,6 +194,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Put('product-overrides/:productId/:type')
   async upsertProductOverride(
     @Param('productId') productId: string,
@@ -201,6 +209,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Delete('product-overrides/:productId/:type')
   async deleteProductOverride(
     @Param('productId') productId: string,
@@ -213,6 +222,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
   // ============ ADMIN: Combo Payment Option Overrides ============
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Get('combo-overrides/:comboId')
   async findComboOverrides(@Param('comboId') comboId: string) {
     return this.prisma.productPaymentOption.findMany({
@@ -222,6 +232,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Put('combo-overrides/:comboId/:type')
   async upsertComboOverride(
     @Param('comboId') comboId: string,
@@ -236,6 +247,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Delete('combo-overrides/:comboId/:type')
   async deleteComboOverride(
     @Param('comboId') comboId: string,
@@ -247,6 +259,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_payments')
   @Get(':code')
   async findOne(@Param('code') code: string) {
     return this.prisma.paymentGateway.findUnique({ where: { code } });

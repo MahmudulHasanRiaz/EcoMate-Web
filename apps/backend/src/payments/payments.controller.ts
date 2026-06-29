@@ -4,12 +4,14 @@ import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly svc: PaymentsService) {}
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_payments')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -34,6 +36,7 @@ export class PaymentsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_payments')
   @Put(':id/verify')
   verify(
     @Param('id') id: string,

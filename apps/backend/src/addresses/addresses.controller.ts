@@ -5,9 +5,11 @@ import {
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('addresses')
+@RequiresFeature('storefront_account')
 export class AddressesController {
   constructor(private readonly svc: AddressesService) {}
 

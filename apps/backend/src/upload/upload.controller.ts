@@ -14,6 +14,7 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { MediaService } from '../media/media.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB per file
@@ -45,6 +46,7 @@ const fileFilter = (
 };
 
 @Controller('upload')
+@RequiresFeature('admin_media')
 export class UploadController {
   constructor(private readonly media: MediaService) {}
 

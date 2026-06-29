@@ -12,6 +12,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ImportService } from './import.service';
 import { OrderImportService } from './order-import.service';
 import { ImportJobManager } from './import-job-manager';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import * as Papa from 'papaparse';
 
@@ -26,6 +27,7 @@ function estimateCsvRows(content: string): number {
 
 
 @Controller('import')
+@RequiresFeature('admin_import')
 export class ImportController {
   constructor(
     private readonly importService: ImportService,

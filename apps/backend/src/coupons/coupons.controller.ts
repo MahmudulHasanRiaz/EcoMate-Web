@@ -10,11 +10,13 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 
 @Controller('coupons')
+@RequiresFeature('admin_coupons')
 export class CouponsController {
   constructor(private readonly couponsService: CouponsService) {}
 

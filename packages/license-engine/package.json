@@ -1,15 +1,15 @@
 {
   "name": "@ecomate/license-engine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "node-gyp rebuild",
-    "preinstall": "node-gyp install"
+    "build": "tsc",
+    "build:native": "node-gyp rebuild",
+    "test": "node test/index.test.js"
   },
-  "dependencies": {
-    "node-addon-api": "^8.3.1",
-    "node-gyp": "^11.2.0"
-  },
-  "gypfile": true
+  "devDependencies": {
+    "typescript": "^5"
+  }
 }

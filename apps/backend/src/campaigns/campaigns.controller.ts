@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -8,6 +9,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 
 @Roles('superadmin', 'admin')
 @Controller('campaigns')
+@RequiresFeature('admin_campaigns')
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 

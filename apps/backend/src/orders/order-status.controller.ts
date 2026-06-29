@@ -2,11 +2,13 @@ import { Controller, Get, Put, Body, Param, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 @Controller('order-statuses')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@RequiresFeature('admin_order_statuses')
 export class OrderStatusController {
   constructor(private readonly prisma: PrismaService) {}
 

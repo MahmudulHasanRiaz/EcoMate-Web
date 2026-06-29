@@ -1,78 +1,135 @@
 const assert = require('assert');
-const LicenseEngine = require('../index');
+const mod = require('../dist/index');
+const LicenseEngine = mod.LicenseEngine;
 
-const VALID_JWT = 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjbGllbnRJZCI6InRlc3QtY2xpZW50IiwicGxhbiI6ImVudGVycHJpc2UiLCJwYWNrYWdlcyI6WyJwb3MiXSwiY3VzdG9tRmVhdHVyZXMiOlsiYWR2YW5jZWQtcmVwb3J0cyJdLCJsaW1pdHMiOnsiY3B1cyI6NCwibWVtb3J5IjoiOEciLCJ1c2VycyI6MTAsInN0b3JlcyI6NX0sImV4cCI6OTk5OTk5OTk5OX0.ZmFrZXNpZ25hdHVyZQ';
+const KEYMATE_URL = 'http://localhost:3000/api/v1/saas';
 
-function test(desc, fn) {
-  try {
-    fn();
-    console.log(`  PASS  ${desc}`);
-  } catch (e) {
-    console.error(`  FAIL  ${desc}: ${e.message}`);
-    process.exitCode = 1;
-  }
+function mockFetch(handler) {
+  const orig = global.fetch;
+  global.fetch = handler;
+  return () => { global.fetch = orig; };
 }
 
-test('verify returns valid for well-formed JWT', () => {
-  const result = LicenseEngine.verify(VALID_JWT);
+const tests = [];
+
+function test(desc, fn) {
+  tests.push({ desc, fn });
+}
+
+const validResponse = {
+  valid: true,
+  plan: { id: 'p1', name: 'Growth', planType: 'fixed', price: 99 },
+  features: ['storefront_catalog', 'admin_products', 'admin_orders', 'admin_accounting'],
+  limits: { orders_per_month: 5000, staff_users: 10 },
+  domains: ['client-store.com'],
+  expiry: '2026-12-31T00:00:00Z',
+  lastCheckIn: null,
+};
+
+// ── verify ──
+test('verify returns valid license info', async () => {
+  const restore = mockFetch(() => Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve(validResponse),
+  }));
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const result = await engine.verify('test-license-key', 'client-store.com');
   assert.strictEqual(result.valid, true);
-  assert.strictEqual(result.clientId, 'test-client');
-  assert.strictEqual(result.plan, 'enterprise');
-  assert.deepStrictEqual(result.packages, ['pos']);
-  assert.deepStrictEqual(result.customFeatures, ['advanced-reports']);
-  assert.deepStrictEqual(result.limits, { cpus: 4, memory: '8G', users: 10, stores: 5 });
-  assert.strictEqual(result.exp, 9999999999);
+  assert.strictEqual(result.plan.name, 'Growth');
+  assert.ok(result.features.includes('storefront_catalog'));
+  assert.strictEqual(result.limits.orders_per_month, 5000);
+  restore();
 });
 
-test('verify returns invalid for malformed token', () => {
-  const result = LicenseEngine.verify('not-a-jwt');
+test('verify returns invalid for rejected license', async () => {
+  const restore = mockFetch(() => Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ valid: false, code: 'license_not_found' }),
+  }));
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const result = await engine.verify('bad-key');
   assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.code, 'license_not_found');
+  restore();
 });
 
-test('verify returns invalid for empty string', () => {
-  const result = LicenseEngine.verify('');
-  assert.strictEqual(result.valid, false);
+test('verify falls back to cache on network error', async () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL, offlineGraceMs: 5000 });
+  const restoreSuccess = mockFetch(() => Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve(validResponse),
+  }));
+  await engine.verify('cache-test-key', 'client-store.com');
+  restoreSuccess();
+  const restoreFail = mockFetch(() => Promise.reject(new Error('network error')));
+  const result = await engine.verify('cache-test-key', 'client-store.com');
+  assert.strictEqual(result.valid, true, 'should fall back to cached license');
+  assert.strictEqual(result.detail, 'offline_cache');
+  restoreFail();
 });
 
-test('canUseFeature returns true for plan-based feature', () => {
-  const license = LicenseEngine.verify(VALID_JWT);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'pos'), true);
-});
-
-test('canUseFeature returns true for enterprise plan multi-warehouse', () => {
-  const license = LicenseEngine.verify(VALID_JWT);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'multi-warehouse'), true);
-});
-
-test('canUseFeature returns true for custom feature', () => {
-  const license = LicenseEngine.verify(VALID_JWT);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'advanced-reports'), true);
-});
-
-test('canUseFeature returns false for unknown feature key', () => {
-  const license = LicenseEngine.verify(VALID_JWT);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'nonexistent-feature'), false);
+// ── canUseFeature ──
+test('canUseFeature checks feature list', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  assert.strictEqual(engine.canUseFeature({ valid: true, features: ['a', 'b'] }, 'a'), true);
+  assert.strictEqual(engine.canUseFeature({ valid: true, features: ['a', 'b'] }, 'c'), false);
 });
 
 test('canUseFeature returns false for invalid license', () => {
-  assert.strictEqual(LicenseEngine.canUseFeature({ valid: false }, 'pos'), false);
-  assert.strictEqual(LicenseEngine.canUseFeature(null, 'pos'), false);
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  assert.strictEqual(engine.canUseFeature({ valid: false }, 'a'), false);
+  assert.strictEqual(engine.canUseFeature(null, 'a'), false);
 });
 
-test('growth plan has pos feature', () => {
-  const growthPayload = btoa(JSON.stringify({ clientId: 'g', plan: 'growth', packages: [], customFeatures: [], limits: {}, exp: 9999999999 }));
-  const token = `header.${growthPayload}.sig`;
-  const license = LicenseEngine.verify(token);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'pos'), true);
+// ── checkLimit ──
+test('checkLimit returns ok when under limit', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const limit = engine.checkLimit({ valid: true, limits: { orders_per_month: 100 } }, 'orders_per_month', 50);
+  assert.strictEqual(limit.ok, true);
+  assert.strictEqual(limit.allowed, 100);
+  assert.strictEqual(limit.remaining, 50);
 });
 
-test('basic plan cannot use pos feature', () => {
-  const basicPayload = btoa(JSON.stringify({ clientId: 'b', plan: 'basic', packages: [], customFeatures: [], limits: {}, exp: 9999999999 }));
-  const token = `header.${basicPayload}.sig`;
-  const license = LicenseEngine.verify(token);
-  assert.strictEqual(LicenseEngine.canUseFeature(license, 'pos'), false);
+test('checkLimit returns fail when over limit', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const limit = engine.checkLimit({ valid: true, limits: { orders_per_month: 100 } }, 'orders_per_month', 150);
+  assert.strictEqual(limit.ok, false);
+  assert.strictEqual(limit.remaining, 0);
 });
 
-function btoa(s) {
-  return Buffer.from(s).toString('base64url');
-}
+test('checkLimit handles missing metric as unlimited', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const limit = engine.checkLimit({ valid: true, limits: {} }, 'nonexistent', 999999);
+  assert.strictEqual(limit.ok, true);
+  assert.strictEqual(limit.allowed, Infinity);
+});
+
+// ── setLicense / getLicense ──
+test('setLicense stores key for later verification', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  const result = engine.setLicense('test-key');
+  assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.code, 'not_verified');
+});
+
+test('getLicense returns null before verification', () => {
+  const engine = new LicenseEngine({ keymateUrl: KEYMATE_URL });
+  assert.strictEqual(engine.getLicense(), null);
+});
+
+(async () => {
+  let passed = 0;
+  let failed = 0;
+  for (const { desc, fn } of tests) {
+    try {
+      await fn();
+      console.log(`  PASS  ${desc}`);
+      passed++;
+    } catch (e) {
+      console.error(`  FAIL  ${desc}: ${e.message}`);
+      failed++;
+    }
+  }
+  console.log(`\n${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exitCode = 1;
+})();

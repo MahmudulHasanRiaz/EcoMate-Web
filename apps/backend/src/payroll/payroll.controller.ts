@@ -2,10 +2,12 @@ import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common
 import { PayrollService } from './payroll.service';
 import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
 import { GeneratePayslipDto } from './dto/generate-payslip.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('payroll')
 @Roles('superadmin', 'admin')
+@RequiresFeature('admin_payroll')
 export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 

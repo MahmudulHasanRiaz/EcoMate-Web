@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateNotificationSettingDto } from './dto/create-notification-setting.dto';
@@ -16,6 +17,7 @@ import { UpdateNotificationSettingDto } from './dto/update-notification-setting.
 import { SendNotificationDto } from './dto/send-notification.dto';
 
 @Controller('notifications')
+@RequiresFeature('admin_notifications')
 export class NotificationsController {
   constructor(private readonly svc: NotificationsService) {}
 

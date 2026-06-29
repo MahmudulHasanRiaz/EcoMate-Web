@@ -12,6 +12,7 @@ import { CombosService } from './combos.service';
 import { CreateComboDto, UpdateComboDto } from './dto/combos.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('combos')
 export class CombosController {
@@ -56,18 +57,21 @@ export class CombosController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_combos')
   @Post()
   async create(@Body() dto: CreateComboDto) {
     return this.combosService.create(dto);
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_combos')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateComboDto) {
     return this.combosService.update(id, dto);
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_combos')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.combosService.remove(id);

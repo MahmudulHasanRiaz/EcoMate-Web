@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 
@@ -36,18 +37,21 @@ export class ReviewsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_reviews')
   @Get()
   async findAll(@Query() query: { status?: string; productId?: string }) {
     return this.svc.findAll(query);
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_reviews')
   @Patch(':id/approve')
   async approve(@Param('id') id: string) {
     return this.svc.approve(id);
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_reviews')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.svc.remove(id);

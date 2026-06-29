@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Param, Query, Body, Req } from '@nestjs/common';
 import { BlockedEntriesService } from './blocked-entries.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('blocked-entries')
+@RequiresFeature('admin_blocking')
 export class BlockedEntriesController {
   constructor(private readonly svc: BlockedEntriesService) {}
 

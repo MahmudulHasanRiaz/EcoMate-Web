@@ -8,6 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -16,6 +17,7 @@ import { BulkDeleteTasksDto, BulkUpdateTasksDto } from './dto/bulk-task.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('tasks')
+@RequiresFeature('admin_tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 

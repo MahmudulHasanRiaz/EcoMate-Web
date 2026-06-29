@@ -9,9 +9,11 @@ import {
   Body,
 } from '@nestjs/common';
 import { MediaService } from './media.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('media')
+@RequiresFeature('admin_media')
 export class MediaController {
   constructor(private readonly svc: MediaService) {}
 

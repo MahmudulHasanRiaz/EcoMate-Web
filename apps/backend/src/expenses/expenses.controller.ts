@@ -3,10 +3,12 @@ import { ExpensesService } from './expenses.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Roles('superadmin', 'admin', 'manager')
 @Controller('expenses')
+@RequiresFeature('admin_expenses')
 export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
 

@@ -502,6 +502,7 @@
     "cache": "/Users/riaz/.npm",
     "node_gyp": "/usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
     "npm_version": "11.12.1",
+    "save": "",
     "init_module": "/Users/riaz/.npm-init.js",
     "userconfig": "/Users/riaz/.npmrc",
     "globalconfig": "/usr/local/etc/npmrc",

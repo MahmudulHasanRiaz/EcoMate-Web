@@ -3,10 +3,12 @@ import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('accounts')
 @Roles('superadmin', 'admin')
+@RequiresFeature('admin_accounting')
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 

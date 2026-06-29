@@ -1,8 +1,10 @@
 import { Controller, Get, Put, Body } from '@nestjs/common';
 import { BlockSettingsService } from './block-settings.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('block-settings')
+@RequiresFeature('admin_blocking')
 export class BlockSettingsController {
   constructor(private readonly svc: BlockSettingsService) {}
 

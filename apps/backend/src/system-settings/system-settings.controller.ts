@@ -13,6 +13,7 @@ import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import * as nodemailer from 'nodemailer';
 
 interface HeroSlide {
@@ -170,6 +171,7 @@ export class SystemSettingsController {
 
   @Get()
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_settings')
   async getAll() {
     const settings = await this.prisma.systemSetting.findMany();
     const map: Record<string, string> = {};
@@ -457,12 +459,14 @@ export class SystemSettingsController {
 
   @Get('storage')
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_settings')
   async getStorageConfig() {
     return this.storage.getConfig();
   }
 
   @Post(':key')
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_settings')
   async set(@Param('key') key: string, @Body() body: { value: string }) {
     let value = body.value ?? '';
 
@@ -539,6 +543,7 @@ export class SystemSettingsController {
 
   @Get('smtp')
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_settings')
   async getSmtpSettings() {
     const keys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
     const settings = await this.prisma.systemSetting.findMany({
@@ -552,6 +557,7 @@ export class SystemSettingsController {
 
   @Put('smtp')
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_settings')
   async updateSmtpSettings(@Body() body: Record<string, string>) {
     const allowedKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
     for (const key of allowedKeys) {
@@ -568,6 +574,7 @@ export class SystemSettingsController {
 
   @Post('smtp/test')
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_settings')
   async testSmtp() {
     const smtpHost = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_host' } });
     const smtpPort = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_port' } });

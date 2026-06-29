@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Param, NotFoundException, BadRequestException, Query } from '@nestjs/common';
 import { CustomersService } from './customers.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('customers')
+@RequiresFeature('admin_customers')
 export class CustomersController {
   constructor(private readonly svc: CustomersService) {}
 

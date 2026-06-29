@@ -7,6 +7,7 @@ import {
   Body,
   Param,
 } from '@nestjs/common';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AttributesService } from './attributes.service';
 import {
@@ -16,6 +17,7 @@ import {
 } from './dto/attribute.dto';
 
 @Controller('attributes')
+@RequiresFeature('admin_attributes')
 export class AttributesController {
   constructor(private readonly svc: AttributesService) {}
 

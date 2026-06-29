@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
@@ -21,6 +22,7 @@ import { BulkDeleteUsersDto, BulkUpdateUsersDto } from './dto/bulk-user.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Controller('users')
+@RequiresFeature('admin_staff_users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

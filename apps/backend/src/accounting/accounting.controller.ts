@@ -3,11 +3,13 @@ import { AccountingService } from './accounting.service';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('accounting')
 @Roles('superadmin', 'admin')
 @UseGuards(AccountingEnabledGuard)
+@RequiresFeature('admin_accounting')
 export class AccountingController {
   constructor(private readonly accountingService: AccountingService) {}
 

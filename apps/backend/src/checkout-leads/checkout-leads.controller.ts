@@ -11,6 +11,7 @@ import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Throttle } from '@nestjs/throttler';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 import { UpsertLeadDto } from './dto/upsert-lead.dto';
@@ -20,6 +21,7 @@ export class CheckoutLeadsController {
   constructor(private readonly svc: CheckoutLeadsService) {}
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -42,12 +44,14 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Get('summary')
   summary() {
     return this.svc.getSummary();
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -61,6 +65,7 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,
@@ -71,6 +76,7 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Patch(':id/assign')
   assign(
     @Param('id') id: string,
@@ -81,6 +87,7 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Post(':id/convert')
   convert(
     @Param('id') id: string,
@@ -91,6 +98,7 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Post('bulk/assign')
   bulkAssign(
     @Body('ids') ids: string[],
@@ -101,6 +109,7 @@ export class CheckoutLeadsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_checkout_leads')
   @Post('bulk/status')
   bulkStatus(@Body('ids') ids: string[], @Body('status') status: string) {
     return this.svc.bulkStatus(ids, status);

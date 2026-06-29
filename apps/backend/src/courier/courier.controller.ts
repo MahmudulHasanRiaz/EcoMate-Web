@@ -1,7 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { CourierService } from './courier.service';
 
 @Controller('courier')
+@RequiresFeature('admin_courier')
 export class CourierController {
   constructor(private readonly svc: CourierService) {}
 

@@ -30,6 +30,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('orders')
 export class OrdersController {
@@ -95,6 +96,7 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_orders')
   @Post('backfill-view-tokens')
   backfillViewTokens() {
     return this.svc.backfillViewTokens();
@@ -129,18 +131,21 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post(':id/rotate-view-token')
   rotateViewToken(@Param('id') id: string) {
     return this.svc.rotateViewToken(id);
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Put(':id')
   updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
     return this.svc.updateOrder(id, dto);
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Put(':id/status')
   updateStatus(
     @Param('id') id: string,
@@ -151,16 +156,19 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post(':id/items')
   addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) {
     return this.svc.addItem(id, dto);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Delete(':id/items/:itemId')
   removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
     return this.svc.removeItem(id, itemId);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post(':id/note')
   addNote(
     @Param('id') id: string,
@@ -171,12 +179,14 @@ export class OrdersController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post('bulk')
   async bulkOrders(@Body() dto: BulkOrdersDto) {
     const orders = await this.svc.bulkOrders(dto.ids || []);
     return { orders };
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post('bulk/status')
   async bulkStatus(
     @Body() dto: BulkStatusDto,
@@ -185,6 +195,7 @@ export class OrdersController {
     return this.svc.bulkStatusChange(dto.ids, dto.statusId, user?.userId || 'system');
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post('bulk/dispatch')
   async bulkDispatch(
     @Body() dto: BulkDispatchDto,
@@ -193,11 +204,13 @@ export class OrdersController {
     return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post('bulk/assign')
   async bulkAssign(@Body() dto: BulkAssignDto) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Get('staff/list')
   async staffList() {
     return this.svc.getStaff();

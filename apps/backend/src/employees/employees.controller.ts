@@ -2,10 +2,12 @@ import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('employees')
 @Roles('superadmin', 'admin', 'manager')
+@RequiresFeature('admin_employees')
 export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 

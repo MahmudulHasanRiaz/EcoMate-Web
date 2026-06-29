@@ -2,9 +2,11 @@ import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('refunds')
+@RequiresFeature('admin_refunds')
 export class RefundsController {
   constructor(private readonly svc: RefundsService) {}
 

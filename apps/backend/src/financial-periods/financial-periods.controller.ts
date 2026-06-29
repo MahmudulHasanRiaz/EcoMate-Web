@@ -2,11 +2,13 @@ import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/co
 import { FinancialPeriodsService } from './financial-periods.service';
 import { CreateFinancialPeriodDto } from './dto/create-financial-period.dto';
 import { AccountingEnabledGuard } from '../accounting/accounting-enabled.guard';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Roles('superadmin', 'admin')
 @UseGuards(AccountingEnabledGuard)
 @Controller('financial-periods')
+@RequiresFeature('admin_accounting')
 export class FinancialPeriodsController {
   constructor(private readonly financialPeriodsService: FinancialPeriodsService) {}
 

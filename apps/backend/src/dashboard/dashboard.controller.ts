@@ -1,8 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('dashboard')
+@RequiresFeature('admin_dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 

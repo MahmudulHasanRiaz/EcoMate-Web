@@ -11,10 +11,12 @@ import {
 import { CourierManagerService } from './courier-manager.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Request } from 'express';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Roles('superadmin', 'admin', 'manager')
 @Controller('couriers')
+@RequiresFeature('admin_courier')
 export class CourierManagerController {
   constructor(
     private readonly svc: CourierManagerService,

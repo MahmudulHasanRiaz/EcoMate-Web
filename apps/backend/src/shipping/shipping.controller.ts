@@ -15,10 +15,12 @@ import {
   CreateShippingZoneGroupDto,
   UpdateShippingZoneGroupDto,
 } from './dto/shipping.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('shipping')
 @Roles('superadmin', 'admin', 'manager')
+@RequiresFeature('admin_shipments')
 export class ShippingController {
   constructor(private readonly shippingService: ShippingService) {}
 

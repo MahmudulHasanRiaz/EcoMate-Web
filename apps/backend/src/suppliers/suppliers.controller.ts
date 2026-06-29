@@ -3,10 +3,12 @@ import { SuppliersService } from './suppliers.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Roles('superadmin', 'admin', 'manager')
 @Controller('suppliers')
+@RequiresFeature('admin_suppliers')
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 

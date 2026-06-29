@@ -18,6 +18,7 @@ import {
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('products')
 export class ProductsController {
@@ -109,36 +110,43 @@ export class ProductsController {
     return this.svc.findOne(id);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Post('bulk/delete')
   bulkRemove(@Body() body: { ids: string[] }) {
     return this.svc.bulkRemove(body.ids);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Post('bulk/update')
   bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
     return this.svc.bulkUpdate(body.ids, body.data);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() user: { email: string }) {
     return this.svc.update(id, dto, user.email);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Post(':id/variants/generate')
   generateVariants(@Param('id') id: string, @Body() dto: GenerateVariantsDto) {
     return this.svc.generateVariants(id, dto);
   }
   @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
   @Put(':id/variants/:variantId')
   updateVariant(
     @Param('id') id: string,

@@ -1,11 +1,13 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdjustInventoryDto, BulkAdjustInventoryDto } from './dto/adjust-inventory.dto';
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 
 @Controller('inventory')
+@RequiresFeature('admin_inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 

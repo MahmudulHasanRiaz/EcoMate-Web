@@ -12,10 +12,12 @@ import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { CreateGrnDto } from './dto/create-grn.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('purchases')
 @Roles('superadmin', 'admin', 'manager')
+@RequiresFeature('admin_purchases')
 export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService) {}
 
