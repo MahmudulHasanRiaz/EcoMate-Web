@@ -50,7 +50,7 @@ export class LicenseService implements OnModuleInit {
 
   async activateWithKeymate(licenseKey: string, domain: string, apiKey?: string) {
     const keymateUrl = this.config.get<string>('KEYMATE_API_URL')
-      || 'https://keygen-keymate.commercians.com/api/v1/saas';
+      || 'https://keygen-keymate.commercians.com/v1/saas';
 
     try {
       await this.featureFlags.initialize(licenseKey, domain, apiKey);
