@@ -35,7 +35,7 @@ export class LicenseService implements OnModuleInit {
     const { licenseKey, domain, apiKey } = creds;
 
     try {
-      await this.featureFlags.initialize(licenseKey, domain, apiKey);
+      await this.featureFlags.initialize(licenseKey, domain ?? undefined, apiKey ?? undefined);
       const lic = this.featureFlags.getLicense();
       if (lic?.valid) {
         console.log(`[License] Validated — plan: ${lic.plan?.name || 'custom'}`);
