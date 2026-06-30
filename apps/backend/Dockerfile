@@ -1,18 +1,19 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-COPY prisma ./prisma/
+COPY packages/ packages/
 RUN npm install
-COPY . .
+COPY apps/backend apps/backend
+COPY prisma.config.ts ./
+WORKDIR /app/apps/backend
 RUN npx prisma generate
 RUN npm run build
 
-# Obfuscation stage
 FROM node:22-alpine AS obfuscator
 WORKDIR /app
 RUN npm install -g javascript-obfuscator@^4.1.1
-COPY --from=builder /app/dist ./dist
-COPY obfuscator.config.json ./
+COPY --from=builder /app/apps/backend/dist ./dist
+COPY apps/backend/obfuscator.config.json ./
 RUN javascript-obfuscator dist/ \
     --output dist-obfuscated/ \
     --config obfuscator.config.json && \
@@ -25,10 +26,10 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=obfuscator /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/prisma.config.ts ./
+COPY --from=builder /app/apps/backend/prisma ./prisma
+COPY --from=builder /app/apps/backend/package.json ./
+COPY --from=builder /app/apps/backend/public ./public
+COPY prisma.config.ts ./
 RUN mkdir -p /app/uploads && chown -R nestjs:nodejs /app/uploads
 USER nestjs
 EXPOSE 4000
