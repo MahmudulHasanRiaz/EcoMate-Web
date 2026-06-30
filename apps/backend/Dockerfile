@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/ packages/
 RUN npm install
+RUN npx tsc -p packages/license-engine/tsconfig.json && \
+    npx tsc -p packages/feature-flags/tsconfig.json && \
+    npx tsc -p packages/shared-types/tsconfig.json
 COPY apps/backend apps/backend
 WORKDIR /app/apps/backend
 RUN npx prisma generate

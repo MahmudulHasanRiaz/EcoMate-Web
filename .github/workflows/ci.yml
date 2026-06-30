@@ -68,6 +68,12 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
+      - name: Build workspace packages
+        run: |
+          npx tsc -p packages/license-engine/tsconfig.json
+          npx tsc -p packages/feature-flags/tsconfig.json
+          npx tsc -p packages/shared-types/tsconfig.json
+
       - name: Generate Prisma client
         working-directory: apps/backend
         run: npx prisma generate

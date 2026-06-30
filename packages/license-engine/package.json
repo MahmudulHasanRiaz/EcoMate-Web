@@ -10,6 +10,7 @@
     "test": "node test/index.test.js"
   },
   "devDependencies": {
+    "@types/node": "^25",
     "typescript": "^5"
   }
 }
