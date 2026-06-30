@@ -39,6 +39,19 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     })
   }, [accessToken, navigate])
 
+  useEffect(() => {
+    if (!accessToken) return
+    if (window.location.pathname.includes('/license/activate')) return
+
+    apiClient.get('/license/status').then(r => {
+      if (!r.data?.active) {
+        navigate({ to: '/license/activate', replace: true })
+      }
+    }).catch(() => {
+      // Allow access on status check failure (grace)
+    })
+  }, [accessToken, navigate])
+
   if (!accessToken) {
     return (
       <div
