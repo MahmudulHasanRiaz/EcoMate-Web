@@ -74,7 +74,7 @@ export default async function RootLayout({
     initialConfig = await getStorefrontConfigServer();
   } catch {}
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+  const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
   let licenseActive = true;
   try {
     const licenseRes = await fetch(`${API_URL}/license/status`, {

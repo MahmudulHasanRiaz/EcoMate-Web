@@ -7,7 +7,7 @@ function getBaseUrl(): string {
   if (typeof window !== "undefined" && !window.location.hostname.includes("localhost")) {
     return "/api";
   }
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+  return process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 }
 
 const apiClient = axios.create({

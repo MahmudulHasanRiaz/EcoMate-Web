@@ -9,7 +9,8 @@ export const dynamicParams = true;
 
 export async function generateStaticParams() {
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/products?isActive=true&perPage=100`);
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const res = await fetch(`${apiUrl}/products?isActive=true&perPage=100`);
     if (!res.ok) return [];
     const { data } = await res.json();
     return (data || []).map((p: any) => ({ slug: p.slug }));

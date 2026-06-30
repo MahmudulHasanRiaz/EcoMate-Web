@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ComboDetailClient from '@/components/ComboDetailClient';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 async function getCombo(id: string) {
   const res = await fetch(`${API}/combos/${id}`, { next: { revalidate: 300 } });
