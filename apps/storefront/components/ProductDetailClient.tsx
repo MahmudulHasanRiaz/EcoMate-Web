@@ -460,9 +460,10 @@ export default function ProductDetailClient({ product, defaultColor }: { product
     : undefined;
 
   const displayPrice = selectedVariant?.price ?? product.price;
+  const refPrice = product.originalPrice ?? product.basePrice;
   const displayOriginalPrice = (selectedVariant?.price != null)
-    ? (product.originalPrice || product.basePrice) > selectedVariant.price
-      ? (product.originalPrice || product.basePrice)
+    ? refPrice != null && refPrice > selectedVariant.price
+      ? refPrice
       : undefined
     : (product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined);
   const displayImage = selectedVariant?.image || product.image;
