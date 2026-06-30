@@ -1472,3 +1472,19 @@ model SupplierPaymentInvoice {
 
   payment SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
+
+model LicenseActivation {
+  id            String    @id @default(uuid())
+  licenseKey    String
+  keymateUrl    String
+  domain        String?
+  apiKey        String?
+  licenseInfo   Json?     @db.JsonB
+  status        String    @default("pending")
+  errorMessage  String?
+  activatedAt   DateTime?
+  expiresAt     DateTime?
+  lastCheckIn   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
