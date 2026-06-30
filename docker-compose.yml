@@ -93,24 +93,7 @@ services:
         reservations:
           memory: 256M
 
-  backend-migrate:
-    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
-    restart: on-failure
-    networks:
-      - ecomate-network
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}}
-      SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && (npx prisma db seed || true)"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
+  # backend-migrate is removed — migrations run automatically in backend service startup.sh
 
   storefront:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-storefront:latest
