@@ -12,29 +12,28 @@ export class LicenseService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Dev bypass: activate dev mode if env var is set
-    if (process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
-      this.featureFlags.setDevMode();
-      console.log('[License] DEV_LICENSE_BYPASS active — all features unrestricted');
-      return;
-    }
-
-    const activation = await this.licenseActivation.find();
-
-    if (!activation || activation.status !== 'active') {
-      const msg = process.env.NODE_ENV === 'production'
-        ? '[License] NO ACTIVE LICENSE — gating all routes'
-        : '[License] No active activation found — setup required via UI';
-      console.warn(msg);
-      return;
-    }
-
-    const creds = await this.licenseActivation.getDecryptedCredentials();
-    if (!creds) return;
-
-    const { licenseKey, domain, apiKey } = creds;
-
     try {
+      // Dev bypass: activate dev mode if env var is set
+      if (process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
+        this.featureFlags.setDevMode();
+        console.log('[License] DEV_LICENSE_BYPASS active — all features unrestricted');
+        return;
+      }
+
+      const activation = await this.licenseActivation.find();
+      if (!activation || activation.status !== 'active') {
+        const msg = process.env.NODE_ENV === 'production'
+          ? '[License] NO ACTIVE LICENSE — gating all routes'
+          : '[License] No active activation found — setup required via UI';
+        console.warn(msg);
+        return;
+      }
+
+      const creds = await this.licenseActivation.getDecryptedCredentials();
+      if (!creds) return;
+
+      const { licenseKey, domain, apiKey } = creds;
+
       await this.featureFlags.initialize(licenseKey, domain ?? undefined, apiKey ?? undefined);
       const lic = this.featureFlags.getLicense();
       if (lic?.valid) {
@@ -45,7 +44,7 @@ export class LicenseService implements OnModuleInit {
         await this.licenseActivation.deactivate(lic?.code);
       }
     } catch {
-      console.warn('[License] KeyMate unreachable — using cached data');
+      console.warn('[License] Failed to validate license (DB not ready?) — skipping');
     }
   }
 

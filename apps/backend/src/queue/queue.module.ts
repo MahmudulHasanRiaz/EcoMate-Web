@@ -7,19 +7,29 @@ import { ImportQueueModule } from './import-queue/import-queue.module';
 @Module({
   imports: [
     BullModule.forRootAsync({
-      useFactory: () => ({
-        connection: {
-          host: process.env['REDIS_HOST'] || 'localhost',
-          port: Number(process.env['REDIS_PORT']) || 6379,
-          password: process.env['REDIS_PASSWORD'] || undefined,
-        },
-        defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 2000 },
-          removeOnComplete: 100,
-          removeOnFail: 50,
-        },
-      }),
+      useFactory: () => {
+        let host = process.env['REDIS_HOST'] || 'localhost';
+        let port = Number(process.env['REDIS_PORT']) || 6379;
+        let password = process.env['REDIS_PASSWORD'] || undefined;
+        const redisUrl = process.env['REDIS_URL'];
+        if (redisUrl && !process.env['REDIS_HOST']) {
+          try {
+            const url = new URL(redisUrl);
+            host = url.hostname || host;
+            port = Number(url.port) || port;
+            password = url.password || password;
+          } catch {}
+        }
+        return {
+          connection: { host, port, password },
+          defaultJobOptions: {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2000 },
+            removeOnComplete: 100,
+            removeOnFail: 50,
+          },
+        };
+      },
     }),
     EmailQueueModule,
     ImportQueueModule,
