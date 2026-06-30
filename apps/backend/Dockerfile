@@ -7,6 +7,13 @@ RUN npm install
 RUN npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json && \
     npx tsc -p packages/shared-types/tsconfig.json
+# Dereference workspace symlinks so Docker COPY produces real directories
+RUN for pkg in license-engine feature-flags shared-types; do \
+      target="node_modules/@ecomate/$pkg"; \
+      [ -L "$target" ] && rm -rf "$target" && mkdir -p "$target" && \
+      cp "packages/$pkg/package.json" "$target/" && \
+      cp -r "packages/$pkg/dist" "$target/"; \
+    done
 COPY apps/backend apps/backend
 WORKDIR /app/apps/backend
 RUN npx prisma generate
