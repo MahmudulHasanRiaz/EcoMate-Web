@@ -1,5 +1,5 @@
--- CreateTable
-CREATE TABLE "LicenseActivation" (
+-- CreateTable (safe: IF NOT EXISTS avoids P3018 when table already exists)
+CREATE TABLE IF NOT EXISTS "LicenseActivation" (
     "id" TEXT NOT NULL,
     "licenseKey" TEXT NOT NULL,
     "keymateUrl" TEXT NOT NULL,

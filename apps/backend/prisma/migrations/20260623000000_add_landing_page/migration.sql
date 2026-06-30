@@ -1,5 +1,5 @@
--- Create LandingPage table
-CREATE TABLE "LandingPage" (
+-- Create LandingPage table (safe: IF NOT EXISTS avoids P3018 when table already exists)
+CREATE TABLE IF NOT EXISTS "LandingPage" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
@@ -19,4 +19,4 @@ CREATE TABLE "LandingPage" (
     CONSTRAINT "LandingPage_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "LandingPage_slug_key" ON "LandingPage"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "LandingPage_slug_key" ON "LandingPage"("slug");

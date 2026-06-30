@@ -7,22 +7,8 @@ import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { execSync } from 'node:child_process';
 
 async function bootstrap() {
-  // Apply pending Prisma migrations (production-safe)
-  if (process.env['NODE_ENV'] === 'production') {
-    try {
-      execSync('npx prisma migrate deploy', {
-        cwd: process.cwd(),
-        stdio: 'pipe',
-        timeout: 60000,
-      });
-      console.log('[Schema] Migrations applied');
-    } catch {
-      console.log('[Schema] migrate deploy unavailable — continuing');
-    }
-  }
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
     throw new Error(
       'JWT_SECRET and JWT_REFRESH_SECRET environment variables are required',
