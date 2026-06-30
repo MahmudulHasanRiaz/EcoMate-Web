@@ -1,1 +1,0 @@
-cmd_Release/license_engine.node := c++ -bundle -undefined dynamic_lookup -Wl,-search_paths_first -mmacosx-version-min=13.5 -arch arm64 -L./Release -stdlib=libc++  -o Release/license_engine.node Release/obj.target/license_engine/src/addon.o Release/obj.target/license_engine/src/validator.o 
