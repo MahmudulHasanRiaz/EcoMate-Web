@@ -7,6 +7,23 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
+const ERROR_MESSAGES: Record<string, string> = {
+  not_found: 'License key not found in system. Please verify your license key and try again.',
+  domain_mismatch: 'Domain mismatch. This license is not valid for this domain.',
+  expired: 'License has expired. Please renew your license to continue.',
+  invalid_api_key: 'Invalid API key. The server rejected the request. Please check your API key.',
+  unauthorized: 'Authorization failed. Please check your API key.',
+  unreachable: 'Cannot reach KeyMate server. Please verify: (1) KEYMATE_API_URL is correct, (2) KeyMate server is running, (3) Network connectivity.',
+  engine_unavailable: 'License engine failed to load. Please restart the application.',
+  validation_failed: 'License validation failed. Please contact support with your license key.',
+  keymate_unreachable: 'Cannot reach KeyMate server. Please verify the server is running and accessible.',
+}
+
+function friendlyError(code?: string, fallback?: string): string {
+  if (!code) return fallback || 'An unknown error occurred.'
+  return ERROR_MESSAGES[code] || `License error: ${code}`
+}
+
 export const Route = createFileRoute('/(auth)/license/activate')({
   component: LicenseActivatePage,
 })
@@ -34,7 +51,9 @@ function LicenseActivatePage() {
         setSuccess(true)
         setTimeout(() => navigate({ to: '/' }), 2000)
       } else {
-        setError(res.data?.error || 'Activation failed. Please check your license key.')
+        const code = res.data?.error
+        const backendMessage = res.data?.message
+        setError(backendMessage || friendlyError(code, 'Activation failed. Please check your license key.'))
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to reach server. Please try again.')

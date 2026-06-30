@@ -59,7 +59,7 @@ export class FeatureFlagsService {
           this.license = result;
           return;
         }
-        this.license = { valid: false, code: result.code || 'validation_failed' };
+        this.license = { valid: false, code: result.code || 'validation_failed', detail: result.detail };
         return;
       } catch (err: any) {
         this.license = { valid: false, code: 'unreachable', detail: err.message };

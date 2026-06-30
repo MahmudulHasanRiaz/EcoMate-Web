@@ -76,12 +76,14 @@ export default async function RootLayout({
 
   const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
   let licenseActive = true;
+  let licenseMessage = '';
   try {
     const licenseRes = await fetch(`${API_URL}/license/status`, {
       next: { revalidate: 300 },
     });
     const licenseStatus = await licenseRes.json();
     licenseActive = licenseStatus?.active ?? true;
+    licenseMessage = licenseStatus?.message || '';
   } catch {}
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
@@ -145,8 +147,7 @@ export default async function RootLayout({
                   </div>
                   <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">License Required</h1>
                   <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                    This EcoMate installation requires a valid license. Please contact your
-                    administrator or service provider to activate your license.
+                    {licenseMessage || 'This EcoMate installation requires a valid license. Please contact your administrator or service provider to activate your license.'}
                   </p>
                 </div>
               </div>

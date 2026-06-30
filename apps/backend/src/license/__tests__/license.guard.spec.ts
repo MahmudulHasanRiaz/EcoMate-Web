@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LicenseGuard } from '../license.guard';
 import { LicenseActivationService } from '../license-activation.service';
+import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { SKIP_LICENSE_CHECK } from '../../common/decorators/skip-license-check.decorator';
@@ -13,6 +14,10 @@ describe('LicenseGuard', () => {
 
   const mockActivation = {
     find: jest.fn(),
+  };
+
+  const mockFeatureFlags = {
+    getLicense: jest.fn(),
   };
 
   const mockReflector = {
@@ -31,6 +36,7 @@ describe('LicenseGuard', () => {
       providers: [
         LicenseGuard,
         { provide: LicenseActivationService, useValue: mockActivation },
+        { provide: FeatureFlagsService, useValue: mockFeatureFlags },
         { provide: Reflector, useValue: mockReflector },
       ],
     }).compile();
@@ -69,9 +75,17 @@ describe('LicenseGuard', () => {
     await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
   });
 
-  it('allows when activation is active', async () => {
+  it('blocks when cached license is invalid (expired/revoked)', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(null);
     mockActivation.find.mockResolvedValue({ status: 'active' });
+    mockFeatureFlags.getLicense.mockReturnValue({ valid: false, code: 'expired' });
+    await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows when activation active and cached license valid', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(null);
+    mockActivation.find.mockResolvedValue({ status: 'active' });
+    mockFeatureFlags.getLicense.mockReturnValue({ valid: true, plan: { name: 'Enterprise' } });
     const result = await guard.canActivate(createMockContext());
     expect(result).toBe(true);
   });
