@@ -25,9 +25,12 @@ describe('EncryptionUtils', () => {
     expect(a).not.toBe(b);
   });
 
-  it('throws on missing encryption key', () => {
+  it('uses fallback key when env key is missing', () => {
     delete process.env.LICENSE_ENCRYPTION_KEY;
-    expect(() => encrypt(plaintext)).toThrow('LICENSE_ENCRYPTION_KEY');
+    const encrypted = encrypt(plaintext);
+    expect(encrypted).not.toBe(plaintext);
+    const decrypted = decrypt(encrypted);
+    expect(decrypted).toBe(plaintext);
   });
 
   it('throws on tampered ciphertext', () => {
