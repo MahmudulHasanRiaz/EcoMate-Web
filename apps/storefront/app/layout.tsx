@@ -74,6 +74,16 @@ export default async function RootLayout({
     initialConfig = await getStorefrontConfigServer();
   } catch {}
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+  let licenseActive = true;
+  try {
+    const licenseRes = await fetch(`${API_URL}/license/status`, {
+      next: { revalidate: 300 },
+    });
+    const licenseStatus = await licenseRes.json();
+    licenseActive = licenseStatus?.active ?? true;
+  } catch {}
+
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
 
   const jsonLd = {
@@ -124,7 +134,23 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
             />
             <TrackingScripts />
-            {initialConfig?.features?.maintenanceMode ? (
+            {!licenseActive ? (
+              <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
+                <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)]">
+                  <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </div>
+                  <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">License Required</h1>
+                  <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                    This EcoMate installation requires a valid license. Please contact your
+                    administrator or service provider to activate your license.
+                  </p>
+                </div>
+              </div>
+            ) : initialConfig?.features?.maintenanceMode ? (
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
                 <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)] transition-all hover:shadow-[0_12px_40px_rgb(0,0,0,0.05)]">
                   <div className="w-16 h-16 bg-[#0089CD]/10 text-[#0089CD] rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
