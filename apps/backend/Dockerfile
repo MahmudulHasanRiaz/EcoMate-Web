@@ -2,6 +2,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY packages/ packages/
+COPY apps/backend/package.json apps/backend/package.json
 RUN npm install
 RUN npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json && \
