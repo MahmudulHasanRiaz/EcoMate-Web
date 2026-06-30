@@ -4,7 +4,6 @@ COPY package*.json ./
 COPY packages/ packages/
 RUN npm install
 COPY apps/backend apps/backend
-COPY prisma.config.ts ./
 WORKDIR /app/apps/backend
 RUN npx prisma generate
 RUN npm run build
@@ -29,7 +28,6 @@ COPY --from=obfuscator /app/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
-COPY prisma.config.ts ./
 RUN mkdir -p /app/uploads && chown -R nestjs:nodejs /app/uploads
 USER nestjs
 EXPOSE 4000
