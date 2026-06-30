@@ -16,11 +16,15 @@ while [ $attempt -le $max_retries ]; do
   fi
 
   # Extract migration name from P3018/P3009 error format:
-  #   "The migration `20260625201147_add_accounting_integration` was not applied"
-  #   "The `20260625201147_add_accounting_integration` migration failed"
-  migration=$(echo "$output" | sed -n 's/.*The migration `\([^`]*\)`.*/\1/p' | head -1)
+  #   P3009: "The `20260625201147_add_accounting_integration` migration failed"
+  #   P3018: "Migration name: 20260625201147_add_accounting_integration"
+  #   Old:   "The migration `20260625201147_add_accounting_integration` was not applied"
+  migration=$(echo "$output" | sed -n 's/.*The `\([^`]*\)` migration.*/\1/p' | head -1)
   if [ -z "$migration" ]; then
-    migration=$(echo "$output" | sed -n 's/.*The `\([^`]*\)` migration.*/\1/p' | head -1)
+    migration=$(echo "$output" | sed -n 's/.*The migration `\([^`]*\)`.*/\1/p' | head -1)
+  fi
+  if [ -z "$migration" ]; then
+    migration=$(echo "$output" | sed -n 's/.*Migration name: *\([^ ]*\).*/\1/p' | head -1)
   fi
 
   if [ -z "$migration" ]; then
