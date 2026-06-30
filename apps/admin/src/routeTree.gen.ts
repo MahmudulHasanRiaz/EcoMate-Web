@@ -27,6 +27,7 @@ import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authentic
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as authLicenseActivateRouteImport } from './routes/(auth)/license/activate'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
 import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authenticated/op/print/route'
 import { Route as AuthenticatedMonSettingsRouteRouteImport } from './routes/_authenticated/mon/settings/route'
@@ -191,6 +192,11 @@ const AuthenticatedErrorsErrorRoute =
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const authLicenseActivateRoute = authLicenseActivateRouteImport.update({
+  id: '/(auth)/license/activate',
+  path: '/license/activate',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedOpSettingsRouteRoute =
   AuthenticatedOpSettingsRouteRouteImport.update({
     id: '/op/settings',
@@ -631,6 +637,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
+  '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
@@ -721,6 +728,7 @@ export interface FileRoutesByTo {
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
+  '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
@@ -813,6 +821,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
+  '/(auth)/license/activate': typeof authLicenseActivateRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
@@ -905,6 +914,7 @@ export interface FileRouteTypes {
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
+    | '/license/activate'
     | '/errors/$error'
     | '/mon/blocking-settings'
     | '/mon/overview'
@@ -995,6 +1005,7 @@ export interface FileRouteTypes {
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
+    | '/license/activate'
     | '/errors/$error'
     | '/mon/blocking-settings'
     | '/mon/overview'
@@ -1086,6 +1097,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings'
     | '/_authenticated/op/print'
     | '/_authenticated/op/settings'
+    | '/(auth)/license/activate'
     | '/_authenticated/errors/$error'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
@@ -1174,6 +1186,7 @@ export interface RootRouteChildren {
   errors404Route: typeof errors404Route
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
+  authLicenseActivateRoute: typeof authLicenseActivateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1303,6 +1316,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/errors/$error'
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/(auth)/license/activate': {
+      id: '/(auth)/license/activate'
+      path: '/license/activate'
+      fullPath: '/license/activate'
+      preLoaderRoute: typeof authLicenseActivateRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/op/settings': {
       id: '/_authenticated/op/settings'
@@ -2042,6 +2062,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors404Route: errors404Route,
   errors500Route: errors500Route,
   errors503Route: errors503Route,
+  authLicenseActivateRoute: authLicenseActivateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
