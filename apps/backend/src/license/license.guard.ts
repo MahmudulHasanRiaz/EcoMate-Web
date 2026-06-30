@@ -24,9 +24,18 @@ export class LicenseGuard implements CanActivate {
     ]);
     if (skipLicense) return true;
 
+    // Dev bypass: allow if DEV_LICENSE_BYPASS=true and NOT production
+    if (process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
+      return true;
+    }
+
     const activation = await this.licenseActivation.find();
     if (!activation || activation.status !== 'active') {
-      throw new ForbiddenException('License not activated. Please activate your license.');
+      throw new ForbiddenException(
+        process.env.NODE_ENV === 'production'
+          ? 'License not activated. This application requires a valid license.'
+          : 'License not activated. Please activate your license.',
+      );
     }
 
     return true;

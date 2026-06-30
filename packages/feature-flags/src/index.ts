@@ -28,6 +28,10 @@ export class FeatureFlagsService {
   private license: LicenseInfo | null = null;
   private licenseEngine: LicenseEngine | null = null;
 
+  private isDevBypassEnabled(): boolean {
+    return process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production';
+  }
+
   constructor(@Optional() licenseEngine?: LicenseEngine) {
     if (licenseEngine) {
       this.licenseEngine = licenseEngine;
@@ -36,7 +40,13 @@ export class FeatureFlagsService {
         const engine = require('@ecomate/license-engine');
         this.licenseEngine = engine.default || engine;
       } catch {
-        console.warn('[FeatureFlags] License engine unavailable — running in dev mode');
+        if (this.isDevBypassEnabled()) {
+          this.setDevLicense();
+          console.warn('[FeatureFlags] License engine unavailable — DEV_LICENSE_BYPASS active');
+        } else {
+          this.license = { valid: false, code: 'engine_unavailable' };
+          console.warn('[FeatureFlags] License engine unavailable — license required');
+        }
       }
     }
   }
@@ -49,11 +59,14 @@ export class FeatureFlagsService {
           this.license = result;
           return;
         }
-      } catch {
-        // fall through to dev mode
+        this.license = { valid: false, code: result.code || 'validation_failed' };
+        return;
+      } catch (err: any) {
+        this.license = { valid: false, code: 'unreachable', detail: err.message };
+        return;
       }
     }
-    this.setDevLicense();
+    this.license = { valid: false, code: 'engine_unavailable' };
   }
 
   setLicense(token: string) {
@@ -61,12 +74,15 @@ export class FeatureFlagsService {
       const result = this.licenseEngine.setLicense(token);
       if (result.valid) {
         this.license = result;
-      } else {
-        this.setDevLicense();
+        return;
       }
-    } else {
-      this.setDevLicense();
     }
+    this.license = { valid: false, code: 'invalid_token' };
+  }
+
+  setDevMode() {
+    if (!this.isDevBypassEnabled()) return;
+    this.setDevLicense();
   }
 
   private setDevLicense() {
@@ -84,7 +100,7 @@ export class FeatureFlagsService {
     if (this.licenseEngine) {
       return this.licenseEngine.canUseFeature(this.license, featureKey);
     }
-    return true;
+    return this.license.valid;
   }
 
   getLicense(): LicenseInfo | null {

@@ -12,10 +12,20 @@ export class LicenseService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Dev bypass: activate dev mode if env var is set
+    if (process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
+      this.featureFlags.setDevMode();
+      console.log('[License] DEV_LICENSE_BYPASS active — all features unrestricted');
+      return;
+    }
+
     const activation = await this.licenseActivation.find();
 
     if (!activation || activation.status !== 'active') {
-      console.log('[License] No active activation found — setup required via UI');
+      const msg = process.env.NODE_ENV === 'production'
+        ? '[License] NO ACTIVE LICENSE — gating all routes'
+        : '[License] No active activation found — setup required via UI';
+      console.warn(msg);
       return;
     }
 
