@@ -21,17 +21,20 @@ jobs:
           filters: |
             backend:
               - 'apps/backend/**'
+              - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
               - 'docker-compose.yml'
             storefront:
               - 'apps/storefront/**'
+              - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
             admin:
               - 'apps/admin/**'
+              - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
