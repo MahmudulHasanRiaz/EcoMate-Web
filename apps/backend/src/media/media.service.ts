@@ -312,7 +312,10 @@ export class MediaService {
       resp = await fetch(url.toString(), {
         signal: controller.signal,
         redirect: 'follow',
-        headers: { 'User-Agent': 'EcoMate-MediaIngest/1.0' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5'
+        },
       });
     } catch (err) {
       throw new BadRequestException(
@@ -326,7 +329,7 @@ export class MediaService {
       throw new BadRequestException(`Failed to fetch URL: ${resp.status}`);
     }
     const contentType =
-      resp.headers.get('content-type')?.split(';')[0].trim() ||
+      resp.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ||
       'application/octet-stream';
     if (
       !contentType.startsWith('image/') &&
