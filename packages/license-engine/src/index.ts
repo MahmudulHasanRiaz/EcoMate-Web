@@ -30,7 +30,8 @@ export class LicenseEngine {
       }
 
       return result;
-    } catch {
+    } catch (err: any) {
+      console.error('[LicenseEngine] Verification failed:', err);
       const cached = this.cache.get(licenseKey);
       if (cached) {
         return { ...cached, valid: true, detail: 'offline_cache' };
@@ -49,7 +50,8 @@ export class LicenseEngine {
 
       this.cachedLicense = result;
       return result;
-    } catch {
+    } catch (err: any) {
+      console.error('[LicenseEngine] Check-in failed:', err);
       const cached = this.cache.get(licenseKey);
       if (cached) {
         return { ...cached, valid: true, detail: 'offline_cache' };
