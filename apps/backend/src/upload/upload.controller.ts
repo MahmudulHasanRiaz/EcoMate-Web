@@ -1,17 +1,12 @@
 import {
   Controller,
   Post,
-  UseInterceptors,
-  UploadedFile,
-  UploadedFiles,
   BadRequestException,
   Body,
+  Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import * as fastify from 'fastify';
 import { MediaService } from '../media/media.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -19,31 +14,6 @@ import { Roles } from '../common/decorators/roles.decorator';
 
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB per file
 const MAX_BULK = 20;
-
-const UPLOADS_DIR = join(process.cwd(), 'uploads');
-if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
-
-const diskStorageConfig = diskStorage({
-  destination: UPLOADS_DIR,
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + extname(file.originalname));
-  },
-});
-
-const fileFilter = (
-  _req: unknown,
-  file: Express.Multer.File,
-  cb: (err: Error | null, accept: boolean) => void,
-) => {
-  if (
-    !file.mimetype.startsWith('image/') &&
-    !file.mimetype.startsWith('video/')
-  ) {
-    return cb(new BadRequestException('Only images & videos allowed'), false);
-  }
-  cb(null, true);
-};
 
 @Controller('upload')
 @RequiresFeature('admin_media')
@@ -53,17 +23,36 @@ export class UploadController {
   @Post('image')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Roles('superadmin', 'admin', 'manager', 'cashier')
-  @UseInterceptors(
-    FileInterceptor('file', { storage: diskStorageConfig, limits: { fileSize: MAX_BYTES }, fileFilter }),
-  )
   async uploadImage(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('filename') filename: string | undefined,
-    @Body('alt') alt: string | undefined,
+    @Req() req: fastify.FastifyRequest,
     @CurrentUser() user: { id: string } | null,
   ) {
+    const file = await req.file();
     if (!file) throw new BadRequestException('No file uploaded');
-    return this.media.ingestFromMulter(file, {
+
+    const filename = file.fields.filename ? (file.fields.filename as any).value : undefined;
+    const alt = file.fields.alt ? (file.fields.alt as any).value : undefined;
+
+    if (
+      !file.mimetype.startsWith('image/') &&
+      !file.mimetype.startsWith('video/')
+    ) {
+      throw new BadRequestException('Only images & videos allowed');
+    }
+
+    const buffer = await file.toBuffer();
+    if (buffer.length > MAX_BYTES) {
+      throw new BadRequestException('File too large');
+    }
+
+    const multerFile = {
+      buffer,
+      mimetype: file.mimetype,
+      size: buffer.length,
+      originalname: file.filename,
+    } as any;
+
+    return this.media.ingestFromMulter(multerFile, {
       filename,
       alt,
       uploadedBy: user?.id,
@@ -73,18 +62,11 @@ export class UploadController {
   @Post('images')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Roles('superadmin', 'admin', 'manager', 'cashier')
-  @UseInterceptors(
-    FilesInterceptor('files', MAX_BULK, {
-      storage: diskStorageConfig,
-      limits: { fileSize: MAX_BYTES },
-      fileFilter,
-    }),
-  )
   async uploadImages(
-    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: fastify.FastifyRequest,
     @CurrentUser() user: { id: string } | null,
   ) {
-    if (!files?.length) throw new BadRequestException('No files uploaded');
+    const parts = req.files();
     const results: Array<{
       ok: boolean;
       id?: string;
@@ -95,20 +77,55 @@ export class UploadController {
       error?: string;
       originalname: string;
     }> = [];
-    for (const file of files) {
-      try {
-        const out = await this.media.ingestFromMulter(file, {
-          uploadedBy: user?.id,
-        });
-        results.push({ ok: true, originalname: file.originalname, ...out });
-      } catch (err) {
-        results.push({
-          ok: false,
-          originalname: file.originalname,
-          error: (err as Error).message,
-        });
+
+    let count = 0;
+    for await (const part of parts) {
+      if (part.file) {
+        count++;
+        if (count > MAX_BULK) {
+          results.push({
+            ok: false,
+            originalname: part.filename,
+            error: 'Too many files uploaded',
+          });
+          continue;
+        }
+
+        try {
+          if (
+            !part.mimetype.startsWith('image/') &&
+            !part.mimetype.startsWith('video/')
+          ) {
+            throw new BadRequestException('Only images & videos allowed');
+          }
+
+          const buffer = await part.toBuffer();
+          if (buffer.length > MAX_BYTES) {
+            throw new BadRequestException('File too large');
+          }
+
+          const multerFile = {
+            buffer,
+            mimetype: part.mimetype,
+            size: buffer.length,
+            originalname: part.filename,
+          } as any;
+
+          const out = await this.media.ingestFromMulter(multerFile, {
+            uploadedBy: user?.id,
+          });
+          results.push({ ok: true, originalname: part.filename, ...out });
+        } catch (err) {
+          results.push({
+            ok: false,
+            originalname: part.filename,
+            error: (err as Error).message,
+          });
+        }
       }
     }
+
+    if (!count) throw new BadRequestException('No files uploaded');
     return { data: results };
   }
 

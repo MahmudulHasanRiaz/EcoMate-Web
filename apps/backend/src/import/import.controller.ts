@@ -3,12 +3,11 @@ import {
   Post,
   Get,
   Param,
-  UseInterceptors,
-  UploadedFile,
   BadRequestException,
   Query,
+  Req,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import * as fastify from 'fastify';
 import { ImportService } from './import.service';
 import { OrderImportService } from './order-import.service';
 import { ImportJobManager } from './import-job-manager';
@@ -47,36 +46,30 @@ export class ImportController {
 
   @Post('products')
   @Roles('superadmin', 'admin')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 50 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        const allowedMime = [
-          'text/csv',
-          'text/plain',
-          'application/csv',
-          'application/octet-stream',
-        ];
-        const allowedExt = file.originalname.toLowerCase().endsWith('.csv');
-
-        if (allowedMime.includes(file.mimetype) || allowedExt) {
-          cb(null, true);
-        } else {
-          cb(new BadRequestException('Only CSV files are allowed'), false);
-        }
-      },
-    }),
-  )
   async importProducts(
-    @UploadedFile() file: Express.Multer.File,
+    @Req() req: fastify.FastifyRequest,
     @Query('mode') mode?: string,
     @Query('dryRun') dryRun?: string,
   ) {
+    const file = await req.file();
     if (!file) {
       throw new BadRequestException('CSV file is required');
     }
 
-    const csvContent = file.buffer.toString('utf-8');
+    const allowedMime = [
+      'text/csv',
+      'text/plain',
+      'application/csv',
+      'application/octet-stream',
+    ];
+    const allowedExt = file.filename.toLowerCase().endsWith('.csv');
+
+    if (!allowedMime.includes(file.mimetype) && !allowedExt) {
+      throw new BadRequestException('Only CSV files are allowed');
+    }
+
+    const buffer = await file.toBuffer();
+    const csvContent = buffer.toString('utf-8');
     if (!csvContent.trim()) {
       throw new BadRequestException('CSV file is empty');
     }
@@ -120,32 +113,26 @@ export class ImportController {
 
   @Post('orders')
   @Roles('superadmin', 'admin')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 50 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        const allowedMime = [
-          'text/csv',
-          'text/plain',
-          'application/csv',
-          'application/octet-stream',
-        ];
-        const allowedExt = file.originalname.toLowerCase().endsWith('.csv');
-
-        if (allowedMime.includes(file.mimetype) || allowedExt) {
-          cb(null, true);
-        } else {
-          cb(new BadRequestException('Only CSV files are allowed'), false);
-        }
-      },
-    }),
-  )
-  async importOrders(@UploadedFile() file: Express.Multer.File) {
+  async importOrders(@Req() req: fastify.FastifyRequest) {
+    const file = await req.file();
     if (!file) {
       throw new BadRequestException('CSV file is required');
     }
 
-    const csvContent = file.buffer.toString('utf-8');
+    const allowedMime = [
+      'text/csv',
+      'text/plain',
+      'application/csv',
+      'application/octet-stream',
+    ];
+    const allowedExt = file.filename.toLowerCase().endsWith('.csv');
+
+    if (!allowedMime.includes(file.mimetype) && !allowedExt) {
+      throw new BadRequestException('Only CSV files are allowed');
+    }
+
+    const buffer = await file.toBuffer();
+    const csvContent = buffer.toString('utf-8');
     if (!csvContent.trim()) {
       throw new BadRequestException('CSV file is empty');
     }

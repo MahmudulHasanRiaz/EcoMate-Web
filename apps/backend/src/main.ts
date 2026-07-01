@@ -6,6 +6,7 @@ import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 async function bootstrap() {
@@ -62,6 +63,11 @@ async function bootstrap() {
     decorateReply: false,
   });
   await app.register(cookie);
+  await app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB
+    },
+  });
 
   app.enableCors({
     origin: process.env['CORS_ORIGIN']
