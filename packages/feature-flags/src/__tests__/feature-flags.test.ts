@@ -21,7 +21,7 @@ function createMockEngine() {
 describe('FeatureFlagsService', () => {
   it('returns valid license after initialize', async () => {
     const engine = createMockEngine();
-    const svc = new FeatureFlagsService(engine);
+    const svc = new FeatureFlagsService(engine as any);
     expect(svc.getLicense()).toBeNull();
 
     await svc.initialize('test-license-key', 'example.com');
@@ -33,7 +33,7 @@ describe('FeatureFlagsService', () => {
 
   it('delegates canUse to license engine', async () => {
     const engine = createMockEngine();
-    const svc = new FeatureFlagsService(engine);
+    const svc = new FeatureFlagsService(engine as any);
     await svc.initialize('test-license-key');
     expect(svc.canUse('storefront_catalog')).toBe(true);
     expect(engine.canUseFeature).toHaveBeenCalledWith(
@@ -43,12 +43,12 @@ describe('FeatureFlagsService', () => {
   });
 
   it('returns null license before initialize call', () => {
-    const svc = new FeatureFlagsService(createMockEngine());
+    const svc = new FeatureFlagsService(createMockEngine() as any);
     expect(svc.getLicense()).toBeNull();
   });
 
   it('returns false for canUse when no license set', () => {
-    const svc = new FeatureFlagsService(createMockEngine());
+    const svc = new FeatureFlagsService(createMockEngine() as any);
     expect(svc.canUse('storefront_catalog')).toBe(false);
   });
 });

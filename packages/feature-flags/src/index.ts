@@ -15,13 +15,7 @@ export interface LicenseInfo {
   lastCheckIn?: string;
 }
 
-interface LicenseEngine {
-  verify(licenseKey: string, domain?: string, apiKey?: string): Promise<LicenseInfo>;
-  canUseFeature(license: LicenseInfo | null, featureKey: string): boolean;
-  checkLimit(license: LicenseInfo | null, metricKey: string, currentUsage: number): { ok: boolean; allowed: number; current: number; remaining: number };
-  setLicense(token: string): LicenseInfo;
-  getLicense(): LicenseInfo | null;
-}
+import { LicenseEngine } from '@ecomate/license-engine';
 
 @Injectable()
 export class FeatureFlagsService {
