@@ -74,6 +74,8 @@ services:
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       TIKTOK_PIXEL_CODE: ${TIKTOK_PIXEL_CODE:-}
       TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
