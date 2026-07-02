@@ -98,7 +98,7 @@ export class PrismaService
         "email" TEXT,
         "isActive" BOOLEAN NOT NULL DEFAULT true,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "Warehouse_pkey" PRIMARY KEY ("id")
       )`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "Warehouse_slug_key" ON "Warehouse"("slug")`,
@@ -116,6 +116,170 @@ export class PrismaService
       )`,
       `CREATE INDEX IF NOT EXISTS "BinLocation_warehouseId_idx" ON "BinLocation"("warehouseId")`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "BinLocation_warehouseId_code_key" ON "BinLocation"("warehouseId", "code")`,
+
+      `CREATE TABLE IF NOT EXISTS "Supplier" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "contactPerson" TEXT,
+        "email" TEXT,
+        "phone" TEXT,
+        "address" TEXT,
+        "city" TEXT,
+        "country" TEXT NOT NULL DEFAULT 'Bangladesh',
+        "taxId" TEXT,
+        "paymentTerms" TEXT,
+        "notes" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "totalPurchases" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "totalPaid" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "balance" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        CONSTRAINT "Supplier_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_slug_key" ON "Supplier"("slug")`,
+      `CREATE INDEX IF NOT EXISTS "Supplier_isActive_idx" ON "Supplier"("isActive")`,
+
+      `CREATE TABLE IF NOT EXISTS "CouponUsage" (
+        "id" TEXT NOT NULL,
+        "couponId" TEXT NOT NULL,
+        "orderId" TEXT NOT NULL,
+        "userId" TEXT,
+        "discount" DECIMAL(10,2) NOT NULL,
+        "usedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "CouponUsage_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "CouponUsage_couponId_idx" ON "CouponUsage"("couponId")`,
+      `CREATE INDEX IF NOT EXISTS "CouponUsage_orderId_idx" ON "CouponUsage"("orderId")`,
+      `CREATE INDEX IF NOT EXISTS "CouponUsage_userId_idx" ON "CouponUsage"("userId")`,
+
+      `CREATE TABLE IF NOT EXISTS "CostingLot" (
+        "id" TEXT NOT NULL,
+        "purchaseId" TEXT,
+        "grnId" TEXT,
+        "productId" TEXT NOT NULL,
+        "variantId" TEXT,
+        "lotNumber" TEXT NOT NULL,
+        "unitCost" DECIMAL(12,2) NOT NULL,
+        "totalCost" DECIMAL(14,2) NOT NULL,
+        "quantity" INTEGER NOT NULL,
+        "remainingQty" INTEGER NOT NULL,
+        "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "CostingLot_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "CostingLot_lotNumber_key" ON "CostingLot"("lotNumber")`,
+
+      `CREATE TABLE IF NOT EXISTS "GoodsReceiptNote" (
+        "id" TEXT NOT NULL,
+        "grnNumber" TEXT NOT NULL,
+        "purchaseId" TEXT NOT NULL,
+        "receivedBy" TEXT,
+        "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "GoodsReceiptNote_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "GoodsReceiptNote_grnNumber_key" ON "GoodsReceiptNote"("grnNumber")`,
+
+      `CREATE TABLE IF NOT EXISTS "GoodsReceiptNoteItem" (
+        "id" TEXT NOT NULL,
+        "grnId" TEXT NOT NULL,
+        "purchaseItemId" TEXT,
+        "productId" TEXT NOT NULL,
+        "variantId" TEXT,
+        "expectedQty" INTEGER NOT NULL,
+        "receivedQty" INTEGER NOT NULL,
+        "acceptedQty" INTEGER NOT NULL,
+        "rejectedQty" INTEGER NOT NULL DEFAULT 0,
+        "unitCost" DECIMAL(12,2) NOT NULL,
+        "totalCost" DECIMAL(14,2) NOT NULL,
+        CONSTRAINT "GoodsReceiptNoteItem_pkey" PRIMARY KEY ("id")
+      )`,
+
+      `CREATE TABLE IF NOT EXISTS "SupplierPayment" (
+        "id" TEXT NOT NULL,
+        "supplierId" TEXT NOT NULL,
+        "amount" DECIMAL(14,2) NOT NULL,
+        "paidAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "paymentMethod" TEXT,
+        "reference" TEXT,
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "SupplierPayment_pkey" PRIMARY KEY ("id")
+      )`,
+
+      `CREATE TABLE IF NOT EXISTS "SupplierPaymentInvoice" (
+        "id" TEXT NOT NULL,
+        "paymentId" TEXT NOT NULL,
+        "invoiceNo" TEXT NOT NULL,
+        CONSTRAINT "SupplierPaymentInvoice_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "SupplierPaymentInvoice_invoiceNo_key" ON "SupplierPaymentInvoice"("invoiceNo")`,
+
+      `CREATE TABLE IF NOT EXISTS "Purchase" (
+        "id" TEXT NOT NULL,
+        "supplierId" TEXT NOT NULL,
+        "referenceNo" TEXT NOT NULL,
+        "orderDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "expectedDate" TIMESTAMP(3),
+        "status" TEXT NOT NULL DEFAULT 'draft',
+        "subtotal" DECIMAL(12,2) NOT NULL,
+        "taxAmount" DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "discount" DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "total" DECIMAL(12,2) NOT NULL,
+        "paidAmount" DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "notes" TEXT,
+        "createdBy" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Purchase_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Purchase_referenceNo_key" ON "Purchase"("referenceNo")`,
+      `CREATE INDEX IF NOT EXISTS "Purchase_supplierId_idx" ON "Purchase"("supplierId")`,
+      `CREATE INDEX IF NOT EXISTS "Purchase_status_idx" ON "Purchase"("status")`,
+      `CREATE INDEX IF NOT EXISTS "Purchase_createdAt_idx" ON "Purchase"("createdAt")`,
+
+      `CREATE TABLE IF NOT EXISTS "PurchaseItem" (
+        "id" TEXT NOT NULL,
+        "purchaseId" TEXT NOT NULL,
+        "productId" TEXT,
+        "variantId" TEXT,
+        "description" TEXT,
+        "quantity" INTEGER NOT NULL,
+        "unitPrice" DECIMAL(10,2) NOT NULL,
+        "totalPrice" DECIMAL(12,2) NOT NULL,
+        "totalBill" DECIMAL(14,2) NOT NULL,
+        "receivedQty" INTEGER NOT NULL DEFAULT 0,
+        CONSTRAINT "PurchaseItem_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "PurchaseItem_purchaseId_idx" ON "PurchaseItem"("purchaseId")`,
+      `CREATE INDEX IF NOT EXISTS "PurchaseItem_productId_idx" ON "PurchaseItem"("productId")`,
+
+      `CREATE TABLE IF NOT EXISTS "Expense" (
+        "id" TEXT NOT NULL,
+        "description" TEXT NOT NULL,
+        "categoryId" TEXT NOT NULL,
+        "amount" DECIMAL(10,2) NOT NULL,
+        "taxAmount" DECIMAL(10,2) NOT NULL DEFAULT 0,
+        "expenseDate" TIMESTAMP(3) NOT NULL,
+        "paymentMethod" TEXT,
+        "paymentAccountId" TEXT,
+        "journalEntryId" TEXT,
+        "referenceNo" TEXT,
+        "notes" TEXT,
+        "receiptUrl" TEXT,
+        "createdBy" TEXT,
+        "updatedBy" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Expense_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Expense_journalEntryId_key" ON "Expense"("journalEntryId")`,
+      `CREATE INDEX IF NOT EXISTS "Expense_categoryId_idx" ON "Expense"("categoryId")`,
+      `CREATE INDEX IF NOT EXISTS "Expense_paymentAccountId_idx" ON "Expense"("paymentAccountId")`
     ];
 
     for (const sql of tableFixes) {
@@ -185,6 +349,8 @@ export class PrismaService
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3)`],
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "reservedStock" INTEGER NOT NULL DEFAULT 0`],
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT`],
+      // === OrderItem Table ===
+      ['OrderItem',      `ALTER TABLE "OrderItem" ADD COLUMN IF NOT EXISTS "costingLotId" TEXT`],
     ];
 
 
@@ -220,6 +386,12 @@ export class PrismaService
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Product_sizeChartId_fkey') THEN
           ALTER TABLE "Product" ADD CONSTRAINT "Product_sizeChartId_fkey"
             FOREIGN KEY ("sizeChartId") REFERENCES "SizeChart"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OrderItem_costingLotId_fkey') THEN
+          ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_costingLotId_fkey"
+            FOREIGN KEY ("costingLotId") REFERENCES "CostingLot"("id") ON DELETE SET NULL ON UPDATE CASCADE;
         END IF;
       END $$`,
     ];
