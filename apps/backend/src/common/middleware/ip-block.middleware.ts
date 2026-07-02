@@ -1,5 +1,5 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
-import { Request, Response, NextFunction } from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -10,14 +10,14 @@ export class IpBlockMiddleware implements NestMiddleware {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async use(req: Request, res: Response, next: NextFunction) {
-    const ip = req.ip || req.socket?.remoteAddress || '';
+  async use(req: FastifyRequest, res: FastifyReply, next: () => void) {
+    const ip = req.ip || '';
     if (!ip) return next();
 
     const blocked = await this.isBlocked(ip);
     if (blocked) {
       this.logger.warn(`Full-blocked request from IP: ${ip}`);
-      res.status(403).json({
+      res.status(403).send({
         statusCode: 403,
         message: 'Access denied. Your IP has been blocked.',
       });
@@ -25,6 +25,10 @@ export class IpBlockMiddleware implements NestMiddleware {
     }
 
     next();
+  }
+
+  invalidateCache() {
+    this.cache = null;
   }
 
   private async isBlocked(ip: string): Promise<boolean> {
@@ -43,7 +47,8 @@ export class IpBlockMiddleware implements NestMiddleware {
         const ips = new Map<string, true>();
         for (const e of entries) ips.set(e.ip, true);
         this.cache = { ips, timestamp: now };
-      } catch {
+      } catch (error) {
+        this.logger.error(`Failed to fetch blocked IPs, allowing traffic through: ${error instanceof Error ? error.message : error}`);
         this.cache = { ips: new Map(), timestamp: now };
       }
     }

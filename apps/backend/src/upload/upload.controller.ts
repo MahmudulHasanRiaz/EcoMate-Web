@@ -8,6 +8,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import * as fastify from 'fastify';
 import { MediaService } from '../media/media.service';
+import type { UploadFile } from '../storage/storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -45,14 +46,14 @@ export class UploadController {
       throw new BadRequestException('File too large');
     }
 
-    const multerFile = {
+    const uploadFile: UploadFile = {
       buffer,
       mimetype: file.mimetype,
       size: buffer.length,
       originalname: file.filename,
-    } as any;
+    };
 
-    return this.media.ingestFromMulter(multerFile, {
+    return this.media.ingestFromMulter(uploadFile, {
       filename,
       alt,
       uploadedBy: user?.id,
@@ -104,14 +105,14 @@ export class UploadController {
             throw new BadRequestException('File too large');
           }
 
-          const multerFile = {
+          const uploadFile: UploadFile = {
             buffer,
             mimetype: part.mimetype,
             size: buffer.length,
             originalname: part.filename,
-          } as any;
+          };
 
-          const out = await this.media.ingestFromMulter(multerFile, {
+          const out = await this.media.ingestFromMulter(uploadFile, {
             uploadedBy: user?.id,
           });
           results.push({ ok: true, originalname: part.filename, ...out });

@@ -40,6 +40,6 @@ describe('LicenseService', () => {
   it('activateWithKeymate handles KeyMate unreachable', async () => {
     const result = await service.activateWithKeymate('test-key', 'test.com');
     expect(result.success).toBe(false);
-    expect(result.error).toBe('keymate_unreachable');
+    expect(result.error).toBe('unreachable');
   });
 });

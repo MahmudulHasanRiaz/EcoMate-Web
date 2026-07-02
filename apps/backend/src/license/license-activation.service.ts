@@ -19,27 +19,40 @@ export class LicenseActivationService {
   }
 
   async activate(dto: ActivateDto) {
-    const data: any = {
-      licenseKey: encrypt(dto.licenseKey),
-      keymateUrl: dto.keymateUrl,
-      domain: dto.domain || null,
-      apiKey: dto.apiKey ? encrypt(dto.apiKey) : null,
-      status: 'active',
-      licenseInfo: dto.licenseInfo || null,
-      activatedAt: new Date(),
-      expiresAt: dto.licenseInfo?.expiry ? new Date(dto.licenseInfo.expiry) : null,
-      errorMessage: null,
-    };
+    const encryptedKey = encrypt(dto.licenseKey);
+    const encryptedApiKey = dto.apiKey ? encrypt(dto.apiKey) : null;
 
     const existing = await this.find();
     if (existing) {
       return this.prisma.licenseActivation.update({
         where: { id: existing.id },
-        data,
+        data: {
+          licenseKey: encryptedKey,
+          keymateUrl: dto.keymateUrl,
+          domain: dto.domain || null,
+          apiKey: encryptedApiKey,
+          status: 'active',
+          licenseInfo: dto.licenseInfo ?? undefined,
+          activatedAt: new Date(),
+          expiresAt: dto.licenseInfo?.expiry ? new Date(dto.licenseInfo.expiry) : undefined,
+          errorMessage: null,
+        },
       });
     }
 
-    return this.prisma.licenseActivation.create({ data } as any);
+    return this.prisma.licenseActivation.create({
+      data: {
+        licenseKey: encryptedKey,
+        keymateUrl: dto.keymateUrl,
+        domain: dto.domain || null,
+        apiKey: encryptedApiKey,
+        status: 'active',
+        licenseInfo: dto.licenseInfo ?? undefined,
+        activatedAt: new Date(),
+        expiresAt: dto.licenseInfo?.expiry ? new Date(dto.licenseInfo.expiry) : undefined,
+        errorMessage: null,
+      },
+    });
   }
 
   async deactivate(errorMessage?: string) {

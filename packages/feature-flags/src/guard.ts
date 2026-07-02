@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector, ModuleRef } from '@nestjs/core';
 import { REQUIRES_FEATURE_KEY } from './decorator';
-import { FeatureFlagsService } from './index';
+import { FeatureFlagsService } from './feature-flags.service';
 
 const FEATURE_ERROR_MESSAGES: Record<string, string> = {
   not_found: 'License key not found. Please verify your license key.',
@@ -36,10 +36,17 @@ export class FeatureGuard implements CanActivate {
     ]);
     if (!featureKey) return true;
 
+    const lic = this.featureFlags.getLicense();
+
+    if (lic === null) {
+      throw new ForbiddenException(
+        FEATURE_ERROR_MESSAGES['not_verified'] || 'License not yet verified. Please try again in a moment.',
+      );
+    }
+
     if (!this.featureFlags.canUse(featureKey)) {
-      const lic = this.featureFlags.getLicense();
-      const code = lic?.code;
-      let message = code
+      const code = lic.code;
+      const message = code
         ? (FEATURE_ERROR_MESSAGES[code] || `License error: ${code}`)
         : `Feature "${featureKey}" is not included in your plan`;
       throw new ForbiddenException(message);

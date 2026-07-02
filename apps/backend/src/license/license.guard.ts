@@ -1,4 +1,4 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { LicenseActivationService } from './license-activation.service';
@@ -40,31 +40,38 @@ export class LicenseGuard implements CanActivate {
     ]);
     if (skipLicense) return true;
 
-    const activation = await this.licenseActivation.find();
-    if (!activation) {
-      throw new ForbiddenException(
-        process.env.NODE_ENV === 'production'
-          ? 'This EcoMate installation requires a valid license. Please contact your service provider.'
-          : 'License not activated. Please activate your license to continue.',
-      );
-    }
+    try {
+      const activation = await this.licenseActivation.find();
+      if (!activation) {
+        throw new ForbiddenException(
+          process.env.NODE_ENV === 'production'
+            ? 'This EcoMate installation requires a valid license. Please contact your service provider.'
+            : 'License not activated. Please activate your license to continue.',
+        );
+      }
 
-    if (activation.status !== 'active') {
-      const code = activation.errorMessage || 'inactive';
-      const message = LICENSE_ERROR_MESSAGES[code]
-        || `License is ${activation.status}: ${code}`;
-      throw new ForbiddenException(message);
-    }
-
-    const lic = this.featureFlags.getLicense();
-    if (lic && !lic.valid) {
-      const code = lic.code || 'unknown';
-      if (code !== 'not_verified' && code !== 'engine_unavailable') {
-        const message = LICENSE_ERROR_MESSAGES[code] || `License error: ${code}`;
+      if (activation.status !== 'active') {
+        const code = activation.errorMessage || 'inactive';
+        const message = LICENSE_ERROR_MESSAGES[code]
+          || `License is ${activation.status}: ${code}`;
         throw new ForbiddenException(message);
       }
-    }
 
-    return true;
+      const lic = this.featureFlags.getLicense();
+      if (lic && !lic.valid) {
+        const code = lic.code || 'unknown';
+        if (code !== 'not_verified' && code !== 'engine_unavailable') {
+          const message = LICENSE_ERROR_MESSAGES[code] || `License error: ${code}`;
+          throw new ForbiddenException(message);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
+      throw new ServiceUnavailableException(
+        'License check temporarily unavailable. Please try again.',
+      );
+    }
   }
 }

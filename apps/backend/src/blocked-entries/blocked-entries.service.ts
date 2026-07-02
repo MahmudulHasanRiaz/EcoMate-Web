@@ -1,10 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 
 @Injectable()
-export class BlockedEntriesService {
+export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(BlockedEntriesService.name);
+  private expireInterval: ReturnType<typeof setInterval>;
+
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit() {
+    this.expireInterval = setInterval(() => {
+      this.lazyExpire().catch((err) => {
+        this.logger.error(`lazyExpire failed: ${err instanceof Error ? err.message : err}`);
+      });
+    }, 60_000);
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.expireInterval);
+  }
 
   async findAll(type?: string, search?: string) {
     const ipWhere: any = {};
