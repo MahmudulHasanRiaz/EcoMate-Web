@@ -374,7 +374,98 @@ export class PrismaService
         CONSTRAINT "expense_categories_pkey" PRIMARY KEY ("id")
       )`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "expense_categories_slug_key" ON "expense_categories"("slug")`,
-      `CREATE INDEX IF NOT EXISTS "expense_categories_accountId_idx" ON "expense_categories"("accountId")`
+      `CREATE INDEX IF NOT EXISTS "expense_categories_accountId_idx" ON "expense_categories"("accountId")`,
+
+      `CREATE TABLE IF NOT EXISTS "Brand" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "logo" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Brand_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Brand_slug_key" ON "Brand"("slug")`,
+
+      `CREATE TABLE IF NOT EXISTS "BlockedIp" (
+        "id" TEXT NOT NULL,
+        "ip" TEXT NOT NULL,
+        "blockType" TEXT NOT NULL DEFAULT 'order',
+        "reason" TEXT,
+        "blockedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "blockedBy" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "whitelisted" BOOLEAN NOT NULL DEFAULT false,
+        "autoBlocked" BOOLEAN NOT NULL DEFAULT false,
+        "expiresAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "BlockedIp_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "BlockedIp_ip_key" ON "BlockedIp"("ip")`,
+
+      `CREATE TABLE IF NOT EXISTS "BlockedPhone" (
+        "id" TEXT NOT NULL,
+        "phone" TEXT NOT NULL,
+        "reason" TEXT,
+        "blockedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "blockedBy" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "whitelisted" BOOLEAN NOT NULL DEFAULT false,
+        "autoBlocked" BOOLEAN NOT NULL DEFAULT false,
+        "expiresAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "BlockedPhone_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "BlockedPhone_phone_key" ON "BlockedPhone"("phone")`,
+      `CREATE INDEX IF NOT EXISTS "BlockedPhone_phone_idx" ON "BlockedPhone"("phone")`,
+      `CREATE INDEX IF NOT EXISTS "BlockedPhone_isActive_idx" ON "BlockedPhone"("isActive")`,
+
+      `CREATE TABLE IF NOT EXISTS "BlockSettings" (
+        "id" TEXT NOT NULL DEFAULT 'singleton',
+        "data" JSONB NOT NULL,
+        CONSTRAINT "BlockSettings_pkey" PRIMARY KEY ("id")
+      )`,
+
+      `CREATE TABLE IF NOT EXISTS "LandingPage" (
+        "id" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "pageType" TEXT NOT NULL DEFAULT 'template',
+        "templateId" TEXT,
+        "sections" JSONB DEFAULT '[]',
+        "customHtml" TEXT,
+        "customCss" TEXT,
+        "productIds" JSONB DEFAULT '[]',
+        "comboIds" JSONB DEFAULT '[]',
+        "trackingJson" JSONB DEFAULT '{}',
+        "isActive" BOOLEAN NOT NULL DEFAULT false,
+        "isDraft" BOOLEAN NOT NULL DEFAULT true,
+        "publishedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "LandingPage_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "LandingPage_slug_key" ON "LandingPage"("slug")`,
+
+      `CREATE TABLE IF NOT EXISTS "LicenseActivation" (
+        "id" TEXT NOT NULL,
+        "licenseKey" TEXT NOT NULL,
+        "keymateUrl" TEXT NOT NULL,
+        "domain" TEXT,
+        "apiKey" TEXT,
+        "licenseInfo" JSONB,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "errorMessage" TEXT,
+        "activatedAt" TIMESTAMP(3),
+        "expiresAt" TIMESTAMP(3),
+        "lastCheckIn" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "LicenseActivation_pkey" PRIMARY KEY ("id")
+      )`
     ];
 
     for (const sql of tableFixes) {
@@ -458,6 +549,9 @@ export class PrismaService
       ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "startsAt" TIMESTAMP(3)`],
       ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`],
       ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],
+
+      // === User Table ===
+      ['User',           `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0`],
     ];
 
 
