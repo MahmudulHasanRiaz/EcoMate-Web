@@ -117,6 +117,37 @@ export class LicenseService implements OnModuleInit {
     }
   }
 
+  async sync() {
+    const activation = await this.licenseActivation.find();
+    if (!activation) {
+      return {
+        success: false,
+        error: 'not_found',
+        message: 'No active license found to sync.',
+      };
+    }
+    let creds;
+    try {
+      creds = await this.licenseActivation.getDecryptedCredentials();
+    } catch (err: any) {
+      return {
+        success: false,
+        error: 'decryption_failed',
+        message: 'Failed to decrypt stored credentials.',
+      };
+    }
+    if (!creds) {
+      return {
+        success: false,
+        error: 'not_found',
+        message: 'License credentials not found.',
+      };
+    }
+
+    const { licenseKey, domain, apiKey } = creds;
+    return this.activateWithKeymate(licenseKey, domain, apiKey || undefined);
+  }
+
   getStatus() {
     const lic = this.featureFlags.getLicense();
     const active = lic?.valid ?? false;

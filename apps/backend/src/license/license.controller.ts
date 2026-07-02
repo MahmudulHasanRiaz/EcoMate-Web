@@ -3,6 +3,7 @@ import { LicenseService } from './license.service';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('license')
 export class LicenseController {
@@ -14,6 +15,13 @@ export class LicenseController {
   async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
     const domain = req.hostname;
     return this.licenseService.activateWithKeymate(dto.licenseKey, domain, dto.apiKey);
+  }
+
+  @SkipLicenseCheck()
+  @Post('sync')
+  @Roles('superadmin', 'admin')
+  async sync() {
+    return this.licenseService.sync();
   }
 
   @Public()
