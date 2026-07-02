@@ -88,6 +88,7 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
               type: 'category',
               label: c.name,
               categoryId: c.id,
+              slug: c.slug ?? null,
               children: []
             });
           });

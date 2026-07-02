@@ -128,7 +128,7 @@ export function SidebarNav({ className, items, groups, ...props }: SidebarNavPro
       {/* Large screens (vertical scrollable sidebar) */}
       <ScrollArea
         orientation='vertical'
-        className='hidden lg:block w-full min-w-40 bg-background px-1 py-2 max-h-[calc(100vh-12rem)] overflow-y-auto pr-3'
+        className='hidden lg:flex lg:flex-col min-h-0 w-full min-w-40 bg-background px-1 py-2 flex-1 pr-3'
       >
         <nav
           className={cn(

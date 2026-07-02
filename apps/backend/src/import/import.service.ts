@@ -838,15 +838,17 @@ export class ImportService {
     const cachedId = brandCache.get(slug);
     if (cachedId) return cachedId;
 
-    const created = await this.prisma.brand.create({
-      data: {
+    const upserted = await this.prisma.brand.upsert({
+      where: { slug },
+      create: {
         name: brandName.trim(),
         slug,
         isActive: true,
       },
+      update: {}, // already exists — keep as-is
     });
-    brandCache.set(slug, created.id);
-    return created.id;
+    brandCache.set(slug, upserted.id);
+    return upserted.id;
   }
 
   private parseBrand(value?: string): string | null {

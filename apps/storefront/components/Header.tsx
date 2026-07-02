@@ -135,7 +135,10 @@ function NavItem({ item }: { item: any }) {
   }, []);
 
   const getHref = (it: any) => {
-    if (it.type === 'category') return `/products?categoryId=${it.categoryId || it.id}`;
+    if (it.type === 'category') {
+      if (it.slug) return `/products?category=${it.slug}`;
+      if (it.categoryId) return `/products?categoryId=${it.categoryId}`;
+    }
     return it.url || '/';
   };
 
@@ -195,7 +198,10 @@ function SubMenuItem({ item }: { item: any }) {
   }, []);
 
   const getHref = (it: any) => {
-    if (it.type === 'category') return `/products?categoryId=${it.categoryId || it.id}`;
+    if (it.type === 'category') {
+      if (it.slug) return `/products?category=${it.slug}`;
+      if (it.categoryId) return `/products?categoryId=${it.categoryId}`;
+    }
     return it.url || '/';
   };
 
@@ -281,13 +287,15 @@ function NavSlider({ children }: { children: React.ReactNode }) {
   const trackRef = useRef<HTMLDivElement>(null);
   
   const [isHovered, setIsHovered] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   
   const currentX = useRef(0);
   const startX = useRef(0);
   const initialX = useRef(0);
   const speed = useRef(0.5); // pixels per frame
   const isPointerDown = useRef(false);
+  // Use a ref (not state) so click capture handler always sees the current value
+  // without waiting for a React re-render cycle.
+  const didDrag = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -326,6 +334,7 @@ function NavSlider({ children }: { children: React.ReactNode }) {
 
   const handlePointerDown = (e: React.PointerEvent) => {
     isPointerDown.current = true;
+    didDrag.current = false;
     startX.current = e.clientX;
     initialX.current = currentX.current;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -339,7 +348,7 @@ function NavSlider({ children }: { children: React.ReactNode }) {
 
     const dx = e.clientX - startX.current;
     if (Math.abs(dx) > 5) {
-      setIsDragging(true); // actually dragged
+      didDrag.current = true; // actually dragged — use ref, not state
     }
 
     let newX = initialX.current + dx;
@@ -356,7 +365,11 @@ function NavSlider({ children }: { children: React.ReactNode }) {
   const handlePointerUp = (e: React.PointerEvent) => {
     isPointerDown.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    setTimeout(() => setIsDragging(false), 50);
+    // Reset didDrag shortly after so the ref is clean for the next interaction.
+    // We do NOT reset it immediately here because the browser fires the
+    // click event synchronously after pointerup — so the captureClick handler
+    // below still needs the correct value.
+    setTimeout(() => { didDrag.current = false; }, 50);
   };
 
   return (
@@ -367,7 +380,7 @@ function NavSlider({ children }: { children: React.ReactNode }) {
       onMouseLeave={() => {
         setIsHovered(false);
         isPointerDown.current = false;
-        setIsDragging(false);
+        didDrag.current = false;
       }}
     >
       <div 
@@ -381,7 +394,10 @@ function NavSlider({ children }: { children: React.ReactNode }) {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onClickCapture={(e) => {
-            if (isDragging) {
+            // Only block the click if the user actually dragged (moved >5px).
+            // Using a ref (not state) means this handler always reads the
+            // current value synchronously — no stale-closure/timing issues.
+            if (didDrag.current) {
               e.stopPropagation();
               e.preventDefault();
             }
