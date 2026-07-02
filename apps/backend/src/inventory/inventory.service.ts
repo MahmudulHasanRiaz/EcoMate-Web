@@ -105,9 +105,7 @@ export class InventoryService {
     const variantIds = [
       ...new Set(data.map((l) => l.variantId).filter(Boolean)),
     ];
-    const comboIds = [
-      ...new Set(data.map((l) => l.comboId).filter(Boolean)),
-    ];
+    const comboIds = [...new Set(data.map((l) => l.comboId).filter(Boolean))];
 
     const [products, variants, combos] = await Promise.all([
       productIds.length
@@ -151,16 +149,14 @@ export class InventoryService {
       return {
         ...l,
         productName: l.productId
-          ? productMap.get(l.productId)?.name ?? null
+          ? (productMap.get(l.productId)?.name ?? null)
           : null,
         variantName: variant
           ? variant.attributeValues
               .map((av) => av.attributeValue.value)
               .join(' / ') || variant.sku
           : null,
-        comboName: l.comboId
-          ? comboMap.get(l.comboId)?.name ?? null
-          : null,
+        comboName: l.comboId ? (comboMap.get(l.comboId)?.name ?? null) : null,
       };
     });
 
@@ -184,7 +180,9 @@ export class InventoryService {
         include: {
           items: {
             include: {
-              product: { select: { id: true, name: true, type: true, manageStock: true } },
+              product: {
+                select: { id: true, name: true, type: true, manageStock: true },
+              },
               variant: { select: { id: true, sku: true } },
             },
           },
@@ -192,7 +190,11 @@ export class InventoryService {
       });
       if (!combo) throw new NotFoundException('Combo not found');
 
-      const adjusted: { productId: string; productName: string; quantity: number }[] = [];
+      const adjusted: {
+        productId: string;
+        productName: string;
+        quantity: number;
+      }[] = [];
       const skipped: string[] = [];
 
       for (const item of combo.items) {
@@ -240,7 +242,9 @@ export class InventoryService {
             quantity: qty,
           });
         } else {
-          skipped.push(`${item.product.name} (stock tracking not enabled — no change needed)`);
+          skipped.push(
+            `${item.product.name} (stock tracking not enabled — no change needed)`,
+          );
         }
       }
 
@@ -248,7 +252,9 @@ export class InventoryService {
         id: combo.id,
         name: combo.name,
         items: adjusted,
-        ...(skipped.length > 0 && { info: `${skipped.length} item(s) skipped: ${skipped.join('; ')}` }),
+        ...(skipped.length > 0 && {
+          info: `${skipped.length} item(s) skipped: ${skipped.join('; ')}`,
+        }),
       };
     }
 
@@ -434,11 +440,19 @@ export class InventoryService {
     }
   }
 
-  async stockOverview(params: { page?: number; perPage?: number; search?: string; categoryId?: string; type?: string; sortBy?: string; sortOrder?: 'asc' | 'desc' }) {
+  async stockOverview(params: {
+    page?: number;
+    perPage?: number;
+    search?: string;
+    categoryId?: string;
+    type?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
     const page = params.page || 1;
     const perPage = params.perPage || 20;
     const where: any = { isActive: true };
-    
+
     if (params.search) {
       where.OR = [
         { name: { contains: params.search, mode: 'insensitive' } },
@@ -447,13 +461,15 @@ export class InventoryService {
     }
     if (params.categoryId) where.categoryId = params.categoryId;
     if (params.type) where.type = params.type;
-    
+
     const orderBy: any = {};
     if (params.sortBy === 'name') orderBy.name = params.sortOrder || 'asc';
-    else if (params.sortBy === 'stock') orderBy.stock = params.sortOrder || 'desc';
-    else if (params.sortBy === 'price') orderBy.basePrice = params.sortOrder || 'desc';
+    else if (params.sortBy === 'stock')
+      orderBy.stock = params.sortOrder || 'desc';
+    else if (params.sortBy === 'price')
+      orderBy.basePrice = params.sortOrder || 'desc';
     else orderBy.updatedAt = 'desc';
-    
+
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
@@ -490,7 +506,7 @@ export class InventoryService {
       }),
       this.prisma.product.count({ where }),
     ]);
-    
+
     return {
       data,
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },

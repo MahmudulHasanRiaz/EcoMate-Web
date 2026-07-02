@@ -3,7 +3,10 @@ import { SearchController } from '../search.controller';
 
 describe('SearchController', () => {
   it('has RequiresFeature(storefront_search) metadata', () => {
-    const featureKey = Reflect.getMetadata(REQUIRES_FEATURE_KEY, SearchController);
+    const featureKey = Reflect.getMetadata(
+      REQUIRES_FEATURE_KEY,
+      SearchController,
+    );
     expect(featureKey).toBe('storefront_search');
   });
 });

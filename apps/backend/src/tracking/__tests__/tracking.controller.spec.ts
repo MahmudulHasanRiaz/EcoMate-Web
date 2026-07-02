@@ -6,7 +6,10 @@ describe('TrackingController', () => {
 
   it('has no RequiresFeature metadata on any method', () => {
     for (const method of allPublicMethods) {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, TrackingController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        TrackingController.prototype[method],
+      );
       expect(meta).toBeUndefined();
     }
   });

@@ -3,13 +3,17 @@ import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { CreateCouponDto } from './create-coupon.dto';
 
 export class UpdateCouponDto extends PartialType(CreateCouponDto) {
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   code?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   type?: string;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   value?: number;
 
   @IsOptional()

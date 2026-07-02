@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
@@ -28,7 +37,10 @@ export class SuppliersController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateSupplierDto: UpdateSupplierDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateSupplierDto: UpdateSupplierDto,
+  ) {
     return this.suppliersService.update(id, updateSupplierDto);
   }
 
@@ -48,7 +60,11 @@ export class SuppliersController {
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
   ) {
-    return this.suppliersService.getPayments(id, page ? +page : 1, perPage ? +perPage : 20);
+    return this.suppliersService.getPayments(
+      id,
+      page ? +page : 1,
+      perPage ? +perPage : 20,
+    );
   }
 
   @Get('payments/:paymentId')

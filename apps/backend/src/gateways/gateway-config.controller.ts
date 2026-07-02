@@ -1,4 +1,14 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, Query, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Query,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { PaymentOptionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -21,9 +31,27 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   async ensureStandardGateways() {
     // 1. Ensure payment options
     const paymentOptions = [
-      { type: PaymentOptionType.FULL_PAYMENT, name: 'Full Payment', description: 'Pay the full order amount online', enabled: true, sortOrder: 1 },
-      { type: PaymentOptionType.PARTIAL_PAYMENT, name: 'Partial Payment', description: 'Pay a partial amount online, rest on delivery', enabled: true, sortOrder: 2 },
-      { type: PaymentOptionType.CASH_ON_DELIVERY, name: 'Cash on Delivery', description: 'Pay in cash when order is delivered', enabled: true, sortOrder: 3 },
+      {
+        type: PaymentOptionType.FULL_PAYMENT,
+        name: 'Full Payment',
+        description: 'Pay the full order amount online',
+        enabled: true,
+        sortOrder: 1,
+      },
+      {
+        type: PaymentOptionType.PARTIAL_PAYMENT,
+        name: 'Partial Payment',
+        description: 'Pay a partial amount online, rest on delivery',
+        enabled: true,
+        sortOrder: 2,
+      },
+      {
+        type: PaymentOptionType.CASH_ON_DELIVERY,
+        name: 'Cash on Delivery',
+        description: 'Pay in cash when order is delivered',
+        enabled: true,
+        sortOrder: 3,
+      },
     ];
     for (const opt of paymentOptions) {
       await this.prisma.paymentOption.upsert({
@@ -35,13 +63,83 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
     // 2. Ensure gateways
     const gateways = [
-      { code: 'cash', name: 'Cash', type: 'cash', paymentOptionType: PaymentOptionType.CASH_ON_DELIVERY, enabled: true, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 1 },
-      { code: 'bkash', name: 'bKash (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000000', credentials: {}, sortOrder: 2 },
-      { code: 'nagad', name: 'Nagad (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000001', credentials: {}, sortOrder: 3 },
-      { code: 'rocket', name: 'Rocket (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: '01700000002', credentials: {}, sortOrder: 4 },
-      { code: 'upay', name: 'Upay (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 5 },
-      { code: 'cellfin', name: 'Cellfin (Manual)', type: 'manual', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'personal', phoneNumber: null, credentials: {}, sortOrder: 6 },
-      { code: 'bkash_pgw', name: 'bKash PGW (API)', type: 'api', paymentOptionType: PaymentOptionType.FULL_PAYMENT, enabled: false, mode: 'sandbox', phoneNumber: null, credentials: { appKey: '', appSecret: '', username: '', password: '' }, sortOrder: 7 },
+      {
+        code: 'cash',
+        name: 'Cash',
+        type: 'cash',
+        paymentOptionType: PaymentOptionType.CASH_ON_DELIVERY,
+        enabled: true,
+        mode: 'personal',
+        phoneNumber: null,
+        credentials: {},
+        sortOrder: 1,
+      },
+      {
+        code: 'bkash',
+        name: 'bKash (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: '01700000000',
+        credentials: {},
+        sortOrder: 2,
+      },
+      {
+        code: 'nagad',
+        name: 'Nagad (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: '01700000001',
+        credentials: {},
+        sortOrder: 3,
+      },
+      {
+        code: 'rocket',
+        name: 'Rocket (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: '01700000002',
+        credentials: {},
+        sortOrder: 4,
+      },
+      {
+        code: 'upay',
+        name: 'Upay (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: null,
+        credentials: {},
+        sortOrder: 5,
+      },
+      {
+        code: 'cellfin',
+        name: 'Cellfin (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: null,
+        credentials: {},
+        sortOrder: 6,
+      },
+      {
+        code: 'bkash_pgw',
+        name: 'bKash PGW (API)',
+        type: 'api',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'sandbox',
+        phoneNumber: null,
+        credentials: { appKey: '', appSecret: '', username: '', password: '' },
+        sortOrder: 7,
+      },
     ];
     for (const g of gateways) {
       await this.prisma.paymentGateway.upsert({
@@ -97,7 +195,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       FULL_PAYMENT: 'Full Payment',
       PARTIAL_PAYMENT: 'Partial Payment',
       CASH_ON_DELIVERY: 'Cash on Delivery',
-    }
+    };
     return this.prisma.paymentOption.upsert({
       where: { type: type as PaymentOptionType },
       create: { type, name: displayNames[type] || type, ...dto },
@@ -110,7 +208,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @RequiresFeature('admin_payments')
   @Get('admin')
   async findAllAdmin(@Query('optionType') optionType?: string) {
-    const where = optionType ? { paymentOptionType: optionType as PaymentOptionType } : {};
+    const where = optionType
+      ? { paymentOptionType: optionType as PaymentOptionType }
+      : {};
     const gateways = await this.prisma.paymentGateway.findMany({
       where,
       orderBy: [{ paymentOptionType: 'asc' }, { sortOrder: 'asc' }],
@@ -135,7 +235,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @RequiresFeature('admin_payments')
   @Post()
   async createGateway(@Body() dto: any) {
-    const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
+    const phoneNumber = dto.phoneNumber
+      ? normalizePhone(dto.phoneNumber)
+      : null;
     return this.prisma.paymentGateway.create({
       data: {
         code: dto.code,
@@ -155,7 +257,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @RequiresFeature('admin_payments')
   @Put(':code')
   async upsertGateway(@Param('code') code: string, @Body() dto: any) {
-    const phoneNumber = dto.phoneNumber ? normalizePhone(dto.phoneNumber) : null;
+    const phoneNumber = dto.phoneNumber
+      ? normalizePhone(dto.phoneNumber)
+      : null;
     return this.prisma.paymentGateway.upsert({
       where: { code },
       create: {
@@ -199,11 +303,27 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   async upsertProductOverride(
     @Param('productId') productId: string,
     @Param('type') type: PaymentOptionType,
-    @Body() dto: { enabled: boolean; partialFixedAmount?: number; partialPercentage?: number },
+    @Body()
+    dto: {
+      enabled: boolean;
+      partialFixedAmount?: number;
+      partialPercentage?: number;
+    },
   ) {
     return this.prisma.productPaymentOption.upsert({
-      where: { productId_comboId_paymentOptionType: { productId, comboId: null as any, paymentOptionType: type } },
-      create: { productId, comboId: null as any, paymentOptionType: type, ...dto },
+      where: {
+        productId_comboId_paymentOptionType: {
+          productId,
+          comboId: null as any,
+          paymentOptionType: type,
+        },
+      },
+      create: {
+        productId,
+        comboId: null as any,
+        paymentOptionType: type,
+        ...dto,
+      },
       update: dto,
     });
   }
@@ -216,7 +336,13 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     @Param('type') type: PaymentOptionType,
   ) {
     return this.prisma.productPaymentOption.delete({
-      where: { productId_comboId_paymentOptionType: { productId, comboId: null as any, paymentOptionType: type } },
+      where: {
+        productId_comboId_paymentOptionType: {
+          productId,
+          comboId: null as any,
+          paymentOptionType: type,
+        },
+      },
     });
   }
 
@@ -237,11 +363,27 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   async upsertComboOverride(
     @Param('comboId') comboId: string,
     @Param('type') type: PaymentOptionType,
-    @Body() dto: { enabled: boolean; partialFixedAmount?: number; partialPercentage?: number },
+    @Body()
+    dto: {
+      enabled: boolean;
+      partialFixedAmount?: number;
+      partialPercentage?: number;
+    },
   ) {
     return this.prisma.productPaymentOption.upsert({
-      where: { productId_comboId_paymentOptionType: { productId: null as any, comboId, paymentOptionType: type } },
-      create: { productId: null as any, comboId, paymentOptionType: type, ...dto },
+      where: {
+        productId_comboId_paymentOptionType: {
+          productId: null as any,
+          comboId,
+          paymentOptionType: type,
+        },
+      },
+      create: {
+        productId: null as any,
+        comboId,
+        paymentOptionType: type,
+        ...dto,
+      },
       update: dto,
     });
   }
@@ -254,7 +396,13 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     @Param('type') type: PaymentOptionType,
   ) {
     return this.prisma.productPaymentOption.delete({
-      where: { productId_comboId_paymentOptionType: { productId: null as any, comboId, paymentOptionType: type } },
+      where: {
+        productId_comboId_paymentOptionType: {
+          productId: null as any,
+          comboId,
+          paymentOptionType: type,
+        },
+      },
     });
   }
 

@@ -34,7 +34,9 @@ export class LicenseActivationService {
           status: 'active',
           licenseInfo: dto.licenseInfo ?? undefined,
           activatedAt: new Date(),
-          expiresAt: dto.licenseInfo?.expiry ? new Date(dto.licenseInfo.expiry) : undefined,
+          expiresAt: dto.licenseInfo?.expiry
+            ? new Date(dto.licenseInfo.expiry)
+            : undefined,
           errorMessage: null,
         },
       });
@@ -49,7 +51,9 @@ export class LicenseActivationService {
         status: 'active',
         licenseInfo: dto.licenseInfo ?? undefined,
         activatedAt: new Date(),
-        expiresAt: dto.licenseInfo?.expiry ? new Date(dto.licenseInfo.expiry) : undefined,
+        expiresAt: dto.licenseInfo?.expiry
+          ? new Date(dto.licenseInfo.expiry)
+          : undefined,
         errorMessage: null,
       },
     });
@@ -84,7 +88,9 @@ export class LicenseActivationService {
       data: {
         licenseInfo,
         lastCheckIn: new Date(),
-        expiresAt: licenseInfo?.expiry ? new Date(licenseInfo.expiry) : undefined,
+        expiresAt: licenseInfo?.expiry
+          ? new Date(licenseInfo.expiry)
+          : undefined,
       },
     });
   }

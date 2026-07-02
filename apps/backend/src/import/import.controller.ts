@@ -24,7 +24,6 @@ function estimateCsvRows(content: string): number {
   return Math.max(1, count - 1); // Exclude header row
 }
 
-
 @Controller('import')
 @RequiresFeature('admin_import')
 export class ImportController {
@@ -86,7 +85,11 @@ export class ImportController {
           mode: mode === 'update' ? 'update' : 'create',
           dryRun: true,
         });
-        return { status: 'completed', summary: result.summary, errors: result.errors };
+        return {
+          status: 'completed',
+          summary: result.summary,
+          errors: result.errors,
+        };
       } catch (err) {
         throw new BadRequestException((err as Error).message);
       }

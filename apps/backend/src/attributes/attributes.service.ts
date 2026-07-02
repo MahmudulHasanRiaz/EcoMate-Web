@@ -39,9 +39,9 @@ export class AttributesService {
     return this.prisma.attribute.create({
       data: {
         name: dto.name,
-        values: dto.values
+        values: dto.values?.length
           ? {
-              createMany: { data: dto.values as any[] },
+              createMany: { data: dto.values },
             }
           : undefined,
       },
@@ -56,17 +56,24 @@ export class AttributesService {
   }
 
   async remove(id: string) {
-    await this.prisma.attribute.findUniqueOrThrow({ where: { id } });
     await this.prisma.attribute.delete({ where: { id } });
     return { message: 'Attribute deleted' };
   }
 
   async addValue(attributeId: string, dto: CreateAttributeValueDto) {
-    await this.prisma.attribute.findUniqueOrThrow({
+    const attr = await this.prisma.attribute.findUnique({
       where: { id: attributeId },
+      select: { id: true },
     });
+    if (!attr) throw new NotFoundException('Attribute not found');
+
+    const existing = await this.prisma.attributeValue.findFirst({
+      where: { attributeId, value: dto.value },
+    });
+    if (existing) throw new ConflictException('Value already exists for this attribute');
+
     return this.prisma.attributeValue.create({
-      data: { value: dto.value, sortOrder: dto.sortOrder || 0, attributeId },
+      data: { value: dto.value, sortOrder: dto.sortOrder ?? 0, attributeId },
     });
   }
 

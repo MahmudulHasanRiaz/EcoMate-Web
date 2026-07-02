@@ -48,7 +48,9 @@ export class IpBlockMiddleware implements NestMiddleware {
         for (const e of entries) ips.set(e.ip, true);
         this.cache = { ips, timestamp: now };
       } catch (error) {
-        this.logger.error(`Failed to fetch blocked IPs, allowing traffic through: ${error instanceof Error ? error.message : error}`);
+        this.logger.error(
+          `Failed to fetch blocked IPs, allowing traffic through: ${error instanceof Error ? error.message : error}`,
+        );
         this.cache = { ips: new Map(), timestamp: now };
       }
     }

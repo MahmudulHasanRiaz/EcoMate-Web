@@ -36,9 +36,26 @@ describe('SearchService', () => {
   });
 
   it('searches all three entity types', async () => {
-    const mockOrder = { id: '1', displayId: 'ORD-1', total: 100, status: 'Pending', customerName: 'Test', phone: null };
-    const mockProduct = { id: '2', name: 'Test Product', sku: 'TP-1', price: 50 };
-    const mockCustomer = { id: '3', name: 'Test User', phone: '017...', email: 't@t.com' };
+    const mockOrder = {
+      id: '1',
+      displayId: 'ORD-1',
+      total: 100,
+      status: 'Pending',
+      customerName: 'Test',
+      phone: null,
+    };
+    const mockProduct = {
+      id: '2',
+      name: 'Test Product',
+      sku: 'TP-1',
+      price: 50,
+    };
+    const mockCustomer = {
+      id: '3',
+      name: 'Test User',
+      phone: '017...',
+      email: 't@t.com',
+    };
 
     prisma.$queryRawUnsafe
       .mockResolvedValueOnce([mockOrder])
@@ -57,7 +74,14 @@ describe('SearchService', () => {
   });
 
   it('returns partial results if only some entities match', async () => {
-    const mockOrder = { id: '1', displayId: 'ORD-1', total: 100, status: 'Pending', customerName: 'Test', phone: null };
+    const mockOrder = {
+      id: '1',
+      displayId: 'ORD-1',
+      total: 100,
+      status: 'Pending',
+      customerName: 'Test',
+      phone: null,
+    };
 
     prisma.$queryRawUnsafe
       .mockResolvedValueOnce([mockOrder])

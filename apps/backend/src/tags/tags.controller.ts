@@ -6,11 +6,16 @@ import {
   Delete,
   Body,
   Param,
+  ValidationPipe,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { TagsService } from './tags.service';
+import { CreateTagDto } from './dto/create-tag.dto';
+import { UpdateTagDto } from './dto/update-tag.dto';
+import { BulkDeleteTagsDto } from './dto/bulk-delete-tags.dto';
+import { MergeTagsDto } from './dto/merge-tags.dto';
 
 @Controller('tags')
 export class TagsController {
@@ -39,7 +44,10 @@ export class TagsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_tags')
   @Post()
-  async create(@Body() dto: { name: string; slug: string }) {
+  async create(
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: CreateTagDto,
+  ) {
     return this.svc.create(dto);
   }
 
@@ -48,7 +56,8 @@ export class TagsController {
   @Put(':id')
   async update(
     @Param('id') id: string,
-    @Body() dto: { name?: string; slug?: string },
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: UpdateTagDto,
   ) {
     return this.svc.update(id, dto);
   }
@@ -63,14 +72,20 @@ export class TagsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_tags')
   @Post('bulk-delete')
-  async bulkDelete(@Body() dto: { ids: string[] }) {
+  async bulkDelete(
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: BulkDeleteTagsDto,
+  ) {
     return this.svc.bulkDelete(dto.ids);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_tags')
   @Post('merge')
-  async merge(@Body() dto: { keepId: string; removeId: string }) {
+  async merge(
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: MergeTagsDto,
+  ) {
     return this.svc.merge(dto.keepId, dto.removeId);
   }
 }

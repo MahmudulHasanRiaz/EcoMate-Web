@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFinancialPeriodDto } from './dto/create-financial-period.dto';
 
@@ -19,7 +24,9 @@ export class FinancialPeriodsService {
     });
 
     if (overlapping) {
-      throw new ConflictException('A financial period already exists for this date range');
+      throw new ConflictException(
+        'A financial period already exists for this date range',
+      );
     }
 
     return this.prisma.financialPeriod.create({ data: dto });
@@ -32,7 +39,9 @@ export class FinancialPeriodsService {
   }
 
   async findOne(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({ where: { id } });
+    const period = await this.prisma.financialPeriod.findUnique({
+      where: { id },
+    });
 
     if (!period) {
       throw new NotFoundException(`Financial period with ID ${id} not found`);
@@ -42,7 +51,9 @@ export class FinancialPeriodsService {
   }
 
   async closePeriod(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({ where: { id } });
+    const period = await this.prisma.financialPeriod.findUnique({
+      where: { id },
+    });
 
     if (!period) {
       throw new NotFoundException(`Financial period with ID ${id} not found`);
@@ -59,7 +70,9 @@ export class FinancialPeriodsService {
   }
 
   async openPeriod(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({ where: { id } });
+    const period = await this.prisma.financialPeriod.findUnique({
+      where: { id },
+    });
 
     if (!period) {
       throw new NotFoundException(`Financial period with ID ${id} not found`);

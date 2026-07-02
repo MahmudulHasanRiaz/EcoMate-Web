@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  BadRequestException,
+} from '@nestjs/common';
 import { ExpensesService } from './expenses.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -13,7 +24,10 @@ export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
 
   @Post()
-  create(@Body() createExpenseDto: CreateExpenseDto, @CurrentUser() user?: any) {
+  create(
+    @Body() createExpenseDto: CreateExpenseDto,
+    @CurrentUser() user?: any,
+  ) {
     return this.expensesService.create(createExpenseDto, user?.sub);
   }
 
@@ -46,7 +60,11 @@ export class ExpensesController {
   }
 
   @Put(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateExpenseDto: UpdateExpenseDto, @CurrentUser() user?: any) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateExpenseDto: UpdateExpenseDto,
+    @CurrentUser() user?: any,
+  ) {
     return this.expensesService.update(id, updateExpenseDto, user?.sub);
   }
 

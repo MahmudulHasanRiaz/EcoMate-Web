@@ -17,7 +17,16 @@ describe('EmailQueueService', () => {
   });
 
   it('adds email job to queue', async () => {
-    await service.send({ to: 'test@test.com', subject: 'Test', template: 'test', context: {} });
-    expect(mockQueue.add).toHaveBeenCalledWith('send', expect.any(Object), expect.any(Object));
+    await service.send({
+      to: 'test@test.com',
+      subject: 'Test',
+      template: 'test',
+      context: {},
+    });
+    expect(mockQueue.add).toHaveBeenCalledWith(
+      'send',
+      expect.any(Object),
+      expect.any(Object),
+    );
   });
 });

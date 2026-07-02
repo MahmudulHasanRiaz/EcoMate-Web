@@ -293,9 +293,27 @@ export class SystemSettingsController {
     }
     if (!Array.isArray(homepageSections) || homepageSections.length === 0) {
       homepageSections = [
-        { id: '1', title: 'Featured Gadgets', type: 'featured', limit: 4, enabled: true },
-        { id: '2', title: 'New Arrivals', type: 'new_arrivals', limit: 4, enabled: true },
-        { id: '3', title: 'Popular Items', type: 'popular', limit: 4, enabled: true },
+        {
+          id: '1',
+          title: 'Featured Gadgets',
+          type: 'featured',
+          limit: 4,
+          enabled: true,
+        },
+        {
+          id: '2',
+          title: 'New Arrivals',
+          type: 'new_arrivals',
+          limit: 4,
+          enabled: true,
+        },
+        {
+          id: '3',
+          title: 'Popular Items',
+          type: 'popular',
+          limit: 4,
+          enabled: true,
+        },
       ];
     }
 
@@ -349,8 +367,11 @@ export class SystemSettingsController {
           success: map['brand_success'] || '#22C55E',
           danger: map['brand_danger'] || '#EF4444',
           border: map['brand_border'] || '#E5E7EB',
-          shadowSoft: map['brand_shadow_soft'] || '0 8px 25px rgba(0,137,205,0.15)',
-          shadowStrong: map['brand_shadow_strong'] || '0 15px 45px -5px rgba(0,137,205,0.6)',
+          shadowSoft:
+            map['brand_shadow_soft'] || '0 8px 25px rgba(0,137,205,0.15)',
+          shadowStrong:
+            map['brand_shadow_strong'] ||
+            '0 15px 45px -5px rgba(0,137,205,0.6)',
         },
       },
       seo: {
@@ -377,10 +398,8 @@ export class SystemSettingsController {
           'true',
         pixelId:
           map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
-        purchaseMode:
-          map['tracking_meta_purchase_mode'] || 'instant',
-        validatedStatus:
-          map['tracking_meta_validated_status'] || '',
+        purchaseMode: map['tracking_meta_purchase_mode'] || 'instant',
+        validatedStatus: map['tracking_meta_validated_status'] || '',
       },
       tiktok: {
         pixelEnabled:
@@ -390,20 +409,38 @@ export class SystemSettingsController {
           map['tracking_tiktok_pixel_code'] ||
           process.env.TIKTOK_PIXEL_CODE ||
           '',
-        purchaseMode:
-          map['tracking_tiktok_purchase_mode'] || 'instant',
-        validatedStatus:
-          map['tracking_tiktok_validated_status'] || '',
+        purchaseMode: map['tracking_tiktok_purchase_mode'] || 'instant',
+        validatedStatus: map['tracking_tiktok_validated_status'] || '',
       },
       menu: (() => {
         const menuConfig = parseJson<{
-          header?: { mode?: string; showAllCategories?: boolean; excludedCategories?: string[]; items?: any[] };
-          mobile?: { mode?: string; showAllCategories?: boolean; excludedCategories?: string[]; items?: any[] };
+          header?: {
+            mode?: string;
+            showAllCategories?: boolean;
+            excludedCategories?: string[];
+            items?: any[];
+          };
+          mobile?: {
+            mode?: string;
+            showAllCategories?: boolean;
+            excludedCategories?: string[];
+            items?: any[];
+          };
           footer?: { columns?: any[] };
         }>(map['menu_config'], {});
         return {
-          header: menuConfig.header || { mode: 'include', showAllCategories: false, excludedCategories: [], items: [] },
-          mobile: menuConfig.mobile || { mode: 'include', showAllCategories: false, excludedCategories: [], items: [] },
+          header: menuConfig.header || {
+            mode: 'include',
+            showAllCategories: false,
+            excludedCategories: [],
+            items: [],
+          },
+          mobile: menuConfig.mobile || {
+            mode: 'include',
+            showAllCategories: false,
+            excludedCategories: [],
+            items: [],
+          },
           footer: menuConfig.footer || { columns: [] },
         };
       })(),
@@ -557,7 +594,14 @@ export class SystemSettingsController {
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_settings')
   async getSmtpSettings() {
-    const keys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
+    const keys = [
+      'smtp_host',
+      'smtp_port',
+      'smtp_user',
+      'smtp_pass',
+      'smtp_from_email',
+      'smtp_from_name',
+    ];
     const settings = await this.prisma.systemSetting.findMany({
       where: { key: { in: keys } },
     });
@@ -571,7 +615,14 @@ export class SystemSettingsController {
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_settings')
   async updateSmtpSettings(@Body() body: Record<string, string>) {
-    const allowedKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'];
+    const allowedKeys = [
+      'smtp_host',
+      'smtp_port',
+      'smtp_user',
+      'smtp_pass',
+      'smtp_from_email',
+      'smtp_from_name',
+    ];
     for (const key of allowedKeys) {
       if (body[key] !== undefined) {
         await this.prisma.systemSetting.upsert({
@@ -588,12 +639,24 @@ export class SystemSettingsController {
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_settings')
   async testSmtp() {
-    const smtpHost = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_host' } });
-    const smtpPort = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_port' } });
-    const smtpUser = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_user' } });
-    const smtpPass = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_pass' } });
-    const fromEmail = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_email' } });
-    const fromName = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_name' } });
+    const smtpHost = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_host' },
+    });
+    const smtpPort = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_port' },
+    });
+    const smtpUser = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_user' },
+    });
+    const smtpPass = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_pass' },
+    });
+    const fromEmail = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_from_email' },
+    });
+    const fromName = await this.prisma.systemSetting.findUnique({
+      where: { key: 'smtp_from_name' },
+    });
 
     if (!smtpHost?.value) {
       throw new BadRequestException('SMTP not configured');
@@ -603,10 +666,12 @@ export class SystemSettingsController {
       host: smtpHost.value,
       port: parseInt(smtpPort?.value || '587'),
       secure: smtpPort?.value === '465',
-      auth: smtpUser?.value ? {
-        user: smtpUser.value,
-        pass: smtpPass?.value || '',
-      } : undefined,
+      auth: smtpUser?.value
+        ? {
+            user: smtpUser.value,
+            pass: smtpPass?.value || '',
+          }
+        : undefined,
     });
 
     await transporter.verify();

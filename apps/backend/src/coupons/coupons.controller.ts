@@ -25,7 +25,10 @@ export class CouponsController {
   }
 
   @Get('validate')
-  async validate(@Query('code') code: string, @Query('userId') userId?: string) {
+  async validate(
+    @Query('code') code: string,
+    @Query('userId') userId?: string,
+  ) {
     if (!code) throw new BadRequestException('Coupon code is required');
     return this.couponsService.validate(code, userId);
   }

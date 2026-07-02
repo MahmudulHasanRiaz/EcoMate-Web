@@ -119,7 +119,11 @@ export class MediaService {
     type ProductInfo = { id: string; name: string; slug: string };
     type ComboInfo = { id: string; name: string };
     type CategoryInfo = { id: string; name: string };
-    type VariantInfo = { id: string; sku: string; product: { name: string } | null };
+    type VariantInfo = {
+      id: string;
+      sku: string;
+      product: { name: string } | null;
+    };
 
     const [products, combos, categories, variants] = await Promise.all([
       productIds.length
@@ -143,7 +147,11 @@ export class MediaService {
       variantIds.length
         ? this.prisma.productVariant.findMany({
             where: { id: { in: variantIds } },
-            select: { id: true, sku: true, product: { select: { name: true } } },
+            select: {
+              id: true,
+              sku: true,
+              product: { select: { name: true } },
+            },
           })
         : (Promise.resolve([]) as Promise<VariantInfo[]>),
     ]);
@@ -313,8 +321,10 @@ export class MediaService {
         signal: controller.signal,
         redirect: 'follow',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5'
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept:
+            'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5',
         },
       });
     } catch (err) {
@@ -371,10 +381,14 @@ export class MediaService {
       opts.filename?.trim() || undefined,
     );
 
-    if (!result.filename) throw new BadRequestException('Upload failed: missing filename');
-    if (!result.url) throw new BadRequestException('Upload failed: missing url');
-    if (!contentType) throw new BadRequestException('Upload failed: missing mimetype');
-    if (result.size == null) throw new BadRequestException('Upload failed: missing size');
+    if (!result.filename)
+      throw new BadRequestException('Upload failed: missing filename');
+    if (!result.url)
+      throw new BadRequestException('Upload failed: missing url');
+    if (!contentType)
+      throw new BadRequestException('Upload failed: missing mimetype');
+    if (result.size == null)
+      throw new BadRequestException('Upload failed: missing size');
 
     this.logger.debug(
       `Creating media from URL: filename="${result.filename}" url="${result.url}" mimeType="${contentType}" size=${result.size} hash=${hash}`,
@@ -415,7 +429,8 @@ export class MediaService {
     size: number;
     mimeType: string;
   }> {
-    if (!file?.buffer && !file?.path) throw new BadRequestException('No file uploaded');
+    if (!file?.buffer && !file?.path)
+      throw new BadRequestException('No file uploaded');
     if (!file.buffer && file.path) {
       file.buffer = await readFile(file.path);
     }
@@ -444,10 +459,14 @@ export class MediaService {
     );
     if (file.path) await unlink(file.path).catch(() => {});
 
-    if (!result.filename) throw new BadRequestException('Upload failed: missing filename');
-    if (!result.url) throw new BadRequestException('Upload failed: missing url');
-    if (!file.mimetype) throw new BadRequestException('Upload failed: missing mimetype');
-    if (file.size == null) throw new BadRequestException('Upload failed: missing size');
+    if (!result.filename)
+      throw new BadRequestException('Upload failed: missing filename');
+    if (!result.url)
+      throw new BadRequestException('Upload failed: missing url');
+    if (!file.mimetype)
+      throw new BadRequestException('Upload failed: missing mimetype');
+    if (file.size == null)
+      throw new BadRequestException('Upload failed: missing size');
 
     this.logger.debug(
       `Creating media: filename="${result.filename}" url="${result.url}" mimeType="${file.mimetype}" size=${file.size} hash=${hash}`,

@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Param, NotFoundException, BadRequestException, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  NotFoundException,
+  BadRequestException,
+  Query,
+} from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';

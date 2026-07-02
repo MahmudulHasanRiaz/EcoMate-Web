@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { FinancialPeriodsService } from './financial-periods.service';
 import { CreateFinancialPeriodDto } from './dto/create-financial-period.dto';
 import { AccountingEnabledGuard } from '../accounting/accounting-enabled.guard';
@@ -10,7 +18,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 @Controller('financial-periods')
 @RequiresFeature('admin_accounting')
 export class FinancialPeriodsController {
-  constructor(private readonly financialPeriodsService: FinancialPeriodsService) {}
+  constructor(
+    private readonly financialPeriodsService: FinancialPeriodsService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateFinancialPeriodDto) {

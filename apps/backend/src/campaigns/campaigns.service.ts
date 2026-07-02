@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailQueueService } from '../queue/email-queue/email-queue.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -32,7 +36,9 @@ export class CampaignsService {
   }
 
   async findTemplate(id: string) {
-    const template = await this.prisma.emailTemplate.findUnique({ where: { id } });
+    const template = await this.prisma.emailTemplate.findUnique({
+      where: { id },
+    });
     if (!template) throw new NotFoundException('Template not found');
     return template;
   }
@@ -85,7 +91,10 @@ export class CampaignsService {
       }),
       this.prisma.emailCampaign.count({ where }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findOne(id: string) {
@@ -107,7 +116,9 @@ export class CampaignsService {
       data: {
         ...dto,
         recipients: dto.recipients ? { set: dto.recipients } : undefined,
-        segmentFilter: dto.segmentFilter ? { set: dto.segmentFilter } : undefined,
+        segmentFilter: dto.segmentFilter
+          ? { set: dto.segmentFilter }
+          : undefined,
       },
     });
   }
@@ -123,10 +134,14 @@ export class CampaignsService {
   async sendCampaign(id: string) {
     const campaign = await this.findOne(id);
     if (campaign.status !== 'draft' && campaign.status !== 'scheduled') {
-      throw new BadRequestException('Campaign must be draft or scheduled to send');
+      throw new BadRequestException(
+        'Campaign must be draft or scheduled to send',
+      );
     }
 
-    let recipients = campaign.recipients as { email: string; name?: string }[] | null;
+    const recipients = campaign.recipients as
+      | { email: string; name?: string }[]
+      | null;
     if (!recipients || recipients.length === 0) {
       throw new BadRequestException('No recipients defined');
     }

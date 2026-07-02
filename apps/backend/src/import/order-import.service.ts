@@ -56,7 +56,9 @@ export class OrderImportService {
       (e) => e.code !== 'TooFewFields' && e.code !== 'TooManyFields',
     );
     if (criticalErrors.length > 0) {
-      throw new BadRequestException(`CSV parse error: ${criticalErrors[0].message}`);
+      throw new BadRequestException(
+        `CSV parse error: ${criticalErrors[0].message}`,
+      );
     }
 
     const summary: OrderImportSummary = {
@@ -94,13 +96,9 @@ export class OrderImportService {
     // Process orders sequentially in batches to preserve order sequence and prevent race conditions
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
-      
-      const {
-        variantSkuMap,
-        productSkuMap,
-        productNameMap,
-        customerPhoneMap,
-      } = await this.preloadBatchEntities(batch);
+
+      const { variantSkuMap, productSkuMap, productNameMap, customerPhoneMap } =
+        await this.preloadBatchEntities(batch);
 
       await this.processBatch(
         batch,
@@ -166,8 +164,12 @@ export class OrderImportService {
         ? this.prisma.product.findMany({
             where: {
               OR: [
-                skuList.length > 0 ? { sku: { in: skuList, mode: 'insensitive' } } : {},
-                nameList.length > 0 ? { name: { in: nameList, mode: 'insensitive' } } : {},
+                skuList.length > 0
+                  ? { sku: { in: skuList, mode: 'insensitive' } }
+                  : {},
+                nameList.length > 0
+                  ? { name: { in: nameList, mode: 'insensitive' } }
+                  : {},
               ].filter((cond) => Object.keys(cond).length > 0) as any,
             },
             select: { id: true, name: true, sku: true },
@@ -195,7 +197,10 @@ export class OrderImportService {
     const variantSkuMap = new Map<string, { id: string; productId: string }>();
     for (const v of dbVariants) {
       if (v.sku) {
-        variantSkuMap.set(v.sku.trim().toLowerCase(), { id: v.id, productId: v.productId });
+        variantSkuMap.set(v.sku.trim().toLowerCase(), {
+          id: v.id,
+          productId: v.productId,
+        });
       }
     }
 
@@ -277,14 +282,18 @@ export class OrderImportService {
       return;
     }
 
-    const statusId = statusCache.get(row.status.toLowerCase()) || statusCache.get('Pending')!;
+    const statusId =
+      statusCache.get(row.status.toLowerCase()) || statusCache.get('Pending')!;
 
     // 2. Customer Lookup & Creation (using local memory caches)
     let customerId: string | null = null;
-    const customerName = [row.billingFirstName, row.billingLastName]
-      .filter(Boolean)
-      .join(' ')
-      .trim() || row.billingFirstName || 'Unknown';
+    const customerName =
+      [row.billingFirstName, row.billingLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      row.billingFirstName ||
+      'Unknown';
 
     if (row.billingPhone) {
       let normalized = normalizePhone(row.billingPhone);
@@ -339,7 +348,8 @@ export class OrderImportService {
     if (row.shippingState) shippingAddress.state = row.shippingState;
     if (row.shippingPostcode) shippingAddress.postcode = row.shippingPostcode;
     if (row.shippingCountry) shippingAddress.country = row.shippingCountry;
-    if (row.shippingFirstName) shippingAddress.firstName = row.shippingFirstName;
+    if (row.shippingFirstName)
+      shippingAddress.firstName = row.shippingFirstName;
     if (row.shippingLastName) shippingAddress.lastName = row.shippingLastName;
     if (row.shippingPhone) shippingAddress.phone = row.shippingPhone;
 
@@ -370,7 +380,10 @@ export class OrderImportService {
       },
       ...notes,
     ];
-    timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    timeline.sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
 
     // 6. Fee & Discount corrections
     let discountTotal = Math.abs(row.discountTotal);
@@ -510,7 +523,9 @@ export class OrderImportService {
         sku: (data[skuCol] || '').trim(),
         productId: (data[idCol] || '').trim(),
         quantity: this.parseInt(data[qtyCol], 1),
-        price: this.parseFloatSafe(data[totalCol]) / Math.max(1, this.parseInt(data[qtyCol], 1)),
+        price:
+          this.parseFloatSafe(data[totalCol]) /
+          Math.max(1, this.parseInt(data[qtyCol], 1)),
         total: this.parseFloatSafe(data[totalCol]),
         subtotal: this.parseFloatSafe(data[subtotalCol]),
         variationId: '',
@@ -544,7 +559,9 @@ export class OrderImportService {
       quantity: parseInt(map.get('quantity') || '1') || 1,
       total: parseFloat(map.get('total') || '0') || 0,
       subtotal: parseFloat(map.get('sub_total') || '0') || 0,
-      price: (parseFloat(map.get('total') || '0') || 0) / Math.max(1, parseInt(map.get('quantity') || '1') || 1),
+      price:
+        (parseFloat(map.get('total') || '0') || 0) /
+        Math.max(1, parseInt(map.get('quantity') || '1') || 1),
       variationId: map.get('_variation_id') || '',
     };
   }

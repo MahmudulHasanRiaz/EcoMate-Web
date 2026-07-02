@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsObject, IsArray, ValidateNested, IsNumber } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsObject,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class UpsertLeadItemDto {
@@ -15,7 +22,8 @@ export class UpsertLeadDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsObject() address?: Record<string, unknown>;
-  @IsOptional() @IsArray()
+  @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UpsertLeadItemDto)
   items?: UpsertLeadItemDto[];

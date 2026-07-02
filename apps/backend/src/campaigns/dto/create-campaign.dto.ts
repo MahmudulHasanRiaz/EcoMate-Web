@@ -2,16 +2,20 @@ import { IsString, IsNotEmpty, IsOptional, IsDate } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateCampaignDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   subject: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   templateId?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   content?: string;
 
   @IsOptional()
@@ -20,6 +24,8 @@ export class CreateCampaignDto {
   @IsOptional()
   segmentFilter?: Record<string, any>;
 
-  @IsOptional() @Type(() => Date) @IsDate()
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
   scheduledAt?: Date;
 }

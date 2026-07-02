@@ -9,30 +9,58 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ReviewsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findByProductSlug(slug: string) {
+  async findByProductSlug(slug: string, page: number = 1, limit: number = 10) {
+    page = Math.max(1, page);
+    limit = Math.max(1, Math.min(100, limit));
     const product = await this.prisma.product.findUnique({
       where: { slug },
       select: { id: true },
     });
     if (!product) throw new NotFoundException('Product not found');
-    return this.prisma.review.findMany({
-      where: { productId: product.id, approved: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where = { productId: product.id, approved: true };
+    const [data, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
-  async findAll(query: { status?: string; productId?: string }) {
+  async findAll(query: {
+    status?: string;
+    productId?: string;
+    page?: number;
+    perPage?: number;
+  }) {
+    const page = query.page || 1;
+    const perPage = query.perPage || 10;
     const where: Record<string, unknown> = {};
     if (query.status === 'pending') where.approved = false;
     if (query.status === 'approved') where.approved = true;
     if (query.productId) where.productId = query.productId;
-    return this.prisma.review.findMany({
-      where,
-      include: {
-        product: { select: { id: true, name: true, slug: true, images: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [data, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        skip: (page - 1) * perPage,
+        take: perPage,
+        include: {
+          product: { select: { id: true, name: true, slug: true, images: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async create(dto: {
@@ -48,6 +76,12 @@ export class ReviewsService {
       where: { id: dto.productId },
     });
     if (!product) throw new NotFoundException('Product not found');
+    const existing = await this.prisma.review.findFirst({
+      where: { productId: dto.productId, customerName: dto.customerName },
+    });
+    if (existing) {
+      throw new BadRequestException('You have already reviewed this product');
+    }
     return this.prisma.review.create({ data: { ...dto, approved: false } });
   }
 

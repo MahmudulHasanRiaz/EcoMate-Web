@@ -8,8 +8,9 @@ import { LicenseActivationService } from './license-activation.service';
 import { LicenseGuard } from './license.guard';
 
 function createLicenseEngine(config: ConfigService): LicenseEngine {
-  const url = config.get<string>('KEYMATE_API_URL')
-    || 'https://keygen-keymate.commercians.com/v1/saas';
+  const url =
+    config.get<string>('KEYMATE_API_URL') ||
+    'https://keygen-keymate.commercians.com/v1/saas';
   return new LicenseEngine({ keymateUrl: url });
 }
 
@@ -27,6 +28,11 @@ function createLicenseEngine(config: ConfigService): LicenseEngine {
       inject: [ConfigService],
     },
   ],
-  exports: [LicenseService, LicenseActivationService, LicenseGuard, FeatureFlagsService],
+  exports: [
+    LicenseService,
+    LicenseActivationService,
+    LicenseGuard,
+    FeatureFlagsService,
+  ],
 })
 export class LicenseModule {}

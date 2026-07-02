@@ -61,14 +61,19 @@ export class AuthService {
     });
 
     this.sendVerificationEmail(user.id).catch((err) =>
-      this.logger.error('Failed to send verification email after registration', err),
+      this.logger.error(
+        'Failed to send verification email after registration',
+        err,
+      ),
     );
 
     return this.generateTokens(user);
   }
 
   async login(dto: LoginDto) {
-    console.log(`[LOGIN ATTEMPT] Email: "${dto.email}", Password length: ${dto.password?.length}`);
+    console.log(
+      `[LOGIN ATTEMPT] Email: "${dto.email}", Password length: ${dto.password?.length}`,
+    );
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -92,7 +97,7 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     console.log(`[LOGIN ATTEMPT] Password valid? ${isPasswordValid}`);
-    
+
     if (!isPasswordValid) {
       // Increment failed attempts in one atomic operation
       // If this is the 5th attempt (attempts was 4), also lock the account

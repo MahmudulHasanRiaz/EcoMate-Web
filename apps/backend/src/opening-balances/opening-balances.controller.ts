@@ -10,7 +10,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 @Controller('opening-balances')
 @RequiresFeature('admin_accounting')
 export class OpeningBalancesController {
-  constructor(private readonly openingBalancesService: OpeningBalancesService) {}
+  constructor(
+    private readonly openingBalancesService: OpeningBalancesService,
+  ) {}
 
   @Post()
   setBalance(@Body() dto: SetOpeningBalanceDto) {

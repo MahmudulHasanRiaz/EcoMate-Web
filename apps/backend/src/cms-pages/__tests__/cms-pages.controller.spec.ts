@@ -8,14 +8,20 @@ describe('CmsPagesController', () => {
 
   describe('admin methods', () => {
     it.each(adminMethods)('adds RequiresFeature(admin_cms) on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CmsPagesController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        CmsPagesController.prototype[method],
+      );
       expect(meta).toBe('admin_cms');
     });
   });
 
   describe('public methods', () => {
     it.each(publicMethods)('does not add RequiresFeature on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CmsPagesController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        CmsPagesController.prototype[method],
+      );
       expect(meta).toBeUndefined();
     });
   });

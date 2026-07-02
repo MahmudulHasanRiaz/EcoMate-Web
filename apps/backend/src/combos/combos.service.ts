@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateComboDto, UpdateComboDto } from './dto/combos.dto';
@@ -58,6 +59,14 @@ export class CombosService {
     );
   }
 
+  private readonly allowedSortFields = ['name', 'createdAt', 'updatedAt', 'basePrice', 'salePrice', 'isActive', 'isFeatured'];
+
+  private parseDate(value: string, field: string): Date {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) throw new BadRequestException(`Invalid ${field} date`);
+    return d;
+  }
+
   private readonly comboInclude = {
     category: { select: { id: true, name: true } },
     items: {
@@ -90,12 +99,15 @@ export class CombosService {
     const page = query.page || 1;
     const perPage = query.perPage || 12;
     const where = this.buildWhere(query);
+    const sortField = query.sort && this.allowedSortFields.includes(query.sort)
+      ? query.sort
+      : 'createdAt';
     const [data, total] = await Promise.all([
       this.prisma.combo.findMany({
         where,
         skip: (page - 1) * perPage,
         take: perPage,
-        orderBy: { [query.sort || 'createdAt']: query.order || 'desc' },
+        orderBy: { [sortField]: query.order || 'desc' },
         include: this.comboInclude,
       }),
       this.prisma.combo.count({ where }),
@@ -126,13 +138,17 @@ export class CombosService {
     if (query.cursor) {
       const decoded = this.decodeCursor(query.cursor);
       if (decoded) {
-        where.OR = [
-          { createdAt: { lt: decoded.createdAt } },
-          {
-            createdAt: decoded.createdAt,
-            id: { lt: decoded.id },
-          },
-        ];
+        const searchOr = where.OR;
+        delete where.OR;
+        const andClauses: any[] = [];
+        if (searchOr) andClauses.push({ OR: searchOr });
+        andClauses.push({
+          OR: [
+            { createdAt: { lt: decoded.createdAt } },
+            { createdAt: decoded.createdAt, id: { lt: decoded.id } },
+          ],
+        });
+        where.AND = andClauses;
       }
     }
     const [data, total] = await Promise.all([
@@ -203,7 +219,13 @@ export class CombosService {
               },
             },
             variant: {
-              select: { id: true, sku: true, price: true, stock: true, image: true },
+              select: {
+                id: true,
+                sku: true,
+                price: true,
+                stock: true,
+                image: true,
+              },
             },
           },
         },
@@ -213,11 +235,35 @@ export class CombosService {
     return combo;
   }
 
+  private async validateComboItems(
+    items: { productId: string; variantId?: string; quantity: number }[],
+  ) {
+    const productIds = [...new Set(items.map((i) => i.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, stock: true, manageStock: true, variants: { select: { id: true } } },
+    });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) throw new NotFoundException(`Product ${item.productId} not found`);
+      if (item.variantId) {
+        const hasVariant = product.variants.some((v) => v.id === item.variantId);
+        if (!hasVariant) throw new BadRequestException(`Variant ${item.variantId} does not belong to product ${item.productId}`);
+      }
+      if (product.manageStock && item.quantity > product.stock) {
+        throw new BadRequestException(`Insufficient stock for product "${product.name}"`);
+      }
+    }
+  }
+
   async create(dto: CreateComboDto) {
     const existing = await this.prisma.combo.findUnique({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
+
+    await this.validateComboItems(dto.items);
 
     const combo = await this.prisma.combo.create({
       data: {
@@ -234,8 +280,8 @@ export class CombosService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+        startDate: dto.startDate ? this.parseDate(dto.startDate, 'startDate') : undefined,
+        endDate: dto.endDate ? this.parseDate(dto.endDate, 'endDate') : undefined,
         items: {
           create: dto.items.map((item) => ({
             productId: item.productId,
@@ -305,8 +351,8 @@ export class CombosService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
-    if (dto.startDate) data.startDate = new Date(dto.startDate);
-    if (dto.endDate) data.endDate = new Date(dto.endDate);
+    if (dto.startDate) data.startDate = this.parseDate(dto.startDate, 'startDate');
+    if (dto.endDate) data.endDate = this.parseDate(dto.endDate, 'endDate');
 
     await this.prisma.combo.update({
       where: { id },
@@ -315,6 +361,7 @@ export class CombosService {
     });
 
     if (dto.items) {
+      await this.validateComboItems(dto.items);
       await this.prisma.comboItem.deleteMany({ where: { comboId: id } });
       await this.prisma.comboItem.createMany({
         data: dto.items.map((item) => ({
@@ -348,7 +395,16 @@ export class CombosService {
   async remove(id: string) {
     await this.prisma.combo.findUniqueOrThrow({ where: { id } });
     await this.media.detachAll('combo', id);
-    await this.prisma.combo.delete({ where: { id } });
+    try {
+      await this.prisma.combo.delete({ where: { id } });
+    } catch (e: any) {
+      if (e.code === 'P2003') {
+        throw new BadRequestException(
+          'Cannot delete combo with existing orders. Deactivate it instead.',
+        );
+      }
+      throw e;
+    }
     return { message: 'Combo deleted' };
   }
 }

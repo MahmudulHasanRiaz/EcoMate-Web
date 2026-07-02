@@ -1,7 +1,8 @@
 import { encrypt, decrypt } from '../encryption';
 
 describe('EncryptionUtils', () => {
-  const key = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  const key =
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
   const plaintext = 'my-secret-license-key-1234';
 
   beforeEach(() => {

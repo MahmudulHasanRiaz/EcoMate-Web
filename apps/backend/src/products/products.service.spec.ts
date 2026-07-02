@@ -68,6 +68,7 @@ describe('ProductsService', () => {
         {
           provide: PrismaService,
           useValue: {
+            $transaction: jest.fn((fn: any) => fn(prismaMock)),
             product: {
               findMany: jest.fn(),
               findUnique: jest.fn(),
@@ -91,20 +92,38 @@ describe('ProductsService', () => {
               findFirst: jest.fn(),
             },
             productTag: {
+              findMany: jest.fn().mockResolvedValue([]),
               deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
               upsert: jest.fn().mockResolvedValue({}),
+            },
+            tag: {
+              findUnique: jest.fn().mockResolvedValue({
+                id: 'tag-1',
+                name: 'Test Tag',
+                slug: 'test-tag',
+              }),
+              create: jest.fn().mockResolvedValue({
+                id: 'tag-1',
+                name: 'Test Tag',
+                slug: 'test-tag',
+              }),
+              update: jest.fn().mockResolvedValue({
+                id: 'tag-1',
+                name: 'Test Tag',
+                slug: 'test-tag',
+              }),
+              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
             },
             comboItem: {
               deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
             },
-            tag: {
-              findUnique: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
-              create: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
-              update: jest.fn().mockResolvedValue({ id: 'tag-1', name: 'Test Tag', slug: 'test-tag' }),
-            },
             category: {
               findMany: jest.fn().mockResolvedValue([]),
-              findUnique: jest.fn().mockResolvedValue({ id: 'cat-1', name: 'Test Category', slug: 'test-category' }),
+              findUnique: jest.fn().mockResolvedValue({
+                id: 'cat-1',
+                name: 'Test Category',
+                slug: 'test-category',
+              }),
             },
           },
         },
@@ -196,7 +215,11 @@ describe('ProductsService', () => {
               {
                 OR: [
                   { categoryId: { in: ['cat-1'] } },
-                  { productCategories: { some: { categoryId: { in: ['cat-1'] } } } },
+                  {
+                    productCategories: {
+                      some: { categoryId: { in: ['cat-1'] } },
+                    },
+                  },
                 ],
               },
             ],

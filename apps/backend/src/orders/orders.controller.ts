@@ -175,7 +175,13 @@ export class OrdersController {
     @Body() dto: { note: string; visibility: 'public' | 'private' },
     @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.addNote(id, dto.note, dto.visibility, user.userId, user.email);
+    return this.svc.addNote(
+      id,
+      dto.note,
+      dto.visibility,
+      user.userId,
+      user.email,
+    );
   }
 
   @Roles('superadmin', 'admin', 'manager')
@@ -188,11 +194,12 @@ export class OrdersController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Post('bulk/status')
-  async bulkStatus(
-    @Body() dto: BulkStatusDto,
-    @CurrentUser() user: any,
-  ) {
-    return this.svc.bulkStatusChange(dto.ids, dto.statusId, user?.userId || 'system');
+  async bulkStatus(@Body() dto: BulkStatusDto, @CurrentUser() user: any) {
+    return this.svc.bulkStatusChange(
+      dto.ids,
+      dto.statusId,
+      user?.userId || 'system',
+    );
   }
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')

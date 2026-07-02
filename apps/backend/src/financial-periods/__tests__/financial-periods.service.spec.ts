@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { FinancialPeriodsService } from '../financial-periods.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -29,7 +33,9 @@ describe('FinancialPeriodsService', () => {
               findUnique: jest.fn().mockResolvedValue(mockPeriod),
               findFirst: jest.fn().mockResolvedValue(null),
               create: jest.fn().mockResolvedValue(mockPeriod),
-              update: jest.fn().mockResolvedValue({ ...mockPeriod, isClosed: true }),
+              update: jest
+                .fn()
+                .mockResolvedValue({ ...mockPeriod, isClosed: true }),
             },
           },
         },
@@ -40,23 +46,41 @@ describe('FinancialPeriodsService', () => {
     prisma = module.get<PrismaService>(PrismaService);
   });
 
-  it('should be defined', () => { expect(service).toBeDefined(); });
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
 
   describe('create', () => {
     it('should create a period', async () => {
-      const result = await service.create({ name: 'July 2026', startDate: new Date('2026-07-01'), endDate: new Date('2026-07-31') });
+      const result = await service.create({
+        name: 'July 2026',
+        startDate: new Date('2026-07-01'),
+        endDate: new Date('2026-07-31'),
+      });
       expect(result).toEqual(mockPeriod);
     });
 
     it('should throw on overlapping dates', async () => {
-      jest.spyOn(prisma.financialPeriod, 'findFirst').mockResolvedValue(mockPeriod);
-      await expect(service.create({ name: 'July 2026', startDate: new Date('2026-07-01'), endDate: new Date('2026-07-31') }))
-        .rejects.toThrow(ConflictException);
+      jest
+        .spyOn(prisma.financialPeriod, 'findFirst')
+        .mockResolvedValue(mockPeriod);
+      await expect(
+        service.create({
+          name: 'July 2026',
+          startDate: new Date('2026-07-01'),
+          endDate: new Date('2026-07-31'),
+        }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw if startDate > endDate', async () => {
-      await expect(service.create({ name: 'Invalid', startDate: new Date('2026-08-01'), endDate: new Date('2026-07-01') }))
-        .rejects.toThrow(BadRequestException);
+      await expect(
+        service.create({
+          name: 'Invalid',
+          startDate: new Date('2026-08-01'),
+          endDate: new Date('2026-07-01'),
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -78,19 +102,29 @@ describe('FinancialPeriodsService', () => {
 
     it('should throw if period not found', async () => {
       jest.spyOn(prisma.financialPeriod, 'findUnique').mockResolvedValue(null);
-      await expect(service.closePeriod('invalid')).rejects.toThrow(NotFoundException);
+      await expect(service.closePeriod('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw if already closed', async () => {
-      jest.spyOn(prisma.financialPeriod, 'findUnique').mockResolvedValue({ ...mockPeriod, isClosed: true });
-      await expect(service.closePeriod('fp-1')).rejects.toThrow(BadRequestException);
+      jest
+        .spyOn(prisma.financialPeriod, 'findUnique')
+        .mockResolvedValue({ ...mockPeriod, isClosed: true });
+      await expect(service.closePeriod('fp-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('openPeriod', () => {
     it('should reopen a closed period', async () => {
-      jest.spyOn(prisma.financialPeriod, 'findUnique').mockResolvedValue({ ...mockPeriod, isClosed: true });
-      jest.spyOn(prisma.financialPeriod, 'update').mockResolvedValue(mockPeriod);
+      jest
+        .spyOn(prisma.financialPeriod, 'findUnique')
+        .mockResolvedValue({ ...mockPeriod, isClosed: true });
+      jest
+        .spyOn(prisma.financialPeriod, 'update')
+        .mockResolvedValue(mockPeriod);
       const result = await service.openPeriod('fp-1');
       expect(result.isClosed).toBe(false);
     });

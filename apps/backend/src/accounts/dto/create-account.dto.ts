@@ -1,25 +1,37 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+} from 'class-validator';
 import { AccountType } from '@prisma/client';
 
 export class CreateAccountDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   code: string;
 
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsEnum(AccountType)
   type: AccountType;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   parentId?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isGroup?: boolean;
 }

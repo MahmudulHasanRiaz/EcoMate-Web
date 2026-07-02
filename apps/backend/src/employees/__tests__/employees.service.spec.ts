@@ -8,8 +8,24 @@ describe('EmployeesService', () => {
   let service: EmployeesService;
   let prisma: PrismaService;
 
-  const mockDepartment = { id: 'dept-1', name: 'Engineering', slug: 'engineering', description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() };
-  const mockDesignation = { id: 'desig-1', name: 'Developer', slug: 'developer', level: 1, isActive: true, createdAt: new Date(), updatedAt: new Date() };
+  const mockDepartment = {
+    id: 'dept-1',
+    name: 'Engineering',
+    slug: 'engineering',
+    description: null,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const mockDesignation = {
+    id: 'desig-1',
+    name: 'Developer',
+    slug: 'developer',
+    level: 1,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
   const mockEmployee = {
     id: 'emp-1',
     userId: null,
@@ -94,8 +110,11 @@ describe('EmployeesService', () => {
     it('should throw if department not found', async () => {
       jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
       const dto: CreateEmployeeDto = {
-        firstName: 'John', lastName: 'Doe', email: 'john@example.com',
-        joiningDate: '2025-01-15', departmentId: 'invalid',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@example.com',
+        joiningDate: '2025-01-15',
+        departmentId: 'invalid',
       };
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
     });
@@ -103,7 +122,9 @@ describe('EmployeesService', () => {
     it('should throw if email already exists', async () => {
       jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue(mockEmployee);
       const dto: CreateEmployeeDto = {
-        firstName: 'John', lastName: 'Doe', email: 'john@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@example.com',
         joiningDate: '2025-01-15',
       };
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
@@ -126,7 +147,9 @@ describe('EmployeesService', () => {
 
     it('should throw if not found', async () => {
       jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
-      await expect(service.findOne('invalid')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

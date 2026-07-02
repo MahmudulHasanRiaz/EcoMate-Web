@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
@@ -8,13 +13,24 @@ export class AccountsService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateAccountDto, userId?: string) {
-    const existing = await this.prisma.account.findUnique({ where: { code: dto.code } });
-    if (existing) throw new ConflictException(`Account with code ${dto.code} already exists`);
+    const existing = await this.prisma.account.findUnique({
+      where: { code: dto.code },
+    });
+    if (existing)
+      throw new ConflictException(
+        `Account with code ${dto.code} already exists`,
+      );
 
     if (dto.parentId) {
-      const parent = await this.prisma.account.findUnique({ where: { id: dto.parentId } });
-      if (!parent) throw new NotFoundException(`Parent account with ID ${dto.parentId} not found`);
-      if (!parent.isGroup) throw new BadRequestException('Parent account must be a group account');
+      const parent = await this.prisma.account.findUnique({
+        where: { id: dto.parentId },
+      });
+      if (!parent)
+        throw new NotFoundException(
+          `Parent account with ID ${dto.parentId} not found`,
+        );
+      if (!parent.isGroup)
+        throw new BadRequestException('Parent account must be a group account');
     }
 
     return this.prisma.account.create({
@@ -39,7 +55,8 @@ export class AccountsService {
       where: { id },
       include: { children: true },
     });
-    if (!account) throw new NotFoundException(`Account with ID ${id} not found`);
+    if (!account)
+      throw new NotFoundException(`Account with ID ${id} not found`);
     return account;
   }
 

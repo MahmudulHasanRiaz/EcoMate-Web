@@ -8,7 +8,8 @@ export const correlationIdStorage = new AsyncLocalStorage<string>();
 @Injectable()
 export class CorrelationIdMiddleware implements NestMiddleware {
   use(req: FastifyRequest, res: FastifyReply, next: () => void) {
-    const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+    const correlationId =
+      (req.headers['x-correlation-id'] as string) || uuidv4();
     correlationIdStorage.run(correlationId, () => {
       res.header('x-correlation-id', correlationId);
       next();

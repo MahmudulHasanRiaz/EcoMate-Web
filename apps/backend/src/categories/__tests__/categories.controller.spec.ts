@@ -7,15 +7,24 @@ describe('CategoriesController', () => {
   const publicMethods = ['findAll', 'getMenuCategories', 'findOne'];
 
   describe('admin methods', () => {
-    it.each(adminMethods)('adds RequiresFeature(admin_categories) on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CategoriesController.prototype[method]);
-      expect(meta).toBe('admin_categories');
-    });
+    it.each(adminMethods)(
+      'adds RequiresFeature(admin_categories) on %s',
+      (method) => {
+        const meta = Reflect.getMetadata(
+          REQUIRES_FEATURE_KEY,
+          CategoriesController.prototype[method],
+        );
+        expect(meta).toBe('admin_categories');
+      },
+    );
   });
 
   describe('public methods', () => {
     it.each(publicMethods)('does not add RequiresFeature on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CategoriesController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        CategoriesController.prototype[method],
+      );
       expect(meta).toBeUndefined();
     });
   });

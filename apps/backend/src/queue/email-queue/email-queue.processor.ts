@@ -5,7 +5,14 @@ import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailJob } from './email-queue.service';
 
-const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'] as const;
+const SMTP_KEYS = [
+  'smtp_host',
+  'smtp_port',
+  'smtp_user',
+  'smtp_pass',
+  'smtp_from_email',
+  'smtp_from_name',
+] as const;
 
 @Processor('email')
 export class EmailQueueProcessor extends WorkerHost {
@@ -21,10 +28,12 @@ export class EmailQueueProcessor extends WorkerHost {
     const settings = await this.prisma.systemSetting.findMany({
       where: { key: { in: SMTP_KEYS as unknown as string[] } },
     });
-    const cfg = Object.fromEntries(settings.map(s => [s.key, s.value]));
+    const cfg = Object.fromEntries(settings.map((s) => [s.key, s.value]));
 
     if (!cfg['smtp_host']) {
-      this.logger.log(`SMTP not configured. Skipping email to ${to}: ${subject}`);
+      this.logger.log(
+        `SMTP not configured. Skipping email to ${to}: ${subject}`,
+      );
       return;
     }
 
@@ -32,10 +41,12 @@ export class EmailQueueProcessor extends WorkerHost {
       host: cfg['smtp_host'],
       port: parseInt(cfg['smtp_port'] || '587'),
       secure: cfg['smtp_port'] === '465',
-      auth: cfg['smtp_user'] ? {
-        user: cfg['smtp_user'],
-        pass: cfg['smtp_pass'] || '',
-      } : undefined,
+      auth: cfg['smtp_user']
+        ? {
+            user: cfg['smtp_user'],
+            pass: cfg['smtp_pass'] || '',
+          }
+        : undefined,
     });
 
     try {

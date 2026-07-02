@@ -13,8 +13,14 @@ export class ReferralsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_referrals')
   @Get()
-  async findAll(@Query('page') page?: string, @Query('perPage') perPage?: string) {
-    return this.referralsService.findAll(page ? parseInt(page) : 1, perPage ? parseInt(perPage) : 20);
+  async findAll(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.referralsService.findAll(
+      page ? parseInt(page) : 1,
+      perPage ? parseInt(perPage) : 20,
+    );
   }
 
   @Get('my')
@@ -38,7 +44,15 @@ export class ReferralsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_referrals')
   @Get(':id/leads')
-  async findLeads(@Param('id') id: string, @Query('page') page?: string, @Query('perPage') perPage?: string) {
-    return this.referralsService.findLeads(id, page ? parseInt(page) : 1, perPage ? parseInt(perPage) : 20);
+  async findLeads(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.referralsService.findLeads(
+      id,
+      page ? parseInt(page) : 1,
+      perPage ? parseInt(perPage) : 20,
+    );
   }
 }

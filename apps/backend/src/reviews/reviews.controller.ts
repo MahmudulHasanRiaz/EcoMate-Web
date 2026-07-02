@@ -20,8 +20,12 @@ export class ReviewsController {
 
   @Public()
   @Get('product/:slug')
-  async findByProduct(@Param('slug') slug: string) {
-    return this.svc.findByProductSlug(slug);
+  async findByProduct(
+    @Param('slug') slug: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.svc.findByProductSlug(slug, page ? parseInt(page) : 1, limit ? parseInt(limit) : 10);
   }
 
   @Public()
@@ -39,8 +43,18 @@ export class ReviewsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_reviews')
   @Get()
-  async findAll(@Query() query: { status?: string; productId?: string }) {
-    return this.svc.findAll(query);
+  async findAll(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('status') status?: string,
+    @Query('productId') productId?: string,
+  ) {
+    return this.svc.findAll({
+      page: page ? parseInt(page) : undefined,
+      perPage: perPage ? parseInt(perPage) : undefined,
+      status,
+      productId,
+    });
   }
 
   @Roles('superadmin', 'admin', 'manager')

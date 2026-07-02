@@ -31,7 +31,9 @@ export class UploadController {
     const file = await req.file();
     if (!file) throw new BadRequestException('No file uploaded');
 
-    const filename = file.fields.filename ? (file.fields.filename as any).value : undefined;
+    const filename = file.fields.filename
+      ? (file.fields.filename as any).value
+      : undefined;
     const alt = file.fields.alt ? (file.fields.alt as any).value : undefined;
 
     if (

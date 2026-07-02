@@ -10,14 +10,29 @@ export class BlockedEntriesController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Get()
-  async findAll(@Query('type') type?: string, @Query('search') search?: string) {
+  async findAll(
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+  ) {
     return this.svc.findAll(type, search);
   }
 
   @Roles('superadmin', 'admin')
   @Post()
-  async create(@Body() dto: { type: 'ip' | 'phone'; value: string; reason?: string; blockType?: string }, @Req() req: any) {
-    return this.svc.create({ ...dto, blockedBy: req.user?.username || 'admin' });
+  async create(
+    @Body()
+    dto: {
+      type: 'ip' | 'phone';
+      value: string;
+      reason?: string;
+      blockType?: string;
+    },
+    @Req() req: any,
+  ) {
+    return this.svc.create({
+      ...dto,
+      blockedBy: req.user?.username || 'admin',
+    });
   }
 
   @Roles('superadmin', 'admin')

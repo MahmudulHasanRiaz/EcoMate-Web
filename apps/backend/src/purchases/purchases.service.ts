@@ -89,7 +89,7 @@ export class PurchasesService {
     const vendorRef = dto.referenceNo || '';
     const notesWithRef = vendorRef
       ? `Vendor Ref: ${vendorRef}\n${dto.notes || ''}`
-      : (dto.notes || '');
+      : dto.notes || '';
 
     return this.prisma.$transaction(async (tx) => {
       const items = dto.items.map((item) => ({

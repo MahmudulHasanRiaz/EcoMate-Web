@@ -3,7 +3,10 @@ import { DashboardController } from '../dashboard.controller';
 
 describe('DashboardController', () => {
   it('has RequiresFeature(admin_dashboard) metadata', () => {
-    const featureKey = Reflect.getMetadata(REQUIRES_FEATURE_KEY, DashboardController);
+    const featureKey = Reflect.getMetadata(
+      REQUIRES_FEATURE_KEY,
+      DashboardController,
+    );
     expect(featureKey).toBe('admin_dashboard');
   });
 });

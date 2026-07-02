@@ -52,9 +52,27 @@ describe('PayrollService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     items: [
-      { id: 'psi-1', payslipId: 'ps-1', type: 'earnings', label: 'Basic Salary', amount: '30000' },
-      { id: 'psi-2', payslipId: 'ps-1', type: 'earnings', label: 'House Allowance', amount: '10000' },
-      { id: 'psi-3', payslipId: 'ps-1', type: 'deductions', label: 'Tax', amount: '2000' },
+      {
+        id: 'psi-1',
+        payslipId: 'ps-1',
+        type: 'earnings',
+        label: 'Basic Salary',
+        amount: '30000',
+      },
+      {
+        id: 'psi-2',
+        payslipId: 'ps-1',
+        type: 'earnings',
+        label: 'House Allowance',
+        amount: '10000',
+      },
+      {
+        id: 'psi-3',
+        payslipId: 'ps-1',
+        type: 'deductions',
+        label: 'Tax',
+        amount: '2000',
+      },
     ],
     employee: mockEmployee,
   };
@@ -80,7 +98,11 @@ describe('PayrollService', () => {
               findMany: jest.fn().mockResolvedValue([mockPayslip]),
               findUnique: jest.fn().mockResolvedValue(mockPayslip),
               create: jest.fn().mockResolvedValue(mockPayslip),
-              update: jest.fn().mockResolvedValue({ ...mockPayslip, status: 'paid', paidAt: new Date() }),
+              update: jest.fn().mockResolvedValue({
+                ...mockPayslip,
+                status: 'paid',
+                paidAt: new Date(),
+              }),
               count: jest.fn().mockResolvedValue(1),
             },
             payslipItem: {
@@ -115,7 +137,9 @@ describe('PayrollService', () => {
     it('should throw if employee not found', async () => {
       jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
       const dto = { employeeId: 'invalid', basicSalary: 30000 };
-      await expect(service.setSalaryStructure(dto)).rejects.toThrow(NotFoundException);
+      await expect(service.setSalaryStructure(dto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -128,14 +152,20 @@ describe('PayrollService', () => {
 
   describe('generatePayslip', () => {
     it('should generate payslip for an employee', async () => {
-      const result = await service.generatePayslip('emp-1', '2025-06-01', '2025-06-30');
+      const result = await service.generatePayslip(
+        'emp-1',
+        '2025-06-01',
+        '2025-06-30',
+      );
       expect(result).toBeDefined();
       expect(prisma.payslip.create).toHaveBeenCalled();
     });
 
     it('should throw if no active salary structure', async () => {
       jest.spyOn(prisma.salaryStructure, 'findFirst').mockResolvedValue(null);
-      await expect(service.generatePayslip('emp-1', '2025-06-01', '2025-06-30')).rejects.toThrow(BadRequestException);
+      await expect(
+        service.generatePayslip('emp-1', '2025-06-01', '2025-06-30'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -155,7 +185,9 @@ describe('PayrollService', () => {
 
     it('should throw if payslip not found', async () => {
       jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
-      await expect(service.approvePayslip('invalid')).rejects.toThrow(NotFoundException);
+      await expect(service.approvePayslip('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

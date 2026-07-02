@@ -35,7 +35,12 @@ export class ImagesService {
     }
 
     const allowedExtensions = [
-      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.gif',
+      '.avif',
     ];
     const ext = extname(relativePath).toLowerCase();
     if (!allowedExtensions.includes(ext)) {
@@ -43,9 +48,12 @@ export class ImagesService {
     }
 
     const mimeMap: Record<string, string> = {
-      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-      '.png': 'image/png', '.webp': 'image/webp',
-      '.gif': 'image/gif', '.avif': 'image/avif',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.avif': 'image/avif',
     };
     const mime = mimeMap[ext];
 
@@ -54,13 +62,19 @@ export class ImagesService {
     }
 
     const cacheKey = createHash('md5')
-      .update(`${relativePath}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}`)
+      .update(
+        `${relativePath}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}`,
+      )
       .digest('hex');
     const cacheExt = '.webp';
     const cachePath = join(this.cacheRoot, `${cacheKey}${cacheExt}`);
 
     if (existsSync(cachePath)) {
-      return { buffer: readFileSync(cachePath), ext: cacheExt, mime: 'image/webp' };
+      return {
+        buffer: readFileSync(cachePath),
+        ext: cacheExt,
+        mime: 'image/webp',
+      };
     }
 
     const result = await sharp(sourcePath)

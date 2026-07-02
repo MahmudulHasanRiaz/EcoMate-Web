@@ -19,10 +19,7 @@ export class OrderStatusController {
 
   @Roles('superadmin', 'admin')
   @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateOrderStatusDto,
-  ) {
+  async update(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
     return this.prisma.orderStatus.update({ where: { id }, data: dto as any });
   }
 }

@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsArray, IsObject, IsBoolean, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsObject,
+  IsBoolean,
+  IsIn,
+} from 'class-validator';
 
 export class CreateLandingPageDto {
   @IsString()

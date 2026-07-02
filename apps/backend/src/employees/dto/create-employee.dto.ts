@@ -1,49 +1,74 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsEnum, IsDateString, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEmail,
+  IsEnum,
+  IsDateString,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { EmploymentType } from '@prisma/client';
 
 export class CreateEmployeeDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   firstName: string;
 
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   lastName: string;
 
-  @IsEmail() @IsNotEmpty()
+  @IsEmail()
+  @IsNotEmpty()
   email: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   phone?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   departmentId?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   designationId?: string;
 
-  @IsOptional() @IsEnum(EmploymentType)
+  @IsOptional()
+  @IsEnum(EmploymentType)
   employmentType?: EmploymentType;
 
-  @IsDateString() @IsNotEmpty()
+  @IsDateString()
+  @IsNotEmpty()
   joiningDate: string;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   salary?: number;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   bankAccountNo?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   bankName?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   address?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   city?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   emergencyContact?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   notes?: string;
 }

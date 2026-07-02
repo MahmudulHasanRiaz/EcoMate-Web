@@ -17,8 +17,14 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly ALLOWED_SORT_FIELDS = [
-    'createdAt', 'updatedAt', 'firstName', 'lastName',
-    'email', 'username', 'role', 'status',
+    'createdAt',
+    'updatedAt',
+    'firstName',
+    'lastName',
+    'email',
+    'username',
+    'role',
+    'status',
   ];
 
   async findAll(query: {
@@ -55,8 +61,10 @@ export class UsersService {
     }
 
     const orderBy: any = {};
-    const sortField = query.sort && this.ALLOWED_SORT_FIELDS.includes(query.sort)
-      ? query.sort : 'createdAt';
+    const sortField =
+      query.sort && this.ALLOWED_SORT_FIELDS.includes(query.sort)
+        ? query.sort
+        : 'createdAt';
     const sortOrder = query.order === 'asc' ? 'asc' : 'desc';
     orderBy[sortField] = sortOrder;
 
@@ -168,7 +176,7 @@ export class UsersService {
           email: dto.email,
           phoneNumber: normalizedPhone,
           password: hashedPassword,
-          role: dto.role as UserRole,
+          role: dto.role,
         },
         select: {
           id: true,
@@ -226,11 +234,12 @@ export class UsersService {
     if (dto.email !== undefined) data.email = dto.email;
     if (dto.phoneNumber !== undefined) {
       const normalizedPhone = normalizePhone(dto.phoneNumber);
-      if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
+      if (!normalizedPhone)
+        throw new BadRequestException('Invalid phone number');
       data.phoneNumber = normalizedPhone;
     }
-    if (dto.status !== undefined) data.status = dto.status as UserStatus;
-    if (dto.role !== undefined) data.role = dto.role as UserRole;
+    if (dto.status !== undefined) data.status = dto.status;
+    if (dto.role !== undefined) data.role = dto.role;
     if (dto.password) {
       data.password = await bcrypt.hash(dto.password, 12);
     }

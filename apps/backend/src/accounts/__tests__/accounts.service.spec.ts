@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { AccountsService } from '../accounts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccountDto } from '../dto/create-account.dto';
@@ -47,7 +51,8 @@ describe('AccountsService', () => {
               findMany: jest.fn().mockResolvedValue([mockAccount]),
               findUnique: jest.fn().mockImplementation(({ where }: any) => {
                 if (where.id === 'acc-1') return Promise.resolve(mockAccount);
-                if (where.id === 'acc-parent') return Promise.resolve(mockParentAccount);
+                if (where.id === 'acc-parent')
+                  return Promise.resolve(mockParentAccount);
                 return Promise.resolve(null);
               }),
               findFirst: jest.fn().mockResolvedValue(null),
@@ -71,30 +76,51 @@ describe('AccountsService', () => {
 
   describe('create', () => {
     it('should create an account', async () => {
-      const dto: CreateAccountDto = { code: '1-1000', name: 'Cash', type: 'asset' };
+      const dto: CreateAccountDto = {
+        code: '1-1000',
+        name: 'Cash',
+        type: 'asset',
+      };
       const result = await service.create(dto);
       expect(result).toEqual(mockAccount);
     });
 
     it('should throw on duplicate code', async () => {
       jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(mockAccount);
-      const dto: CreateAccountDto = { code: '1-1000', name: 'Cash', type: 'asset' };
+      const dto: CreateAccountDto = {
+        code: '1-1000',
+        name: 'Cash',
+        type: 'asset',
+      };
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
     });
 
     it('should throw if parent not found', async () => {
       jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
-      const dto: CreateAccountDto = { code: '1-1001', name: 'Petty Cash', type: 'asset', parentId: 'nonexistent' };
+      const dto: CreateAccountDto = {
+        code: '1-1001',
+        name: 'Petty Cash',
+        type: 'asset',
+        parentId: 'nonexistent',
+      };
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
     });
 
     it('should create leaf account under a group parent', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockImplementation(async ({ where }: any) => {
-        if (where.id === 'acc-parent') return Promise.resolve(mockParentAccount);
-        return Promise.resolve(null);
-      });
+      jest
+        .spyOn(prisma.account, 'findUnique')
+        .mockImplementation(async ({ where }: any) => {
+          if (where.id === 'acc-parent')
+            return Promise.resolve(mockParentAccount);
+          return Promise.resolve(null);
+        });
       jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
-      const dto: CreateAccountDto = { code: '1-1001', name: 'Petty Cash', type: 'asset', parentId: 'acc-parent' };
+      const dto: CreateAccountDto = {
+        code: '1-1001',
+        name: 'Petty Cash',
+        type: 'asset',
+        parentId: 'acc-parent',
+      };
       const result = await service.create(dto);
       expect(result).toEqual(mockAccount);
     });
@@ -109,7 +135,9 @@ describe('AccountsService', () => {
     it('should filter by type', async () => {
       const result = await service.findAll('asset');
       expect(prisma.account.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ type: 'asset' }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ type: 'asset' }),
+        }),
       );
     });
   });
@@ -122,7 +150,9 @@ describe('AccountsService', () => {
 
     it('should throw if not found', async () => {
       jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
-      await expect(service.findOne('invalid')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -135,8 +165,12 @@ describe('AccountsService', () => {
 
   describe('remove', () => {
     it('should throw if account has children', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(mockParentAccount);
-      await expect(service.remove('acc-parent')).rejects.toThrow(BadRequestException);
+      jest
+        .spyOn(prisma.account, 'findUnique')
+        .mockResolvedValue(mockParentAccount);
+      await expect(service.remove('acc-parent')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should delete leaf account', async () => {
@@ -146,7 +180,9 @@ describe('AccountsService', () => {
 
     it('should throw if not found', async () => {
       jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
-      await expect(service.remove('invalid')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

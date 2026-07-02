@@ -1,4 +1,15 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsNumber, Min, MinLength, MaxLength, Matches, IsHexColor } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  Min,
+  MinLength,
+  MaxLength,
+  Matches,
+  IsHexColor,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateExpenseCategoryDto {
@@ -12,7 +23,9 @@ export class CreateExpenseCategoryDto {
   @IsNotEmpty()
   @MinLength(1)
   @MaxLength(100)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: 'slug must be lowercase alphanumeric with hyphens only' })
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: 'slug must be lowercase alphanumeric with hyphens only',
+  })
   slug: string;
 
   @IsOptional()
@@ -58,7 +71,9 @@ export class UpdateExpenseCategoryDto {
   @IsNotEmpty()
   @MinLength(1)
   @MaxLength(100)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: 'slug must be lowercase alphanumeric with hyphens only' })
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: 'slug must be lowercase alphanumeric with hyphens only',
+  })
   slug?: string;
 
   @IsOptional()

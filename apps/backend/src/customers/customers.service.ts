@@ -154,7 +154,8 @@ export class CustomersService {
     const phoneKey = normalized.replace(/[^\d]/g, '');
     // Use a pre-calculated dummy hash to avoid extremely slow CPU-blocking bcrypt hashing during checkout/import.
     // Since this is a guest account with a random UUID password, it cannot be logged into anyway until a password reset.
-    const hashedPassword = '$2a$12$5K1R68iJb0Z2kYf.p0jOeuZ/XmS9M0d.6oZc1p9e6p9z1a2b3c4d5';
+    const hashedPassword =
+      '$2a$12$5K1R68iJb0Z2kYf.p0jOeuZ/XmS9M0d.6oZc1p9e6p9z1a2b3c4d5';
 
     const user = await this.prisma.user.create({
       data: {

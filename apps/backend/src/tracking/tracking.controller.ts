@@ -37,7 +37,14 @@ export class TrackingController {
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('context')
   async saveContext(
-    @Body() body: { orderId: string; fbp?: string; fbc?: string; url?: string; referrer?: string },
+    @Body()
+    body: {
+      orderId: string;
+      fbp?: string;
+      fbc?: string;
+      url?: string;
+      referrer?: string;
+    },
   ) {
     if (body.orderId) {
       await this.tracking.saveContext(body.orderId, {

@@ -118,14 +118,29 @@ describe('OrdersService', () => {
             },
             productVariant: {
               findMany: jest.fn().mockResolvedValue([
-                { id: 'variant-1', price: 1000, isActive: true, productId: 'prod-1' }
+                {
+                  id: 'variant-1',
+                  price: 1000,
+                  isActive: true,
+                  productId: 'prod-1',
+                },
               ]),
               update: jest.fn(),
             },
             product: {
               findMany: jest.fn().mockResolvedValue([
-                { id: 'prod-1', basePrice: 1000, salePrice: null, isActive: true },
-                { id: 'prod-2', basePrice: 500, salePrice: null, isActive: true }
+                {
+                  id: 'prod-1',
+                  basePrice: 1000,
+                  salePrice: null,
+                  isActive: true,
+                },
+                {
+                  id: 'prod-2',
+                  basePrice: 500,
+                  salePrice: null,
+                  isActive: true,
+                },
               ]),
             },
             combo: {
@@ -166,7 +181,9 @@ describe('OrdersService', () => {
           provide: CustomersService,
           useValue: {
             isPhoneBlocked: jest.fn().mockResolvedValue(false),
-            findOrCreateCustomer: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+            findOrCreateCustomer: jest
+              .fn()
+              .mockResolvedValue({ id: 'customer-id-1' }),
           },
         },
         {
@@ -177,7 +194,9 @@ describe('OrdersService', () => {
             deduct: jest.fn().mockResolvedValue(undefined),
             add: jest.fn().mockResolvedValue(undefined),
             scrap: jest.fn().mockResolvedValue(undefined),
-            getAvailableStock: jest.fn().mockResolvedValue({ stock: 10, reserved: 0, available: 10 }),
+            getAvailableStock: jest
+              .fn()
+              .mockResolvedValue({ stock: 10, reserved: 0, available: 10 }),
           },
         },
         {
@@ -190,7 +209,10 @@ describe('OrdersService', () => {
         {
           provide: CouponsService,
           useValue: {
-            validate: jest.fn().mockResolvedValue({ valid: true, coupon: { type: 'flat', value: 50, minOrderValue: null } }),
+            validate: jest.fn().mockResolvedValue({
+              valid: true,
+              coupon: { type: 'flat', value: 50, minOrderValue: null },
+            }),
             apply: jest.fn().mockResolvedValue({ success: true, discount: 50 }),
           },
         },
@@ -207,7 +229,9 @@ describe('OrdersService', () => {
     prisma = module.get<PrismaService>(PrismaService);
 
     // Set up default implementation for $transaction to pass the prisma mock
-    (prisma.$transaction as jest.Mock).mockImplementation(async (cb) => cb(prisma));
+    (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
+      cb(prisma),
+    );
   });
 
   afterEach(() => {
@@ -251,8 +275,16 @@ describe('OrdersService', () => {
           where: {
             OR: [
               { displayId: { contains: 'ORD-25', mode: 'insensitive' } },
-              { customer: { firstName: { contains: 'ORD-25', mode: 'insensitive' } } },
-              { customer: { lastName: { contains: 'ORD-25', mode: 'insensitive' } } },
+              {
+                customer: {
+                  firstName: { contains: 'ORD-25', mode: 'insensitive' },
+                },
+              },
+              {
+                customer: {
+                  lastName: { contains: 'ORD-25', mode: 'insensitive' },
+                },
+              },
               { customer: { phoneNumber: { contains: 'ORD-25' } } },
               { guestName: { contains: 'ORD-25', mode: 'insensitive' } },
               { guestPhone: { contains: 'ORD-25' } },

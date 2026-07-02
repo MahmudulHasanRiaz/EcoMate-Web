@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -14,30 +18,54 @@ export class ExpensesService {
     paymentAccount: { select: { id: true, code: true, name: true } },
     journalEntry: {
       include: {
-        lines: { include: { account: { select: { id: true, code: true, name: true } } } },
+        lines: {
+          include: {
+            account: { select: { id: true, code: true, name: true } },
+          },
+        },
         period: { select: { id: true, name: true } },
       },
     },
   };
 
   async create(createExpenseDto: CreateExpenseDto, userId?: string) {
-    const cat = await this.prisma.expenseCategory.findUnique({ where: { id: createExpenseDto.categoryId } });
-    if (!cat) throw new NotFoundException(`Expense category ${createExpenseDto.categoryId} not found`);
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id: createExpenseDto.categoryId },
+    });
+    if (!cat)
+      throw new NotFoundException(
+        `Expense category ${createExpenseDto.categoryId} not found`,
+      );
 
     // Validate paymentAccountId is asset-type if provided
     if (createExpenseDto.paymentAccountId) {
-      const acct = await this.prisma.account.findUnique({ where: { id: createExpenseDto.paymentAccountId } });
-      if (!acct) throw new NotFoundException(`Payment account ${createExpenseDto.paymentAccountId} not found`);
-      if (acct.type !== 'asset') throw new BadRequestException('Payment account must be an Asset-type account (Cash/Bank)');
+      const acct = await this.prisma.account.findUnique({
+        where: { id: createExpenseDto.paymentAccountId },
+      });
+      if (!acct)
+        throw new NotFoundException(
+          `Payment account ${createExpenseDto.paymentAccountId} not found`,
+        );
+      if (acct.type !== 'asset')
+        throw new BadRequestException(
+          'Payment account must be an Asset-type account (Cash/Bank)',
+        );
     }
 
     // Check accounting_enabled
     const accountingEnabled = await this.isAccountingEnabled();
 
     // Warn if accounting enabled but no financial period exists
-    if (accountingEnabled && cat.accountId && createExpenseDto.paymentAccountId) {
+    if (
+      accountingEnabled &&
+      cat.accountId &&
+      createExpenseDto.paymentAccountId
+    ) {
       const periodExists = await this.prisma.financialPeriod.findFirst({
-        where: { startDate: { lte: createExpenseDto.expenseDate }, endDate: { gte: createExpenseDto.expenseDate } },
+        where: {
+          startDate: { lte: createExpenseDto.expenseDate },
+          endDate: { gte: createExpenseDto.expenseDate },
+        },
       });
       if (!periodExists) {
         throw new BadRequestException(
@@ -57,7 +85,11 @@ export class ExpensesService {
         },
       });
 
-      if (accountingEnabled && cat.accountId && createExpenseDto.paymentAccountId) {
+      if (
+        accountingEnabled &&
+        cat.accountId &&
+        createExpenseDto.paymentAccountId
+      ) {
         const je = await this.createExpenseJournalEntry(tx, {
           expenseId: exp.id,
           amount: createExpenseDto.amount,
@@ -86,18 +118,26 @@ export class ExpensesService {
     });
   }
 
-  async findAll(page = 1, perPage = 10, categoryId?: string, fromDate?: string, toDate?: string) {
+  async findAll(
+    page = 1,
+    perPage = 10,
+    categoryId?: string,
+    fromDate?: string,
+    toDate?: string,
+  ) {
     const where: any = {};
 
     if (categoryId) where.categoryId = categoryId;
     if (fromDate) {
       const d = new Date(fromDate);
-      if (isNaN(d.getTime())) throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
+      if (isNaN(d.getTime()))
+        throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
       where.expenseDate = { ...where.expenseDate, gte: d };
     }
     if (toDate) {
       const d = new Date(toDate);
-      if (isNaN(d.getTime())) throw new BadRequestException(`Invalid toDate: ${toDate}`);
+      if (isNaN(d.getTime()))
+        throw new BadRequestException(`Invalid toDate: ${toDate}`);
       where.expenseDate = { ...where.expenseDate, lte: d };
     }
 
@@ -126,33 +166,53 @@ export class ExpensesService {
       where: { id },
       include: this.expenseInclude,
     });
-    if (!expense) throw new NotFoundException(`Expense with ID ${id} not found`);
+    if (!expense)
+      throw new NotFoundException(`Expense with ID ${id} not found`);
     return expense;
   }
 
-  async update(id: string, updateExpenseDto: UpdateExpenseDto, userId?: string) {
+  async update(
+    id: string,
+    updateExpenseDto: UpdateExpenseDto,
+    userId?: string,
+  ) {
     const existing = await this.findOne(id);
 
     if (updateExpenseDto.categoryId) {
-      const cat = await this.prisma.expenseCategory.findUnique({ where: { id: updateExpenseDto.categoryId } });
-      if (!cat) throw new NotFoundException(`Expense category ${updateExpenseDto.categoryId} not found`);
+      const cat = await this.prisma.expenseCategory.findUnique({
+        where: { id: updateExpenseDto.categoryId },
+      });
+      if (!cat)
+        throw new NotFoundException(
+          `Expense category ${updateExpenseDto.categoryId} not found`,
+        );
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.expense.update({ where: { id }, data: { ...updateExpenseDto, updatedBy: userId } });
+      await tx.expense.update({
+        where: { id },
+        data: { ...updateExpenseDto, updatedBy: userId },
+      });
 
       // If expense has a journal entry and amount or taxAmount changed, update it
-      const amountChanged = updateExpenseDto.amount != null && Number(updateExpenseDto.amount) !== Number(existing.amount);
-      const taxChanged = updateExpenseDto.taxAmount != null && Number(updateExpenseDto.taxAmount) !== Number(existing.taxAmount ?? 0);
+      const amountChanged =
+        updateExpenseDto.amount != null &&
+        Number(updateExpenseDto.amount) !== Number(existing.amount);
+      const taxChanged =
+        updateExpenseDto.taxAmount != null &&
+        Number(updateExpenseDto.taxAmount) !== Number(existing.taxAmount ?? 0);
       if (existing.journalEntryId && (amountChanged || taxChanged)) {
         const newAmount = Number(updateExpenseDto.amount ?? existing.amount);
-        const newTaxAmount = Number(updateExpenseDto.taxAmount ?? existing.taxAmount ?? 0);
+        const newTaxAmount = Number(
+          updateExpenseDto.taxAmount ?? existing.taxAmount ?? 0,
+        );
         const newTotal = newAmount + newTaxAmount;
 
         const cat = await tx.expenseCategory.findUnique({
           where: { id: updateExpenseDto.categoryId || existing.categoryId },
         });
-        const paymentAccountId = updateExpenseDto.paymentAccountId || existing.paymentAccountId;
+        const paymentAccountId =
+          updateExpenseDto.paymentAccountId || existing.paymentAccountId;
 
         if (cat?.accountId && paymentAccountId) {
           await tx.journalEntry.update({
@@ -214,12 +274,14 @@ export class ExpensesService {
     const where: any = {};
     if (fromDate) {
       const d = new Date(fromDate);
-      if (isNaN(d.getTime())) throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
+      if (isNaN(d.getTime()))
+        throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
       where.expenseDate = { ...where.expenseDate, gte: d };
     }
     if (toDate) {
       const d = new Date(toDate);
-      if (isNaN(d.getTime())) throw new BadRequestException(`Invalid toDate: ${toDate}`);
+      if (isNaN(d.getTime()))
+        throw new BadRequestException(`Invalid toDate: ${toDate}`);
       where.expenseDate = { ...where.expenseDate, lte: d };
     }
 
@@ -230,15 +292,24 @@ export class ExpensesService {
       where,
     });
 
-    const categoryIds = grouped.map(g => g.categoryId);
+    const categoryIds = grouped.map((g) => g.categoryId);
     const categories = await this.prisma.expenseCategory.findMany({
       where: { id: { in: categoryIds } },
       include: { account: { select: { id: true, code: true, name: true } } },
     });
-    const catMap = new Map(categories.map(c => [c.id, { id: c.id, name: c.name, slug: c.slug, account: c.account }]));
+    const catMap = new Map(
+      categories.map((c) => [
+        c.id,
+        { id: c.id, name: c.name, slug: c.slug, account: c.account },
+      ]),
+    );
 
-    return grouped.map(g => ({
-      category: catMap.get(g.categoryId) || { id: g.categoryId, name: g.categoryId.slice(0, 8), slug: 'unknown' },
+    return grouped.map((g) => ({
+      category: catMap.get(g.categoryId) || {
+        id: g.categoryId,
+        name: g.categoryId.slice(0, 8),
+        slug: 'unknown',
+      },
       total: Number(g._sum.amount) || 0,
       count: g._count,
     }));
@@ -248,7 +319,9 @@ export class ExpensesService {
 
   private async isAccountingEnabled(): Promise<boolean> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({ where: { key: 'accounting_enabled' } });
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'accounting_enabled' },
+      });
       return setting?.value === 'true';
     } catch {
       return false;
@@ -268,7 +341,16 @@ export class ExpensesService {
       userId?: string;
     },
   ) {
-    const { expenseId, amount, taxAmount, expenseDate, description, expenseAccountId, paymentAccountId, userId } = params;
+    const {
+      expenseId,
+      amount,
+      taxAmount,
+      expenseDate,
+      description,
+      expenseAccountId,
+      paymentAccountId,
+      userId,
+    } = params;
     const totalAmount = amount + taxAmount;
 
     // Find financial period for expense date

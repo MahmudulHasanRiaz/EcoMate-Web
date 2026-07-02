@@ -3,7 +3,10 @@ import { TasksController } from '../tasks.controller';
 
 describe('TasksController', () => {
   it('has RequiresFeature(admin_tasks) metadata', () => {
-    const featureKey = Reflect.getMetadata(REQUIRES_FEATURE_KEY, TasksController);
+    const featureKey = Reflect.getMetadata(
+      REQUIRES_FEATURE_KEY,
+      TasksController,
+    );
     expect(featureKey).toBe('admin_tasks');
   });
 });

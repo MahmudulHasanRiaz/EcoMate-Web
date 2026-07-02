@@ -17,7 +17,9 @@ export class BlockSettingsController {
 
   @Roles('superadmin', 'admin')
   @Put()
-  async update(@Body(new ValidationPipe({ whitelist: true })) dto: BlockSettingsDto) {
+  async update(
+    @Body(new ValidationPipe({ whitelist: true })) dto: BlockSettingsDto,
+  ) {
     return this.svc.updateSettings(dto);
   }
 }

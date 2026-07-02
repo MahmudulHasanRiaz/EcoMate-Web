@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaimReferralDto } from './dto/claim-referral.dto';
 
@@ -7,7 +11,9 @@ export class ReferralsService {
   constructor(private prisma: PrismaService) {}
 
   async getOrCreateReferral(userId: string) {
-    let referral = await this.prisma.referral.findFirst({ where: { referrerId: userId } });
+    let referral = await this.prisma.referral.findFirst({
+      where: { referrerId: userId },
+    });
     if (!referral) {
       const code = this.generateCode();
       referral = await this.prisma.referral.create({
@@ -18,9 +24,12 @@ export class ReferralsService {
   }
 
   async claimReferral(dto: ClaimReferralDto) {
-    const referral = await this.prisma.referral.findUnique({ where: { code: dto.code } });
+    const referral = await this.prisma.referral.findUnique({
+      where: { code: dto.code },
+    });
     if (!referral) throw new NotFoundException('Invalid referral code');
-    if (!referral.isActive) throw new BadRequestException('Referral code is inactive');
+    if (!referral.isActive)
+      throw new BadRequestException('Referral code is inactive');
 
     const existing = await this.prisma.referralLead.findFirst({
       where: { referralId: referral.id, phone: dto.phone },
@@ -39,7 +48,9 @@ export class ReferralsService {
   }
 
   async convertLead(leadId: string, orderId: string) {
-    const lead = await this.prisma.referralLead.findUnique({ where: { id: leadId } });
+    const lead = await this.prisma.referralLead.findUnique({
+      where: { id: leadId },
+    });
     if (!lead || lead.status !== 'pending') return;
 
     await this.prisma.referralLead.update({
@@ -60,20 +71,39 @@ export class ReferralsService {
         take: perPage,
         orderBy: { createdAt: 'desc' },
         include: {
-          referrer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
+          referrer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
+            },
+          },
           _count: { select: { leads: true } },
         },
       }),
       this.prisma.referral.count(),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findOne(id: string) {
     const referral = await this.prisma.referral.findUnique({
       where: { id },
       include: {
-        referrer: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true } },
+        referrer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phoneNumber: true,
+          },
+        },
         leads: { orderBy: { createdAt: 'desc' }, take: 50 },
       },
     });
@@ -88,11 +118,24 @@ export class ReferralsService {
         skip: (page - 1) * perPage,
         take: perPage,
         orderBy: { createdAt: 'desc' },
-        include: { order: { select: { id: true, displayId: true, total: true, statusId: true, createdAt: true } } },
+        include: {
+          order: {
+            select: {
+              id: true,
+              displayId: true,
+              total: true,
+              statusId: true,
+              createdAt: true,
+            },
+          },
+        },
       }),
       this.prisma.referralLead.count({ where: { referralId } }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   private generateCode(): string {

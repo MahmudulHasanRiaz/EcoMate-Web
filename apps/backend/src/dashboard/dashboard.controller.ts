@@ -10,19 +10,28 @@ export class DashboardController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('stats')
-  async getStats(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getStats(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getStats(startDate, endDate);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('analytics')
-  async getAnalytics(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getAnalytics(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getAnalytics(startDate, endDate);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('pending-orders')
-  async getPendingOrders(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getPendingOrders(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getPendingOrders(startDate, endDate);
   }
 
@@ -34,25 +43,42 @@ export class DashboardController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('top-products')
-  async getTopProducts(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string, @Query('limit') limit?: string) {
-    return this.dashboardService.getTopProducts(startDate, endDate, limit ? parseInt(limit) : 10);
+  async getTopProducts(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboardService.getTopProducts(
+      startDate,
+      endDate,
+      limit ? parseInt(limit) : 10,
+    );
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('order-status-distribution')
-  async getOrderStatusDistribution(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getOrderStatusDistribution(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getOrderStatusDistribution(startDate, endDate);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('revenue-by-payment')
-  async getRevenueByPaymentMethod(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getRevenueByPaymentMethod(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getRevenueByPaymentMethod(startDate, endDate);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('new-customers')
-  async getNewCustomers(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getNewCustomers(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.dashboardService.getNewCustomers(startDate, endDate);
   }
 

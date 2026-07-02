@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -17,20 +22,32 @@ interface ParsedModel {
   tableName: string;
   scalarFields: ParsedField[];
   indexes: string[];
-  idFields: string[];       // column names for PRIMARY KEY
-  compositeId: boolean;     // whether PK is composite (from @@id)
-  compositeIdCols: string[];// column names from @@id
+  idFields: string[]; // column names for PRIMARY KEY
+  compositeId: boolean; // whether PK is composite (from @@id)
+  compositeIdCols: string[]; // column names from @@id
 }
 
 const SCALAR_TYPES = new Set([
-  'String', 'Boolean', 'Int', 'BigInt', 'Float', 'Decimal', 'DateTime', 'Json', 'Bytes',
+  'String',
+  'Boolean',
+  'Int',
+  'BigInt',
+  'Float',
+  'Decimal',
+  'DateTime',
+  'Json',
+  'Bytes',
 ]);
 
 function isScalarType(t: string): boolean {
   return SCALAR_TYPES.has(t);
 }
 
-function buildColumnDef(fieldName: string, fieldType: string, rawLine: string): string | null {
+function buildColumnDef(
+  fieldName: string,
+  fieldType: string,
+  rawLine: string,
+): string | null {
   const isOptional = rawLine.includes('?');
   const hasDefault = rawLine.includes('@default');
   const defaultStr = extractDefault(rawLine);
@@ -64,7 +81,8 @@ function mapPrismaType(prismaType: string, rawLine: string): string {
   if (rawLine.includes('@db.Text')) return 'TEXT';
   if (rawLine.includes('@db.BigInt')) return 'BIGINT';
   if (rawLine.includes('@db.Boolean')) return 'BOOLEAN';
-  if (rawLine.includes('@db.JsonB') || rawLine.includes('@db.Json')) return 'JSONB';
+  if (rawLine.includes('@db.JsonB') || rawLine.includes('@db.Json'))
+    return 'JSONB';
   if (rawLine.includes('@db.Timestamp')) return 'TIMESTAMP(3)';
   if (rawLine.includes('@db.Date')) return 'DATE';
   if (rawLine.includes('@db.Time')) return 'TIME';
@@ -77,15 +95,15 @@ function mapPrismaType(prismaType: string, rawLine: string): string {
   if (rawLine.includes('@db.Citext')) return 'CITEXT';
 
   const typeMap: Record<string, string> = {
-    'String': 'TEXT',
-    'Boolean': 'BOOLEAN',
-    'Int': 'INTEGER',
-    'BigInt': 'BIGINT',
-    'Float': 'DOUBLE PRECISION',
-    'Decimal': 'DECIMAL(65,30)',
-    'DateTime': 'TIMESTAMP(3)',
-    'Json': 'JSONB',
-    'Bytes': 'BYTEA',
+    String: 'TEXT',
+    Boolean: 'BOOLEAN',
+    Int: 'INTEGER',
+    BigInt: 'BIGINT',
+    Float: 'DOUBLE PRECISION',
+    Decimal: 'DECIMAL(65,30)',
+    DateTime: 'TIMESTAMP(3)',
+    Json: 'JSONB',
+    Bytes: 'BYTEA',
   };
 
   return typeMap[prismaType] || 'TEXT'; // fallback: enums and unknown → TEXT
@@ -95,12 +113,18 @@ function extractDefault(rawLine: string): string | null {
   if (!rawLine.includes('@default')) return null;
 
   // uuid()
-  if (rawLine.includes('@default(uuid())') || rawLine.includes("@default(uuid())")) {
+  if (
+    rawLine.includes('@default(uuid())') ||
+    rawLine.includes('@default(uuid())')
+  ) {
     return 'gen_random_uuid()';
   }
 
   // now()
-  if (rawLine.includes('@default(now())') || rawLine.includes('@default(now()')) {
+  if (
+    rawLine.includes('@default(now())') ||
+    rawLine.includes('@default(now()')
+  ) {
     return 'CURRENT_TIMESTAMP';
   }
 
@@ -118,7 +142,7 @@ function extractDefault(rawLine: string): string | null {
   const defaultMatch = rawLine.match(/@default\((.+?)\)/);
   if (!defaultMatch) return null;
 
-  let val = defaultMatch[1].trim();
+  const val = defaultMatch[1].trim();
 
   // String literal: "value"
   if (val.startsWith('"') && val.endsWith('"')) {
@@ -161,9 +185,17 @@ export class PrismaService
 
     super({
       adapter,
-      log: process.env.NODE_ENV === 'development'
-        ? [{ level: 'query', emit: 'event' }, { level: 'warn', emit: 'event' }, { level: 'error', emit: 'stdout' }]
-        : [{ level: 'warn', emit: 'event' }, { level: 'error', emit: 'stdout' }],
+      log:
+        process.env.NODE_ENV === 'development'
+          ? [
+              { level: 'query', emit: 'event' },
+              { level: 'warn', emit: 'event' },
+              { level: 'error', emit: 'stdout' },
+            ]
+          : [
+              { level: 'warn', emit: 'event' },
+              { level: 'error', emit: 'stdout' },
+            ],
     });
     this.nativePool = pool;
   }
@@ -209,7 +241,7 @@ export class PrismaService
         FROM information_schema.columns 
         WHERE table_name = 'Product'
       `);
-      const cols = res.map(r => r.column_name).join(', ');
+      const cols = res.map((r) => r.column_name).join(', ');
       this.logger.log(`[SCHEMA CHECK] Database "Product" columns: ${cols}`);
     } catch (e: any) {
       this.logger.warn(`Failed to inspect Product columns: ${e.message}`);
@@ -231,7 +263,9 @@ export class PrismaService
   private async autoHealSchema(): Promise<void> {
     const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
     if (!fs.existsSync(schemaPath)) {
-      this.logger.warn(`Schema file not found at ${schemaPath} — auto-heal skipped`);
+      this.logger.warn(
+        `Schema file not found at ${schemaPath} — auto-heal skipped`,
+      );
       return;
     }
 
@@ -246,25 +280,32 @@ export class PrismaService
     let existingTables = new Set<string>();
     try {
       const rows = await this.runRaw<{ table_name: string }[]>(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      existingTables = new Set(rows.map(r => r.table_name));
+      existingTables = new Set(rows.map((r) => r.table_name));
     } catch {
-      this.logger.warn('Could not query existing tables — auto-heal may be incomplete');
+      this.logger.warn(
+        'Could not query existing tables — auto-heal may be incomplete',
+      );
     }
 
     // Get existing columns per table
-    let existingCols = new Map<string, Set<string>>();
+    const existingCols = new Map<string, Set<string>>();
     try {
-      const colRows = await this.runRaw<{ table_name: string; column_name: string }[]>(
-        `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+      const colRows = await this.runRaw<
+        { table_name: string; column_name: string }[]
+      >(
+        `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`,
       );
       for (const r of colRows) {
-        if (!existingCols.has(r.table_name)) existingCols.set(r.table_name, new Set());
+        if (!existingCols.has(r.table_name))
+          existingCols.set(r.table_name, new Set());
         existingCols.get(r.table_name)!.add(r.column_name);
       }
     } catch {
-      this.logger.warn('Could not query existing columns — auto-heal may be incomplete');
+      this.logger.warn(
+        'Could not query existing columns — auto-heal may be incomplete',
+      );
     }
 
     const createdTables: string[] = [];
@@ -285,7 +326,9 @@ export class PrismaService
           await this.runRaw(createSQL);
           createdTables.push(tbl);
         } catch (err: any) {
-          this.logger.warn(`Auto-heal: CREATE TABLE "${tbl}" failed: ${err.message}`);
+          this.logger.warn(
+            `Auto-heal: CREATE TABLE "${tbl}" failed: ${err.message}`,
+          );
         }
 
         // Create indexes for new table
@@ -294,7 +337,9 @@ export class PrismaService
             await this.runRaw(idx);
             createdIndexes.push(idx);
             idxCount++;
-          } catch { /* ignore — index may already exist from CREATE TABLE */ }
+          } catch {
+            /* ignore — index may already exist from CREATE TABLE */
+          }
         }
       } else {
         // Table exists — check for missing columns
@@ -307,7 +352,9 @@ export class PrismaService
             addedColumns.push(`${tbl}.${field.columnName}`);
             colCount++;
           } catch (err: any) {
-            this.logger.warn(`Auto-heal: ALTER "${tbl}"."${field.columnName}" failed: ${err.message}`);
+            this.logger.warn(
+              `Auto-heal: ALTER "${tbl}"."${field.columnName}" failed: ${err.message}`,
+            );
           }
         }
 
@@ -317,21 +364,31 @@ export class PrismaService
             await this.runRaw(idx);
             createdIndexes.push(idx);
             idxCount++;
-          } catch { /* ignore — already exists */ }
+          } catch {
+            /* ignore — already exists */
+          }
         }
       }
     }
 
     if (createdTables.length > 0) {
-      this.logger.log(`Auto-heal: created ${createdTables.length} table(s): ${createdTables.join(', ')}`);
+      this.logger.log(
+        `Auto-heal: created ${createdTables.length} table(s): ${createdTables.join(', ')}`,
+      );
     }
     if (addedColumns.length > 0) {
-      this.logger.log(`Auto-heal: added ${addedColumns.length} column(s): ${addedColumns.join(', ')}`);
+      this.logger.log(
+        `Auto-heal: added ${addedColumns.length} column(s): ${addedColumns.join(', ')}`,
+      );
     }
     if (createdIndexes.length > 0) {
       this.logger.log(`Auto-heal: created ${idxCount} index(es)`);
     }
-    if (createdTables.length === 0 && addedColumns.length === 0 && idxCount === 0) {
+    if (
+      createdTables.length === 0 &&
+      addedColumns.length === 0 &&
+      idxCount === 0
+    ) {
       this.logger.log(`Auto-heal: all ${tableCount} models up to date ✓`);
     }
   }
@@ -350,7 +407,7 @@ export class PrismaService
     let currentModel: ParsedModel | null = null;
     let inModel = false;
 
-    for (let line of lines) {
+    for (const line of lines) {
       const trimmed = line.trim();
 
       // Skip empty lines, comments, and block-level attributes (we handle them separately)
@@ -450,7 +507,7 @@ export class PrismaService
       const trimmed = lines[i].trim();
       if (trimmed.match(/^model\s+(\w+)\s*\{$/)) {
         const nameMatch = trimmed.match(/^model\s+(\w+)\s*\{$/);
-        currentModel = models.find(m => m.name === nameMatch![1]) || null;
+        currentModel = models.find((m) => m.name === nameMatch![1]) || null;
         inModel = true;
         continue;
       }
@@ -465,28 +522,38 @@ export class PrismaService
       const idCompMatch = trimmed.match(/^@@id\(\[([^\]]+)\]\)/);
       if (idCompMatch) {
         currentModel.compositeId = true;
-        currentModel.compositeIdCols = idCompMatch[1].split(',').map(c => c.trim());
+        currentModel.compositeIdCols = idCompMatch[1]
+          .split(',')
+          .map((c) => c.trim());
         continue;
       }
 
       // Handle @@unique([a, b]) — multi-column unique constraint
       const uniqueMatch = trimmed.match(/^@@unique\(\[([^\]]+)\]\)/);
       if (uniqueMatch) {
-        const cols = uniqueMatch[1].split(',').map(c => `"${c.trim()}"`).join(', ');
+        const cols = uniqueMatch[1]
+          .split(',')
+          .map((c) => `"${c.trim()}"`)
+          .join(', ');
         const idxName = `${currentModel.tableName}_${cols.replace(/"/g, '').replace(/, /g, '_')}_key`;
         const idxSQL = `CREATE UNIQUE INDEX IF NOT EXISTS "${idxName}" ON "${currentModel.tableName}"(${cols})`;
         // Avoid duplicates
-        if (!currentModel.indexes.includes(idxSQL)) currentModel.indexes.push(idxSQL);
+        if (!currentModel.indexes.includes(idxSQL))
+          currentModel.indexes.push(idxSQL);
         continue;
       }
 
       // Handle @@index([a]) or @@index([a, b])
       const indexMatch2 = trimmed.match(/^@@index\(\[([^\]]+)\]\)/);
       if (indexMatch2) {
-        const cols = indexMatch2[1].split(',').map(c => `"${c.trim()}"`).join(', ');
+        const cols = indexMatch2[1]
+          .split(',')
+          .map((c) => `"${c.trim()}"`)
+          .join(', ');
         const idxName = `${currentModel.tableName}_${cols.replace(/"/g, '').replace(/, /g, '_')}_idx`;
         const idxSQL = `CREATE INDEX IF NOT EXISTS "${idxName}" ON "${currentModel.tableName}"(${cols})`;
-        if (!currentModel.indexes.includes(idxSQL)) currentModel.indexes.push(idxSQL);
+        if (!currentModel.indexes.includes(idxSQL))
+          currentModel.indexes.push(idxSQL);
         continue;
       }
     }
@@ -495,7 +562,7 @@ export class PrismaService
   }
 
   private generateCreateTableSQL(model: ParsedModel): string {
-    const colLines = model.scalarFields.map(f => `  ${f.columnDef}`);
+    const colLines = model.scalarFields.map((f) => `  ${f.columnDef}`);
     // Build PRIMARY KEY clause
     let pkCols: string[];
     if (model.compositeId) {
@@ -506,8 +573,10 @@ export class PrismaService
       pkCols = []; // no PK — skip
     }
     if (pkCols.length > 0) {
-      const pkColStr = pkCols.map(c => `"${c}"`).join(', ');
-      colLines.push(`  CONSTRAINT "${model.tableName}_pkey" PRIMARY KEY (${pkColStr})`);
+      const pkColStr = pkCols.map((c) => `"${c}"`).join(', ');
+      colLines.push(
+        `  CONSTRAINT "${model.tableName}_pkey" PRIMARY KEY (${pkColStr})`,
+      );
     }
     return `CREATE TABLE IF NOT EXISTS "${model.tableName}" (\n${colLines.join(',\n')}\n)`;
   }
@@ -666,27 +735,87 @@ export class PrismaService
   private async validateSchemaCompleteness(): Promise<void> {
     try {
       const rows = await this.runRaw<{ table_name: string }[]>(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      const existing = new Set(rows.map(r => r.table_name));
+      const existing = new Set(rows.map((r) => r.table_name));
 
       const allModels = [
-        'Account', 'Address', 'Attribute', 'AttributeValue', 'BinLocation', 'BlockedIp',
-        'BlockedPhone', 'BlockSettings', 'Brand', 'Category', 'CmsPage', 'Combo',
-        'ComboItem', 'CostingLot', 'Coupon', 'CouponUsage', 'CourierCredentials',
-        'CourierDispatchLog', 'Department', 'Designation', 'EmailCampaign', 'EmailTemplate',
-        'Employee', 'Expense', 'expense_categories', 'FinancialPeriod', 'GoodsReceiptNote',
-        'GoodsReceiptNoteItem', 'InventoryLog', 'JournalEntry', 'JournalEntryLine',
-        'LandingPage', 'LicenseActivation', 'Media', 'MediaAttachment', 'NotificationLog',
-        'NotificationSetting', 'OpeningBalance', 'Order', 'OrderCounter', 'OrderItem',
-        'OrderStatus', 'Payment', 'PaymentGateway', 'PaymentOption', 'Payslip',
-        'PayslipItem', 'Product', 'ProductCategory', 'ProductPaymentOption',
-        'ProductTag', 'ProductVariant', 'ProductVariantAttributeValue', 'Purchase',
-        'PurchaseItem', 'Referral', 'ReferralLead', 'ReferralReward', 'Refund',
-        'RefreshToken', 'Review', 'SalaryStructure', 'Shipment', 'ShippingOption',
-        'ShippingZoneGroup', 'SizeChart', 'Supplier', 'SupplierPayment',
-        'SupplierPaymentInvoice', 'SystemSetting', 'Tag', 'Task', 'User', 'UserSettings',
-        'VerificationToken', 'Warehouse',
+        'Account',
+        'Address',
+        'Attribute',
+        'AttributeValue',
+        'BinLocation',
+        'BlockedIp',
+        'BlockedPhone',
+        'BlockSettings',
+        'Brand',
+        'Category',
+        'CmsPage',
+        'Combo',
+        'ComboItem',
+        'CostingLot',
+        'Coupon',
+        'CouponUsage',
+        'CourierCredentials',
+        'CourierDispatchLog',
+        'Department',
+        'Designation',
+        'EmailCampaign',
+        'EmailTemplate',
+        'Employee',
+        'Expense',
+        'expense_categories',
+        'FinancialPeriod',
+        'GoodsReceiptNote',
+        'GoodsReceiptNoteItem',
+        'InventoryLog',
+        'JournalEntry',
+        'JournalEntryLine',
+        'LandingPage',
+        'LicenseActivation',
+        'Media',
+        'MediaAttachment',
+        'NotificationLog',
+        'NotificationSetting',
+        'OpeningBalance',
+        'Order',
+        'OrderCounter',
+        'OrderItem',
+        'OrderStatus',
+        'Payment',
+        'PaymentGateway',
+        'PaymentOption',
+        'Payslip',
+        'PayslipItem',
+        'Product',
+        'ProductCategory',
+        'ProductPaymentOption',
+        'ProductTag',
+        'ProductVariant',
+        'ProductVariantAttributeValue',
+        'Purchase',
+        'PurchaseItem',
+        'Referral',
+        'ReferralLead',
+        'ReferralReward',
+        'Refund',
+        'RefreshToken',
+        'Review',
+        'SalaryStructure',
+        'Shipment',
+        'ShippingOption',
+        'ShippingZoneGroup',
+        'SizeChart',
+        'Supplier',
+        'SupplierPayment',
+        'SupplierPaymentInvoice',
+        'SystemSetting',
+        'Tag',
+        'Task',
+        'User',
+        'UserSettings',
+        'VerificationToken',
+        'Warehouse',
       ];
 
       const missing: string[] = [];
@@ -697,10 +826,16 @@ export class PrismaService
       }
 
       if (missing.length > 0) {
-        this.logger.warn(`Schema validation: ${missing.length} table(s) MISSING — ${missing.join(', ')}`);
-        this.logger.warn('Run `npx prisma migrate deploy` to apply all pending migrations.');
+        this.logger.warn(
+          `Schema validation: ${missing.length} table(s) MISSING — ${missing.join(', ')}`,
+        );
+        this.logger.warn(
+          'Run `npx prisma migrate deploy` to apply all pending migrations.',
+        );
       } else {
-        this.logger.log(`Schema validation: all ${allModels.length} tables present ✓`);
+        this.logger.log(
+          `Schema validation: all ${allModels.length} tables present ✓`,
+        );
       }
     } catch (err: any) {
       this.logger.warn(`Schema validation skipped: ${err.message}`);
@@ -743,7 +878,9 @@ export class PrismaService
         create: { key: 'accounting_enabled', value: 'true' },
       });
     } catch (err: any) {
-      this.logger.warn(`Failed to seed accounting_enabled setting: ${err.message}`);
+      this.logger.warn(
+        `Failed to seed accounting_enabled setting: ${err.message}`,
+      );
     }
   }
 }

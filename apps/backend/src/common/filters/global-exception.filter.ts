@@ -29,7 +29,9 @@ function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
   message: string;
 } {
   const code = exception.code;
-  const userMsg = PRISMA_USER_MESSAGES[code] || 'A database error occurred. Please try again.';
+  const userMsg =
+    PRISMA_USER_MESSAGES[code] ||
+    'A database error occurred. Please try again.';
 
   let detail = '';
   if (code === 'P2002' && exception.meta) {
@@ -77,25 +79,42 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // Handle Prisma errors with user-friendly messages
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const { status, message } = parsePrismaError(exception);
-      const body = { message, statusCode: status, timestamp: new Date().toISOString(), path: request.url };
+      const body = {
+        message,
+        statusCode: status,
+        timestamp: new Date().toISOString(),
+        path: request.url,
+      };
 
-      this.logger.warn(`Prisma error ${exception.code} at ${request.method} ${request.url}: ${exception.message}`);
+      this.logger.warn(
+        `Prisma error ${exception.code} at ${request.method} ${request.url}: ${exception.message}`,
+      );
 
-      if (typeof response.code === 'function' && typeof response.send === 'function') {
+      if (
+        typeof response.code === 'function' &&
+        typeof response.send === 'function'
+      ) {
         response.code(status).send(body);
         return;
       }
       try {
-        if (typeof response.status === 'function' && typeof response.json === 'function') {
+        if (
+          typeof response.status === 'function' &&
+          typeof response.json === 'function'
+        ) {
           response.status(status).json(body);
           return;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       try {
         response.statusCode = status;
         response.setHeader?.('Content-Type', 'application/json');
         response.end?.(JSON.stringify(body));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -119,18 +138,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
-    const payload = typeof message === 'string' ? { message } : (message as object);
-    const body = { ...payload, timestamp: new Date().toISOString(), path: request.url };
+    const payload = typeof message === 'string' ? { message } : message;
+    const body = {
+      ...payload,
+      timestamp: new Date().toISOString(),
+      path: request.url,
+    };
 
     // Fastify-style (reply.code().send())
-    if (typeof response.code === 'function' && typeof response.send === 'function') {
+    if (
+      typeof response.code === 'function' &&
+      typeof response.send === 'function'
+    ) {
       response.code(status).send(body);
       return;
     }
 
     // Express-style (response.status().json())
     try {
-      if (typeof response.status === 'function' && typeof response.json === 'function') {
+      if (
+        typeof response.status === 'function' &&
+        typeof response.json === 'function'
+      ) {
         response.status(status).json(body);
         return;
       }

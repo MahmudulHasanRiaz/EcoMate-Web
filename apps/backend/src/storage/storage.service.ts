@@ -1,4 +1,8 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   S3Client,
@@ -161,10 +165,7 @@ export class StorageService {
     return `${baseUrl.replace(/\/$/, '')}/${name}`;
   }
 
-  private async uploadToLocal(
-    name: string,
-    body: Buffer,
-  ): Promise<string> {
+  private async uploadToLocal(name: string, body: Buffer): Promise<string> {
     const uploadDir = join(process.cwd(), 'uploads');
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
@@ -232,7 +233,9 @@ export class StorageService {
     try {
       await unlink(filepath);
     } catch (err) {
-      this.logger.warn(`Failed to delete ${filepath}: ${(err as Error).message}`);
+      this.logger.warn(
+        `Failed to delete ${filepath}: ${(err as Error).message}`,
+      );
     }
   }
 }

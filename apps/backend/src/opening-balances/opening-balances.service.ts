@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SetOpeningBalanceDto } from './dto/set-opening-balance.dto';
 
@@ -7,20 +11,28 @@ export class OpeningBalancesService {
   constructor(private prisma: PrismaService) {}
 
   async setBalance(dto: SetOpeningBalanceDto) {
-    const account = await this.prisma.account.findUnique({ where: { id: dto.accountId } });
+    const account = await this.prisma.account.findUnique({
+      where: { id: dto.accountId },
+    });
 
     if (!account) {
       throw new NotFoundException(`Account with ID ${dto.accountId} not found`);
     }
 
-    const period = await this.prisma.financialPeriod.findUnique({ where: { id: dto.periodId } });
+    const period = await this.prisma.financialPeriod.findUnique({
+      where: { id: dto.periodId },
+    });
 
     if (!period) {
-      throw new NotFoundException(`Financial period with ID ${dto.periodId} not found`);
+      throw new NotFoundException(
+        `Financial period with ID ${dto.periodId} not found`,
+      );
     }
 
     if (period.isClosed) {
-      throw new BadRequestException('Cannot modify opening balances for a closed period');
+      throw new BadRequestException(
+        'Cannot modify opening balances for a closed period',
+      );
     }
 
     return this.prisma.openingBalance.upsert({

@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 
@@ -8,7 +12,9 @@ export class AccountingService {
 
   async createEntry(dto: CreateJournalEntryDto, userId?: string) {
     if (!dto.lines || dto.lines.length === 0) {
-      throw new BadRequestException('Journal entry must have at least one line');
+      throw new BadRequestException(
+        'Journal entry must have at least one line',
+      );
     }
 
     let totalDebit = 0;
@@ -29,18 +35,28 @@ export class AccountingService {
       throw new BadRequestException('Total debit must equal total credit');
     }
 
-    const period = await this.prisma.financialPeriod.findUnique({ where: { id: dto.periodId } });
+    const period = await this.prisma.financialPeriod.findUnique({
+      where: { id: dto.periodId },
+    });
     if (!period) {
-      throw new NotFoundException(`Financial period with ID ${dto.periodId} not found`);
+      throw new NotFoundException(
+        `Financial period with ID ${dto.periodId} not found`,
+      );
     }
     if (period.isClosed) {
-      throw new BadRequestException('Cannot post entry to a closed financial period');
+      throw new BadRequestException(
+        'Cannot post entry to a closed financial period',
+      );
     }
 
     for (const line of dto.lines) {
-      const account = await this.prisma.account.findUnique({ where: { id: line.accountId } });
+      const account = await this.prisma.account.findUnique({
+        where: { id: line.accountId },
+      });
       if (!account) {
-        throw new NotFoundException(`Account with ID ${line.accountId} not found`);
+        throw new NotFoundException(
+          `Account with ID ${line.accountId} not found`,
+        );
       }
     }
 
@@ -66,7 +82,7 @@ export class AccountingService {
         referenceNo: dto.referenceNo,
         createdBy: userId,
         lines: {
-          create: dto.lines.map(line => ({
+          create: dto.lines.map((line) => ({
             accountId: line.accountId,
             debit: line.debit,
             credit: line.credit,
@@ -116,16 +132,20 @@ export class AccountingService {
         period: true,
       },
     });
-    if (!entry) throw new NotFoundException(`Journal entry with ID ${id} not found`);
+    if (!entry)
+      throw new NotFoundException(`Journal entry with ID ${id} not found`);
     return entry;
   }
 
   async deleteEntry(id: string) {
     const entry = await this.prisma.journalEntry.findUnique({ where: { id } });
-    if (!entry) throw new NotFoundException(`Journal entry with ID ${id} not found`);
+    if (!entry)
+      throw new NotFoundException(`Journal entry with ID ${id} not found`);
 
     // Check if linked to an expense
-    const linkedExpense = await this.prisma.expense.findUnique({ where: { journalEntryId: id } });
+    const linkedExpense = await this.prisma.expense.findUnique({
+      where: { journalEntryId: id },
+    });
     if (linkedExpense) {
       throw new BadRequestException(
         `Cannot delete journal entry linked to expense "${linkedExpense.description.slice(0, 50)}". Delete the expense first.`,
@@ -155,8 +175,14 @@ export class AccountingService {
       total_credit: Number(row.total_credit),
     }));
 
-    const totalDebit = accounts.reduce((sum: number, a: any) => sum + a.total_debit, 0);
-    const totalCredit = accounts.reduce((sum: number, a: any) => sum + a.total_credit, 0);
+    const totalDebit = accounts.reduce(
+      (sum: number, a: any) => sum + a.total_debit,
+      0,
+    );
+    const totalCredit = accounts.reduce(
+      (sum: number, a: any) => sum + a.total_credit,
+      0,
+    );
 
     return { accounts, totalDebit, totalCredit };
   }
@@ -236,12 +262,22 @@ export class AccountingService {
       }
     }
 
-    return { assetAccounts, liabilityAccounts, equityAccounts, totalAssets, totalLiabilities, totalEquity };
+    return {
+      assetAccounts,
+      liabilityAccounts,
+      equityAccounts,
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+    };
   }
 
   async accountLedger(accountId: string, periodId?: string) {
-    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
-    if (!account) throw new NotFoundException(`Account with ID ${accountId} not found`);
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+    });
+    if (!account)
+      throw new NotFoundException(`Account with ID ${accountId} not found`);
 
     const where: any = { accountId };
     if (periodId) {
@@ -264,8 +300,14 @@ export class AccountingService {
       credit: Number(line.credit),
     }));
 
-    const totalDebit = entries.reduce((sum: number, e: any) => sum + e.debit, 0);
-    const totalCredit = entries.reduce((sum: number, e: any) => sum + e.credit, 0);
+    const totalDebit = entries.reduce(
+      (sum: number, e: any) => sum + e.debit,
+      0,
+    );
+    const totalCredit = entries.reduce(
+      (sum: number, e: any) => sum + e.credit,
+      0,
+    );
 
     return { account, entries, totalDebit, totalCredit };
   }

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -7,7 +12,12 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 export class EmployeesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(page = 1, perPage = 20, status?: string, departmentId?: string) {
+  async findAll(
+    page = 1,
+    perPage = 20,
+    status?: string,
+    departmentId?: string,
+  ) {
     const where: any = {};
     if (status) where.status = status;
     if (departmentId) where.departmentId = departmentId;
@@ -20,13 +30,18 @@ export class EmployeesService {
         orderBy: { createdAt: 'desc' },
         include: {
           department: { select: { id: true, name: true, slug: true } },
-          designation: { select: { id: true, name: true, slug: true, level: true } },
+          designation: {
+            select: { id: true, name: true, slug: true, level: true },
+          },
         },
       }),
       this.prisma.employee.count({ where }),
     ]);
 
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findOne(id: string) {
@@ -34,10 +49,13 @@ export class EmployeesService {
       where: { id },
       include: {
         department: { select: { id: true, name: true, slug: true } },
-        designation: { select: { id: true, name: true, slug: true, level: true } },
+        designation: {
+          select: { id: true, name: true, slug: true, level: true },
+        },
       },
     });
-    if (!employee) throw new NotFoundException(`Employee with ID ${id} not found`);
+    if (!employee)
+      throw new NotFoundException(`Employee with ID ${id} not found`);
     return employee;
   }
 
@@ -45,14 +63,19 @@ export class EmployeesService {
     const existing = await this.prisma.employee.findFirst({
       where: { email: dto.email },
     });
-    if (existing) throw new ConflictException('Employee with this email already exists');
+    if (existing)
+      throw new ConflictException('Employee with this email already exists');
 
     if (dto.departmentId) {
-      const dept = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
+      const dept = await this.prisma.department.findUnique({
+        where: { id: dto.departmentId },
+      });
       if (!dept) throw new NotFoundException('Department not found');
     }
     if (dto.designationId) {
-      const desig = await this.prisma.designation.findUnique({ where: { id: dto.designationId } });
+      const desig = await this.prisma.designation.findUnique({
+        where: { id: dto.designationId },
+      });
       if (!desig) throw new NotFoundException('Designation not found');
     }
 
@@ -85,7 +108,9 @@ export class EmployeesService {
       },
       include: {
         department: { select: { id: true, name: true, slug: true } },
-        designation: { select: { id: true, name: true, slug: true, level: true } },
+        designation: {
+          select: { id: true, name: true, slug: true, level: true },
+        },
       },
     });
   }
@@ -100,7 +125,9 @@ export class EmployeesService {
       },
       include: {
         department: { select: { id: true, name: true, slug: true } },
-        designation: { select: { id: true, name: true, slug: true, level: true } },
+        designation: {
+          select: { id: true, name: true, slug: true, level: true },
+        },
       },
     });
   }

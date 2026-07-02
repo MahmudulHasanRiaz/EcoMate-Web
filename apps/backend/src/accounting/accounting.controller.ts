@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AccountingService } from './accounting.service';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
@@ -57,7 +66,10 @@ export class AccountingController {
   }
 
   @Get('reports/ledger/:accountId')
-  accountLedger(@Param('accountId') accountId: string, @Query('periodId') periodId?: string) {
+  accountLedger(
+    @Param('accountId') accountId: string,
+    @Query('periodId') periodId?: string,
+  ) {
     return this.accountingService.accountLedger(accountId, periodId);
   }
 }

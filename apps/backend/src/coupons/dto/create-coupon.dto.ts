@@ -1,30 +1,51 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class CreateCouponDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   code: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   type?: string;
 
-  @IsNumber() @Min(0)
+  @IsNumber()
+  @Min(0)
   value: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   minOrderValue?: number;
 
-  @IsOptional() @IsNumber() @Min(1)
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
   maxUses?: number;
 
-  @IsOptional() @IsNumber() @Min(1)
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
   maxUsesPerCustomer?: number;
 
-  @IsOptional() @IsNumber() @Min(0) @Max(100)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
   percentageCap?: number;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   startsAt?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   expiresAt?: string;
 }

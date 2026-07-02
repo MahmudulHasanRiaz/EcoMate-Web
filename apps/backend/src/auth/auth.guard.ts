@@ -19,7 +19,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const authHeader = request.headers?.authorization;
       if (authHeader?.startsWith('Bearer ')) {
         try {
-          const result = super.canActivate(context) as boolean | Promise<boolean>;
+          const result = super.canActivate(context) as
+            | boolean
+            | Promise<boolean>;
           if (result instanceof Promise) {
             return result.catch(() => true);
           }

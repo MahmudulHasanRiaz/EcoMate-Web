@@ -1,12 +1,15 @@
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class ClaimReferralDto {
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   code: string;
 
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   phone: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   name?: string;
 }

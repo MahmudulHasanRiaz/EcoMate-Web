@@ -30,7 +30,9 @@ export class CourierManagerController {
     });
 
     const defaults = ['steadfast', 'pathao', 'redx', 'carrybee'];
-    const missing = defaults.filter(d => !existing.some(e => e.courier === d));
+    const missing = defaults.filter(
+      (d) => !existing.some((e) => e.courier === d),
+    );
 
     if (missing.length > 0) {
       for (const courier of missing) {

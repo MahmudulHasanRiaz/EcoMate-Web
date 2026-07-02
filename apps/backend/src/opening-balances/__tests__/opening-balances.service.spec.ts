@@ -28,10 +28,14 @@ describe('OpeningBalancesService', () => {
               upsert: jest.fn().mockResolvedValue(mockBalance),
             },
             account: {
-              findUnique: jest.fn().mockResolvedValue({ id: 'acc-1', name: 'Cash' }),
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ id: 'acc-1', name: 'Cash' }),
             },
             financialPeriod: {
-              findUnique: jest.fn().mockResolvedValue({ id: 'fp-1', isClosed: false }),
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ id: 'fp-1', isClosed: false }),
             },
           },
         },
@@ -42,24 +46,45 @@ describe('OpeningBalancesService', () => {
     prisma = module.get<PrismaService>(PrismaService);
   });
 
-  it('should be defined', () => { expect(service).toBeDefined(); });
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
 
   describe('setBalance', () => {
     it('should set opening balance for account in period', async () => {
-      const result = await service.setBalance({ accountId: 'acc-1', periodId: 'fp-1', debit: 100000, credit: 0 });
+      const result = await service.setBalance({
+        accountId: 'acc-1',
+        periodId: 'fp-1',
+        debit: 100000,
+        credit: 0,
+      });
       expect(result).toEqual(mockBalance);
     });
 
     it('should throw if account not found', async () => {
       jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
-      await expect(service.setBalance({ accountId: 'invalid', periodId: 'fp-1', debit: 0, credit: 0 }))
-        .rejects.toThrow(NotFoundException);
+      await expect(
+        service.setBalance({
+          accountId: 'invalid',
+          periodId: 'fp-1',
+          debit: 0,
+          credit: 0,
+        }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw if period is closed', async () => {
-      jest.spyOn(prisma.financialPeriod, 'findUnique').mockResolvedValue({ id: 'fp-1', isClosed: true });
-      await expect(service.setBalance({ accountId: 'acc-1', periodId: 'fp-1', debit: 100000, credit: 0 }))
-        .rejects.toThrow(BadRequestException);
+      jest
+        .spyOn(prisma.financialPeriod, 'findUnique')
+        .mockResolvedValue({ id: 'fp-1', isClosed: true });
+      await expect(
+        service.setBalance({
+          accountId: 'acc-1',
+          periodId: 'fp-1',
+          debit: 100000,
+          credit: 0,
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

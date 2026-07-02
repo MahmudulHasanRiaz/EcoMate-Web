@@ -48,7 +48,8 @@ export class ProductsController {
     const effectiveCategoryId =
       categoryId ||
       (category ? await this.svc.resolveCategorySlug(category) : undefined);
-    const parsedHasStock = hasStock !== undefined ? hasStock === 'true' : undefined;
+    const parsedHasStock =
+      hasStock !== undefined ? hasStock === 'true' : undefined;
     const isSortingActive = sort && sort !== 'default';
 
     let parsedPage = page ? parseInt(page) : undefined;
@@ -130,7 +131,11 @@ export class ProductsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_products')
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() user: { email: string }) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+    @CurrentUser() user: { email: string },
+  ) {
     return this.svc.update(id, dto, user.email);
   }
   @Roles('superadmin', 'admin', 'manager')

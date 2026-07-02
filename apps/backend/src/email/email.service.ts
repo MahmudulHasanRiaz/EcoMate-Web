@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { EmailQueueService } from '../queue/email-queue/email-queue.service';
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 @Injectable()
@@ -14,7 +18,9 @@ export class EmailService {
     await this.emailQueue.send({
       to: email,
       subject: 'Your OTP Code',
-      context: { content: `<p>Your OTP is: <strong>${safeOtp}</strong></p><p>This code expires in 10 minutes.</p>` },
+      context: {
+        content: `<p>Your OTP is: <strong>${safeOtp}</strong></p><p>This code expires in 10 minutes.</p>`,
+      },
     });
   }
 
@@ -24,7 +30,9 @@ export class EmailService {
     await this.emailQueue.send({
       to: email,
       subject: 'Verify Your Email',
-      context: { content: `<p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>` },
+      context: {
+        content: `<p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`,
+      },
     });
   }
 

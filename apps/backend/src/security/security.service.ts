@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { BlockSettingsService } from '../block-settings/block-settings.service';
@@ -10,8 +15,14 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis | null = null;
   private isRedisConnected = false;
 
-  private failedLoginsFallback = new Map<string, { count: number; firstAttempt: number }>();
-  private ipOrderCountsFallback = new Map<string, { count: number; firstOrder: number }>();
+  private failedLoginsFallback = new Map<
+    string,
+    { count: number; firstAttempt: number }
+  >();
+  private ipOrderCountsFallback = new Map<
+    string,
+    { count: number; firstOrder: number }
+  >();
   private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
@@ -40,7 +51,9 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
 
       this.redis.on('error', (err) => {
         this.isRedisConnected = false;
-        this.logger.warn(`Redis connection error, falling back to in-memory: ${err.message}`);
+        this.logger.warn(
+          `Redis connection error, falling back to in-memory: ${err.message}`,
+        );
       });
     } catch (err: any) {
       this.isRedisConnected = false;
@@ -59,7 +72,8 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     const settings = await this.blockSettings.getSettings();
     const threshold = settings.autoBlock.failedLoginThreshold;
-    const windowMs = (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
+    const windowMs =
+      (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
     const windowSec = Math.ceil(windowMs / 1000);
 
     let count = 0;
@@ -82,18 +96,23 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
             await this.redis.expire(key, windowSec);
             firstAttempt = now;
           } else {
-            firstAttempt = now - (windowMs - (ttl * 1000));
+            firstAttempt = now - (windowMs - ttl * 1000);
           }
           redisSucceeded = true;
         }
       } catch (err: any) {
-        this.logger.error(`Redis recordFailedLogin failed, falling back: ${err.message}`);
+        this.logger.error(
+          `Redis recordFailedLogin failed, falling back: ${err.message}`,
+        );
         this.isRedisConnected = false;
       }
     }
 
     if (!redisSucceeded) {
-      const entry = this.failedLoginsFallback.get(ip) || { count: 0, firstAttempt: now };
+      const entry = this.failedLoginsFallback.get(ip) || {
+        count: 0,
+        firstAttempt: now,
+      };
       entry.count++;
       if (entry.count === 1) entry.firstAttempt = now;
       this.failedLoginsFallback.set(ip, entry);
@@ -101,7 +120,7 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
       firstAttempt = entry.firstAttempt;
     }
 
-    if (count >= threshold && (now - firstAttempt) <= windowMs) {
+    if (count >= threshold && now - firstAttempt <= windowMs) {
       if (this.isRedisConnected && this.redis) {
         await this.redis.del(`ratelimit:login:${ip}`).catch(() => {});
       } else {
@@ -109,7 +128,9 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (settings.autoBlock.autoFullBlockIp) {
-        this.logger.warn(`Auto full-blocking IP ${ip} (${count} failed logins)`);
+        this.logger.warn(
+          `Auto full-blocking IP ${ip} (${count} failed logins)`,
+        );
         await this.blockedEntries.createAutoBlock('ip', ip, 'full', 1440);
       }
     }
@@ -119,18 +140,29 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
     const settings = await this.blockSettings.getSettings();
 
     if (settings.autoBlock?.autoOrderBlockPhone && phone) {
-      const count = await this.blockedEntries.countPhoneOrders(phone, settings.phoneOrderRestriction.timeWindowMinutes);
+      const count = await this.blockedEntries.countPhoneOrders(
+        phone,
+        settings.phoneOrderRestriction.timeWindowMinutes,
+      );
       if (count >= settings.phoneOrderRestriction.maxOrders) {
-        this.logger.warn(`Auto order-blocking phone ${phone} (${count} orders)`);
-        await this.blockedEntries.createAutoBlock('phone', phone, 'order', settings.phoneOrderRestriction.blockDurationMinutes);
+        this.logger.warn(
+          `Auto order-blocking phone ${phone} (${count} orders)`,
+        );
+        await this.blockedEntries.createAutoBlock(
+          'phone',
+          phone,
+          'order',
+          settings.phoneOrderRestriction.blockDurationMinutes,
+        );
       }
     }
 
     if (settings.autoBlock?.autoOrderBlockIp && ip) {
-      const windowMs = (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
+      const windowMs =
+        (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
       const windowSec = Math.ceil(windowMs / 1000);
       let count = 0;
-      let now = Date.now();
+      const now = Date.now();
       let firstOrder = now;
       let redisSucceeded = false;
 
@@ -150,21 +182,26 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
               await this.redis.expire(key, windowSec);
               firstOrder = now;
             } else {
-              firstOrder = now - (windowMs - (ttl * 1000));
+              firstOrder = now - (windowMs - ttl * 1000);
             }
             redisSucceeded = true;
           }
         } catch (err: any) {
-          this.logger.error(`Redis recordOrder failed, falling back: ${err.message}`);
+          this.logger.error(
+            `Redis recordOrder failed, falling back: ${err.message}`,
+          );
           this.isRedisConnected = false;
         }
       }
 
       if (!redisSucceeded) {
-        const entry = this.ipOrderCountsFallback.get(ip) || { count: 0, firstOrder: now };
+        const entry = this.ipOrderCountsFallback.get(ip) || {
+          count: 0,
+          firstOrder: now,
+        };
         entry.count++;
         if (entry.count === 1) entry.firstOrder = now;
-        if ((now - entry.firstOrder) > windowMs) {
+        if (now - entry.firstOrder > windowMs) {
           entry.count = 1;
           entry.firstOrder = now;
         }
@@ -179,7 +216,12 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
           this.ipOrderCountsFallback.delete(ip);
         }
         this.logger.warn(`Auto order-blocking IP ${ip} (${count} orders)`);
-        await this.blockedEntries.createAutoBlock('ip', ip, 'order', settings.ipOrderRestriction.blockDurationMinutes);
+        await this.blockedEntries.createAutoBlock(
+          'ip',
+          ip,
+          'order',
+          settings.ipOrderRestriction.blockDurationMinutes,
+        );
       }
     }
   }
@@ -222,14 +264,24 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
     try {
       const [ipActive, ipAuto, phoneActive, phoneAuto] = await Promise.all([
         this.prisma.blockedIp.count({ where: { isActive: true } }),
-        this.prisma.blockedIp.count({ where: { isActive: true, autoBlocked: true } }),
+        this.prisma.blockedIp.count({
+          where: { isActive: true, autoBlocked: true },
+        }),
         this.prisma.blockedPhone.count({ where: { isActive: true } }),
-        this.prisma.blockedPhone.count({ where: { isActive: true, autoBlocked: true } }),
+        this.prisma.blockedPhone.count({
+          where: { isActive: true, autoBlocked: true },
+        }),
       ]);
-      return { ipBlocks: { total: ipActive, auto: ipAuto }, phoneBlocks: { total: phoneActive, auto: phoneAuto } };
+      return {
+        ipBlocks: { total: ipActive, auto: ipAuto },
+        phoneBlocks: { total: phoneActive, auto: phoneAuto },
+      };
     } catch (err: any) {
       this.logger.error(`Failed to fetch auto-block stats: ${err.message}`);
-      return { ipBlocks: { total: 0, auto: 0 }, phoneBlocks: { total: 0, auto: 0 } };
+      return {
+        ipBlocks: { total: 0, auto: 0 },
+        phoneBlocks: { total: 0, auto: 0 },
+      };
     }
   }
 
@@ -238,14 +290,16 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
       const settings = await this.blockSettings.getSettings();
       const now = Date.now();
 
-      const loginWindowMs = (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
+      const loginWindowMs =
+        (settings.autoBlock.failedLoginWindowMinutes || 10) * 60_000;
       for (const [ip, entry] of this.failedLoginsFallback.entries()) {
         if (now - entry.firstAttempt > loginWindowMs) {
           this.failedLoginsFallback.delete(ip);
         }
       }
 
-      const orderWindowMs = (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
+      const orderWindowMs =
+        (settings.ipOrderRestriction.timeWindowMinutes || 60) * 60_000;
       for (const [ip, entry] of this.ipOrderCountsFallback.entries()) {
         if (now - entry.firstOrder > orderWindowMs) {
           this.ipOrderCountsFallback.delete(ip);

@@ -59,11 +59,17 @@ export class TrackingService {
     ]);
   }
 
-  async saveContext(orderId: string, context: { fbp?: string; fbc?: string; url?: string; referrer?: string }) {
+  async saveContext(
+    orderId: string,
+    context: { fbp?: string; fbc?: string; url?: string; referrer?: string },
+  ) {
     try {
       await this.prisma.systemSetting.upsert({
         where: { key: `tracking_ctx_${orderId}` },
-        create: { key: `tracking_ctx_${orderId}`, value: JSON.stringify(context) },
+        create: {
+          key: `tracking_ctx_${orderId}`,
+          value: JSON.stringify(context),
+        },
         update: { value: JSON.stringify(context) },
       });
     } catch (err) {
@@ -71,7 +77,12 @@ export class TrackingService {
     }
   }
 
-  async getContext(orderId: string): Promise<{ fbp?: string; fbc?: string; url?: string; referrer?: string } | null> {
+  async getContext(orderId: string): Promise<{
+    fbp?: string;
+    fbc?: string;
+    url?: string;
+    referrer?: string;
+  } | null> {
     try {
       const setting = await this.prisma.systemSetting.findUnique({
         where: { key: `tracking_ctx_${orderId}` },

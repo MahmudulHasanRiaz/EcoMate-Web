@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
@@ -28,9 +32,9 @@ export class SuppliersService {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
-          select: { purchases: true }
-        }
-      }
+          select: { purchases: true },
+        },
+      },
     });
   }
 
@@ -39,16 +43,16 @@ export class SuppliersService {
       where: { id },
       include: {
         _count: {
-          select: { purchases: true }
+          select: { purchases: true },
         },
         payments: {
           take: 10,
           orderBy: { createdAt: 'desc' },
           include: {
-            invoices: true
-          }
-        }
-      }
+            invoices: true,
+          },
+        },
+      },
     });
 
     if (!supplier) {
@@ -94,10 +98,10 @@ export class SuppliersService {
           reference: dto.reference,
           notes: dto.notes,
           invoices: {
-            create: { invoiceNo }
-          }
+            create: { invoiceNo },
+          },
         },
-        include: { invoices: true }
+        include: { invoices: true },
       });
 
       await tx.supplier.update({

@@ -7,15 +7,24 @@ describe('CombosController', () => {
   const publicMethods = ['findAll', 'findOne'];
 
   describe('admin methods', () => {
-    it.each(adminMethods)('adds RequiresFeature(admin_combos) on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CombosController.prototype[method]);
-      expect(meta).toBe('admin_combos');
-    });
+    it.each(adminMethods)(
+      'adds RequiresFeature(admin_combos) on %s',
+      (method) => {
+        const meta = Reflect.getMetadata(
+          REQUIRES_FEATURE_KEY,
+          CombosController.prototype[method],
+        );
+        expect(meta).toBe('admin_combos');
+      },
+    );
   });
 
   describe('public methods', () => {
     it.each(publicMethods)('does not add RequiresFeature on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, CombosController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        CombosController.prototype[method],
+      );
       expect(meta).toBeUndefined();
     });
   });

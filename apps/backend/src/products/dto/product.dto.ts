@@ -69,8 +69,13 @@ export class UpdateProductDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
-  @IsOptional() @ValidateIf((o) => o.categoryId !== null) @IsString() categoryId?: string | null;
-  @IsOptional() @ValidateIf((o) => o.brandId !== null) @IsString() brandId?: string | null;
+  @IsOptional()
+  @ValidateIf((o) => o.categoryId !== null)
+  @IsString()
+  categoryId?: string | null;
+  @IsOptional() @ValidateIf((o) => o.brandId !== null) @IsString() brandId?:
+    | string
+    | null;
   @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsArray() images?: string[];

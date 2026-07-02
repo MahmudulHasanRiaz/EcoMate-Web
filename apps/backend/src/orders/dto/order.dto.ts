@@ -40,7 +40,9 @@ export class CreateOrderDto {
   @IsOptional() @IsString() couponCode?: string;
 
   // Checkout enhancements
-  @IsOptional() @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY']) paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
+  @IsOptional()
+  @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY'])
+  paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   @IsOptional() @IsString() gatewayCode?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
   @IsOptional() @IsString() district?: string;

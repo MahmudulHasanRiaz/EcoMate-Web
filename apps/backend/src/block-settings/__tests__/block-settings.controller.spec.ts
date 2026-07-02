@@ -3,7 +3,10 @@ import { BlockSettingsController } from '../block-settings.controller';
 
 describe('BlockSettingsController', () => {
   it('has RequiresFeature(admin_blocking) metadata', () => {
-    const featureKey = Reflect.getMetadata(REQUIRES_FEATURE_KEY, BlockSettingsController);
+    const featureKey = Reflect.getMetadata(
+      REQUIRES_FEATURE_KEY,
+      BlockSettingsController,
+    );
     expect(featureKey).toBe('admin_blocking');
   });
 });

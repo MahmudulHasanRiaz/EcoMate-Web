@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
@@ -47,18 +51,27 @@ export class PaymentsService {
       });
 
       // Lock the order row
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId);
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM "Order" WHERE id = $1 FOR UPDATE',
+        orderId,
+      );
 
       const paymentAmount = Number(dto.amount);
       if (isNaN(paymentAmount) || paymentAmount <= 0) {
-        throw new BadRequestException('Payment amount must be a positive number');
+        throw new BadRequestException(
+          'Payment amount must be a positive number',
+        );
       }
 
       const orderTotal = Number(order.total);
 
       // Sum only PAID/PENDING payments for this order
       const totalPaidOrPending = order.payments
-        .filter((p) => p.status === PaymentStatus.PAID || p.status === PaymentStatus.PENDING)
+        .filter(
+          (p) =>
+            p.status === PaymentStatus.PAID ||
+            p.status === PaymentStatus.PENDING,
+        )
         .reduce((sum, p) => sum + Number(p.amount), 0);
 
       const remainingBalance = Math.max(0, orderTotal - totalPaidOrPending);
@@ -123,7 +136,10 @@ export class PaymentsService {
         await tx.order.update({
           where: { id: payment.orderId },
           data: {
-            paymentStatus: totalPaid >= orderTotal ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID,
+            paymentStatus:
+              totalPaid >= orderTotal
+                ? PaymentStatus.PAID
+                : PaymentStatus.PARTIAL_PAID,
           },
         });
       }

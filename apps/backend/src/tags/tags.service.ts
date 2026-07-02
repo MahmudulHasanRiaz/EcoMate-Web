@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -54,22 +55,52 @@ export class TagsService {
   }
 
   async bulkDelete(ids: string[]) {
-    await this.prisma.tag.deleteMany({ where: { id: { in: ids } } });
-    return { message: `${ids.length} tags deleted` };
+    const result = await this.prisma.tag.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return { message: `${result.count} tags deleted` };
   }
 
   async merge(keepId: string, removeId: string) {
-    const productsToMove = await this.prisma.productTag.findMany({
-      where: { tagId: removeId },
-    });
-    for (const pt of productsToMove) {
-      await this.prisma.productTag.upsert({
-        where: { productId_tagId: { productId: pt.productId, tagId: keepId } },
-        update: {},
-        create: { productId: pt.productId, tagId: keepId },
-      });
+    if (keepId === removeId) {
+      throw new BadRequestException('Cannot merge a tag with itself');
     }
-    await this.prisma.tag.delete({ where: { id: removeId } });
+
+    const [keepTag, removeTag] = await Promise.all([
+      this.prisma.tag.findUnique({ where: { id: keepId } }),
+      this.prisma.tag.findUnique({ where: { id: removeId } }),
+    ]);
+    if (!keepTag) throw new NotFoundException('Keep tag not found');
+    if (!removeTag) throw new NotFoundException('Remove tag not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      const existingOnKeep = await tx.productTag.findMany({
+        where: { tagId: keepId },
+        select: { productId: true },
+      });
+      const existingOnKeepSet = new Set(existingOnKeep.map((p) => p.productId));
+
+      const toMove = await tx.productTag.findMany({
+        where: { tagId: removeId },
+      });
+
+      const newProductIds = toMove
+        .filter((pt) => !existingOnKeepSet.has(pt.productId))
+        .map((pt) => pt.productId);
+
+      if (newProductIds.length > 0) {
+        await tx.productTag.createMany({
+          data: newProductIds.map((productId) => ({ productId, tagId: keepId })),
+        });
+        await tx.tag.update({
+          where: { id: keepId },
+          data: { productCount: { increment: newProductIds.length } },
+        });
+      }
+
+      await tx.tag.delete({ where: { id: removeId } });
+    });
+
     return { message: 'Tags merged' };
   }
 }

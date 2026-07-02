@@ -41,7 +41,9 @@ describe('LicenseGuard', () => {
       ],
     }).compile();
     guard = module.get<LicenseGuard>(LicenseGuard);
-    licenseActivation = module.get<LicenseActivationService>(LicenseActivationService);
+    licenseActivation = module.get<LicenseActivationService>(
+      LicenseActivationService,
+    );
     reflector = module.get<Reflector>(Reflector);
   });
 
@@ -66,26 +68,38 @@ describe('LicenseGuard', () => {
   it('blocks when no activation exists', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(null);
     mockActivation.find.mockResolvedValue(null);
-    await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(createMockContext())).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('blocks when activation is not active', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(null);
     mockActivation.find.mockResolvedValue({ status: 'pending' });
-    await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(createMockContext())).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('blocks when cached license is invalid (expired/revoked)', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(null);
     mockActivation.find.mockResolvedValue({ status: 'active' });
-    mockFeatureFlags.getLicense.mockReturnValue({ valid: false, code: 'expired' });
-    await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
+    mockFeatureFlags.getLicense.mockReturnValue({
+      valid: false,
+      code: 'expired',
+    });
+    await expect(guard.canActivate(createMockContext())).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('allows when activation active and cached license valid', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(null);
     mockActivation.find.mockResolvedValue({ status: 'active' });
-    mockFeatureFlags.getLicense.mockReturnValue({ valid: true, plan: { name: 'Enterprise' } });
+    mockFeatureFlags.getLicense.mockReturnValue({
+      valid: true,
+      plan: { name: 'Enterprise' },
+    });
     const result = await guard.canActivate(createMockContext());
     expect(result).toBe(true);
   });

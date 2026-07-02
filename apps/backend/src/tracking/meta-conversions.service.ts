@@ -59,7 +59,22 @@ export class MetaConversionsService {
     const apiUrl = `https://graph.facebook.com/v18.0/${pixelId}/events`;
 
     try {
-      const { email, phone, name, firstName, lastName, ip, userAgent, city, country, state, zip, fbp, fbc, url } = event.userData;
+      const {
+        email,
+        phone,
+        name,
+        firstName,
+        lastName,
+        ip,
+        userAgent,
+        city,
+        country,
+        state,
+        zip,
+        fbp,
+        fbc,
+        url,
+      } = event.userData;
 
       const fn = firstName
         ? this.hash(firstName)
@@ -123,28 +138,41 @@ export class MetaConversionsService {
           });
 
           if (response.ok) {
-            this.logger.log(`Meta CAPI event sent: ${event.eventName} [${event.eventId}]`);
+            this.logger.log(
+              `Meta CAPI event sent: ${event.eventName} [${event.eventId}]`,
+            );
             return;
           }
 
           if (response.status < 500 && response.status !== 429) {
-            this.logger.error(`Meta CAPI error: ${response.status} ${await response.text()}`);
+            this.logger.error(
+              `Meta CAPI error: ${response.status} ${await response.text()}`,
+            );
             return;
           }
 
-          lastError = new Error(`HTTP ${response.status}: ${await response.text()}`);
-          this.logger.warn(`Meta CAPI retryable error (attempt ${attempt + 1}/${maxRetries}): ${response.status}`);
+          lastError = new Error(
+            `HTTP ${response.status}: ${await response.text()}`,
+          );
+          this.logger.warn(
+            `Meta CAPI retryable error (attempt ${attempt + 1}/${maxRetries}): ${response.status}`,
+          );
         } catch (err) {
           lastError = err as Error;
-          this.logger.warn(`Meta CAPI network error (attempt ${attempt + 1}/${maxRetries}): ${err}`);
+          this.logger.warn(
+            `Meta CAPI network error (attempt ${attempt + 1}/${maxRetries}): ${err}`,
+          );
         }
 
         if (attempt < maxRetries - 1) {
-          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+          await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
         }
       }
 
-      this.logger.error(`Meta CAPI failed after ${maxRetries} retries`, lastError);
+      this.logger.error(
+        `Meta CAPI failed after ${maxRetries} retries`,
+        lastError,
+      );
     } catch (err) {
       this.logger.error('Meta CAPI request failed', err);
     }

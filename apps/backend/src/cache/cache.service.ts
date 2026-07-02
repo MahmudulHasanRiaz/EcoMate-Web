@@ -32,7 +32,10 @@ export class CacheService implements OnModuleDestroy {
         console.warn('[Cache] Redis unavailable — using memory fallback');
       });
     }
-    this.cleanupTimer = setInterval(() => this.evictExpired(), CLEANUP_INTERVAL_MS);
+    this.cleanupTimer = setInterval(
+      () => this.evictExpired(),
+      CLEANUP_INTERVAL_MS,
+    );
   }
 
   onModuleDestroy() {
@@ -52,7 +55,9 @@ export class CacheService implements OnModuleDestroy {
       try {
         const raw = await this.redis.get(key);
         if (raw) return JSON.parse(raw) as T;
-      } catch { /* fall through to memory */ }
+      } catch {
+        /* fall through to memory */
+      }
     }
     const entry = this.store.get(key);
     if (!entry) return undefined;
@@ -64,12 +69,16 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async set<T>(key: string, data: T, ttlMs?: number): Promise<void> {
-    const ttlSeconds = ttlMs ? Math.ceil(ttlMs / 1000) : Math.ceil(this.defaultTtl / 1000);
+    const ttlSeconds = ttlMs
+      ? Math.ceil(ttlMs / 1000)
+      : Math.ceil(this.defaultTtl / 1000);
     if (this.redis) {
       try {
         await this.redis.setex(key, ttlSeconds, JSON.stringify(data));
         return;
-      } catch { /* fall through to memory */ }
+      } catch {
+        /* fall through to memory */
+      }
     }
     if (this.store.size >= MAX_MEMORY_ENTRIES) {
       this.evictExpired();
@@ -86,7 +95,11 @@ export class CacheService implements OnModuleDestroy {
 
   async delete(key: string): Promise<void> {
     if (this.redis) {
-      try { await this.redis.del(key); } catch { /* ignore */ }
+      try {
+        await this.redis.del(key);
+      } catch {
+        /* ignore */
+      }
     }
     this.store.delete(key);
   }
@@ -96,11 +109,19 @@ export class CacheService implements OnModuleDestroy {
       try {
         let cursor = '0';
         do {
-          const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
+          const [nextCursor, keys] = await this.redis.scan(
+            cursor,
+            'MATCH',
+            `${prefix}*`,
+            'COUNT',
+            100,
+          );
           if (keys.length) await this.redis.del(...keys);
           cursor = nextCursor;
         } while (cursor !== '0');
-      } catch { /* fall through to memory */ }
+      } catch {
+        /* fall through to memory */
+      }
     }
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) this.store.delete(key);

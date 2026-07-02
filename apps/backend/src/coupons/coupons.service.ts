@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -26,16 +31,24 @@ export class CouponsService {
   async validate(code: string, userId?: string) {
     const coupon = await this.prisma.coupon.findUnique({ where: { code } });
     if (!coupon) return { valid: false, message: 'Coupon not found' };
-    if (!coupon.isActive) return { valid: false, message: 'Coupon is no longer active' };
-    if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) return { valid: false, message: 'Coupon usage limit reached' };
-    if (coupon.expiresAt && new Date() > coupon.expiresAt) return { valid: false, message: 'Coupon has expired' };
-    if (coupon.startsAt && new Date() < coupon.startsAt) return { valid: false, message: 'Coupon is not yet active' };
+    if (!coupon.isActive)
+      return { valid: false, message: 'Coupon is no longer active' };
+    if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
+      return { valid: false, message: 'Coupon usage limit reached' };
+    if (coupon.expiresAt && new Date() > coupon.expiresAt)
+      return { valid: false, message: 'Coupon has expired' };
+    if (coupon.startsAt && new Date() < coupon.startsAt)
+      return { valid: false, message: 'Coupon is not yet active' };
 
     if (userId && coupon.maxUsesPerCustomer) {
       const userUsageCount = await this.prisma.couponUsage.count({
         where: { couponId: coupon.id, userId },
       });
-      if (userUsageCount >= coupon.maxUsesPerCustomer) return { valid: false, message: 'You have reached the usage limit for this coupon' };
+      if (userUsageCount >= coupon.maxUsesPerCustomer)
+        return {
+          valid: false,
+          message: 'You have reached the usage limit for this coupon',
+        };
     }
 
     return {
@@ -50,22 +63,32 @@ export class CouponsService {
     };
   }
 
-  async apply(code: string, orderId: string, userId?: string, discountAmount?: number) {
+  async apply(
+    code: string,
+    orderId: string,
+    userId?: string,
+    discountAmount?: number,
+  ) {
     const [coupon]: any[] = await this.prisma.$queryRawUnsafe(
       'SELECT id, "isActive", "maxUses", "usedCount", "maxUsesPerCustomer", "expiresAt", "startsAt", "minOrderValue", type, value, "percentageCap" FROM "Coupon" WHERE code = $1 FOR UPDATE',
       code,
     );
     if (!coupon) throw new BadRequestException('Coupon not found');
-    if (!coupon.isActive) throw new BadRequestException('Coupon is no longer active');
-    if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) throw new BadRequestException('Coupon usage limit reached');
-    if (coupon.expiresAt && new Date() > coupon.expiresAt) throw new BadRequestException('Coupon has expired');
-    if (coupon.startsAt && new Date() < coupon.startsAt) throw new BadRequestException('Coupon is not yet active');
+    if (!coupon.isActive)
+      throw new BadRequestException('Coupon is no longer active');
+    if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
+      throw new BadRequestException('Coupon usage limit reached');
+    if (coupon.expiresAt && new Date() > coupon.expiresAt)
+      throw new BadRequestException('Coupon has expired');
+    if (coupon.startsAt && new Date() < coupon.startsAt)
+      throw new BadRequestException('Coupon is not yet active');
 
     if (userId && coupon.maxUsesPerCustomer) {
       const userUsageCount = await this.prisma.couponUsage.count({
         where: { couponId: coupon.id, userId },
       });
-      if (userUsageCount >= coupon.maxUsesPerCustomer) throw new BadRequestException('Per-customer usage limit reached');
+      if (userUsageCount >= coupon.maxUsesPerCustomer)
+        throw new BadRequestException('Per-customer usage limit reached');
     }
 
     const actualDiscount = discountAmount ?? 0;
@@ -83,7 +106,9 @@ export class CouponsService {
   }
 
   async create(dto: CreateCouponDto) {
-    const existing = await this.prisma.coupon.findUnique({ where: { code: dto.code } });
+    const existing = await this.prisma.coupon.findUnique({
+      where: { code: dto.code },
+    });
     if (existing) throw new ConflictException('Coupon code already exists');
 
     return this.prisma.coupon.create({
@@ -104,8 +129,11 @@ export class CouponsService {
   async update(id: string, dto: UpdateCouponDto) {
     await this.findOne(id);
     if (dto.code) {
-      const existing = await this.prisma.coupon.findUnique({ where: { code: dto.code } });
-      if (existing && existing.id !== id) throw new ConflictException('Coupon code already exists');
+      const existing = await this.prisma.coupon.findUnique({
+        where: { code: dto.code },
+      });
+      if (existing && existing.id !== id)
+        throw new ConflictException('Coupon code already exists');
     }
     return this.prisma.coupon.update({
       where: { id },
@@ -133,6 +161,9 @@ export class CouponsService {
       }),
       this.prisma.couponUsage.count({ where }),
     ]);
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 }

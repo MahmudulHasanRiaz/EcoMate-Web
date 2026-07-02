@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
 
@@ -7,8 +11,13 @@ export class PayrollService {
   constructor(private prisma: PrismaService) {}
 
   async setSalaryStructure(dto: SetSalaryStructureDto) {
-    const employee = await this.prisma.employee.findUnique({ where: { id: dto.employeeId } });
-    if (!employee) throw new NotFoundException(`Employee with ID ${dto.employeeId} not found`);
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: dto.employeeId },
+    });
+    if (!employee)
+      throw new NotFoundException(
+        `Employee with ID ${dto.employeeId} not found`,
+      );
 
     const basicSalary = dto.basicSalary;
     const houseAllowance = dto.houseAllowance || 0;
@@ -19,7 +28,12 @@ export class PayrollService {
     const insuranceDeduction = dto.insuranceDeduction || 0;
     const otherDeduction = dto.otherDeduction || 0;
 
-    const totalEarnings = basicSalary + houseAllowance + medicalAllowance + transportAllowance + otherAllowance;
+    const totalEarnings =
+      basicSalary +
+      houseAllowance +
+      medicalAllowance +
+      transportAllowance +
+      otherAllowance;
     const totalDeductions = taxDeduction + insuranceDeduction + otherDeduction;
     const netSalary = totalEarnings - totalDeductions;
 
@@ -50,18 +64,31 @@ export class PayrollService {
     const structure = await this.prisma.salaryStructure.findFirst({
       where: { employeeId, isActive: true },
     });
-    if (!structure) throw new NotFoundException(`No active salary structure for employee ${employeeId}`);
+    if (!structure)
+      throw new NotFoundException(
+        `No active salary structure for employee ${employeeId}`,
+      );
     return structure;
   }
 
-  async generatePayslip(employeeId: string, periodStart: string, periodEnd: string) {
-    const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
-    if (!employee) throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+  async generatePayslip(
+    employeeId: string,
+    periodStart: string,
+    periodEnd: string,
+  ) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+    if (!employee)
+      throw new NotFoundException(`Employee with ID ${employeeId} not found`);
 
     const salaryStructure = await this.prisma.salaryStructure.findFirst({
       where: { employeeId, isActive: true },
     });
-    if (!salaryStructure) throw new BadRequestException(`No active salary structure for employee ${employeeId}`);
+    if (!salaryStructure)
+      throw new BadRequestException(
+        `No active salary structure for employee ${employeeId}`,
+      );
 
     const payslip = await this.prisma.payslip.create({
       data: {
@@ -76,14 +103,54 @@ export class PayrollService {
     });
 
     const items = [
-      { payslipId: payslip.id, type: 'earnings', label: 'Basic Salary', amount: salaryStructure.basicSalary },
-      { payslipId: payslip.id, type: 'earnings', label: 'House Allowance', amount: salaryStructure.houseAllowance },
-      { payslipId: payslip.id, type: 'earnings', label: 'Medical Allowance', amount: salaryStructure.medicalAllowance },
-      { payslipId: payslip.id, type: 'earnings', label: 'Transport Allowance', amount: salaryStructure.transportAllowance },
-      { payslipId: payslip.id, type: 'earnings', label: 'Other Allowance', amount: salaryStructure.otherAllowance },
-      { payslipId: payslip.id, type: 'deductions', label: 'Tax', amount: salaryStructure.taxDeduction },
-      { payslipId: payslip.id, type: 'deductions', label: 'Insurance', amount: salaryStructure.insuranceDeduction },
-      { payslipId: payslip.id, type: 'deductions', label: 'Other Deduction', amount: salaryStructure.otherDeduction },
+      {
+        payslipId: payslip.id,
+        type: 'earnings',
+        label: 'Basic Salary',
+        amount: salaryStructure.basicSalary,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'earnings',
+        label: 'House Allowance',
+        amount: salaryStructure.houseAllowance,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'earnings',
+        label: 'Medical Allowance',
+        amount: salaryStructure.medicalAllowance,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'earnings',
+        label: 'Transport Allowance',
+        amount: salaryStructure.transportAllowance,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'earnings',
+        label: 'Other Allowance',
+        amount: salaryStructure.otherAllowance,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'deductions',
+        label: 'Tax',
+        amount: salaryStructure.taxDeduction,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'deductions',
+        label: 'Insurance',
+        amount: salaryStructure.insuranceDeduction,
+      },
+      {
+        payslipId: payslip.id,
+        type: 'deductions',
+        label: 'Other Deduction',
+        amount: salaryStructure.otherDeduction,
+      },
     ];
 
     await this.prisma.payslipItem.createMany({ data: items });
@@ -102,14 +169,23 @@ export class PayrollService {
         orderBy: { createdAt: 'desc' },
         include: {
           employee: {
-            select: { id: true, employeeId: true, firstName: true, lastName: true, email: true },
+            select: {
+              id: true,
+              employeeId: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
         },
       }),
       this.prisma.payslip.count(),
     ]);
 
-    return { data, meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) } };
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async findPayslip(id: string) {
@@ -117,13 +193,15 @@ export class PayrollService {
       where: { id },
       include: { items: true, employee: true },
     });
-    if (!payslip) throw new NotFoundException(`Payslip with ID ${id} not found`);
+    if (!payslip)
+      throw new NotFoundException(`Payslip with ID ${id} not found`);
     return payslip;
   }
 
   async approvePayslip(id: string) {
     const payslip = await this.prisma.payslip.findUnique({ where: { id } });
-    if (!payslip) throw new NotFoundException(`Payslip with ID ${id} not found`);
+    if (!payslip)
+      throw new NotFoundException(`Payslip with ID ${id} not found`);
 
     return this.prisma.payslip.update({
       where: { id },

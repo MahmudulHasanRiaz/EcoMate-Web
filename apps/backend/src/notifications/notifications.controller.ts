@@ -35,7 +35,10 @@ export class NotificationsController {
 
   @Roles('superadmin', 'admin', 'manager')
   @Put('settings/:id')
-  updateSetting(@Param('id') id: string, @Body() dto: UpdateNotificationSettingDto) {
+  updateSetting(
+    @Param('id') id: string,
+    @Body() dto: UpdateNotificationSettingDto,
+  ) {
     return this.svc.updateSetting(id, dto);
   }
 

@@ -119,7 +119,11 @@ export class OrdersService {
             lastName: { contains: query.search, mode: 'insensitive' },
           },
         },
-        { customer: { phoneNumber: { contains: normalizedPhone || query.search } } },
+        {
+          customer: {
+            phoneNumber: { contains: normalizedPhone || query.search },
+          },
+        },
         { guestName: { contains: query.search, mode: 'insensitive' } },
         { guestPhone: { contains: normalizedPhone || query.search } },
       ];
@@ -171,10 +175,13 @@ export class OrdersService {
       }),
     ]);
 
-    const statusCounts = stats.reduce((acc, curr) => {
-      acc[curr.statusId] = curr._count;
-      return acc;
-    }, {} as Record<string, number>);
+    const statusCounts = stats.reduce(
+      (acc, curr) => {
+        acc[curr.statusId] = curr._count;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     return {
       data: data.map((o: any) => this.transformOrder(o)),
@@ -188,7 +195,10 @@ export class OrdersService {
     };
   }
 
-  async findMyOrders(userId: string, query: { page?: number; perPage?: number; status?: string }) {
+  async findMyOrders(
+    userId: string,
+    query: { page?: number; perPage?: number; status?: string },
+  ) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: any = { customerId: userId };
@@ -205,7 +215,9 @@ export class OrdersService {
           status: true,
           items: {
             include: {
-              product: { select: { id: true, name: true, images: true, slug: true } },
+              product: {
+                select: { id: true, name: true, images: true, slug: true },
+              },
             },
           },
           payments: true,
@@ -227,7 +239,9 @@ export class OrdersService {
         shipment: true,
         items: {
           include: {
-            product: { select: { id: true, name: true, images: true, slug: true } },
+            product: {
+              select: { id: true, name: true, images: true, slug: true },
+            },
           },
         },
         payments: {
@@ -302,9 +316,8 @@ export class OrdersService {
     }
 
     if (clientIp) {
-      const orderBlockIp = await this.blockedEntries.findOrderBlockedIp(
-        clientIp,
-      );
+      const orderBlockIp =
+        await this.blockedEntries.findOrderBlockedIp(clientIp);
       if (orderBlockIp) {
         throw new BadRequestException(
           'Orders from your IP address are temporarily restricted. Please contact support.',
@@ -355,11 +368,7 @@ export class OrdersService {
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
       const productIds = Array.from(
-        new Set(
-          dto.items
-            .filter((i) => i.productId)
-            .map((i) => i.productId!),
-        ),
+        new Set(dto.items.filter((i) => i.productId).map((i) => i.productId!)),
       );
       const products =
         productIds.length > 0
@@ -376,27 +385,24 @@ export class OrdersService {
       const productMap = new Map(products.map((p) => [p.id, p]));
 
       const variantIds = Array.from(
-        new Set(
-          dto.items
-            .filter((i) => i.variantId)
-            .map((i) => i.variantId!),
-        ),
+        new Set(dto.items.filter((i) => i.variantId).map((i) => i.variantId!)),
       );
       const variants =
         variantIds.length > 0
           ? await tx.productVariant.findMany({
               where: { id: { in: variantIds } },
-              select: { id: true, price: true, isActive: true, productId: true },
+              select: {
+                id: true,
+                price: true,
+                isActive: true,
+                productId: true,
+              },
             })
           : [];
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
       const comboIds = Array.from(
-        new Set(
-          dto.items
-            .filter((i) => i.comboId)
-            .map((i) => i.comboId!),
-        ),
+        new Set(dto.items.filter((i) => i.comboId).map((i) => i.comboId!)),
       );
       const combos =
         comboIds.length > 0
@@ -439,7 +445,9 @@ export class OrdersService {
         } else if (item.variantId) {
           const variant = variantMap.get(item.variantId);
           if (!variant) {
-            throw new BadRequestException(`Variant ${item.variantId} not found`);
+            throw new BadRequestException(
+              `Variant ${item.variantId} not found`,
+            );
           }
           if (!variant.isActive) {
             throw new BadRequestException(`Variant is no longer active`);
@@ -460,7 +468,9 @@ export class OrdersService {
         } else if (item.productId) {
           const product = productMap.get(item.productId);
           if (!product) {
-            throw new BadRequestException(`Product ${item.productId} not found`);
+            throw new BadRequestException(
+              `Product ${item.productId} not found`,
+            );
           }
           if (!product.isActive) {
             throw new BadRequestException(`Product is no longer active`);
@@ -486,7 +496,10 @@ export class OrdersService {
           dto.couponCode,
         );
         const coupon = coupons[0];
-        if (coupon?.minOrderValue && Number(subtotal) < Number(coupon.minOrderValue)) {
+        if (
+          coupon?.minOrderValue &&
+          Number(subtotal) < Number(coupon.minOrderValue)
+        ) {
           throw new BadRequestException(
             `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
           );
@@ -534,7 +547,7 @@ export class OrdersService {
               : PaymentStatus.PAYMENT_PENDING,
           partialAmount:
             dto.paymentOptionType === 'PARTIAL_PAYMENT'
-              ? dto.partialAmount ?? undefined
+              ? (dto.partialAmount ?? undefined)
               : undefined,
           items: {
             create: dto.items.map((i) => ({
@@ -623,7 +636,12 @@ export class OrdersService {
     this.security.recordOrder(dto.guestPhone || '', clientIp || '');
 
     if (dto.couponCode) {
-      await this.couponsService.apply(dto.couponCode, order.id, undefined, dto.discount || 0);
+      await this.couponsService.apply(
+        dto.couponCode,
+        order.id,
+        undefined,
+        dto.discount || 0,
+      );
     }
 
     this.events.emit({
@@ -643,7 +661,11 @@ export class OrdersService {
         },
       });
       if (orderWithItems) {
-        this.firePurchaseIfModeMatches(initialStatus.name, orderWithItems as any, 'system').catch(() => {});
+        this.firePurchaseIfModeMatches(
+          initialStatus.name,
+          orderWithItems as any,
+          'system',
+        ).catch(() => {});
       }
     }
 
@@ -678,8 +700,11 @@ export class OrdersService {
       });
     }
 
-    const discountChanged = dto.discount !== undefined && Number(dto.discount) !== Number(order.discount);
-    const discountTypeChanged = dto.discountType !== undefined && dto.discountType !== order.discountType;
+    const discountChanged =
+      dto.discount !== undefined &&
+      Number(dto.discount) !== Number(order.discount);
+    const discountTypeChanged =
+      dto.discountType !== undefined && dto.discountType !== order.discountType;
     if (discountChanged || discountTypeChanged) {
       timeline.push({
         type: 'discount',
@@ -744,7 +769,8 @@ export class OrdersService {
             productId: item.productId || undefined,
             variantId: item.variantId || undefined,
             comboId: item.comboId || undefined,
-            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            comboSelection:
+              (item.comboSelection as Record<string, string>) || undefined,
             quantity: item.quantity,
             reference: order.displayId,
             tx,
@@ -794,7 +820,8 @@ export class OrdersService {
         }
         if (safeData.phoneNumber) {
           const normalized = normalizePhone(safeData.phoneNumber);
-          if (!normalized) throw new BadRequestException('Invalid phone number');
+          if (!normalized)
+            throw new BadRequestException('Invalid phone number');
           safeData.phoneNumber = normalized;
         }
         if (Object.keys(safeData).length > 0) {
@@ -867,7 +894,12 @@ export class OrdersService {
     });
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, performedBy?: string) {
+  async updateStatus(
+    id: string,
+    dto: UpdateOrderStatusDto,
+    userId: string,
+    performedBy?: string,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: { status: true },
@@ -925,37 +957,49 @@ export class OrdersService {
 
     if (newStatus.name === 'Cancelled') {
       try {
-        const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+        const cancelItems = await this.prisma.orderItem.findMany({
+          where: { orderId: id },
+        });
         for (const item of cancelItems) {
           await this.stockService.release({
             productId: item.productId || undefined,
             variantId: item.variantId || undefined,
             comboId: item.comboId || undefined,
-            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            comboSelection:
+              (item.comboSelection as Record<string, string>) || undefined,
             quantity: item.quantity,
             reference: order.displayId,
           });
         }
       } catch (err) {
-        this.logger.error(`Failed to release stock for cancelled order ${id}:`, err);
+        this.logger.error(
+          `Failed to release stock for cancelled order ${id}:`,
+          err,
+        );
       }
     }
 
     if (newStatus.name === 'Delivered') {
       try {
-        const deliverItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+        const deliverItems = await this.prisma.orderItem.findMany({
+          where: { orderId: id },
+        });
         for (const item of deliverItems) {
           await this.stockService.deduct({
             productId: item.productId || undefined,
             variantId: item.variantId || undefined,
             comboId: item.comboId || undefined,
-            comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+            comboSelection:
+              (item.comboSelection as Record<string, string>) || undefined,
             quantity: item.quantity,
             reference: order.displayId,
           });
         }
       } catch (err) {
-        this.logger.error(`Failed to deduct stock for delivered order ${id}:`, err);
+        this.logger.error(
+          `Failed to deduct stock for delivered order ${id}:`,
+          err,
+        );
       }
     }
 
@@ -970,7 +1014,11 @@ export class OrdersService {
     });
 
     if (newStatus.name === 'Confirmed' || newStatus.name === 'Delivered') {
-      await this.firePurchaseIfModeMatches(newStatus.name, updated, userId).catch(() => {});
+      await this.firePurchaseIfModeMatches(
+        newStatus.name,
+        updated,
+        userId,
+      ).catch(() => {});
     }
 
     return updated;
@@ -1118,19 +1166,25 @@ export class OrdersService {
               select: { displayId: true },
             });
             if (!cancelledOrder) continue;
-            const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId: id } });
+            const cancelItems = await this.prisma.orderItem.findMany({
+              where: { orderId: id },
+            });
             for (const item of cancelItems) {
               await this.stockService.release({
                 productId: item.productId || undefined,
                 variantId: item.variantId || undefined,
                 comboId: item.comboId || undefined,
-                comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+                comboSelection:
+                  (item.comboSelection as Record<string, string>) || undefined,
                 quantity: item.quantity,
                 reference: cancelledOrder.displayId,
               });
             }
           } catch (err) {
-            this.logger.error(`Failed to release stock for cancelled order ${id}:`, err);
+            this.logger.error(
+              `Failed to release stock for cancelled order ${id}:`,
+              err,
+            );
           }
         }
       }
@@ -1209,7 +1263,9 @@ export class OrdersService {
   async findByPhone(phone: string) {
     const normalized = normalizePhone(phone);
     if (!normalized) {
-      throw new BadRequestException('Invalid Bangladeshi phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.');
+      throw new BadRequestException(
+        'Invalid Bangladeshi phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.',
+      );
     }
 
     const orders = await this.prisma.order.findMany({
@@ -1266,7 +1322,10 @@ export class OrdersService {
     if (!order || order.viewToken !== token) {
       throw new NotFoundException('Order not found');
     }
-    if (order.status.name !== 'Pending' && order.status.name !== 'Payment Pending') {
+    if (
+      order.status.name !== 'Pending' &&
+      order.status.name !== 'Payment Pending'
+    ) {
       throw new BadRequestException(
         `Order in "${order.status.name}" status cannot be cancelled`,
       );
@@ -1303,19 +1362,25 @@ export class OrdersService {
     });
 
     try {
-      const cancelItems = await this.prisma.orderItem.findMany({ where: { orderId } });
+      const cancelItems = await this.prisma.orderItem.findMany({
+        where: { orderId },
+      });
       for (const item of cancelItems) {
         await this.stockService.release({
           productId: item.productId || undefined,
           variantId: item.variantId || undefined,
           comboId: item.comboId || undefined,
-          comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+          comboSelection:
+            (item.comboSelection as Record<string, string>) || undefined,
           quantity: item.quantity,
           reference: order.displayId,
         });
       }
     } catch (err) {
-      this.logger.error(`Failed to release stock for cancelled order ${orderId}:`, err);
+      this.logger.error(
+        `Failed to release stock for cancelled order ${orderId}:`,
+        err,
+      );
     }
 
     return updated;
@@ -1345,7 +1410,14 @@ export class OrdersService {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
-          key: { in: ['tracking_meta_purchase_mode', 'tracking_meta_validated_status', 'tracking_tiktok_purchase_mode', 'tracking_tiktok_validated_status'] },
+          key: {
+            in: [
+              'tracking_meta_purchase_mode',
+              'tracking_meta_validated_status',
+              'tracking_tiktok_purchase_mode',
+              'tracking_tiktok_validated_status',
+            ],
+          },
         },
       });
       const settingMap = Object.fromEntries(
@@ -1353,7 +1425,8 @@ export class OrdersService {
       );
       const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
       const metaStatus = settingMap['tracking_meta_validated_status'] || '';
-      const tiktokMode = settingMap['tracking_tiktok_purchase_mode'] || 'instant';
+      const tiktokMode =
+        settingMap['tracking_tiktok_purchase_mode'] || 'instant';
       const tiktokStatus = settingMap['tracking_tiktok_validated_status'] || '';
 
       const shouldFire =
@@ -1392,8 +1465,13 @@ export class OrdersService {
       const customData = {
         value: totalValue,
         currency: 'BDT',
-        content_ids: itemsList.map((i: any) => i.productId || i.comboId || '').filter(Boolean),
-        num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
+        content_ids: itemsList
+          .map((i: any) => i.productId || i.comboId || '')
+          .filter(Boolean),
+        num_items: itemsList.reduce(
+          (s: number, i: any) => s + (i.quantity || 0),
+          0,
+        ),
         order_id: order.id,
         contents: itemsList.map((i: any) => ({
           id: i.productId || i.comboId || '',
@@ -1425,6 +1503,4 @@ export class OrdersService {
       this.logger.error('Failed to fire purchase event:', err);
     }
   }
-
-
 }

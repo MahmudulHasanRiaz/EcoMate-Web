@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -17,7 +22,9 @@ export class LandingPagesService {
 
   private validateSlug(slug: string): void {
     if (!/^[a-z0-9-]+$/.test(slug)) {
-      throw new BadRequestException('Slug must be lowercase alphanumeric with dashes only');
+      throw new BadRequestException(
+        'Slug must be lowercase alphanumeric with dashes only',
+      );
     }
   }
 
@@ -56,7 +63,9 @@ export class LandingPagesService {
 
   async create(dto: Record<string, any>) {
     if (!dto.title || !dto.slug) {
-      throw new BadRequestException('Page title and URL slug are both required');
+      throw new BadRequestException(
+        'Page title and URL slug are both required',
+      );
     }
     this.validateSlug(dto.slug);
     try {
@@ -97,7 +106,9 @@ export class LandingPagesService {
           ...(dto.customCss !== undefined && { customCss: dto.customCss }),
           ...(dto.productIds !== undefined && { productIds: dto.productIds }),
           ...(dto.comboIds !== undefined && { comboIds: dto.comboIds }),
-          ...(dto.trackingJson !== undefined && { trackingJson: dto.trackingJson }),
+          ...(dto.trackingJson !== undefined && {
+            trackingJson: dto.trackingJson,
+          }),
         },
       });
     } catch (e) {

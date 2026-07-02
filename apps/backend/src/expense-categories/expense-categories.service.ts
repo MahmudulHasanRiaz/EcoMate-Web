@@ -1,6 +1,14 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateExpenseCategoryDto, UpdateExpenseCategoryDto } from './dto/expense-category.dto';
+import {
+  CreateExpenseCategoryDto,
+  UpdateExpenseCategoryDto,
+} from './dto/expense-category.dto';
 
 @Injectable()
 export class ExpenseCategoriesService {
@@ -12,18 +20,31 @@ export class ExpenseCategoriesService {
   };
 
   async create(dto: CreateExpenseCategoryDto) {
-    const existing = await this.prisma.expenseCategory.findUnique({ where: { slug: dto.slug } });
-    if (existing) throw new ConflictException(`Category with slug "${dto.slug}" already exists`);
+    const existing = await this.prisma.expenseCategory.findUnique({
+      where: { slug: dto.slug },
+    });
+    if (existing)
+      throw new ConflictException(
+        `Category with slug "${dto.slug}" already exists`,
+      );
 
     if (dto.accountId) {
-      const account = await this.prisma.account.findUnique({ where: { id: dto.accountId } });
-      if (!account) throw new NotFoundException(`Account ${dto.accountId} not found`);
+      const account = await this.prisma.account.findUnique({
+        where: { id: dto.accountId },
+      });
+      if (!account)
+        throw new NotFoundException(`Account ${dto.accountId} not found`);
       if (account.type !== 'expense') {
-        throw new BadRequestException(`Account "${account.code}" is of type ${account.type}, not expense`);
+        throw new BadRequestException(
+          `Account "${account.code}" is of type ${account.type}, not expense`,
+        );
       }
     }
 
-    return this.prisma.expenseCategory.create({ data: dto, include: this.include });
+    return this.prisma.expenseCategory.create({
+      data: dto,
+      include: this.include,
+    });
   }
 
   async findAll() {
@@ -48,26 +69,43 @@ export class ExpenseCategoriesService {
     }
     await this.findOne(id);
     if (dto.slug) {
-      const existing = await this.prisma.expenseCategory.findUnique({ where: { slug: dto.slug } });
+      const existing = await this.prisma.expenseCategory.findUnique({
+        where: { slug: dto.slug },
+      });
       if (existing && existing.id !== id) {
-        throw new ConflictException(`Category with slug "${dto.slug}" already exists`);
+        throw new ConflictException(
+          `Category with slug "${dto.slug}" already exists`,
+        );
       }
     }
     if (dto.accountId) {
-      const account = await this.prisma.account.findUnique({ where: { id: dto.accountId } });
-      if (!account) throw new NotFoundException(`Account ${dto.accountId} not found`);
+      const account = await this.prisma.account.findUnique({
+        where: { id: dto.accountId },
+      });
+      if (!account)
+        throw new NotFoundException(`Account ${dto.accountId} not found`);
       if (account.type !== 'expense') {
-        throw new BadRequestException(`Account "${account.code}" is of type ${account.type}, not expense`);
+        throw new BadRequestException(
+          `Account "${account.code}" is of type ${account.type}, not expense`,
+        );
       }
     }
-    return this.prisma.expenseCategory.update({ where: { id }, data: dto, include: this.include });
+    return this.prisma.expenseCategory.update({
+      where: { id },
+      data: dto,
+      include: this.include,
+    });
   }
 
   async remove(id: string) {
     await this.findOne(id);
-    const count = await this.prisma.expense.count({ where: { categoryId: id } });
+    const count = await this.prisma.expense.count({
+      where: { categoryId: id },
+    });
     if (count > 0) {
-      throw new ConflictException(`Cannot delete: ${count} expense(s) use this category`);
+      throw new ConflictException(
+        `Cannot delete: ${count} expense(s) use this category`,
+      );
     }
     return this.prisma.expenseCategory.delete({ where: { id } });
   }

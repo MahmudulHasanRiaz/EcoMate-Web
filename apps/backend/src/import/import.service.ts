@@ -154,7 +154,10 @@ export class ImportService {
       for (const v of attr.values) {
         valMap.set(v.value.toLowerCase(), v.id);
       }
-      attributeCache.set(attr.name.toLowerCase(), { id: attr.id, values: valMap });
+      attributeCache.set(attr.name.toLowerCase(), {
+        id: attr.id,
+        values: valMap,
+      });
     }
 
     // 4. Media URLs
@@ -198,19 +201,22 @@ export class ImportService {
       if (!groupKey) continue;
 
       // Skip orphan variation groups:
-      // If none of the rows in the group are a parent (i.e. all are variations), 
+      // If none of the rows in the group are a parent (i.e. all are variations),
       // AND this product doesn't already exist in the DB, it's an orphan.
-      const hasParentRow = group.some(r => {
+      const hasParentRow = group.some((r) => {
         const type = (r.data.Type || 'simple').toLowerCase().trim();
         return !type.includes('variation');
       });
       if (!hasParentRow && !productCache.has(groupKey)) {
-        this.logger.warn(`Skipping group ${groupKey}: contains only variations but no parent row exists in CSV or Database.`);
+        this.logger.warn(
+          `Skipping group ${groupKey}: contains only variations but no parent row exists in CSV or Database.`,
+        );
         allErrors.push({
           rowNumber: group[0].rowNumber,
           sku: groupKey,
           errorType: 'ORPHAN_VARIATIONS',
-          message: 'Skipped orphan variations because no parent product exists.',
+          message:
+            'Skipped orphan variations because no parent product exists.',
         });
         summary.errors++;
         continue;
@@ -236,7 +242,9 @@ export class ImportService {
         const error = err as Error;
         const msg = error.message;
         const stack = error.stack || '';
-        this.logger.error(`Group processing failed for ${groupKey}: ${msg}\n${stack}`);
+        this.logger.error(
+          `Group processing failed for ${groupKey}: ${msg}\n${stack}`,
+        );
         allErrors.push({
           rowNumber: group[0].rowNumber,
           sku: groupKey,
@@ -316,8 +324,8 @@ export class ImportService {
         (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
       ) || rows[0];
 
-    const variationRows = rows.filter(
-      (r) => (r.data.Type || 'simple').toLowerCase().includes('variation'),
+    const variationRows = rows.filter((r) =>
+      (r.data.Type || 'simple').toLowerCase().includes('variation'),
     );
 
     const parentSku = parentRow.data.SKU!.trim();
@@ -401,7 +409,10 @@ export class ImportService {
 
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
-    const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
+    const tagIds =
+      tags.length > 0
+        ? await this.resolveTagsCached(tags, summary, tagCache)
+        : [];
     const images = this.parseImages(data.Images);
 
     const brandName = this.parseBrand(data.Brands);
@@ -410,10 +421,15 @@ export class ImportService {
       brandId = await this.resolveBrandCached(brandName, brandCache);
     }
 
-    const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
+    const categoryId = await this.resolveCategoriesCached(
+      categories,
+      summary,
+      categoryCacheByPath,
+    );
 
     const name = data.Name?.trim() || sku;
-    const slug = data.Slug?.trim() || this.uniqueSlugCached(slugify(name), slugSet);
+    const slug =
+      data.Slug?.trim() || this.uniqueSlugCached(slugify(name), slugSet);
 
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
@@ -437,7 +453,9 @@ export class ImportService {
 
     const attrs = this.extractAttributes(data);
     const resolvedAttrs =
-      attrs.length > 0 ? await this.resolveAttributesCached(attrs, summary, attributeCache) : [];
+      attrs.length > 0
+        ? await this.resolveAttributesCached(attrs, summary, attributeCache)
+        : [];
 
     if (!isVariable && resolvedAttrs.length > 0) {
       seoMeta.attributes = resolvedAttrs.map((a) => ({
@@ -476,7 +494,13 @@ export class ImportService {
     slugSet.add(product.slug);
 
     if (images.length > 0) {
-      await this.processProductImagesCached(product.id, images, summary, errors, mediaCache);
+      await this.processProductImagesCached(
+        product.id,
+        images,
+        summary,
+        errors,
+        mediaCache,
+      );
     }
 
     summary.productsCreated++;
@@ -486,7 +510,12 @@ export class ImportService {
       resolvedAttrs.length > 0 &&
       !options?.skipVariantGeneration
     ) {
-      await this.generateVariantCombinationsCached(product.id, resolvedAttrs, product.sku || 'PRD', product.basePrice);
+      await this.generateVariantCombinationsCached(
+        product.id,
+        resolvedAttrs,
+        product.sku || 'PRD',
+        product.basePrice,
+      );
     }
 
     return product.id;
@@ -507,7 +536,10 @@ export class ImportService {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
-    const tagIds = tags.length > 0 ? await this.resolveTagsCached(tags, summary, tagCache) : [];
+    const tagIds =
+      tags.length > 0
+        ? await this.resolveTagsCached(tags, summary, tagCache)
+        : [];
     const images = this.parseImages(data.Images);
 
     const brandName = this.parseBrand(data.Brands);
@@ -516,7 +548,11 @@ export class ImportService {
       brandId = await this.resolveBrandCached(brandName, brandCache);
     }
 
-    const categoryId = await this.resolveCategoriesCached(categories, summary, categoryCacheByPath);
+    const categoryId = await this.resolveCategoriesCached(
+      categories,
+      summary,
+      categoryCacheByPath,
+    );
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
@@ -573,7 +609,13 @@ export class ImportService {
     });
 
     if (images.length > 0) {
-      await this.processProductImagesCached(productId, images, summary, errors, mediaCache);
+      await this.processProductImagesCached(
+        productId,
+        images,
+        summary,
+        errors,
+        mediaCache,
+      );
     }
 
     this.logger.log(`Product ${productId}: updated (type=${type})`);
@@ -631,7 +673,12 @@ export class ImportService {
       });
 
       if (mainImage) {
-        const ingested = await this.ingestImageCached(mainImage, summary, errors, mediaCache);
+        const ingested = await this.ingestImageCached(
+          mainImage,
+          summary,
+          errors,
+          mediaCache,
+        );
         if (ingested) {
           await this.media.syncEntityImages('variant', existingId, [ingested]);
         }
@@ -679,7 +726,12 @@ export class ImportService {
     variantCache.set(varSku, variant.id);
 
     if (mainImage) {
-      const ingested = await this.ingestImageCached(mainImage, summary, errors, mediaCache);
+      const ingested = await this.ingestImageCached(
+        mainImage,
+        summary,
+        errors,
+        mediaCache,
+      );
       if (ingested) {
         await this.media.syncEntityImages('variant', variant.id, [ingested]);
       }
@@ -698,7 +750,12 @@ export class ImportService {
     const resolved: string[] = [];
 
     for (const url of urls) {
-      const ingested = await this.ingestImageCached(url, summary, errors, mediaCache);
+      const ingested = await this.ingestImageCached(
+        url,
+        summary,
+        errors,
+        mediaCache,
+      );
       if (ingested) {
         resolved.push(ingested);
       }
@@ -859,7 +916,10 @@ export class ImportService {
 
   private parseBrand(value?: string): string | null {
     if (!value?.trim()) return null;
-    const names = value.split(',').map((s) => s.trim()).filter(Boolean);
+    const names = value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     return names[0] || null;
   }
 
@@ -991,7 +1051,9 @@ export class ImportService {
 
         cachedAttr = {
           id: attribute.id,
-          values: new Map(attribute.values.map((v) => [v.value.toLowerCase(), v.id])),
+          values: new Map(
+            attribute.values.map((v) => [v.value.toLowerCase(), v.id]),
+          ),
         };
         attributeCache.set(normalizedKey, cachedAttr);
       }

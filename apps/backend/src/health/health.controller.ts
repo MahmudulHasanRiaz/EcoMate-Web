@@ -40,10 +40,10 @@ export class HealthController {
         FROM information_schema.columns 
         WHERE table_name = 'ProductVariant'
       `);
-      return { 
-        success: true, 
+      return {
+        success: true,
         productColumns: productCols,
-        variantColumns: variantCols
+        variantColumns: variantCols,
       };
     } catch (err: any) {
       return { success: false, error: err.message };

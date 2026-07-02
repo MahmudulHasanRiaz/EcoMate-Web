@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Query,
+} from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
 import { GeneratePayslipDto } from './dto/generate-payslip.dto';
@@ -23,7 +31,11 @@ export class PayrollController {
 
   @Post('payslips/generate')
   generatePayslip(@Body() dto: GeneratePayslipDto) {
-    return this.payrollService.generatePayslip(dto.employeeId, dto.periodStart as unknown as string, dto.periodEnd as unknown as string);
+    return this.payrollService.generatePayslip(
+      dto.employeeId,
+      dto.periodStart as unknown as string,
+      dto.periodEnd as unknown as string,
+    );
   }
 
   @Get('payslips')

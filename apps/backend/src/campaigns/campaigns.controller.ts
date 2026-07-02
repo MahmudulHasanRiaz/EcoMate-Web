@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
@@ -24,7 +33,10 @@ export class CampaignsController {
   }
 
   @Put('templates/:id')
-  async updateTemplate(@Param('id') id: string, @Body() dto: UpdateTemplateDto) {
+  async updateTemplate(
+    @Param('id') id: string,
+    @Body() dto: UpdateTemplateDto,
+  ) {
     return this.campaignsService.updateTemplate(id, dto);
   }
 

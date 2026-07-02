@@ -37,7 +37,10 @@ export class CategoriesService {
     const cached = await this.cache.get<any[]>('categories:all');
     if (cached) return cached;
     const data = await this.prisma.category.findMany({
-      include: { children: true, _count: { select: { products: true } } },
+      include: {
+        children: { where: { isActive: true } },
+        _count: { select: { products: true } },
+      },
       orderBy: { sortOrder: 'asc' },
     });
     await this.cache.set('categories:all', data);
@@ -62,6 +65,13 @@ export class CategoriesService {
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
+
+    if (dto.parentId) {
+      const parent = await this.prisma.category.findUnique({
+        where: { id: dto.parentId },
+      });
+      if (!parent) throw new NotFoundException('Parent category not found');
+    }
 
     const created = await this.prisma.category.create({ data: dto as any });
     await this.cache.invalidateByPrefix('categories:');
@@ -91,6 +101,30 @@ export class CategoriesService {
         where: { slug: dto.slug },
       });
       if (exist) throw new ConflictException('Slug already exists');
+    }
+
+    if (dto.parentId !== undefined) {
+      if (dto.parentId === id) {
+        throw new ConflictException('Category cannot be its own parent');
+      }
+      if (dto.parentId !== null) {
+        const parent = await this.prisma.category.findUnique({
+          where: { id: dto.parentId },
+        });
+        if (!parent) throw new NotFoundException('Parent category not found');
+        let current: string | null = dto.parentId;
+        while (current) {
+          if (current === id) {
+            throw new ConflictException('Circular parent reference detected');
+          }
+          const ancestor = await this.prisma.category.findUnique({
+            where: { id: current },
+            select: { parentId: true },
+          });
+          if (!ancestor) break;
+          current = ancestor.parentId;
+        }
+      }
     }
 
     const updated = await this.prisma.category.update({

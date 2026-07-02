@@ -8,11 +8,20 @@ import { Public } from '../common/decorators/public.decorator';
 export class ImagesController {
   private readonly logger = new Logger(ImagesController.name);
   /** Dedup concurrent resize requests for identical params */
-  private inflight = new Map<string, Promise<{ buffer: Buffer; ext: string; mime: string }>>();
+  private inflight = new Map<
+    string,
+    Promise<{ buffer: Buffer; ext: string; mime: string }>
+  >();
 
   constructor(private readonly imagesService: ImagesService) {}
 
-  private cacheKey(path: string, w?: string, h?: string, q?: string, fit?: string): string {
+  private cacheKey(
+    path: string,
+    w?: string,
+    h?: string,
+    q?: string,
+    fit?: string,
+  ): string {
     return `${path}:${w || ''}:${h || ''}:${q || ''}:${fit || ''}`;
   }
 

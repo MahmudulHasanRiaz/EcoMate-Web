@@ -43,7 +43,13 @@ export class SizeChartsService {
   async findByProductSlug(slug: string) {
     const product = await this.prisma.product.findUnique({
       where: { slug },
-      include: { category: true },
+      select: {
+        sizeChartId: true,
+        category: { select: { sizeChartId: true } },
+        productCategories: {
+          select: { category: { select: { sizeChartId: true } } },
+        },
+      },
     });
     if (!product) throw new NotFoundException('Product not found');
 
@@ -53,6 +59,12 @@ export class SizeChartsService {
 
     if (product.category?.sizeChartId) {
       return this.findOne(product.category.sizeChartId);
+    }
+
+    for (const pc of product.productCategories) {
+      if (pc.category.sizeChartId) {
+        return this.findOne(pc.category.sizeChartId);
+      }
     }
 
     return null;

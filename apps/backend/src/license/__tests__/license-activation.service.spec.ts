@@ -17,7 +17,8 @@ describe('LicenseActivationService', () => {
   };
 
   beforeAll(() => {
-    process.env.LICENSE_ENCRYPTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    process.env.LICENSE_ENCRYPTION_KEY =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   });
 
   beforeEach(async () => {
@@ -26,7 +27,13 @@ describe('LicenseActivationService', () => {
       providers: [
         LicenseActivationService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: ConfigService, useValue: { get: () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: () =>
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+        },
       ],
     }).compile();
     service = module.get<LicenseActivationService>(LicenseActivationService);

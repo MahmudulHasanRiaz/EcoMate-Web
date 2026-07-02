@@ -1,6 +1,14 @@
 import {
-  Controller, Get, Post, Put, Delete, Patch,
-  Body, Param, HttpCode, HttpStatus,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Patch,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -19,10 +27,7 @@ export class AddressesController {
   }
 
   @Get(':id')
-  findOne(
-    @CurrentUser() user: { userId: string },
-    @Param('id') id: string,
-  ) {
+  findOne(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.svc.findOne(user.userId, id);
   }
 
@@ -45,18 +50,12 @@ export class AddressesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  remove(
-    @CurrentUser() user: { userId: string },
-    @Param('id') id: string,
-  ) {
+  remove(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.svc.remove(user.userId, id);
   }
 
   @Patch(':id/default')
-  setDefault(
-    @CurrentUser() user: { userId: string },
-    @Param('id') id: string,
-  ) {
+  setDefault(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.svc.setDefault(user.userId, id);
   }
 }

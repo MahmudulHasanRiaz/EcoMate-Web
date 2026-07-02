@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
@@ -27,15 +31,20 @@ export class BrandsService {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
-          select: { products: true }
-        }
-      }
+          select: { products: true },
+        },
+      },
     });
   }
 
   async findOne(id: string) {
     const brand = await this.prisma.brand.findUnique({
       where: { id },
+      include: {
+        _count: {
+          select: { products: true },
+        },
+      },
     });
 
     if (!brand) {
@@ -46,7 +55,7 @@ export class BrandsService {
   }
 
   async update(id: string, updateBrandDto: UpdateBrandDto) {
-    await this.findOne(id); // Check exists
+    await this.findOne(id);
 
     if (updateBrandDto.slug) {
       const existing = await this.prisma.brand.findUnique({
@@ -60,11 +69,21 @@ export class BrandsService {
     return this.prisma.brand.update({
       where: { id },
       data: updateBrandDto,
+      include: {
+        _count: {
+          select: { products: true },
+        },
+      },
     });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const brand = await this.findOne(id);
+    if (brand._count.products > 0) {
+      throw new ConflictException(
+        `Cannot delete brand "${brand.name}": ${brand._count.products} product(s) are associated with it`,
+      );
+    }
     return this.prisma.brand.delete({
       where: { id },
     });

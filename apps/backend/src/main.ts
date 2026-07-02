@@ -1,7 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { join } from 'path';
-import { NestFastifyApplication, FastifyAdapter } from '@nestjs/platform-fastify';
+import {
+  NestFastifyApplication,
+  FastifyAdapter,
+} from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
@@ -29,9 +32,15 @@ async function bootstrap() {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "blob:", "https://*.r2.dev", "https://images.unsplash.com"],
-        connectSrc: ["'self'", "https://*.r2.dev"],
-        fontSrc: ["'self'", "data:"],
+        imgSrc: [
+          "'self'",
+          'data:',
+          'blob:',
+          'https://*.r2.dev',
+          'https://images.unsplash.com',
+        ],
+        connectSrc: ["'self'", 'https://*.r2.dev'],
+        fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
       },
@@ -40,14 +49,22 @@ async function bootstrap() {
 
   await app.register(compress);
 
-  app.getHttpAdapter().getInstance().addHook('onRequest', async (request, reply) => {
-    if (request.url.startsWith('/uploads/') && (request.method === 'POST' || request.method === 'PUT')) {
-      const contentType = request.headers['content-type'];
-      if (contentType && !contentType.startsWith('image/')) {
-        console.warn(`Non-image upload attempt: ${request.method} ${request.url} (${contentType})`);
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', async (request, reply) => {
+      if (
+        request.url.startsWith('/uploads/') &&
+        (request.method === 'POST' || request.method === 'PUT')
+      ) {
+        const contentType = request.headers['content-type'];
+        if (contentType && !contentType.startsWith('image/')) {
+          console.warn(
+            `Non-image upload attempt: ${request.method} ${request.url} (${contentType})`,
+          );
+        }
       }
-    }
-  });
+    });
 
   await app.register(fastifyStatic, {
     root: join(process.cwd(), 'uploads'),
@@ -83,10 +100,15 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  app.getHttpAdapter().getInstance().addHook('onResponse', async (request, reply) => {
-    const duration = reply.elapsedTime.toFixed(0);
-    console.log(`${request.method} ${request.url} ${reply.statusCode} ${duration}ms`);
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onResponse', async (request, reply) => {
+      const duration = reply.elapsedTime.toFixed(0);
+      console.log(
+        `${request.method} ${request.url} ${reply.statusCode} ${duration}ms`,
+      );
+    });
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.setGlobalPrefix('api', { exclude: ['/'] });

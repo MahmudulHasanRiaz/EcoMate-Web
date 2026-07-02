@@ -30,7 +30,18 @@ export class ProductsService {
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
+    const oldTags = await this.prisma.productTag.findMany({
+      where: { productId },
+      select: { tagId: true },
+    });
+    const oldTagIds = oldTags.map((t) => t.tagId);
     await this.prisma.productTag.deleteMany({ where: { productId } });
+    if (oldTagIds.length > 0) {
+      await this.prisma.tag.updateMany({
+        where: { id: { in: oldTagIds } },
+        data: { productCount: { decrement: 1 } },
+      });
+    }
     if (!tagNames?.length) return;
     for (const name of tagNames) {
       const slug = slugify(name);
@@ -73,7 +84,11 @@ export class ProductsService {
       const catCondition = {
         OR: [
           { categoryId: { in: query.categoryIds } },
-          { productCategories: { some: { categoryId: { in: query.categoryIds } } } },
+          {
+            productCategories: {
+              some: { categoryId: { in: query.categoryIds } },
+            },
+          },
         ],
       };
       if (where.AND) {
@@ -171,7 +186,7 @@ export class ProductsService {
     },
   };
 
-    async findAll(query: {
+  async findAll(query: {
     page?: number;
     perPage?: number;
     search?: string;
@@ -191,12 +206,12 @@ export class ProductsService {
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 24;
-    
+
     let categoryIds: string[] | undefined = undefined;
     if (query.categoryId) {
       categoryIds = await this.getCategoryWithDescendants(query.categoryId);
     }
-    
+
     const where: any = this.buildWhere({ ...query, categoryIds });
     if (query.tagSlug) {
       where.productTags = {
@@ -227,7 +242,17 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { salePrice: null, price: priceFilter }] } } },
+            {
+              type: 'variable',
+              variants: {
+                some: {
+                  OR: [
+                    { salePrice: priceFilter },
+                    { salePrice: null, price: priceFilter },
+                  ],
+                },
+              },
+            },
           ],
         },
       ];
@@ -265,8 +290,12 @@ export class ProductsService {
     const hasMore = page * perPage < total;
     const last = data[data.length - 1];
     const nextCursor = query.sort
-      ? (hasMore ? String(page + 1) : null)
-      : (hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null);
+      ? hasMore
+        ? String(page + 1)
+        : null
+      : hasMore && last
+        ? this.encodeCursor(last.createdAt, last.id)
+        : null;
     return {
       data,
       meta: {
@@ -302,7 +331,7 @@ export class ProductsService {
       (query.category
         ? await this.resolveCategorySlug(query.category)
         : undefined);
-        
+
     let categoryIds: string[] | undefined = undefined;
     if (effectiveCategoryId) {
       categoryIds = await this.getCategoryWithDescendants(effectiveCategoryId);
@@ -341,7 +370,17 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { salePrice: null, price: priceFilter }] } } },
+            {
+              type: 'variable',
+              variants: {
+                some: {
+                  OR: [
+                    { salePrice: priceFilter },
+                    { salePrice: null, price: priceFilter },
+                  ],
+                },
+              },
+            },
           ],
         },
       ];
@@ -432,6 +471,7 @@ export class ProductsService {
     const p = await this.prisma.product.findUnique({
       where: { id },
       include: {
+        brand: { select: { id: true, name: true, slug: true } },
         category: true,
         productCategories: {
           include: {
@@ -464,6 +504,7 @@ export class ProductsService {
         type: dto.type || 'simple',
         description: dto.description,
         shortDesc: dto.shortDesc,
+        brandId: dto.brandId,
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         sku: dto.sku,
@@ -570,28 +611,30 @@ export class ProductsService {
     }
 
     if (dto.categoryIds) {
-      await this.prisma.productCategory.deleteMany({
-        where: { productId: id },
-      });
-      await this.prisma.productCategory.createMany({
-        data: dto.categoryIds.map((cid) => ({
-          productId: id,
-          categoryId: cid,
-        })),
-      });
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryIds.map((cid) => ({ categoryId: cid })),
+      };
     }
 
     const product = await this.prisma.product.update({
       where: { id },
       data,
       include: {
+        brand: { select: { id: true, name: true, slug: true } },
         category: true,
         productCategories: {
           include: {
             category: { select: { id: true, name: true, slug: true } },
           },
         },
-        variants: true,
+        variants: {
+          include: {
+            attributeValues: {
+              include: { attributeValue: { include: { attribute: true } } },
+            },
+          },
+        },
       },
     });
 
@@ -612,7 +655,11 @@ export class ProductsService {
       }
     }
 
-    if (p.type !== 'variable' && dto.manageStock !== undefined && dto.manageStock !== p.manageStock) {
+    if (
+      p.type !== 'variable' &&
+      dto.manageStock !== undefined &&
+      dto.manageStock !== p.manageStock
+    ) {
       if (dto.manageStock) {
         await this.prisma.inventoryLog.create({
           data: {
@@ -647,9 +694,9 @@ export class ProductsService {
       where: { productId: id },
       select: { id: true },
     });
-    for (const v of variants) {
-      await this.media.detachAll('variant', v.id);
-    }
+    await Promise.all(
+      variants.map((v) => this.media.detachAll('variant', v.id)),
+    );
     await this.media.detachAll('product', id);
     await this.cache.invalidateByPrefix('product:');
     try {
@@ -680,17 +727,17 @@ export class ProductsService {
   }
 
   async bulkUpdate(ids: string[], data: UpdateProductDto) {
-    const { variants, attributes, stock, manageStock, ...clean } = data as any;
     const results = { success: 0, failed: 0, errors: [] as string[] };
     for (const id of ids) {
       try {
-        await this.prisma.product.update({ where: { id }, data: clean });
+        await this.update(id, data);
         results.success++;
       } catch (e: any) {
         results.failed++;
         results.errors.push(`${id}: ${e.message}`);
       }
     }
+    await this.cache.invalidateByPrefix('product:');
     return results;
   }
 
@@ -698,7 +745,16 @@ export class ProductsService {
     const product = await this.prisma.product.findUniqueOrThrow({
       where: { id: productId },
     });
-    await this.prisma.productVariant.deleteMany({ where: { productId } });
+
+    const existingOrderItems = await this.prisma.orderItem.findFirst({
+      where: { variant: { productId } },
+      select: { id: true },
+    });
+    if (existingOrderItems) {
+      throw new BadRequestException(
+        'Cannot regenerate variants — product has existing orders linked to current variants.',
+      );
+    }
 
     const attributeIds = dto.attributeIds;
     const valueWhere: any = { attributeId: { in: attributeIds } };
@@ -734,16 +790,18 @@ export class ProductsService {
       };
     });
 
-    for (const v of variants) {
-      await this.prisma.productVariant.create({ data: v });
-    }
-
-    if (variants.length > 0) {
-      await this.prisma.product.update({
-        where: { id: productId },
-        data: { type: 'variable', stock: 0, manageStock: false },
-      });
-    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productVariant.deleteMany({ where: { productId } });
+      for (const v of variants) {
+        await tx.productVariant.create({ data: v });
+      }
+      if (variants.length > 0) {
+        await tx.product.update({
+          where: { id: productId },
+          data: { type: 'variable', stock: 0, manageStock: false },
+        });
+      }
+    });
 
     return this.findOne(productId);
   }

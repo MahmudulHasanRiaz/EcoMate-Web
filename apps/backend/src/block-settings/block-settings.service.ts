@@ -23,7 +23,8 @@ const DEFAULT_SETTINGS = {
   blockMessages: {
     orderBlockPhone: {
       title: 'Order Blocked',
-      message: 'Your phone number has been temporarily blocked. Please contact support for assistance.',
+      message:
+        'Your phone number has been temporarily blocked. Please contact support for assistance.',
       ctaLabel: 'Call Support',
       ctaAction: 'tel:01700000000',
     },
@@ -47,7 +48,9 @@ export class BlockSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings() {
-    let settings = await this.prisma.blockSettings.findUnique({ where: { id: 'singleton' } });
+    let settings = await this.prisma.blockSettings.findUnique({
+      where: { id: 'singleton' },
+    });
     if (!settings) {
       settings = await this.prisma.blockSettings.create({
         data: { id: 'singleton', data: DEFAULT_SETTINGS },
@@ -71,7 +74,11 @@ export class BlockSettingsService {
   private deepMerge(target: any, source: any): any {
     const output = { ...target };
     for (const key of Object.keys(source)) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      if (
+        source[key] &&
+        typeof source[key] === 'object' &&
+        !Array.isArray(source[key])
+      ) {
         if (!output[key] || typeof output[key] !== 'object') {
           output[key] = source[key];
         } else {

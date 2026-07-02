@@ -247,11 +247,18 @@ export class CheckoutLeadsService {
             price: i.price || 0,
           })),
         },
-        paymentOptionType: overrides?.paymentMode === 'cod' ? 'CASH_ON_DELIVERY' 
-          : overrides?.paymentMode === 'partial' ? 'PARTIAL_PAYMENT' 
-          : overrides?.paymentMode === 'full' ? 'FULL_PAYMENT' 
-          : undefined,
-        partialAmount: overrides?.paymentMode === 'partial' ? (overrides.partialAmount ?? null) : undefined,
+        paymentOptionType:
+          overrides?.paymentMode === 'cod'
+            ? 'CASH_ON_DELIVERY'
+            : overrides?.paymentMode === 'partial'
+              ? 'PARTIAL_PAYMENT'
+              : overrides?.paymentMode === 'full'
+                ? 'FULL_PAYMENT'
+                : undefined,
+        partialAmount:
+          overrides?.paymentMode === 'partial'
+            ? (overrides.partialAmount ?? null)
+            : undefined,
         timeline: [
           {
             status: initialStatus.name,
@@ -275,7 +282,11 @@ export class CheckoutLeadsService {
         ...(typeof shippingAddress === 'object' ? shippingAddress : {}),
         district: overrides.district,
         thana: overrides.thana,
-        ...(overrides.shippingAddress ? (typeof overrides.shippingAddress === 'object' ? overrides.shippingAddress : {}) : {}),
+        ...(overrides.shippingAddress
+          ? typeof overrides.shippingAddress === 'object'
+            ? overrides.shippingAddress
+            : {}
+          : {}),
       };
     }
 
@@ -283,9 +294,10 @@ export class CheckoutLeadsService {
       (s: number, i: any) => s + (i.price || 0) * (i.quantity || 1),
       0,
     );
-    const effectiveDiscount = discountType === 'percentage'
-      ? subtotal * (discountAmount / 100)
-      : discountAmount;
+    const effectiveDiscount =
+      discountType === 'percentage'
+        ? subtotal * (discountAmount / 100)
+        : discountAmount;
     const total = Math.max(0, subtotal + shippingCharge - effectiveDiscount);
 
     await this.prisma.order.update({

@@ -14,7 +14,11 @@ export class LicenseController {
   @Post('activate')
   async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
     const domain = req.hostname;
-    return this.licenseService.activateWithKeymate(dto.licenseKey, domain, dto.apiKey);
+    return this.licenseService.activateWithKeymate(
+      dto.licenseKey,
+      domain,
+      dto.apiKey,
+    );
   }
 
   @SkipLicenseCheck()

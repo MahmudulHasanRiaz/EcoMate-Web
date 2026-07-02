@@ -1,4 +1,15 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsPositive, IsDate, IsDefined, IsUrl, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  IsPositive,
+  IsDate,
+  IsDefined,
+  IsUrl,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class CreateExpenseDto {

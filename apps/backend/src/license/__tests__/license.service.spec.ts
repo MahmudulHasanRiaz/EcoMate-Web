@@ -20,7 +20,10 @@ describe('LicenseService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LicenseService,
-        { provide: FeatureFlagsService, useFactory: () => new FeatureFlagsService() },
+        {
+          provide: FeatureFlagsService,
+          useFactory: () => new FeatureFlagsService(),
+        },
         { provide: ConfigService, useValue: { get: () => null } },
         { provide: LicenseActivationService, useValue: mockActivation },
       ],

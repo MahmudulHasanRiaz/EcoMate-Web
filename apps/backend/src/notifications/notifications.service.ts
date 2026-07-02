@@ -27,13 +27,17 @@ export class NotificationsService {
   }
 
   async updateSetting(id: string, dto: UpdateNotificationSettingDto) {
-    const setting = await this.prisma.notificationSetting.findUnique({ where: { id } });
+    const setting = await this.prisma.notificationSetting.findUnique({
+      where: { id },
+    });
     if (!setting) throw new NotFoundException('Notification setting not found');
     return this.prisma.notificationSetting.update({ where: { id }, data: dto });
   }
 
   async removeSetting(id: string) {
-    const setting = await this.prisma.notificationSetting.findUnique({ where: { id } });
+    const setting = await this.prisma.notificationSetting.findUnique({
+      where: { id },
+    });
     if (!setting) throw new NotFoundException('Notification setting not found');
     return this.prisma.notificationSetting.delete({ where: { id } });
   }

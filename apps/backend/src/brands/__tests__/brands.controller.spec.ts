@@ -7,15 +7,24 @@ describe('BrandsController', () => {
   const publicMethods = ['findAll', 'findOne'];
 
   describe('admin methods', () => {
-    it.each(adminMethods)('adds RequiresFeature(admin_brands) on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, BrandsController.prototype[method]);
-      expect(meta).toBe('admin_brands');
-    });
+    it.each(adminMethods)(
+      'adds RequiresFeature(admin_brands) on %s',
+      (method) => {
+        const meta = Reflect.getMetadata(
+          REQUIRES_FEATURE_KEY,
+          BrandsController.prototype[method],
+        );
+        expect(meta).toBe('admin_brands');
+      },
+    );
   });
 
   describe('public methods', () => {
     it.each(publicMethods)('does not add RequiresFeature on %s', (method) => {
-      const meta = Reflect.getMetadata(REQUIRES_FEATURE_KEY, BrandsController.prototype[method]);
+      const meta = Reflect.getMetadata(
+        REQUIRES_FEATURE_KEY,
+        BrandsController.prototype[method],
+      );
       expect(meta).toBeUndefined();
     });
   });
