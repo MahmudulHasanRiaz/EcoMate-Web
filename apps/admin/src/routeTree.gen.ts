@@ -91,6 +91,7 @@ import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
+import { Route as AuthenticatedMonSettingsLicenseIndexRouteImport } from './routes/_authenticated/mon/settings/license/index'
 import { Route as AuthenticatedMonSettingsHomepageIndexRouteImport } from './routes/_authenticated/mon/settings/homepage/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
@@ -573,6 +574,12 @@ const AuthenticatedMonSettingsMenuIndexRoute =
     path: '/menu/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsLicenseIndexRoute =
+  AuthenticatedMonSettingsLicenseIndexRouteImport.update({
+    id: '/license/',
+    path: '/license/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsHomepageIndexRoute =
   AuthenticatedMonSettingsHomepageIndexRouteImport.update({
     id: '/homepage/',
@@ -700,6 +707,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -791,6 +799,7 @@ export interface FileRoutesByTo {
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/mon/settings/license': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -884,6 +893,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/_authenticated/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -977,6 +987,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways/'
     | '/mon/settings/general/'
     | '/mon/settings/homepage/'
+    | '/mon/settings/license/'
     | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/shipping/'
@@ -1068,6 +1079,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways'
     | '/mon/settings/general'
     | '/mon/settings/homepage'
+    | '/mon/settings/license'
     | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
     | '/mon/settings/shipping'
@@ -1160,6 +1172,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/homepage/'
+    | '/_authenticated/mon/settings/license/'
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/shipping/'
@@ -1765,6 +1778,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsMenuIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/license/': {
+      id: '/_authenticated/mon/settings/license/'
+      path: '/license'
+      fullPath: '/mon/settings/license/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsLicenseIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/homepage/': {
       id: '/_authenticated/mon/settings/homepage/'
       path: '/homepage'
@@ -1830,6 +1850,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsHomepageIndexRoute: typeof AuthenticatedMonSettingsHomepageIndexRoute
+  AuthenticatedMonSettingsLicenseIndexRoute: typeof AuthenticatedMonSettingsLicenseIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -1852,6 +1873,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsGeneralIndexRoute,
     AuthenticatedMonSettingsHomepageIndexRoute:
       AuthenticatedMonSettingsHomepageIndexRoute,
+    AuthenticatedMonSettingsLicenseIndexRoute:
+      AuthenticatedMonSettingsLicenseIndexRoute,
     AuthenticatedMonSettingsMenuIndexRoute:
       AuthenticatedMonSettingsMenuIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
