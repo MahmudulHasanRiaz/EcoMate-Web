@@ -349,7 +349,7 @@ export class MediaService {
     }
     const hash = sha256(buffer);
 
-    const existing = await this.prisma.media.findUnique({ where: { hash } });
+    const existing = await this.prisma.media.findFirst({ where: { hash } });
     if (existing)
       return {
         id: existing.id,
@@ -387,9 +387,9 @@ export class MediaService {
         mimeType: contentType,
         size: result.size,
         hash,
-        alt: opts.alt ?? null,
+        alt: opts.alt,
         sourceUrl: rawUrl,
-        uploadedBy: opts.uploadedBy ?? null,
+        uploadedBy: opts.uploadedBy,
       },
     });
     return {
@@ -426,7 +426,7 @@ export class MediaService {
       throw new BadRequestException('Only images & videos allowed');
     }
     const hash = sha256(file.buffer);
-    const existing = await this.prisma.media.findUnique({ where: { hash } });
+    const existing = await this.prisma.media.findFirst({ where: { hash } });
     if (existing) {
       if (file.path) await unlink(file.path).catch(() => {});
       return {
@@ -460,8 +460,8 @@ export class MediaService {
         mimeType: file.mimetype,
         size: file.size,
         hash,
-        alt: opts.alt ?? null,
-        uploadedBy: opts.uploadedBy ?? null,
+        alt: opts.alt,
+        uploadedBy: opts.uploadedBy,
       },
     });
     return {

@@ -664,7 +664,7 @@ model Media {
 
   attachments MediaAttachment[]
 
-  @@unique([hash])
+  @@index([hash])
   @@index([url])
 }
 

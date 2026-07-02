@@ -933,7 +933,7 @@ async function main() {
 
       // Deduplicate by sha256
       const hash = createHash('sha256').update(buffer).digest('hex');
-      const existing = await prisma.media.findUnique({ where: { hash } });
+      const existing = await prisma.media.findFirst({ where: { hash } });
       if (existing) { migrated++; return existing.url; }
 
       const ext = MIME_EXT_MAP[contentType] || extname(new URL(url).pathname) || '.jpg';
