@@ -23,14 +23,16 @@ export class AddressesService {
   }
 
   async create(userId: string, dto: CreateAddressDto) {
-    if (dto.isDefault) {
+    const count = await this.prisma.address.count({ where: { userId } });
+    const isDefault = dto.isDefault ?? count === 0;
+    if (isDefault) {
       await this.prisma.address.updateMany({
         where: { userId },
         data: { isDefault: false },
       });
     }
     return this.prisma.address.create({
-      data: { ...dto, userId },
+      data: { ...dto, userId, isDefault },
     });
   }
 

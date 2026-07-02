@@ -7,8 +7,11 @@ import {
   Body,
   Param,
   Query,
+  NotFoundException,
+  BadRequestException,
   OnApplicationBootstrap,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PaymentOptionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -190,14 +193,17 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_payments')
   @Put('options/:type')
-  async upsertOption(@Param('type') type: string, @Body() dto: any) {
+  async upsertOption(@Param('type') type: PaymentOptionType, @Body() dto: any) {
+    const validTypes = Object.values(PaymentOptionType);
+    if (!validTypes.includes(type))
+      throw new BadRequestException(`Invalid payment option type: "${type}"`);
     const displayNames: Record<string, string> = {
       FULL_PAYMENT: 'Full Payment',
       PARTIAL_PAYMENT: 'Partial Payment',
       CASH_ON_DELIVERY: 'Cash on Delivery',
     };
     return this.prisma.paymentOption.upsert({
-      where: { type: type as PaymentOptionType },
+      where: { type },
       create: { type, name: displayNames[type] || type, ...dto },
       update: dto,
     });
@@ -335,15 +341,26 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     @Param('productId') productId: string,
     @Param('type') type: PaymentOptionType,
   ) {
-    return this.prisma.productPaymentOption.delete({
-      where: {
-        productId_comboId_paymentOptionType: {
-          productId,
-          comboId: null as any,
-          paymentOptionType: type,
+    try {
+      return await this.prisma.productPaymentOption.delete({
+        where: {
+          productId_comboId_paymentOptionType: {
+            productId,
+            comboId: null as any,
+            paymentOptionType: type,
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      )
+        throw new NotFoundException(
+          `Product override not found for product ${productId}, type ${type}`,
+        );
+      throw err;
+    }
   }
 
   // ============ ADMIN: Combo Payment Option Overrides ============
@@ -395,21 +412,36 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     @Param('comboId') comboId: string,
     @Param('type') type: PaymentOptionType,
   ) {
-    return this.prisma.productPaymentOption.delete({
-      where: {
-        productId_comboId_paymentOptionType: {
-          productId: null as any,
-          comboId,
-          paymentOptionType: type,
+    try {
+      return await this.prisma.productPaymentOption.delete({
+        where: {
+          productId_comboId_paymentOptionType: {
+            productId: null as any,
+            comboId,
+            paymentOptionType: type,
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      )
+        throw new NotFoundException(
+          `Combo override not found for combo ${comboId}, type ${type}`,
+        );
+      throw err;
+    }
   }
 
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_payments')
   @Get(':code')
   async findOne(@Param('code') code: string) {
-    return this.prisma.paymentGateway.findUnique({ where: { code } });
+    const gateway = await this.prisma.paymentGateway.findUnique({
+      where: { code },
+    });
+    if (!gateway) throw new NotFoundException(`Gateway "${code}" not found`);
+    return gateway;
   }
 }

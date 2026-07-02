@@ -734,11 +734,13 @@ export class OrdersService {
             quantity: i.quantity,
           }));
     const shipping =
-      data.shippingCharge !== undefined
-        ? data.shippingCharge
+      dto.shippingCharge !== undefined
+        ? Number(dto.shippingCharge)
         : Number(order.shippingCharge);
     const discount =
-      data.discount !== undefined ? data.discount : Number(order.discount);
+      dto.discount !== undefined
+        ? Number(dto.discount)
+        : Number(order.discount);
     const discountType = dto.discountType || order.discountType || 'flat';
     const { subtotal, total } = this.recalculate(
       currentItems,
@@ -929,35 +931,19 @@ export class OrdersService {
       },
     ];
 
-    const updated = await this.prisma.order.update({
-      where: { id },
-      data: { statusId: dto.statusId, timeline: timeline as any },
-      include: {
-        status: true,
-        customer: { select: { id: true, firstName: true, lastName: true } },
-        payments: true,
-      },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
+        where: { id },
+        data: { statusId: dto.statusId, timeline: timeline as any },
+        include: {
+          status: true,
+          customer: { select: { id: true, firstName: true, lastName: true } },
+          payments: true,
+        },
+      });
 
-    if (newStatus.name === 'Delivered') {
-      const codPayment = updated.payments?.find(
-        (p) => p.gatewayCode === 'cash' && p.status === PaymentStatus.UNPAID,
-      );
-      if (codPayment) {
-        await this.prisma.payment.update({
-          where: { id: codPayment.id },
-          data: {
-            status: PaymentStatus.PAID,
-            verifiedBy: userId,
-            verifiedAt: new Date(),
-          },
-        });
-      }
-    }
-
-    if (newStatus.name === 'Cancelled') {
-      try {
-        const cancelItems = await this.prisma.orderItem.findMany({
+      if (newStatus.name === 'Cancelled') {
+        const cancelItems = await tx.orderItem.findMany({
           where: { orderId: id },
         });
         for (const item of cancelItems) {
@@ -969,19 +955,13 @@ export class OrdersService {
               (item.comboSelection as Record<string, string>) || undefined,
             quantity: item.quantity,
             reference: order.displayId,
+            tx,
           });
         }
-      } catch (err) {
-        this.logger.error(
-          `Failed to release stock for cancelled order ${id}:`,
-          err,
-        );
       }
-    }
 
-    if (newStatus.name === 'Delivered') {
-      try {
-        const deliverItems = await this.prisma.orderItem.findMany({
+      if (newStatus.name === 'Delivered') {
+        const deliverItems = await tx.orderItem.findMany({
           where: { orderId: id },
         });
         for (const item of deliverItems) {
@@ -993,15 +973,27 @@ export class OrdersService {
               (item.comboSelection as Record<string, string>) || undefined,
             quantity: item.quantity,
             reference: order.displayId,
+            tx,
           });
         }
-      } catch (err) {
-        this.logger.error(
-          `Failed to deduct stock for delivered order ${id}:`,
-          err,
+
+        const codPayment = u.payments?.find(
+          (p) => p.gatewayCode === 'cash' && p.status === PaymentStatus.UNPAID,
         );
+        if (codPayment) {
+          await tx.payment.update({
+            where: { id: codPayment.id },
+            data: {
+              status: PaymentStatus.PAID,
+              verifiedBy: userId,
+              verifiedAt: new Date(),
+            },
+          });
+        }
       }
-    }
+
+      return u;
+    });
 
     this.events.emit({
       type: 'order.status_changed',
@@ -1031,6 +1023,13 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
+    await this.stockService.reserve({
+      productId: dto.productId,
+      variantId: dto.variantId,
+      quantity: dto.quantity,
+      reference: order.displayId,
+    });
+
     await this.prisma.orderItem.create({
       data: {
         orderId,
@@ -1039,6 +1038,11 @@ export class OrdersService {
         quantity: dto.quantity,
         price: dto.price,
       },
+    });
+
+    this.events.emit({
+      type: 'order.status_changed',
+      data: { id: orderId, displayId: order.displayId, note: 'Item added' },
     });
 
     const items = [
@@ -1075,7 +1079,26 @@ export class OrdersService {
       include: { items: true },
     });
     if (!order) throw new NotFoundException('Order not found');
+
+    const removedItem = order.items.find((i) => i.id === itemId);
+    if (!removedItem) throw new NotFoundException('Order item not found');
+
+    await this.stockService.release({
+      productId: removedItem.productId || undefined,
+      variantId: removedItem.variantId || undefined,
+      comboId: removedItem.comboId || undefined,
+      comboSelection:
+        (removedItem.comboSelection as Record<string, string>) || undefined,
+      quantity: removedItem.quantity,
+      reference: order.displayId,
+    });
+
     await this.prisma.orderItem.delete({ where: { id: itemId } });
+
+    this.events.emit({
+      type: 'order.status_changed',
+      data: { id: orderId, displayId: order.displayId, note: 'Item removed' },
+    });
 
     const remaining = order.items
       .filter((i) => i.id !== itemId)
@@ -1136,6 +1159,8 @@ export class OrdersService {
       where: { id: { in: ids } },
       select: {
         id: true,
+        displayId: true,
+        timeline: true,
         statusId: true,
         status: { select: { nextStatuses: true } },
       },
@@ -1143,6 +1168,7 @@ export class OrdersService {
 
     const validIds: string[] = [];
     const skipped: string[] = [];
+    const failedDetails: { id: string; reason: string }[] = [];
     for (const order of orders) {
       const allowed = (order.status.nextStatuses as string[]) || [];
       if (allowed.includes(statusId)) {
@@ -1153,23 +1179,18 @@ export class OrdersService {
     }
 
     if (validIds.length > 0) {
-      await this.prisma.order.updateMany({
-        where: { id: { in: validIds } },
-        data: { statusId },
-      });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.order.updateMany({
+          where: { id: { in: validIds } },
+          data: { statusId },
+        });
 
-      if (targetStatus.name === 'Cancelled') {
-        for (const id of validIds) {
-          try {
-            const cancelledOrder = await this.prisma.order.findUnique({
-              where: { id },
-              select: { displayId: true },
-            });
-            if (!cancelledOrder) continue;
-            const cancelItems = await this.prisma.orderItem.findMany({
-              where: { orderId: id },
-            });
-            for (const item of cancelItems) {
+        if (targetStatus.name === 'Cancelled') {
+          const allItems = await tx.orderItem.findMany({
+            where: { orderId: { in: validIds } },
+          });
+          for (const item of allItems) {
+            try {
               await this.stockService.release({
                 productId: item.productId || undefined,
                 variantId: item.variantId || undefined,
@@ -1177,24 +1198,47 @@ export class OrdersService {
                 comboSelection:
                   (item.comboSelection as Record<string, string>) || undefined,
                 quantity: item.quantity,
-                reference: cancelledOrder.displayId,
+                reference:
+                  orders.find((o) => o.id === item.orderId)?.displayId || '',
+                tx,
+              });
+            } catch (err) {
+              this.logger.error(
+                `Failed to release stock for item ${item.id} in order ${item.orderId}:`,
+                err,
+              );
+              failedDetails.push({
+                id: item.orderId,
+                reason: `Stock release failed: ${err.message}`,
               });
             }
-          } catch (err) {
-            this.logger.error(
-              `Failed to release stock for cancelled order ${id}:`,
-              err,
-            );
           }
         }
-      }
+
+        for (const order of orders) {
+          if (!validIds.includes(order.id)) continue;
+          const tl = [
+            ...this.parseTimeline(order.timeline),
+            {
+              status: targetStatus.name,
+              timestamp: new Date().toISOString(),
+              note: `Bulk status changed to ${targetStatus.name}`,
+              performedBy: userId,
+            },
+          ];
+          await tx.order.update({
+            where: { id: order.id },
+            data: { timeline: tl as any },
+          });
+        }
+      });
     }
 
     return {
       updated: validIds.length,
       skipped: skipped.length,
-      failed: 0,
-      failedDetails: [],
+      failed: failedDetails.length,
+      failedDetails,
       status: targetStatus.name,
     };
   }
@@ -1322,47 +1366,34 @@ export class OrdersService {
     if (!order || order.viewToken !== token) {
       throw new NotFoundException('Order not found');
     }
-    if (
-      order.status.name !== 'Pending' &&
-      order.status.name !== 'Payment Pending'
-    ) {
-      throw new BadRequestException(
-        `Order in "${order.status.name}" status cannot be cancelled`,
-      );
-    }
     const cancelled = await this.prisma.orderStatus.findFirst({
       where: { name: 'Cancelled' },
-      orderBy: { id: 'asc' },
     });
     if (!cancelled) {
       throw new BadRequestException('Cancelled status not configured');
     }
+    const allowedIds = (order.status.nextStatuses as string[]) || [];
+    if (!allowedIds.includes(cancelled.id)) {
+      throw new BadRequestException(
+        `Order in "${order.status.name}" status cannot be cancelled`,
+      );
+    }
     const timeline = [
       ...this.parseTimeline(order.timeline),
       {
-        status: 'Cancelled',
+        status: cancelled.name,
         timestamp: new Date().toISOString(),
         note: 'Cancelled by customer',
       },
     ];
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { statusId: cancelled.id, timeline: timeline as any },
-      include: { status: true },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
+        where: { id: orderId },
+        data: { statusId: cancelled.id, timeline: timeline as any },
+        include: { status: true },
+      });
 
-    this.events.emit({
-      type: 'order.status_changed',
-      data: {
-        id: updated.id,
-        displayId: updated.displayId,
-        statusId: cancelled.id,
-        statusName: cancelled.name,
-      },
-    });
-
-    try {
-      const cancelItems = await this.prisma.orderItem.findMany({
+      const cancelItems = await tx.orderItem.findMany({
         where: { orderId },
       });
       for (const item of cancelItems) {
@@ -1374,14 +1405,22 @@ export class OrdersService {
             (item.comboSelection as Record<string, string>) || undefined,
           quantity: item.quantity,
           reference: order.displayId,
+          tx,
         });
       }
-    } catch (err) {
-      this.logger.error(
-        `Failed to release stock for cancelled order ${orderId}:`,
-        err,
-      );
-    }
+
+      return u;
+    });
+
+    this.events.emit({
+      type: 'order.status_changed',
+      data: {
+        id: updated.id,
+        displayId: updated.displayId,
+        statusId: cancelled.id,
+        statusName: cancelled.name,
+      },
+    });
 
     return updated;
   }

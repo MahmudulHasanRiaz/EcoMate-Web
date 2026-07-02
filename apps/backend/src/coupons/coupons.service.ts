@@ -69,40 +69,47 @@ export class CouponsService {
     userId?: string,
     discountAmount?: number,
   ) {
-    const [coupon]: any[] = await this.prisma.$queryRawUnsafe(
-      'SELECT id, "isActive", "maxUses", "usedCount", "maxUsesPerCustomer", "expiresAt", "startsAt", "minOrderValue", type, value, "percentageCap" FROM "Coupon" WHERE code = $1 FOR UPDATE',
-      code,
-    );
-    if (!coupon) throw new BadRequestException('Coupon not found');
-    if (!coupon.isActive)
-      throw new BadRequestException('Coupon is no longer active');
-    if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
-      throw new BadRequestException('Coupon usage limit reached');
-    if (coupon.expiresAt && new Date() > coupon.expiresAt)
-      throw new BadRequestException('Coupon has expired');
-    if (coupon.startsAt && new Date() < coupon.startsAt)
-      throw new BadRequestException('Coupon is not yet active');
+    return this.prisma.$transaction(async (tx) => {
+      const [coupon]: any[] = await tx.$queryRawUnsafe(
+        'SELECT id, "isActive", "maxUses", "usedCount", "maxUsesPerCustomer", "expiresAt", "startsAt", "minOrderValue", type, value, "percentageCap" FROM "Coupon" WHERE code = $1 FOR UPDATE',
+        code,
+      );
+      if (!coupon) throw new BadRequestException('Coupon not found');
+      if (!coupon.isActive)
+        throw new BadRequestException('Coupon is no longer active');
+      if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
+        throw new BadRequestException('Coupon usage limit reached');
+      if (coupon.expiresAt && new Date() > coupon.expiresAt)
+        throw new BadRequestException('Coupon has expired');
+      if (coupon.startsAt && new Date() < coupon.startsAt)
+        throw new BadRequestException('Coupon is not yet active');
 
-    if (userId && coupon.maxUsesPerCustomer) {
-      const userUsageCount = await this.prisma.couponUsage.count({
-        where: { couponId: coupon.id, userId },
+      if (userId && coupon.maxUsesPerCustomer) {
+        const userUsageCount = await tx.couponUsage.count({
+          where: { couponId: coupon.id, userId },
+        });
+        if (userUsageCount >= coupon.maxUsesPerCustomer)
+          throw new BadRequestException('Per-customer usage limit reached');
+      }
+
+      const actualDiscount = discountAmount ?? 0;
+
+      await tx.coupon.update({
+        where: { id: coupon.id },
+        data: { usedCount: { increment: 1 } },
       });
-      if (userUsageCount >= coupon.maxUsesPerCustomer)
-        throw new BadRequestException('Per-customer usage limit reached');
-    }
 
-    const actualDiscount = discountAmount ?? 0;
+      await tx.couponUsage.create({
+        data: {
+          couponId: coupon.id,
+          orderId,
+          userId,
+          discount: actualDiscount,
+        },
+      });
 
-    await this.prisma.coupon.update({
-      where: { id: coupon.id },
-      data: { usedCount: { increment: 1 } },
+      return { success: true, discount: actualDiscount };
     });
-
-    await this.prisma.couponUsage.create({
-      data: { couponId: coupon.id, orderId, userId, discount: actualDiscount },
-    });
-
-    return { success: true, discount: actualDiscount };
   }
 
   async create(dto: CreateCouponDto) {

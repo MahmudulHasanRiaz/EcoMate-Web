@@ -55,9 +55,10 @@ describe('RefundsService', () => {
       create: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
+      aggregate: jest.fn(),
     },
     order: {
-      findUniqueOrThrow: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -189,16 +190,20 @@ describe('RefundsService', () => {
     };
 
     it('should create a refund successfully', async () => {
-      (prisma.order.findUniqueOrThrow as jest.Mock).mockResolvedValue({
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
-        displayId: 'ORD-250115-0001',
+        total: 2000,
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 0 },
       });
       (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
 
       const result = await service.create(createDto);
 
-      expect(prisma.order.findUniqueOrThrow).toHaveBeenCalledWith({
+      expect(prisma.order.findUnique).toHaveBeenCalledWith({
         where: { id: createDto.orderId },
+        select: { id: true, total: true },
       });
       expect(prisma.refund.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -213,21 +218,36 @@ describe('RefundsService', () => {
       expect(result.status).toBe('pending');
     });
 
-    it('should throw error if order does not exist (findUniqueOrThrow)', async () => {
-      const notFoundError = new Error('Not found');
-      (prisma.order.findUniqueOrThrow as jest.Mock).mockRejectedValue(
-        notFoundError,
-      );
+    it('should throw NotFoundException if order does not exist', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.create(createDto)).rejects.toThrow('Not found');
+      await expect(service.create(createDto)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if amount exceeds order total', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 100,
+      });
+
+      await expect(service.create(createDto)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(prisma.refund.create).not.toHaveBeenCalled();
     });
 
     it('should create refund with minimal fields', async () => {
       const minimalDto = { orderId: 'order-id-1', amount: 500 };
 
-      (prisma.order.findUniqueOrThrow as jest.Mock).mockResolvedValue({
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
+        total: 1000,
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 0 },
       });
       (prisma.refund.create as jest.Mock).mockResolvedValue({
         ...mockRefund,
@@ -289,6 +309,12 @@ describe('RefundsService', () => {
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundCompleted,
         );
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+          total: 1500,
+        });
+        (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+          _sum: { amount: 1500 },
+        });
 
         const result = await service.updateStatus(
           'refund-id-2',
@@ -309,6 +335,35 @@ describe('RefundsService', () => {
           'refund_restock',
           false,
           mockPrisma,
+        );
+      });
+
+      it('should set PAYMENT status for partial refunds', async () => {
+        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+          mockRefundApproved,
+        );
+        (prisma.refund.update as jest.Mock).mockResolvedValue(
+          mockRefundCompleted,
+        );
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+          total: 2000,
+        });
+        (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+          _sum: { amount: 1500 },
+        });
+
+        const result = await service.updateStatus(
+          'refund-id-2',
+          { status: 'completed' },
+          processedBy,
+        );
+
+        expect(result.status).toBe('completed');
+        expect(prisma.order.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'order-id-1' },
+            data: expect.objectContaining({ paymentStatus: 'PAID' }),
+          }),
         );
       });
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { OrdersController } from './orders.controller';
+import { OrderStatusController } from './order-status.controller';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { TrackingModule } from '../tracking/tracking.module';
@@ -9,7 +10,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 
 @Module({
-  controllers: [OrdersController],
+  controllers: [OrdersController, OrderStatusController],
   providers: [OrdersService, OrdersEventService],
   imports: [
     TrackingModule,

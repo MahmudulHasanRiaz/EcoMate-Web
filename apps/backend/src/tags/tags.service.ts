@@ -90,7 +90,10 @@ export class TagsService {
 
       if (newProductIds.length > 0) {
         await tx.productTag.createMany({
-          data: newProductIds.map((productId) => ({ productId, tagId: keepId })),
+          data: newProductIds.map((productId) => ({
+            productId,
+            tagId: keepId,
+          })),
         });
         await tx.tag.update({
           where: { id: keepId },

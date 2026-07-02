@@ -51,7 +51,9 @@ export class ReviewsService {
         skip: (page - 1) * perPage,
         take: perPage,
         include: {
-          product: { select: { id: true, name: true, slug: true, images: true } },
+          product: {
+            select: { id: true, name: true, slug: true, images: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),

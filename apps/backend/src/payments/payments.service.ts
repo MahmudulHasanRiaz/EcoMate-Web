@@ -45,16 +45,16 @@ export class PaymentsService {
 
   async create(orderId: string, dto: CreatePaymentDto) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: { payments: true },
-      });
-
-      // Lock the order row
+      // Lock the order row first — prevents concurrent payment insert races
       await tx.$queryRawUnsafe(
         'SELECT id FROM "Order" WHERE id = $1 FOR UPDATE',
         orderId,
       );
+
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { payments: true },
+      });
 
       const paymentAmount = Number(dto.amount);
       if (isNaN(paymentAmount) || paymentAmount <= 0) {
@@ -113,26 +113,41 @@ export class PaymentsService {
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
+
+      // Lock the order row — prevents concurrent verify races on order status
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM "Order" WHERE id = $1 FOR UPDATE',
+        payment.orderId,
+      );
+
       const updated = await tx.payment.update({
         where: { id },
         data: {
-          status: dto.status as PaymentStatus,
+          status: dto.status,
           verifiedBy: userId,
           verifiedAt: new Date(),
           notes: dto.notes ?? payment.notes,
         },
       });
-      if (dto.status === PaymentStatus.PAID) {
-        const paidAgg = await tx.payment.aggregate({
-          where: { orderId: payment.orderId, status: PaymentStatus.PAID },
-          _sum: { amount: true },
-        });
-        const totalPaid = Number(paidAgg._sum.amount || 0);
-        const orderData = await tx.order.findUnique({
+
+      // Always recalculate order payment status (handles PAID→FAILED rollback too)
+      const paidAgg = await tx.payment.aggregate({
+        where: { orderId: payment.orderId, status: PaymentStatus.PAID },
+        _sum: { amount: true },
+      });
+      const totalPaid = Number(paidAgg._sum.amount || 0);
+      const orderData = await tx.order.findUnique({
+        where: { id: payment.orderId },
+        select: { total: true },
+      });
+      const orderTotal = Number(orderData?.total || 0);
+
+      if (totalPaid === 0) {
+        await tx.order.update({
           where: { id: payment.orderId },
-          select: { total: true },
+          data: { paymentStatus: PaymentStatus.PAYMENT_PENDING },
         });
-        const orderTotal = Number(orderData?.total || 0);
+      } else {
         await tx.order.update({
           where: { id: payment.orderId },
           data: {
@@ -143,6 +158,7 @@ export class PaymentsService {
           },
         });
       }
+
       return updated;
     });
   }

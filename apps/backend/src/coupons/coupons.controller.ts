@@ -58,10 +58,12 @@ export class CouponsController {
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
   ) {
-    return this.couponsService.getUsage(
-      id,
-      page ? parseInt(page) : 1,
-      perPage ? parseInt(perPage) : 20,
-    );
+    const pageNum = page ? parseInt(page) : 1;
+    const perPageNum = perPage ? parseInt(perPage) : 20;
+    if (isNaN(pageNum) || pageNum < 1)
+      throw new BadRequestException('Invalid page');
+    if (isNaN(perPageNum) || perPageNum < 1)
+      throw new BadRequestException('Invalid perPage');
+    return this.couponsService.getUsage(id, pageNum, perPageNum);
   }
 }

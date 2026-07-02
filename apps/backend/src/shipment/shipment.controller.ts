@@ -2,12 +2,7 @@ import { Controller, Get, Put, Param, Query, Body } from '@nestjs/common';
 import { ShipmentService } from './shipment.service';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
-
-interface CreateOrUpdateShipmentDto {
-  trackingNo?: string;
-  courier?: string;
-  status?: string;
-}
+import { CreateOrUpdateShipmentDto } from './dto/shipment.dto';
 
 @Controller('shipments')
 @RequiresFeature('admin_shipments')

@@ -28,9 +28,9 @@ export class RefundsService {
     status?: string;
     orderId?: string;
   }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 10;
-    const where: Record<string, unknown> = {};
+    const page = Math.max(1, query.page || 1);
+    const perPage = Math.max(1, Math.min(100, query.perPage || 10));
+    const where: Prisma.RefundWhereInput = {};
     if (query.status) where.status = query.status;
     if (query.orderId) where.orderId = query.orderId;
 
@@ -66,7 +66,27 @@ export class RefundsService {
   }
 
   async create(dto: CreateRefundDto) {
-    await this.prisma.order.findUniqueOrThrow({ where: { id: dto.orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: dto.orderId },
+      select: { id: true, total: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (dto.amount > Number(order.total)) {
+      throw new BadRequestException(
+        `Refund amount (${dto.amount}) exceeds order total (${order.total})`,
+      );
+    }
+
+    const existing = await this.prisma.refund.aggregate({
+      where: { orderId: dto.orderId, status: 'completed' },
+      _sum: { amount: true },
+    });
+    const refundedSoFar = Number(existing._sum.amount || 0);
+    if (refundedSoFar + dto.amount > Number(order.total)) {
+      throw new BadRequestException('Total refund would exceed order total');
+    }
+
     return this.prisma.refund.create({
       data: {
         orderId: dto.orderId,
@@ -113,9 +133,25 @@ export class RefundsService {
       });
 
       if (dto.status === 'completed') {
+        const [orderData, refundSum] = await Promise.all([
+          tx.order.findUnique({
+            where: { id: updated.order.id },
+            select: { total: true },
+          }),
+          tx.refund.aggregate({
+            where: { orderId: updated.order.id, status: 'completed' },
+            _sum: { amount: true },
+          }),
+        ]);
+
+        const totalRefunded = Number(refundSum._sum.amount || 0);
+        const orderTotal = Number(orderData?.total || 0);
+
         await tx.order.update({
           where: { id: updated.order.id },
-          data: { paymentStatus: 'REFUNDED' },
+          data: {
+            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PAID',
+          },
         });
 
         await this.inventoryService.restockOrderItems(

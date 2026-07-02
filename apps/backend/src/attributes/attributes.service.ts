@@ -70,7 +70,8 @@ export class AttributesService {
     const existing = await this.prisma.attributeValue.findFirst({
       where: { attributeId, value: dto.value },
     });
-    if (existing) throw new ConflictException('Value already exists for this attribute');
+    if (existing)
+      throw new ConflictException('Value already exists for this attribute');
 
     return this.prisma.attributeValue.create({
       data: { value: dto.value, sortOrder: dto.sortOrder ?? 0, attributeId },

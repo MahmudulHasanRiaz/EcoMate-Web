@@ -25,7 +25,11 @@ export class ReviewsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.svc.findByProductSlug(slug, page ? parseInt(page) : 1, limit ? parseInt(limit) : 10);
+    return this.svc.findByProductSlug(
+      slug,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 10,
+    );
   }
 
   @Public()

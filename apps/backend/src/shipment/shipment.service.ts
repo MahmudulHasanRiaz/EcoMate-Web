@@ -1,17 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import {
+  CreateOrUpdateShipmentDto,
+  isValidTransition,
+} from './dto/shipment.dto';
 
 interface ShipmentQuery {
   page?: number;
   perPage?: number;
   search?: string;
-  courier?: string;
-  status?: string;
-}
-
-interface CreateOrUpdateShipmentDto {
-  trackingNo?: string;
   courier?: string;
   status?: string;
 }
@@ -83,10 +85,26 @@ export class ShipmentService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
+    const existing = await this.prisma.shipment.findUnique({
+      where: { orderId },
+    });
+
+    if (dto.status && existing) {
+      if (!isValidTransition(existing.status, dto.status)) {
+        throw new BadRequestException(
+          `Cannot transition shipment from '${existing.status}' to '${dto.status}'`,
+        );
+      }
+    }
+
+    const cleanDto = Object.fromEntries(
+      Object.entries(dto).filter(([, v]) => v !== undefined),
+    );
+
     return this.prisma.shipment.upsert({
       where: { orderId },
-      update: dto,
-      create: { orderId, ...dto },
+      update: cleanDto,
+      create: { orderId, ...cleanDto },
       include: { order: { include: orderInclude } },
     });
   }

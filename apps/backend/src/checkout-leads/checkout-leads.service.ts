@@ -190,7 +190,9 @@ export class CheckoutLeadsService {
       throw new BadRequestException('Only PENDING leads can be converted');
     }
 
-    const items = overrides?.items || (lead.items as any[]) || [];
+    const items =
+      overrides?.items ||
+      (Array.isArray(lead.items) ? (lead.items as any[]) : []);
     if (items.length === 0) {
       throw new BadRequestException('Lead has no items to convert');
     }
@@ -228,54 +230,10 @@ export class CheckoutLeadsService {
       resolvedCustomerId = customer.id;
     }
 
-    const order = await this.prisma.order.create({
-      data: {
-        displayId,
-        customerId: resolvedCustomerId,
-        statusId: initialStatus.id,
-        subtotal: 0,
-        total: 0,
-        shippingAddress: overrides?.shippingAddress ?? (lead.address as any),
-        guestName,
-        guestPhone,
-        items: {
-          create: items.map((i: any) => ({
-            productId: i.productId,
-            comboId: i.comboId,
-            variantId: i.variantId,
-            quantity: i.quantity || 1,
-            price: i.price || 0,
-          })),
-        },
-        paymentOptionType:
-          overrides?.paymentMode === 'cod'
-            ? 'CASH_ON_DELIVERY'
-            : overrides?.paymentMode === 'partial'
-              ? 'PARTIAL_PAYMENT'
-              : overrides?.paymentMode === 'full'
-                ? 'FULL_PAYMENT'
-                : undefined,
-        partialAmount:
-          overrides?.paymentMode === 'partial'
-            ? (overrides.partialAmount ?? null)
-            : undefined,
-        timeline: [
-          {
-            status: initialStatus.name,
-            timestamp: new Date().toISOString(),
-            note: `Converted from lead ${lead.displayId || id} by ${userName}`,
-            changedBy: userId,
-          },
-        ] as any,
-      },
-    });
-
-    // Apply shipping charge, discount, notes from overrides
     const shippingCharge = overrides?.shippingCharge ?? 0;
     const discountAmount = overrides?.discount ?? 0;
     const discountType = overrides?.discountType ?? 'flat';
 
-    // Build shipping address from overrides
     let shippingAddress = overrides?.shippingAddress ?? (lead.address as any);
     if (overrides?.district || overrides?.thana) {
       shippingAddress = {
@@ -300,68 +258,104 @@ export class CheckoutLeadsService {
         : discountAmount;
     const total = Math.max(0, subtotal + shippingCharge - effectiveDiscount);
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        subtotal,
-        total,
-        shippingCharge,
-        discount: discountAmount,
-        discountType,
-        customerNotes: overrides?.customerNotes ?? null,
-        officeNotes: overrides?.officeNotes ?? null,
-        shippingAddress,
-      },
-    });
-
     const pm = overrides?.paymentMethod ?? lead.paymentMethod;
-    if (pm) {
-      const paymentAmount =
-        overrides?.paymentMode === 'partial' && overrides?.partialAmount
-          ? overrides.partialAmount
-          : total;
-      const isPgw = pm === 'bkash_pgw';
-      await this.prisma.payment.create({
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
         data: {
-          orderId: order.id,
-          gatewayCode: pm,
-          amount: paymentAmount,
-          status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
-          verifiedBy: isPgw ? 'system' : null,
-          verifiedAt: isPgw ? new Date() : null,
+          displayId,
+          customerId: resolvedCustomerId,
+          statusId: initialStatus.id,
+          subtotal,
+          total,
+          shippingCharge,
+          discount: discountAmount,
+          discountType,
+          shippingAddress,
+          customerNotes: overrides?.customerNotes ?? null,
+          officeNotes: overrides?.officeNotes ?? null,
+          guestName,
+          guestPhone,
+          items: {
+            create: items.map((i: any) => ({
+              productId: i.productId,
+              comboId: i.comboId,
+              variantId: i.variantId,
+              quantity: i.quantity || 1,
+              price: i.price || 0,
+            })),
+          },
+          paymentOptionType:
+            overrides?.paymentMode === 'cod'
+              ? 'CASH_ON_DELIVERY'
+              : overrides?.paymentMode === 'partial'
+                ? 'PARTIAL_PAYMENT'
+                : overrides?.paymentMode === 'full'
+                  ? 'FULL_PAYMENT'
+                  : undefined,
+          partialAmount:
+            overrides?.paymentMode === 'partial'
+              ? (overrides.partialAmount ?? null)
+              : undefined,
+          timeline: [
+            {
+              status: initialStatus.name,
+              timestamp: new Date().toISOString(),
+              note: `Converted from lead ${lead.displayId || id} by ${userName}`,
+              changedBy: userId,
+            },
+          ] as any,
         },
       });
-    }
 
-    await this.prisma.checkoutLead.update({
-      where: { id },
-      data: {
-        status: 'CONVERTED',
-        convertedAt: new Date(),
-        convertedById: userId,
-        convertedOrderId: order.id,
-      },
-    });
+      if (pm) {
+        const paymentAmount =
+          overrides?.paymentMode === 'partial' && overrides?.partialAmount
+            ? overrides.partialAmount
+            : total;
+        const isPgw = pm === 'bkash_pgw';
+        await tx.payment.create({
+          data: {
+            orderId: order.id,
+            gatewayCode: pm,
+            amount: paymentAmount,
+            status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
+            verifiedBy: isPgw ? 'system' : null,
+            verifiedAt: isPgw ? new Date() : null,
+          },
+        });
+      }
 
-    if (guestPhone) {
-      await this.prisma.checkoutLead.updateMany({
-        where: { phone: guestPhone, status: 'PENDING', id: { not: id } },
+      await tx.checkoutLead.update({
+        where: { id },
         data: {
           status: 'CONVERTED',
-          convertedOrderId: order.id,
           convertedAt: new Date(),
+          convertedById: userId,
+          convertedOrderId: order.id,
         },
       });
-    }
 
-    return this.prisma.order.findUnique({
-      where: { id: order.id },
-      include: {
-        status: true,
-        items: {
-          include: { product: { select: { id: true, name: true } } },
+      if (guestPhone) {
+        await tx.checkoutLead.updateMany({
+          where: { phone: guestPhone, status: 'PENDING', id: { not: id } },
+          data: {
+            status: 'CONVERTED',
+            convertedOrderId: order.id,
+            convertedAt: new Date(),
+          },
+        });
+      }
+
+      return tx.order.findUnique({
+        where: { id: order.id },
+        include: {
+          status: true,
+          items: {
+            include: { product: { select: { id: true, name: true } } },
+          },
         },
-      },
+      });
     });
   }
 
@@ -378,7 +372,7 @@ export class CheckoutLeadsService {
   }
 
   async bulkAssign(ids: string[], assignedToId: string | null, userId: string) {
-    await this.prisma.checkoutLead.updateMany({
+    const { count } = await this.prisma.checkoutLead.updateMany({
       where: { id: { in: ids } },
       data: {
         assignedToId,
@@ -386,15 +380,15 @@ export class CheckoutLeadsService {
         assignedAt: new Date(),
       },
     });
-    return { message: `${ids.length} leads assigned` };
+    return { message: `${count} leads assigned` };
   }
 
   async bulkStatus(ids: string[], status: string) {
-    await this.prisma.checkoutLead.updateMany({
+    const { count } = await this.prisma.checkoutLead.updateMany({
       where: { id: { in: ids }, status: { not: 'CONVERTED' } },
       data: { status },
     });
-    return { message: `${ids.length} leads updated to ${status}` };
+    return { message: `${count} leads updated to ${status}` };
   }
 
   async getSummary() {

@@ -8,9 +8,11 @@ import {
   Min,
   IsObject,
   IsIn,
+  IsEnum,
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentStatus } from '@prisma/client';
 
 export class OrderItemDto {
   @IsOptional() @IsString() productId?: string;
@@ -107,7 +109,7 @@ export class CreatePaymentDto {
 }
 
 export class VerifyPaymentDto {
-  @IsString() status: string;
+  @IsEnum(PaymentStatus) status: PaymentStatus;
   @IsOptional() @IsString() notes?: string;
 }
 

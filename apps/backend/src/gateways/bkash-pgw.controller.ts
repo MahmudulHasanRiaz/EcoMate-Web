@@ -14,7 +14,7 @@ import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Throttle } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { FastifyReply } from 'fastify';
 
 @Controller('payments/bkash')
 export class BkashPgwController {
@@ -33,7 +33,7 @@ export class BkashPgwController {
   }
 
   @Get('callback')
-  async callback(@Query() query: any, @Res() res: Response) {
+  async callback(@Query() query: any, @Res() res: FastifyReply) {
     const { paymentID, status, orderId: queryOrderId } = query;
     const storefrontUrl =
       process.env['STOREFRONT_URL'] || 'http://localhost:3000';

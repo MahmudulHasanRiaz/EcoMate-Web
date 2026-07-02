@@ -1,5 +1,11 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  Min,
+  IsBoolean,
+} from 'class-validator';
 import { CreateCouponDto } from './create-coupon.dto';
 
 export class UpdateCouponDto extends PartialType(CreateCouponDto) {
@@ -17,5 +23,6 @@ export class UpdateCouponDto extends PartialType(CreateCouponDto) {
   value?: number;
 
   @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }

@@ -59,11 +59,20 @@ export class CombosService {
     );
   }
 
-  private readonly allowedSortFields = ['name', 'createdAt', 'updatedAt', 'basePrice', 'salePrice', 'isActive', 'isFeatured'];
+  private readonly allowedSortFields = [
+    'name',
+    'createdAt',
+    'updatedAt',
+    'basePrice',
+    'salePrice',
+    'isActive',
+    'isFeatured',
+  ];
 
   private parseDate(value: string, field: string): Date {
     const d = new Date(value);
-    if (isNaN(d.getTime())) throw new BadRequestException(`Invalid ${field} date`);
+    if (isNaN(d.getTime()))
+      throw new BadRequestException(`Invalid ${field} date`);
     return d;
   }
 
@@ -99,9 +108,10 @@ export class CombosService {
     const page = query.page || 1;
     const perPage = query.perPage || 12;
     const where = this.buildWhere(query);
-    const sortField = query.sort && this.allowedSortFields.includes(query.sort)
-      ? query.sort
-      : 'createdAt';
+    const sortField =
+      query.sort && this.allowedSortFields.includes(query.sort)
+        ? query.sort
+        : 'createdAt';
     const [data, total] = await Promise.all([
       this.prisma.combo.findMany({
         where,
@@ -241,18 +251,32 @@ export class CombosService {
     const productIds = [...new Set(items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, name: true, stock: true, manageStock: true, variants: { select: { id: true } } },
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        manageStock: true,
+        variants: { select: { id: true } },
+      },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
     for (const item of items) {
       const product = productMap.get(item.productId);
-      if (!product) throw new NotFoundException(`Product ${item.productId} not found`);
+      if (!product)
+        throw new NotFoundException(`Product ${item.productId} not found`);
       if (item.variantId) {
-        const hasVariant = product.variants.some((v) => v.id === item.variantId);
-        if (!hasVariant) throw new BadRequestException(`Variant ${item.variantId} does not belong to product ${item.productId}`);
+        const hasVariant = product.variants.some(
+          (v) => v.id === item.variantId,
+        );
+        if (!hasVariant)
+          throw new BadRequestException(
+            `Variant ${item.variantId} does not belong to product ${item.productId}`,
+          );
       }
       if (product.manageStock && item.quantity > product.stock) {
-        throw new BadRequestException(`Insufficient stock for product "${product.name}"`);
+        throw new BadRequestException(
+          `Insufficient stock for product "${product.name}"`,
+        );
       }
     }
   }
@@ -280,8 +304,12 @@ export class CombosService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        startDate: dto.startDate ? this.parseDate(dto.startDate, 'startDate') : undefined,
-        endDate: dto.endDate ? this.parseDate(dto.endDate, 'endDate') : undefined,
+        startDate: dto.startDate
+          ? this.parseDate(dto.startDate, 'startDate')
+          : undefined,
+        endDate: dto.endDate
+          ? this.parseDate(dto.endDate, 'endDate')
+          : undefined,
         items: {
           create: dto.items.map((item) => ({
             productId: item.productId,
@@ -351,7 +379,8 @@ export class CombosService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
-    if (dto.startDate) data.startDate = this.parseDate(dto.startDate, 'startDate');
+    if (dto.startDate)
+      data.startDate = this.parseDate(dto.startDate, 'startDate');
     if (dto.endDate) data.endDate = this.parseDate(dto.endDate, 'endDate');
 
     await this.prisma.combo.update({
