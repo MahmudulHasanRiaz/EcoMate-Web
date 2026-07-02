@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   S3Client,
@@ -37,6 +37,22 @@ export interface StorageConfig {
   r2PublicUrl?: string;
 }
 
+export interface UploadFile {
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+  originalname: string;
+}
+
+const CONFIG_KEYS = [
+  'storage_provider',
+  'storage_r2_endpoint',
+  'storage_r2_access_key',
+  'storage_r2_secret_key',
+  'storage_r2_bucket',
+  'storage_r2_public_url',
+] as const;
+
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
@@ -46,54 +62,63 @@ export class StorageService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getConfig(): Promise<StorageConfig> {
-    const provider = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_provider' },
+    const rows = await this.prisma.systemSetting.findMany({
+      where: { key: { in: [...CONFIG_KEYS] } },
     });
-    const r2Endpoint = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_r2_endpoint' },
-    });
-    const r2AccessKey = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_r2_access_key' },
-    });
-    const r2SecretKey = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_r2_secret_key' },
-    });
-    const r2Bucket = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_r2_bucket' },
-    });
-    const r2PublicUrl = await this.prisma.systemSetting.findUnique({
-      where: { key: 'storage_r2_public_url' },
-    });
+    const map = new Map(rows.map((r) => [r.key, r.value]));
 
-    return {
-      provider: (provider?.value as 'local' | 'r2') || 'local',
-      r2Endpoint: r2Endpoint?.value,
-      r2AccessKey: r2AccessKey?.value,
-      r2SecretKey: r2SecretKey?.value,
-      r2Bucket: r2Bucket?.value,
-      r2PublicUrl: r2PublicUrl?.value,
+    const cfg: StorageConfig = {
+      provider: (map.get('storage_provider') as 'local' | 'r2') || 'local',
+      r2Endpoint: map.get('storage_r2_endpoint'),
+      r2AccessKey: map.get('storage_r2_access_key'),
+      r2SecretKey: map.get('storage_r2_secret_key'),
+      r2Bucket: map.get('storage_r2_bucket'),
+      r2PublicUrl: map.get('storage_r2_public_url'),
     };
+
+    if (
+      cfg.provider === 'r2' &&
+      (!cfg.r2Endpoint || !cfg.r2AccessKey || !cfg.r2SecretKey || !cfg.r2Bucket)
+    ) {
+      throw new InternalServerErrorException(
+        'R2 storage provider selected but missing required configuration',
+      );
+    }
+
+    return cfg;
   }
 
   private getS3Client(config: StorageConfig): S3Client {
     if (
-      !this.s3Client &&
-      config.provider === 'r2' &&
-      config.r2Endpoint &&
-      config.r2AccessKey &&
-      config.r2SecretKey
+      config.provider !== 'r2' ||
+      !config.r2Endpoint ||
+      !config.r2AccessKey ||
+      !config.r2SecretKey
     ) {
-      this.s3Client = new S3Client({
-        region: 'auto',
-        endpoint: config.r2Endpoint,
-        credentials: {
-          accessKeyId: config.r2AccessKey,
-          secretAccessKey: config.r2SecretKey,
-        },
-        forcePathStyle: true,
-      });
+      throw new InternalServerErrorException('R2 not configured');
     }
-    return this.s3Client!;
+
+    const key = `${config.r2Endpoint}|${config.r2AccessKey}`;
+    if (!this.s3Client) {
+      this.s3Client = this.buildS3Client(config);
+      (this.s3Client as any).__configKey = key;
+    } else if ((this.s3Client as any).__configKey !== key) {
+      this.s3Client = this.buildS3Client(config);
+      (this.s3Client as any).__configKey = key;
+    }
+    return this.s3Client;
+  }
+
+  private buildS3Client(config: StorageConfig): S3Client {
+    return new S3Client({
+      region: 'auto',
+      endpoint: config.r2Endpoint!,
+      credentials: {
+        accessKeyId: config.r2AccessKey!,
+        secretAccessKey: config.r2SecretKey!,
+      },
+      forcePathStyle: true,
+    });
   }
 
   async resolveFilename(desired: string): Promise<string> {
@@ -117,8 +142,45 @@ export class StorageService {
     return candidate;
   }
 
+  private async uploadToR2(
+    name: string,
+    body: Buffer,
+    contentType: string,
+    config: StorageConfig,
+  ): Promise<string> {
+    const client = this.getS3Client(config);
+    await client.send(
+      new PutObjectCommand({
+        Bucket: config.r2Bucket!,
+        Key: name,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+    const baseUrl = config.r2PublicUrl || config.r2Endpoint!;
+    return `${baseUrl.replace(/\/$/, '')}/${name}`;
+  }
+
+  private async uploadToLocal(
+    name: string,
+    body: Buffer,
+  ): Promise<string> {
+    const uploadDir = join(process.cwd(), 'uploads');
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
+    const filepath = join(uploadDir, name);
+    try {
+      await writeFile(filepath, body);
+    } catch (err) {
+      await unlink(filepath).catch(() => {});
+      throw err;
+    }
+    return `/uploads/${name}`;
+  }
+
   async upload(
-    file: Express.Multer.File,
+    file: UploadFile,
     filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
@@ -128,25 +190,12 @@ export class StorageService {
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;
 
-    if (config.provider === 'r2' && config.r2Bucket) {
-      const client = this.getS3Client(config);
-      const cmd = new PutObjectCommand({
-        Bucket: config.r2Bucket,
-        Key: name,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      });
-      await client.send(cmd);
-      const baseUrl = config.r2PublicUrl || config.r2Endpoint;
-      const url = `${baseUrl?.replace(/\/$/, '')}/${name}`;
-      return { url, filename: name, size: file.size };
-    }
+    const url =
+      config.provider === 'r2'
+        ? await this.uploadToR2(name, file.buffer, file.mimetype, config)
+        : await this.uploadToLocal(name, file.buffer);
 
-    const uploadDir = join(process.cwd(), 'uploads');
-    if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
-    const filepath = join(uploadDir, name);
-    await writeFile(filepath, file.buffer);
-    return { url: `/uploads/${name}`, filename: name, size: file.size };
+    return { url, filename: name, size: file.size };
   }
 
   async uploadFromBuffer(
@@ -162,41 +211,28 @@ export class StorageService {
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;
 
-    if (config.provider === 'r2' && config.r2Bucket) {
-      const client = this.getS3Client(config);
-      const cmd = new PutObjectCommand({
-        Bucket: config.r2Bucket,
-        Key: name,
-        Body: buffer,
-        ContentType: mimeType,
-      });
-      await client.send(cmd);
-      const baseUrl = config.r2PublicUrl || config.r2Endpoint;
-      const url = `${baseUrl?.replace(/\/$/, '')}/${name}`;
-      return { url, filename: name, size: buffer.length };
-    }
+    const url =
+      config.provider === 'r2'
+        ? await this.uploadToR2(name, buffer, mimeType, config)
+        : await this.uploadToLocal(name, buffer);
 
-    const uploadDir = join(process.cwd(), 'uploads');
-    if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
-    const filepath = join(uploadDir, name);
-    await writeFile(filepath, buffer);
-    return { url: `/uploads/${name}`, filename: name, size: buffer.length };
+    return { url, filename: name, size: buffer.length };
   }
 
   async delete(filename: string): Promise<void> {
     const config = await this.getConfig();
-    if (config.provider === 'r2' && config.r2Bucket) {
+    if (config.provider === 'r2') {
       const client = this.getS3Client(config);
       await client.send(
-        new DeleteObjectCommand({ Bucket: config.r2Bucket, Key: filename }),
+        new DeleteObjectCommand({ Bucket: config.r2Bucket!, Key: filename }),
       );
       return;
     }
     const filepath = join(process.cwd(), 'uploads', filename);
     try {
       await unlink(filepath);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      this.logger.warn(`Failed to delete ${filepath}: ${(err as Error).message}`);
     }
   }
 }

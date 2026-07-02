@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { Request } from 'express';
+import { FastifyRequest } from 'fastify';
 
 const PRISMA_USER_MESSAGES: Record<string, string> = {
   P2000: 'The provided value is too long for the column.',
@@ -18,6 +18,8 @@ const PRISMA_USER_MESSAGES: Record<string, string> = {
   P1002: 'Database server timed out. Please try again.',
   P1017: 'Database server disconnected. Please try again.',
   P2011: 'Upload data is incomplete. One or more required fields are missing.',
+  P2014: 'A required related record is missing.',
+  P2016: 'Query interpretation error. Please try again.',
   P2021: 'This feature is temporarily unavailable. Database setup in progress.',
   P2023: 'Database schema update in progress. Please try again shortly.',
 };
@@ -47,6 +49,8 @@ function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
     P2002: HttpStatus.CONFLICT,
     P2003: HttpStatus.BAD_REQUEST,
     P2011: HttpStatus.BAD_REQUEST,
+    P2014: HttpStatus.BAD_REQUEST,
+    P2016: HttpStatus.BAD_REQUEST,
     P2025: HttpStatus.NOT_FOUND,
     P1001: HttpStatus.SERVICE_UNAVAILABLE,
     P1002: HttpStatus.SERVICE_UNAVAILABLE,
@@ -68,7 +72,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     // Handle Prisma errors with user-friendly messages
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {

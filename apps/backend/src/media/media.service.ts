@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, type UploadFile } from '../storage/storage.service';
 import { createHash } from 'crypto';
 import { extname } from 'path';
 import { readFile, unlink } from 'fs/promises';
@@ -406,7 +406,7 @@ export class MediaService {
    * Returns the Media row — caller may reuse an existing row when content matches.
    */
   async ingestFromMulter(
-    file: Express.Multer.File,
+    file: UploadFile & { path?: string },
     opts: { filename?: string; alt?: string; uploadedBy?: string } = {},
   ): Promise<{
     id: string;
@@ -416,7 +416,7 @@ export class MediaService {
     mimeType: string;
   }> {
     if (!file?.buffer && !file?.path) throw new BadRequestException('No file uploaded');
-    if (!file.buffer) {
+    if (!file.buffer && file.path) {
       file.buffer = await readFile(file.path);
     }
     if (

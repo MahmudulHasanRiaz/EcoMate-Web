@@ -6,11 +6,15 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
+const MAX_MEMORY_ENTRIES = 10_000;
+const CLEANUP_INTERVAL_MS = 60_000;
+
 @Injectable()
 export class CacheService implements OnModuleDestroy {
   private store = new Map<string, CacheEntry<any>>();
   private defaultTtl = 300_000;
   private redis: Redis | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     const host = process.env['REDIS_HOST'];
@@ -28,10 +32,19 @@ export class CacheService implements OnModuleDestroy {
         console.warn('[Cache] Redis unavailable — using memory fallback');
       });
     }
+    this.cleanupTimer = setInterval(() => this.evictExpired(), CLEANUP_INTERVAL_MS);
   }
 
   onModuleDestroy() {
     this.redis?.disconnect();
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+  }
+
+  private evictExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store) {
+      if (now > entry.expiresAt) this.store.delete(key);
+    }
   }
 
   async get<T>(key: string): Promise<T | undefined> {
@@ -57,6 +70,13 @@ export class CacheService implements OnModuleDestroy {
         await this.redis.setex(key, ttlSeconds, JSON.stringify(data));
         return;
       } catch { /* fall through to memory */ }
+    }
+    if (this.store.size >= MAX_MEMORY_ENTRIES) {
+      this.evictExpired();
+      if (this.store.size >= MAX_MEMORY_ENTRIES) {
+        const eldest = this.store.keys().next().value;
+        if (eldest) this.store.delete(eldest);
+      }
     }
     this.store.set(key, {
       data,

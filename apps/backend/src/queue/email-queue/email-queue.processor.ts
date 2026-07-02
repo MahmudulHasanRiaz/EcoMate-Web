@@ -1,11 +1,16 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailJob } from './email-queue.service';
 
+const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from_email', 'smtp_from_name'] as const;
+
 @Processor('email')
 export class EmailQueueProcessor extends WorkerHost {
+  private readonly logger = new Logger(EmailQueueProcessor.name);
+
   constructor(private prisma: PrismaService) {
     super();
   }
@@ -13,37 +18,41 @@ export class EmailQueueProcessor extends WorkerHost {
   async process(job: Job<EmailJob>): Promise<void> {
     const { to, subject, context } = job.data;
 
-    const smtpHost = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_host' } });
-    const smtpPort = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_port' } });
-    const smtpUser = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_user' } });
-    const smtpPass = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_pass' } });
-    const fromEmail = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_email' } });
-    const fromName = await this.prisma.systemSetting.findUnique({ where: { key: 'smtp_from_name' } });
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { key: { in: SMTP_KEYS as unknown as string[] } },
+    });
+    const cfg = Object.fromEntries(settings.map(s => [s.key, s.value]));
 
-    if (!smtpHost?.value) {
-      console.log(`[EmailQueue] SMTP not configured. Skipping email to ${to}: ${subject}`);
+    if (!cfg['smtp_host']) {
+      this.logger.log(`SMTP not configured. Skipping email to ${to}: ${subject}`);
       return;
     }
 
     const transporter = nodemailer.createTransport({
-      host: smtpHost.value,
-      port: parseInt(smtpPort?.value || '587'),
-      secure: smtpPort?.value === '465',
-      auth: smtpUser?.value ? {
-        user: smtpUser.value,
-        pass: smtpPass?.value || '',
+      host: cfg['smtp_host'],
+      port: parseInt(cfg['smtp_port'] || '587'),
+      secure: cfg['smtp_port'] === '465',
+      auth: cfg['smtp_user'] ? {
+        user: cfg['smtp_user'],
+        pass: cfg['smtp_pass'] || '',
       } : undefined,
     });
 
-    const html = context?.html || context?.content || subject;
+    try {
+      const html = context?.html || context?.content || '';
+      const text = context?.text || undefined;
 
-    await transporter.sendMail({
-      from: `"${fromName?.value || 'EcoMate'}" <${fromEmail?.value || 'noreply@ecomate.com'}>`,
-      to,
-      subject: subject || 'No subject',
-      html,
-    });
+      await transporter.sendMail({
+        from: `"${cfg['smtp_from_name'] || 'EcoMate'}" <${cfg['smtp_from_email'] || 'noreply@ecomate.com'}>`,
+        to,
+        subject: subject || 'No subject',
+        html: html || undefined,
+        text,
+      });
 
-    console.log(`[EmailQueue] Email sent to ${to}: ${subject}`);
+      this.logger.log(`Email sent to ${to}: ${subject}`);
+    } finally {
+      transporter.close();
+    }
   }
 }
