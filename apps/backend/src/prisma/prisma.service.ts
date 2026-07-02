@@ -118,19 +118,63 @@ export class PrismaService
     // Each ALTER TABLE runs in its own call because PostgreSQL does not
     // support multiple semicolon-separated statements in a single query().
     const columnFixes: [string, string][] = [
-      // table, ALTER statement
+      // === Product Table ===
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "name" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "slug" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "type" TEXT NOT NULL DEFAULT 'simple'`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "description" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "shortDesc" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "basePrice" DECIMAL(10,2) NOT NULL DEFAULT 0`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "salePrice" DECIMAL(10,2)`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "sku" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "stock" INTEGER NOT NULL DEFAULT 0`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "lowStockQty" INTEGER`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "categoryId" TEXT`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "tags" JSONB DEFAULT '[]'`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "images" JSONB DEFAULT '[]'`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "seoMeta" JSONB DEFAULT '{}'`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isFeatured" BOOLEAN NOT NULL DEFAULT false`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],
+      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "manageStock" BOOLEAN NOT NULL DEFAULT false`],
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "brandId" TEXT`],
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "reservedStock" INTEGER NOT NULL DEFAULT 0`],
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "defaultBinLocationId" TEXT`],
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT`],
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "sizeChartId" TEXT`],
-      ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "manageStock" BOOLEAN NOT NULL DEFAULT false`],
+
+      // === ProductVariant Table ===
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "productId" TEXT`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "sku" TEXT`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "price" DECIMAL(10,2)`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER NOT NULL DEFAULT 0`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "image" TEXT`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "reservedStock" INTEGER NOT NULL DEFAULT 0`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "binLocationId" TEXT`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT`],
+
+      // === Combo Table ===
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "name" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "slug" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "description" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "shortDesc" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "basePrice" DECIMAL(10,2) NOT NULL DEFAULT 0`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "salePrice" DECIMAL(10,2)`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "image" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "images" JSONB DEFAULT '[]'`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "categoryId" TEXT`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "tags" JSONB DEFAULT '[]'`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "seoMeta" JSONB DEFAULT '{}'`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "isFeatured" BOOLEAN NOT NULL DEFAULT false`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "manageStock" BOOLEAN NOT NULL DEFAULT false`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "stock" INTEGER NOT NULL DEFAULT 0`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "startDate" TIMESTAMP(3)`],
+      ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3)`],
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "reservedStock" INTEGER NOT NULL DEFAULT 0`],
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT`],
     ];
+
 
     for (const [table, sql] of columnFixes) {
       try {
