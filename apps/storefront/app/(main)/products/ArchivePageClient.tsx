@@ -210,6 +210,7 @@ export default function ArchivePageClient({
           hasStock: hasStock || undefined,
           search: filters.search || undefined,
           category: filters.category || undefined,
+          categoryId: filters.categoryId || undefined,
           tagSlug: filters.tag || undefined,
           brandSlug: filters.brand || undefined,
           minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
@@ -280,6 +281,7 @@ export default function ArchivePageClient({
     if (next.category !== undefined) {
       if (next.category) params.set('category', next.category);
       else params.delete('category');
+      params.delete('categoryId');
     }
     if (next.tag !== undefined) {
       if (next.tag) params.set('tag', next.tag);
