@@ -347,8 +347,8 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     if (!track || !container) return;
 
     const dx = e.clientX - startX.current;
-    if (Math.abs(dx) > 5) {
-      didDrag.current = true; // actually dragged — use ref, not state
+    if (Math.abs(dx) > 10) {
+      didDrag.current = true;
     }
 
     let newX = initialX.current + dx;
@@ -394,10 +394,10 @@ function NavSlider({ children }: { children: React.ReactNode }) {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onClickCapture={(e) => {
-            // Only block the click if the user actually dragged (moved >5px).
-            // Using a ref (not state) means this handler always reads the
-            // current value synchronously — no stale-closure/timing issues.
-            if (didDrag.current) {
+            // Block click only if content actually scrolled (real drag).
+            // Using refs avoids stale-closure issues.
+            const scrolled = Math.abs(currentX.current - initialX.current) > 3;
+            if (didDrag.current && scrolled) {
               e.stopPropagation();
               e.preventDefault();
             }

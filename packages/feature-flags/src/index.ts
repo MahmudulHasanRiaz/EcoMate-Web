@@ -22,10 +22,6 @@ export class FeatureFlagsService {
   private license: LicenseInfo | null = null;
   private licenseEngine: LicenseEngine | null = null;
 
-  private isDevBypassEnabled(): boolean {
-    return process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production';
-  }
-
   constructor(@Optional() licenseEngine?: LicenseEngine) {
     if (licenseEngine) {
       this.licenseEngine = licenseEngine;
@@ -34,13 +30,8 @@ export class FeatureFlagsService {
         const engine = require('@ecomate/license-engine');
         this.licenseEngine = engine.default || engine;
       } catch {
-        if (this.isDevBypassEnabled()) {
-          this.setDevLicense();
-          console.warn('[FeatureFlags] License engine unavailable — DEV_LICENSE_BYPASS active');
-        } else {
-          this.license = { valid: false, code: 'engine_unavailable' };
-          console.warn('[FeatureFlags] License engine unavailable — license required');
-        }
+        this.license = { valid: false, code: 'engine_unavailable' };
+        console.warn('[FeatureFlags] License engine unavailable — license required');
       }
     }
   }
@@ -72,21 +63,6 @@ export class FeatureFlagsService {
       }
     }
     this.license = { valid: false, code: 'invalid_token' };
-  }
-
-  setDevMode() {
-    if (!this.isDevBypassEnabled()) return;
-    this.setDevLicense();
-  }
-
-  private setDevLicense() {
-    this.license = {
-      valid: true,
-      plan: { id: 'dev', name: 'Dev Mode', planType: 'fixed', price: 0 },
-      features: [],
-      limits: {},
-      expiry: '2099-12-31T23:59:59Z',
-    };
   }
 
   canUse(featureKey: string): boolean {

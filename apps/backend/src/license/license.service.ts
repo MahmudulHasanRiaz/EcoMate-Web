@@ -33,12 +33,6 @@ export class LicenseService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      if (process.env.DEV_LICENSE_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
-        this.featureFlags.setDevMode();
-        console.log('[License] DEV_LICENSE_BYPASS active — all features unrestricted');
-        return;
-      }
-
       const activation = await this.licenseActivation.find();
       if (!activation || activation.status !== 'active') {
         const msg = process.env.NODE_ENV === 'production'

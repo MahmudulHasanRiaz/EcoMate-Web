@@ -233,13 +233,15 @@ export class ImportService {
           slugSet,
         );
       } catch (err) {
-        const msg = (err as Error).message;
-        this.logger.error(`Group processing failed for ${groupKey}: ${msg}`);
+        const error = err as Error;
+        const msg = error.message;
+        const stack = error.stack || '';
+        this.logger.error(`Group processing failed for ${groupKey}: ${msg}\n${stack}`);
         allErrors.push({
           rowNumber: group[0].rowNumber,
           sku: groupKey,
           errorType: 'GROUP_PROCESSING_FAILED',
-          message: msg,
+          message: `${msg}${process.env.NODE_ENV === 'development' ? ` (see server logs)` : ''}`,
         });
         summary.errors++;
       }

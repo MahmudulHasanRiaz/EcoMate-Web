@@ -61,7 +61,7 @@ export default function Hero() {
                     className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${isActive ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
                   >
                     {href ? (
-                      <Link href={href} aria-label={slide.alt || `Slide ${index + 1}`}>{inner}</Link>
+                      <Link href={href} aria-label={slide.alt || `Slide ${index + 1}`} className="relative block w-full h-full">{inner}</Link>
                     ) : (
                       inner
                     )}

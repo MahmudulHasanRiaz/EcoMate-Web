@@ -89,24 +89,4 @@ describe('LicenseGuard', () => {
     const result = await guard.canActivate(createMockContext());
     expect(result).toBe(true);
   });
-
-  it('allows when DEV_LICENSE_BYPASS is true and not production', async () => {
-    process.env.DEV_LICENSE_BYPASS = 'true';
-    process.env.NODE_ENV = 'development';
-    mockReflector.getAllAndOverride.mockReturnValue(null);
-    const result = await guard.canActivate(createMockContext());
-    expect(result).toBe(true);
-    delete process.env.DEV_LICENSE_BYPASS;
-    delete process.env.NODE_ENV;
-  });
-
-  it('blocks in production even with DEV_LICENSE_BYPASS', async () => {
-    process.env.DEV_LICENSE_BYPASS = 'true';
-    process.env.NODE_ENV = 'production';
-    mockReflector.getAllAndOverride.mockReturnValue(null);
-    mockActivation.find.mockResolvedValue(null);
-    await expect(guard.canActivate(createMockContext())).rejects.toThrow(ForbiddenException);
-    delete process.env.DEV_LICENSE_BYPASS;
-    delete process.env.NODE_ENV;
-  });
 });

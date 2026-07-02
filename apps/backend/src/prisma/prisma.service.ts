@@ -9,6 +9,7 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+  private readonly nativePool: Pool;
 
   constructor() {
     const connectionString = process.env.DATABASE_URL;
@@ -21,6 +22,16 @@ export class PrismaService
         ? [{ level: 'query', emit: 'event' }, { level: 'warn', emit: 'event' }, { level: 'error', emit: 'stdout' }]
         : [{ level: 'warn', emit: 'event' }, { level: 'error', emit: 'stdout' }],
     });
+    this.nativePool = pool;
+  }
+
+  private async runRaw(sql: string): Promise<void> {
+    const client = await this.nativePool.connect();
+    try {
+      await client.query(sql);
+    } finally {
+      client.release();
+    }
   }
 
   async onModuleInit() {
@@ -108,7 +119,7 @@ export class PrismaService
 
     for (const sql of tableFixes) {
       try {
-        await this.$executeRawUnsafe(sql);
+        await this.runRaw(sql);
       } catch (err: any) {
         this.logger.warn(`Schema drift table fix skipped: ${err.message}`);
       }
@@ -178,7 +189,7 @@ export class PrismaService
 
     for (const [table, sql] of columnFixes) {
       try {
-        await this.$executeRawUnsafe(sql);
+        await this.runRaw(sql);
       } catch (err: any) {
         this.logger.warn(`Schema drift fix skipped for ${table}: ${err.message}`);
       }
@@ -214,7 +225,7 @@ export class PrismaService
 
     for (const sql of fkFixes) {
       try {
-        await this.$executeRawUnsafe(sql);
+        await this.runRaw(sql);
       } catch (err: any) {
         this.logger.warn(`Schema drift FK fix skipped: ${err.message}`);
       }
