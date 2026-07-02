@@ -371,6 +371,15 @@ export class MediaService {
       opts.filename?.trim() || undefined,
     );
 
+    if (!result.filename) throw new BadRequestException('Upload failed: missing filename');
+    if (!result.url) throw new BadRequestException('Upload failed: missing url');
+    if (!contentType) throw new BadRequestException('Upload failed: missing mimetype');
+    if (result.size == null) throw new BadRequestException('Upload failed: missing size');
+
+    this.logger.debug(
+      `Creating media from URL: filename="${result.filename}" url="${result.url}" mimeType="${contentType}" size=${result.size} hash=${hash}`,
+    );
+
     const created = await this.prisma.media.create({
       data: {
         filename: result.filename,
@@ -378,9 +387,9 @@ export class MediaService {
         mimeType: contentType,
         size: result.size,
         hash,
-        alt: opts.alt,
+        alt: opts.alt ?? null,
         sourceUrl: rawUrl,
-        uploadedBy: opts.uploadedBy,
+        uploadedBy: opts.uploadedBy ?? null,
       },
     });
     return {
@@ -411,8 +420,8 @@ export class MediaService {
       file.buffer = await readFile(file.path);
     }
     if (
-      !file.mimetype.startsWith('image/') &&
-      !file.mimetype.startsWith('video/')
+      !file.mimetype?.startsWith('image/') &&
+      !file.mimetype?.startsWith('video/')
     ) {
       throw new BadRequestException('Only images & videos allowed');
     }
@@ -435,11 +444,14 @@ export class MediaService {
     );
     if (file.path) await unlink(file.path).catch(() => {});
 
-    // Guard required fields — Prisma P2011 on nullable unique can be cryptic
     if (!result.filename) throw new BadRequestException('Upload failed: missing filename');
     if (!result.url) throw new BadRequestException('Upload failed: missing url');
     if (!file.mimetype) throw new BadRequestException('Upload failed: missing mimetype');
     if (file.size == null) throw new BadRequestException('Upload failed: missing size');
+
+    this.logger.debug(
+      `Creating media: filename="${result.filename}" url="${result.url}" mimeType="${file.mimetype}" size=${file.size} hash=${hash}`,
+    );
 
     const created = await this.prisma.media.create({
       data: {
@@ -448,8 +460,8 @@ export class MediaService {
         mimeType: file.mimetype,
         size: file.size,
         hash,
-        alt: opts.alt,
-        uploadedBy: opts.uploadedBy,
+        alt: opts.alt ?? null,
+        uploadedBy: opts.uploadedBy ?? null,
       },
     });
     return {

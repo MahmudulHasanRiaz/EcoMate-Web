@@ -34,8 +34,8 @@ export class UploadController {
     const alt = file.fields.alt ? (file.fields.alt as any).value : undefined;
 
     if (
-      !file.mimetype.startsWith('image/') &&
-      !file.mimetype.startsWith('video/')
+      !file.mimetype?.startsWith('image/') &&
+      !file.mimetype?.startsWith('video/')
     ) {
       throw new BadRequestException('Only images & videos allowed');
     }
@@ -93,8 +93,8 @@ export class UploadController {
 
         try {
           if (
-            !part.mimetype.startsWith('image/') &&
-            !part.mimetype.startsWith('video/')
+            !part.mimetype?.startsWith('image/') &&
+            !part.mimetype?.startsWith('video/')
           ) {
             throw new BadRequestException('Only images & videos allowed');
           }

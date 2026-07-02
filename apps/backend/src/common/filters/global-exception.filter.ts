@@ -17,6 +17,7 @@ const PRISMA_USER_MESSAGES: Record<string, string> = {
   P1001: 'Database connection failed. Please try again.',
   P1002: 'Database server timed out. Please try again.',
   P1017: 'Database server disconnected. Please try again.',
+  P2011: 'Upload data is incomplete. One or more required fields are missing.',
   P2021: 'This feature is temporarily unavailable. Database setup in progress.',
   P2023: 'Database schema update in progress. Please try again shortly.',
 };
@@ -45,6 +46,7 @@ function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
     P2000: HttpStatus.BAD_REQUEST,
     P2002: HttpStatus.CONFLICT,
     P2003: HttpStatus.BAD_REQUEST,
+    P2011: HttpStatus.BAD_REQUEST,
     P2025: HttpStatus.NOT_FOUND,
     P1001: HttpStatus.SERVICE_UNAVAILABLE,
     P1002: HttpStatus.SERVICE_UNAVAILABLE,
