@@ -1,3 +1,7 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
 import { PrismaClient, UserRole, UserStatus, PaymentOptionType, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { writeFile, mkdir } from 'fs/promises';
@@ -27,22 +31,26 @@ async function main() {
   console.log(`Seeding database... (Dummy Data: ${seedDummyData})`);
 
   // ── Super Admin ──
-  const adminPassword = await bcrypt.hash('Admin@123', 12);
+  const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
+  const plainPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+  const adminPassword = await bcrypt.hash(plainPassword, 12);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@ecomate.com' },
-    update: {},
+    where: { email },
+    update: {
+      password: adminPassword,
+    },
     create: {
       firstName: 'Super',
       lastName: 'Admin',
       username: 'superadmin',
-      email: 'admin@ecomate.com',
+      email,
       phoneNumber: '+8801700000000',
       password: adminPassword,
       role: UserRole.superadmin,
       status: UserStatus.active,
     },
   });
-  console.log(`  ✓ Super admin created: admin@ecomate.com / Admin@123`);
+  console.log(`  ✓ Super admin created/updated: ${email} / ${plainPassword}`);
 
   let customer: any = null;
   if (seedDummyData) {
@@ -1006,7 +1014,7 @@ async function main() {
   }
 
   console.log('\n✅ Database seeded successfully!');
-  console.log('   Super Admin: admin@ecomate.com / Admin@123');
+  console.log(`   Super Admin: ${email} / ${plainPassword}`);
   if (seedDummyData) {
     console.log('   Customer:    customer@example.com / Customer@123');
   }

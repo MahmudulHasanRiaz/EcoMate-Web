@@ -49,6 +49,7 @@ export class PrismaService
     await this.$connect();
     await this.ensureSchemaColumns();
     await this.logDatabaseColumns();
+    await this.seedAdminUser();
   }
 
   async onModuleDestroy() {
@@ -232,5 +233,34 @@ export class PrismaService
     }
 
     this.logger.log('Schema drift check: all required columns verified ✓');
+  }
+
+  private async seedAdminUser(): Promise<void> {
+    try {
+      const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
+      const plainPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+      const bcrypt = require('bcryptjs');
+      const adminPassword = await bcrypt.hash(plainPassword, 12);
+
+      await (this as any).user.upsert({
+        where: { email },
+        update: {
+          password: adminPassword,
+        },
+        create: {
+          firstName: 'Super',
+          lastName: 'Admin',
+          username: 'superadmin',
+          email,
+          phoneNumber: '+8801700000000',
+          password: adminPassword,
+          role: 'superadmin',
+          status: 'active',
+        },
+      });
+      this.logger.log(`[License/Seed] Admin user synced/seeded: ${email}`);
+    } catch (err: any) {
+      this.logger.warn(`Failed to auto-seed admin user: ${err.message}`);
+    }
   }
 }
