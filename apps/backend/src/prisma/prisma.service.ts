@@ -37,10 +37,25 @@ export class PrismaService
     });
     await this.$connect();
     await this.ensureSchemaColumns();
+    await this.logDatabaseColumns();
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
+  }
+
+  private async logDatabaseColumns(): Promise<void> {
+    try {
+      const res = await this.$queryRawUnsafe<any[]>(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'Product'
+      `);
+      const cols = res.map(r => r.column_name).join(', ');
+      this.logger.log(`[SCHEMA CHECK] Database "Product" columns: ${cols}`);
+    } catch (e: any) {
+      this.logger.warn(`Failed to inspect Product columns: ${e.message}`);
+    }
   }
 
   /**
