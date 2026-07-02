@@ -340,6 +340,18 @@ export class SystemSettingsController {
         adminTitle: map['admin_title'] || '',
         adminFavicon: map['admin_favicon'] || '',
         adminTagline: map['admin_tagline'] || '',
+        colors: {
+          primary: map['brand_primary'] || '#0089CD',
+          primaryDark: map['brand_primary_dark'] || '#006da3',
+          accent: map['brand_accent'] || '#E77250',
+          text: map['brand_text'] || '#0a0a0a',
+          background: map['brand_bg'] || '#FFFFFF',
+          success: map['brand_success'] || '#22C55E',
+          danger: map['brand_danger'] || '#EF4444',
+          border: map['brand_border'] || '#E5E7EB',
+          shadowSoft: map['brand_shadow_soft'] || '0 8px 25px rgba(0,137,205,0.15)',
+          shadowStrong: map['brand_shadow_strong'] || '0 15px 45px -5px rgba(0,137,205,0.6)',
+        },
       },
       seo: {
         title: map['seo_title'] || '',

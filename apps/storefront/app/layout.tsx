@@ -9,6 +9,7 @@ import TrackingScripts from "@/components/TrackingScripts";
 import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 
 const geistSans = Geist({
@@ -115,10 +116,22 @@ export default async function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
+      style={initialConfig?.branding?.colors ? {
+        '--color-brand-blue': initialConfig.branding.colors.primary,
+        '--color-brand-blue-dark': initialConfig.branding.colors.primaryDark,
+        '--color-brand-coral': initialConfig.branding.colors.accent,
+        '--color-brand-dark': initialConfig.branding.colors.text,
+        '--color-brand-bg': initialConfig.branding.colors.background,
+        '--color-brand-success': initialConfig.branding.colors.success,
+        '--color-brand-danger': initialConfig.branding.colors.danger,
+        '--color-brand-border': initialConfig.branding.colors.border,
+        '--brand-shadow-soft': initialConfig.branding.colors.shadowSoft,
+        '--brand-shadow-strong': initialConfig.branding.colors.shadowStrong,
+      } as React.CSSProperties : undefined}
     >
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0089CD" />
+        <meta name="theme-color" content={initialConfig?.branding?.colors?.primary || '#0089CD'} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
@@ -154,7 +167,7 @@ export default async function RootLayout({
             ) : initialConfig?.features?.maintenanceMode ? (
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
                 <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)] transition-all hover:shadow-[0_12px_40px_rgb(0,0,0,0.05)]">
-                  <div className="w-16 h-16 bg-[#0089CD]/10 text-[#0089CD] rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
+                  <div className="w-16 h-16 bg-brand-blue/10 text-brand-blue rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
                       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                     </svg>

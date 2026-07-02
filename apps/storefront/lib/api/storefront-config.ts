@@ -8,6 +8,19 @@ export interface StoreSystem {
   display: 'name' | 'logo' | 'name+logo';
 }
 
+export interface BrandColors {
+  primary: string;
+  primaryDark: string;
+  accent: string;
+  text: string;
+  background: string;
+  success: string;
+  danger: string;
+  border: string;
+  shadowSoft: string;
+  shadowStrong: string;
+}
+
 export interface StorefrontConfig {
   store: {
     name: string;
@@ -48,6 +61,7 @@ export interface StorefrontConfig {
     adminTitle: string;
     adminFavicon: string;
     adminTagline: string;
+    colors: BrandColors;
   };
   seo: {
     title: string;

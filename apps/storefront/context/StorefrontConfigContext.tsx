@@ -11,7 +11,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "", messengerUsername: "" },
   order: { whatsapp: "", callNumber: "" },
-  branding: { storefrontFavicon: "", storefrontOgImage: "", storeLogo: "", adminTitle: "", adminFavicon: "", adminTagline: "" },
+  branding: { storefrontFavicon: "", storefrontOgImage: "", storeLogo: "", adminTitle: "", adminFavicon: "", adminTagline: "", colors: { primary: '#0089CD', primaryDark: '#006da3', accent: '#E77250', text: '#0a0a0a', background: '#FFFFFF', success: '#22C55E', danger: '#EF4444', border: '#E5E7EB', shadowSoft: '0 8px 25px rgba(0,137,205,0.15)', shadowStrong: '0 15px 45px -5px rgba(0,137,205,0.6)' } },
   seo: { title: "", description: "", keywords: "" },
   footer: { description: "", copyright: "" },
   about: { text: "" },

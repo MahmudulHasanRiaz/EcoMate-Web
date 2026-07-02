@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="bg-[#0a0a0a] min-h-screen text-white pt-24 pb-32">
+    <div className="bg-brand-dark min-h-screen text-white pt-24 pb-32">
       <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
         <div className="mb-20">

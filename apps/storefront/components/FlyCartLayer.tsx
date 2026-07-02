@@ -91,7 +91,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
       }}
     >
       <div
-        className="w-24 h-24 md:w-32 md:h-32 bg-white rounded-full p-2 border-[4px] border-brand-blue flex items-center justify-center shadow-[0_15px_45px_-5px_rgba(0,137,205,0.6)] overflow-hidden"
+        className="w-24 h-24 md:w-32 md:h-32 bg-white rounded-full p-2 border-[4px] border-brand-blue flex items-center justify-center shadow-brand-strong overflow-hidden"
         style={{
           transform: isActive
             ? `translate(-50%, calc(${targetPos.y - item.y}px - 50%)) scale(0.1) rotate(720deg)`

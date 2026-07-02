@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, ImageIcon, Globe, Shield, X } from 'lucide-react'
+import { Loader2, Save, ImageIcon, Globe, Shield, X, Palette } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { MediaPicker } from '@/components/media-picker'
 import { mediaUrl } from '@/lib/utils'
@@ -25,6 +25,7 @@ export function BrandingSettings() {
   const [storefrontFavicon, setStorefrontFavicon] = useState('')
   const [storefrontOgImage, setStorefrontOgImage] = useState('')
   const [storeLogo, setStoreLogo] = useState('')
+  const [brandColors, setBrandColors] = useState<Record<string, string>>({})
   const [adminFaviconPickerOpen, setAdminFaviconPickerOpen] = useState(false)
   const [storefrontFaviconPickerOpen, setStorefrontFaviconPickerOpen] = useState(false)
   const [ogImagePickerOpen, setOgImagePickerOpen] = useState(false)
@@ -38,6 +39,16 @@ export function BrandingSettings() {
       setStorefrontFavicon(settings.storefront_favicon || '')
       setStorefrontOgImage(settings.storefront_og_image || '')
       setStoreLogo(settings.store_logo || '')
+      setBrandColors({
+        brand_primary: settings.brand_primary || '#0089CD',
+        brand_primary_dark: settings.brand_primary_dark || '#006da3',
+        brand_accent: settings.brand_accent || '#E77250',
+        brand_text: settings.brand_text || '#0a0a0a',
+        brand_bg: settings.brand_bg || '#FFFFFF',
+        brand_success: settings.brand_success || '#22C55E',
+        brand_danger: settings.brand_danger || '#EF4444',
+        brand_border: settings.brand_border || '#E5E7EB',
+      })
     }
   }, [settings])
 
@@ -54,6 +65,7 @@ export function BrandingSettings() {
       { key: 'storefront_favicon', value: storefrontFavicon },
       { key: 'storefront_og_image', value: storefrontOgImage },
       { key: 'store_logo', value: storeLogo },
+      ...Object.entries(brandColors).map(([key, value]) => ({ key, value })),
     ]
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
       .then(() => toast.success('Branding settings saved. Refresh the storefront/admin to see changes.'))
@@ -234,6 +246,52 @@ export function BrandingSettings() {
                 <p className='text-xs text-muted-foreground'>Recommended size 1200×630 px. Used when sharing links on Facebook, Messenger, etc.</p>
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className='flex items-center gap-2'>
+            <Palette className='h-5 w-5 text-primary' />
+            <div>
+              <CardTitle>Brand Colors</CardTitle>
+              <CardDescription>Customize the storefront color scheme. Changes apply after refreshing the storefront pages.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+            {[
+              { key: 'brand_primary', label: 'Primary', default: '#0089CD' },
+              { key: 'brand_primary_dark', label: 'Primary Dark', default: '#006da3' },
+              { key: 'brand_accent', label: 'Accent', default: '#E77250' },
+              { key: 'brand_text', label: 'Text', default: '#0a0a0a' },
+              { key: 'brand_bg', label: 'Background', default: '#FFFFFF' },
+              { key: 'brand_success', label: 'Success', default: '#22C55E' },
+              { key: 'brand_danger', label: 'Danger', default: '#EF4444' },
+              { key: 'brand_border', label: 'Border', default: '#E5E7EB' },
+            ].map(c => (
+              <div key={c.key} className='space-y-2'>
+                <Label>{c.label}</Label>
+                <div className='flex items-center gap-3'>
+                  <div className='relative'>
+                    <input
+                      type='color'
+                      value={brandColors[c.key] || c.default}
+                      onChange={e => setBrandColors(prev => ({ ...prev, [c.key]: e.target.value }))}
+                      className='h-10 w-14 rounded-md border border-input bg-transparent cursor-pointer p-0.5'
+                    />
+                  </div>
+                  <Input
+                    value={brandColors[c.key] || c.default}
+                    onChange={e => setBrandColors(prev => ({ ...prev, [c.key]: e.target.value }))}
+                    className='font-mono text-xs flex-1'
+                    placeholder={c.default}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
