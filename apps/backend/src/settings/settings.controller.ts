@@ -5,11 +5,9 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 import { UpdateAppearanceDto } from './dto/update-appearance.dto';
 import { UpdateNotificationsDto } from './dto/update-notifications.dto';
 import { UpdateDisplayDto } from './dto/update-display.dto';
-import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('settings')
-@RequiresFeature('admin_settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 

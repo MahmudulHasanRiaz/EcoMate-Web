@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BlockSettingsDto } from './dto/block-settings.dto';
 
 const DEFAULT_SETTINGS = {
   phoneOrderRestriction: {
@@ -45,22 +46,41 @@ const DEFAULT_SETTINGS = {
 export class BlockSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSettings(): Promise<any> {
+  async getSettings() {
     let settings = await this.prisma.blockSettings.findUnique({ where: { id: 'singleton' } });
     if (!settings) {
       settings = await this.prisma.blockSettings.create({
         data: { id: 'singleton', data: DEFAULT_SETTINGS },
       });
     }
-    return settings.data;
+    return settings.data as typeof DEFAULT_SETTINGS;
   }
 
-  async updateSettings(data: any) {
+  async updateSettings(data: BlockSettingsDto) {
+    const current = await this.getSettings();
+    const merged = this.deepMerge(current, data);
+
     const settings = await this.prisma.blockSettings.upsert({
       where: { id: 'singleton' },
-      create: { id: 'singleton', data },
-      update: { data },
+      create: { id: 'singleton', data: merged },
+      update: { data: merged },
     });
-    return settings.data;
+    return settings.data as typeof DEFAULT_SETTINGS;
+  }
+
+  private deepMerge(target: any, source: any): any {
+    const output = { ...target };
+    for (const key of Object.keys(source)) {
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+        if (!output[key] || typeof output[key] !== 'object') {
+          output[key] = source[key];
+        } else {
+          output[key] = this.deepMerge(output[key], source[key]);
+        }
+      } else {
+        output[key] = source[key];
+      }
+    }
+    return output;
   }
 }

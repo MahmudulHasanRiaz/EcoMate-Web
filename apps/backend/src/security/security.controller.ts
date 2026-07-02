@@ -10,7 +10,7 @@ export class SecurityController {
   @Public()
   @Get('block-info')
   async getBlockInfo(@Query('phone') phone?: string, @Req() req?: any) {
-    const ip = req?.ip || req?.socket?.remoteAddress || '';
+    const ip = req?.ip || req?.raw?.socket?.remoteAddress || '';
     return this.svc.getBlockInfo(phone, ip);
   }
 

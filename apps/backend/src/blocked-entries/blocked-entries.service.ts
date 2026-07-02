@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 
@@ -75,6 +75,10 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async create(dto: { type: 'ip' | 'phone'; value: string; reason?: string; blockType?: string; blockedBy?: string }) {
+    if (dto.type !== 'ip' && dto.type !== 'phone') {
+      throw new BadRequestException(`Invalid block type: ${dto.type}. Must be 'ip' or 'phone'`);
+    }
+
     const blockType = dto.blockType || 'order';
 
     if (dto.type === 'ip') {
@@ -157,19 +161,29 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
 
   async unblock(type: string, id: string) {
     if (type === 'ip') {
+      const entry = await this.prisma.blockedIp.findUnique({ where: { id } });
+      if (!entry) throw new NotFoundException(`Blocked IP ${id} not found`);
       await this.prisma.blockedIp.update({ where: { id }, data: { isActive: false } });
-    } else {
+    } else if (type === 'phone') {
+      const entry = await this.prisma.blockedPhone.findUnique({ where: { id } });
+      if (!entry) throw new NotFoundException(`Blocked phone ${id} not found`);
       await this.prisma.blockedPhone.update({ where: { id }, data: { isActive: false } });
+    } else {
+      throw new BadRequestException(`Invalid type: ${type}. Must be 'ip' or 'phone'`);
     }
   }
 
   async toggleWhitelist(type: string, id: string) {
     if (type === 'ip') {
       const entry = await this.prisma.blockedIp.findUnique({ where: { id } });
-      await this.prisma.blockedIp.update({ where: { id }, data: { whitelisted: !entry?.whitelisted } });
-    } else {
+      if (!entry) throw new NotFoundException(`Blocked IP ${id} not found`);
+      await this.prisma.blockedIp.update({ where: { id }, data: { whitelisted: !entry.whitelisted } });
+    } else if (type === 'phone') {
       const entry = await this.prisma.blockedPhone.findUnique({ where: { id } });
-      await this.prisma.blockedPhone.update({ where: { id }, data: { whitelisted: !entry?.whitelisted } });
+      if (!entry) throw new NotFoundException(`Blocked phone ${id} not found`);
+      await this.prisma.blockedPhone.update({ where: { id }, data: { whitelisted: !entry.whitelisted } });
+    } else {
+      throw new BadRequestException(`Invalid type: ${type}. Must be 'ip' or 'phone'`);
     }
   }
 

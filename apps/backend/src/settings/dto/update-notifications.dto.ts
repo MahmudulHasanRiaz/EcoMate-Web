@@ -1,9 +1,10 @@
 import { IsString, IsBoolean, IsOptional, IsIn } from 'class-validator';
 
 export class UpdateNotificationsDto {
+  @IsOptional()
   @IsString()
   @IsIn(['all', 'mentions', 'none'])
-  type: string;
+  type?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -21,6 +22,7 @@ export class UpdateNotificationsDto {
   @IsBoolean()
   marketing_emails?: boolean;
 
+  @IsOptional()
   @IsBoolean()
-  security_emails: boolean;
+  security_emails?: boolean;
 }

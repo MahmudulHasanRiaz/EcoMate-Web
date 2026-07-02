@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomInt, createHash } from 'crypto';
@@ -19,6 +20,8 @@ import type { StringValue } from 'ms';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -57,7 +60,9 @@ export class AuthService {
       data: { userId: user.id },
     });
 
-    await this.sendVerificationEmail(user.id);
+    this.sendVerificationEmail(user.id).catch((err) =>
+      this.logger.error('Failed to send verification email after registration', err),
+    );
 
     return this.generateTokens(user);
   }
@@ -148,6 +153,12 @@ export class AuthService {
         await this.prisma.refreshToken.delete({
           where: { id: tokenRecord.id },
         });
+      } else {
+        // Token reuse detected — JWT was valid but DB record gone
+        // Invalidates all tokens for user (token may be compromised)
+        await this.prisma.refreshToken.deleteMany({
+          where: { userId },
+        });
       }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -200,7 +211,16 @@ export class AuthService {
     const data: any = {};
     if (dto.firstName !== undefined) data.firstName = dto.firstName;
     if (dto.lastName !== undefined) data.lastName = dto.lastName;
-    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.email !== undefined) {
+      const existing = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('Email is already in use');
+      }
+      data.email = dto.email;
+    }
     if (dto.phoneNumber !== undefined) {
       const normalized = normalizePhone(dto.phoneNumber);
       if (!normalized) throw new BadRequestException('Invalid phone number');
@@ -262,7 +282,10 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
     if (user) {
       const rawToken = randomInt(100000, 999999).toString();
       const hashedToken = createHash('sha256')
@@ -278,7 +301,9 @@ export class AuthService {
         },
       });
 
-      await this.emailService.sendOtp(email, rawToken);
+      await this.emailService.sendOtp(email, rawToken).catch((err) => {
+        this.logger.error('Failed to send OTP email', err);
+      });
     }
     return { message: 'If the email exists, a reset code has been sent' };
   }
@@ -363,7 +388,10 @@ export class AuthService {
   }
 
   async sendVerificationEmail(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailVerified: true, email: true },
+    });
     if (!user || user.emailVerified) return;
 
     const rawToken = randomInt(100000, 999999).toString();

@@ -48,6 +48,9 @@ describe('UsersService', () => {
         {
           provide: PrismaService,
           useValue: {
+            $transaction: jest
+              .fn()
+              .mockImplementation(async (cb) => cb(prisma)),
             user: {
               findMany: jest.fn(),
               findUnique: jest.fn(),
@@ -61,6 +64,8 @@ describe('UsersService', () => {
             },
             userSettings: {
               create: jest.fn(),
+              upsert: jest.fn(),
+              findUnique: jest.fn(),
             },
           },
         },

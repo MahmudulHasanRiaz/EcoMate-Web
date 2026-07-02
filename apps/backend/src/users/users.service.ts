@@ -16,6 +16,11 @@ import { UserRole, UserStatus } from '@prisma/client';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly ALLOWED_SORT_FIELDS = [
+    'createdAt', 'updatedAt', 'firstName', 'lastName',
+    'email', 'username', 'role', 'status',
+  ];
+
   async findAll(query: {
     page?: number;
     perPage?: number;
@@ -25,8 +30,8 @@ export class UsersService {
     sort?: string;
     order?: string;
   }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 10;
+    const page = Math.max(query.page || 1, 1);
+    const perPage = Math.min(Math.max(query.perPage || 10, 1), 100);
     const skip = (page - 1) * perPage;
 
     const where: any = {};
@@ -50,8 +55,9 @@ export class UsersService {
     }
 
     const orderBy: any = {};
-    const sortField = query.sort || 'createdAt';
-    const sortOrder = query.order || 'desc';
+    const sortField = query.sort && this.ALLOWED_SORT_FIELDS.includes(query.sort)
+      ? query.sort : 'createdAt';
+    const sortOrder = query.order === 'asc' ? 'asc' : 'desc';
     orderBy[sortField] = sortOrder;
 
     const [users, total] = await Promise.all([
@@ -152,35 +158,38 @@ export class UsersService {
     if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        username: dto.username,
-        email: dto.email,
-        phoneNumber: normalizedPhone,
-        password: hashedPassword,
-        role: dto.role as UserRole,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        username: true,
-        email: true,
-        phoneNumber: true,
-        status: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
 
-    await this.prisma.userSettings.create({
-      data: { userId: user.id },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          username: dto.username,
+          email: dto.email,
+          phoneNumber: normalizedPhone,
+          password: hashedPassword,
+          role: dto.role as UserRole,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+          email: true,
+          phoneNumber: true,
+          status: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
-    return user;
+      await tx.userSettings.create({
+        data: { userId: user.id },
+      });
+
+      return user;
+    });
   }
 
   async update(id: string, dto: UpdateUserDto) {
@@ -255,18 +264,18 @@ export class UsersService {
   }
 
   async bulkDelete(ids: string[]) {
-    await this.prisma.user.deleteMany({
+    const result = await this.prisma.user.deleteMany({
       where: { id: { in: ids } },
     });
-    return { message: `${ids.length} users deleted successfully` };
+    return { message: `${result.count} users deleted successfully` };
   }
 
   async bulkUpdateStatus(ids: string[], status: string) {
-    await this.prisma.user.updateMany({
+    const result = await this.prisma.user.updateMany({
       where: { id: { in: ids } },
       data: { status: status as UserStatus },
     });
-    return { message: `${ids.length} users updated successfully` };
+    return { message: `${result.count} users updated successfully` };
   }
 
   async getSettings(userId: string) {

@@ -1,5 +1,6 @@
-import { Controller, Get, Put, Body } from '@nestjs/common';
+import { Controller, Get, Put, Body, ValidationPipe } from '@nestjs/common';
 import { BlockSettingsService } from './block-settings.service';
+import { BlockSettingsDto } from './dto/block-settings.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -16,7 +17,7 @@ export class BlockSettingsController {
 
   @Roles('superadmin', 'admin')
   @Put()
-  async update(@Body() data: any) {
-    return this.svc.updateSettings(data);
+  async update(@Body(new ValidationPipe({ whitelist: true })) dto: BlockSettingsDto) {
+    return this.svc.updateSettings(dto);
   }
 }

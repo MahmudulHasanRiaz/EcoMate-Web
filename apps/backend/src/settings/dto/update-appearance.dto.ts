@@ -1,10 +1,12 @@
-import { IsString, IsIn } from 'class-validator';
+import { IsString, IsIn, IsOptional } from 'class-validator';
 
 export class UpdateAppearanceDto {
+  @IsOptional()
   @IsString()
   @IsIn(['light', 'dark'])
-  theme: string;
+  theme?: string;
 
+  @IsOptional()
   @IsString()
-  font: string;
+  font?: string;
 }

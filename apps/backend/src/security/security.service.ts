@@ -219,13 +219,18 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAutoBlockStats() {
-    const [ipActive, ipAuto, phoneActive, phoneAuto] = await Promise.all([
-      this.prisma.blockedIp.count({ where: { isActive: true } }),
-      this.prisma.blockedIp.count({ where: { isActive: true, autoBlocked: true } }),
-      this.prisma.blockedPhone.count({ where: { isActive: true } }),
-      this.prisma.blockedPhone.count({ where: { isActive: true, autoBlocked: true } }),
-    ]);
-    return { ipBlocks: { total: ipActive, auto: ipAuto }, phoneBlocks: { total: phoneActive, auto: phoneAuto } };
+    try {
+      const [ipActive, ipAuto, phoneActive, phoneAuto] = await Promise.all([
+        this.prisma.blockedIp.count({ where: { isActive: true } }),
+        this.prisma.blockedIp.count({ where: { isActive: true, autoBlocked: true } }),
+        this.prisma.blockedPhone.count({ where: { isActive: true } }),
+        this.prisma.blockedPhone.count({ where: { isActive: true, autoBlocked: true } }),
+      ]);
+      return { ipBlocks: { total: ipActive, auto: ipAuto }, phoneBlocks: { total: phoneActive, auto: phoneAuto } };
+    } catch (err: any) {
+      this.logger.error(`Failed to fetch auto-block stats: ${err.message}`);
+      return { ipBlocks: { total: 0, auto: 0 }, phoneBlocks: { total: 0, auto: 0 } };
+    }
   }
 
   private async cleanup() {
