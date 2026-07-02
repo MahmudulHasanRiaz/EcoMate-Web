@@ -411,10 +411,11 @@ export class InventoryService {
         if (
           product &&
           product.manageStock &&
+          item.productId &&
           (!item.variantId || product.type === 'simple')
         ) {
           await client.product.update({
-            where: { id: item.productId! },
+            where: { id: item.productId },
             data: { stock: { increment: item.quantity } },
           });
         }

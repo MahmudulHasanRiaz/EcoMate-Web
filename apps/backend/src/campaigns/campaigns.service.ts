@@ -19,7 +19,7 @@ export class CampaignsService {
         name: dto.name,
         subject: dto.subject,
         body: dto.body,
-        variables: dto.variables ? JSON.stringify(dto.variables) : undefined,
+        variables: dto.variables ?? undefined,
         isActive: dto.isActive ?? true,
       },
     });
@@ -39,11 +39,12 @@ export class CampaignsService {
 
   async updateTemplate(id: string, dto: UpdateTemplateDto) {
     await this.findTemplate(id);
+    const { variables, ...rest } = dto;
     return this.prisma.emailTemplate.update({
       where: { id },
       data: {
-        ...dto,
-        variables: dto.variables ? { set: dto.variables } : undefined,
+        ...rest,
+        variables: variables ?? undefined,
       },
     });
   }
@@ -63,8 +64,8 @@ export class CampaignsService {
         subject: dto.subject,
         templateId: dto.templateId,
         content: dto.content,
-        recipients: dto.recipients ? JSON.stringify(dto.recipients) : undefined,
-        segmentFilter: dto.segmentFilter ? JSON.stringify(dto.segmentFilter) : undefined,
+        recipients: dto.recipients ?? undefined,
+        segmentFilter: dto.segmentFilter ?? undefined,
         scheduledAt: dto.scheduledAt,
       },
     });
@@ -133,8 +134,8 @@ export class CampaignsService {
     let subject = campaign.subject;
     let htmlBody = campaign.content || '';
 
-    if (campaign.template) {
-      const template = await this.findTemplate(campaign.templateId!);
+    if (campaign.template && campaign.templateId) {
+      const template = await this.findTemplate(campaign.templateId);
       subject = campaign.subject || template.subject;
       htmlBody = template.body;
     }
@@ -187,8 +188,8 @@ export class CampaignsService {
     let subject = campaign.subject;
     let htmlBody = campaign.content || '';
 
-    if (campaign.template) {
-      const template = await this.findTemplate(campaign.templateId!);
+    if (campaign.template && campaign.templateId) {
+      const template = await this.findTemplate(campaign.templateId);
       subject = campaign.subject || template.subject;
       htmlBody = template.body;
     }
