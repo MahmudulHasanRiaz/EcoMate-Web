@@ -286,15 +286,15 @@ function NavSlider({ children }: { children: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   
-  const [isHovered, setIsHovered] = useState(false);
+  // Use a ref so the animation loop reads the live value instantly,
+  // without waiting for a React re-render cycle.
+  const isHoveredRef = useRef(false);
   
   const currentX = useRef(0);
   const startX = useRef(0);
   const initialX = useRef(0);
   const speed = useRef(0.5); // pixels per frame
   const isPointerDown = useRef(false);
-  // Use a ref (not state) so click capture handler always sees the current value
-  // without waiting for a React re-render cycle.
   const didDrag = useRef(false);
 
   useEffect(() => {
@@ -305,7 +305,7 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     let animationFrameId: number;
 
     const step = () => {
-      if (!isHovered && !isPointerDown.current) {
+      if (!isHoveredRef.current && !isPointerDown.current) {
         const maxScroll = track.scrollWidth - container.clientWidth;
         if (maxScroll > 0) {
           currentX.current -= speed.current; // Move left
@@ -330,14 +330,13 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     animationFrameId = requestAnimationFrame(step);
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isHovered]);
+  }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     isPointerDown.current = true;
     didDrag.current = false;
     startX.current = e.clientX;
     initialX.current = currentX.current;
-    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -348,7 +347,14 @@ function NavSlider({ children }: { children: React.ReactNode }) {
 
     const dx = e.clientX - startX.current;
     if (Math.abs(dx) > 10) {
-      didDrag.current = true;
+      if (!didDrag.current) {
+        didDrag.current = true;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch (err) {
+          // ignore
+        }
+      }
     }
 
     let newX = initialX.current + dx;
@@ -364,11 +370,13 @@ function NavSlider({ children }: { children: React.ReactNode }) {
 
   const handlePointerUp = (e: React.PointerEvent) => {
     isPointerDown.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    // Reset didDrag shortly after so the ref is clean for the next interaction.
-    // We do NOT reset it immediately here because the browser fires the
-    // click event synchronously after pointerup — so the captureClick handler
-    // below still needs the correct value.
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        // ignore
+      }
+    }
     setTimeout(() => { didDrag.current = false; }, 50);
   };
 
@@ -376,9 +384,9 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     <div 
       className="relative w-full flex items-center min-h-[44px]"
       style={{ overflowX: 'clip', overflowY: 'visible' }}
-      onMouseEnter={() => setIsHovered(true)}
+      onMouseEnter={() => { isHoveredRef.current = true; }}
       onMouseLeave={() => {
-        setIsHovered(false);
+        isHoveredRef.current = false;
         isPointerDown.current = false;
         didDrag.current = false;
       }}
@@ -394,10 +402,9 @@ function NavSlider({ children }: { children: React.ReactNode }) {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onClickCapture={(e) => {
-            // Block click only if content actually scrolled (real drag).
-            // Using refs avoids stale-closure issues.
-            const scrolled = Math.abs(currentX.current - initialX.current) > 3;
-            if (didDrag.current && scrolled) {
+            // Only block the click if the user actually dragged (moved 10px+).
+            // didDrag is only set to true inside handlePointerMove when dx > 10.
+            if (didDrag.current) {
               e.stopPropagation();
               e.preventDefault();
             }
