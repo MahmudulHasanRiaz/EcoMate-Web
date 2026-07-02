@@ -6,7 +6,58 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Request } from 'express';
+
+const PRISMA_USER_MESSAGES: Record<string, string> = {
+  P2000: 'The provided value is too long for the column.',
+  P2002: 'A record with this value already exists.',
+  P2003: 'Referenced record not found.',
+  P2025: 'Record not found.',
+  P1001: 'Database connection failed. Please try again.',
+  P1002: 'Database server timed out. Please try again.',
+  P1017: 'Database server disconnected. Please try again.',
+  P2021: 'This feature is temporarily unavailable. Database setup in progress.',
+  P2023: 'Database schema update in progress. Please try again shortly.',
+};
+
+function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
+  status: number;
+  message: string;
+} {
+  const code = exception.code;
+  const userMsg = PRISMA_USER_MESSAGES[code] || 'A database error occurred. Please try again.';
+
+  let detail = '';
+  if (code === 'P2002' && exception.meta) {
+    const target = Array.isArray((exception.meta as any).target)
+      ? (exception.meta as any).target.join(', ')
+      : '';
+    detail = target ? ` (${target})` : '';
+  }
+  if (code === 'P2003' && exception.meta) {
+    detail = (exception.meta as any)?.field_name
+      ? ` (${(exception.meta as any).field_name})`
+      : '';
+  }
+
+  const statusMap: Record<string, number> = {
+    P2000: HttpStatus.BAD_REQUEST,
+    P2002: HttpStatus.CONFLICT,
+    P2003: HttpStatus.BAD_REQUEST,
+    P2025: HttpStatus.NOT_FOUND,
+    P1001: HttpStatus.SERVICE_UNAVAILABLE,
+    P1002: HttpStatus.SERVICE_UNAVAILABLE,
+    P1017: HttpStatus.SERVICE_UNAVAILABLE,
+    P2021: HttpStatus.SERVICE_UNAVAILABLE,
+    P2023: HttpStatus.SERVICE_UNAVAILABLE,
+  };
+
+  return {
+    status: statusMap[code] || HttpStatus.INTERNAL_SERVER_ERROR,
+    message: userMsg + detail,
+  };
+}
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -16,6 +67,31 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
     const request = ctx.getRequest<Request>();
+
+    // Handle Prisma errors with user-friendly messages
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      const { status, message } = parsePrismaError(exception);
+      const body = { message, statusCode: status, timestamp: new Date().toISOString(), path: request.url };
+
+      this.logger.warn(`Prisma error ${exception.code} at ${request.method} ${request.url}: ${exception.message}`);
+
+      if (typeof response.code === 'function' && typeof response.send === 'function') {
+        response.code(status).send(body);
+        return;
+      }
+      try {
+        if (typeof response.status === 'function' && typeof response.json === 'function') {
+          response.status(status).json(body);
+          return;
+        }
+      } catch { /* ignore */ }
+      try {
+        response.statusCode = status;
+        response.setHeader?.('Content-Type', 'application/json');
+        response.end?.(JSON.stringify(body));
+      } catch { /* ignore */ }
+      return;
+    }
 
     const status =
       exception instanceof HttpException
