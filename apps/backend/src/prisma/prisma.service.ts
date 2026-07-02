@@ -57,9 +57,51 @@ export class PrismaService
    * to run multiple times.
    */
   private async ensureSchemaColumns(): Promise<void> {
+    // Step 0: Create tables that may not exist yet (idempotent via IF NOT EXISTS).
+    // Must run BEFORE the column/FK fixes below because those reference these tables.
+    const tableFixes: string[] = [
+      `CREATE TABLE IF NOT EXISTS "Warehouse" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "address" TEXT,
+        "city" TEXT,
+        "country" TEXT NOT NULL DEFAULT 'Bangladesh',
+        "phone" TEXT,
+        "email" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "Warehouse_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Warehouse_slug_key" ON "Warehouse"("slug")`,
+      `CREATE INDEX IF NOT EXISTS "Warehouse_isActive_idx" ON "Warehouse"("isActive")`,
+      `CREATE TABLE IF NOT EXISTS "BinLocation" (
+        "id" TEXT NOT NULL,
+        "warehouseId" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "zone" TEXT,
+        "rack" TEXT,
+        "shelf" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "BinLocation_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "BinLocation_warehouseId_idx" ON "BinLocation"("warehouseId")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "BinLocation_warehouseId_code_key" ON "BinLocation"("warehouseId", "code")`,
+    ];
+
+    for (const sql of tableFixes) {
+      try {
+        await this.$executeRawUnsafe(sql);
+      } catch (err: any) {
+        this.logger.warn(`Schema drift table fix skipped: ${err.message}`);
+      }
+    }
+
+    // Step 1: Add columns that may be missing (idempotent via IF NOT EXISTS).
     // Each ALTER TABLE runs in its own call because PostgreSQL does not
     // support multiple semicolon-separated statements in a single query().
-    // Every statement is idempotent (IF NOT EXISTS) — safe to run on every boot.
     const columnFixes: [string, string][] = [
       // table, ALTER statement
       ['Product',        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "brandId" TEXT`],
