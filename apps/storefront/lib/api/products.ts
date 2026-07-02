@@ -15,7 +15,7 @@ export interface ProductsResponse {
 
 export function transformBackendProduct(raw: any): Product {
   const rawBasePrice = Number(raw.basePrice) || 0;
-  const rawSalePrice = raw.salePrice ? Number(raw.salePrice) || 0 : undefined;
+  const rawSalePrice = raw.salePrice != null ? Number(raw.salePrice) : undefined;
   const rawImages = Array.isArray(raw.images) ? raw.images : [];
   const firstImage = rawImages.length > 0 ? rawImages[0] : null;
   const isVar = (raw.type || 'simple') === 'variable';
@@ -28,7 +28,7 @@ export function transformBackendProduct(raw: any): Product {
     )
     .map((v: any) => {
       const regPrice = Number(v.price) || 0;
-      const saleP = v.salePrice ? Number(v.salePrice) : undefined;
+      const saleP = v.salePrice != null ? Number(v.salePrice) : undefined;
       return {
         id: v.id,
         sku: v.sku,
@@ -42,7 +42,7 @@ export function transformBackendProduct(raw: any): Product {
       };
     });
 
-  const rawOriginalPrice = raw.originalPrice ? Number(raw.originalPrice) : undefined;
+  const rawOriginalPrice = raw.originalPrice != null ? Number(raw.originalPrice) : undefined;
 
   let displayPrice: number;
   let displayOriginalPrice: number | undefined;
@@ -52,8 +52,8 @@ export function transformBackendProduct(raw: any): Product {
   if (isVar && variants.length > 0) {
     const prices = variants.map((v) => v.price);
     const minPrice = Math.min(...prices);
-    const minRegPrice = Math.min(...variants.map((v) => v.regularPrice!));
-    const hasSale = variants.some((v) => v.salePrice !== undefined && v.salePrice! < v.regularPrice!);
+    const minRegPrice = Math.min(...variants.map((v) => v.regularPrice));
+    const hasSale = variants.some((v) => v.salePrice !== undefined && v.salePrice! < v.regularPrice);
     displayPrice = minPrice;
     displayBasePrice = rawBasePrice;
     displaySalePrice = hasSale ? minPrice : undefined;

@@ -227,7 +227,7 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { price: priceFilter }] } } },
+            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { salePrice: null, price: priceFilter }] } } },
           ],
         },
       ];
@@ -341,7 +341,7 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { price: priceFilter }] } } },
+            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { salePrice: null, price: priceFilter }] } } },
           ],
         },
       ];

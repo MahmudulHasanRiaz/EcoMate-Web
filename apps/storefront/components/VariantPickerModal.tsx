@@ -47,7 +47,7 @@ function getColorValue(value: string): string {
 function buildAttributeGroups(variants: Variant[]): Record<string, { value: string }[]> {
   const groups: Record<string, { value: string }[]> = {};
   for (const v of variants) {
-    if (!v.isActive) continue;
+    if (!v.isActive || !v.attributeValues) continue;
     for (const av of v.attributeValues) {
       const attr = av.attributeValue.attribute;
       if (!groups[attr.name]) groups[attr.name] = [];

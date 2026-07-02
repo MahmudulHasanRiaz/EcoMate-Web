@@ -25,10 +25,11 @@ export class PrismaService
     this.nativePool = pool;
   }
 
-  private async runRaw(sql: string): Promise<void> {
+  private async runRaw<T = void>(sql: string): Promise<T> {
     const client = await this.nativePool.connect();
     try {
-      await client.query(sql);
+      const res = await client.query(sql);
+      return res.rows as T;
     } finally {
       client.release();
     }
@@ -49,6 +50,7 @@ export class PrismaService
     await this.$connect();
     await this.ensureSchemaColumns();
     await this.logDatabaseColumns();
+    await this.validateSchemaCompleteness();
     await this.seedAdminUser();
   }
 
@@ -176,6 +178,7 @@ export class PrismaService
         "grnNumber" TEXT NOT NULL,
         "purchaseId" TEXT NOT NULL,
         "receivedBy" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'draft',
         "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "notes" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -553,6 +556,31 @@ export class PrismaService
 
       // === User Table ===
       ['User',           `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0`],
+      ['User',           `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lockoutUntil" TIMESTAMP(3)`],
+
+      // === Expense Table ===
+      ['Expense',        `ALTER TABLE "Expense" ADD COLUMN IF NOT EXISTS "updatedBy" TEXT`],
+      ['Expense',        `ALTER TABLE "Expense" ADD COLUMN IF NOT EXISTS "paymentAccountId" TEXT`],
+      ['Expense',        `ALTER TABLE "Expense" ADD COLUMN IF NOT EXISTS "journalEntryId" TEXT`],
+
+      // === Account Table ===
+      ['Account',        `ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`],
+      ['Account',        `ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "updatedBy" TEXT`],
+
+      // === JournalEntry Table ===
+      ['JournalEntry',   `ALTER TABLE "JournalEntry" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`],
+      ['JournalEntry',   `ALTER TABLE "JournalEntry" ADD COLUMN IF NOT EXISTS "updatedBy" TEXT`],
+
+      // === JournalEntryLine Table ===
+      ['JournalEntryLine', `ALTER TABLE "JournalEntryLine" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`],
+      ['JournalEntryLine', `ALTER TABLE "JournalEntryLine" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`],
+
+      // === OpeningBalance Table ===
+      ['OpeningBalance', `ALTER TABLE "OpeningBalance" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`],
+      ['OpeningBalance', `ALTER TABLE "OpeningBalance" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`],
+
+      // === expense_categories Table ===
+      ['expense_categories', `ALTER TABLE "expense_categories" ADD COLUMN IF NOT EXISTS "accountId" TEXT`],
     ];
 
 
@@ -697,6 +725,50 @@ export class PrismaService
     }
 
     this.logger.log('Schema drift check: all required columns verified ✓');
+  }
+
+  private async validateSchemaCompleteness(): Promise<void> {
+    try {
+      const rows = await this.runRaw<{ table_name: string }[]>(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+      );
+      const existing = new Set(rows.map(r => r.table_name));
+
+      const allModels = [
+        'Account', 'Address', 'Attribute', 'AttributeValue', 'BinLocation', 'BlockedIp',
+        'BlockedPhone', 'BlockSettings', 'Brand', 'Category', 'CmsPage', 'Combo',
+        'ComboItem', 'CostingLot', 'Coupon', 'CouponUsage', 'CourierCredentials',
+        'CourierDispatchLog', 'Department', 'Designation', 'EmailCampaign', 'EmailTemplate',
+        'Employee', 'Expense', 'expense_categories', 'FinancialPeriod', 'GoodsReceiptNote',
+        'GoodsReceiptNoteItem', 'InventoryLog', 'JournalEntry', 'JournalEntryLine',
+        'LandingPage', 'LicenseActivation', 'Media', 'MediaAttachment', 'NotificationLog',
+        'NotificationSetting', 'OpeningBalance', 'Order', 'OrderCounter', 'OrderItem',
+        'OrderStatus', 'Payment', 'PaymentGateway', 'PaymentOption', 'Payslip',
+        'PayslipItem', 'Product', 'ProductCategory', 'ProductPaymentOption',
+        'ProductTag', 'ProductVariant', 'ProductVariantAttributeValue', 'Purchase',
+        'PurchaseItem', 'Referral', 'ReferralLead', 'ReferralReward', 'Refund',
+        'RefreshToken', 'Review', 'SalaryStructure', 'Shipment', 'ShippingOption',
+        'ShippingZoneGroup', 'SizeChart', 'Supplier', 'SupplierPayment',
+        'SupplierPaymentInvoice', 'SystemSetting', 'Tag', 'Task', 'User', 'UserSettings',
+        'VerificationToken', 'Warehouse',
+      ];
+
+      const missing: string[] = [];
+      for (const model of allModels) {
+        if (!existing.has(model)) {
+          missing.push(model);
+        }
+      }
+
+      if (missing.length > 0) {
+        this.logger.warn(`Schema validation: ${missing.length} table(s) MISSING — ${missing.join(', ')}`);
+        this.logger.warn('Run `npx prisma migrate deploy` to apply all pending migrations.');
+      } else {
+        this.logger.log(`Schema validation: all ${allModels.length} tables present ✓`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Schema validation skipped: ${err.message}`);
+    }
   }
 
   private async seedAdminUser(): Promise<void> {

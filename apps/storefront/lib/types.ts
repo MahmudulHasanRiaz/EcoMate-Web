@@ -11,7 +11,7 @@ export interface Variant {
   id: string;
   sku: string;
   price: number;
-  regularPrice?: number;
+  regularPrice: number;
   salePrice?: number;
   stock: number;
   image?: string;

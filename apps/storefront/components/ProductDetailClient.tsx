@@ -419,23 +419,27 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
     if (config.features.sizeChart && product.slug) {
       setSizeChartLoading(true);
-      apiClient.get(`/size-charts/by-product/${product.slug}`)
-        .then(res => setSizeChartData(res.data))
+      apiClient.get(`/size-charts/by-product/${product.slug}`, { signal: controller.signal })
+        .then(res => { if (!controller.signal.aborted) setSizeChartData(res.data); })
         .catch(() => {})
-        .finally(() => setSizeChartLoading(false));
+        .finally(() => { if (!controller.signal.aborted) setSizeChartLoading(false); });
     } else {
       setSizeChartData(null);
     }
+    return () => controller.abort();
   }, [product.slug, config.features.sizeChart]);
 
   useEffect(() => {
+    const controller = new AbortController();
     if (!reviews && product.slug) {
-      apiClient.get(`/reviews/product/${product.slug}`)
-        .then(res => setReviews(res.data))
+      apiClient.get(`/reviews/product/${product.slug}`, { signal: controller.signal })
+        .then(res => { if (!controller.signal.aborted) setReviews(res.data); })
         .catch(() => {});
     }
+    return () => controller.abort();
   }, [product.slug, reviews]);
 
   useEffect(() => {
