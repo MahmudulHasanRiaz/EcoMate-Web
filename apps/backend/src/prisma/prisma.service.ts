@@ -279,7 +279,102 @@ export class PrismaService
       )`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "Expense_journalEntryId_key" ON "Expense"("journalEntryId")`,
       `CREATE INDEX IF NOT EXISTS "Expense_categoryId_idx" ON "Expense"("categoryId")`,
-      `CREATE INDEX IF NOT EXISTS "Expense_paymentAccountId_idx" ON "Expense"("paymentAccountId")`
+      `CREATE INDEX IF NOT EXISTS "Expense_paymentAccountId_idx" ON "Expense"("paymentAccountId")`,
+
+      `CREATE TABLE IF NOT EXISTS "Account" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "type" TEXT NOT NULL,
+        "parentId" TEXT,
+        "description" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "isGroup" BOOLEAN NOT NULL DEFAULT false,
+        "createdBy" TEXT,
+        "updatedBy" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Account_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Account_code_key" ON "Account"("code")`,
+      `CREATE INDEX IF NOT EXISTS "Account_type_idx" ON "Account"("type")`,
+      `CREATE INDEX IF NOT EXISTS "Account_parentId_idx" ON "Account"("parentId")`,
+
+      `CREATE TABLE IF NOT EXISTS "FinancialPeriod" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "startDate" TIMESTAMP(3) NOT NULL,
+        "endDate" TIMESTAMP(3) NOT NULL,
+        "isClosed" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "FinancialPeriod_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "FinancialPeriod_startDate_endDate_key" ON "FinancialPeriod"("startDate", "endDate")`,
+
+      `CREATE TABLE IF NOT EXISTS "OpeningBalance" (
+        "id" TEXT NOT NULL,
+        "accountId" TEXT NOT NULL,
+        "periodId" TEXT NOT NULL,
+        "debit" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "credit" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "OpeningBalance_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "OpeningBalance_accountId_periodId_key" ON "OpeningBalance"("accountId", "periodId")`,
+      `CREATE INDEX IF NOT EXISTS "OpeningBalance_periodId_idx" ON "OpeningBalance"("periodId")`,
+
+      `CREATE TABLE IF NOT EXISTS "JournalEntry" (
+        "id" TEXT NOT NULL,
+        "entryNo" TEXT NOT NULL,
+        "periodId" TEXT NOT NULL,
+        "entryDate" TIMESTAMP(3) NOT NULL,
+        "description" TEXT NOT NULL,
+        "totalDebit" DECIMAL(14,2) NOT NULL,
+        "totalCredit" DECIMAL(14,2) NOT NULL,
+        "isOpening" BOOLEAN NOT NULL DEFAULT false,
+        "referenceNo" TEXT,
+        "createdBy" TEXT,
+        "updatedBy" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "JournalEntry_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "JournalEntry_entryNo_key" ON "JournalEntry"("entryNo")`,
+      `CREATE INDEX IF NOT EXISTS "JournalEntry_periodId_idx" ON "JournalEntry"("periodId")`,
+      `CREATE INDEX IF NOT EXISTS "JournalEntry_entryDate_idx" ON "JournalEntry"("entryDate")`,
+
+      `CREATE TABLE IF NOT EXISTS "JournalEntryLine" (
+        "id" TEXT NOT NULL,
+        "entryId" TEXT NOT NULL,
+        "accountId" TEXT NOT NULL,
+        "debit" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "credit" DECIMAL(14,2) NOT NULL DEFAULT 0,
+        "description" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "JournalEntryLine_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "JournalEntryLine_entryId_idx" ON "JournalEntryLine"("entryId")`,
+      `CREATE INDEX IF NOT EXISTS "JournalEntryLine_accountId_idx" ON "JournalEntryLine"("accountId")`,
+
+      `CREATE TABLE IF NOT EXISTS "expense_categories" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "description" TEXT,
+        "icon" TEXT,
+        "color" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "accountId" TEXT,
+        CONSTRAINT "expense_categories_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "expense_categories_slug_key" ON "expense_categories"("slug")`,
+      `CREATE INDEX IF NOT EXISTS "expense_categories_accountId_idx" ON "expense_categories"("accountId")`
     ];
 
     for (const sql of tableFixes) {
@@ -351,6 +446,18 @@ export class PrismaService
       ['Combo',          `ALTER TABLE "Combo" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT`],
       // === OrderItem Table ===
       ['OrderItem',      `ALTER TABLE "OrderItem" ADD COLUMN IF NOT EXISTS "costingLotId" TEXT`],
+
+      // === Coupon Table ===
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "type" TEXT NOT NULL DEFAULT 'flat'`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "value" DECIMAL(10,2) NOT NULL DEFAULT 0`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "minOrderValue" DECIMAL(10,2)`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "maxUses" INTEGER`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "usedCount" INTEGER NOT NULL DEFAULT 0`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "maxUsesPerCustomer" INTEGER`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "percentageCap" DECIMAL(5,2)`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "startsAt" TIMESTAMP(3)`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`],
+      ['Coupon',         `ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],
     ];
 
 
@@ -392,6 +499,96 @@ export class PrismaService
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OrderItem_costingLotId_fkey') THEN
           ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_costingLotId_fkey"
             FOREIGN KEY ("costingLotId") REFERENCES "CostingLot"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OpeningBalance_accountId_fkey') THEN
+          ALTER TABLE "OpeningBalance" ADD CONSTRAINT "OpeningBalance_accountId_fkey"
+            FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OpeningBalance_periodId_fkey') THEN
+          ALTER TABLE "OpeningBalance" ADD CONSTRAINT "OpeningBalance_periodId_fkey"
+            FOREIGN KEY ("periodId") REFERENCES "FinancialPeriod"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JournalEntry_periodId_fkey') THEN
+          ALTER TABLE "JournalEntry" ADD CONSTRAINT "JournalEntry_periodId_fkey"
+            FOREIGN KEY ("periodId") REFERENCES "FinancialPeriod"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JournalEntryLine_entryId_fkey') THEN
+          ALTER TABLE "JournalEntryLine" ADD CONSTRAINT "JournalEntryLine_entryId_fkey"
+            FOREIGN KEY ("entryId") REFERENCES "JournalEntry"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JournalEntryLine_accountId_fkey') THEN
+          ALTER TABLE "JournalEntryLine" ADD CONSTRAINT "JournalEntryLine_accountId_fkey"
+            FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expense_categories_accountId_fkey') THEN
+          ALTER TABLE "expense_categories" ADD CONSTRAINT "expense_categories_accountId_fkey"
+            FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Expense_categoryId_fkey') THEN
+          ALTER TABLE "Expense" ADD CONSTRAINT "Expense_categoryId_fkey"
+            FOREIGN KEY ("categoryId") REFERENCES "expense_categories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Expense_paymentAccountId_fkey') THEN
+          ALTER TABLE "Expense" ADD CONSTRAINT "Expense_paymentAccountId_fkey"
+            FOREIGN KEY ("paymentAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Expense_journalEntryId_fkey') THEN
+          ALTER TABLE "Expense" ADD CONSTRAINT "Expense_journalEntryId_fkey"
+            FOREIGN KEY ("journalEntryId") REFERENCES "JournalEntry"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Purchase_supplierId_fkey') THEN
+          ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_supplierId_fkey"
+            FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PurchaseItem_purchaseId_fkey') THEN
+          ALTER TABLE "PurchaseItem" ADD CONSTRAINT "PurchaseItem_purchaseId_fkey"
+            FOREIGN KEY ("purchaseId") REFERENCES "Purchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SupplierPayment_supplierId_fkey') THEN
+          ALTER TABLE "SupplierPayment" ADD CONSTRAINT "SupplierPayment_supplierId_fkey"
+            FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SupplierPaymentInvoice_paymentId_fkey') THEN
+          ALTER TABLE "SupplierPaymentInvoice" ADD CONSTRAINT "SupplierPaymentInvoice_paymentId_fkey"
+            FOREIGN KEY ("paymentId") REFERENCES "SupplierPayment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CouponUsage_couponId_fkey') THEN
+          ALTER TABLE "CouponUsage" ADD CONSTRAINT "CouponUsage_couponId_fkey"
+            FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CouponUsage_orderId_fkey') THEN
+          ALTER TABLE "CouponUsage" ADD CONSTRAINT "CouponUsage_orderId_fkey"
+            FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
         END IF;
       END $$`,
     ];
