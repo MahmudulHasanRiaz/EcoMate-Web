@@ -72,22 +72,75 @@ export function SidebarNav({ className, items, groups, ...props }: SidebarNavPro
         </Select>
       </div>
 
+      {/* Medium screens (horizontal scroll) */}
       <ScrollArea
         orientation='horizontal'
         type='always'
-        className='hidden w-full min-w-40 bg-background px-1 py-2 md:block'
+        className='hidden w-full min-w-40 bg-background px-1 py-2 md:block lg:hidden'
       >
         <nav
           className={cn(
-            'flex space-x-2 py-1 lg:flex-col lg:space-y-1 lg:space-x-0',
+            'flex space-x-2 py-1',
             className
           )}
           {...props}
         >
           {groups
             ? groups.map(group => (
-                <div key={group.groupLabel} className='lg:space-y-0.5'>
-                  <h4 className='hidden px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 lg:block'>
+                <div key={group.groupLabel} className='flex space-x-2'>
+                  {group.items.map(item => (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      className={cn(
+                        buttonVariants({ variant: 'ghost' }),
+                        pathname === item.href
+                          ? 'bg-muted hover:bg-accent'
+                          : 'hover:bg-accent hover:underline',
+                        'justify-start whitespace-nowrap'
+                      )}
+                    >
+                      <span className='me-2'>{item.icon}</span>
+                      {item.title}
+                    </Link>
+                  ))}
+                </div>
+              ))
+            : allItems.map(item => (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    buttonVariants({ variant: 'ghost' }),
+                    pathname === item.href
+                      ? 'bg-muted hover:bg-accent'
+                      : 'hover:bg-accent hover:underline',
+                    'justify-start whitespace-nowrap'
+                  )}
+                >
+                  <span className='me-2'>{item.icon}</span>
+                  {item.title}
+                </Link>
+              ))}
+        </nav>
+      </ScrollArea>
+
+      {/* Large screens (vertical scrollable sidebar) */}
+      <ScrollArea
+        orientation='vertical'
+        className='hidden lg:block w-full min-w-40 bg-background px-1 py-2 max-h-[calc(100vh-12rem)] overflow-y-auto pr-3'
+      >
+        <nav
+          className={cn(
+            'flex flex-col space-y-1',
+            className
+          )}
+          {...props}
+        >
+          {groups
+            ? groups.map(group => (
+                <div key={group.groupLabel} className='space-y-0.5'>
+                  <h4 className='px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60'>
                     {group.groupLabel}
                   </h4>
                   {group.items.map(item => (
@@ -117,7 +170,7 @@ export function SidebarNav({ className, items, groups, ...props }: SidebarNavPro
                     pathname === item.href
                       ? 'bg-muted hover:bg-accent'
                       : 'hover:bg-accent hover:underline',
-                    'justify-start'
+                    'justify-start w-full'
                   )}
                 >
                   <span className='me-2'>{item.icon}</span>

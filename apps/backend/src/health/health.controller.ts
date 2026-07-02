@@ -25,4 +25,28 @@ export class HealthController {
       },
     };
   }
+
+  @Public()
+  @Get('db-columns')
+  async getDbColumns() {
+    try {
+      const productCols = await this.prisma.$queryRawUnsafe(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'Product'
+      `);
+      const variantCols = await this.prisma.$queryRawUnsafe(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'ProductVariant'
+      `);
+      return { 
+        success: true, 
+        productColumns: productCols,
+        variantColumns: variantCols
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
 }
