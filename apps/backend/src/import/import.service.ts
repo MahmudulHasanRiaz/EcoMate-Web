@@ -605,7 +605,9 @@ export class ImportService {
       return;
     }
 
-    const price = this.parsePrice(data['Sale price']) ?? this.parsePrice(data['Regular price']);
+    const regPrice = this.parsePrice(data['Regular price']);
+    const salePrice = this.parsePrice(data['Sale price']);
+    const price = salePrice ?? regPrice;
     const stock = this.parseInt(data.Stock) ?? 0;
     const images = this.parseImages(data.Images);
     const mainImage = images[0];
@@ -618,7 +620,8 @@ export class ImportService {
 
     if (existingId) {
       const updateData: Record<string, unknown> = {};
-      if (price !== undefined) updateData.price = price;
+      if (regPrice !== undefined) updateData.price = regPrice;
+      if (salePrice !== undefined) updateData.salePrice = salePrice;
       updateData.stock = stock;
       if (mainImage) updateData.image = mainImage;
 
@@ -656,7 +659,8 @@ export class ImportService {
       data: {
         productId,
         sku: varSku,
-        price: price ?? undefined,
+        price: regPrice ?? undefined,
+        salePrice: salePrice ?? undefined,
         stock,
         image: mainImage || undefined,
         attributeValues:

@@ -1044,7 +1044,7 @@ function VariantRow({
 
   const saveEdit = () => {
     if (!editing) return
-    const field = editing as 'price' | 'stock' | 'sku'
+    const field = editing as 'price' | 'salePrice' | 'stock' | 'sku'
     if (field === 'sku') {
       if (!editValue.trim()) {
         toast.error('SKU cannot be empty')
@@ -1060,6 +1060,14 @@ function VariantRow({
         return
       }
       onUpdate({ price: val })
+    } else if (field === 'salePrice') {
+      const val = editValue === '' ? null : parseFloat(editValue)
+      if (val !== null && (isNaN(val) || val < 0)) {
+        toast.error('Sale price must be a valid positive number')
+        cancelEdit()
+        return
+      }
+      onUpdate({ salePrice: val })
     } else if (field === 'stock') {
       const val = parseInt(editValue)
       if (isNaN(val) || val < 0) {
@@ -1081,7 +1089,7 @@ function VariantRow({
           ? <SafeImage src={imgUrl(variant.image)} alt='' className='h-full w-full object-cover' />
           : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
       </div>
-      <div className='flex-1 min-w-0 grid grid-cols-4 gap-3 items-center'>
+      <div className='flex-1 min-w-0 grid grid-cols-5 gap-3 items-center'>
         <div className='min-w-0'>
           <p className='font-medium text-xs text-muted-foreground mb-0.5'>Attribute</p>
           <p className='truncate'>{variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>
@@ -1102,9 +1110,9 @@ function VariantRow({
           )}
         </div>
 
-        {/* Price */}
+        {/* Reg. Price */}
         <div className='min-w-0'>
-          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Price</p>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Reg. Price</p>
           {editing === 'price' ? (
             <div className='flex items-center gap-1'>
               <span className='text-xs text-muted-foreground'>{currencySymbol}</span>
@@ -1113,6 +1121,26 @@ function VariantRow({
           ) : (
             <button onClick={() => startEdit('price', variant.price)} className='flex items-center gap-1 group'>
               <span>{currencySymbol}{Number(variant.price || 0).toFixed(2)}</span>
+              <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
+            </button>
+          )}
+        </div>
+
+        {/* Sale Price */}
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Sale Price</p>
+          {editing === 'salePrice' ? (
+            <div className='flex items-center gap-1'>
+              <span className='text-xs text-muted-foreground'>{currencySymbol}</span>
+              <Input type='number' step='0.01' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-24' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+            </div>
+          ) : (
+            <button onClick={() => startEdit('salePrice', variant.salePrice)} className='flex items-center gap-1 group'>
+              {variant.salePrice ? (
+                <span className='text-green-600 font-medium'>{currencySymbol}{Number(variant.salePrice).toFixed(2)}</span>
+              ) : (
+                <span className='text-muted-foreground italic text-xs'>—</span>
+              )}
               <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
             </button>
           )}

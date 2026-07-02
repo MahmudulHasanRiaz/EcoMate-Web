@@ -288,6 +288,7 @@ model ProductVariant {
   productId String
   sku       String   @unique
   price     Decimal? @db.Decimal(10, 2)
+  salePrice Decimal? @db.Decimal(10, 2)
   stock     Int      @default(0)
   image     String?
   isActive  Boolean  @default(true)

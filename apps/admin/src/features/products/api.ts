@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api-client'
 
 export interface ProductVariantResponse {
   id: string; productId: string; sku: string; price?: number | string | null;
+  salePrice?: number | string | null;
   stock: number; image?: string | null; isActive: boolean;
   attributeValues: { attributeValue: { id: string; value: string; attribute: { id: string; name: string } } }[];
 }
@@ -30,7 +31,7 @@ export const productsApi = {
   bulkUpdate: (ids: string[], data: any) => apiClient.post('/products/bulk/update', { ids, data }),
   generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultStock?: number }) =>
     apiClient.post<ProductResponse>(`/products/${id}/variants/generate`, data),
-  updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; stock?: number; image?: string | null }) =>
+  updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; salePrice?: number; stock?: number; image?: string | null }) =>
     apiClient.put<ProductVariantResponse>(`/products/${id}/variants/${variantId}`, data),
 }
 

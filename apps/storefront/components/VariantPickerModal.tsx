@@ -93,7 +93,7 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
   const attrNames = Object.keys(attributeGroups);
 
   const matchingVariant = useMemo(() => findMatchingVariant(variants, selectedAttrs), [variants, selectedAttrs]);
-  const refPrice = product.originalPrice ?? product.basePrice;
+  const refPrice = matchingVariant?.regularPrice ?? product.originalPrice ?? product.basePrice;
 
   const handleSelect = (attrName: string, value: string) => {
     setSelectedAttrs(prev => ({ ...prev, [attrName]: value }));

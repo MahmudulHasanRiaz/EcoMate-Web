@@ -26,15 +26,21 @@ export function transformBackendProduct(raw: any): Product {
         av.attributeValue?.value?.includes(', ')
       )
     )
-    .map((v: any) => ({
-      id: v.id,
-      sku: v.sku,
-      price: Number(v.price) || 0,
-      stock: v.stock ?? 0,
-      image: v.image || undefined,
-      isActive: v.isActive !== false,
-      attributeValues: v.attributeValues || [],
-    }));
+    .map((v: any) => {
+      const regPrice = Number(v.price) || 0;
+      const saleP = v.salePrice ? Number(v.salePrice) : undefined;
+      return {
+        id: v.id,
+        sku: v.sku,
+        price: saleP ?? regPrice,
+        regularPrice: regPrice,
+        salePrice: saleP,
+        stock: v.stock ?? 0,
+        image: v.image || undefined,
+        isActive: v.isActive !== false,
+        attributeValues: v.attributeValues || [],
+      };
+    });
 
   const rawOriginalPrice = raw.originalPrice ? Number(raw.originalPrice) : undefined;
 
@@ -44,15 +50,18 @@ export function transformBackendProduct(raw: any): Product {
   let displayBasePrice: number;
 
   if (isVar && variants.length > 0) {
-    // Variable product: price = min variant price, original = basePrice or rawOriginalPrice
     const prices = variants.map((v) => v.price);
     const minPrice = Math.min(...prices);
+    const minRegPrice = Math.min(...variants.map((v) => v.regularPrice!));
+    const hasSale = variants.some((v) => v.salePrice !== undefined && v.salePrice! < v.regularPrice!);
     displayPrice = minPrice;
     displayBasePrice = rawBasePrice;
-    displaySalePrice = undefined;
-    displayOriginalPrice = minPrice < rawBasePrice
-      ? rawBasePrice
-      : (rawOriginalPrice && rawOriginalPrice > minPrice ? rawOriginalPrice : undefined);
+    displaySalePrice = hasSale ? minPrice : undefined;
+    displayOriginalPrice = hasSale
+      ? Math.min(minRegPrice, rawBasePrice > 0 ? rawBasePrice : Infinity)
+      : (rawBasePrice > 0 && rawBasePrice > minPrice ? rawBasePrice
+        : rawOriginalPrice && rawOriginalPrice > minPrice ? rawOriginalPrice : undefined);
+    if (displayOriginalPrice === Infinity) displayOriginalPrice = undefined;
   } else {
     // Simple product: price = salePrice or basePrice, original = basePrice when sale is lower
     displayPrice = rawSalePrice || rawBasePrice;

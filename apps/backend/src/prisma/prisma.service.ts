@@ -508,6 +508,7 @@ export class PrismaService
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "productId" TEXT`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "sku" TEXT`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "price" DECIMAL(10,2)`],
+      ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "salePrice" DECIMAL(10,2)`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER NOT NULL DEFAULT 0`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "image" TEXT`],
       ['ProductVariant', `ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`],

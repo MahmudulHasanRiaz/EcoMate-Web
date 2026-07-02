@@ -20,6 +20,7 @@ export class VariantAttributeDto {
 export class CreateVariantDto {
   @IsString() @MinLength(1) sku: string;
   @IsOptional() @IsNumber() price?: number;
+  @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsString() image?: string;
   @IsOptional()
@@ -87,12 +88,14 @@ export class GenerateVariantsDto {
   @IsString({ each: true })
   attributeValueIds?: string[];
   @IsOptional() @IsNumber() defaultPrice?: number;
+  @IsOptional() @IsNumber() defaultSalePrice?: number;
   @IsOptional() @IsInt() defaultStock?: number;
 }
 
 export class UpdateVariantDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsNumber() price?: number;
+  @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsInt() stock?: number;
   @IsOptional() @IsString() image?: string | null;
 }

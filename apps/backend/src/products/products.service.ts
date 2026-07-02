@@ -227,7 +227,7 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { price: priceFilter } } },
+            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { price: priceFilter }] } } },
           ],
         },
       ];
@@ -341,7 +341,7 @@ export class ProductsService {
         {
           OR: [
             { type: { not: 'variable' }, basePrice: priceFilter },
-            { type: 'variable', variants: { some: { price: priceFilter } } },
+            { type: 'variable', variants: { some: { OR: [{ salePrice: priceFilter }, { price: priceFilter }] } } },
           ],
         },
       ];
@@ -485,6 +485,7 @@ export class ProductsService {
               create: dto.variants.map((v) => ({
                 sku: v.sku,
                 price: v.price,
+                salePrice: v.salePrice,
                 stock: v.stock || 0,
                 image: v.image,
                 attributeValues: v.attributeValues
@@ -725,6 +726,7 @@ export class ProductsService {
         productId,
         sku,
         price: dto.defaultPrice || Number(product.basePrice),
+        salePrice: dto.defaultSalePrice ?? undefined,
         stock: dto.defaultStock || 0,
         attributeValues: {
           create: combo.map((av) => ({ attributeValueId: av.id })),
@@ -772,6 +774,7 @@ export class ProductsService {
     const data: any = {};
     if (dto.sku !== undefined) data.sku = dto.sku;
     if (dto.price !== undefined) data.price = dto.price;
+    if (dto.salePrice !== undefined) data.salePrice = dto.salePrice;
     if (dto.image !== undefined) data.image = dto.image;
     const updated = await this.prisma.productVariant.update({
       where: { id: variantId },
