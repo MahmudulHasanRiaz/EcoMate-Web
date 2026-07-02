@@ -434,6 +434,13 @@ export class MediaService {
       opts.filename?.trim() || undefined,
     );
     if (file.path) await unlink(file.path).catch(() => {});
+
+    // Guard required fields — Prisma P2011 on nullable unique can be cryptic
+    if (!result.filename) throw new BadRequestException('Upload failed: missing filename');
+    if (!result.url) throw new BadRequestException('Upload failed: missing url');
+    if (!file.mimetype) throw new BadRequestException('Upload failed: missing mimetype');
+    if (file.size == null) throw new BadRequestException('Upload failed: missing size');
+
     const created = await this.prisma.media.create({
       data: {
         filename: result.filename,
