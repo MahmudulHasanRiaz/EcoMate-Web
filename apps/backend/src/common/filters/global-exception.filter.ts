@@ -7,7 +7,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { FastifyRequest } from 'fastify';
+import { FastifyRequest, FastifyReply } from 'fastify';
+import { ServerResponse } from 'node:http';
 
 const PRISMA_USER_MESSAGES: Record<string, string> = {
   P2000: 'The provided value is too long for the column.',
@@ -67,13 +68,27 @@ function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
   };
 }
 
+function sendResponse(
+  response: FastifyReply | ServerResponse,
+  status: number,
+  body: Record<string, unknown>,
+) {
+  if ('code' in response) {
+    (response as FastifyReply).code(status).send(body);
+  } else {
+    const res = response as ServerResponse;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+  }
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse();
+    const response = ctx.getResponse<FastifyReply | ServerResponse>();
     const request = ctx.getRequest<FastifyRequest>();
 
     // Handle Prisma errors with user-friendly messages
@@ -90,7 +105,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         `Prisma error ${exception.code} at ${request.method} ${request.url}: ${exception.message}`,
       );
 
-      response.code(status).send(body);
+      sendResponse(response, status, body);
       return;
     }
 
@@ -121,6 +136,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       path: request.url,
     };
 
-    response.code(status).send(body);
+    sendResponse(response, status, body);
   }
 }

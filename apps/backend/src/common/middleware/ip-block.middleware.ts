@@ -1,5 +1,5 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
-import { FastifyRequest, FastifyReply } from 'fastify';
+import { IncomingMessage, ServerResponse } from 'node:http';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -10,17 +10,23 @@ export class IpBlockMiddleware implements NestMiddleware {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async use(req: FastifyRequest, res: FastifyReply, next: () => void) {
-    const ip = req.ip || '';
+  async use(req: IncomingMessage, res: ServerResponse, next: () => void) {
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket.remoteAddress ||
+      '';
     if (!ip) return next();
 
     const blocked = await this.isBlocked(ip);
     if (blocked) {
       this.logger.warn(`Full-blocked request from IP: ${ip}`);
-      res.status(403).send({
-        statusCode: 403,
-        message: 'Access denied. Your IP has been blocked.',
-      });
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          statusCode: 403,
+          message: 'Access denied. Your IP has been blocked.',
+        }),
+      );
       return;
     }
 
