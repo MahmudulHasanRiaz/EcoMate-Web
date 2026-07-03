@@ -12,7 +12,7 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, SalesChannel } from '@prisma/client';
 
 export class OrderItemDto {
   @IsOptional() @IsString() productId?: string;
@@ -49,6 +49,9 @@ export class CreateOrderDto {
   @IsOptional() @IsNumber() partialAmount?: number;
   @IsOptional() @IsString() district?: string;
   @IsOptional() @IsString() thana?: string;
+  @IsOptional()
+  @IsEnum(SalesChannel)
+  salesChannel?: SalesChannel;
 }
 
 export class UpdateOrderStatusDto {

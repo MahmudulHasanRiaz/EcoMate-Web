@@ -538,6 +538,7 @@ export class OrdersService {
           },
           customerNotes: dto.customerNotes,
           officeNotes: dto.officeNotes,
+          salesChannel: dto.salesChannel || 'WEBSITE',
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
           paymentOptionType: dto.paymentOptionType,

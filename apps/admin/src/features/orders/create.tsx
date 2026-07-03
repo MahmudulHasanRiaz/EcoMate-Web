@@ -78,6 +78,7 @@ export function CreateOrder() {
   const [shippingCharge, setShippingCharge] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
+  const [salesChannel, setSalesChannel] = useState('WEBSITE')
 
   const [paymentMethod, setPaymentMethod] = useState('cod')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
@@ -272,6 +273,7 @@ export function CreateOrder() {
       shippingCharge: parseFloat(shippingCharge) || 0,
       discount: parseFloat(discount) || 0,
       discountType,
+      salesChannel,
       customerNotes: customerNotes || null,
       officeNotes: officeNotes || null,
       paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,
@@ -691,6 +693,26 @@ export function CreateOrder() {
                     <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-sm mt-1' placeholder='Amount to collect' />
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className='pb-2'>
+                <CardTitle className='text-base'>Sales Channel</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={salesChannel} onChange={e => setSalesChannel(e.target.value)}>
+                  <option value='WEBSITE'>Website</option>
+                  <option value='WALK_IN'>Walk-in</option>
+                  <option value='CALL'>Call</option>
+                  <option value='FACEBOOK'>Facebook</option>
+                  <option value='INSTAGRAM'>Instagram</option>
+                  <option value='TIKTOK'>TikTok</option>
+                  <option value='MESSENGER'>Messenger</option>
+                  <option value='WHATSAPP'>WhatsApp</option>
+                  <option value='THREADS'>Threads</option>
+                  <option value='OTHER'>Other</option>
+                </select>
               </CardContent>
             </Card>
 
