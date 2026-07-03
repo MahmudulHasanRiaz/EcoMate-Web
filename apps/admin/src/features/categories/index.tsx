@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronRight, ChevronDown, Image as ImageIcon, X, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ChevronRight, ChevronDown, Image as ImageIcon, X, Search, Copy, Check } from 'lucide-react'
 import { apiClient } from '@/lib/api-client'
 import { categoriesApi, type CategoryResponse } from './api'
 import { Header } from '@/components/layout/header'
@@ -16,7 +16,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { MediaPicker } from '@/components/media-picker'
-import { mediaUrl } from '@/lib/utils'
+import { mediaUrl, getStorefrontUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
@@ -35,6 +35,13 @@ export function Categories() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copyCategoryLink = (slug: string, id: string) => {
+    navigator.clipboard.writeText(`${getStorefrontUrl()}/category/${slug}`)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
 
   const createMut = useMutation({
     mutationFn: categoriesApi.create,
@@ -180,6 +187,9 @@ export function Categories() {
           )}
 
           <div className='flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0' onClick={e => e.stopPropagation()}>
+            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => copyCategoryLink(cat.slug, cat.id)} title='Copy link'>
+              {copiedId === cat.id ? <Check className='h-3.5 w-3.5 text-emerald-500' /> : <Copy className='h-3.5 w-3.5' />}
+            </Button>
             <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(cat)}>
               <Pencil className='h-3.5 w-3.5' />
             </Button>
@@ -236,6 +246,9 @@ export function Categories() {
         )}
 
         <div className='flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0' onClick={e => e.stopPropagation()}>
+          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => copyCategoryLink(cat.slug, cat.id)} title='Copy link'>
+            {copiedId === cat.id ? <Check className='h-3.5 w-3.5 text-emerald-500' /> : <Copy className='h-3.5 w-3.5' />}
+          </Button>
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(cat)}>
             <Pencil className='h-3.5 w-3.5' />
           </Button>

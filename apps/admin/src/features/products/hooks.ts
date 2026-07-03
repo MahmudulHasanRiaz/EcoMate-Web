@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { productsApi } from './api'
 
 export function useProductsQuery(query: {
@@ -8,6 +8,7 @@ export function useProductsQuery(query: {
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['products', query],
     queryFn: () => productsApi.list(query).then((r) => r.data),
+    placeholderData: keepPreviousData,
   })
   return { data, isLoading, isError, error, isFetching }
 }
