@@ -62,9 +62,11 @@ export class NotificationsController {
     @Query('channel') channel?: string,
     @Query('status') status?: string,
   ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const perPageNum = perPage ? parseInt(perPage, 10) : 20;
     return this.svc.findAllLogs(
-      page ? parseInt(page) : 1,
-      perPage ? parseInt(perPage) : 20,
+      Number.isNaN(pageNum) ? 1 : pageNum,
+      Number.isNaN(perPageNum) ? 20 : perPageNum,
       channel,
       status,
     );

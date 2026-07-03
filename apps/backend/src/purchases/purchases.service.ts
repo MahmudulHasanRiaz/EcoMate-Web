@@ -52,19 +52,28 @@ export class PurchasesService {
     return `${datePrefix}${String(seq).padStart(4, '0')}`;
   }
 
-  private async generateReferenceNo(tx?: Prisma.TransactionClient): Promise<string> {
+  private async generateReferenceNo(
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
     return this.generateNumber('PO', 'purchase', 'referenceNo', tx);
   }
 
-  private async generateGrnNumber(tx?: Prisma.TransactionClient): Promise<string> {
+  private async generateGrnNumber(
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
     return this.generateNumber('GRN', 'goodsReceiptNote', 'grnNumber', tx);
   }
 
-  private async generateLotNumber(tx?: Prisma.TransactionClient): Promise<string> {
+  private async generateLotNumber(
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
     return this.generateNumber('LOT', 'costingLot', 'lotNumber', tx);
   }
 
-  private async validateSupplier(supplierId: string, tx: Prisma.TransactionClient) {
+  private async validateSupplier(
+    supplierId: string,
+    tx: Prisma.TransactionClient,
+  ) {
     const supplier = await tx.supplier.findUnique({
       where: { id: supplierId },
       select: { id: true },

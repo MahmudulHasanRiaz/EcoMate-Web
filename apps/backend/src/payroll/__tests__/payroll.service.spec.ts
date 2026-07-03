@@ -88,14 +88,10 @@ describe('PayrollService', () => {
               cb({
                 payslip: {
                   create: jest.fn().mockResolvedValue(mockPayslip),
-                  findUnique: jest
-                    .fn()
-                    .mockResolvedValue(mockPayslip),
+                  findUnique: jest.fn().mockResolvedValue(mockPayslip),
                 },
                 payslipItem: {
-                  createMany: jest
-                    .fn()
-                    .mockResolvedValue({ count: 8 }),
+                  createMany: jest.fn().mockResolvedValue({ count: 8 }),
                 },
               }),
             ),
@@ -180,7 +176,11 @@ describe('PayrollService', () => {
       jest.spyOn(prisma.salaryStructure, 'findFirst').mockResolvedValue(null);
       jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
       await expect(
-        service.generatePayslip('emp-1', new Date('2025-06-01'), new Date('2025-06-30')),
+        service.generatePayslip(
+          'emp-1',
+          new Date('2025-06-01'),
+          new Date('2025-06-30'),
+        ),
       ).rejects.toThrow(BadRequestException);
     });
   });

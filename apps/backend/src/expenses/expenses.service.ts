@@ -128,7 +128,8 @@ export class ExpensesService {
     const where: any = {};
 
     if (categoryId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(categoryId))
         throw new BadRequestException(`Invalid categoryId: ${categoryId}`);
       where.categoryId = categoryId;

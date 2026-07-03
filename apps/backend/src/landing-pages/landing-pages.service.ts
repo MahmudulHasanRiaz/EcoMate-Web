@@ -52,13 +52,17 @@ export class LandingPagesService {
   }
 
   async findBySlug(slug: string) {
-    return this.prisma.landingPage.findUnique({ where: { slug } });
+    const page = await this.prisma.landingPage.findUnique({ where: { slug } });
+    if (!page) throw new NotFoundException('Landing page not found');
+    return page;
   }
 
   async findPublishedBySlug(slug: string) {
-    return this.prisma.landingPage.findUnique({
+    const page = await this.prisma.landingPage.findUnique({
       where: { slug, isActive: true, isDraft: false },
     });
+    if (!page) throw new NotFoundException('Landing page not found');
+    return page;
   }
 
   async create(dto: Record<string, any>) {

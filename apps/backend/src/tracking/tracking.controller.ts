@@ -1,7 +1,10 @@
 import { Controller, Post, Body, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import * as fastify from 'fastify';
 import { TrackingService } from './tracking.service';
 import { Public } from '../common/decorators/public.decorator';
+import { TrackEventDto } from './dto/track-event.dto';
+import { SaveContextDto } from './dto/save-context.dto';
 
 @Controller('tracking')
 export class TrackingController {
@@ -11,14 +14,8 @@ export class TrackingController {
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('events')
   async trackEvent(
-    @Body()
-    body: {
-      eventName: string;
-      eventId?: string;
-      customData?: Record<string, any>;
-      userData?: Record<string, any>;
-    },
-    @Req() req: any,
+    @Body() body: TrackEventDto,
+    @Req() req: fastify.FastifyRequest,
   ) {
     await this.tracking.track({
       eventName: body.eventName,
@@ -36,24 +33,13 @@ export class TrackingController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('context')
-  async saveContext(
-    @Body()
-    body: {
-      orderId: string;
-      fbp?: string;
-      fbc?: string;
-      url?: string;
-      referrer?: string;
-    },
-  ) {
-    if (body.orderId) {
-      await this.tracking.saveContext(body.orderId, {
-        fbp: body.fbp,
-        fbc: body.fbc,
-        url: body.url,
-        referrer: body.referrer,
-      });
-    }
+  async saveContext(@Body() body: SaveContextDto) {
+    await this.tracking.saveContext(body.orderId, {
+      fbp: body.fbp,
+      fbc: body.fbc,
+      url: body.url,
+      referrer: body.referrer,
+    });
     return { success: true };
   }
 }

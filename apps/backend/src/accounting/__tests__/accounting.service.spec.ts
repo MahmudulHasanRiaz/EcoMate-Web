@@ -173,20 +173,24 @@ describe('AccountingService', () => {
             $transaction: jest.fn().mockImplementation(async (cb) => {
               const tx = {
                 orderCounter: {
-                  upsert: jest.fn().mockResolvedValue({ date: '250701', seq: 1 }),
+                  upsert: jest
+                    .fn()
+                    .mockResolvedValue({ date: '250701', seq: 1 }),
                 },
                 journalEntry: {
                   create: jest.fn().mockResolvedValue(mockEntry),
                   delete: jest.fn().mockResolvedValue(mockEntry),
                 },
                 account: {
-                  findMany: jest.fn().mockResolvedValue([
-                    assetAccount,
-                    incomeAccount,
-                    expenseAccount,
-                    equityAccount,
-                    liabilityAccount,
-                  ]),
+                  findMany: jest
+                    .fn()
+                    .mockResolvedValue([
+                      assetAccount,
+                      incomeAccount,
+                      expenseAccount,
+                      equityAccount,
+                      liabilityAccount,
+                    ]),
                 },
               };
               return cb(tx);

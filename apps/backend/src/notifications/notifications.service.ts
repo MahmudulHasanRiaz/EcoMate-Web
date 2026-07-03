@@ -49,7 +49,22 @@ export class NotificationsService {
       },
     });
 
-    if (setting && !setting.enabled) {
+    if (!setting) {
+      return this.prisma.notificationLog.create({
+        data: {
+          channel: dto.channel,
+          eventType: dto.eventType,
+          recipient: dto.recipient,
+          subject: dto.subject,
+          content: dto.content,
+          status: 'failed',
+          error: 'Notification setting not found',
+          metadata: performedBy ? { performedBy } : {},
+        },
+      });
+    }
+
+    if (!setting.enabled) {
       return this.prisma.notificationLog.create({
         data: {
           channel: dto.channel,
@@ -111,11 +126,14 @@ export class NotificationsService {
     if (channel) where.channel = channel;
     if (status) where.status = status;
 
+    const safePage = Math.max(1, page);
+    const safePerPage = Math.min(100, Math.max(1, perPage));
+
     const [data, total] = await Promise.all([
       this.prisma.notificationLog.findMany({
         where,
-        skip: (page - 1) * perPage,
-        take: perPage,
+        skip: (safePage - 1) * safePerPage,
+        take: safePerPage,
         orderBy: { sentAt: 'desc' },
       }),
       this.prisma.notificationLog.count({ where }),
@@ -123,7 +141,12 @@ export class NotificationsService {
 
     return {
       data,
-      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+      meta: {
+        total,
+        page: safePage,
+        perPage: safePerPage,
+        totalPages: Math.ceil(total / safePerPage),
+      },
     };
   }
 }

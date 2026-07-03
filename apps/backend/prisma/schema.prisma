@@ -837,6 +837,8 @@ model CmsPage {
   sortOrder    Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([isActive, showInFooter])
 }
 
 model BlockedIp {

@@ -99,14 +99,46 @@ export class PayrollService {
       );
 
     const items = [
-      { type: 'earnings', label: 'Basic Salary', amount: salaryStructure.basicSalary },
-      { type: 'earnings', label: 'House Allowance', amount: salaryStructure.houseAllowance },
-      { type: 'earnings', label: 'Medical Allowance', amount: salaryStructure.medicalAllowance },
-      { type: 'earnings', label: 'Transport Allowance', amount: salaryStructure.transportAllowance },
-      { type: 'earnings', label: 'Other Allowance', amount: salaryStructure.otherAllowance },
-      { type: 'deductions', label: 'Tax', amount: salaryStructure.taxDeduction },
-      { type: 'deductions', label: 'Insurance', amount: salaryStructure.insuranceDeduction },
-      { type: 'deductions', label: 'Other Deduction', amount: salaryStructure.otherDeduction },
+      {
+        type: 'earnings',
+        label: 'Basic Salary',
+        amount: salaryStructure.basicSalary,
+      },
+      {
+        type: 'earnings',
+        label: 'House Allowance',
+        amount: salaryStructure.houseAllowance,
+      },
+      {
+        type: 'earnings',
+        label: 'Medical Allowance',
+        amount: salaryStructure.medicalAllowance,
+      },
+      {
+        type: 'earnings',
+        label: 'Transport Allowance',
+        amount: salaryStructure.transportAllowance,
+      },
+      {
+        type: 'earnings',
+        label: 'Other Allowance',
+        amount: salaryStructure.otherAllowance,
+      },
+      {
+        type: 'deductions',
+        label: 'Tax',
+        amount: salaryStructure.taxDeduction,
+      },
+      {
+        type: 'deductions',
+        label: 'Insurance',
+        amount: salaryStructure.insuranceDeduction,
+      },
+      {
+        type: 'deductions',
+        label: 'Other Deduction',
+        amount: salaryStructure.otherDeduction,
+      },
     ];
 
     return this.prisma.$transaction(async (tx) => {

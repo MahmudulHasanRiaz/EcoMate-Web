@@ -149,7 +149,7 @@ export class CampaignsService {
     let subject = campaign.subject;
     let htmlBody = campaign.content || '';
 
-    if (campaign.template && campaign.templateId) {
+    if (campaign.templateId) {
       const template = await this.findTemplate(campaign.templateId);
       subject = campaign.subject || template.subject;
       htmlBody = template.body;
@@ -167,23 +167,43 @@ export class CampaignsService {
     let sent = 0;
     let failed = 0;
 
-    for (const recipient of recipients) {
-      try {
-        let personalHtml = htmlBody;
-        if (recipient.name) {
-          personalHtml = htmlBody.replace(/\{\{name\}\}/g, recipient.name);
-        }
-        personalHtml = personalHtml.replace(/\{\{email\}\}/g, recipient.email);
+    try {
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+        const batch = recipients.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(async (recipient) => {
+            let personalHtml = htmlBody;
+            if (recipient.name) {
+              personalHtml = htmlBody.replace(/\{\{name\}\}/g, recipient.name);
+            }
+            personalHtml = personalHtml.replace(
+              /\{\{email\}\}/g,
+              recipient.email,
+            );
 
-        await this.emailQueue.send({
-          to: recipient.email,
-          subject,
-          context: { html: personalHtml },
-        });
-        sent++;
-      } catch {
-        failed++;
+            await this.emailQueue.send({
+              to: recipient.email,
+              subject,
+              context: { html: personalHtml },
+            });
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'fulfilled') sent++;
+          else failed++;
+        }
       }
+    } catch {
+      try {
+        await this.prisma.emailCampaign.update({
+          where: { id },
+          data: { status: 'draft', totalSent: sent, totalFailed: failed },
+        });
+      } catch {
+        // suppress secondary error
+      }
+      throw new Error('Campaign send failed');
     }
 
     return this.prisma.emailCampaign.update({
@@ -203,7 +223,7 @@ export class CampaignsService {
     let subject = campaign.subject;
     let htmlBody = campaign.content || '';
 
-    if (campaign.template && campaign.templateId) {
+    if (campaign.templateId) {
       const template = await this.findTemplate(campaign.templateId);
       subject = campaign.subject || template.subject;
       htmlBody = template.body;

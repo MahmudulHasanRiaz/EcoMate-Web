@@ -32,7 +32,8 @@ export class CmsPagesService {
 
   async findBySlug(slug: string) {
     const page = await this.prisma.cmsPage.findUnique({ where: { slug } });
-    if (!page || !page.isActive) throw new NotFoundException('Page not found');
+    if (!page) throw new NotFoundException('Page not found');
+    if (!page.isActive) throw new NotFoundException('Page is not active');
     return page;
   }
 
@@ -41,7 +42,7 @@ export class CmsPagesService {
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
-    return this.prisma.cmsPage.create({ data: dto as any });
+    return this.prisma.cmsPage.create({ data: { ...dto } });
   }
 
   async update(id: string, dto: UpdateCmsPageDto) {
@@ -57,7 +58,7 @@ export class CmsPagesService {
 
     return this.prisma.cmsPage.update({
       where: { id },
-      data: dto as any,
+      data: { ...dto },
     });
   }
 

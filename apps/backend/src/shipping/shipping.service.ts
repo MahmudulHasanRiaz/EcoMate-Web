@@ -73,8 +73,13 @@ export class ShippingService {
   }
 
   async createZoneGroup(dto: CreateShippingZoneGroupDto) {
-    if (dto.type === 'custom_amount' && (dto.amount == null || dto.amount < 0)) {
-      throw new BadRequestException('Amount is required for custom_amount zones');
+    if (
+      dto.type === 'custom_amount' &&
+      (dto.amount == null || dto.amount < 0)
+    ) {
+      throw new BadRequestException(
+        'Amount is required for custom_amount zones',
+      );
     }
     await this.checkDistrictOverlap(dto.districts);
     return this.prisma.shippingZoneGroup.create({
@@ -109,7 +114,9 @@ export class ShippingService {
             : existing.amount;
 
     if (resolvedType === 'custom_amount' && resolvedAmount == null) {
-      throw new BadRequestException('Amount is required for custom_amount zones');
+      throw new BadRequestException(
+        'Amount is required for custom_amount zones',
+      );
     }
 
     return this.prisma.shippingZoneGroup.update({
@@ -133,10 +140,7 @@ export class ShippingService {
     return this.prisma.shippingZoneGroup.delete({ where: { id } });
   }
 
-  private async checkDistrictOverlap(
-    districts: string[],
-    excludeId?: string,
-  ) {
+  private async checkDistrictOverlap(districts: string[], excludeId?: string) {
     if (!districts.length) return;
     const existing = await this.prisma.shippingZoneGroup.findMany({
       where: excludeId ? { id: { not: excludeId } } : undefined,

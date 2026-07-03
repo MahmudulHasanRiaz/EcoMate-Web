@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { createHash } from 'crypto';
 
 interface TrackEvent {
   eventName: string;
@@ -195,11 +196,7 @@ export class MetaConversionsService {
   }
 
   private hash(data: string): string {
-    const crypto = require('crypto');
-    return crypto
-      .createHash('sha256')
-      .update(data.toLowerCase().trim())
-      .digest('hex');
+    return createHash('sha256').update(data.toLowerCase().trim()).digest('hex');
   }
 
   private splitName(fullName: string): { firstName: string; lastName: string } {

@@ -28,9 +28,7 @@ describe('FinancialPeriodsService', () => {
         findUnique: jest.fn().mockResolvedValue(mockPeriod),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockPeriod),
-        update: jest
-          .fn()
-          .mockResolvedValue({ ...mockPeriod, isClosed: true }),
+        update: jest.fn().mockResolvedValue({ ...mockPeriod, isClosed: true }),
       },
       journalEntry: {
         count: jest.fn().mockResolvedValue(1),
@@ -102,9 +100,7 @@ describe('FinancialPeriodsService', () => {
 
   describe('closePeriod', () => {
     it('should close an open period with entries', async () => {
-      jest
-        .spyOn(prisma.journalEntry, 'count')
-        .mockResolvedValue(1);
+      jest.spyOn(prisma.journalEntry, 'count').mockResolvedValue(1);
       const result = await service.closePeriod('fp-1');
       expect(result.isClosed).toBe(true);
     });
@@ -126,9 +122,7 @@ describe('FinancialPeriodsService', () => {
     });
 
     it('should throw if period has no journal entries', async () => {
-      jest
-        .spyOn(prisma.journalEntry, 'count')
-        .mockResolvedValue(0);
+      jest.spyOn(prisma.journalEntry, 'count').mockResolvedValue(0);
       await expect(service.closePeriod('fp-1')).rejects.toThrow(
         BadRequestException,
       );

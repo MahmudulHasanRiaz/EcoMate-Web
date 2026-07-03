@@ -56,9 +56,7 @@ export class AccountingService {
     const foundIds = new Set(accounts.map((a) => a.id));
     for (const accountId of accountIds) {
       if (!foundIds.has(accountId)) {
-        throw new NotFoundException(
-          `Account with ID ${accountId} not found`,
-        );
+        throw new NotFoundException(`Account with ID ${accountId} not found`);
       }
     }
     const groupAccount = accounts.find((a) => a.isGroup);

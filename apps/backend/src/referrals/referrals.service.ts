@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaimReferralDto } from './dto/claim-referral.dto';
@@ -15,7 +16,7 @@ export class ReferralsService {
       where: { referrerId: userId },
     });
     if (!referral) {
-      const code = this.generateCode();
+      const code = await this.generateUniqueCode();
       referral = await this.prisma.referral.create({
         data: { code, referrerId: userId },
       });
@@ -35,7 +36,7 @@ export class ReferralsService {
       where: { referralId: referral.id, phone: dto.phone },
     });
     if (existing) {
-      return existing;
+      throw new ConflictException('Phone number already claimed this referral code');
     }
 
     return this.prisma.referralLead.create({
@@ -44,23 +45,6 @@ export class ReferralsService {
         phone: dto.phone,
         name: dto.name,
       },
-    });
-  }
-
-  async convertLead(leadId: string, orderId: string) {
-    const lead = await this.prisma.referralLead.findUnique({
-      where: { id: leadId },
-    });
-    if (!lead || lead.status !== 'pending') return;
-
-    await this.prisma.referralLead.update({
-      where: { id: leadId },
-      data: { status: 'converted', orderId },
-    });
-
-    await this.prisma.referral.update({
-      where: { id: lead.referralId },
-      data: { totalReferrals: { increment: 1 } },
     });
   }
 
@@ -138,12 +122,16 @@ export class ReferralsService {
     };
   }
 
-  private generateCode(): string {
+  private async generateUniqueCode(): Promise<string> {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
+    for (let attempt = 0; attempt < 5; attempt++) {
+      let code = '';
+      for (let i = 0; i < 8; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
+      }
+      const exists = await this.prisma.referral.findUnique({ where: { code } });
+      if (!exists) return code;
     }
-    return code;
+    throw new Error('Unable to generate unique referral code after 5 attempts');
   }
 }

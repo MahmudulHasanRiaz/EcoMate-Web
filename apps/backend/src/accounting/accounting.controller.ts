@@ -36,21 +36,12 @@ export class AccountingController {
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const perPageNum = perPage ? parseInt(perPage, 10) : 10;
-    if (
-      isNaN(pageNum) ||
-      pageNum < 1 ||
-      isNaN(perPageNum) ||
-      perPageNum < 1
-    ) {
+    if (isNaN(pageNum) || pageNum < 1 || isNaN(perPageNum) || perPageNum < 1) {
       throw new BadRequestException(
         'Page and perPage must be positive numbers',
       );
     }
-    return this.accountingService.findAllEntries(
-      pageNum,
-      perPageNum,
-      periodId,
-    );
+    return this.accountingService.findAllEntries(pageNum, perPageNum, periodId);
   }
 
   @Get('entries/:id')
