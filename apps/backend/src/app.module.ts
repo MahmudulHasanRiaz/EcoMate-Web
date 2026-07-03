@@ -65,6 +65,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
+import { PosModule } from './pos/pos.module';
 import { FinancialPeriodsModule } from './financial-periods/financial-periods.module';
 import { OpeningBalancesModule } from './opening-balances/opening-balances.module';
 import { AccountingModule } from './accounting/accounting.module';
@@ -131,6 +132,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AccountsModule,
     AccountingModule,
     StockModule,
+    PosModule,
   ],
 
   providers: [
