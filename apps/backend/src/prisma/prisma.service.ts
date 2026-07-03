@@ -842,8 +842,8 @@ export class PrismaService
 
   private async seedAdminUser(): Promise<void> {
     try {
-      const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
-      const plainPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+      const email = process.env.ADMIN_EMAIL || process.env.ADMIN_USER || 'admin@ecomate.com';
+      const plainPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || 'Admin@123';
       const adminPassword = await bcrypt.hash(plainPassword, 12);
 
       await this.user.upsert({
