@@ -464,12 +464,10 @@ export class PrismaService
       const fieldName = fieldParts[0];
       const fieldType = fieldParts[1];
 
-      // Check if this is a relation by looking at the full line for @relation
-      const isRelation = trimmed.includes('@relation');
-      // Also: if the type is a known model name and there's no scalar-type annotation, it's a relation
-      const isModelRef = modelNames.has(fieldType) && !isScalarType(fieldType);
+      const baseType = fieldType.replace(/\[\]$/, '');
+      const isRelation = trimmed.includes('@relation') || (modelNames.has(baseType) && !isScalarType(baseType));
 
-      if (isRelation || isModelRef) continue;
+      if (isRelation) continue;
 
       // Check for @map("col_name") on this field
       let columnName = fieldName;
