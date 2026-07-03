@@ -9,4 +9,5 @@ interface EcoMateTracking {
 
 interface Window {
   EcoMate?: EcoMateTracking;
+  __deferredPWAInstall?: Event;
 }

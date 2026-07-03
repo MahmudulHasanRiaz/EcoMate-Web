@@ -7,10 +7,12 @@ import { WishlistProvider } from "@/context/WishlistContext";
 import { StorefrontConfigProvider } from "@/context/StorefrontConfigContext";
 import TrackingScripts from "@/components/TrackingScripts";
 import OfflineBanner from "@/components/OfflineBanner";
+import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { Toaster } from "sonner";
-import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
+import { headers } from "next/headers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,13 +57,7 @@ export async function generateMetadata(): Promise<Metadata> {
       },
     };
   } catch {
-    return {
-      title: "Store",
-      description: "Premium products and services",
-      icons: {
-        icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
-      },
-    };
+    return { title: "Loading..." };
   }
 }
 
@@ -71,9 +67,22 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let initialConfig: StorefrontConfig | undefined;
+  let configError = false;
   try {
     initialConfig = await getStorefrontConfigServer();
-  } catch {}
+  } catch (err) {
+    configError = true;
+    if (err instanceof StorefrontConfigError) {
+      console.error('[Layout] Storefront config failed:', err.message);
+    } else {
+      console.error('[Layout] Unexpected error fetching config:', err);
+    }
+  }
+
+  if (configError) {
+    const h = await headers();
+    h.set('X-Robots-Tag', 'noindex, nofollow');
+  }
 
   const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
   let licenseActive = true;
@@ -135,6 +144,16 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.addEventListener('beforeinstallprompt', function(e) {
+                e.preventDefault();
+                window.__deferredPWAInstall = e;
+              });
+            `,
+          }}
+        />
       </head>
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
         {initialConfig ? (
@@ -149,7 +168,29 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
             />
             <TrackingScripts />
-            {!licenseActive ? (
+            {configError ? (
+              <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
+                <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)]">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                  </div>
+                  <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">Unable to Load</h1>
+                  <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                    We couldn't load the store configuration. This is a temporary issue — please refresh the page or try again in a moment.
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="bg-brand-blue text-white font-bold px-6 py-3 rounded-xl hover:bg-brand-blue-dark transition-colors text-sm"
+                  >
+                    Refresh Page
+                  </button>
+                </div>
+              </div>
+            ) : !licenseActive ? (
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
                 <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)]">
                   <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -191,6 +232,7 @@ export default async function RootLayout({
               duration={4000}
             />
             <OfflineBanner />
+            <PWAInstallBanner />
             </StorefrontConfigProvider>
             </WishlistProvider>
           </CartProvider>

@@ -1,7 +1,8 @@
+const CACHE_VERSION = 'v3';
 const CACHE_NAMES = {
-  pages: 'ecomate-pages-v2',
-  static: 'ecomate-static-v2',
-  images: 'ecomate-images-v2',
+  pages: `ecomate-pages-${CACHE_VERSION}`,
+  static: `ecomate-static-${CACHE_VERSION}`,
+  images: `ecomate-images-${CACHE_VERSION}`,
 };
 
 const ALL_CACHES = Object.values(CACHE_NAMES);

@@ -68,6 +68,20 @@ export class CacheService implements OnModuleDestroy {
     return entry.data as T;
   }
 
+  async getStale<T>(key: string): Promise<T | undefined> {
+    if (this.redis) {
+      try {
+        const raw = await this.redis.get(key);
+        if (raw) return JSON.parse(raw) as T;
+      } catch {
+        /* fall through to memory */
+      }
+    }
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    return entry.data as T;
+  }
+
   async set<T>(key: string, data: T, ttlMs?: number): Promise<void> {
     const ttlSeconds = ttlMs
       ? Math.ceil(ttlMs / 1000)

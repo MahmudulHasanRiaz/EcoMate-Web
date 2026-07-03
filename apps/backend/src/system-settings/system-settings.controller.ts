@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -220,9 +221,12 @@ export class SystemSettingsController {
   async getStorefrontConfig() {
     const cached = await this.cache.get<any>('storefront:config');
     if (cached) return cached;
-    const settings = await this.prisma.systemSetting.findMany();
-    const map: Record<string, string> = {};
-    for (const s of settings) map[s.key] = s.value;
+
+    let result: any;
+    try {
+      const settings = await this.prisma.systemSetting.findMany();
+      const map: Record<string, string> = {};
+      for (const s of settings) map[s.key] = s.value;
 
     const parseJson = <T>(val: string, fallback: T): T => {
       try {
@@ -505,6 +509,11 @@ export class SystemSettingsController {
     };
     await this.cache.set('storefront:config', result);
     return result;
+  } catch {
+    const stale = await this.cache.getStale<any>('storefront:config');
+    if (stale) return stale;
+    throw new InternalServerErrorException('Failed to load storefront configuration');
+  }
   }
 
   @Get('storage')
