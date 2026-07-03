@@ -10,7 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -39,7 +39,7 @@ export class AuthController {
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.authService.register(dto);
     res.cookie('refreshToken', result.refreshToken, {
@@ -58,7 +58,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
     @Req() req: any,
   ) {
     try {
@@ -72,7 +72,7 @@ export class AuthController {
       });
       return { accessToken: result.accessToken, user: result.user };
     } catch (error) {
-      const ip = req?.ip || req?.socket?.remoteAddress || '';
+      const ip = req?.ip || '';
       if (ip) this.security.recordFailedLogin(ip);
       throw error;
     }
@@ -85,7 +85,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(
     @CurrentUser() user: { userId: string; refreshToken: string },
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.authService.refresh(
       user.userId,
@@ -106,7 +106,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(
     @CurrentUser() user: { userId: string },
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     await this.authService.logout(user.userId);
     res.clearCookie('refreshToken', { path: '/' });

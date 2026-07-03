@@ -1,4 +1,13 @@
-import { Controller, Get, Query, Res, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Res,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { ImagesService } from './images.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -27,7 +36,7 @@ export class ImagesController {
 
   @Get('resize')
   async resize(
-    @Res() res: FastifyReply,
+    @Res({ passthrough: true }) res: FastifyReply,
     @Query('path') path: string,
     @Query('w') w?: string,
     @Query('h') h?: string,
@@ -35,11 +44,11 @@ export class ImagesController {
     @Query('fit') fit?: string,
   ) {
     if (!path) {
-      return res.status(400).send({ error: 'path parameter is required' });
+      throw new BadRequestException('path parameter is required');
     }
 
     if (path.includes('..')) {
-      return res.status(400).send({ error: 'Invalid path' });
+      throw new BadRequestException('Invalid path');
     }
 
     const width = w !== undefined ? parseInt(w, 10) : undefined;
@@ -47,18 +56,18 @@ export class ImagesController {
     const quality = q !== undefined ? parseInt(q, 10) : undefined;
 
     if (w !== undefined && (isNaN(width!) || width! <= 0)) {
-      return res.status(400).send({ error: 'Invalid width parameter' });
+      throw new BadRequestException('Invalid width parameter');
     }
     if (h !== undefined && (isNaN(height!) || height! <= 0)) {
-      return res.status(400).send({ error: 'Invalid height parameter' });
+      throw new BadRequestException('Invalid height parameter');
     }
     if (
       q !== undefined &&
       (isNaN(quality!) || quality! <= 0 || quality! > 100)
     ) {
-      return res
-        .status(400)
-        .send({ error: 'Invalid quality parameter (must be 1-100)' });
+      throw new BadRequestException(
+        'Invalid quality parameter (must be 1-100)',
+      );
     }
 
     const validFits = [
@@ -69,7 +78,7 @@ export class ImagesController {
       'outside',
     ] as const;
     if (fit && !validFits.includes(fit as any)) {
-      return res.status(400).send({ error: 'Invalid fit parameter' });
+      throw new BadRequestException('Invalid fit parameter');
     }
 
     const key = this.cacheKey(path, w, h, q, fit);
@@ -98,10 +107,13 @@ export class ImagesController {
       res.status(200).send(result.buffer);
     } catch (err: any) {
       this.logger.error(`Image resize failed: ${path}`, err.message);
-      if (err.message?.startsWith('Image not found')) {
-        return res.status(404).send({ error: 'Image not found' });
+      if (err instanceof NotFoundException) {
+        throw err;
       }
-      return res.status(500).send({ error: 'Image processing failed' });
+      if (err.message?.startsWith('Image not found')) {
+        throw new NotFoundException('Image not found');
+      }
+      throw new InternalServerErrorException('Image processing failed');
     }
   }
 }

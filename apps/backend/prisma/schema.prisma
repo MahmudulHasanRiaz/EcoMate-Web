@@ -87,6 +87,10 @@ model User {
   assignedByMe   CheckoutLead[] @relation("CheckoutLeadAssignedBy")
   convertedLeads CheckoutLead[] @relation("CheckoutLeadConvertedBy")
   referrals     Referral[]
+
+  @@index([role])
+  @@index([status])
+  @@index([phoneNumber])
 }
 
 model VerificationToken {
@@ -117,6 +121,10 @@ model Task {
   updatedAt   DateTime     @updatedAt
 
   createdBy User @relation(fields: [createdById], references: [id])
+
+  @@index([createdById])
+  @@index([assignee])
+  @@index([status])
 }
 
 model UserSettings {
@@ -284,6 +292,8 @@ model Product {
   @@index([categoryId])
   @@index([createdAt])
   @@index([sku])
+  @@index([type])
+  @@index([brandId])
 }
 
 model ProductVariant {
@@ -457,6 +467,9 @@ model OrderItem {
   costingLot  CostingLot?     @relation(fields: [costingLotId], references: [id])
 
   @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([comboId])
 }
 
 model Payment {

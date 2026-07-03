@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { Request } from 'express';
+import { FastifyRequest } from 'fastify';
 
 @Injectable()
 export class RefreshJwtStrategy extends PassportStrategy(
@@ -11,7 +11,7 @@ export class RefreshJwtStrategy extends PassportStrategy(
   constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
-        (request: Request) => {
+        (request: FastifyRequest) => {
           return request?.cookies?.['refreshToken'] || null;
         },
       ]),
@@ -21,7 +21,7 @@ export class RefreshJwtStrategy extends PassportStrategy(
     });
   }
 
-  async validate(req: Request, payload: { sub: string; email: string }) {
+  async validate(req: FastifyRequest, payload: { sub: string; email: string }) {
     const refreshToken = req.cookies?.['refreshToken'];
     return { userId: payload.sub, email: payload.email, refreshToken };
   }
