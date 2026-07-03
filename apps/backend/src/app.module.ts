@@ -17,7 +17,7 @@ import { BrandsModule } from './brands/brands.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
-import { OrderStatusController } from './orders/order-status.controller';
+
 import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
@@ -132,7 +132,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AccountingModule,
     StockModule,
   ],
-  controllers: [OrderStatusController],
+
   providers: [
     {
       provide: APP_PIPE,
