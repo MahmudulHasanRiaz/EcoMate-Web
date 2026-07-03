@@ -517,7 +517,7 @@ export function Purchases() {
 
   const { data: suppliers } = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => suppliersApi.list().then(r => Array.isArray(r.data) ? r.data : r.data?.data || []),
+    queryFn: () => suppliersApi.list().then((r: any) => Array.isArray(r.data) ? r.data : r.data?.data || []),
   })
   const allSuppliers = Array.isArray(suppliers) ? suppliers : []
 

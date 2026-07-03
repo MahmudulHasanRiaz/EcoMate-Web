@@ -169,7 +169,7 @@ function TemplatesTab() {
               <Input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder='Welcome to {{name}}!' />
             </div>
             <div className='grid gap-2'>
-              <Label>Body (HTML with {{placeholders}})</Label>
+              <Label>Body (HTML with {"{{placeholders}}"})</Label>
               <Textarea
                 className='min-h-[200px] font-mono text-sm'
                 value={form.body}

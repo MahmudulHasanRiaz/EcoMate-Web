@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Search, Gift, Loader2, Image as ImageIcon } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { combosApi, type ComboResponse } from '../api'
@@ -58,6 +59,14 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerMulti, setPickerMulti] = useState(false)
   const [categoryId, setCategoryId] = useState('')
+  const categoryOptions = useMemo(() => {
+    return [
+      ...(Array.isArray(cats) ? cats : []).map((c: any) => ({
+        id: c.id,
+        label: c.name,
+      })),
+    ]
+  }, [cats])
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
   const [tags, setTags] = useState<string[]>([])
@@ -280,11 +289,13 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
             </div>
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>
-                <Label>Category</Label>
-                <select className='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm' value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                  <option value=''>No category</option>
-                  {Array.isArray(cats) && cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <SearchableSelect
+                  options={categoryOptions}
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  placeholder='No category'
+                  searchPlaceholder='Search categories...'
+                />
               </div>
               <div className='space-y-2'>
                 <Label>Featured Image</Label>

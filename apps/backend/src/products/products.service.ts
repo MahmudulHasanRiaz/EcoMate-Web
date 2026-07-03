@@ -497,6 +497,9 @@ export class ProductsService {
     });
     if (existing) throw new ConflictException('Slug already exists');
 
+    const categoryIds = dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
+    const categoryId = dto.categoryId || (categoryIds[0] || null);
+
     const product = await this.prisma.product.create({
       data: {
         name: dto.name,
@@ -510,9 +513,9 @@ export class ProductsService {
         sku: dto.sku,
         stock: dto.type === 'variable' ? 0 : dto.stock || 0,
         lowStockQty: dto.lowStockQty,
-        categoryId: dto.categoryId,
-        productCategories: dto.categoryIds
-          ? { create: dto.categoryIds.map((cid) => ({ categoryId: cid })) }
+        categoryId: categoryId || undefined,
+        productCategories: categoryIds.length > 0
+          ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
           : undefined,
         sizeChartId: dto.sizeChartId,
         tags: dto.tags as any,
@@ -610,10 +613,17 @@ export class ProductsService {
       delete data.manageStock;
     }
 
-    if (dto.categoryIds) {
+    if (dto.categoryIds !== undefined) {
+      data.categoryId = dto.categoryIds[0] || null;
       data.productCategories = {
         deleteMany: {},
         create: dto.categoryIds.map((cid) => ({ categoryId: cid })),
+      };
+    } else if (dto.categoryId !== undefined) {
+      data.categoryId = dto.categoryId;
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryId ? [{ categoryId: dto.categoryId }] : [],
       };
     }
 

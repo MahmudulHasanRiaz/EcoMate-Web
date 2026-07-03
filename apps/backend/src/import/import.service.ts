@@ -74,15 +74,60 @@ export class ImportService {
     const headers = parsed.meta?.fields || [];
     this.logger.log(`CSV headers (${headers.length}): ${headers.join(', ')}`);
 
+    const idToParentSku = new Map<string, string>();
+    for (const data of parsed.data) {
+      const id = data.ID?.trim();
+      const sku = data.SKU?.trim();
+      const type = (data.Type || 'simple').toLowerCase().trim();
+      const isVariation = type.includes('variation');
+
+      if (!isVariation && id) {
+        const resolvedSku = sku || `WOO-ID-${id}`;
+        idToParentSku.set(`id:${id}`, resolvedSku);
+        if (sku) {
+          idToParentSku.set(sku, resolvedSku);
+        }
+      }
+    }
+
+    const getParentSku = (parentVal?: string): string | null => {
+      if (!parentVal) return null;
+      const clean = parentVal.trim();
+      if (/^id:/i.test(clean)) {
+        const idKey = `id:${clean.replace(/^id:/i, '').trim()}`;
+        return idToParentSku.get(idKey) || null;
+      }
+      return idToParentSku.get(clean) || clean;
+    };
+
     const rows: CsvRowWithMeta[] = parsed.data
       .map((data, i) => {
         const row = { rowNumber: i + 2, data };
         const sku = data.SKU?.trim();
         const type = (data.Type || 'simple').toLowerCase().trim();
         const isVariation = type.includes('variation');
-        if (!sku && !isVariation && data.ID?.trim()) {
-          data.SKU = `WOO-ID-${data.ID.trim()}`;
-        } else if (sku) {
+
+        if (!sku) {
+          if (!isVariation && data.ID?.trim()) {
+            data.SKU = `WOO-ID-${data.ID.trim()}`;
+          } else if (isVariation) {
+            const parentSku = getParentSku(data.Parent);
+            if (parentSku) {
+              const varAttrs = this.extractVariationAttributes(data);
+              const suffix = varAttrs.flatMap((a) => a.values).join('-');
+              if (suffix) {
+                data.SKU = `${parentSku}-${suffix
+                  .replace(/\s+/g, '-')
+                  .replace(/\//g, '_')
+                  .toUpperCase()}`;
+              } else {
+                data.SKU = `${parentSku}-VAR-${data.ID?.trim() || Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+              }
+            } else {
+              data.SKU = `WOO-VAR-${data.ID?.trim() || Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+            }
+          }
+        } else {
           data.SKU = sku;
         }
         return row;
@@ -203,6 +248,11 @@ export class ImportService {
 
     this.logger.log('Caching completed. Starting import processing...');
 
+    const maxSortOrderResult = await this.prisma.category.aggregate({
+      _max: { sortOrder: true },
+    });
+    const sortOrderObj = { value: (maxSortOrderResult._max.sortOrder ?? 0) + 1 };
+
     let processedCount = 0;
     const groupEntries = Object.entries(groups);
 
@@ -246,6 +296,7 @@ export class ImportService {
           productCache,
           variantCache,
           slugSet,
+          sortOrderObj,
         );
       } catch (err) {
         const error = err as Error;
@@ -327,7 +378,12 @@ export class ImportService {
     productCache: Map<string, string>,
     variantCache: Map<string, string>,
     slugSet: Set<string>,
+    sortOrderObj: { value: number },
   ): Promise<void> {
+    const hasParentRow = rows.some(
+      (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
+    );
+
     const parentRow =
       rows.find(
         (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
@@ -350,18 +406,25 @@ export class ImportService {
     const hasVariations = variationRows.length > 0;
 
     if (existingProductId) {
-      await this.updateProductCached(
-        existingProductId,
-        parentRow,
-        summary,
-        errors,
-        categoryCacheByPath,
-        tagCache,
-        brandCache,
-        mediaCache,
-        productCache,
-        slugSet,
-      );
+      if (hasParentRow) {
+        await this.updateProductCached(
+          existingProductId,
+          parentRow,
+          summary,
+          errors,
+          categoryCacheByPath,
+          tagCache,
+          brandCache,
+          mediaCache,
+          productCache,
+          slugSet,
+          sortOrderObj,
+        );
+      } else {
+        this.logger.log(
+          `Skipped updating parent metadata for SKU ${parentSku} because CSV group contains only variation rows.`,
+        );
+      }
       productId = existingProductId;
     } else {
       productId = await this.createProductCached(
@@ -376,6 +439,7 @@ export class ImportService {
         mediaCache,
         productCache,
         slugSet,
+        sortOrderObj,
       );
     }
 
@@ -394,6 +458,7 @@ export class ImportService {
         attributeCache,
         mediaCache,
         variantCache,
+        productCache,
       );
     }
   }
@@ -410,6 +475,7 @@ export class ImportService {
     mediaCache: Map<string, string>,
     productCache: Map<string, string>,
     slugSet: Set<string>,
+    sortOrderObj: { value: number },
   ): Promise<string> {
     const data = row.data;
     const sku = data.SKU!.trim();
@@ -430,11 +496,13 @@ export class ImportService {
       brandId = await this.resolveBrandCached(brandName, brandCache);
     }
 
-    const categoryId = await this.resolveCategoriesCached(
+    const categoryIds = await this.resolveCategoriesCached(
       categories,
       summary,
       categoryCacheByPath,
+      sortOrderObj,
     );
+    const categoryId = categoryIds[0] || null;
 
     const name = data.Name?.trim() || sku;
     const slug =
@@ -484,7 +552,10 @@ export class ImportService {
         basePrice,
         salePrice: salePrice ?? undefined,
         stock,
-        categoryId: categoryId ?? undefined,
+        categoryId: categoryId || undefined,
+        productCategories: categoryIds.length > 0
+          ? { create: categoryIds.map((id) => ({ categoryId: id })) }
+          : undefined,
         brandId: brandId ?? undefined,
         tags: tags as any,
         productTags:
@@ -509,6 +580,7 @@ export class ImportService {
         summary,
         errors,
         mediaCache,
+        row.rowNumber,
       );
     }
 
@@ -541,6 +613,7 @@ export class ImportService {
     mediaCache: Map<string, string>,
     productCache: Map<string, string>,
     slugSet: Set<string>,
+    sortOrderObj: { value: number },
   ): Promise<void> {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
@@ -557,11 +630,14 @@ export class ImportService {
       brandId = await this.resolveBrandCached(brandName, brandCache);
     }
 
-    const categoryId = await this.resolveCategoriesCached(
+    const categoryIds = await this.resolveCategoriesCached(
       categories,
       summary,
       categoryCacheByPath,
+      sortOrderObj,
     );
+    const categoryId = categoryIds[0] || null;
+
     const basePrice = this.parsePrice(data['Regular price']) ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
@@ -595,7 +671,10 @@ export class ImportService {
     updateData.basePrice = basePrice;
     updateData.salePrice = salePrice ?? null;
     updateData.stock = stock;
-    updateData.categoryId = categoryId ?? null;
+    updateData.categoryId = categoryId;
+    updateData.productCategories = categoryIds.length > 0
+      ? { deleteMany: {}, create: categoryIds.map((id) => ({ categoryId: id })) }
+      : { deleteMany: {} };
     updateData.brandId = brandId;
     updateData.tags = tags;
     updateData.productTags =
@@ -624,6 +703,7 @@ export class ImportService {
         summary,
         errors,
         mediaCache,
+        row.rowNumber,
       );
     }
 
@@ -641,12 +721,34 @@ export class ImportService {
     attributeCache: Map<string, CachedAttribute>,
     mediaCache: Map<string, string>,
     variantCache: Map<string, string>,
+    productCache: Map<string, string>,
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
     if (!varSku) {
       this.logger.warn(`Variation row ${row.rowNumber}: skipped — no SKU.`);
       return;
+    }
+
+    // Check if this SKU exists as a standalone Product in the DB (incorrect simple product import)
+    const existingStandalone = await this.prisma.product.findFirst({
+      where: { sku: varSku },
+      include: { orderItems: { take: 1 } },
+    });
+    if (existingStandalone) {
+      if (existingStandalone.orderItems.length > 0) {
+        this.logger.warn(
+          `Cannot delete standalone product for variation SKU ${varSku}: it has ${existingStandalone.orderItems.length} existing order(s). Leaving it in place.`,
+        );
+      } else {
+        this.logger.log(
+          `Found incorrect standalone product for variation SKU ${varSku}. Deleting it to fix variation structure.`,
+        );
+        await this.prisma.product.delete({
+          where: { id: existingStandalone.id },
+        });
+        productCache.delete(varSku);
+      }
     }
 
     const existingId = variantCache.get(varSku);
@@ -678,7 +780,10 @@ export class ImportService {
 
       await this.prisma.productVariant.update({
         where: { id: existingId },
-        data: updateData,
+        data: {
+          ...updateData,
+          productId,
+        },
       });
 
       if (mainImage) {
@@ -687,6 +792,7 @@ export class ImportService {
           summary,
           errors,
           mediaCache,
+          row.rowNumber,
         );
         if (ingested) {
           await this.media.syncEntityImages('variant', existingId, [ingested]);
@@ -740,6 +846,7 @@ export class ImportService {
         summary,
         errors,
         mediaCache,
+        row.rowNumber,
       );
       if (ingested) {
         await this.media.syncEntityImages('variant', variant.id, [ingested]);
@@ -755,6 +862,7 @@ export class ImportService {
     summary: ImportSummary,
     errors: ImportError[],
     mediaCache: Map<string, string>,
+    rowNumber: number,
   ): Promise<void> {
     const resolved: string[] = [];
 
@@ -764,6 +872,7 @@ export class ImportService {
         summary,
         errors,
         mediaCache,
+        rowNumber,
       );
       if (ingested) {
         resolved.push(ingested);
@@ -788,6 +897,7 @@ export class ImportService {
     summary: ImportSummary,
     errors: ImportError[],
     mediaCache: Map<string, string>,
+    rowNumber: number,
   ): Promise<string | null> {
     const trimmed = url.trim();
     if (!trimmed) return null;
@@ -808,7 +918,7 @@ export class ImportService {
       this.logger.warn(`${msg} — ${url}`);
       summary.imagesFailed++;
       errors.push({
-        rowNumber: 0,
+        rowNumber,
         sku: url,
         errorType: 'IMAGE_DOWNLOAD_FAILED',
         message: `${msg}: ${url}`,
@@ -837,45 +947,50 @@ export class ImportService {
     categories: ParsedCategory[],
     summary: ImportSummary,
     categoryCacheByPath: Map<string, string>,
-  ): Promise<string | null> {
-    if (categories.length === 0) return null;
+    sortOrderObj: { value: number },
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const cat of categories) {
+      const segments = cat.path
+        .split('>')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      let parentId: string | null = null;
+      let lastId: string | null = null;
+      let currentPath = '';
 
-    const first = categories[0];
-    const segments = first.path
-      .split('>')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    let parentId: string | null = null;
-    let lastId: string | null = null;
-    let currentPath = '';
+      for (const seg of segments) {
+        currentPath = currentPath ? `${currentPath} > ${seg}` : seg;
+        const cachedId = categoryCacheByPath.get(currentPath);
 
-    for (const seg of segments) {
-      currentPath = currentPath ? `${currentPath} > ${seg}` : seg;
-      const cachedId = categoryCacheByPath.get(currentPath);
-
-      if (cachedId) {
-        summary.categoriesReused++;
-        lastId = cachedId;
-        parentId = cachedId;
-      } else {
-        const slug = slugify(seg);
-        const cat = await this.prisma.category.create({
-          data: {
-            name: seg,
-            slug,
-            parentId,
-            sortOrder: 0,
-            isActive: true,
-          },
-        });
-        summary.categoriesCreated++;
-        categoryCacheByPath.set(currentPath, cat.id);
-        lastId = cat.id;
-        parentId = cat.id;
+        if (cachedId) {
+          summary.categoriesReused++;
+          lastId = cachedId;
+          parentId = cachedId;
+        } else {
+          const slug = slugify(seg);
+          const created = await this.prisma.category.create({
+            data: {
+              name: seg,
+              slug,
+              parentId,
+              sortOrder: sortOrderObj.value++,
+              isActive: true,
+            },
+          });
+          summary.categoriesCreated++;
+          categoryCacheByPath.set(currentPath, created.id);
+          lastId = created.id;
+          parentId = created.id;
+        }
+      }
+      if (lastId && !seen.has(lastId)) {
+        seen.add(lastId);
+        ids.push(lastId);
       }
     }
-
-    return lastId;
+    return ids;
   }
 
   private async resolveTagsCached(

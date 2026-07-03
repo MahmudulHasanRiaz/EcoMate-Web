@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -39,10 +39,32 @@ export function CreateOrder() {
 
   const [cities, setCities] = useState<any[]>([])
   const [zones, setZones] = useState<any[]>([])
+  const [shipZones, setShipZones] = useState<any[]>([])
   const [useDiffShipping, setUseDiffShipping] = useState(false)
   const [shipAddress, setShipAddress] = useState('')
   const [shipCityId, setShipCityId] = useState('')
   const [shipZoneId, setShipZoneId] = useState('')
+
+  const cityOptions = useMemo(() => {
+    return (cities || []).map((c: any) => ({
+      id: c.id,
+      label: c.name,
+    }))
+  }, [cities])
+
+  const zoneOptions = useMemo(() => {
+    return (zones || []).map((z: any) => ({
+      id: z.id,
+      label: z.name,
+    }))
+  }, [zones])
+
+  const shipZoneOptions = useMemo(() => {
+    return (shipZones || []).map((z: any) => ({
+      id: z.id,
+      label: z.name,
+    }))
+  }, [shipZones])
 
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<any[]>([])
@@ -81,6 +103,14 @@ export function CreateOrder() {
       setZones([])
     }
   }, [customerCityId])
+
+  useEffect(() => {
+    if (shipCityId) {
+      apiClient.get(`/couriers/zones?cityId=${shipCityId}`).then(r => setShipZones(r.data as any[])).catch(() => {})
+    } else {
+      setShipZones([])
+    }
+  }, [shipCityId])
 
   useEffect(() => {
     const normalized = normalizePhone(customerPhone)
@@ -358,17 +388,24 @@ export function CreateOrder() {
                 <div className='grid grid-cols-2 gap-3'>
                   <div>
                     <Label className='text-xs'>City</Label>
-                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={customerCityId} onChange={e => { setCustomerCityId(e.target.value); setCustomerZoneId('') }}>
-                      <option value=''>Select city...</option>
-                      {cities.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={cityOptions}
+                      value={customerCityId}
+                      onChange={val => { setCustomerCityId(val); setCustomerZoneId('') }}
+                      placeholder='Select city...'
+                      searchPlaceholder='Search cities...'
+                    />
                   </div>
                   <div>
                     <Label className='text-xs'>Zone</Label>
-                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={customerZoneId} onChange={e => setCustomerZoneId(e.target.value)}>
-                      <option value=''>Select zone...</option>
-                      {zones.map((z: any) => <option key={z.id} value={z.id}>{z.name}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={zoneOptions}
+                      value={customerZoneId}
+                      onChange={setCustomerZoneId}
+                      placeholder='Select zone...'
+                      searchPlaceholder='Search zones...'
+                      disabled={!customerCityId}
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -391,17 +428,24 @@ export function CreateOrder() {
                   <div className='grid grid-cols-2 gap-3'>
                     <div>
                       <Label className='text-xs'>City</Label>
-                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={shipCityId} onChange={e => { setShipCityId(e.target.value); setShipZoneId('') }}>
-                        <option value=''>Select city...</option>
-                        {cities.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={cityOptions}
+                        value={shipCityId}
+                        onChange={val => { setShipCityId(val); setShipZoneId('') }}
+                        placeholder='Select city...'
+                        searchPlaceholder='Search cities...'
+                      />
                     </div>
                     <div>
                       <Label className='text-xs'>Zone</Label>
-                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={shipZoneId} onChange={e => setShipZoneId(e.target.value)}>
-                        <option value=''>Select zone...</option>
-                        {zones.length > 0 ? zones.map((z: any) => <option key={z.id} value={z.id}>{z.name}</option>) : <option value=''>Select city first</option>}
-                      </select>
+                      <SearchableSelect
+                        options={shipZoneOptions}
+                        value={shipZoneId}
+                        onChange={setShipZoneId}
+                        placeholder='Select zone...'
+                        searchPlaceholder='Search zones...'
+                        disabled={!shipCityId}
+                      />
                     </div>
                   </div>
                 </CardContent>

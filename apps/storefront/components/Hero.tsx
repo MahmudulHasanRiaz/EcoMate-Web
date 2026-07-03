@@ -40,7 +40,7 @@ export default function Hero() {
 
           {/* Main Banner (col-8) */}
           <div className="md:col-span-8 overflow-hidden rounded-[12px] md:rounded-[20px] shadow-sm bg-white relative group">
-            <div className="relative w-full h-[180px] md:h-[400px]">
+            <div className="relative w-full aspect-[5/2]">
               {slides.map((slide, index) => {
                 const isActive = index === currentSlide;
                 const href = (slide as { link?: string }).link;
@@ -105,7 +105,7 @@ export default function Hero() {
 
           {/* Secondary Banner (col-4) */}
           <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
-            <div className="relative w-full h-[400px]">
+            <div className="relative w-full aspect-[5/4]">
               <Image
                 src={config.hero.secondaryBanner || PLACEHOLDER_IMAGE}
                 alt={config.hero.secondaryBannerAlt || 'Featured banner'}

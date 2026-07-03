@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -46,6 +47,16 @@ export function Inventory() {
   const [variants, setVariants] = useState<any[]>([])
   const [variantId, setVariantId] = useState('')
   const [loadingVariants, setLoadingVariants] = useState(false)
+
+  const variantOptions = useMemo(() => {
+    return (variants || []).map((v: any) => {
+      const label = v.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || v.sku
+      return {
+        id: v.id,
+        label: `${label} — Stock: ${v.stock} ${v.price ? `| ৳${v.price}` : ''}`,
+      }
+    })
+  }, [variants])
 
   const [quantity, setQuantity] = useState('0')
   const [reason, setReason] = useState('')
@@ -247,20 +258,13 @@ export function Inventory() {
                     {loadingVariants ? (
                       <div className='flex items-center gap-2 text-sm text-muted-foreground'><Loader2 className='h-4 w-4 animate-spin' /> Loading variants...</div>
                     ) : variants.length > 0 ? (
-                      <select
+                      <SearchableSelect
+                        options={variantOptions}
                         value={variantId}
-                        onChange={e => setVariantId(e.target.value)}
-                        className='w-full rounded-md border px-3 py-2 text-sm bg-background'
-                      >
-                        {variants.map((v: any) => {
-                          const attrs = v.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || v.sku
-                          return (
-                            <option key={v.id} value={v.id}>
-                              {attrs} — Stock: {v.stock} {v.price ? `| ৳${v.price}` : ''}
-                            </option>
-                          )
-                        })}
-                      </select>
+                        onChange={setVariantId}
+                        placeholder='Select variant...'
+                        searchPlaceholder='Search variants...'
+                      />
                     ) : (
                       <p className='text-sm text-muted-foreground'>No variants found for this product.</p>
                     )}

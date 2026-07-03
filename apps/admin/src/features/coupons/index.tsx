@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -97,7 +98,7 @@ export function Coupons() {
                   <TableCell>{c['type'] === 'percentage' ? `${c['value']}%` : `৳${c['value']}`}</TableCell>
                   <TableCell>{c['minOrderValue'] ? `৳${c['minOrderValue']}` : '—'}</TableCell>
                   <TableCell>{(c as any)._count?.usages ?? c['usedCount']}{c['maxUses'] ? ` / ${c['maxUses']}` : ''}</TableCell>
-                  <TableCell>{c['maxUsesPerCustomer'] ?? '—'}</TableCell>
+                  <TableCell>{(c['maxUsesPerCustomer'] as number | null) ?? '—'}</TableCell>
                   <TableCell><Badge className={c['isActive'] ? 'bg-green-500' : ''}>{c['isActive'] ? 'Active' : 'Inactive'}</Badge></TableCell>
                   <TableCell className='flex gap-1'>
                     <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openUsage(c as Record<string, unknown>)} title='View usage'><Eye className='h-3.5 w-3.5' /></Button>
@@ -117,7 +118,18 @@ export function Coupons() {
           <div className='space-y-3 py-2'>
             <div><Label>Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} placeholder='SUMMER2026' /></div>
             <div className='grid grid-cols-2 gap-3'>
-              <div><Label>Type</Label><select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option value='flat'>Flat (৳)</option><option value='percentage'>Percentage (%)</option></select></div>
+              <div>
+                <Label>Type</Label>
+                <SearchableSelect
+                  options={[
+                    { id: 'flat', label: 'Flat (৳)' },
+                    { id: 'percentage', label: 'Percentage (%)' },
+                  ]}
+                  value={form.type}
+                  onChange={val => setForm({ ...form, type: val })}
+                  placeholder='Select type...'
+                />
+              </div>
               <div><Label>Value</Label><Input type='number' value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} placeholder={form.type === 'percentage' ? '15' : '200'} /></div>
             </div>
             <div className='grid grid-cols-2 gap-3'>

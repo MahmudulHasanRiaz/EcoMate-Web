@@ -18,6 +18,7 @@ export type SectionId =
   | 'commerce-checkout'
   | 'commerce-order'
   | 'catalog-display'
+  | 'smtp'
 
 export interface SectionMeta {
   id: SectionId

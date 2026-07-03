@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
@@ -147,6 +148,24 @@ export function Tags() {
   const getProductCount = (t: TagItem) =>
     t._count?.products ?? t.productCount ?? 0
 
+  const keepTagOptions = useMemo(() => {
+    return list
+      .filter(t => t.id !== mergeRemove)
+      .map(t => ({
+        id: t.id,
+        label: `${t.name} (${getProductCount(t)} products)`,
+      }))
+  }, [list, mergeRemove])
+
+  const removeTagOptions = useMemo(() => {
+    return list
+      .filter(t => t.id !== mergeKeep)
+      .map(t => ({
+        id: t.id,
+        label: `${t.name} (${getProductCount(t)} products)`,
+      }))
+  }, [list, mergeKeep])
+
   const copyTagLink = (slug: string, id: string) => {
     const storefrontUrl = getStorefrontUrl()
     navigator.clipboard.writeText(`${storefrontUrl}/products/tags/${slug}`)
@@ -292,29 +311,23 @@ export function Tags() {
             <p className='text-sm text-muted-foreground'>Merge products from the "Remove" tag into the "Keep" tag. The "Remove" tag will be deleted.</p>
             <div className='space-y-1.5'>
               <Label>Keep Tag</Label>
-              <select
-                className='w-full rounded-md border px-3 py-2 text-sm bg-background'
+              <SearchableSelect
+                options={keepTagOptions}
                 value={mergeKeep}
-                onChange={e => setMergeKeep(e.target.value)}
-              >
-                <option value=''>Select tag to keep...</option>
-                {list.filter(t => t.id !== mergeRemove).map(t => (
-                  <option key={t.id} value={t.id}>{t.name} ({getProductCount(t)} products)</option>
-                ))}
-              </select>
+                onChange={setMergeKeep}
+                placeholder='Select tag to keep...'
+                searchPlaceholder='Search tags...'
+              />
             </div>
             <div className='space-y-1.5'>
               <Label>Remove Tag</Label>
-              <select
-                className='w-full rounded-md border px-3 py-2 text-sm bg-background'
+              <SearchableSelect
+                options={removeTagOptions}
                 value={mergeRemove}
-                onChange={e => setMergeRemove(e.target.value)}
-              >
-                <option value=''>Select tag to remove...</option>
-                {list.filter(t => t.id !== mergeKeep).map(t => (
-                  <option key={t.id} value={t.id}>{t.name} ({getProductCount(t)} products)</option>
-                ))}
-              </select>
+                onChange={setMergeRemove}
+                placeholder='Select tag to remove...'
+                searchPlaceholder='Search tags...'
+              />
             </div>
           </div>
           <DialogFooter>

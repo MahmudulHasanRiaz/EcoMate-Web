@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
@@ -78,6 +79,19 @@ function OrderDetailPage() {
   const [zoneId, setZoneId] = useState('')
   const [cities, setCities] = useState<any[]>([])
   const [zones, setZones] = useState<any[]>([])
+  const cityOptions = useMemo(() => {
+    return (cities || []).map((c: any) => ({
+      id: c.id,
+      label: c.name,
+    }));
+  }, [cities]);
+
+  const zoneOptions = useMemo(() => {
+    return (zones || []).map((z: any) => ({
+      id: z.id,
+      label: z.name,
+    }));
+  }, [zones]);
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
@@ -598,17 +612,24 @@ function OrderDetailPage() {
                     <div><Label className='text-xs'>Address</Label><Textarea value={address} onChange={e => setAddress(e.target.value)} rows={2} /></div>
                     <div>
                       <Label className='text-xs'>City</Label>
-                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={cityId} onChange={e => { setCityId(e.target.value); setZones([]); }}>
-                        <option value=''>Select City...</option>
-                        {cities.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={cityOptions}
+                        value={cityId}
+                        onChange={val => { setCityId(val); setZones([]); }}
+                        placeholder='Select City...'
+                        searchPlaceholder='Search cities...'
+                      />
                     </div>
                     <div>
                       <Label className='text-xs'>Zone</Label>
-                      <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={zoneId} onChange={e => setZoneId(e.target.value)}>
-                        <option value=''>Select Zone...</option>
-                        {zones.map((z: any) => <option key={z.id} value={z.id}>{z.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={zoneOptions}
+                        value={zoneId}
+                        onChange={setZoneId}
+                        placeholder='Select Zone...'
+                        searchPlaceholder='Search zones...'
+                        disabled={!cityId}
+                      />
                     </div>
                   </div>
 

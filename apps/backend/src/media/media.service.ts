@@ -324,32 +324,54 @@ export class MediaService {
     size: number;
     mimeType: string;
   }> {
-    const url = await this.assertSafeRemoteUrl(rawUrl);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
+    let currentUrlStr = rawUrl;
+    let redirectCount = 0;
+    const maxRedirects = 5;
     let resp: Response;
-    try {
-      resp = await fetch(url.toString(), {
-        signal: controller.signal,
-        redirect: 'manual',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept:
-            'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5',
-        },
-      });
-    } catch (err) {
-      throw new BadRequestException(
-        `Failed to fetch URL: ${(err as Error).message}`,
-      );
-    } finally {
-      clearTimeout(timeout);
+    let url: URL;
+
+    while (true) {
+      url = await this.assertSafeRemoteUrl(currentUrlStr);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      try {
+        resp = await fetch(url.toString(), {
+          signal: controller.signal,
+          redirect: 'manual',
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept:
+              'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5',
+          },
+        });
+      } catch (err) {
+        throw new BadRequestException(
+          `Failed to fetch URL: ${(err as Error).message}`,
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (resp.status >= 300 && resp.status < 400) {
+        if (redirectCount >= maxRedirects) {
+          throw new BadRequestException('Too many redirects');
+        }
+        const location = resp.headers.get('location');
+        if (!location) {
+          throw new BadRequestException(
+            `Redirect response missing Location header (status ${resp.status})`,
+          );
+        }
+        // Resolve relative redirects against current URL
+        const nextUrl = new URL(location, url.toString());
+        currentUrlStr = nextUrl.toString();
+        redirectCount++;
+        continue;
+      }
+      break;
     }
 
-    if (resp.status >= 300 && resp.status < 400) {
-      throw new BadRequestException('Redirects not allowed (SSRF guard)');
-    }
     if (!resp.ok) {
       throw new BadRequestException(`Failed to fetch URL: ${resp.status}`);
     }

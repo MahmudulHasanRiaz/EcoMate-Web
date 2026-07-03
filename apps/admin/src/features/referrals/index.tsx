@@ -111,7 +111,7 @@ function ExpandedRow({ referral, expanded, onToggle }: { referral: Record<string
                       <Badge variant='outline' className={l['status'] === 'converted' ? 'bg-green-500/10 text-green-600' : l['status'] === 'expired' ? 'bg-red-500/10 text-red-600' : ''}>
                         {l['status'] as string}
                       </Badge>
-                      {l['rewardGiven'] && <Gift className='h-3.5 w-3.5 text-green-500' />}
+                      {!!l['rewardGiven'] && <Gift className='h-3.5 w-3.5 text-green-500' />}
                     </div>
                   ))}
                 </div>

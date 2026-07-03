@@ -86,6 +86,16 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [tags, setTags] = useState<string>('')
   const [sizeChartId, setSizeChartId] = useState<string>('')
   const [categoryDefaultChart, setCategoryDefaultChart] = useState<{ id: string; name: string | null } | null>(null)
+  const sizeChartOptions = useMemo(() => {
+    const defaultLabel = categoryDefaultChart?.id ? 'None (use default)' : 'None';
+    return [
+      { id: '', label: defaultLabel },
+      ...(Array.isArray(sizeCharts) ? sizeCharts : (sizeCharts as any)?.data || []).map((sc: any) => ({
+        id: sc.id,
+        label: sc.id === categoryDefaultChart?.id ? `${sc.name} (default)` : sc.name,
+      })),
+    ];
+  }, [sizeCharts, categoryDefaultChart]);
   const [seoTitle, setSeoTitle] = useState('')
   const [seoDesc, setSeoDesc] = useState('')
   const [seoKeywords, setSeoKeywords] = useState('')
@@ -515,16 +525,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Size Chart</Label>
-                    <select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={sizeChartId} onChange={e => setSizeChartId(e.target.value)}>
-                      <option value=''>
-                        {categoryDefaultChart?.id ? 'None (use default)' : 'None'}
-                      </option>
-                      {(Array.isArray(sizeCharts) ? sizeCharts : (sizeCharts as any)?.data || []).map((sc: any) => (
-                        <option key={sc.id} value={sc.id}>
-                          {sc.id === categoryDefaultChart?.id ? `${sc.name} (default)` : sc.name}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={sizeChartOptions}
+                      value={sizeChartId}
+                      onChange={setSizeChartId}
+                      placeholder={categoryDefaultChart?.id ? 'None (use default)' : 'None'}
+                      searchPlaceholder='Search size charts...'
+                    />
                     {categoryDefaultChart?.id && (
                       <p className='text-xs text-muted-foreground mt-1'>
                         Default from{' '}
