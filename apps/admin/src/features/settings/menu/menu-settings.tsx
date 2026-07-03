@@ -233,7 +233,7 @@ export function MenuSettings() {
           <TabsTrigger value="header"><Layout className="h-4 w-4 mr-2" />Header Menu</TabsTrigger>
           <TabsTrigger value="mobile"><Smartphone className="h-4 w-4 mr-2" />Mobile Menu</TabsTrigger>
           <TabsTrigger value="footer"><Columns3 className="h-4 w-4 mr-2" />Footer Menu</TabsTrigger>
-          <TabsTrigger value="categories"><List className="h-4 w-4 mr-2" />Menu Categories</TabsTrigger>
+          <TabsTrigger value="categories"><List className="h-4 w-4 mr-2" />Homepage Categories</TabsTrigger>
         </TabsList>
         <TabsContent value="header" className="space-y-4 pt-4">
           <MenuSectionBuilder section={config.header} onChange={s => updateSection('header', s)} categories={categories} />
@@ -810,9 +810,9 @@ function MenuCategoriesPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Menu Categories</CardTitle>
+        <CardTitle>Homepage Category Showcase</CardTitle>
         <CardDescription>
-          Toggle which product categories appear in the storefront navigation header. Drag to reorder.
+          Control which categories appear in the category showcase below the hero slider on the homepage. Toggle visibility and drag to set display order.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -828,7 +828,7 @@ function MenuCategoriesPanel() {
             {orderedCats.length > 0 && (
               <>
                 <div className='text-sm font-medium text-muted-foreground'>
-                  Shown in menu
+                  Visible on homepage
                 </div>
                 {orderedCats.map((cat, idx) => (
                   <CategoryRow
@@ -849,7 +849,7 @@ function MenuCategoriesPanel() {
             {hidden.length > 0 && (
               <>
                 <div className='text-sm font-medium text-muted-foreground mt-6'>
-                  Hidden from menu
+                  Hidden from homepage
                 </div>
                 {hidden.map((cat) => (
                   <CategoryRow

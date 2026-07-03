@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
-import { getCategories } from "@/lib/api/products";
+import { getMenuCategories } from "@/lib/api/products";
 import type { Category } from "@/lib/types";
 
 export default function CategoryList() {
@@ -15,7 +15,7 @@ export default function CategoryList() {
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
-    getCategories().then(setCategories).catch(() => {});
+    getMenuCategories().then(setCategories).catch(() => {});
   }, []);
 
   const scroll = (direction: 'left' | 'right') => {

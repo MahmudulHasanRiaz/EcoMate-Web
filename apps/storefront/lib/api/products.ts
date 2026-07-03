@@ -153,3 +153,8 @@ export async function getCategories(): Promise<Category[]> {
   const { data } = await apiClient.get("/categories");
   return Array.isArray(data) ? data : data.data || [];
 }
+
+export async function getMenuCategories(): Promise<Category[]> {
+  const { data } = await apiClient.get("/categories/menu");
+  return Array.isArray(data) ? data : data.data || [];
+}
