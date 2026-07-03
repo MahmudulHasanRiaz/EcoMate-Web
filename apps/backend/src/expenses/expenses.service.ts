@@ -127,7 +127,12 @@ export class ExpensesService {
   ) {
     const where: any = {};
 
-    if (categoryId) where.categoryId = categoryId;
+    if (categoryId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(categoryId))
+        throw new BadRequestException(`Invalid categoryId: ${categoryId}`);
+      where.categoryId = categoryId;
+    }
     if (fromDate) {
       const d = new Date(fromDate);
       if (isNaN(d.getTime()))
@@ -188,20 +193,51 @@ export class ExpensesService {
         );
     }
 
+    if (updateExpenseDto.paymentAccountId) {
+      const acct = await this.prisma.account.findUnique({
+        where: { id: updateExpenseDto.paymentAccountId },
+      });
+      if (!acct)
+        throw new NotFoundException(
+          `Payment account ${updateExpenseDto.paymentAccountId} not found`,
+        );
+      if (acct.type !== 'asset')
+        throw new BadRequestException(
+          'Payment account must be an Asset-type account (Cash/Bank)',
+        );
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.expense.update({
         where: { id },
         data: { ...updateExpenseDto, updatedBy: userId },
       });
 
-      // If expense has a journal entry and amount or taxAmount changed, update it
+      // If expense has a journal entry and amount, taxAmount, category, or paymentAccount changed, update it
       const amountChanged =
         updateExpenseDto.amount != null &&
         Number(updateExpenseDto.amount) !== Number(existing.amount);
       const taxChanged =
         updateExpenseDto.taxAmount != null &&
         Number(updateExpenseDto.taxAmount) !== Number(existing.taxAmount ?? 0);
-      if (existing.journalEntryId && (amountChanged || taxChanged)) {
+      const categoryChanged =
+        updateExpenseDto.categoryId != null &&
+        updateExpenseDto.categoryId !== existing.categoryId;
+      const paymentAccountChanged =
+        updateExpenseDto.paymentAccountId != null &&
+        updateExpenseDto.paymentAccountId !== existing.paymentAccountId;
+      const dateChanged =
+        updateExpenseDto.expenseDate != null &&
+        new Date(updateExpenseDto.expenseDate).getTime() !==
+          existing.expenseDate.getTime();
+      if (
+        existing.journalEntryId &&
+        (amountChanged ||
+          taxChanged ||
+          categoryChanged ||
+          paymentAccountChanged ||
+          dateChanged)
+      ) {
         const newAmount = Number(updateExpenseDto.amount ?? existing.amount);
         const newTaxAmount = Number(
           updateExpenseDto.taxAmount ?? existing.taxAmount ?? 0,
@@ -220,28 +256,45 @@ export class ExpensesService {
             data: {
               totalDebit: newTotal,
               totalCredit: newTotal,
-              description: updateExpenseDto.description || existing.description,
+              description:
+                updateExpenseDto.description != null
+                  ? `Expense: ${updateExpenseDto.description}`
+                  : undefined,
+              entryDate:
+                dateChanged && updateExpenseDto.expenseDate
+                  ? new Date(updateExpenseDto.expenseDate)
+                  : undefined,
               updatedAt: new Date(),
               updatedBy: userId,
             },
           });
 
-          // Update journal lines
-          const [drLine, crLine] = await tx.journalEntryLine.findMany({
+          // Identify lines by debit/credit nature (not order) for robustness
+          const lines = await tx.journalEntryLine.findMany({
             where: { entryId: existing.journalEntryId },
-            orderBy: { createdAt: 'asc' },
           });
+
+          const drLine = lines.find((l) => Number(l.debit) > 0);
+          const crLine = lines.find((l) => Number(l.credit) > 0);
 
           if (drLine) {
             await tx.journalEntryLine.update({
               where: { id: drLine.id },
-              data: { debit: newTotal, credit: 0 },
+              data: {
+                debit: newTotal,
+                credit: 0,
+                accountId: cat.accountId,
+              },
             });
           }
           if (crLine) {
             await tx.journalEntryLine.update({
               where: { id: crLine.id },
-              data: { credit: newTotal, debit: 0 },
+              data: {
+                credit: newTotal,
+                debit: 0,
+                accountId: paymentAccountId,
+              },
             });
           }
         }

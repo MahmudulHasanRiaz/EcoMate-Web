@@ -22,22 +22,28 @@ describe('FinancialPeriodsService', () => {
   };
 
   beforeEach(async () => {
+    const prismaMock = {
+      financialPeriod: {
+        findMany: jest.fn().mockResolvedValue([mockPeriod]),
+        findUnique: jest.fn().mockResolvedValue(mockPeriod),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(mockPeriod),
+        update: jest
+          .fn()
+          .mockResolvedValue({ ...mockPeriod, isClosed: true }),
+      },
+      journalEntry: {
+        count: jest.fn().mockResolvedValue(1),
+      },
+      $transaction: jest.fn((cb) => cb(prismaMock)),
+    } as unknown as PrismaService;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancialPeriodsService,
         {
           provide: PrismaService,
-          useValue: {
-            financialPeriod: {
-              findMany: jest.fn().mockResolvedValue([mockPeriod]),
-              findUnique: jest.fn().mockResolvedValue(mockPeriod),
-              findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue(mockPeriod),
-              update: jest
-                .fn()
-                .mockResolvedValue({ ...mockPeriod, isClosed: true }),
-            },
-          },
+          useValue: prismaMock,
         },
       ],
     }).compile();
@@ -95,7 +101,10 @@ describe('FinancialPeriodsService', () => {
   });
 
   describe('closePeriod', () => {
-    it('should close an open period', async () => {
+    it('should close an open period with entries', async () => {
+      jest
+        .spyOn(prisma.journalEntry, 'count')
+        .mockResolvedValue(1);
       const result = await service.closePeriod('fp-1');
       expect(result.isClosed).toBe(true);
     });
@@ -111,6 +120,15 @@ describe('FinancialPeriodsService', () => {
       jest
         .spyOn(prisma.financialPeriod, 'findUnique')
         .mockResolvedValue({ ...mockPeriod, isClosed: true });
+      await expect(service.closePeriod('fp-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw if period has no journal entries', async () => {
+      jest
+        .spyOn(prisma.journalEntry, 'count')
+        .mockResolvedValue(0);
       await expect(service.closePeriod('fp-1')).rejects.toThrow(
         BadRequestException,
       );

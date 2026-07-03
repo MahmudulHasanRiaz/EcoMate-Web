@@ -16,20 +16,22 @@ export class FinancialPeriodsService {
       throw new BadRequestException('Start date must be before end date');
     }
 
-    const overlapping = await this.prisma.financialPeriod.findFirst({
-      where: {
-        startDate: { lte: dto.endDate },
-        endDate: { gte: dto.startDate },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const overlapping = await tx.financialPeriod.findFirst({
+        where: {
+          startDate: { lte: dto.endDate },
+          endDate: { gte: dto.startDate },
+        },
+      });
+
+      if (overlapping) {
+        throw new ConflictException(
+          'A financial period already exists for this date range',
+        );
+      }
+
+      return tx.financialPeriod.create({ data: dto });
     });
-
-    if (overlapping) {
-      throw new ConflictException(
-        'A financial period already exists for this date range',
-      );
-    }
-
-    return this.prisma.financialPeriod.create({ data: dto });
   }
 
   async findAll() {
@@ -51,40 +53,54 @@ export class FinancialPeriodsService {
   }
 
   async closePeriod(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({
-      where: { id },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const period = await tx.financialPeriod.findUnique({
+        where: { id },
+      });
 
-    if (!period) {
-      throw new NotFoundException(`Financial period with ID ${id} not found`);
-    }
+      if (!period) {
+        throw new NotFoundException(`Financial period with ID ${id} not found`);
+      }
 
-    if (period.isClosed) {
-      throw new BadRequestException('Financial period is already closed');
-    }
+      if (period.isClosed) {
+        throw new BadRequestException('Financial period is already closed');
+      }
 
-    return this.prisma.financialPeriod.update({
-      where: { id },
-      data: { isClosed: true },
+      const entryCount = await tx.journalEntry.count({
+        where: { periodId: id },
+      });
+
+      if (entryCount === 0) {
+        throw new BadRequestException(
+          'Cannot close a financial period with no journal entries',
+        );
+      }
+
+      return tx.financialPeriod.update({
+        where: { id },
+        data: { isClosed: true },
+      });
     });
   }
 
   async openPeriod(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({
-      where: { id },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const period = await tx.financialPeriod.findUnique({
+        where: { id },
+      });
 
-    if (!period) {
-      throw new NotFoundException(`Financial period with ID ${id} not found`);
-    }
+      if (!period) {
+        throw new NotFoundException(`Financial period with ID ${id} not found`);
+      }
 
-    if (!period.isClosed) {
-      throw new BadRequestException('Financial period is already open');
-    }
+      if (!period.isClosed) {
+        throw new BadRequestException('Financial period is already open');
+      }
 
-    return this.prisma.financialPeriod.update({
-      where: { id },
-      data: { isClosed: false },
+      return tx.financialPeriod.update({
+        where: { id },
+        data: { isClosed: false },
+      });
     });
   }
 }

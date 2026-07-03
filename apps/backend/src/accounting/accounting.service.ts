@@ -31,7 +31,7 @@ export class AccountingService {
       totalCredit += line.credit;
     }
 
-    if (totalDebit !== totalCredit) {
+    if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
       throw new BadRequestException('Total debit must equal total credit');
     }
 
@@ -49,51 +49,67 @@ export class AccountingService {
       );
     }
 
-    for (const line of dto.lines) {
-      const account = await this.prisma.account.findUnique({
-        where: { id: line.accountId },
-      });
-      if (!account) {
+    const accountIds = dto.lines.map((l) => l.accountId);
+    const accounts = await this.prisma.account.findMany({
+      where: { id: { in: accountIds } },
+    });
+    const foundIds = new Set(accounts.map((a) => a.id));
+    for (const accountId of accountIds) {
+      if (!foundIds.has(accountId)) {
         throw new NotFoundException(
-          `Account with ID ${line.accountId} not found`,
+          `Account with ID ${accountId} not found`,
         );
       }
     }
+    const groupAccount = accounts.find((a) => a.isGroup);
+    if (groupAccount) {
+      throw new BadRequestException(
+        `Account "${groupAccount.name}" (${groupAccount.code}) is a group account and cannot be posted to directly`,
+      );
+    }
 
     const date = new Date(dto.entryDate);
+    if (date < period.startDate || date > period.endDate) {
+      throw new BadRequestException(
+        'Entry date must be within the financial period',
+      );
+    }
+
     const dateStr = `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 
-    const counter = await this.prisma.orderCounter.upsert({
-      where: { date: dateStr },
-      update: { seq: { increment: 1 } },
-      create: { date: dateStr, seq: 1 },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.orderCounter.upsert({
+        where: { date: dateStr },
+        update: { seq: { increment: 1 } },
+        create: { date: dateStr, seq: 1 },
+      });
 
-    const entryNo = `JE-${counter.date}-${String(counter.seq).padStart(4, '0')}`;
+      const entryNo = `JE-${counter.date}-${String(counter.seq).padStart(4, '0')}`;
 
-    return this.prisma.journalEntry.create({
-      data: {
-        entryNo,
-        periodId: dto.periodId,
-        entryDate: date,
-        description: dto.description,
-        totalDebit,
-        totalCredit,
-        referenceNo: dto.referenceNo,
-        createdBy: userId,
-        lines: {
-          create: dto.lines.map((line) => ({
-            accountId: line.accountId,
-            debit: line.debit,
-            credit: line.credit,
-            description: line.description,
-          })),
+      return tx.journalEntry.create({
+        data: {
+          entryNo,
+          periodId: dto.periodId,
+          entryDate: date,
+          description: dto.description,
+          totalDebit: Math.round(totalDebit * 100) / 100,
+          totalCredit: Math.round(totalCredit * 100) / 100,
+          referenceNo: dto.referenceNo,
+          createdBy: userId,
+          lines: {
+            create: dto.lines.map((line) => ({
+              accountId: line.accountId,
+              debit: line.debit,
+              credit: line.credit,
+              description: line.description,
+            })),
+          },
         },
-      },
-      include: {
-        lines: { include: { account: true } },
-        period: true,
-      },
+        include: {
+          lines: { include: { account: true } },
+          period: true,
+        },
+      });
     });
   }
 
@@ -152,17 +168,19 @@ export class AccountingService {
       );
     }
 
-    return this.prisma.journalEntry.delete({ where: { id } });
+    return this.prisma.$transaction(async (tx) => {
+      return tx.journalEntry.delete({ where: { id } });
+    });
   }
 
   async trialBalance(periodId: string) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
-              COALESCE(SUM(jel.debit), 0) as total_debit,
-              COALESCE(SUM(jel.credit), 0) as total_credit
+              COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit ELSE 0 END), 0) as total_debit,
+              COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.credit ELSE 0 END), 0) as total_credit
        FROM "Account" a
        LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId"
        WHERE a."isActive" = true
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
@@ -190,10 +208,10 @@ export class AccountingService {
   async profitAndLoss(periodId: string) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
-              COALESCE(SUM(jel.debit - jel.credit), 0) as balance
+              COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit - jel.credit ELSE 0 END), 0) as balance
        FROM "Account" a
        LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId"
        WHERE a.type IN ('income', 'expense') AND a."isActive" = true
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
@@ -229,10 +247,10 @@ export class AccountingService {
   async balanceSheet(periodId: string) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
-              COALESCE(SUM(jel.debit - jel.credit), 0) as balance
+              COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit - jel.credit ELSE 0 END), 0) as balance
        FROM "Account" a
        LEFT JOIN "JournalEntryLine" jel ON jel."accountId" = a.id
-       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId" AND je."periodId" = $1
+       LEFT JOIN "JournalEntry" je ON je.id = jel."entryId"
        WHERE a.type IN ('asset', 'liability', 'equity') AND a."isActive" = true
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,

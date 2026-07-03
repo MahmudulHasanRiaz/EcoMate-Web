@@ -67,16 +67,38 @@ describe('OpeningBalancesService', () => {
         service.setBalance({
           accountId: 'invalid',
           periodId: 'fp-1',
-          debit: 0,
+          debit: 100,
           credit: 0,
         }),
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('should throw if both debit and credit are positive', async () => {
+      await expect(
+        service.setBalance({
+          accountId: 'acc-1',
+          periodId: 'fp-1',
+          debit: 100,
+          credit: 50,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw if both debit and credit are zero', async () => {
+      await expect(
+        service.setBalance({
+          accountId: 'acc-1',
+          periodId: 'fp-1',
+          debit: 0,
+          credit: 0,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw if period is closed', async () => {
       jest
         .spyOn(prisma.financialPeriod, 'findUnique')
-        .mockResolvedValue({ id: 'fp-1', isClosed: true });
+        .mockResolvedValue({ id: 'fp-1', isClosed: true } as any);
       await expect(
         service.setBalance({
           accountId: 'acc-1',

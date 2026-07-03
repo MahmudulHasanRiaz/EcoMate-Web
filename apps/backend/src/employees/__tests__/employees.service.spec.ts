@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { EmployeeStatus, EmploymentType } from '@prisma/client';
 import { EmployeesService } from '../employees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEmployeeDto } from '../dto/create-employee.dto';
@@ -36,8 +37,8 @@ describe('EmployeesService', () => {
     phone: '+8801711111111',
     departmentId: 'dept-1',
     designationId: 'desig-1',
-    employmentType: 'full_time',
-    status: 'active',
+    employmentType: EmploymentType.full_time,
+    status: EmployeeStatus.active,
     joiningDate: new Date('2025-01-15'),
     exitDate: null,
     salary: '50000',
@@ -54,31 +55,37 @@ describe('EmployeesService', () => {
   };
 
   beforeEach(async () => {
+    const prismaMock = {
+      employee: {
+        findMany: jest.fn().mockResolvedValue([mockEmployee]),
+        findUnique: jest.fn().mockResolvedValue(mockEmployee),
+        findFirst: jest.fn(),
+        create: jest.fn().mockResolvedValue(mockEmployee),
+        update: jest.fn().mockResolvedValue(mockEmployee),
+        delete: jest.fn().mockResolvedValue(mockEmployee),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      department: {
+        findUnique: jest.fn().mockResolvedValue(mockDepartment),
+      },
+      designation: {
+        findUnique: jest.fn().mockResolvedValue(mockDesignation),
+      },
+      orderCounter: {
+        upsert: jest.fn().mockResolvedValue({ date: '250624', seq: 1 }),
+      },
+      $transaction: jest.fn(),
+    };
+    prismaMock.$transaction.mockImplementation(
+      async (cb: (tx: typeof prismaMock) => Promise<unknown>) => cb(prismaMock),
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EmployeesService,
         {
           provide: PrismaService,
-          useValue: {
-            employee: {
-              findMany: jest.fn().mockResolvedValue([mockEmployee]),
-              findUnique: jest.fn().mockResolvedValue(mockEmployee),
-              findFirst: jest.fn(),
-              create: jest.fn().mockResolvedValue(mockEmployee),
-              update: jest.fn().mockResolvedValue(mockEmployee),
-              delete: jest.fn().mockResolvedValue(mockEmployee),
-              count: jest.fn().mockResolvedValue(1),
-            },
-            department: {
-              findUnique: jest.fn().mockResolvedValue(mockDepartment),
-            },
-            designation: {
-              findUnique: jest.fn().mockResolvedValue(mockDesignation),
-            },
-            orderCounter: {
-              upsert: jest.fn().mockResolvedValue({ date: '250624', seq: 1 }),
-            },
-          },
+          useValue: prismaMock,
         },
       ],
     }).compile();
@@ -120,7 +127,9 @@ describe('EmployeesService', () => {
     });
 
     it('should throw if email already exists', async () => {
-      jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue(mockEmployee);
+      jest
+        .spyOn(prisma.employee, 'findFirst')
+        .mockResolvedValue(mockEmployee as any);
       const dto: CreateEmployeeDto = {
         firstName: 'John',
         lastName: 'Doe',
@@ -160,6 +169,29 @@ describe('EmployeesService', () => {
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'emp-1' } }),
       );
+    });
+
+    it('should throw if email already taken', async () => {
+      jest
+        .spyOn(prisma.employee, 'findFirst')
+        .mockResolvedValue(mockEmployee as any);
+      await expect(
+        service.update('emp-2', { email: 'john@example.com' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw if department not found', async () => {
+      jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { departmentId: 'invalid' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw if designation not found', async () => {
+      jest.spyOn(prisma.designation, 'findUnique').mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { designationId: 'invalid' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

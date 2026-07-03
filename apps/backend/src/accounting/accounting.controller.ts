@@ -7,6 +7,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { AccountingService } from './accounting.service';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
@@ -33,9 +34,21 @@ export class AccountingController {
     @Query('perPage') perPage?: string,
     @Query('periodId') periodId?: string,
   ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const perPageNum = perPage ? parseInt(perPage, 10) : 10;
+    if (
+      isNaN(pageNum) ||
+      pageNum < 1 ||
+      isNaN(perPageNum) ||
+      perPageNum < 1
+    ) {
+      throw new BadRequestException(
+        'Page and perPage must be positive numbers',
+      );
+    }
     return this.accountingService.findAllEntries(
-      page ? parseInt(page, 10) : 1,
-      perPage ? parseInt(perPage, 10) : 10,
+      pageNum,
+      perPageNum,
       periodId,
     );
   }

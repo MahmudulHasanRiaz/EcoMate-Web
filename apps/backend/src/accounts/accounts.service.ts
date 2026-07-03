@@ -61,7 +61,55 @@ export class AccountsService {
   }
 
   async update(id: string, dto: UpdateAccountDto) {
-    await this.findOne(id);
+    const account = await this.findOne(id);
+
+    if (dto.code && dto.code !== account.code) {
+      const existing = await this.prisma.account.findUnique({
+        where: { code: dto.code },
+      });
+      if (existing) {
+        throw new ConflictException(
+          `Account with code ${dto.code} already exists`,
+        );
+      }
+    }
+
+    if (dto.parentId !== undefined) {
+      if (dto.parentId === id) {
+        throw new BadRequestException('Account cannot be its own parent');
+      }
+
+      if (dto.parentId) {
+        const parent = await this.prisma.account.findUnique({
+          where: { id: dto.parentId },
+        });
+        if (!parent) {
+          throw new NotFoundException(
+            `Parent account with ID ${dto.parentId} not found`,
+          );
+        }
+        if (!parent.isGroup) {
+          throw new BadRequestException(
+            'Parent account must be a group account',
+          );
+        }
+
+        let currentId: string | null = dto.parentId;
+        while (currentId) {
+          if (currentId === id) {
+            throw new BadRequestException(
+              'Cannot set parent to a descendant account (cycle detected)',
+            );
+          }
+          const ancestor = await this.prisma.account.findUnique({
+            where: { id: currentId },
+            select: { parentId: true },
+          });
+          currentId = ancestor?.parentId ?? null;
+        }
+      }
+    }
+
     return this.prisma.account.update({
       where: { id },
       data: dto,
@@ -78,18 +126,26 @@ export class AccountsService {
   }
 
   async getChartOfAccounts() {
-    const accounts = await this.prisma.account.findMany({
-      where: { parentId: null },
-      include: {
-        children: {
-          include: {
-            children: true,
-          },
-          orderBy: { code: 'asc' },
-        },
-      },
+    const allAccounts = await this.prisma.account.findMany({
       orderBy: [{ type: 'asc' }, { code: 'asc' }],
     });
-    return accounts;
+
+    const map = new Map<string, any>();
+    const roots: any[] = [];
+
+    for (const acc of allAccounts) {
+      map.set(acc.id, { ...acc, children: [] });
+    }
+
+    for (const acc of allAccounts) {
+      const node = map.get(acc.id)!;
+      if (acc.parentId && map.has(acc.parentId)) {
+        map.get(acc.parentId)!.children.push(node);
+      } else if (!acc.parentId) {
+        roots.push(node);
+      }
+    }
+
+    return roots;
   }
 }

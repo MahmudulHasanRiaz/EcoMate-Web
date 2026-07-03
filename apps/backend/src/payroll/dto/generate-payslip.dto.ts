@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsDate } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GeneratePayslipDto {
@@ -7,8 +7,10 @@ export class GeneratePayslipDto {
   employeeId: string;
 
   @Type(() => Date)
+  @IsDate()
   periodStart: Date;
 
   @Type(() => Date)
+  @IsDate()
   periodEnd: Date;
 }

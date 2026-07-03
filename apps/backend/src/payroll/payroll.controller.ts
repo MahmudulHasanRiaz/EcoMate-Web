@@ -33,8 +33,8 @@ export class PayrollController {
   generatePayslip(@Body() dto: GeneratePayslipDto) {
     return this.payrollService.generatePayslip(
       dto.employeeId,
-      dto.periodStart as unknown as string,
-      dto.periodEnd as unknown as string,
+      dto.periodStart,
+      dto.periodEnd,
     );
   }
 

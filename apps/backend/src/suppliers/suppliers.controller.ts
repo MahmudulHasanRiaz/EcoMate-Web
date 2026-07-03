@@ -27,8 +27,16 @@ export class SuppliersController {
   }
 
   @Get()
-  findAll(@Query('activeOnly') activeOnly?: string) {
-    return this.suppliersService.findAll(activeOnly === 'true');
+  findAll(
+    @Query('activeOnly') activeOnly?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.suppliersService.findAll(
+      activeOnly === 'true',
+      page ? +page : 1,
+      perPage ? +perPage : 20,
+    );
   }
 
   @Get(':id')

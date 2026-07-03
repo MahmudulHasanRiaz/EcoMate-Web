@@ -11,17 +11,26 @@ export class OpeningBalancesService {
   constructor(private prisma: PrismaService) {}
 
   async setBalance(dto: SetOpeningBalanceDto) {
-    const account = await this.prisma.account.findUnique({
-      where: { id: dto.accountId },
-    });
+    if (dto.debit > 0 && dto.credit > 0) {
+      throw new BadRequestException(
+        'Opening balance cannot have both debit and credit',
+      );
+    }
+
+    if (dto.debit === 0 && dto.credit === 0) {
+      throw new BadRequestException(
+        'Opening balance must have either debit or credit',
+      );
+    }
+
+    const [account, period] = await Promise.all([
+      this.prisma.account.findUnique({ where: { id: dto.accountId } }),
+      this.prisma.financialPeriod.findUnique({ where: { id: dto.periodId } }),
+    ]);
 
     if (!account) {
       throw new NotFoundException(`Account with ID ${dto.accountId} not found`);
     }
-
-    const period = await this.prisma.financialPeriod.findUnique({
-      where: { id: dto.periodId },
-    });
 
     if (!period) {
       throw new NotFoundException(

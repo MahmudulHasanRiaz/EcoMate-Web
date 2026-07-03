@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
@@ -26,16 +27,34 @@ export class SuppliersService {
     });
   }
 
-  async findAll(activeOnly = false) {
-    return this.prisma.supplier.findMany({
-      where: activeOnly ? { isActive: true } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { purchases: true },
+  async findAll(activeOnly = false, page = 1, perPage = 20) {
+    const skip = (page - 1) * perPage;
+    const where = activeOnly ? { isActive: true } : {};
+
+    const [data, total] = await Promise.all([
+      this.prisma.supplier.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+        include: {
+          _count: {
+            select: { purchases: true },
+          },
         },
+      }),
+      this.prisma.supplier.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage),
       },
-    });
+    };
   }
 
   async findOne(id: string) {
@@ -71,23 +90,29 @@ export class SuppliersService {
       throw new NotFoundException(`Supplier with ID ${supplierId} not found`);
     }
 
+    if (new Prisma.Decimal(dto.amount).gt(supplier.balance)) {
+      throw new ConflictException(
+        `Payment amount (${dto.amount}) exceeds outstanding balance (${supplier.balance})`,
+      );
+    }
+
     const now = new Date();
     const dateStr = `${now.getFullYear().toString().slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const todayPrefix = `PINV-${dateStr}-`;
 
     return this.prisma.$transaction(async (tx) => {
-      const lastInvoice = await tx.supplierPaymentInvoice.findFirst({
-        orderBy: { id: 'desc' },
+      const lastTodayInvoice = await tx.supplierPaymentInvoice.findFirst({
+        where: { invoiceNo: { startsWith: todayPrefix } },
+        orderBy: { invoiceNo: 'desc' },
       });
 
       let nextSeq = 1;
-      if (lastInvoice) {
-        const parts = lastInvoice.invoiceNo.split('-');
-        if (parts.length === 3 && parts[0] === 'PINV' && parts[1] === dateStr) {
-          nextSeq = parseInt(parts[2], 10) + 1;
-        }
+      if (lastTodayInvoice) {
+        const parts = lastTodayInvoice.invoiceNo.split('-');
+        nextSeq = parseInt(parts[2], 10) + 1;
       }
 
-      const invoiceNo = `PINV-${dateStr}-${String(nextSeq).padStart(4, '0')}`;
+      const invoiceNo = `${todayPrefix}${String(nextSeq).padStart(4, '0')}`;
 
       const payment = await tx.supplierPayment.create({
         data: {
@@ -192,7 +217,14 @@ export class SuppliersService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const supplier = await this.findOne(id);
+
+    if (supplier._count.purchases > 0) {
+      throw new ConflictException(
+        `Cannot delete supplier with ${supplier._count.purchases} associated purchase(s). Remove purchase associations first.`,
+      );
+    }
+
     return this.prisma.supplier.delete({
       where: { id },
     });

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
@@ -17,81 +18,73 @@ export class PurchasesService {
     private stockService: StockService,
   ) {}
 
-  private async generateReferenceNo(): Promise<string> {
+  private async generateNumber(
+    prefix: string,
+    model: 'purchase' | 'goodsReceiptNote' | 'costingLot',
+    field: 'referenceNo' | 'grnNumber' | 'lotNumber',
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const db = tx || this.prisma;
     const now = new Date();
     const yy = String(now.getFullYear()).slice(2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
-    const prefix = `PO-${yy}${mm}${dd}-`;
+    const datePrefix = `${prefix}-${yy}${mm}${dd}-`;
 
-    const last = await this.prisma.purchase.findFirst({
-      where: { referenceNo: { startsWith: prefix } },
-      orderBy: { referenceNo: 'desc' },
-      select: { referenceNo: true },
+    const modelMap = {
+      purchase: db.purchase,
+      goodsReceiptNote: db.goodsReceiptNote,
+      costingLot: db.costingLot,
+    } as const;
+
+    const last = await (modelMap[model] as any).findFirst({
+      where: { [field]: { startsWith: datePrefix } },
+      orderBy: { [field]: 'desc' },
+      select: { [field]: true },
     });
 
     let seq = 1;
     if (last) {
-      const parts = last.referenceNo.split('-');
+      const parts = last[field].split('-');
       seq = parseInt(parts[parts.length - 1], 10) + 1;
     }
 
-    return `${prefix}${String(seq).padStart(4, '0')}`;
+    return `${datePrefix}${String(seq).padStart(4, '0')}`;
   }
 
-  private async generateGrnNumber(): Promise<string> {
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const prefix = `GRN-${yy}${mm}${dd}-`;
-
-    const last = await this.prisma.goodsReceiptNote.findFirst({
-      where: { grnNumber: { startsWith: prefix } },
-      orderBy: { grnNumber: 'desc' },
-      select: { grnNumber: true },
-    });
-
-    let seq = 1;
-    if (last) {
-      const parts = last.grnNumber.split('-');
-      seq = parseInt(parts[parts.length - 1], 10) + 1;
-    }
-
-    return `${prefix}${String(seq).padStart(4, '0')}`;
+  private async generateReferenceNo(tx?: Prisma.TransactionClient): Promise<string> {
+    return this.generateNumber('PO', 'purchase', 'referenceNo', tx);
   }
 
-  private async generateLotNumber(): Promise<string> {
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const prefix = `LOT-${yy}${mm}${dd}-`;
+  private async generateGrnNumber(tx?: Prisma.TransactionClient): Promise<string> {
+    return this.generateNumber('GRN', 'goodsReceiptNote', 'grnNumber', tx);
+  }
 
-    const last = await this.prisma.costingLot.findFirst({
-      where: { lotNumber: { startsWith: prefix } },
-      orderBy: { lotNumber: 'desc' },
-      select: { lotNumber: true },
+  private async generateLotNumber(tx?: Prisma.TransactionClient): Promise<string> {
+    return this.generateNumber('LOT', 'costingLot', 'lotNumber', tx);
+  }
+
+  private async validateSupplier(supplierId: string, tx: Prisma.TransactionClient) {
+    const supplier = await tx.supplier.findUnique({
+      where: { id: supplierId },
+      select: { id: true },
     });
-
-    let seq = 1;
-    if (last) {
-      const parts = last.lotNumber.split('-');
-      seq = parseInt(parts[parts.length - 1], 10) + 1;
+    if (!supplier) {
+      throw new NotFoundException(`Supplier with ID ${supplierId} not found`);
     }
-
-    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
   async create(dto: CreatePurchaseDto) {
-    // Always generate a system PO number — user's reference goes into notes
-    const poNumber = await this.generateReferenceNo();
     const vendorRef = dto.referenceNo || '';
     const notesWithRef = vendorRef
       ? `Vendor Ref: ${vendorRef}\n${dto.notes || ''}`
       : dto.notes || '';
 
     return this.prisma.$transaction(async (tx) => {
+      await this.validateSupplier(dto.supplierId, tx);
+
+      const poNumber = await this.generateReferenceNo(tx);
+
       const items = dto.items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId,
@@ -203,13 +196,25 @@ export class PurchasesService {
     return this.prisma.$transaction(async (tx) => {
       const data: Record<string, unknown> = {};
 
-      if (dto.supplierId !== undefined) data.supplierId = dto.supplierId;
+      if (dto.supplierId !== undefined) {
+        await this.validateSupplier(dto.supplierId, tx);
+        data.supplierId = dto.supplierId;
+      }
       if (dto.orderDate !== undefined) data.orderDate = new Date(dto.orderDate);
       if (dto.expectedDate !== undefined)
         data.expectedDate = new Date(dto.expectedDate);
       if (dto.notes !== undefined) data.notes = dto.notes;
 
       if (dto.items) {
+        const grnCount = await tx.goodsReceiptNote.count({
+          where: { purchaseId: id },
+        });
+        if (grnCount > 0) {
+          throw new ConflictException(
+            'Cannot update items after GRN has been created',
+          );
+        }
+
         await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
 
         const newItems = dto.items.map((item) => ({
@@ -255,6 +260,15 @@ export class PurchasesService {
       throw new NotFoundException(`Purchase with ID ${id} not found`);
     }
 
+    const grnCount = await this.prisma.goodsReceiptNote.count({
+      where: { purchaseId: id },
+    });
+    if (grnCount > 0) {
+      throw new ConflictException(
+        'Cannot delete purchase with existing GRNs. Cancel it instead.',
+      );
+    }
+
     return this.prisma.purchase.delete({ where: { id } });
   }
 
@@ -272,8 +286,6 @@ export class PurchasesService {
       throw new ConflictException('Cannot create GRN for a cancelled purchase');
     }
 
-    const grnNumber = await this.generateGrnNumber();
-
     return this.prisma.$transaction(async (tx) => {
       const itemIds = dto.items.map((i) => i.purchaseItemId);
       const purchaseItems = await tx.purchaseItem.findMany({
@@ -283,6 +295,27 @@ export class PurchasesService {
       const piMap = new Map(purchaseItems.map((pi) => [pi.id, pi]));
 
       for (const d of dto.items) {
+        if (d.receivedQty < 0) {
+          throw new BadRequestException(
+            `receivedQty must be >= 0 for item ${d.purchaseItemId}`,
+          );
+        }
+        if (d.acceptedQty < 0) {
+          throw new BadRequestException(
+            `acceptedQty must be >= 0 for item ${d.purchaseItemId}`,
+          );
+        }
+        if (d.rejectedQty < 0) {
+          throw new BadRequestException(
+            `rejectedQty must be >= 0 for item ${d.purchaseItemId}`,
+          );
+        }
+        if (d.acceptedQty + d.rejectedQty > d.receivedQty) {
+          throw new BadRequestException(
+            `acceptedQty (${d.acceptedQty}) + rejectedQty (${d.rejectedQty}) exceeds receivedQty (${d.receivedQty}) for item ${d.purchaseItemId}`,
+          );
+        }
+
         const pi = piMap.get(d.purchaseItemId);
         if (!pi) {
           throw new NotFoundException(
@@ -297,6 +330,8 @@ export class PurchasesService {
           );
         }
       }
+
+      const grnNumber = await this.generateGrnNumber(tx);
 
       const grn = await tx.goodsReceiptNote.create({
         data: {
@@ -342,7 +377,7 @@ export class PurchasesService {
         const unitCost = new Prisma.Decimal(
           Number(pi.totalBill) / Number(pi.quantity),
         );
-        const lotNumber = await this.generateLotNumber();
+        const lotNumber = await this.generateLotNumber(tx);
 
         await tx.costingLot.create({
           data: {

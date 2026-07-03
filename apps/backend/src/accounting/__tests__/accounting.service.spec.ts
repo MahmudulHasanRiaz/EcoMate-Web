@@ -21,6 +21,13 @@ describe('AccountingService', () => {
     endDate: new Date('2026-06-30'),
     isClosed: true,
   };
+  const otherPeriod = {
+    id: 'fp-other',
+    name: 'August 2026',
+    startDate: new Date('2026-08-01'),
+    endDate: new Date('2026-08-31'),
+    isClosed: false,
+  };
 
   const assetAccount = {
     id: 'acc-cash',
@@ -114,15 +121,22 @@ describe('AccountingService', () => {
               findMany: jest.fn().mockResolvedValue([mockEntry]),
               findUnique: jest.fn().mockResolvedValue(mockEntry),
               create: jest.fn().mockResolvedValue(mockEntry),
-              update: jest.fn().mockResolvedValue(mockEntry),
               delete: jest.fn().mockResolvedValue(mockEntry),
               count: jest.fn().mockResolvedValue(1),
             },
             journalEntryLine: {
-              createMany: jest.fn().mockResolvedValue({ count: 2 }),
               findMany: jest.fn().mockResolvedValue([]),
             },
             account: {
+              findMany: jest
+                .fn()
+                .mockResolvedValue([
+                  assetAccount,
+                  incomeAccount,
+                  expenseAccount,
+                  equityAccount,
+                  liabilityAccount,
+                ]),
               findUnique: jest
                 .fn()
                 .mockImplementation(async ({ where }: any) => {
@@ -135,15 +149,6 @@ describe('AccountingService', () => {
                   };
                   return map[where.id] || null;
                 }),
-              findMany: jest
-                .fn()
-                .mockResolvedValue([
-                  assetAccount,
-                  incomeAccount,
-                  expenseAccount,
-                  equityAccount,
-                  liabilityAccount,
-                ]),
             },
             financialPeriod: {
               findUnique: jest
@@ -152,6 +157,7 @@ describe('AccountingService', () => {
                   const map: any = {
                     'fp-open': openPeriod,
                     'fp-closed': closedPeriod,
+                    'fp-other': otherPeriod,
                   };
                   return map[where.id] || null;
                 }),
@@ -159,8 +165,32 @@ describe('AccountingService', () => {
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250701', seq: 1 }),
             },
+            expense: {
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
             $queryRaw: jest.fn().mockResolvedValue([]),
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
+            $transaction: jest.fn().mockImplementation(async (cb) => {
+              const tx = {
+                orderCounter: {
+                  upsert: jest.fn().mockResolvedValue({ date: '250701', seq: 1 }),
+                },
+                journalEntry: {
+                  create: jest.fn().mockResolvedValue(mockEntry),
+                  delete: jest.fn().mockResolvedValue(mockEntry),
+                },
+                account: {
+                  findMany: jest.fn().mockResolvedValue([
+                    assetAccount,
+                    incomeAccount,
+                    expenseAccount,
+                    equityAccount,
+                    liabilityAccount,
+                  ]),
+                },
+              };
+              return cb(tx);
+            }),
           },
         },
       ],
@@ -351,12 +381,14 @@ describe('AccountingService', () => {
     it('should return P&L statement', async () => {
       jest.spyOn(prisma, '$queryRawUnsafe').mockResolvedValue([
         {
+          type: 'income',
           account_id: 'acc-rev',
           account_code: '4-1000',
           account_name: 'Sales Revenue',
           balance: '50000',
         },
         {
+          type: 'expense',
           account_id: 'acc-exp',
           account_code: '5-1000',
           account_name: 'Rent Expense',

@@ -79,44 +79,69 @@ export class EmployeesService {
       if (!desig) throw new NotFoundException('Designation not found');
     }
 
-    const counter = await this.prisma.orderCounter.upsert({
-      where: { date: this.dateStr() },
-      create: { date: this.dateStr(), seq: 1 },
-      update: { seq: { increment: 1 } },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.orderCounter.upsert({
+        where: { date: this.dateStr() },
+        create: { date: this.dateStr(), seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
 
-    const employeeId = `EMP-${this.dateStr()}-${String(counter.seq).padStart(4, '0')}`;
+      const employeeId = `EMP-${this.dateStr()}-${String(counter.seq).padStart(4, '0')}`;
 
-    return this.prisma.employee.create({
-      data: {
-        employeeId,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email,
-        phone: dto.phone,
-        departmentId: dto.departmentId,
-        designationId: dto.designationId,
-        employmentType: dto.employmentType || 'full_time',
-        joiningDate: new Date(dto.joiningDate),
-        salary: dto.salary || undefined,
-        bankAccountNo: dto.bankAccountNo,
-        bankName: dto.bankName,
-        address: dto.address,
-        city: dto.city,
-        emergencyContact: dto.emergencyContact,
-        notes: dto.notes,
-      },
-      include: {
-        department: { select: { id: true, name: true, slug: true } },
-        designation: {
-          select: { id: true, name: true, slug: true, level: true },
+      return tx.employee.create({
+        data: {
+          employeeId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          phone: dto.phone,
+          departmentId: dto.departmentId,
+          designationId: dto.designationId,
+          employmentType: dto.employmentType || 'full_time',
+          joiningDate: new Date(dto.joiningDate),
+          salary: dto.salary ?? undefined,
+          bankAccountNo: dto.bankAccountNo,
+          bankName: dto.bankName,
+          address: dto.address,
+          city: dto.city,
+          emergencyContact: dto.emergencyContact,
+          notes: dto.notes,
         },
-      },
+        include: {
+          department: { select: { id: true, name: true, slug: true } },
+          designation: {
+            select: { id: true, name: true, slug: true, level: true },
+          },
+        },
+      });
     });
   }
 
   async update(id: string, dto: UpdateEmployeeDto) {
     await this.findOne(id);
+
+    if (dto.email) {
+      const existing = await this.prisma.employee.findFirst({
+        where: { email: dto.email, NOT: { id } },
+      });
+      if (existing)
+        throw new ConflictException('Employee with this email already exists');
+    }
+
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findUnique({
+        where: { id: dto.departmentId },
+      });
+      if (!dept) throw new NotFoundException('Department not found');
+    }
+
+    if (dto.designationId) {
+      const desig = await this.prisma.designation.findUnique({
+        where: { id: dto.designationId },
+      });
+      if (!desig) throw new NotFoundException('Designation not found');
+    }
+
     return this.prisma.employee.update({
       where: { id },
       data: {

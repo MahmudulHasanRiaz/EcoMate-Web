@@ -14,6 +14,7 @@ import { CreateGrnDto } from './dto/create-grn.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('purchases')
 @Roles('superadmin', 'admin', 'manager')
@@ -57,8 +58,12 @@ export class PurchasesController {
   }
 
   @Post(':id/grn')
-  createGrn(@Param('id') id: string, @Body() dto: CreateGrnDto) {
-    return this.purchasesService.createGrn(id, dto);
+  createGrn(
+    @Param('id') id: string,
+    @Body() dto: CreateGrnDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.purchasesService.createGrn(id, dto, user?.userId);
   }
 
   @Get(':id/grns')
