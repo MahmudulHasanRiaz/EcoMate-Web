@@ -12,75 +12,76 @@ export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async lowStock() {
-    const products = await this.prisma.product.findMany({
-      where: { manageStock: true, isActive: true, type: { not: 'variable' } },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        stock: true,
-        lowStockQty: true,
-        sku: true,
-      },
-    });
-    const lowStockProducts = products
-      .filter((p) => p.stock <= (p.lowStockQty || 5))
-      .map((p) => ({ ...p, type: 'product' as const }));
+    const products = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        slug: string;
+        stock: number;
+        lowStockQty: number | null;
+        sku: string | null;
+      }>
+    >`
+      SELECT id, name, slug, stock, "lowStockQty", sku
+      FROM "Product"
+      WHERE "manageStock" = true
+        AND "isActive" = true
+        AND type != 'variable'
+        AND stock <= COALESCE("lowStockQty", 5)
+      ORDER BY name ASC
+    `;
+    const lowStockProducts = products.map((p) => ({
+      ...p,
+      type: 'product' as const,
+    }));
 
-    const variableProducts = await this.prisma.product.findMany({
-      where: { isActive: true, type: 'variable' },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        sku: true,
-        lowStockQty: true,
-        variants: {
-          select: {
-            id: true,
-            sku: true,
-            stock: true,
-            attributeValues: {
-              include: { attributeValue: { select: { value: true } } },
-            },
-          },
-        },
-      },
-    });
-
-    const lowStockVariants: Array<{
-      id: string;
-      name: string;
-      slug: string;
-      stock: number;
-      lowStockQty: number | null;
-      sku: string | null;
-      type: 'variant';
-      variantSku: string;
-      variantAttributes: string;
-    }> = [];
-
-    for (const product of variableProducts) {
-      const threshold = product.lowStockQty || 5;
-      for (const variant of product.variants) {
-        if (variant.stock <= threshold) {
-          const attrs = variant.attributeValues
-            .map((av) => av.attributeValue.value)
-            .join(' / ');
-          lowStockVariants.push({
-            id: variant.id,
-            name: product.name,
-            slug: product.slug,
-            stock: variant.stock,
-            lowStockQty: threshold,
-            sku: product.sku,
-            type: 'variant',
-            variantSku: variant.sku,
-            variantAttributes: attrs || variant.sku,
-          });
-        }
-      }
-    }
+    const variableProducts = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        slug: string;
+        sku: string | null;
+        lowStockQty: number | null;
+        variantId: string;
+        variantSku: string | null;
+        variantStock: number;
+        variantAttributes: string | null;
+      }>
+    >`
+      SELECT
+        p.id,
+        p.name,
+        p.slug,
+        p.sku,
+        p."lowStockQty",
+        pv.id AS "variantId",
+        pv.sku AS "variantSku",
+        pv.stock AS "variantStock",
+        COALESCE(
+          (SELECT string_agg(av.value, ' / ' ORDER BY av.value)
+           FROM "ProductVariantAttributeValue" pvav
+           JOIN "AttributeValue" av ON av.id = pvav."attributeValueId"
+           WHERE pvav."variantId" = pv.id),
+          pv.sku
+        ) AS "variantAttributes"
+      FROM "Product" p
+      JOIN "ProductVariant" pv ON pv."productId" = p.id
+      WHERE p."isActive" = true
+        AND p.type = 'variable'
+        AND pv.stock <= COALESCE(p."lowStockQty", 5)
+      ORDER BY p.name ASC
+    `;
+    const lowStockVariants = variableProducts.map((v) => ({
+      id: v.variantId,
+      name: v.name,
+      slug: v.slug,
+      stock: v.variantStock,
+      lowStockQty: v.lowStockQty,
+      sku: v.sku,
+      type: 'variant' as const,
+      variantSku: v.variantSku || '',
+      variantAttributes: v.variantAttributes || v.variantSku || '',
+    }));
 
     const allLowStock = [...lowStockProducts, ...lowStockVariants];
     return { products: allLowStock, count: allLowStock.length };
@@ -181,9 +182,15 @@ export class InventoryService {
           items: {
             include: {
               product: {
-                select: { id: true, name: true, type: true, manageStock: true },
+                select: {
+                  id: true,
+                  name: true,
+                  type: true,
+                  manageStock: true,
+                  stock: true,
+                },
               },
-              variant: { select: { id: true, sku: true } },
+              variant: { select: { id: true, sku: true, stock: true } },
             },
           },
         },
@@ -201,6 +208,12 @@ export class InventoryService {
         const qty = (quantity || 0) * item.quantity;
 
         if (item.variantId) {
+          const avail = item.variant?.stock ?? 0;
+          if (qty < 0 && avail + qty < 0) {
+            throw new BadRequestException(
+              `Insufficient stock for variant ${item.variant?.sku ?? 'unknown'}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
+            );
+          }
           await this.prisma.productVariant.update({
             where: { id: item.variantId },
             data: { stock: { increment: qty } },
@@ -222,6 +235,12 @@ export class InventoryService {
             quantity: qty,
           });
         } else if (item.product.manageStock) {
+          const avail = item.product.stock;
+          if (qty < 0 && avail + qty < 0) {
+            throw new BadRequestException(
+              `Insufficient stock for product ${item.product.name}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
+            );
+          }
           await this.prisma.product.update({
             where: { id: item.productId },
             data: { stock: { increment: qty } },
@@ -266,9 +285,15 @@ export class InventoryService {
         },
       });
       if (!variant) throw new NotFoundException('Variant not found');
+      const q = quantity ?? 0;
+      if (q < 0 && variant.stock + q < 0) {
+        throw new BadRequestException(
+          `Insufficient stock for variant ${variant.sku}. Available: ${variant.stock}, needed: ${Math.abs(q)}.`,
+        );
+      }
       const updated = await this.prisma.productVariant.update({
         where: { id: variantId },
-        data: { stock: { increment: quantity } },
+        data: { stock: { increment: q } },
       });
       await this.prisma.inventoryLog.create({
         data: {
@@ -309,6 +334,12 @@ export class InventoryService {
     if (product.type === 'variable') {
       throw new BadRequestException(
         'Variable products use variant-level stock management. Select a specific variant instead.',
+      );
+    }
+
+    if (q < 0 && product.stock + q < 0) {
+      throw new BadRequestException(
+        `Insufficient stock for product ${product.name}. Available: ${product.stock}, needed: ${Math.abs(q)}.`,
       );
     }
 
@@ -380,9 +411,12 @@ export class InventoryService {
           }
           const product = await client.product.findUnique({
             where: { id: ci.productId },
-            select: { manageStock: true },
+            select: { manageStock: true, type: true },
           });
-          if (product?.manageStock) {
+          if (
+            product?.manageStock &&
+            (!effectiveVariantId || product.type === 'simple')
+          ) {
             await client.product.update({
               where: { id: ci.productId },
               data: { stock: { increment: qty } },
@@ -543,7 +577,7 @@ export class InventoryService {
   }
 
   async valuation(query: ValuationQueryDto) {
-    const where: any = { isActive: true };
+    const where: any = { isActive: true, manageStock: true };
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.search) {
       where.OR = [
@@ -616,6 +650,23 @@ export class InventoryService {
       select: { id: true, name: true, stock: true },
     });
     if (!product) throw new NotFoundException('Product not found');
+
+    const [sourceWarehouse, destWarehouse] = await Promise.all([
+      this.prisma.warehouse.findUnique({ where: { id: dto.sourceLocation } }),
+      this.prisma.warehouse.findUnique({
+        where: { id: dto.destinationLocation },
+      }),
+    ]);
+    if (!sourceWarehouse) {
+      throw new NotFoundException(
+        `Source warehouse ${dto.sourceLocation} not found`,
+      );
+    }
+    if (!destWarehouse) {
+      throw new NotFoundException(
+        `Destination warehouse ${dto.destinationLocation} not found`,
+      );
+    }
 
     await this.prisma.inventoryLog.create({
       data: {

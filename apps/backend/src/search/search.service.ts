@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface SearchResult {
@@ -26,28 +26,41 @@ export interface SearchResult {
 
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async search(query: string, limit = 5): Promise<SearchResult> {
-    const sanitized = query.replace(/[&|!()':*]/g, ' ').trim();
+    const sanitized = query.replace(/[%_\\]/g, ' ').trim();
     if (sanitized.length < 2) {
       return { orders: [], products: [], customers: [] };
     }
-    const tsquery = sanitized
-      .split(/\s+/)
-      .map((w) => w + ':*')
-      .join(' & ');
+    const pattern = `%${sanitized}%`;
 
     const [orders, products, customers] = await Promise.all([
-      this.searchOrders(tsquery, limit),
-      this.searchProducts(tsquery, limit),
-      this.searchCustomers(tsquery, limit),
+      this.safeFetch(() => this.searchOrders(pattern, limit), 'orders'),
+      this.safeFetch(() => this.searchProducts(pattern, limit), 'products'),
+      this.safeFetch(() => this.searchCustomers(pattern, limit), 'customers'),
     ]);
 
     return { orders, products, customers };
   }
 
-  private async searchOrders(tsquery: string, limit: number) {
+  private async safeFetch<T>(
+    fn: () => Promise<T[]>,
+    label: string,
+  ): Promise<T[]> {
+    try {
+      return await fn();
+    } catch (err) {
+      this.logger.error(
+        `Search failed for ${label}: ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
+
+  private async searchOrders(pattern: string, limit: number) {
     type OrderRow = {
       id: string;
       displayId: string;
@@ -64,16 +77,20 @@ export class SearchService {
        FROM "Order" o
        LEFT JOIN "OrderStatus" os ON os.id = o."statusId"
        LEFT JOIN "User" u ON u.id = o."customerId"
-       WHERE o.fts @@ to_tsquery('simple', $1)
-       ORDER BY ts_rank(o.fts, to_tsquery('simple', $1)) DESC
+       WHERE o."displayId" ILIKE $1
+          OR o."guestName" ILIKE $1
+          OR o."guestPhone" ILIKE $1
+          OR u."phoneNumber" ILIKE $1
+          OR (u."firstName" || ' ' || u."lastName") ILIKE $1
+       ORDER BY o."createdAt" DESC
        LIMIT $2::int`,
-      tsquery,
+      pattern,
       limit,
     );
     return rows.map((r) => ({ ...r, total: Number(r.total) }));
   }
 
-  private async searchProducts(tsquery: string, limit: number) {
+  private async searchProducts(pattern: string, limit: number) {
     type ProductRow = {
       id: string;
       name: string;
@@ -87,16 +104,16 @@ export class SearchService {
           ELSE COALESCE("salePrice", "basePrice")
         END::text AS price
        FROM "Product"
-       WHERE "isActive" = true AND fts @@ to_tsquery('simple', $1)
-       ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC
+       WHERE "isActive" = true AND (name ILIKE $1 OR sku ILIKE $1)
+       ORDER BY name ASC
        LIMIT $2::int`,
-      tsquery,
+      pattern,
       limit,
     );
     return rows.map((r) => ({ ...r, price: Number(r.price) }));
   }
 
-  private async searchCustomers(tsquery: string, limit: number) {
+  private async searchCustomers(pattern: string, limit: number) {
     type CustomerRow = {
       id: string;
       name: string;
@@ -109,10 +126,15 @@ export class SearchService {
               "phoneNumber" AS phone,
               email
        FROM "User"
-       WHERE role = 'customer' AND fts @@ to_tsquery('simple', $1)
-       ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC
+       WHERE role = 'customer'
+         AND ("firstName" ILIKE $1
+          OR "lastName" ILIKE $1
+          OR ("firstName" || ' ' || "lastName") ILIKE $1
+          OR email ILIKE $1
+          OR "phoneNumber" ILIKE $1)
+       ORDER BY "firstName" ASC
        LIMIT $2::int`,
-      tsquery,
+      pattern,
       limit,
     );
     return rows;

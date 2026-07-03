@@ -12,6 +12,7 @@ import { extname } from 'path';
 import { readFile, unlink } from 'fs/promises';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
+import { validateMagicBytes } from '../common/utils/file-validation';
 
 const PRIVATE_CIDRS: Array<(ip: string) => boolean> = [
   (ip) => ip.startsWith('10.'),
@@ -214,7 +215,13 @@ export class MediaService {
         `Storage delete failed for ${filename}: ${(err as Error).message}`,
       );
     }
-    await this.prisma.media.delete({ where: { id } });
+    try {
+      await this.prisma.media.delete({ where: { id } });
+    } catch (err) {
+      const e = err as { code?: string };
+      if (e.code === 'P2025') throw new NotFoundException('Media not found');
+      throw err;
+    }
 
     return { message: 'Media deleted' };
   }
@@ -239,6 +246,11 @@ export class MediaService {
   }
 
   async attach(mediaId: string, entityType: string, entityId: string) {
+    const media = await this.prisma.media.findUnique({
+      where: { id: mediaId },
+      select: { id: true },
+    });
+    if (!media) throw new NotFoundException('Media not found');
     return this.prisma.mediaAttachment.upsert({
       where: { mediaId_entityType_entityId: { mediaId, entityType, entityId } },
       create: { mediaId, entityType, entityId },
@@ -319,7 +331,7 @@ export class MediaService {
     try {
       resp = await fetch(url.toString(), {
         signal: controller.signal,
-        redirect: 'follow',
+        redirect: 'manual',
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -335,6 +347,9 @@ export class MediaService {
       clearTimeout(timeout);
     }
 
+    if (resp.status >= 300 && resp.status < 400) {
+      throw new BadRequestException('Redirects not allowed (SSRF guard)');
+    }
     if (!resp.ok) {
       throw new BadRequestException(`Failed to fetch URL: ${resp.status}`);
     }
@@ -357,6 +372,7 @@ export class MediaService {
     if (buffer.length > 25 * 1024 * 1024) {
       throw new BadRequestException('Remote file too large (>25MB)');
     }
+    validateMagicBytes(buffer, contentType);
     const hash = sha256(buffer);
 
     const existing = await this.prisma.media.findFirst({ where: { hash } });
@@ -440,6 +456,7 @@ export class MediaService {
     ) {
       throw new BadRequestException('Only images & videos allowed');
     }
+    validateMagicBytes(file.buffer, file.mimetype);
     const hash = sha256(file.buffer);
     const existing = await this.prisma.media.findFirst({ where: { hash } });
     if (existing) {
@@ -504,53 +521,78 @@ export class MediaService {
    * Returns parallel-array of { url, mediaId | null } where `url` is the
    * canonicalised library URL the caller should persist on the entity.
    */
+  private async resolveOneUrl(
+    trimmed: string,
+    opts: { uploadedBy?: string },
+  ): Promise<{ url: string; mediaId: string | null }> {
+    const fname = trimmed.split('/').pop()?.split('?')[0] || '';
+    const known = await this.prisma.media.findFirst({
+      where: {
+        OR: [{ url: trimmed }, ...(fname ? [{ filename: fname }] : [])],
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, url: true },
+    });
+
+    if (known) {
+      return { url: known.url, mediaId: known.id };
+    }
+
+    if (isLocalUrl(trimmed)) {
+      return { url: trimmed, mediaId: null };
+    }
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const ingested = await this.ingestFromUrl(trimmed, {
+          uploadedBy: opts.uploadedBy,
+        });
+        return { url: ingested.url, mediaId: ingested.id };
+      } catch (err) {
+        this.logger.warn(
+          `Auto-migration failed for ${trimmed}: ${(err as Error).message}`,
+        );
+        return { url: trimmed, mediaId: null };
+      }
+    }
+
+    return { url: trimmed, mediaId: null };
+  }
+
   async resolveUrlsToMedia(
     urls: string[],
     opts: { uploadedBy?: string } = {},
   ): Promise<{ url: string; mediaId: string | null }[]> {
-    const result: { url: string; mediaId: string | null }[] = [];
+    const CONCURRENCY = 10;
+    const results: (Promise<{
+      url: string;
+      mediaId: string | null;
+    } | null> | null)[] = [];
+
     for (const raw of urls) {
-      if (!raw) continue;
+      if (!raw) {
+        results.push(null);
+        continue;
+      }
       const trimmed = raw.trim();
-      if (!trimmed) continue;
-
-      const fname = trimmed.split('/').pop()?.split('?')[0] || '';
-      const known = await this.prisma.media.findFirst({
-        where: {
-          OR: [{ url: trimmed }, ...(fname ? [{ filename: fname }] : [])],
-        },
-        select: { id: true, url: true },
-      });
-
-      if (known) {
-        result.push({ url: known.url, mediaId: known.id });
+      if (!trimmed) {
+        results.push(null);
         continue;
       }
-
-      if (isLocalUrl(trimmed)) {
-        // Library-shaped URL but no row yet (e.g. file copied manually into uploads/).
-        result.push({ url: trimmed, mediaId: null });
-        continue;
-      }
-
-      if (/^https?:\/\//i.test(trimmed)) {
-        try {
-          const ingested = await this.ingestFromUrl(trimmed, {
-            uploadedBy: opts.uploadedBy,
-          });
-          result.push({ url: ingested.url, mediaId: ingested.id });
-        } catch (err) {
-          this.logger.warn(
-            `Auto-migration failed for ${trimmed}: ${(err as Error).message}`,
-          );
-          result.push({ url: trimmed, mediaId: null });
-        }
-        continue;
-      }
-
-      result.push({ url: trimmed, mediaId: null });
+      results.push(this.resolveOneUrl(trimmed, opts));
     }
-    return result;
+
+    const resolved: { url: string; mediaId: string | null }[] = [];
+    for (let i = 0; i < results.length; i += CONCURRENCY) {
+      const batch = (await Promise.all(results.slice(i, i + CONCURRENCY))) as ({
+        url: string;
+        mediaId: string | null;
+      } | null)[];
+      for (const r of batch) {
+        if (r) resolved.push(r);
+      }
+    }
+    return resolved;
   }
 
   /**

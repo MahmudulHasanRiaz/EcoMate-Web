@@ -45,8 +45,8 @@ export class TasksService {
     const where: any = {};
     if (query.search) {
       where.OR = [
-        { title: { contains: query.search } },
-        { description: { contains: query.search } },
+        { title: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.status) {
@@ -123,9 +123,9 @@ export class TasksService {
       data: {
         displayId,
         title: dto.title,
-        status: dto.status as TaskStatus,
-        label: dto.label as TaskLabel,
-        priority: dto.priority as TaskPriority,
+        status: dto.status,
+        label: dto.label,
+        priority: dto.priority,
         assignee: dto.assignee,
         description: dto.description,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
@@ -152,10 +152,9 @@ export class TasksService {
 
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
-    if (dto.status !== undefined) data.status = dto.status as TaskStatus;
-    if (dto.label !== undefined) data.label = dto.label as TaskLabel;
-    if (dto.priority !== undefined)
-      data.priority = dto.priority as TaskPriority;
+    if (dto.status !== undefined) data.status = dto.status;
+    if (dto.label !== undefined) data.label = dto.label;
+    if (dto.priority !== undefined) data.priority = dto.priority;
     if (dto.assignee !== undefined) data.assignee = dto.assignee;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
@@ -187,10 +186,10 @@ export class TasksService {
   }
 
   async bulkDelete(ids: string[]) {
-    await this.prisma.task.deleteMany({
+    const result = await this.prisma.task.deleteMany({
       where: { id: { in: ids } },
     });
-    return { message: `${ids.length} tasks deleted successfully` };
+    return { message: `${result.count} tasks deleted successfully` };
   }
 
   async bulkUpdate(
@@ -201,10 +200,10 @@ export class TasksService {
     if (update.status) data.status = update.status;
     if (update.priority) data.priority = update.priority;
 
-    await this.prisma.task.updateMany({
+    const result = await this.prisma.task.updateMany({
       where: { id: { in: ids } },
       data,
     });
-    return { message: `${ids.length} tasks updated successfully` };
+    return { message: `${result.count} tasks updated successfully` };
   }
 }

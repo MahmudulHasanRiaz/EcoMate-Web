@@ -12,6 +12,7 @@ import type { UploadFile } from '../storage/storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { validateMagicBytes } from '../common/utils/file-validation';
 
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB per file
 const MAX_BULK = 20;
@@ -47,6 +48,7 @@ export class UploadController {
     if (buffer.length > MAX_BYTES) {
       throw new BadRequestException('File too large');
     }
+    validateMagicBytes(buffer, file.mimetype);
 
     const uploadFile: UploadFile = {
       buffer,
@@ -106,6 +108,7 @@ export class UploadController {
           if (buffer.length > MAX_BYTES) {
             throw new BadRequestException('File too large');
           }
+          validateMagicBytes(buffer, part.mimetype);
 
           const uploadFile: UploadFile = {
             buffer,

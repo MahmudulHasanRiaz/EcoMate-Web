@@ -36,7 +36,9 @@ export class ReferralsService {
       where: { referralId: referral.id, phone: dto.phone },
     });
     if (existing) {
-      throw new ConflictException('Phone number already claimed this referral code');
+      throw new ConflictException(
+        'Phone number already claimed this referral code',
+      );
     }
 
     return this.prisma.referralLead.create({

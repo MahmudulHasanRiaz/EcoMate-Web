@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
@@ -9,8 +13,12 @@ export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(query: { search?: string; page?: number; perPage?: number }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 20;
+    const page =
+      Number.isFinite(query.page) && query.page! > 0 ? query.page! : 1;
+    const perPage =
+      Number.isFinite(query.perPage) && query.perPage! > 0
+        ? Math.min(query.perPage!, 100)
+        : 20;
     const where: any = { role: 'customer' };
 
     if (query.search) {
@@ -67,31 +75,37 @@ export class CustomersService {
     });
     if (!user || user.role !== 'customer') return null;
 
-    const orders = await this.prisma.order.findMany({
-      where: { customerId: user.id },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        displayId: true,
-        total: true,
-        statusId: true,
-        createdAt: true,
-        status: { select: { name: true, color: true } },
-      },
-    });
+    const [aggregation, recentOrders] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { customerId: user.id },
+        _count: true,
+        _sum: { total: true },
+      }),
+      this.prisma.order.findMany({
+        where: { customerId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          displayId: true,
+          total: true,
+          statusId: true,
+          createdAt: true,
+          status: { select: { name: true, color: true } },
+        },
+      }),
+    ]);
 
-    const totalOrders = orders.length;
-    const totalSpent = orders.reduce((s, o) => s + Number(o.total), 0);
-    const lastOrder = orders[0] || null;
+    const lastOrder = recentOrders[0] || null;
 
     return {
       customer: user,
       summary: {
-        totalOrders,
-        totalSpent,
+        totalOrders: aggregation._count,
+        totalSpent: Number(aggregation._sum.total || 0),
         lastOrderDate: lastOrder?.createdAt || null,
       },
-      recentOrders: orders.slice(0, 10),
+      recentOrders,
     };
   }
 
@@ -106,6 +120,13 @@ export class CustomersService {
   }
 
   async blockPhone(id: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true },
+    });
+    if (!user || user.role !== 'customer')
+      throw new NotFoundException('Customer not found');
+
     await this.prisma.user.update({
       where: { id },
       data: { status: 'suspended' },
@@ -113,6 +134,13 @@ export class CustomersService {
   }
 
   async unblockPhone(id: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true },
+    });
+    if (!user || user.role !== 'customer')
+      throw new NotFoundException('Customer not found');
+
     await this.prisma.user.update({
       where: { id },
       data: { status: 'active' },
@@ -187,31 +215,35 @@ export class CustomersService {
 
     if (!user) return null;
 
-    const orders = await this.prisma.order.findMany({
-      where: { customerId: user.id },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        displayId: true,
-        total: true,
-        statusId: true,
-        createdAt: true,
-        status: { select: { name: true, color: true } },
-      },
-    });
-
-    const totalOrders = orders.length;
-    const totalSpent = orders.reduce((s, o) => s + Number(o.total), 0);
-    const lastOrder = orders[0] || null;
+    const [aggregation, recentOrders] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { customerId: user.id },
+        _count: true,
+        _sum: { total: true },
+      }),
+      this.prisma.order.findMany({
+        where: { customerId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          displayId: true,
+          total: true,
+          statusId: true,
+          createdAt: true,
+          status: { select: { name: true, color: true } },
+        },
+      }),
+    ]);
 
     return {
       customer: user,
       summary: {
-        totalOrders,
-        totalSpent,
-        lastOrderDate: lastOrder?.createdAt || null,
+        totalOrders: aggregation._count,
+        totalSpent: Number(aggregation._sum.total || 0),
+        lastOrderDate: recentOrders[0]?.createdAt || null,
       },
-      recentOrders: orders.slice(0, 5),
+      recentOrders,
     };
   }
 }

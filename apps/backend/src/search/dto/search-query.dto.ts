@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class SearchQueryDto {
   @IsString()
@@ -8,5 +8,7 @@ export class SearchQueryDto {
 
   @Type(() => Number)
   @IsOptional()
+  @Min(1)
+  @Max(100)
   limit?: number;
 }

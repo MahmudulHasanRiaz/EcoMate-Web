@@ -61,6 +61,13 @@ export class OrderImportService {
       );
     }
 
+    const nonCriticalErrors = parsed.errors.filter(
+      (e) => e.code === 'TooFewFields' || e.code === 'TooManyFields',
+    );
+    for (const e of nonCriticalErrors) {
+      this.logger.warn(`CSV non-critical warning (row ${e.row}): ${e.message}`);
+    }
+
     const summary: OrderImportSummary = {
       ordersImported: 0,
       ordersSkipped: 0,
@@ -71,6 +78,10 @@ export class OrderImportService {
 
     const allErrors: OrderImportError[] = [];
     const rawRows = parsed.data.filter((r) => r.order_id?.trim());
+    const skippedCount = parsed.data.length - rawRows.length;
+    if (skippedCount > 0) {
+      this.logger.warn(`Skipped ${skippedCount} row(s) without order_id`);
+    }
     this.logger.log(`Parsed ${rawRows.length} order row(s) from CSV`);
 
     const rows: OrderImportRow[] = [];
@@ -402,7 +413,10 @@ export class OrderImportService {
           discount: discountTotal,
           discountType: 'flat',
           total: row.orderTotal,
-          shippingAddress: { ...shippingAddress, ...billingAddress } as any,
+          shippingAddress: {
+            shipping: shippingAddress,
+            billing: billingAddress,
+          } as any,
           customerNotes: row.customerNote || null,
           guestName: customerId ? null : customerName,
           guestPhone: customerId ? null : row.billingPhone || null,

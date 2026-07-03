@@ -1,18 +1,25 @@
-import { IsString, MinLength, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsString,
+  MinLength,
+  IsOptional,
+  IsDateString,
+  IsEnum,
+} from 'class-validator';
+import { TaskStatus, TaskLabel, TaskPriority } from '@prisma/client';
 
 export class CreateTaskDto {
   @IsString()
   @MinLength(1)
   title: string;
 
-  @IsString()
-  status: string;
+  @IsEnum(TaskStatus)
+  status: TaskStatus;
 
-  @IsString()
-  label: string;
+  @IsEnum(TaskLabel)
+  label: TaskLabel;
 
-  @IsString()
-  priority: string;
+  @IsEnum(TaskPriority)
+  priority: TaskPriority;
 
   @IsOptional()
   @IsString()

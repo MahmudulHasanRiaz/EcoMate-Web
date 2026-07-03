@@ -12,7 +12,8 @@ export class SearchController {
   @Roles('admin', 'manager', 'superadmin', 'cashier')
   @Get()
   async search(
-    @Query(new ValidationPipe({ transform: true })) query: SearchQueryDto,
+    @Query(new ValidationPipe({ transform: true, whitelist: true }))
+    query: SearchQueryDto,
   ) {
     return this.searchService.search(query.q, query.limit ?? 5);
   }

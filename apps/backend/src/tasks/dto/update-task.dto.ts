@@ -1,4 +1,11 @@
-import { IsString, MinLength, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsString,
+  MinLength,
+  IsOptional,
+  IsDateString,
+  IsEnum,
+} from 'class-validator';
+import { TaskStatus, TaskLabel, TaskPriority } from '@prisma/client';
 
 export class UpdateTaskDto {
   @IsOptional()
@@ -7,16 +14,16 @@ export class UpdateTaskDto {
   title?: string;
 
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(TaskStatus)
+  status?: TaskStatus;
 
   @IsOptional()
-  @IsString()
-  label?: string;
+  @IsEnum(TaskLabel)
+  label?: TaskLabel;
 
   @IsOptional()
-  @IsString()
-  priority?: string;
+  @IsEnum(TaskPriority)
+  priority?: TaskPriority;
 
   @IsOptional()
   @IsString()

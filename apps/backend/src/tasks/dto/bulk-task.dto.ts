@@ -1,4 +1,5 @@
-import { IsArray, IsString, IsOptional } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsEnum } from 'class-validator';
+import { TaskStatus, TaskPriority } from '@prisma/client';
 
 export class BulkDeleteTasksDto {
   @IsArray()
@@ -11,11 +12,11 @@ export class BulkUpdateTasksDto {
   @IsString({ each: true })
   ids: string[];
 
-  @IsString()
   @IsOptional()
-  status?: string;
+  @IsEnum(TaskStatus)
+  status?: TaskStatus;
 
-  @IsString()
   @IsOptional()
-  priority?: string;
+  @IsEnum(TaskPriority)
+  priority?: TaskPriority;
 }

@@ -1,0 +1,62 @@
+{
+  "summary": {
+    "severity": "moderate",
+    "total_issues": 5,
+    "critical": 1,
+    "medium": 2,
+    "low": 2,
+    "build": "pass"
+  },
+  "findings": [
+    {
+      "id": "SSRF-001",
+      "severity": "critical",
+      "category": "security",
+      "file": "apps/backend/src/media/media.service.ts",
+      "line": 322,
+      "title": "SSRF via redirect following in ingestFromUrl",
+      "description": "assertSafeRemoteUrl validates DNS of original URL blocking private IPs, but fetch() with redirect:'follow' follows HTTP redirects without re-validating the target. Attacker can host public URL that 302-redirects to http://169.254.169.254/ (AWS metadata) or other internal services.",
+      "fix": "Set redirect:'error' or redirect:'manual' and re-validate each redirect target with assertSafeRemoteUrl"
+    },
+    {
+      "id": "ERR-001",
+      "severity": "medium",
+      "category": "error_handling",
+      "file": "apps/backend/src/media/media.service.ts",
+      "line": 241,
+      "title": "attach() doesn't validate media existence before upsert",
+      "description": "attach() calls prisma.mediaAttachment.upsert directly. If mediaId doesn't exist, Prisma throws P2003 foreign key violation (500 error) instead of clean 404 NotFoundException.",
+      "fix": "Add findUnique check for media before upsert; throw NotFoundException if missing"
+    },
+    {
+      "id": "ERR-002",
+      "severity": "medium",
+      "category": "error_handling",
+      "file": "apps/backend/src/media/media.service.ts",
+      "line": 217,
+      "title": "remove() race condition — unhandled P2025 on concurrent delete",
+      "description": "Between findUnique (line 196) and delete (line 217), another request can delete the same media. Prisma.delete throws P2025 (RecordNotFound) which is uncaught, returning 500 instead of 404.",
+      "fix": "Wrap prisma.media.delete in try/catch; convert P2025 to NotFoundException"
+    },
+    {
+      "id": "PERF-001",
+      "severity": "low",
+      "category": "query_optimization",
+      "file": "apps/backend/src/media/media.service.ts",
+      "line": 512,
+      "title": "resolveUrlsToMedia processes URLs sequentially with await in for loop",
+      "description": "Each URL waits for previous DB lookup + optional HTTP download + media creation to complete. With N external URLs, this is N sequential network round-trips. Used heavily by migrateOrphans which can scan thousands of URLs.",
+      "fix": "Use Promise.all with concurrency limit (p-map or similar, 5-10 concurrency)"
+    },
+    {
+      "id": "QUERY-001",
+      "severity": "low",
+      "category": "query_optimization",
+      "file": "apps/backend/src/media/media.service.ts",
+      "line": 518,
+      "title": "resolveUrlsToMedia findFirst without orderBy — non-deterministic",
+      "description": "findFirst for OR[{url}, {filename}] query has no explicit orderBy. When multiple DB rows match (e.g. same filename via dedup counters), which row is returned is undefined.",
+      "fix": "Add orderBy: { createdAt: 'desc' } to findFirst for deterministic matching"
+    }
+  ]
+}

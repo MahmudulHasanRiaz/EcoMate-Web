@@ -25,8 +25,8 @@ export class CustomersController {
   ) {
     return this.svc.findAll({
       search,
-      page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 20,
+      page: page ? parseInt(page) || 1 : 1,
+      perPage: perPage ? parseInt(perPage) || 20 : 20,
     });
   }
 

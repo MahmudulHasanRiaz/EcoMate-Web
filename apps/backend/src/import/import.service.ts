@@ -62,6 +62,15 @@ export class ImportService {
       throw new BadRequestException(`CSV parse error: ${msg}`);
     }
 
+    const nonCriticalErrors = parsed.errors.filter(
+      (e) => e.code === 'TooFewFields' || e.code === 'TooManyFields',
+    );
+    if (nonCriticalErrors.length > 0) {
+      this.logger.warn(
+        `CSV non-critical warnings: ${nonCriticalErrors.map((e) => `row ${e.row}: ${e.message}`).join('; ')}`,
+      );
+    }
+
     const headers = parsed.meta?.fields || [];
     this.logger.log(`CSV headers (${headers.length}): ${headers.join(', ')}`);
 

@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -6,6 +6,8 @@ import { SkipThrottle } from '@nestjs/throttler';
 @SkipThrottle()
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   @Public()
@@ -14,7 +16,10 @@ export class HealthController {
     const dbOk = await this.prisma
       .$queryRawUnsafe('SELECT 1')
       .then(() => true)
-      .catch(() => false);
+      .catch((err) => {
+        this.logger.error(`Health check DB ping failed: ${err.message}`);
+        return false;
+      });
     return {
       status: dbOk ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
@@ -24,29 +29,5 @@ export class HealthController {
         memory: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
       },
     };
-  }
-
-  @Public()
-  @Get('db-columns')
-  async getDbColumns() {
-    try {
-      const productCols = await this.prisma.$queryRawUnsafe(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'Product'
-      `);
-      const variantCols = await this.prisma.$queryRawUnsafe(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'ProductVariant'
-      `);
-      return {
-        success: true,
-        productColumns: productCols,
-        variantColumns: variantCols,
-      };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
   }
 }

@@ -55,12 +55,7 @@ export class ImportController {
       throw new BadRequestException('CSV file is required');
     }
 
-    const allowedMime = [
-      'text/csv',
-      'text/plain',
-      'application/csv',
-      'application/octet-stream',
-    ];
+    const allowedMime = ['text/csv', 'text/plain', 'application/csv'];
     const allowedExt = file.filename.toLowerCase().endsWith('.csv');
 
     if (!allowedMime.includes(file.mimetype) && !allowedExt) {
@@ -108,7 +103,10 @@ export class ImportController {
         this.jobManager.completeJob(job.id, result.summary, result.errors);
       })
       .catch((err) => {
-        this.jobManager.failJob(job.id, err.message);
+        this.jobManager.failJob(
+          job.id,
+          err instanceof Error ? err.message : String(err),
+        );
       });
 
     return { jobId: job.id, status: 'processing', message: 'Import started' };
@@ -122,12 +120,7 @@ export class ImportController {
       throw new BadRequestException('CSV file is required');
     }
 
-    const allowedMime = [
-      'text/csv',
-      'text/plain',
-      'application/csv',
-      'application/octet-stream',
-    ];
+    const allowedMime = ['text/csv', 'text/plain', 'application/csv'];
     const allowedExt = file.filename.toLowerCase().endsWith('.csv');
 
     if (!allowedMime.includes(file.mimetype) && !allowedExt) {
@@ -155,7 +148,10 @@ export class ImportController {
         this.jobManager.completeJob(job.id, result.summary, result.errors);
       })
       .catch((err) => {
-        this.jobManager.failJob(job.id, err.message);
+        this.jobManager.failJob(
+          job.id,
+          err instanceof Error ? err.message : String(err),
+        );
       });
 
     return { jobId: job.id, status: 'processing', message: 'Import started' };

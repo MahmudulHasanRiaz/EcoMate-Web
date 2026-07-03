@@ -42,6 +42,36 @@ export class ImagesController {
       return res.status(400).send({ error: 'Invalid path' });
     }
 
+    const width = w !== undefined ? parseInt(w, 10) : undefined;
+    const height = h !== undefined ? parseInt(h, 10) : undefined;
+    const quality = q !== undefined ? parseInt(q, 10) : undefined;
+
+    if (w !== undefined && (isNaN(width!) || width! <= 0)) {
+      return res.status(400).send({ error: 'Invalid width parameter' });
+    }
+    if (h !== undefined && (isNaN(height!) || height! <= 0)) {
+      return res.status(400).send({ error: 'Invalid height parameter' });
+    }
+    if (
+      q !== undefined &&
+      (isNaN(quality!) || quality! <= 0 || quality! > 100)
+    ) {
+      return res
+        .status(400)
+        .send({ error: 'Invalid quality parameter (must be 1-100)' });
+    }
+
+    const validFits = [
+      'cover',
+      'contain',
+      'fill',
+      'inside',
+      'outside',
+    ] as const;
+    if (fit && !validFits.includes(fit as any)) {
+      return res.status(400).send({ error: 'Invalid fit parameter' });
+    }
+
     const key = this.cacheKey(path, w, h, q, fit);
 
     try {
@@ -49,9 +79,9 @@ export class ImagesController {
       if (!promise) {
         promise = this.imagesService.resize({
           path,
-          w: w ? parseInt(w) : undefined,
-          h: h ? parseInt(h) : undefined,
-          q: q ? parseInt(q) : undefined,
+          w: width,
+          h: height,
+          q: quality,
           fit: fit as any,
         });
         this.inflight.set(key, promise);
@@ -62,13 +92,16 @@ export class ImagesController {
       const result = await promise;
 
       res.header('Content-Type', result.mime);
-      res.header('Content-Length', result.buffer.length);
+      res.header('Content-Length', String(result.buffer.length));
       res.header('Cache-Control', 'public, max-age=31536000, immutable');
       res.header('Vary', 'Accept-Encoding');
       res.status(200).send(result.buffer);
     } catch (err: any) {
       this.logger.error(`Image resize failed: ${path}`, err.message);
-      res.status(404).send({ error: 'Image not found' });
+      if (err.message?.startsWith('Image not found')) {
+        return res.status(404).send({ error: 'Image not found' });
+      }
+      return res.status(500).send({ error: 'Image processing failed' });
     }
   }
 }

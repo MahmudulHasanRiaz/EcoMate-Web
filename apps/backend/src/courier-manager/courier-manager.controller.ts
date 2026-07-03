@@ -1,16 +1,7 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Request } from 'express';
+import { randomBytes } from 'node:crypto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -102,8 +93,7 @@ export class CourierManagerController {
 
   @Post('credentials/:courier/generate-webhook-secret')
   async generateWebhookSecret(@Param('courier') courier: string) {
-    const crypto = await import('crypto');
-    const secret = crypto.randomBytes(32).toString('hex');
+    const secret = randomBytes(32).toString('hex');
     await this.prisma.courierCredentials.update({
       where: { courier },
       data: { webhookSecret: secret },
@@ -135,11 +125,7 @@ export class CourierManagerController {
   }
 
   @Post('webhook/:courier')
-  async webhook(
-    @Param('courier') courier: string,
-    @Req() req: Request,
-    @Body() body: unknown,
-  ) {
+  async webhook(@Param('courier') _courier: string, @Body() body: unknown) {
     const data = body as Record<string, unknown>;
     const orderId = (data['merchant_order_id'] ||
       data['invoice'] ||

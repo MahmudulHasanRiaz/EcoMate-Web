@@ -2,9 +2,10 @@ import {
   IsString,
   IsInt,
   IsOptional,
-  Min,
   IsArray,
   ValidateNested,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -22,7 +23,8 @@ export class AdjustInventoryDto {
   comboId?: string;
 
   @IsInt()
-  @Min(1)
+  @Min(-999999)
+  @Max(999999)
   quantity: number;
 
   @IsString()

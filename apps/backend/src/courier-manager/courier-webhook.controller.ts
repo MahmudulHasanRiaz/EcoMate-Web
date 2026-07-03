@@ -12,7 +12,7 @@ import {
 import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Request, Response } from 'express';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 @Controller('webhooks/courier')
 export class CourierWebhookController {
@@ -45,7 +45,10 @@ export class CourierWebhookController {
   }
 
   @Post('steadfast')
-  async steadfast(@Body() body: Record<string, unknown>, @Req() req: Request) {
+  async steadfast(
+    @Body() body: Record<string, unknown>,
+    @Req() req: FastifyRequest,
+  ) {
     const authHeader = req.headers['authorization'];
     await this.validateWebhookToken('steadfast', authHeader);
     this.logger.log('Steadfast webhook received');
@@ -55,8 +58,8 @@ export class CourierWebhookController {
   @Post('pathao')
   async pathao(
     @Body() body: Record<string, unknown>,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const signature = req.headers['x-pathao-signature'] as string | undefined;
     if (!signature)
@@ -71,7 +74,7 @@ export class CourierWebhookController {
     if (signature !== creds.webhookSecret)
       throw new UnauthorizedException('Invalid X-PATHAO-Signature');
 
-    res.set(
+    res.header(
       'X-Pathao-Merchant-Webhook-Integration-Secret',
       creds.webhookSecret,
     );
@@ -81,7 +84,10 @@ export class CourierWebhookController {
   }
 
   @Post('redx')
-  async redx(@Body() body: Record<string, unknown>, @Req() req: Request) {
+  async redx(
+    @Body() body: Record<string, unknown>,
+    @Req() req: FastifyRequest,
+  ) {
     const signature = req.headers['x-redx-signature'] as string;
     const webhookSecret = process.env['REDX_WEBHOOK_SECRET'];
     if (webhookSecret && signature) {
@@ -99,7 +105,10 @@ export class CourierWebhookController {
   }
 
   @Post('carrybee')
-  async carrybee(@Body() body: Record<string, unknown>, @Req() req: Request) {
+  async carrybee(
+    @Body() body: Record<string, unknown>,
+    @Req() req: FastifyRequest,
+  ) {
     const authHeader = req.headers['authorization'];
     await this.validateWebhookToken('carrybee', authHeader);
     this.logger.log('Carrybee webhook received');

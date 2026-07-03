@@ -42,7 +42,7 @@ export class CourierWebhookService {
     await this.prisma.order.update({
       where: { id: order.id },
       data: {
-        courierStatus: status,
+        courierStatus: mappedStatus,
         courierTrackingCode:
           (body['tracking_code'] as string) || order.courierTrackingCode,
         courierService: 'steadfast',
@@ -77,7 +77,7 @@ export class CourierWebhookService {
 
     await this.prisma.order.update({
       where: { id: order.id },
-      data: { courierStatus: event, courierService: 'pathao' },
+      data: { courierStatus: mappedStatus, courierService: 'pathao' },
     });
     await this.addTimelineEntry(order.id, 'pathao', mappedStatus);
     this.logger.log(`Pathao: ${consignmentId} → ${mappedStatus}`);
@@ -169,7 +169,7 @@ export class CourierWebhookService {
     await this.prisma.order.update({
       where: { id: order.id },
       data: {
-        courierStatus: event || deliveryStatus,
+        courierStatus: mappedStatus,
         courierConsignmentId: consignmentId || order.courierConsignmentId,
         courierService: 'carrybee',
       },

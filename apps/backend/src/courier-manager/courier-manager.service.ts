@@ -26,6 +26,35 @@ export class CourierManagerService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private async fetchWithTimeout(
+    url: string,
+    options: RequestInit = {},
+    timeoutMs = 15000,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async jsonFetch(
+    url: string,
+    options: RequestInit = {},
+    timeoutMs = 15000,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.fetchWithTimeout(url, options, timeoutMs);
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error');
+      throw new BadRequestException(
+        `HTTP ${res.status} from courier API: ${text.slice(0, 200)}`,
+      );
+    }
+    return (await res.json()) as Record<string, unknown>;
+  }
+
   private async getBaseUrl(courier: string): Promise<string> {
     const creds = await this.getCreds(courier);
     const mode = creds?.mode || 'production';
@@ -169,7 +198,7 @@ export class CourierManagerService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`${base}/create_order`, {
+        const res = await this.fetchWithTimeout(`${base}/create_order`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -319,14 +348,17 @@ export class CourierManagerService {
           password,
         );
 
-        const res = await fetch(`${base}/aladdin/api/v1/orders`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+        const res = await this.fetchWithTimeout(
+          `${base}/aladdin/api/v1/orders`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-        });
+        );
         const data = (await res.json()) as Record<string, unknown>;
         if (data['data']?.['consignment_id']) {
           const cId = String(
@@ -388,18 +420,20 @@ export class CourierManagerService {
     username: string,
     password: string,
   ): Promise<string> {
-    const tokenRes = await fetch(`${base}/aladdin/api/v1/issue-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        username,
-        password,
-        grant_type: 'password',
-      }),
-    });
-    const tokenData = (await tokenRes.json()) as Record<string, unknown>;
+    const tokenData = await this.jsonFetch(
+      `${base}/aladdin/api/v1/issue-token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          username,
+          password,
+          grant_type: 'password',
+        }),
+      },
+    );
     if (!tokenData['access_token'])
       throw new BadRequestException(
         String(tokenData['message'] || 'Pathao auth failed'),
@@ -451,7 +485,7 @@ export class CourierManagerService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`${base}/parcel`, {
+        const res = await this.fetchWithTimeout(`${base}/parcel`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -540,7 +574,7 @@ export class CourierManagerService {
     };
 
     try {
-      const res = await fetch(`${base}/api/shipments/create`, {
+      const res = await this.fetchWithTimeout(`${base}/api/shipments/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -593,7 +627,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/get_balance`, {
+    const data = await this.jsonFetch(`${base}/get_balance`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -601,7 +635,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    const data = (await res.json()) as Record<string, unknown>;
     return { current_balance: Number(data['current_balance'] || 0) };
   }
 
@@ -624,7 +657,7 @@ export class CourierManagerService {
     if (params.tracking_code) payload.tracking_code = params.tracking_code;
     if (params.reason) payload.reason = params.reason;
 
-    const res = await fetch(`${base}/create_return_request`, {
+    return this.jsonFetch(`${base}/create_return_request`, {
       method: 'POST',
       headers: {
         'Api-Key': apiKey,
@@ -633,7 +666,6 @@ export class CourierManagerService {
       },
       body: JSON.stringify(payload),
     });
-    return res.json();
   }
 
   async getSteadfastReturnRequest(id: string) {
@@ -644,7 +676,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/get_return_request/${id}`, {
+    return this.jsonFetch(`${base}/get_return_request/${id}`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -652,7 +684,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    return res.json();
   }
 
   async getSteadfastReturnRequests() {
@@ -663,7 +694,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/get_return_requests`, {
+    return this.jsonFetch(`${base}/get_return_requests`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -671,7 +702,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    return res.json();
   }
 
   async getSteadfastPayments() {
@@ -682,7 +712,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/payments`, {
+    return this.jsonFetch(`${base}/payments`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -690,7 +720,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    return res.json();
   }
 
   async getSteadfastPaymentWithConsignments(paymentId: string) {
@@ -701,7 +730,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/payments/${paymentId}`, {
+    return this.jsonFetch(`${base}/payments/${paymentId}`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -709,7 +738,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    return res.json();
   }
 
   async getSteadfastPoliceStations() {
@@ -720,7 +748,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await fetch(`${base}/police_stations`, {
+    return this.jsonFetch(`${base}/police_stations`, {
       method: 'GET',
       headers: {
         'Api-Key': apiKey,
@@ -728,7 +756,6 @@ export class CourierManagerService {
         'Content-Type': 'application/json',
       },
     });
-    return res.json();
   }
 
   async bulkCreateSteadfastOrders(orders: any[]) {
@@ -744,7 +771,7 @@ export class CourierManagerService {
       );
 
     const base = await this.getBaseUrl('steadfast');
-    const data = orders.map((order) => ({
+    const bodyData = orders.map((order) => ({
       invoice: order.displayId,
       recipient_name:
         `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim() ||
@@ -758,16 +785,15 @@ export class CourierManagerService {
       note: order.officeNotes || null,
     }));
 
-    const res = await fetch(`${base}/create_order/bulk-order`, {
+    const response = await this.jsonFetch(`${base}/create_order/bulk-order`, {
       method: 'POST',
       headers: {
         'Api-Key': apiKey,
         'Secret-Key': secretKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ data: bodyData }),
     });
-    const response = (await res.json()) as Record<string, unknown>;
 
     const results = (response['data'] as Array<Record<string, unknown>>) || [];
     const successResults: {
@@ -804,14 +830,13 @@ export class CourierManagerService {
       throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
-    const res = await fetch(`${base}/parcel/info/${trackingId}`, {
+    return this.jsonFetch(`${base}/parcel/info/${trackingId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
       },
     });
-    return res.json();
   }
 
   async trackRedxParcel(trackingId: string) {
@@ -821,14 +846,13 @@ export class CourierManagerService {
       throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
-    const res = await fetch(`${base}/parcel/track/${trackingId}`, {
+    return this.jsonFetch(`${base}/parcel/track/${trackingId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
       },
     });
-    return res.json();
   }
 
   async cancelRedxParcel(trackingId: string, reason: string) {
@@ -838,7 +862,7 @@ export class CourierManagerService {
       throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
-    const res = await fetch(`${base}/parcels`, {
+    return this.jsonFetch(`${base}/parcels`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -854,7 +878,6 @@ export class CourierManagerService {
         },
       }),
     });
-    return res.json();
   }
 
   async getCities() {
@@ -903,11 +926,17 @@ export class CourierManagerService {
       creds.username,
       creds.password,
     );
-    const res = await fetch(`${base}/aladdin/api/v1/city-list`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const parsed = await res.json();
-    const list = parsed?.data?.data || parsed?.data || [];
+    const parsed: Record<string, unknown> = await this.jsonFetch(
+      `${base}/aladdin/api/v1/city-list`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    const innerData = parsed['data'] as Record<string, unknown> | undefined;
+    const list = (innerData?.['data'] ||
+      innerData ||
+      parsed['data'] ||
+      []) as unknown[];
     return list.map((item: any) => ({
       id: item.city_id || item.id,
       name: item.city_name || item.name,
@@ -924,14 +953,17 @@ export class CourierManagerService {
       creds.username,
       creds.password,
     );
-    const res = await fetch(
+    const parsed: Record<string, unknown> = await this.jsonFetch(
       `${base}/aladdin/api/v1/cities/${cityId}/zone-list`,
       {
         headers: { Authorization: `Bearer ${token}` },
       },
     );
-    const parsed = await res.json();
-    const list = parsed?.data?.data || parsed?.data || [];
+    const innerData = parsed['data'] as Record<string, unknown> | undefined;
+    const list = (innerData?.['data'] ||
+      innerData ||
+      parsed['data'] ||
+      []) as unknown[];
     return list.map((item: any) => ({
       id: item.zone_id || item.id,
       name: item.zone_name || item.name,
@@ -942,15 +974,21 @@ export class CourierManagerService {
     const base =
       BASE_URLS['carrybee']?.[creds.mode] ||
       BASE_URLS['carrybee']?.['production'];
-    const res = await fetch(`${base}/api/v2/cities`, {
-      headers: {
-        'Client-ID': creds.clientId,
-        'Client-Secret': creds.clientSecret,
-        'Client-Context': 'merchant',
+    const parsed: Record<string, unknown> = await this.jsonFetch(
+      `${base}/api/v2/cities`,
+      {
+        headers: {
+          'Client-ID': creds.clientId,
+          'Client-Secret': creds.clientSecret,
+          'Client-Context': 'merchant',
+        },
       },
-    });
-    const parsed = await res.json();
-    const list = parsed?.data?.cities || parsed?.cities || parsed?.data || [];
+    );
+    const innerData = parsed['data'] as Record<string, unknown> | undefined;
+    const list = (innerData?.['cities'] ||
+      parsed['cities'] ||
+      parsed['data'] ||
+      []) as unknown[];
     return list.map((item: any) => ({
       id: item.city_id || item.id,
       name: item.city_name || item.name,
@@ -961,15 +999,21 @@ export class CourierManagerService {
     const base =
       BASE_URLS['carrybee']?.[creds.mode] ||
       BASE_URLS['carrybee']?.['production'];
-    const res = await fetch(`${base}/api/v2/cities/${cityId}/zones`, {
-      headers: {
-        'Client-ID': creds.clientId,
-        'Client-Secret': creds.clientSecret,
-        'Client-Context': 'merchant',
+    const parsed: Record<string, unknown> = await this.jsonFetch(
+      `${base}/api/v2/cities/${cityId}/zones`,
+      {
+        headers: {
+          'Client-ID': creds.clientId,
+          'Client-Secret': creds.clientSecret,
+          'Client-Context': 'merchant',
+        },
       },
-    });
-    const parsed = await res.json();
-    const list = parsed?.data?.zones || parsed?.zones || parsed?.data || [];
+    );
+    const innerData = parsed['data'] as Record<string, unknown> | undefined;
+    const list = (innerData?.['zones'] ||
+      parsed['zones'] ||
+      parsed['data'] ||
+      []) as unknown[];
     return list.map((item: any) => ({
       id: item.zone_id || item.id,
       name: item.zone_name || item.name,
