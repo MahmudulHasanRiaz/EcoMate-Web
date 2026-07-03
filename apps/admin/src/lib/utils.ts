@@ -27,9 +27,8 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/a
 export function appUrl(url: string): string {
   if (!url) return ''
   if (url.startsWith('http')) return url
-  // In dev mode Vite proxies /uploads to the backend — use relative URL
+  if (!url.startsWith('/')) url = `/${url}`
   if (import.meta.env.DEV) return url
-  // Strip trailing /api from the base to get the server origin
   const origin = API_BASE.replace(/\/api\/?$/, '')
   return `${origin}${url}`
 }

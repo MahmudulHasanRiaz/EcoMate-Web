@@ -18,11 +18,13 @@ import {
 type DataTablePaginationProps<TData> = {
   table: Table<TData>
   className?: string
+  totalCount?: number
 }
 
 export function DataTablePagination<TData>({
   table,
   className,
+  totalCount,
 }: DataTablePaginationProps<TData>) {
   const currentPage = table.getState().pagination.pageIndex + 1
   const totalPages = table.getPageCount()
@@ -38,6 +40,9 @@ export function DataTablePagination<TData>({
       style={{ overflowClipMargin: 1 }}
     >
       <div className='flex w-full items-center justify-between'>
+        <div className='text-sm text-muted-foreground'>
+          {totalCount != null ? `${totalCount.toLocaleString()} total` : ''}
+        </div>
         <div className='flex w-25 items-center justify-center text-sm font-medium @2xl/content:hidden'>
           Page {currentPage} of {totalPages}
         </div>

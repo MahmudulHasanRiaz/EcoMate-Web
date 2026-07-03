@@ -30,17 +30,15 @@ export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, ...pro
     if (!src) return src
     if (!thumbWidth && !thumbHeight) return src
 
-    let path = src
-    if (path.startsWith('http')) {
-      try { path = new URL(path).pathname } catch { return src }
-    }
-    if (!path.startsWith('/')) return src
+    if (src.startsWith('http')) return src
+
+    if (!src.startsWith('/uploads/')) return src
 
     const base = import.meta.env.DEV
       ? 'http://localhost:4000/api/images/resize'
       : '/api/images/resize'
     const params = new URLSearchParams()
-    params.set('path', path)
+    params.set('path', src)
     if (thumbWidth) params.set('w', String(thumbWidth))
     if (thumbHeight) params.set('h', String(thumbHeight))
     return `${base}?${params.toString()}`

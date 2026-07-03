@@ -7,14 +7,14 @@ import { type ProductResponse } from '../api'
 import { productsColumns } from './products-columns'
 
 type Props = {
-  data: ProductResponse[]; pageCount: number; pagination: PaginationState;
+  data: ProductResponse[]; pageCount: number; totalCount: number; pagination: PaginationState;
   onPaginationChange: (p: PaginationState) => void; isLoading?: boolean;
   onEdit: (row: ProductResponse) => void; onDelete: (row: ProductResponse) => void;
   onToggleActive?: (row: ProductResponse, active: boolean) => void;
   selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
 }
 
-export function ProductsTable({ data, pageCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, selectedIds, onSelectionChange }: Props) {
+export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, selectedIds, onSelectionChange }: Props) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(() => {
@@ -81,7 +81,7 @@ export function ProductsTable({ data, pageCount, pagination, onPaginationChange,
           </TableBody>
         </Table>
       </div>
-      <DataTablePagination table={table} className='mt-auto' />
+      <DataTablePagination table={table} className='mt-auto' totalCount={totalCount} />
     </div>
   )
 }

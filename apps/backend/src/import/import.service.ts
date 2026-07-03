@@ -996,8 +996,12 @@ export class ImportService {
     const intendedTags = JSON.stringify(intended.tags ?? []);
     if (currentTags !== intendedTags) return false;
 
-    const currentSeoMeta = JSON.stringify(current.seoMeta ?? {});
-    const intendedSeoMeta = JSON.stringify(intended.seoMeta ?? {});
+    const stripExtra = (o: Record<string, unknown>) => {
+      const { attributes, ...rest } = o;
+      return rest;
+    };
+    const currentSeoMeta = JSON.stringify(stripExtra((current.seoMeta ?? {}) as Record<string, unknown>));
+    const intendedSeoMeta = JSON.stringify(stripExtra((intended.seoMeta ?? {}) as Record<string, unknown>));
     if (currentSeoMeta !== intendedSeoMeta) return false;
 
     if (intended.slug && current.slug !== intended.slug) return false;

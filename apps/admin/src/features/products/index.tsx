@@ -208,6 +208,7 @@ export function Products() {
         <ProductsTable
           data={data?.data || []}
           pageCount={data?.meta?.totalPages || 0}
+          totalCount={data?.meta?.total || 0}
           pagination={pagination}
           onPaginationChange={setPagination}
           isLoading={isLoading}
