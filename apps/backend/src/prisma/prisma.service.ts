@@ -21,6 +21,7 @@ interface ParsedModel {
   name: string;
   tableName: string;
   scalarFields: ParsedField[];
+  relationFieldNames: string[];
   indexes: string[];
   idFields: string[]; // column names for PRIMARY KEY
   compositeId: boolean; // whether PK is composite (from @@id)
@@ -223,6 +224,7 @@ export class PrismaService
       this.logger.warn(`Prisma warning: ${e.message || e.target}`);
     });
     await this.$connect();
+    await this.dropStaleColumns();
     await this.ensureSchemaColumns();
     await this.logDatabaseColumns();
     await this.validateSchemaCompleteness();
@@ -420,6 +422,7 @@ export class PrismaService
           name: modelStart[1],
           tableName: modelStart[1],
           scalarFields: [],
+          relationFieldNames: [],
           indexes: [],
           idFields: [],
           compositeId: false,
@@ -467,7 +470,10 @@ export class PrismaService
       const baseType = fieldType.replace(/\[\]$/, '');
       const isRelation = trimmed.includes('@relation') || (modelNames.has(baseType) && !isScalarType(baseType));
 
-      if (isRelation) continue;
+      if (isRelation) {
+        currentModel.relationFieldNames.push(fieldName);
+        continue;
+      }
 
       // Check for @map("col_name") on this field
       let columnName = fieldName;
@@ -728,6 +734,38 @@ export class PrismaService
     }
 
     this.logger.log('Schema drift check: all required columns verified ✓');
+  }
+
+  private async dropStaleColumns(): Promise<void> {
+    try {
+      const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
+      if (!fs.existsSync(schemaPath)) return;
+
+      const content = fs.readFileSync(schemaPath, 'utf-8');
+      const models = this.parsePrismaModels(content);
+      if (models.length === 0) return;
+
+      for (const model of models) {
+        if (model.relationFieldNames.length === 0) continue;
+
+        const rows = await this.runRaw<{ column_name: string }[]>(
+          `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${model.tableName}'`,
+        );
+        const existing = new Set(rows.map((r) => r.column_name));
+
+        for (const relName of model.relationFieldNames) {
+          if (!existing.has(relName)) continue;
+          if (model.scalarFields.some((f) => f.columnName === relName)) continue;
+
+          try {
+            await this.runRaw(`ALTER TABLE "${model.tableName}" DROP COLUMN IF EXISTS "${relName}"`);
+            this.logger.log(`Dropped stale relation column "${model.tableName}"."${relName}"`);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Stale column cleanup skipped: ${err.message}`);
+    }
   }
 
   private async validateSchemaCompleteness(): Promise<void> {
