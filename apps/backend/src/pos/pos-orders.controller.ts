@@ -18,6 +18,20 @@ export class PosOrdersController {
     return this.svc.create(dto, sessionId, req.user.id);
   }
 
+  @Get('customers')
+  @Roles('cashier', 'admin')
+  async findCustomer(@Query('phone') phone: string) {
+    if (!phone) throw new BadRequestException('Phone required');
+    return this.svc.findCustomerByPhone(phone);
+  }
+
+  @Post('customers/quick')
+  @Roles('cashier', 'admin')
+  async quickCreateCustomer(@Body() dto: { phoneNumber: string; firstName?: string }) {
+    if (!dto.phoneNumber) throw new BadRequestException('Phone required');
+    return this.svc.quickCreateCustomer(dto.phoneNumber, dto.firstName);
+  }
+
   @Get('products')
   @Roles('cashier', 'admin')
   findProducts(

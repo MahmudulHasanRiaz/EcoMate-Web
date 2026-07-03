@@ -73,6 +73,34 @@ export class PosOrdersService {
     return ids;
   }
 
+  async findCustomerByPhone(phone: string) {
+    return this.prisma.user.findFirst({
+      where: { phoneNumber: phone, role: 'customer' },
+      select: { id: true, firstName: true, lastName: true, phoneNumber: true },
+    });
+  }
+
+  async quickCreateCustomer(phone: string, name?: string) {
+    const existing = await this.prisma.user.findFirst({
+      where: { phoneNumber: phone, role: 'customer' },
+    });
+    if (existing) return existing;
+
+    return this.prisma.user.create({
+      data: {
+        firstName: name || phone,
+        lastName: '',
+        username: `cust_${phone.replace(/[^0-9]/g, '')}`,
+        email: `${phone.replace(/[^0-9]/g, '')}@pos.ecomate`,
+        phoneNumber: phone,
+        password: '',
+        role: 'customer',
+        status: 'active',
+      },
+      select: { id: true, firstName: true, lastName: true, phoneNumber: true },
+    });
+  }
+
   async create(dto: CreatePosOrderDto, sessionId: string, cashierId: string) {
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },

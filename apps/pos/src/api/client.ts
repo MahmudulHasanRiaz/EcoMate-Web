@@ -53,10 +53,10 @@ export const getCategoryTree = () =>
   api.get('/categories/tree');
 
 export const findCustomerByPhone = (phone: string) =>
-  api.get('/customers', { params: { phoneNumber: phone } });
+  api.get('/pos/customers', { params: { phone } });
 
 export const quickCreateCustomer = (phone: string, name?: string) =>
-  api.post('/customers/quick', { phoneNumber: phone, firstName: name });
+  api.post('/pos/customers/quick', { phoneNumber: phone, firstName: name });
 
 export const getShowrooms = () =>
   api.get('/warehouses', { params: { type: 'showroom' } });

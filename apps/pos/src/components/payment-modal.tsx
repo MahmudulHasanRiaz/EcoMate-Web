@@ -11,17 +11,18 @@ interface Props {
 }
 
 export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
-  const { items, total, orderDiscount, orderDiscountType, customerId, guestName, guestPhone, salesChannel, deliveryMethod, notes, clearCart } = useCartStore()
+  const { items, orderDiscount, orderDiscountType, customerId, guestName, guestPhone, salesChannel, deliveryMethod, notes, clearCart, total, subtotal } = useCartStore()
+  const cartTotal = total()
 
   const [splits, setSplits] = useState<{ method: string; amount: string }[]>([
-    { method: 'CASH', amount: total.toFixed(2) },
+    { method: 'CASH', amount: cartTotal.toFixed(2) },
   ])
   const [loading, setLoading] = useState(false)
 
   // Reset splits when modal opens with new total
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      setSplits([{ method: 'CASH', amount: total.toFixed(2) }])
+      setSplits([{ method: 'CASH', amount: cartTotal.toFixed(2) }])
     }
     onOpenChange(open)
   }
@@ -37,7 +38,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const removeSplit = (i: number) => setSplits(splits.filter((_, idx) => idx !== i))
 
   const splitTotal = splits.reduce((s, sp) => s + (parseFloat(sp.amount) || 0), 0)
-  const difference = total - splitTotal
+  const difference = cartTotal - splitTotal
   const isValid = Math.abs(difference) < 0.01 && splits.every((sp) => parseFloat(sp.amount) > 0)
 
   const handlePay = async () => {
@@ -81,7 +82,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
         <Dialog.Overlay className="fixed inset-0 bg-black/50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-2xl">
           <Dialog.Title className="mb-1 text-xl font-bold">Payment</Dialog.Title>
-          <p className="mb-4 text-3xl font-bold text-green-700">৳{total.toLocaleString()}</p>
+          <p className="mb-4 text-3xl font-bold text-green-700">৳{cartTotal.toLocaleString()}</p>
 
           <div className="mb-4 space-y-2">
             {splits.map((sp, i) => (
@@ -121,7 +122,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
               disabled={!isValid || loading}
               className="flex-1 rounded-lg bg-green-600 py-3 text-sm font-medium text-white disabled:opacity-50"
             >
-              {loading ? 'Processing...' : `Pay ৳${total.toLocaleString()}`}
+              {loading ? 'Processing...' : `Pay ৳${cartTotal.toLocaleString()}`}
             </button>
           </div>
         </Dialog.Content>

@@ -113,6 +113,7 @@ model User {
   convertedLeads CheckoutLead[] @relation("CheckoutLeadConvertedBy")
   referrals     Referral[]
   posSessions   PosSession[]
+  heldCarts     HeldCart[]
 
   @@index([role])
   @@index([status])
@@ -427,6 +428,7 @@ model PosSession {
   closedAt        DateTime?
   notes           String?
   orders          Order[]
+  heldCarts       HeldCart[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -446,6 +448,10 @@ model HeldCart {
   discount     Decimal  @default(0) @db.Decimal(10, 2)
   discountType String   @default("flat")
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  session   PosSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  cashier   User       @relation(fields: [cashierId], references: [id])
 
   @@index([sessionId])
   @@index([cashierId])
@@ -860,7 +866,7 @@ model Refund {
   status      String    @default("pending")
   processedBy String?
   processedAt DateTime?
-  notes       String?
+  notes           String? @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

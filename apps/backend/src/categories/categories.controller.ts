@@ -30,6 +30,12 @@ export class CategoriesController {
   }
 
   @Public()
+  @Get('tree')
+  async findTree() {
+    return this.svc.findTree();
+  }
+
+  @Public()
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);

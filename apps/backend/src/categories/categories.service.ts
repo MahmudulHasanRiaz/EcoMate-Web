@@ -33,6 +33,21 @@ export class CategoriesService {
     return data;
   }
 
+  async findTree() {
+    const cached = await this.cache.get<any[]>('categories:tree');
+    if (cached) return cached;
+    const all = await this.prisma.category.findMany({
+      where: { isActive: true },
+      include: {
+        children: { where: { isActive: true }, include: { children: { where: { isActive: true } } } },
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const roots = all.filter((c) => !c.parentId);
+    await this.cache.set('categories:tree', roots);
+    return roots;
+  }
+
   async findAll() {
     const cached = await this.cache.get<any[]>('categories:all');
     if (cached) return cached;
