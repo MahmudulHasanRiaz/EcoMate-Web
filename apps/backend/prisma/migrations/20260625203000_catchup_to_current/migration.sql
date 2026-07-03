@@ -514,25 +514,29 @@ CREATE TABLE IF NOT EXISTS "Expense" (
 ALTER TABLE "Expense" ADD COLUMN IF NOT EXISTS "categoryId" TEXT;
 
 -- Backfill: map old enum values to new category IDs (no-op if Expense is new)
-UPDATE "Expense" SET "categoryId" = (
-    CASE "category"::text
-        WHEN 'utilities' THEN 'cat-utilities'
-        WHEN 'rent' THEN 'cat-rent'
-        WHEN 'salaries' THEN 'cat-salaries'
-        WHEN 'marketing' THEN 'cat-marketing'
-        WHEN 'supplies' THEN 'cat-supplies'
-        WHEN 'maintenance' THEN 'cat-maintenance'
-        WHEN 'travel' THEN 'cat-travel'
-        WHEN 'shipping' THEN 'cat-shipping'
-        WHEN 'taxes' THEN 'cat-taxes'
-        WHEN 'insurance' THEN 'cat-insurance'
-        WHEN 'software' THEN 'cat-software'
-        WHEN 'food_and_beverages' THEN 'cat-food_and_beverages'
-        WHEN 'office_expenses' THEN 'cat-office_expenses'
-        WHEN 'professional_fees' THEN 'cat-professional_fees'
-        ELSE 'cat-other'
-    END
-) WHERE "categoryId" IS NULL;
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Expense' AND column_name='category') THEN
+        UPDATE "Expense" SET "categoryId" = (
+            CASE "category"::text
+                WHEN 'utilities' THEN 'cat-utilities'
+                WHEN 'rent' THEN 'cat-rent'
+                WHEN 'salaries' THEN 'cat-salaries'
+                WHEN 'marketing' THEN 'cat-marketing'
+                WHEN 'supplies' THEN 'cat-supplies'
+                WHEN 'maintenance' THEN 'cat-maintenance'
+                WHEN 'travel' THEN 'cat-travel'
+                WHEN 'shipping' THEN 'cat-shipping'
+                WHEN 'taxes' THEN 'cat-taxes'
+                WHEN 'insurance' THEN 'cat-insurance'
+                WHEN 'software' THEN 'cat-software'
+                WHEN 'food_and_beverages' THEN 'cat-food_and_beverages'
+                WHEN 'office_expenses' THEN 'cat-office_expenses'
+                WHEN 'professional_fees' THEN 'cat-professional_fees'
+                ELSE 'cat-other'
+            END
+        ) WHERE "categoryId" IS NULL;
+    END IF;
+END $$;
 
 -- Make categoryId NOT NULL (no-op if already set)
 DO $$ BEGIN

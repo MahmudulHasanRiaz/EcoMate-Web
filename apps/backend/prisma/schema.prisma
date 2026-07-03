@@ -59,6 +59,31 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum WarehouseType {
+  main
+  showroom
+  storage
+}
+
+enum OrderSource {
+  POS
+  ECOMMERCE
+  MANUAL
+}
+
+enum SalesChannel {
+  CALL
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  MESSENGER
+  WHATSAPP
+  THREADS
+  WALK_IN
+  WEBSITE
+  OTHER
+}
+
 model User {
   id                  String     @id @default(uuid())
   firstName           String
@@ -87,6 +112,7 @@ model User {
   assignedByMe   CheckoutLead[] @relation("CheckoutLeadAssignedBy")
   convertedLeads CheckoutLead[] @relation("CheckoutLeadConvertedBy")
   referrals     Referral[]
+  posSessions   PosSession[]
 
   @@index([role])
   @@index([status])
@@ -381,6 +407,50 @@ model ComboItem {
   @@unique([comboId, productId, variantId])
 }
 
+enum PosSessionStatus {
+  open
+  closed
+  cancelled
+}
+
+model PosSession {
+  id              String           @id @default(uuid())
+  showroomId      String
+  showroom        Warehouse        @relation(fields: [showroomId], references: [id])
+  cashierId       String
+  cashier         User             @relation(fields: [cashierId], references: [id])
+  openingBalance  Decimal          @db.Decimal(10, 2)
+  closingBalance  Decimal?         @db.Decimal(10, 2)
+  expectedBalance Decimal?         @db.Decimal(10, 2)
+  status          PosSessionStatus @default(open)
+  openedAt        DateTime         @default(now())
+  closedAt        DateTime?
+  notes           String?
+  orders          Order[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([showroomId])
+  @@index([cashierId])
+  @@index([status])
+}
+
+model HeldCart {
+  id           String   @id @default(uuid())
+  sessionId    String
+  cashierId    String
+  items        Json
+  customerId   String?
+  guestName    String?
+  guestPhone   String?
+  discount     Decimal  @default(0) @db.Decimal(10, 2)
+  discountType String   @default("flat")
+  createdAt    DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([cashierId])
+}
+
 model OrderStatus {
   id           String   @id @default(uuid())
   name         String   @unique
@@ -420,6 +490,10 @@ model Order {
   guestPhone               String?
   paymentOptionType        PaymentOptionType? // FULL_PAYMENT | PARTIAL_PAYMENT | CASH_ON_DELIVERY
   paymentOption            PaymentOption?     @relation(fields: [paymentOptionType], references: [type])
+  source                   OrderSource?       @default(ECOMMERCE)
+  salesChannel             SalesChannel?
+  posSessionId             String?
+  posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
   paymentStatus            PaymentStatus      @default(PAYMENT_PENDING)
   partialAmount            Decimal?           @db.Decimal(10, 2)
   viewToken                String?            @unique
@@ -446,6 +520,9 @@ model Order {
   @@index([courierTrackingCode])
   @@index([paymentOptionType])
   @@index([guestPhone])
+  @@index([posSessionId])
+  @@index([source])
+  @@index([salesChannel])
 }
 
 model OrderItem {
@@ -1389,6 +1466,7 @@ model Warehouse {
   id        String           @id @default(uuid())
   name      String
   slug      String           @unique
+  type      WarehouseType    @default(main)
   address   String?
   city      String?
   country   String           @default("Bangladesh")
@@ -1402,6 +1480,7 @@ model Warehouse {
   variants     ProductVariant[]
   combos       Combo[]
   binLocations BinLocation[]
+  posSessions  PosSession[]
 
   @@index([isActive])
 }
