@@ -26,13 +26,28 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
   try {
     const product = await getProductBySlugServer(slug);
     if (!product) return { title: `Product Not Found — ${storeName}` };
+    const url = `${process.env.NEXT_PUBLIC_BASE_URL || ''}/products/${slug}`;
+    const ogImage = product.image
+      ? product.image.startsWith('http')
+        ? product.image
+        : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/api$/, '')}${product.image.startsWith('/') ? '' : '/'}${product.image}`
+      : undefined;
     return {
       title: `${product.name} — ${storeName}`,
       description: product.description?.slice(0, 160) || `${product.name} at ${storeName}`,
+      alternates: { canonical: url },
       openGraph: {
         title: product.name,
         description: product.description?.slice(0, 160),
-        images: product.image ? [{ url: product.image }] : [],
+        url,
+        siteName: storeName,
+        images: ogImage ? [{ url: ogImage }] : [],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: product.name,
+        description: product.description?.slice(0, 160),
+        images: ogImage ? [ogImage] : [],
       },
     };
   } catch {

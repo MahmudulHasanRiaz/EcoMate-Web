@@ -39,7 +39,7 @@ export class CategoriesService {
     const data = await this.prisma.category.findMany({
       include: {
         children: { where: { isActive: true } },
-        _count: { select: { products: true } },
+        _count: { select: { productCategories: true } },
       },
       orderBy: { sortOrder: 'asc' },
     });
@@ -53,7 +53,7 @@ export class CategoriesService {
       include: {
         children: true,
         parent: true,
-        _count: { select: { products: true } },
+        _count: { select: { productCategories: true } },
       },
     });
     if (!cat) throw new NotFoundException('Category not found');

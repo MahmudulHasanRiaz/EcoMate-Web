@@ -39,6 +39,11 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  React.useEffect(() => {
+    if (open) requestAnimationFrame(() => inputRef.current?.focus())
+  }, [open])
 
   const selectedOption = React.useMemo(
     () => options.find((opt) => opt.id === value),
@@ -106,16 +111,15 @@ export function SearchableSelect({
       <PopoverContent 
         className={cn('p-0 shadow-md z-[9999]', className)} 
         align='start'
-        onClick={(e) => e.stopPropagation()}
       >
         <div className='flex items-center border-b px-3 py-2 gap-2'>
           <Search className='h-4 w-4 text-muted-foreground shrink-0' />
           <Input
+            ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={searchPlaceholder}
             className='h-8 text-sm border-0 focus-visible:ring-0 focus-visible:ring-offset-0'
-            autoFocus
           />
         </div>
         <div className='max-h-[250px] overflow-y-auto p-1'>

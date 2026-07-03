@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
+import { CacheService } from '../cache/cache.service';
 import * as Papa from 'papaparse';
 import slugify from './utils/slugify';
 import {
@@ -32,6 +33,7 @@ export class ImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
+    private readonly cache: CacheService,
   ) {}
 
   async importFromCsv(
@@ -324,6 +326,8 @@ export class ImportService {
     }
 
     summary.imagesDownloaded = summary.imagesImported + summary.imagesReused;
+
+    await this.cache.invalidateByPrefix('categories:');
 
     return { summary, errors: allErrors };
   }
@@ -1074,9 +1078,10 @@ export class ImportService {
         currentPath = currentPath ? `${currentPath} > ${seg}` : seg;
         const cachedId = categoryCacheByPath.get(currentPath);
 
+        let levelId: string;
         if (cachedId) {
           summary.categoriesReused++;
-          lastId = cachedId;
+          levelId = cachedId;
           parentId = cachedId;
         } else {
           const slug = slugify(seg);
@@ -1088,7 +1093,7 @@ export class ImportService {
           if (slugMatch) {
             summary.categoriesReused++;
             categoryCacheByPath.set(currentPath, slugMatch.id);
-            lastId = slugMatch.id;
+            levelId = slugMatch.id;
             parentId = slugMatch.id;
           } else {
             const created = await this.prisma.category.create({
@@ -1102,14 +1107,14 @@ export class ImportService {
             });
             summary.categoriesCreated++;
             categoryCacheByPath.set(currentPath, created.id);
-            lastId = created.id;
+            levelId = created.id;
             parentId = created.id;
           }
         }
-      }
-      if (lastId && !seen.has(lastId)) {
-        seen.add(lastId);
-        ids.push(lastId);
+        if (!seen.has(levelId)) {
+          seen.add(levelId);
+          ids.push(levelId);
+        }
       }
     }
     return ids;

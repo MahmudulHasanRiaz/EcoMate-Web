@@ -1,0 +1,217 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useParams, useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { ArrowLeft, Package, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { productsApi, type ProductResponse } from '../api'
+import { mediaUrl } from '@/lib/utils'
+import { SafeImage } from '@/components/safe-image'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { ProfileDropdown } from '@/components/profile-dropdown'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ProductForm } from './product-form'
+
+export function ProductDetail() {
+  const { id } = useParams({ from: '/_authenticated/op/products/$id' })
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [formOpen, setFormOpen] = useState(false)
+
+  const { data: product, isLoading } = useQuery({
+    queryKey: ['product', id],
+    queryFn: () => productsApi.get(id).then(r => r.data),
+    enabled: !!id,
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => productsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Product deleted')
+      navigate({ to: '/op/products' })
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Delete failed'),
+  })
+
+  if (isLoading) {
+    return (
+      <>
+        <Header>
+          <ProfileDropdown />
+          <ThemeSwitch />
+        </Header>
+        <Main>
+          <div className='flex justify-center py-20'>
+            <Loader2 className='animate-spin h-8 w-8 text-muted-foreground' />
+          </div>
+        </Main>
+      </>
+    )
+  }
+
+  if (!product) {
+    return (
+      <>
+        <Header>
+          <ProfileDropdown />
+          <ThemeSwitch />
+        </Header>
+        <Main>
+          <div className='text-center py-20'>
+            <p className='text-muted-foreground'>Product not found.</p>
+            <Button variant='outline' className='mt-4' onClick={() => navigate({ to: '/op/products' })}>
+              Back to products
+            </Button>
+          </div>
+        </Main>
+      </>
+    )
+  }
+
+  const images = Array.isArray(product.images) ? product.images : []
+  const variants = product.variants || []
+  const p = product as any
+  const categories = p.productCategories || []
+  const isVar = product.type === 'variable'
+
+  return (
+    <>
+      <Header>
+        <ProfileDropdown />
+        <ThemeSwitch />
+      </Header>
+      <Main>
+        <div className='mb-6 flex items-center gap-4'>
+          <Button variant='ghost' size='icon' onClick={() => navigate({ to: '/op/products' })}>
+            <ArrowLeft className='h-5 w-5' />
+          </Button>
+          <div className='flex-1'>
+            <h1 className='text-2xl font-bold tracking-tight'>{product.name}</h1>
+            {product.sku && <p className='text-sm text-muted-foreground'>SKU: {product.sku}</p>}
+          </div>
+          <div className='flex gap-2'>
+            <Button variant='outline' size='sm' onClick={() => setFormOpen(true)}>
+              <Pencil className='h-4 w-4 mr-1' /> Edit
+            </Button>
+            <Button variant='destructive' size='sm' onClick={() => { if (confirm('Delete this product?')) deleteMut.mutate() }}>
+              <Trash2 className='h-4 w-4 mr-1' /> Delete
+            </Button>
+          </div>
+        </div>
+
+        <div className='grid gap-6 lg:grid-cols-3'>
+          <div className='lg:col-span-2 space-y-6'>
+            <Card>
+              <CardHeader><CardTitle className='text-base'>Images</CardTitle></CardHeader>
+              <CardContent>
+                {images.length === 0 ? (
+                  <p className='text-sm text-muted-foreground'>No images.</p>
+                ) : (
+                  <div className='flex gap-3 flex-wrap'>
+                    {images.map((img: any, i: number) => (
+                      <SafeImage key={i} src={mediaUrl(typeof img === 'string' ? img : img)} alt='' className='w-24 h-24 rounded-md border object-cover' thumbWidth={120} thumbHeight={120} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle className='text-base'>Description</CardTitle></CardHeader>
+              <CardContent>
+                <div className='text-sm whitespace-pre-wrap text-muted-foreground'>{product.description || 'No description.'}</div>
+              </CardContent>
+            </Card>
+
+            {variants.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className='text-base'>Variants ({variants.length})</CardTitle></CardHeader>
+                <CardContent>
+                  <div className='overflow-x-auto'>
+                    <table className='w-full text-sm'>
+                      <thead>
+                        <tr className='border-b text-left text-muted-foreground'>
+                          <th className='pb-2 font-medium'>SKU</th>
+                          <th className='pb-2 font-medium'>Attributes</th>
+                          <th className='pb-2 font-medium text-right'>Price</th>
+                          <th className='pb-2 font-medium text-right'>Stock</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {variants.map((v: any) => (
+                          <tr key={v.id} className='border-b last:border-0'>
+                            <td className='py-2 font-mono text-xs'>{v.sku || '—'}</td>
+                            <td className='py-2'>
+                              {(v.attributeValues || []).map((av: any) => (
+                                <Badge key={av.id} variant='outline' className='mr-1 text-[10px]'>
+                                  {av.attributeValue?.attribute?.name}: {av.attributeValue?.value}
+                                </Badge>
+                              ))}
+                            </td>
+                            <td className='py-2 text-right font-medium'>
+                              {v.salePrice ? (
+                                <><span className='line-through text-muted-foreground text-xs mr-1'>৳{Number(v.price).toFixed(2)}</span>৳{Number(v.salePrice).toFixed(2)}</>
+                              ) : v.price ? `৳${Number(v.price).toFixed(2)}` : '—'}
+                            </td>
+                            <td className='py-2 text-right'><Badge variant={v.stock > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.stock}</Badge></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className='space-y-6'>
+            <Card>
+              <CardHeader><CardTitle className='text-base'>Details</CardTitle></CardHeader>
+              <CardContent className='space-y-3 text-sm'>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Type</span><Badge variant='outline' className='capitalize'>{product.type}</Badge></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Slug</span><span className='font-mono text-xs'>{product.slug}</span></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Price</span><span className='font-medium'>৳{Number(product.basePrice).toFixed(2)}</span></div>
+                {product.salePrice != null && <div className='flex justify-between'><span className='text-muted-foreground'>Sale Price</span><span className='font-medium text-green-600'>৳{Number(product.salePrice).toFixed(2)}</span></div>}
+                <div className='flex justify-between'><span className='text-muted-foreground'>Stock</span><Badge variant={product.stock > 0 ? 'outline' : 'destructive'}>{isVar ? `From ${variants.reduce((s, v: any) => s + v.stock, 0)}` : product.stock}</Badge></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Active</span><Badge variant={product.isActive ? 'default' : 'secondary'} className={product.isActive ? 'bg-green-500' : ''}>{product.isActive ? 'Yes' : 'No'}</Badge></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Featured</span><span>{product.isFeatured ? 'Yes' : 'No'}</span></div>
+                {product.brandId && <div className='flex justify-between'><span className='text-muted-foreground'>Brand</span><span>{p.brand?.name || product.brandId}</span></div>}
+                {product.category && <div className='flex justify-between'><span className='text-muted-foreground'>Category</span><span>{(product.category as any)?.name}</span></div>}
+              </CardContent>
+            </Card>
+
+            {categories.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className='text-base'>All Categories</CardTitle></CardHeader>
+                <CardContent className='flex flex-wrap gap-2'>
+                  {categories.map((pc: any) => (
+                    <Badge key={pc.categoryId} variant='secondary'>{pc.category?.name || pc.categoryId}</Badge>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            <Card>
+              <CardHeader><CardTitle className='text-base'>SEO Meta</CardTitle></CardHeader>
+              <CardContent className='space-y-2 text-sm'>
+                {product.seoMeta ? (
+                  <>
+                    <div><span className='text-muted-foreground'>Title: </span>{(product.seoMeta as any)?.seo_title || '—'}</div>
+                    <div><span className='text-muted-foreground'>Description: </span>{(product.seoMeta as any)?.seo_description || '—'}</div>
+                    <div><span className='text-muted-foreground'>Stock Status: </span>{(product.seoMeta as any)?.stockStatus || '—'}</div>
+                  </>
+                ) : <p className='text-muted-foreground'>No SEO data.</p>}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <ProductForm open={formOpen} onOpenChange={setFormOpen} currentRow={product as any} mode='edit' />
+      </Main>
+    </>
+  )
+}

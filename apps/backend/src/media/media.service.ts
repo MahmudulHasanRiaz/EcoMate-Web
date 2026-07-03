@@ -324,6 +324,13 @@ export class MediaService {
     size: number;
     mimeType: string;
   }> {
+    const known = await this.prisma.media.findFirst({
+      where: { sourceUrl: rawUrl },
+      select: { id: true, url: true, filename: true, size: true, mimeType: true },
+    });
+    if (known)
+      return known;
+
     let currentUrlStr = rawUrl;
     let redirectCount = 0;
     const maxRedirects = 5;
@@ -398,7 +405,26 @@ export class MediaService {
     const hash = sha256(buffer);
 
     const existing = await this.prisma.media.findFirst({ where: { hash } });
-    if (existing)
+    if (existing) {
+      if (existing.sourceUrl !== rawUrl) {
+        const created = await this.prisma.media.create({
+          data: {
+            filename: existing.filename,
+            url: existing.url,
+            mimeType: existing.mimeType,
+            size: existing.size,
+            hash,
+            sourceUrl: rawUrl,
+          },
+        });
+        return {
+          id: created.id,
+          url: created.url,
+          filename: created.filename,
+          size: created.size,
+          mimeType: created.mimeType,
+        };
+      }
       return {
         id: existing.id,
         url: existing.url,
@@ -406,6 +432,7 @@ export class MediaService {
         size: existing.size,
         mimeType: existing.mimeType,
       };
+    }
 
     const inferredName =
       opts.filename?.trim() ||
@@ -550,7 +577,7 @@ export class MediaService {
     const fname = trimmed.split('/').pop()?.split('?')[0] || '';
     const known = await this.prisma.media.findFirst({
       where: {
-        OR: [{ url: trimmed }, ...(fname ? [{ filename: fname }] : [])],
+        OR: [{ url: trimmed }, { sourceUrl: trimmed }, ...(fname ? [{ filename: fname }] : [])],
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, url: true },

@@ -197,6 +197,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     icon: ImageIcon,
     fields: ['catalogImageRatio', 'hide_oos_products', 'default_variant_selected', 'show_reviews'],
   },
+  'smtp': {
+    id: 'smtp',
+    categoryId: 'commerce',
+    title: 'SMTP Settings',
+    description: 'Configure SMTP for email notifications and order confirmations.',
+    icon: Settings,
+    fields: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass'],
+  },
 
 }
 
