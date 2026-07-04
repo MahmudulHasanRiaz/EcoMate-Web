@@ -73,6 +73,7 @@ import { OpeningBalancesModule } from './opening-balances/opening-balances.modul
 import { PackingModule } from './packing/packing.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -138,6 +139,7 @@ import { AccountingModule } from './accounting/accounting.module';
     OpeningBalancesModule,
     AccountsModule,
     AccountingModule,
+    AnalyticsModule,
     StockModule,
     WarehousesModule,
     PosModule,
