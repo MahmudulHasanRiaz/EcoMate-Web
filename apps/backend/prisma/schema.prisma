@@ -1709,3 +1709,17 @@ model TrackingEvent {
   @@index([status])
   @@index([createdAt])
 }
+
+model PageView {
+  id         String   @id @default(uuid())
+  url        String
+  referrer   String?
+  source     String?
+  userAgent  String?
+  ip         String?
+  sessionId  String?
+  timestamp  DateTime @default(now())
+
+  @@index([timestamp, sessionId])
+  @@index([source, timestamp])
+}
