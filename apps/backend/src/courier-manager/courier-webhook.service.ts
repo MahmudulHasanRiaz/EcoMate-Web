@@ -49,6 +49,7 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'steadfast', mappedStatus);
+    await this.syncToDispatch(order.id, 'steadfast', consignmentId, mappedStatus);
     this.logger.log(`Steadfast: ${consignmentId} → ${mappedStatus}`);
     return { ok: true, status: mappedStatus };
   }
@@ -80,6 +81,7 @@ export class CourierWebhookService {
       data: { courierStatus: mappedStatus, courierService: 'pathao' },
     });
     await this.addTimelineEntry(order.id, 'pathao', mappedStatus);
+    await this.syncToDispatch(order.id, 'pathao', consignmentId, mappedStatus);
     this.logger.log(`Pathao: ${consignmentId} → ${mappedStatus}`);
     return { ok: true, status: mappedStatus };
   }
@@ -128,6 +130,8 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'redx', mappedStatus);
+    const redxConsignmentId = trackingNumber || invoiceNumber || '';
+    await this.syncToDispatch(order.id, 'redx', redxConsignmentId, mappedStatus);
     this.logger.log(
       `RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`,
     );
@@ -175,6 +179,7 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'carrybee', mappedStatus);
+    await this.syncToDispatch(order.id, 'carrybee', consignmentId || '', mappedStatus);
     this.logger.log(
       `Carrybee: ${consignmentId || orderNumber} → ${mappedStatus}`,
     );
@@ -231,6 +236,43 @@ export class CourierWebhookService {
       where: { id: orderId },
       data: { timeline: timeline as Prisma.InputJsonValue },
     });
+  }
+
+  private async syncToDispatch(orderId: string, courier: string, consignmentId: string, status: string) {
+    if (!consignmentId) return;
+    const mappedStatus = mapToDispatchStatus(status);
+    if (!mappedStatus) return;
+
+    const existingDispatch = await this.prisma.dispatch.findUnique({
+      where: { courier_consignmentId: { courier: courier as any, consignmentId } },
+    });
+
+    if (existingDispatch) {
+      await this.prisma.dispatch.update({
+        where: { id: existingDispatch.id },
+        data: { status: mappedStatus as any },
+      });
+    }
+
+    const orderStatusMap: Record<string, string> = {
+      DELIVERED: 'Delivered',
+      PARTIAL: 'Partial',
+      RETURN_PENDING: 'Return Pending',
+    };
+
+    const targetOrderStatusName = orderStatusMap[mappedStatus];
+    if (targetOrderStatusName) {
+      const targetStatus = await this.prisma.orderStatus.findUnique({
+        where: { name: targetOrderStatusName },
+      });
+      if (targetStatus) {
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { statusId: targetStatus.id },
+        });
+        this.logger.log(`Order ${orderId} status auto-synced to ${targetOrderStatusName} via dispatch webhook`);
+      }
+    }
   }
 }
 
@@ -349,6 +391,19 @@ function mapCarrybeeStatus(
   if (['delivered', 'complete'].includes(s)) return 'Delivered';
   if (s.includes('return')) return 'Return Pending';
   return null;
+}
+
+function mapToDispatchStatus(status: string): string | null {
+  const map: Record<string, string> = {
+    'In Courier': 'IN_TRANSIT',
+    Delivered: 'DELIVERED',
+    Cancelled: 'CANCELLED',
+    Canceled: 'CANCELLED',
+    'Partial Return': 'PARTIAL',
+    'Return Pending': 'RETURN_PENDING',
+    Returned: 'RETURNED',
+  };
+  return map[status] || null;
 }
 
 export function buildTrackingUrl(
