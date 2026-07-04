@@ -512,7 +512,8 @@ export class ImportService {
     const slug =
       data.Slug?.trim() || this.uniqueSlugCached(slugify(name), slugSet);
 
-    const basePrice = this.parsePrice(data['Regular price']) ?? 0;
+    const parsedPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
+    const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
     const manageStock =
@@ -642,12 +643,13 @@ export class ImportService {
     );
     const categoryId = categoryIds[0] || null;
 
-    const basePrice = this.parsePrice(data['Regular price']) ?? 0;
+    const type = (data.Type || 'simple').toLowerCase().trim();
+    const isVariable = type === 'variable' || type === 'variable-subscription';
+    const parsedPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
+    const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
-    const type = (data.Type || 'simple').toLowerCase().trim();
     const slug = data.Slug?.trim();
-    const isVariable = type === 'variable' || type === 'variable-subscription';
     const manageStock =
       !isVariable && parsedStock !== undefined && parsedStock > 0;
     const stock = manageStock ? parsedStock : 0;
@@ -768,7 +770,7 @@ export class ImportService {
       return;
     }
 
-    const regPrice = this.parsePrice(data['Regular price']);
+    const regPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
     const salePrice = this.parsePrice(data['Sale price']);
     const price = salePrice ?? regPrice;
     const stock = this.parseInt(data.Stock) ?? 0;

@@ -75,8 +75,8 @@ async function main() {
 
   // ── Order Statuses ──
   const statuses = [
-    { name: 'Payment Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 0, nextStatuses: [] },
-    { name: 'Pending', color: '#F59E0B', isInitial: false, isFinal: false, sortOrder: 1, nextStatuses: [] },
+    { name: 'Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 0, nextStatuses: [] },
+    { name: 'Payment Pending', color: '#F59E0B', isInitial: false, isFinal: false, sortOrder: 1, nextStatuses: [] },
     { name: 'Confirmed', color: '#3B82F6', isInitial: false, isFinal: false, sortOrder: 2, nextStatuses: [] },
     { name: 'Packed', color: '#059669', isInitial: false, isFinal: false, sortOrder: 3, nextStatuses: [] },
     { name: 'Packing Hold', color: '#D97706', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
@@ -102,8 +102,8 @@ async function main() {
 
   // Define allowed transitions
   const transitions: Record<string, string[]> = {
-    'Payment Pending': ['Pending', 'Confirmed', 'Cancelled'],
-    'Pending': ['Confirmed', 'Cancelled'],
+    'Pending': ['Payment Pending', 'Confirmed', 'Cancelled'],
+    'Payment Pending': ['Confirmed', 'Cancelled'],
     'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
     'Packed': ['Shipped', 'Cancelled'],
     'Packing Hold': ['Confirmed', 'Cancelled'],
