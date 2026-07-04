@@ -20,9 +20,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, ArrowLeft, Package, Search, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus } from 'lucide-react'
-
 const nn = (v: number | string) => Number(v)
+
 const fmt = (v: number | string) => nn(v).toFixed(2)
+
+const ep = (p: any) => {
+  if (p.type === 'variable' && p.variants?.length) {
+    return Math.min(...p.variants.map((v: any) => nn(v.salePrice ?? v.price ?? 0)))
+  }
+  return nn(p.salePrice ?? p.basePrice ?? 0)
+}
 
 export function CreateOrder() {
   const navigate = useNavigate()
@@ -499,7 +506,7 @@ export function CreateOrder() {
                               <p className='text-sm font-medium truncate'>{p.name}</p>
                               <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
                             </div>
-                            <div className='text-sm font-medium shrink-0'>৳{fmt(p.price || 0)}</div>
+                            <div className='text-sm font-medium shrink-0'>৳{fmt(ep(p))}</div>
                           </button>
                         ))}
                       </div>
@@ -767,7 +774,7 @@ export function CreateOrder() {
                       <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
                     </div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants?.price || 0)}</div>
+                  <div className='text-sm font-medium'>৳{fmt(v.salePrice ?? v.price ?? ep(selectedProductForVariants))}</div>
                 </div>
               ))}
             </div>

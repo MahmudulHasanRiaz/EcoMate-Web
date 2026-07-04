@@ -27,8 +27,15 @@ import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
+
 const fmt = (v: number | string) => nn(v).toFixed(2)
 
+const ep = (p: any) => {
+  if (p.type === 'variable' && p.variants?.length) {
+    return Math.min(...p.variants.map((v: any) => nn(v.salePrice ?? v.price ?? 0)))
+  }
+  return nn(p.salePrice ?? p.basePrice ?? 0)
+}
 function paymentOptionTypeLabel(type: string): string {
   const map: Record<string, string> = { FULL_PAYMENT: 'Full Payment', PARTIAL_PAYMENT: 'Partial Payment', CASH_ON_DELIVERY: 'Cash on Delivery' }
   return map[type] || type?.replace(/_/g, ' ') || '—'
@@ -364,7 +371,7 @@ function OrderDetailPage() {
                                           <p className='text-sm font-medium truncate'>{p.name}</p>
                                           <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
                                         </div>
-                                        <div className='text-sm font-medium'>৳{fmt(p.price || 0)}</div>
+                                        <div className='text-sm font-medium'>৳{fmt(ep(p))}</div>
                                       </CommandItem>
                                     ))}
                                 </CommandGroup>
@@ -750,7 +757,7 @@ function OrderDetailPage() {
                     variantId: v.id,
                     product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` }, 
                     quantity: 1, 
-                    price: v.price || selectedProductForVariants.price || 0 
+                    price: v.salePrice ?? v.price ?? selectedProductForVariants.salePrice ?? selectedProductForVariants.basePrice ?? 0 
                   }])
                   setSelectedProductForVariants(null)
                   setProductSearchQuery('')
@@ -766,7 +773,7 @@ function OrderDetailPage() {
                       <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
                     </div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price || 0)}</div>
+                  <div className='text-sm font-medium'>৳{fmt(v.salePrice ?? v.price ?? ep(selectedProductForVariants))}</div>
                 </div>
               ))}
             </div>

@@ -23,8 +23,15 @@ import { Loader2, ArrowLeft, Package, DollarSign, Percent } from 'lucide-react'
 
 const statusColors: Record<string, string> = { PENDING: '#F59E0B', CONVERTED: '#22C55E', NOT_CONVERTED: '#6B7280', DELETED: '#EF4444' }
 const nn = (v: number | string) => Number(v)
+
 const fmt = (v: number | string) => nn(v).toFixed(2)
 
+const ep = (p: any) => {
+  if (p.type === 'variable' && p.variants?.length) {
+    return Math.min(...p.variants.map((v: any) => nn(v.salePrice ?? v.price ?? 0)))
+  }
+  return nn(p.salePrice ?? p.basePrice ?? 0)
+}
 export function ConvertLead({ id }: { id: string }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -309,7 +316,7 @@ export function ConvertLead({ id }: { id: string }) {
                                         <p className='text-sm font-medium truncate'>{p.name}</p>
                                         <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
                                       </div>
-                                      <div className='text-sm font-medium'>৳{fmt(p.price || 0)}</div>
+                                      <div className='text-sm font-medium'>৳{fmt(ep(p))}</div>
                                     </CommandItem>
                                   ))}
                               </CommandGroup>
@@ -441,7 +448,7 @@ export function ConvertLead({ id }: { id: string }) {
             <div className='space-y-2 max-h-60 overflow-y-auto'>
               {selectedProductForVariants?.variants?.map((v: any) => (
                 <div key={v.id} className='flex items-center justify-between p-2 border rounded-md hover:bg-muted cursor-pointer' onClick={() => {
-                  setOrderItems([...orderItems, { productId: selectedProductForVariants.id, variantId: v.id, product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` }, quantity: 1, price: v.price || selectedProductForVariants.price || 0 }])
+                  setOrderItems([...orderItems, { productId: selectedProductForVariants.id, variantId: v.id, product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` }, quantity: 1,                     price: v.salePrice ?? v.price ?? selectedProductForVariants.salePrice ?? selectedProductForVariants.basePrice ?? 0  }])
                   setSelectedProductForVariants(null)
                   setProductSearchQuery('')
                 }}>
@@ -449,7 +456,7 @@ export function ConvertLead({ id }: { id: string }) {
                     {v.image ? <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>}
                     <div><p className='text-sm font-medium'>{v.name || 'Default Variant'}</p><p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p></div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price || 0)}</div>
+                  <div className='text-sm font-medium'>৳{fmt(v.salePrice ?? v.price ?? ep(selectedProductForVariants))}</div>
                 </div>
               ))}
             </div>
