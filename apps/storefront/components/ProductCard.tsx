@@ -18,11 +18,31 @@ interface ProductCardProps {
   index?: number;
 }
 
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 3000;
+
 export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
-  const [imageError, setImageError] = React.useState(false);
+  const [retryKey, setRetryKey] = React.useState(0);
+  const [imageFailed, setImageFailed] = React.useState(false);
+  const retriesRef = React.useRef(0);
+
+  React.useEffect(() => {
+    retriesRef.current = 0;
+    setRetryKey(0);
+    setImageFailed(false);
+  }, [product.image, product.id]);
+
+  const handleImageError = () => {
+    if (retriesRef.current < MAX_RETRIES) {
+      retriesRef.current++;
+      setTimeout(() => setRetryKey(k => k + 1), RETRY_DELAY);
+    } else {
+      setImageFailed(true);
+    }
+  };
 
   const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
 
@@ -53,7 +73,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
       y = rect.top + rect.height / 2;
     }
     window.dispatchEvent(new CustomEvent('fly-to-cart', {
-      detail: { x, y, image: imageError ? PLACEHOLDER_IMAGE : product.image }
+      detail: { x, y, image: product.image || PLACEHOLDER_IMAGE }
     }));
     trackEvent('AddToCart', {
       content_ids: [product.id],
@@ -73,9 +93,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
     });
   };
 
-  const imageSrc = imageError || !product.image ? PLACEHOLDER_IMAGE : product.image;
   const linkUrl = product.slug ? `/products/${product.slug}` : `/products/${product.id}`;
-  const useUnoptimized = imageError || imageSrc === PLACEHOLDER_IMAGE;
   const aspect = getAspectStyle(config.catalogImageRatio);
 
   return (
@@ -86,25 +104,36 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
         </div>
       )}
 
-      <Link href={linkUrl} className={`relative w-full ${aspect.className} bg-white flex items-center justify-center p-0 cursor-pointer overflow-hidden select-none`}
+      <Link href={linkUrl} className={`relative w-full ${aspect.className} bg-gray-50 flex items-center justify-center p-0 cursor-pointer overflow-hidden select-none`}
         style={'style' in aspect ? aspect.style : undefined}
         scroll={true}>
-        <Image
-          id={`img-${product.id}`}
-          src={imageSrc}
-          alt={product.name}
-          fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          priority={isPriority}
-          fetchPriority={isPriority ? "high" : "auto"}
-          loading={isPriority ? "eager" : "lazy"}
-          decoding="async"
-          placeholder={useUnoptimized ? "empty" : "blur"}
-          blurDataURL={PRODUCT_BLUR_DATA_URL}
-          className="object-contain transition-transform duration-500 group-hover:scale-105 pointer-events-none"
-          onError={() => setImageError(true)}
-          unoptimized={useUnoptimized}
-        />
+        {!product.image ? (
+          <Image
+            src={PLACEHOLDER_IMAGE}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="object-contain pointer-events-none"
+            unoptimized
+          />
+        ) : (
+          <Image
+            key={retryKey}
+            id={`img-${product.id}`}
+            src={product.image}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            priority={isPriority}
+            fetchPriority={isPriority ? "high" : "auto"}
+            loading={isPriority ? "eager" : "lazy"}
+            decoding="async"
+            placeholder="blur"
+            blurDataURL={PRODUCT_BLUR_DATA_URL}
+            className={`object-contain transition-transform duration-500 group-hover:scale-105 pointer-events-none ${imageFailed ? 'opacity-60' : ''}`}
+            onError={handleImageError}
+          />
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); toggle(product.id); }}
           aria-label={isWishlisted(product.id) ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}

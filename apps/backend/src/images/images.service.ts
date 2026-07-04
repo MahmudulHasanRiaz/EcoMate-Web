@@ -17,53 +17,26 @@ export class ImagesService {
     fit?: 'cover' | 'contain' | 'fill' | 'inside' | 'outside';
   }): Promise<{ buffer: Buffer; ext: string; mime: string }> {
     const sharp = (await import('sharp')).default;
+    const isExternal =
+      params.path.startsWith('http://') || params.path.startsWith('https://');
 
-    const relativePath = params.path.replace(/^\/uploads\//, '');
-
-    if (relativePath.includes('..')) {
+    if (!isExternal && params.path.includes('..')) {
       throw new Error('Invalid path');
     }
-
-    const sourcePath = resolve(join(this.uploadRoot, relativePath));
-
-    if (!sourcePath.startsWith(resolve(this.uploadRoot))) {
-      throw new Error('Invalid path');
-    }
-
-    if (!existsSync(sourcePath)) {
-      throw new Error(`Image not found: ${params.path}`);
-    }
-
-    const allowedExtensions = [
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.webp',
-      '.gif',
-      '.avif',
-    ];
-    const ext = extname(relativePath).toLowerCase();
-    if (!allowedExtensions.includes(ext)) {
-      throw new Error('Invalid file type');
-    }
-
-    const mimeMap: Record<string, string> = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.webp': 'image/webp',
-      '.gif': 'image/gif',
-      '.avif': 'image/avif',
-    };
-    const mime = mimeMap[ext];
 
     if (!params.w && !params.h) {
-      return { buffer: readFileSync(sourcePath), ext, mime };
+      if (isExternal) {
+        const buf = await this.downloadExternal(params.path);
+        const mime = this.guessMimeFromUrl(params.path);
+        return { buffer: buf, ext: '.jpg', mime };
+      }
+      const { buffer, ext, mime } = this.readLocalFile(params.path);
+      return { buffer, ext, mime };
     }
 
     const cacheKey = createHash('md5')
       .update(
-        `${relativePath}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}`,
+        `${params.path}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}`,
       )
       .digest('hex');
     const cacheExt = '.webp';
@@ -77,7 +50,14 @@ export class ImagesService {
       };
     }
 
-    const result = await sharp(sourcePath)
+    let sourceBuffer: Buffer;
+    if (isExternal) {
+      sourceBuffer = await this.downloadExternal(params.path);
+    } else {
+      sourceBuffer = this.readLocalFile(params.path).buffer;
+    }
+
+    const result = await sharp(sourceBuffer)
       .resize({
         width: params.w,
         height: params.h,
@@ -95,5 +75,78 @@ export class ImagesService {
     }
 
     return { buffer: result, ext: cacheExt, mime: 'image/webp' };
+  }
+
+  private readLocalFile(path: string): { buffer: Buffer; ext: string; mime: string } {
+    const relativePath = path.replace(/^\/uploads\//, '');
+    const sourcePath = resolve(join(this.uploadRoot, relativePath));
+
+    if (!sourcePath.startsWith(resolve(this.uploadRoot))) {
+      throw new Error('Invalid path');
+    }
+
+    if (!existsSync(sourcePath)) {
+      throw new Error(`Image not found: ${path}`);
+    }
+
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+    const ext = extname(relativePath).toLowerCase();
+    if (!allowedExtensions.includes(ext)) {
+      throw new Error('Invalid file type');
+    }
+
+    const mimeMap: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.avif': 'image/avif',
+    };
+
+    return { buffer: readFileSync(sourcePath), ext, mime: mimeMap[ext] };
+  }
+
+  private async downloadExternal(url: string): Promise<Buffer> {
+    const cacheKey = createHash('md5').update(url).digest('hex');
+    const originalCache = join(this.cacheRoot, `${cacheKey}_orig`);
+
+    if (existsSync(originalCache)) {
+      return readFileSync(originalCache);
+    }
+
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch external image: ${url} (${response.status})`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    try {
+      mkdirSync(this.cacheRoot, { recursive: true });
+      writeFileSync(originalCache, buffer);
+    } catch (e) {
+      this.logger.warn('Failed to cache external image', e);
+    }
+
+    return buffer;
+  }
+
+  private guessMimeFromUrl(url: string): string {
+    const ext = extname(url.split('?')[0]).toLowerCase();
+    const map: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.avif': 'image/avif',
+      '.svg': 'image/svg+xml',
+    };
+    return map[ext] || 'image/jpeg';
   }
 }
