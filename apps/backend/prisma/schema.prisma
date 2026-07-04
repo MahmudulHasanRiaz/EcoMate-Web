@@ -270,6 +270,7 @@ model Attribute {
 model AttributeValue {
   id          String @id @default(uuid())
   value       String
+  hexCode     String?
   attributeId String
   sortOrder   Int    @default(0)
 

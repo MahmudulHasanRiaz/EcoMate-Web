@@ -13,6 +13,9 @@ export class CreateAttributeValueDto {
   @MinLength(1)
   value: string;
   @IsOptional()
+  @IsString()
+  hexCode?: string;
+  @IsOptional()
   @IsInt()
   sortOrder?: number;
 }

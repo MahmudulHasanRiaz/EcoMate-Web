@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/api-client'
 
 export interface AttributeValueResponse {
-  id: string; value: string; sortOrder: number; attributeId: string;
+  id: string; value: string; hexCode: string | null; sortOrder: number; attributeId: string;
 }
 
 export interface AttributeResponse {
@@ -17,7 +17,7 @@ export const attributesApi = {
   update: (id: string, data: { name?: string }) =>
     apiClient.put<AttributeResponse>(`/attributes/${id}`, data),
   delete: (id: string) => apiClient.delete(`/attributes/${id}`),
-  addValue: (attributeId: string, data: { value: string; sortOrder?: number }) =>
+  addValue: (attributeId: string, data: { value: string; hexCode?: string; sortOrder?: number }) =>
     apiClient.post(`/attributes/${attributeId}/values`, data),
   removeValue: (attributeId: string, valueId: string) =>
     apiClient.delete(`/attributes/${attributeId}/values/${valueId}`),

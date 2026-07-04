@@ -62,70 +62,75 @@ describe('ProductsService', () => {
   let cache: CacheService;
 
   beforeEach(async () => {
+    const prismaMock = {
+      $transaction: jest.fn((fn: any) => fn(prismaMock)),
+      product: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn(),
+      },
+      productVariant: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        deleteMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      attributeValue: {
+        findMany: jest.fn(),
+      },
+      media: {
+        findFirst: jest.fn(),
+      },
+      productTag: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      tag: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'tag-1',
+          name: 'Test Tag',
+          slug: 'test-tag',
+        }),
+        create: jest.fn().mockResolvedValue({
+          id: 'tag-1',
+          name: 'Test Tag',
+          slug: 'test-tag',
+        }),
+        update: jest.fn().mockResolvedValue({
+          id: 'tag-1',
+          name: 'Test Tag',
+          slug: 'test-tag',
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      orderItem: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      comboItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      category: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'cat-1',
+          name: 'Test Category',
+          slug: 'test-category',
+        }),
+      },
+    }
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductsService,
         {
           provide: PrismaService,
-          useValue: {
-            $transaction: jest.fn((fn: any) => fn(prismaMock)),
-            product: {
-              findMany: jest.fn(),
-              findUnique: jest.fn(),
-              findUniqueOrThrow: jest.fn(),
-              create: jest.fn(),
-              update: jest.fn(),
-              delete: jest.fn(),
-              count: jest.fn(),
-            },
-            productVariant: {
-              findUnique: jest.fn(),
-              findMany: jest.fn(),
-              deleteMany: jest.fn(),
-              create: jest.fn(),
-              update: jest.fn(),
-            },
-            attributeValue: {
-              findMany: jest.fn(),
-            },
-            media: {
-              findFirst: jest.fn(),
-            },
-            productTag: {
-              findMany: jest.fn().mockResolvedValue([]),
-              deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-              upsert: jest.fn().mockResolvedValue({}),
-            },
-            tag: {
-              findUnique: jest.fn().mockResolvedValue({
-                id: 'tag-1',
-                name: 'Test Tag',
-                slug: 'test-tag',
-              }),
-              create: jest.fn().mockResolvedValue({
-                id: 'tag-1',
-                name: 'Test Tag',
-                slug: 'test-tag',
-              }),
-              update: jest.fn().mockResolvedValue({
-                id: 'tag-1',
-                name: 'Test Tag',
-                slug: 'test-tag',
-              }),
-              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-            },
-            comboItem: {
-              deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-            },
-            category: {
-              findMany: jest.fn().mockResolvedValue([]),
-              findUnique: jest.fn().mockResolvedValue({
-                id: 'cat-1',
-                name: 'Test Category',
-                slug: 'test-category',
-              }),
-            },
-          },
+          useValue: prismaMock,
         },
         {
           provide: MediaService,
