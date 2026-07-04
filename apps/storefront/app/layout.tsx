@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { StorefrontConfigProvider } from "@/context/StorefrontConfigContext";
 import TrackingScripts from "@/components/TrackingScripts";
+import { PageViewTracker } from "@/components/PageViewTracker";
 import OfflineBanner from "@/components/OfflineBanner";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { Toaster } from "sonner";
@@ -253,6 +254,7 @@ export default async function RootLayout({
             <OfflineBanner />
             <PWAInstallBanner />
             </StorefrontConfigProvider>
+            <PageViewTracker />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
