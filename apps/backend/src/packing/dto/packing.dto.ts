@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsIn } from 'class-validator';
 
 export class HoldOrderDto {
   @IsString()

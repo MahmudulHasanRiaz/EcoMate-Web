@@ -44,6 +44,7 @@ import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authenticated/op/payroll/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
+import { Route as AuthenticatedOpPackingIndexRouteImport } from './routes/_authenticated/op/packing/index'
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
 import { Route as AuthenticatedOpNotificationsIndexRouteImport } from './routes/_authenticated/op/notifications/index'
 import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
@@ -293,6 +294,12 @@ const AuthenticatedOpPaymentsIndexRoute =
   AuthenticatedOpPaymentsIndexRouteImport.update({
     id: '/op/payments/',
     path: '/op/payments/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpPackingIndexRoute =
+  AuthenticatedOpPackingIndexRouteImport.update({
+    id: '/op/packing/',
+    path: '/op/packing/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpOrdersIndexRoute =
@@ -695,6 +702,7 @@ export interface FileRoutesByFullPath {
   '/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
+  '/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
@@ -788,6 +796,7 @@ export interface FileRoutesByTo {
   '/op/media': typeof AuthenticatedOpMediaIndexRoute
   '/op/notifications': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
+  '/op/packing': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/payroll': typeof AuthenticatedOpPayrollIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
@@ -883,6 +892,7 @@ export interface FileRoutesById {
   '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
   '/_authenticated/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
+  '/_authenticated/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/_authenticated/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
@@ -978,6 +988,7 @@ export interface FileRouteTypes {
     | '/op/media/'
     | '/op/notifications/'
     | '/op/orders/'
+    | '/op/packing/'
     | '/op/payments/'
     | '/op/payroll/'
     | '/op/products/'
@@ -1071,6 +1082,7 @@ export interface FileRouteTypes {
     | '/op/media'
     | '/op/notifications'
     | '/op/orders'
+    | '/op/packing'
     | '/op/payments'
     | '/op/payroll'
     | '/op/products'
@@ -1165,6 +1177,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/media/'
     | '/_authenticated/op/notifications/'
     | '/_authenticated/op/orders/'
+    | '/_authenticated/op/packing/'
     | '/_authenticated/op/payments/'
     | '/_authenticated/op/payroll/'
     | '/_authenticated/op/products/'
@@ -1460,6 +1473,13 @@ declare module '@tanstack/react-router' {
       path: '/op/payments'
       fullPath: '/op/payments/'
       preLoaderRoute: typeof AuthenticatedOpPaymentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/packing/': {
+      id: '/_authenticated/op/packing/'
+      path: '/op/packing'
+      fullPath: '/op/packing/'
+      preLoaderRoute: typeof AuthenticatedOpPackingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/orders/': {
@@ -1999,6 +2019,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
   AuthenticatedOpNotificationsIndexRoute: typeof AuthenticatedOpNotificationsIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
+  AuthenticatedOpPackingIndexRoute: typeof AuthenticatedOpPackingIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
   AuthenticatedOpPayrollIndexRoute: typeof AuthenticatedOpPayrollIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
@@ -2073,6 +2094,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpNotificationsIndexRoute:
     AuthenticatedOpNotificationsIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
+  AuthenticatedOpPackingIndexRoute: AuthenticatedOpPackingIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
   AuthenticatedOpPayrollIndexRoute: AuthenticatedOpPayrollIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,

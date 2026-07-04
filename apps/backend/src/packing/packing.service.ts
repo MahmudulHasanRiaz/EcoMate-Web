@@ -94,10 +94,10 @@ export class PackingService {
     const packedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } });
     if (!packedStatus) throw new NotFoundException('Packed status not found');
 
-    const [result] = await this.prisma.$transaction([
+    await this.prisma.$transaction([
       this.prisma.order.update({
         where: { id: orderId },
-        data: { statusId: packedStatus.id },
+        data: { statusId: packedStatus.id, assignedToId: packerId },
       }),
       this.prisma.packingLock.delete({ where: { orderId } }),
     ]);
@@ -113,10 +113,10 @@ export class PackingService {
     const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
     if (!holdStatus) throw new NotFoundException('Packing Hold status not found');
 
-    const [result] = await this.prisma.$transaction([
+    await this.prisma.$transaction([
       this.prisma.order.update({
         where: { id: orderId },
-        data: { statusId: holdStatus.id, officeNotes: notes ?? '' },
+        data: { statusId: holdStatus.id, assignedToId: packerId, officeNotes: notes ?? '' },
       }),
       this.prisma.packingLock.delete({ where: { orderId } }),
     ]);
@@ -146,6 +146,9 @@ export class PackingService {
     const packedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } });
     const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
     const confirmedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } });
+    if (!packedStatus || !holdStatus || !confirmedStatus) {
+      throw new NotFoundException('Required order status not found');
+    }
 
     const where = packerId ? { assignedToId: packerId } : {};
 

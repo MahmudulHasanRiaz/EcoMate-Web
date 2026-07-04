@@ -1,6 +1,5 @@
 import {
   Controller, Get, Post, Param, Query, Body,
-  BadRequestException,
 } from '@nestjs/common';
 import { PackingService } from './packing.service';
 import { Roles } from '../common/decorators/roles.decorator';
