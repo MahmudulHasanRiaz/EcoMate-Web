@@ -1,6 +1,6 @@
 # Brand Color Theme Setting
 
-## माग
+## প্রয়োজন
 
 Admin panel-এ color picker দিয়ে storefront-এর branding colors change করলে পুরো storefront জুড়ে সব brand color instantly reflect হবে। Admin panel নিজে unaffected থাকবে।
 
