@@ -114,6 +114,7 @@ model User {
   convertedLeads CheckoutLead[] @relation("CheckoutLeadConvertedBy")
   referrals     Referral[]
   posSessions   PosSession[]
+  packingLocks  PackingLock[]
   heldCarts     HeldCart[]
 
   @@index([role])
@@ -458,6 +459,18 @@ model HeldCart {
   @@index([cashierId])
 }
 
+model PackingLock {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  packerId  String
+  packer    User     @relation(fields: [packerId], references: [id])
+  startedAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([packerId])
+}
+
 model OrderStatus {
   id           String   @id @default(uuid())
   name         String   @unique
@@ -491,6 +504,7 @@ model Order {
   assignedToId             String?
   assignedAt               DateTime?
   timeline                 Json?              @default("[]")
+  packingLock              PackingLock?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
   guestName                String?
