@@ -81,13 +81,13 @@ async function main() {
     { name: 'Packed', color: '#059669', isInitial: false, isFinal: false, sortOrder: 3, nextStatuses: [] },
     { name: 'Packing Hold', color: '#D97706', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
     { name: 'Processing', color: '#8B5CF6', isInitial: false, isFinal: false, sortOrder: 5, nextStatuses: [] },
-    { name: 'Shipped', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
-    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 5, nextStatuses: [] },
-    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 6, nextStatuses: [] },
-    { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 7, nextStatuses: [] },
-    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 8, nextStatuses: [] },
-    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 9, nextStatuses: [] },
-    { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 10, nextStatuses: [] },
+    { name: 'Shipped', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 6, nextStatuses: [] },
+    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 7, nextStatuses: [] },
+    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 8, nextStatuses: [] },
+    { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 9, nextStatuses: [] },
+    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 10, nextStatuses: [] },
+    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 11, nextStatuses: [] },
+    { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 12, nextStatuses: [] },
   ];
 
   const orderStatusMap: Record<string, string> = {};
