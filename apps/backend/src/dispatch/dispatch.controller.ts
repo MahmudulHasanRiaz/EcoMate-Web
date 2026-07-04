@@ -41,8 +41,12 @@ export class DispatchController {
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.dispatchService.updateStatus(id, status);
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @Body('performedBy') performedBy?: string,
+  ) {
+    return this.dispatchService.updateStatus(id, status, performedBy);
   }
 
   @Delete(':id')

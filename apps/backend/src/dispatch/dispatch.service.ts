@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stock/stock.service';
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 
 @Injectable()
 export class DispatchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly stockService: StockService,
+  ) {}
 
   async findAll(query: DispatchQueryDto) {
     const where: Prisma.DispatchWhereInput = {};
@@ -133,7 +137,8 @@ export class DispatchService {
     });
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, performedBy?: string) {
+    const dispatch = await this.findOne(id);
     const data: any = { status: status as any };
 
     switch (status) {
@@ -146,12 +151,96 @@ export class DispatchService {
       case 'DELIVERED':
         data.deliveredAt = new Date();
         break;
+      case 'RETURNED':
+        data.deliveredAt = null;
+        break;
     }
 
-    return this.prisma.dispatch.update({
+    const updated = await this.prisma.dispatch.update({
       where: { id },
       data,
     });
+
+    // Stock operations based on status transition
+    const productMapping = dispatch.productMapping as any[] | null;
+
+    if (status === 'HANDED_OVER' || status === 'RETURNED' || status === 'DAMAGED') {
+      const items = productMapping && productMapping.length > 0
+        ? productMapping
+        : await this.getOrderItemsForStock(dispatch.orderId);
+
+      const operation = status === 'HANDED_OVER' ? 'deduct'
+        : status === 'RETURNED' ? 'add'
+        : 'scrap';
+
+      const reference = `Dispatch ${operation.toUpperCase()}: ${dispatch.consignmentId}`;
+
+      for (const item of items) {
+        const qty = item.quantity || 1;
+        const variantId = item.productVariantId || item.variantId;
+        const productId = item.productId;
+
+        if (variantId) {
+          await this.stockService.operate(operation as any, {
+            variantId,
+            quantity: qty,
+            reference,
+            performedBy: performedBy || 'system',
+          });
+        } else if (productId) {
+          await this.stockService.operate(operation as any, {
+            productId,
+            quantity: qty,
+            reference,
+            performedBy: performedBy || 'system',
+          });
+        }
+      }
+    }
+
+    return updated;
+  }
+
+  private async getOrderItemsForStock(orderId: string): Promise<{ productId?: string; variantId?: string; quantity: number }[]> {
+    const orderItems = await this.prisma.orderItem.findMany({
+      where: { orderId },
+      select: {
+        productId: true,
+        variantId: true,
+        comboId: true,
+        comboSelection: true,
+        quantity: true,
+      },
+    });
+
+    const items: { productId?: string; variantId?: string; quantity: number }[] = [];
+
+    for (const oi of orderItems) {
+      if (oi.comboId) {
+        const combo = await this.prisma.combo.findUnique({
+          where: { id: oi.comboId },
+          include: { items: true },
+        });
+        if (combo) {
+          for (const ci of combo.items) {
+            const effectiveVariantId = ci.variantId || (oi.comboSelection as any)?.[ci.productId] || null;
+            items.push({
+              productId: ci.productId,
+              variantId: effectiveVariantId || undefined,
+              quantity: ci.quantity * oi.quantity,
+            });
+          }
+        }
+      } else {
+        items.push({
+          productId: oi.productId || undefined,
+          variantId: oi.variantId || undefined,
+          quantity: oi.quantity,
+        });
+      }
+    }
+
+    return items;
   }
 
   async findFlagged() {

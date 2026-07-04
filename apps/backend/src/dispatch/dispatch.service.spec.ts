@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DispatchService } from './dispatch.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stock/stock.service';
 
 describe('DispatchService', () => {
   let service: DispatchService;
@@ -20,7 +21,16 @@ describe('DispatchService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DispatchService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        DispatchService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: StockService,
+          useValue: {
+            operate: jest.fn().mockResolvedValue([]),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<DispatchService>(DispatchService);
