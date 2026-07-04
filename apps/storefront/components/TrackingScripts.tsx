@@ -35,7 +35,7 @@ export default function TrackingScripts() {
 
   return (
     <>
-      <Script id="app-tracking-init" strategy="afterInteractive"
+      <Script id="app-tracking-init" strategy="lazyOnload"
         dangerouslySetInnerHTML={{
           __html: `
           (function() {

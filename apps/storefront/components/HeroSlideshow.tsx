@@ -84,14 +84,16 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
 
       {/* Pagination Dots */}
       {slides.length > 1 && (
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-20">
+        <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-3 z-20">
           {slides.map((_, index) => (
             <button
               key={index}
               onClick={() => setCurrentSlide(index)}
               aria-label={`Go to slide ${index + 1}`}
-              className={`w-2 h-2 rounded-full transition-all ${index === currentSlide ? 'bg-white w-4' : 'bg-white/50 hover:bg-white/80'}`}
-            />
+              className="flex items-center justify-center w-6 h-6"
+            >
+              <span className={`block rounded-full transition-all ${index === currentSlide ? 'bg-white w-4 h-2' : 'bg-white/50 hover:bg-white/80 w-2 h-2'}`} />
+            </button>
           ))}
         </div>
       )}

@@ -128,7 +128,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
             {isVar && <span className="text-[11px] text-gray-500 font-medium">From</span>}
             <span className="text-[15px] md:text-[18px] font-black text-brand-blue-text">{config.currency.symbol}{product.price.toLocaleString()}</span>
             {product.originalPrice && (
-              <span className="text-[12px] md:text-[14px] font-medium text-gray-300 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
+              <span className="text-[12px] md:text-[14px] font-medium text-gray-500 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
             )}
           </div>
 
