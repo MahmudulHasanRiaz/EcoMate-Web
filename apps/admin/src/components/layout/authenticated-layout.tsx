@@ -4,6 +4,7 @@ import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { apiClient } from '@/lib/api-client'
+import { useLicenseStore } from '@/stores/license-store'
 import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { PanelProvider } from '@/context/panel-provider'
@@ -53,8 +54,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
       if (!r.data?.active) {
         navigate({ to: '/license/activate', replace: true })
       }
+      useLicenseStore.getState().setFeatures(r.data?.license?.features || [])
     }).catch(() => {
-      // Allow access on status check failure (grace)
+      // Allow access on status check failure, but mark store as loaded
+      useLicenseStore.getState().setFeatures([])
     })
   }, [accessToken, navigate])
 

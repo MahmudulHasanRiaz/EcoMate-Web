@@ -78,7 +78,14 @@ export const sidebarData: SidebarData = {
             { title: 'Reports', url: '/op/accounting/reports' },
           ],
         },
-        { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
+        {
+          title: 'Marketing',
+          icon: Megaphone,
+          items: [
+            { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
+            { title: 'Product Catalogs', url: '/op/product-feeds', icon: Upload },
+          ],
+        },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus },
         { title: 'Employees', url: '/op/employees', icon: UserCog },
         { title: 'Payroll', url: '/op/payroll', icon: DollarSign },

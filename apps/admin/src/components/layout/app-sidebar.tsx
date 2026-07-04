@@ -5,14 +5,19 @@ import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
 import { NavUser } from './nav-user'
 import { TeamSwitcher } from './team-switcher'
+import { useLicenseStore } from '@/stores/license-store'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
+  const hasFeedFeature = useLicenseStore((s) => s.hasFeature('admin_product_feeds'))
 
-  const mainGroups = sidebarData.navGroups.filter(
-    (g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel)
-  )
+  const mainGroups = sidebarData.navGroups
+    .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
+    .filter((g) => {
+      if (g.title === 'Marketing' && !hasFeedFeature) return false
+      return true
+    })
 
   const secondaryGroup = sidebarData.navGroups.find((g) => g.title === 'Secondary')
   const footerItems = secondaryGroup?.items.filter(
