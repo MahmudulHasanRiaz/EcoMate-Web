@@ -32,7 +32,13 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (user) return
     apiClient.get('/auth/me').then(r => {
       const u = r.data?.user || r.data
-      if (u) setUser({ id: u.id, email: u.email, role: u.role })
+      if (u) {
+        setUser({ id: u.id, email: u.email, role: u.role })
+        if (u.role === 'packing_assistant') {
+          const isOnPacking = window.location.pathname.startsWith('/op/packing')
+          if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
+        }
+      }
     }).catch(() => {
       reset()
       navigate({ to: '/sign-in', replace: true })
