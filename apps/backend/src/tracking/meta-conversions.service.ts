@@ -57,7 +57,7 @@ export class MetaConversionsService {
       return;
     }
 
-    const apiUrl = `https://graph.facebook.com/v18.0/${pixelId}/events`;
+    const apiUrl = `https://graph.facebook.com/v22.0/${pixelId}/events`;
 
     try {
       const {

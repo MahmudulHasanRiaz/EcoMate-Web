@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MetaConversionsService } from './meta-conversions.service';
-import { TikTokEventsService } from './tiktok-events.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TrackingQueueService } from './tracking-queue.service';
 import { v4 as uuid } from 'uuid';
 
 export interface TrackingEvent {
@@ -34,8 +33,7 @@ export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
 
   constructor(
-    private readonly meta: MetaConversionsService,
-    private readonly tiktok: TikTokEventsService,
+    private readonly queue: TrackingQueueService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -44,19 +42,14 @@ export class TrackingService {
     const eventTime = Math.floor(Date.now() / 1000);
     const userData = event.userData || {};
 
-    const payload = {
-      eventName: this.mapEventName(event.eventName),
+    await this.queue.enqueue({
       eventId,
+      eventName: event.eventName,
       eventTime,
       userId: event.userId,
       userData: { ...userData },
       customData: event.customData,
-    };
-
-    await Promise.allSettled([
-      this.meta.sendEvent(payload),
-      this.tiktok.sendEvent(payload),
-    ]);
+    });
   }
 
   async saveContext(
@@ -64,13 +57,23 @@ export class TrackingService {
     context: { fbp?: string; fbc?: string; url?: string; referrer?: string },
   ) {
     try {
-      await this.prisma.systemSetting.upsert({
-        where: { key: `tracking_ctx_${orderId}` },
+      await this.prisma.trackingEvent.upsert({
+        where: { eventId: `ctx_${orderId}` },
         create: {
-          key: `tracking_ctx_${orderId}`,
-          value: JSON.stringify(context),
+          eventId: `ctx_${orderId}`,
+          orderId,
+          eventType: 'context',
+          fbp: context.fbp,
+          fbc: context.fbc,
+          url: context.url,
+          referrer: context.referrer,
         },
-        update: { value: JSON.stringify(context) },
+        update: {
+          fbp: context.fbp,
+          fbc: context.fbc,
+          url: context.url,
+          referrer: context.referrer,
+        },
       });
     } catch (err) {
       this.logger.error('Failed to save tracking context:', err);
@@ -84,26 +87,18 @@ export class TrackingService {
     referrer?: string;
   } | null> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
-        where: { key: `tracking_ctx_${orderId}` },
+      const record = await this.prisma.trackingEvent.findUnique({
+        where: { eventId: `ctx_${orderId}` },
       });
-      return setting ? JSON.parse(setting.value) : null;
+      if (!record) return null;
+      return {
+        fbp: record.fbp || undefined,
+        fbc: record.fbc || undefined,
+        url: record.url || undefined,
+        referrer: record.referrer || undefined,
+      };
     } catch {
       return null;
     }
-  }
-
-  private mapEventName(name: string): string {
-    const map: Record<string, string> = {
-      view_content: 'ViewContent',
-      add_to_cart: 'AddToCart',
-      add_to_wishlist: 'AddToWishlist',
-      initiate_checkout: 'InitiateCheckout',
-      add_payment_info: 'AddPaymentInfo',
-      purchase: 'Purchase',
-      search: 'Search',
-      complete_registration: 'CompleteRegistration',
-    };
-    return map[name] || name;
   }
 }

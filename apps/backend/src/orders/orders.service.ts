@@ -653,7 +653,7 @@ export class OrdersService {
       data: { id: order.id, displayId: order.displayId },
     });
 
-    // Fire Purchase if mode is "instant" — re-fetch with relations for tracking payload
+    // Fire server-side Purchase for "instant" mode — queue for reliability
     if (initialStatus) {
       const orderWithItems = await this.prisma.order.findUnique({
         where: { id: order.id },
@@ -665,11 +665,9 @@ export class OrdersService {
         },
       });
       if (orderWithItems) {
-        this.firePurchaseIfModeMatches(
-          initialStatus.name,
-          orderWithItems as any,
-          'system',
-        ).catch(() => {});
+        this.firePurchaseInstant(orderWithItems as any).catch((err) => {
+          this.logger.error('Failed to fire instant purchase event:', err);
+        });
       }
     }
 
@@ -994,12 +992,24 @@ export class OrdersService {
       },
     });
 
-    if (newStatus.name === 'Confirmed' || newStatus.name === 'Delivered') {
-      await this.firePurchaseIfModeMatches(
+    // Re-fetch with full relations for tracking payload
+    const updatedWithItems = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: { product: { select: { id: true, name: true } } },
+        },
+        customer: true,
+        payments: true,
+      },
+    });
+    if (updatedWithItems) {
+      await this.firePurchaseValidated(
         newStatus.name,
-        updated,
-        userId,
-      ).catch(() => {});
+        updatedWithItems as any,
+      ).catch((err) => {
+        this.logger.error('Failed to fire validated purchase event:', err);
+      });
     }
 
     return updated;
@@ -1487,105 +1497,117 @@ export class OrdersService {
     return { updated, total: orders.length };
   }
 
-  private async firePurchaseIfModeMatches(
+  private async firePurchaseInstant(order: any) {
+    try {
+      const settings = await this.prisma.systemSetting.findMany({
+        where: {
+          key: { in: ['tracking_meta_purchase_mode', 'tracking_tiktok_purchase_mode'] },
+        },
+      });
+      const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+      const metaInstant = (settingMap['tracking_meta_purchase_mode'] || 'instant') === 'instant';
+      const tiktokInstant = (settingMap['tracking_tiktok_purchase_mode'] || 'instant') === 'instant';
+
+      if (!metaInstant && !tiktokInstant) return;
+
+      await this.buildAndSendPurchaseEvent(order, 'instant');
+    } catch (err) {
+      this.logger.error('Failed to fire instant purchase event:', err);
+    }
+  }
+
+  private async firePurchaseValidated(
     statusName: string,
     order: any,
-    _userId: string,
   ) {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
           key: {
             in: [
-              'tracking_meta_purchase_mode',
               'tracking_meta_validated_status',
-              'tracking_tiktok_purchase_mode',
               'tracking_tiktok_validated_status',
             ],
           },
         },
       });
-      const settingMap = Object.fromEntries(
-        settings.map((s: any) => [s.key, s.value]),
-      );
-      const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
+      const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
       const metaStatus = settingMap['tracking_meta_validated_status'] || '';
-      const tiktokMode =
-        settingMap['tracking_tiktok_purchase_mode'] || 'instant';
       const tiktokStatus = settingMap['tracking_tiktok_validated_status'] || '';
 
-      const shouldFire =
-        (metaMode === 'validated' && metaStatus === statusName) ||
-        (tiktokMode === 'validated' && tiktokStatus === statusName);
+      if (metaStatus !== statusName && tiktokStatus !== statusName) return;
 
-      if (!shouldFire) return;
-
-      let email = '';
-      let phone = '';
-      let firstName = '';
-      let lastName = '';
-      let city = '';
-      let country = 'BD';
-
-      if (order.customer) {
-        email = order.customer.email || '';
-        firstName = order.customer.firstName || '';
-        lastName = order.customer.lastName || '';
-        phone = order.customer.phoneNumber || '';
-      }
-
-      if (!phone) phone = order.guestPhone || '';
-      if (!firstName) firstName = order.guestName || '';
-
-      const shippingAddr = order.shippingAddress || {};
-      if (typeof shippingAddr === 'object') {
-        city = shippingAddr.city || shippingAddr.district || '';
-        if (shippingAddr.country) country = shippingAddr.country;
-      }
-
-      const savedCtx = await this.tracking.getContext(order.id);
-      const itemsList = (order.items as any[]) || [];
-      const totalValue = Number(order.total || 0);
-
-      const customData = {
-        value: totalValue,
-        currency: 'BDT',
-        content_ids: itemsList
-          .map((i: any) => i.productId || i.comboId || '')
-          .filter(Boolean),
-        num_items: itemsList.reduce(
-          (s: number, i: any) => s + (i.quantity || 0),
-          0,
-        ),
-        order_id: order.id,
-        contents: itemsList.map((i: any) => ({
-          id: i.productId || i.comboId || '',
-          quantity: i.quantity,
-          item_price: Number(i.price),
-        })),
-      };
-
-      await this.tracking.track({
-        eventName: 'purchase',
-        eventId: `purchase_${order.id}`,
-        userId: order.customerId || undefined,
-        userData: {
-          email,
-          phone,
-          name: firstName || undefined,
-          city,
-          country,
-          ip: '',
-          userAgent: '',
-          fbp: savedCtx?.fbp || undefined,
-          fbc: savedCtx?.fbc || undefined,
-          url: savedCtx?.url || undefined,
-          referrer: savedCtx?.referrer || undefined,
-        },
-        customData,
-      });
+      await this.buildAndSendPurchaseEvent(order, 'validated');
     } catch (err) {
-      this.logger.error('Failed to fire purchase event:', err);
+      this.logger.error('Failed to fire validated purchase event:', err);
     }
+  }
+
+  private async buildAndSendPurchaseEvent(order: any, mode: 'instant' | 'validated') {
+    let email = '';
+    let phone = '';
+    let firstName = '';
+    let lastName = '';
+    let city = '';
+    let country = 'BD';
+
+    if (order.customer) {
+      email = order.customer.email || '';
+      firstName = order.customer.firstName || '';
+      lastName = order.customer.lastName || '';
+      phone = order.customer.phoneNumber || '';
+    }
+
+    if (!phone) phone = order.guestPhone || '';
+    if (!firstName) firstName = order.guestName || '';
+
+    const shippingAddr = order.shippingAddress || {};
+    if (typeof shippingAddr === 'object') {
+      city = shippingAddr.city || shippingAddr.district || '';
+      if (shippingAddr.country) country = shippingAddr.country;
+    }
+
+    const savedCtx = await this.tracking.getContext(order.id);
+    const itemsList = (order.items as any[]) || [];
+    const totalValue = Number(order.total || 0);
+    const timestamp = Date.now();
+
+    const customData = {
+      value: totalValue,
+      currency: 'BDT',
+      content_ids: itemsList
+        .map((i: any) => i.productId || i.comboId || '')
+        .filter(Boolean),
+      num_items: itemsList.reduce(
+        (s: number, i: any) => s + (i.quantity || 0),
+        0,
+      ),
+      order_id: order.id,
+      contents: itemsList.map((i: any) => ({
+        id: i.productId || i.comboId || '',
+        quantity: i.quantity,
+        item_price: Number(i.price),
+      })),
+    };
+
+    await this.tracking.track({
+      eventName: 'purchase',
+      eventId: `purchase_${mode}_${order.id}_${timestamp}`,
+      userId: order.customerId || undefined,
+      userData: {
+        email,
+        phone,
+        name: firstName || undefined,
+        city,
+        country,
+        ip: '',
+        userAgent: '',
+        fbp: savedCtx?.fbp || undefined,
+        fbc: savedCtx?.fbc || undefined,
+        url: savedCtx?.url || undefined,
+        referrer: savedCtx?.referrer || undefined,
+      },
+      customData,
+    });
   }
 }

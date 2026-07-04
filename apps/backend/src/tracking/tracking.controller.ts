@@ -11,7 +11,7 @@ export class TrackingController {
   constructor(private readonly tracking: TrackingService) {}
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post('events')
   async trackEvent(
     @Body() body: TrackEventDto,
@@ -31,7 +31,7 @@ export class TrackingController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post('context')
   async saveContext(@Body() body: SaveContextDto) {
     await this.tracking.saveContext(body.orderId, {

@@ -80,53 +80,54 @@ export default function ThankYouContent({
 
     const metaMode = config.meta?.purchaseMode || 'instant';
     const tiktokMode = config.tiktok?.purchaseMode || 'instant';
-    const isInstant = metaMode === 'instant' && tiktokMode === 'instant';
+    const fireMeta = metaMode === 'instant';
+    const fireTiktok = tiktokMode === 'instant';
 
-    if (isInstant) {
+    if (fireMeta || fireTiktok) {
       const itemsList = (order.items as any[]) || [];
       const totalValue = Number(order.total || order.subtotal || 0);
-      trackEvent(
-        'Purchase',
-        {
-          value: totalValue,
-          currency: config.currency.code,
-          content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
-          num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
-          order_id: order.id,
-          contents: itemsList.map((i: any) => ({
-            id: i.productId || i.comboId || '',
-            quantity: i.quantity,
-            item_price: Number(i.price),
-          })),
-        },
-        {
-          email: order.customer?.email || '',
-          phone: order.shippingAddress?.phone || order.guestPhone || '',
-          name: order.shippingAddress?.name || order.guestName || '',
-          city: order.shippingAddress?.city || '',
-          state: order.shippingAddress?.district || '',
-          country: 'BD',
-          zip: order.shippingAddress?.zip || '',
-          address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),
-        },
-      );
+      const sharedData = {
+        value: totalValue,
+        currency: config.currency.code,
+        content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
+        num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
+        order_id: order.id,
+        contents: itemsList.map((i: any) => ({
+          id: i.productId || i.comboId || '',
+          quantity: i.quantity,
+          item_price: Number(i.price),
+        })),
+      };
+      const sharedUserData = {
+        email: order.customer?.email || '',
+        phone: order.shippingAddress?.phone || order.guestPhone || '',
+        name: order.shippingAddress?.name || order.guestName || '',
+        city: order.shippingAddress?.city || '',
+        state: order.shippingAddress?.district || '',
+        country: 'BD',
+        zip: order.shippingAddress?.zip || '',
+        address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),
+      };
+      trackEvent('Purchase', sharedData, sharedUserData);
     }
 
     const fbp = getCookie('_fbp');
     const fbc = getCookie('_fbc');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-    fetch(`${apiUrl}/tracking/context`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderId: order.id,
-        fbp: fbp || '',
-        fbc: fbc || '',
-        url: window.location.href,
-        referrer: document.referrer,
-      }),
-      keepalive: true,
-    }).catch(() => {});
+      fetch(`${apiUrl}/tracking/context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          fbp: fbp || '',
+          fbc: fbc || '',
+          url: window.location.href,
+          referrer: document.referrer,
+        }),
+        keepalive: true,
+      }).catch((err) => {
+        console.error('[TRACKING] Failed to save tracking context:', err);
+      });
 
     sessionStorage.setItem(sessionKey, 'true');
   }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);

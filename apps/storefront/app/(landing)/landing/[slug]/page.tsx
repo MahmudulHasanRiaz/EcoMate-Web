@@ -4,7 +4,6 @@ import { serverFetch } from "@/lib/api-server";
 import LandingTemplateRenderer from "@/components/landing/TemplateRenderer";
 import LandingCustomRenderer from "@/components/landing/CustomRenderer";
 import type { Metadata } from "next";
-import Script from "next/script";
 
 export const revalidate = 300;
 
@@ -92,8 +91,6 @@ export default async function LandingPage(props: {
     } catch {}
   }
 
-  const pixelId = storefrontConfig?.meta?.pixelEnabled ? (storefrontConfig?.meta?.pixelId || "") : "";
-  const tiktokCode = storefrontConfig?.tiktok?.pixelEnabled ? (storefrontConfig?.tiktok?.pixelCode || "") : "";
 
   return (
     <>
@@ -103,42 +100,7 @@ export default async function LandingPage(props: {
         </div>
       )}
 
-      {/* Inline tracking — minimal, fires once per event */}
-      <Script
-        id="ecomate-tracking-init"
-        strategy="afterInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `
-            window.EcoMate = window.EcoMate || {};
-            window.EcoMate.config = ${JSON.stringify({
-              pixelId,
-              tiktokCode,
-              currency: storefrontConfig?.currency?.code || "BDT",
-            })};
-            (function() {
-              var fired = {};
-              window.EcoMate.track = function(event, data) {
-                if (fired[event]) { return; }
-                fired[event] = true;
-                var payload = {
-                  eventName: event,
-                  eventId: event + '_' + Date.now(),
-                  customData: Object.assign({}, data || {}, { url: location.href, source: 'landing' })
-                };
-                if (navigator.sendBeacon) {
-                  navigator.sendBeacon('/api/tracking/events', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
-                } else {
-                  fetch('/api/tracking/events', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify(payload), keepalive: true
-                  }).catch(function(){});
-                }
-              };
-              if(!window.__ecoMatePageView){window.__ecoMatePageView=true;window.EcoMate.track('PageView', {});}
-            })();
-          `,
-        }}
-      />
+      {/* Tracking handled by TrackingScripts in root layout — no inline tracking needed */}
 
       {/* Template mode */}
       {page.pageType === "template" && (
@@ -155,8 +117,6 @@ export default async function LandingPage(props: {
           html={page.customHtml || ""}
           css={page.customCss || ""}
           products={products}
-          pixelId={pixelId}
-          tiktokCode={tiktokCode}
           currency={storefrontConfig?.currency?.code || "BDT"}
         />
       )}

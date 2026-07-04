@@ -10,29 +10,19 @@ import { CheckoutFormSection } from "./TemplateRenderer";
  * Provides controlled API surface: EcoMate.products, EcoMate.track(), EcoMate.checkout.submit().
  * Blocks dangerous APIs: eval, localStorage, sessionStorage, cookies.
  */
-function EcoMateSDK({ products, pixelId, tiktokCode, currency }: {
+function EcoMateSDK({ products, currency }: {
   products: any[];
-  pixelId: string;
-  tiktokCode: string;
   currency: string;
 }) {
   const code = `
 (function(){
   window.EcoMate = window.EcoMate || {};
   window.EcoMate.version = '1.0';
-  window.EcoMate.config = ${JSON.stringify({ pixelId, tiktokCode, currency })};
+  window.EcoMate.config = ${JSON.stringify({ currency })};
   window.EcoMate.products = ${JSON.stringify(products || [])};
   window.EcoMate.theme = { primary: '#4f46e5', primaryDark: '#3730a3', currency: '৳' };
 
-  /* Tracking — fire-once per event per page visit */
-  var _fired = {};
-  window.EcoMate.track = function(e,d) {
-    if(_fired[e]) return; _fired[e]=true;
-    var p={eventName:e,eventId:e+'_'+Date.now(),customData:Object.assign({},d||{},{url:location.href,source:'landing'})};
-    if(navigator.sendBeacon){navigator.sendBeacon('/api/tracking/events',new Blob([JSON.stringify(p)],{type:'application/json'}));}
-    else{fetch('/api/tracking/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p),keepalive:true}).catch(function(){});}
-  };
-  if(!window.__ecoMatePageView){window.__ecoMatePageView=true;window.EcoMate.track('PageView',{});}
+  /* Tracking handled by TrackingScripts in root layout — no inline tracking here */
 
   /* Checkout SDK — AI code calls this instead of raw fetch to /api/orders */
   window.EcoMate.checkout = { submit: function(d) {
@@ -77,15 +67,11 @@ export default function LandingCustomRenderer({
   html,
   css,
   products = [],
-  pixelId = '',
-  tiktokCode = '',
   currency = 'BDT',
 }: {
   html: string;
   css?: string | null;
   products?: any[];
-  pixelId?: string;
-  tiktokCode?: string;
   currency?: string;
 }) {
   const initialItems: OrderLineItem[] = (products || []).map((p: any) => {
@@ -104,7 +90,7 @@ export default function LandingCustomRenderer({
 
   return (
     <LandingOrderProvider initialItems={initialItems}>
-      <EcoMateSDK products={products} pixelId={pixelId} tiktokCode={tiktokCode} currency={currency} />
+      <EcoMateSDK products={products} currency={currency} />
       <CustomContentWithPortal html={html} css={css} />
     </LandingOrderProvider>
   );

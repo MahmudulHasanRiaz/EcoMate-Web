@@ -4,6 +4,8 @@ declare global {
   interface Window {
     fbq?: any;
     ttq?: any;
+    gtag?: (...args: any[]) => void;
+    dataLayer?: any[];
     __flushTrackingQueue?: () => void;
   }
 }
@@ -115,6 +117,19 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: eventId });
       ttq.track(tiktokEvent, data, { event_id: eventId });
     }
+    if (window.gtag) {
+      const ga4Event = event === 'Purchase' ? 'purchase'
+        : event === 'ViewContent' ? 'view_item'
+        : event === 'AddToCart' ? 'add_to_cart'
+        : event === 'InitiateCheckout' ? 'begin_checkout'
+        : event === 'Search' ? 'search'
+        : event === 'CompleteRegistration' ? 'sign_up'
+        : event === 'AddToWishlist' ? 'add_to_wishlist'
+        : undefined;
+      if (ga4Event && data) {
+        window.gtag('event', ga4Event, data);
+      }
+    }
   }
 
   const fbp = getCookie('_fbp');
@@ -139,7 +154,9 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
         },
       }),
       keepalive: true,
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('[TRACKING] Server-side event send failed:', err);
+    });
   } else {
     debug('Skipping server-side CAPI call - no tracking enabled');
   }

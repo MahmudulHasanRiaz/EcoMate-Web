@@ -1685,3 +1685,26 @@ model ProductFeedLog {
   @@index([tenantId])
   @@index([fetchedAt])
 }
+
+model TrackingEvent {
+  id        String   @id @default(uuid())
+  eventId   String   @unique
+  orderId   String?
+  eventType String
+  platform  String?
+  status    String   @default("pending") // pending | sent | failed | deduped
+  fbp       String?
+  fbc       String?
+  url       String?
+  referrer  String?
+  payload   Json?
+  response  Json?
+  errorMsg  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}

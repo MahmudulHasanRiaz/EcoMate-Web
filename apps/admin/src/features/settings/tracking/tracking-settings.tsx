@@ -287,6 +287,56 @@ export function TrackingSettings() {
         </CardContent>
       </Card>
 
+      {/* GA4 Card */}
+      <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+        <CardHeader className='pb-4'>
+          <div className='flex items-center gap-2 mb-1'>
+            <Radio className='h-5 w-5 text-primary' />
+            <CardTitle className='text-xl'>Google Analytics 4 (GA4)</CardTitle>
+          </div>
+          <CardDescription>
+            Client-side tracking via gtag.js. Configure via env vars: <code>NEXT_PUBLIC_GA_MEASUREMENT_ID</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className='grid gap-6 sm:grid-cols-2'>
+            <div className='space-y-2'>
+              <Label htmlFor='ga-measurement-id'>Measurement ID</Label>
+              <Input
+                id='ga-measurement-id'
+                value=''
+                readOnly
+                placeholder='Set via NEXT_PUBLIC_GA_MEASUREMENT_ID env var'
+                className='bg-background/50 text-muted-foreground'
+              />
+              <p className='text-xs text-muted-foreground'>
+                Configured server-side via <code>GA_MEASUREMENT_ID</code> and <code>GA_API_SECRET</code>.
+              </p>
+            </div>
+            <div className='space-y-2'>
+              <Label htmlFor='ga-ads-id'>Google Ads Conversion ID</Label>
+              <Input
+                id='ga-ads-id'
+                value=''
+                readOnly
+                placeholder='Set via GA_ADS_CONVERSION_ID env var'
+                className='bg-background/50 text-muted-foreground'
+              />
+            </div>
+          </div>
+          <div className='mt-4'>
+            <a
+              href='https://developers.google.com/analytics/devguides/collection/ga4'
+              target='_blank'
+              rel='noreferrer'
+              className='text-sm text-primary hover:underline inline-flex items-center gap-1'
+            >
+              GA4 setup guide <ExternalLink className='h-3 w-3' />
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className='flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-dashed border-muted-foreground/20'>
         <div className='text-sm text-muted-foreground'>
           Changes will take effect immediately. Tracked events include PageView, AddToCart, Purchase, and more.
