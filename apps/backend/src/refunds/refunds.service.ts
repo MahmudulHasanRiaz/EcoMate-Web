@@ -87,7 +87,7 @@ export class RefundsService {
       throw new BadRequestException('Total refund would exceed order total');
     }
 
-    return this.prisma.refund.create({
+    const refund = await this.prisma.refund.create({
       data: {
         orderId: dto.orderId,
         amount: dto.amount,
@@ -99,6 +99,31 @@ export class RefundsService {
         processor: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    if (dto.targetStatusId) {
+      const allRefunds = await this.prisma.refund.findMany({
+        where: {
+          orderId: dto.orderId,
+          status: { in: ['completed', 'approved'] },
+        },
+        select: { amount: true },
+      });
+      const totalRefunded = allRefunds.reduce(
+        (sum, r) => sum + Number(r.amount),
+        0,
+      );
+      const isFullRefund = totalRefunded >= Number(order.total);
+
+      await this.prisma.order.update({
+        where: { id: dto.orderId },
+        data: {
+          statusId: dto.targetStatusId,
+          paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_PAID',
+        },
+      });
+    }
+
+    return refund;
   }
 
   async updateStatus(
@@ -150,7 +175,7 @@ export class RefundsService {
         await tx.order.update({
           where: { id: updated.order.id },
           data: {
-            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PAID',
+            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_PAID',
           },
         });
 

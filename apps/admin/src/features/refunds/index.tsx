@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Plus } from 'lucide-react'
 import type { PaginationState } from '@tanstack/react-table'
 
@@ -29,6 +30,12 @@ export function Refunds() {
   const [pagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState({ orderId: '', amount: '', reason: '' })
+  const [targetStatusId, setTargetStatusId] = useState<string>('')
+
+  const { data: orderStatuses } = useQuery({
+    queryKey: ['order-statuses'],
+    queryFn: () => apiClient.get('/v1/order-statuses').then(r => r.data?.data || r.data),
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['refunds', pagination],
@@ -37,7 +44,7 @@ export function Refunds() {
 
   const createMut = useMutation({
     mutationFn: refundsApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['refunds'] }); setCreateOpen(false); setForm({ orderId: '', amount: '', reason: '' }); toast.success('Refund created') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['refunds'] }); setCreateOpen(false); setForm({ orderId: '', amount: '', reason: '' }); setTargetStatusId(''); toast.success('Refund created') },
   })
 
   const statusMut = useMutation({
@@ -88,10 +95,30 @@ export function Refunds() {
             <div><Label>Order ID</Label><Input value={form.orderId} onChange={e => setForm({ ...form, orderId: e.target.value })} placeholder='Order UUID' /></div>
             <div><Label>Amount</Label><Input type='number' value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder='0.00' /></div>
             <div><Label>Reason</Label><Textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder='Reason for refund...' /></div>
+            {orderStatuses && (
+              <div className='space-y-2'>
+                <Label>Target Order Status</Label>
+                <Select value={targetStatusId} onValueChange={setTargetStatusId}>
+                  <SelectTrigger><SelectValue placeholder='Select target status (optional)' /></SelectTrigger>
+                  <SelectContent>
+                    {orderStatuses
+                      .filter((s: any) => ['Returned', 'Refunded', 'Return Pending', 'Damaged'].includes(s.name))
+                      .map((s: any) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          <div className='flex items-center gap-2'>
+                            <div className='w-2 h-2 rounded-full' style={{ backgroundColor: s.color }} />
+                            {s.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => createMut.mutate({ orderId: form.orderId, amount: parseFloat(form.amount), reason: form.reason })}>Create</Button>
+            <Button onClick={() => createMut.mutate({ orderId: form.orderId, amount: parseFloat(form.amount), reason: form.reason, targetStatusId: targetStatusId || undefined })}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

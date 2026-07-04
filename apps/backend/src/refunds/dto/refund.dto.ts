@@ -12,6 +12,7 @@ export class CreateRefundDto {
   @IsNumber() @Min(1) amount: number;
   @IsOptional() @IsString() reason?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() targetStatusId?: string;
 }
 
 export class UpdateRefundStatusDto {
