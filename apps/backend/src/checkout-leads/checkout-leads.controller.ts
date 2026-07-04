@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
 } from '@nestjs/common';
 import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -104,8 +105,10 @@ export class CheckoutLeadsController {
     @Param('id') id: string,
     @Body() dto: ConvertOrderDto,
     @CurrentUser() user: { userId: string },
+    @Req() req: any,
   ) {
-    return this.svc.convertToOrder(id, user.userId, dto);
+    const clientIp = req?.ip || req?.socket?.remoteAddress || '';
+    return this.svc.convertToOrder(id, user.userId, dto, clientIp);
   }
 
   @Roles('superadmin', 'admin', 'manager')

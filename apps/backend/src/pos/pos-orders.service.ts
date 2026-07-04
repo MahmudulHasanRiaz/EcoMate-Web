@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
@@ -11,7 +12,18 @@ export class PosOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: StockService,
+    @Inject(ConfigService) private config: ConfigService,
   ) {}
+
+  private getEmailDomain(): string {
+    const appUrl = this.config.get<string>('APP_URL') || '';
+    try {
+      const host = new URL(appUrl).hostname;
+      return host || 'localhost';
+    } catch {
+      return appUrl.replace(/^https?:\/\//, '').split(':')[0] || 'localhost';
+    }
+  }
 
   private async generateDisplayId(): Promise<string> {
     const today = new Date();
@@ -86,12 +98,14 @@ export class PosOrdersService {
     });
     if (existing) return existing;
 
+    const domain = this.getEmailDomain();
+
     return this.prisma.user.create({
       data: {
         firstName: name || phone,
         lastName: '',
         username: `cust_${phone.replace(/[^0-9]/g, '')}`,
-        email: `${phone.replace(/[^0-9]/g, '')}@pos.ecomate`,
+        email: `${phone.replace(/[^0-9]/g, '')}@${domain}`,
         phoneNumber: phone,
         password: '',
         role: 'customer',

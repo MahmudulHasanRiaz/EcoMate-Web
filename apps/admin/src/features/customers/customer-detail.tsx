@@ -151,6 +151,24 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
                 <Calendar className='h-4 w-4 text-muted-foreground shrink-0' />
                 <span className='text-sm'>Registered: {format(new Date(customer.createdAt), 'MMM d, yyyy')}</span>
               </div>
+              {customer.lastIp && (
+                <div className='flex items-center gap-2'>
+                  <Globe className='h-4 w-4 text-muted-foreground shrink-0' />
+                  <span className='text-sm font-mono'>{customer.lastIp}</span>
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    className='h-6 w-6 text-destructive hover:text-destructive'
+                    onClick={() => {
+                      setNewIp(customer.lastIp)
+                      setIpReason(`Customer: ${customer.firstName} ${customer.lastName}`)
+                    }}
+                    title='Block this IP'
+                  >
+                    <Ban className='h-3.5 w-3.5' />
+                  </Button>
+                </div>
+              )}
               <div className='flex items-center gap-2'>
                 <span className='font-medium text-sm text-muted-foreground w-24 shrink-0'>Status:</span>
                 <Badge variant={isBlocked ? 'destructive' : 'secondary'}>

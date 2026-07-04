@@ -71,6 +71,7 @@ export interface CustomerDetail {
     username: string
     email: string
     phoneNumber: string
+    lastIp: string | null
     status: string
     role: string
     createdAt: string

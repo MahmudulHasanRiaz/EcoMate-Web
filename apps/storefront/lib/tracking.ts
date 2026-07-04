@@ -82,9 +82,20 @@ export function getCookie(name: string): string {
   return '';
 }
 
+function isSyntheticEmail(email?: string): boolean {
+  if (!email) return true;
+  const localPart = email.split('@')[0]?.toLowerCase() || '';
+  return localPart.startsWith('cust_') || /^\d+$/.test(localPart);
+}
+
 export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string; zip?: string; state?: string; address?: string }) {
   debug('trackEvent called:', { event, data, userData });
   if (typeof window === 'undefined') return;
+
+  if (isSyntheticEmail(userData?.email)) {
+    debug('Filtering synthetic email from tracking:', userData?.email);
+    userData = { ...userData, email: '' };
+  }
 
   if (event === 'Purchase') {
     const shouldFireMeta = _metaPurchaseMode === 'instant';

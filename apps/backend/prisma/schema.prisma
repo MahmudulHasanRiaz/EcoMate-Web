@@ -98,6 +98,7 @@ model User {
   emailVerified       Boolean    @default(false)
   failedLoginAttempts Int        @default(0)
   lockoutUntil        DateTime?
+  lastIp              String?
   status              UserStatus @default(active)
   role                UserRole   @default(admin)
   createdAt           DateTime   @default(now())

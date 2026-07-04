@@ -2,7 +2,9 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
@@ -10,7 +12,20 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(ConfigService) private config: ConfigService,
+  ) {}
+
+  private getEmailDomain(): string {
+    const appUrl = this.config.get<string>('APP_URL') || '';
+    try {
+      const host = new URL(appUrl).hostname;
+      return host || 'localhost';
+    } catch {
+      return appUrl.replace(/^https?:\/\//, '').split(':')[0] || 'localhost';
+    }
+  }
 
   async findAll(query: { search?: string; page?: number; perPage?: number }) {
     const page =
@@ -67,6 +82,7 @@ export class CustomersService {
         username: true,
         email: true,
         phoneNumber: true,
+        lastIp: true,
         status: true,
         role: true,
         createdAt: true,
@@ -150,6 +166,7 @@ export class CustomersService {
   async findOrCreateCustomer(
     phone: string,
     name: string,
+    clientIp?: string,
   ): Promise<{ id: string }> {
     let normalized = normalizePhone(phone);
     if (!normalized) {
@@ -170,16 +187,25 @@ export class CustomersService {
     });
 
     if (existing) {
+      const updateData: any = {};
       if (existing.firstName !== firstName || existing.lastName !== lastName) {
+        updateData.firstName = firstName;
+        updateData.lastName = lastName;
+      }
+      if (clientIp && existing.lastIp !== clientIp) {
+        updateData.lastIp = clientIp;
+      }
+      if (Object.keys(updateData).length > 0) {
         await this.prisma.user.update({
           where: { id: existing.id },
-          data: { firstName, lastName },
+          data: updateData,
         });
       }
       return { id: existing.id };
     }
 
     const phoneKey = normalized.replace(/[^\d]/g, '');
+    const domain = this.getEmailDomain();
     // Use a pre-calculated dummy hash to avoid extremely slow CPU-blocking bcrypt hashing during checkout/import.
     // Since this is a guest account with a random UUID password, it cannot be logged into anyway until a password reset.
     const hashedPassword =
@@ -190,10 +216,11 @@ export class CustomersService {
         firstName,
         lastName,
         username: `cust_${phoneKey}`,
-        email: `cust_${phoneKey}@ecomate.local`,
+        email: `cust_${phoneKey}@${domain}`,
         phoneNumber: normalized,
         password: hashedPassword,
         role: 'customer',
+        lastIp: clientIp || null,
       },
     });
 

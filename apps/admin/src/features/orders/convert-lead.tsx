@@ -309,7 +309,7 @@ export function ConvertLead({ id }: { id: string }) {
                                         <p className='text-sm font-medium truncate'>{p.name}</p>
                                         <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
                                       </div>
-                                      <div className='text-sm font-medium'>৳{fmt(p.price)}</div>
+                                      <div className='text-sm font-medium'>৳{fmt(p.price || 0)}</div>
                                     </CommandItem>
                                   ))}
                               </CommandGroup>
@@ -449,7 +449,7 @@ export function ConvertLead({ id }: { id: string }) {
                     {v.image ? <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>}
                     <div><p className='text-sm font-medium'>{v.name || 'Default Variant'}</p><p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p></div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price)}</div>
+                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price || 0)}</div>
                 </div>
               ))}
             </div>

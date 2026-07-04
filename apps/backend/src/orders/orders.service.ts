@@ -352,6 +352,7 @@ export class OrdersService {
       const customer = await this.customersService.findOrCreateCustomer(
         dto.guestPhone,
         dto.guestName,
+        clientIp,
       );
       dto.customerId = customer.id;
     }

@@ -47,7 +47,6 @@ import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
 import { Route as AuthenticatedOpPackingIndexRouteImport } from './routes/_authenticated/op/packing/index'
 import { Route as AuthenticatedOpOrdersIndexRouteImport } from './routes/_authenticated/op/orders/index'
-import { Route as AuthenticatedOpNotificationsIndexRouteImport } from './routes/_authenticated/op/notifications/index'
 import { Route as AuthenticatedOpMediaIndexRouteImport } from './routes/_authenticated/op/media/index'
 import { Route as AuthenticatedOpLandingPagesIndexRouteImport } from './routes/_authenticated/op/landing-pages/index'
 import { Route as AuthenticatedOpInventoryIndexRouteImport } from './routes/_authenticated/op/inventory/index'
@@ -71,6 +70,7 @@ import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
 import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
+import { Route as AuthenticatedMonNotificationsIndexRouteImport } from './routes/_authenticated/mon/notifications/index'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
@@ -318,12 +318,6 @@ const AuthenticatedOpOrdersIndexRoute =
     path: '/op/orders/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedOpNotificationsIndexRoute =
-  AuthenticatedOpNotificationsIndexRouteImport.update({
-    id: '/op/notifications/',
-    path: '/op/notifications/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedOpMediaIndexRoute =
   AuthenticatedOpMediaIndexRouteImport.update({
     id: '/op/media/',
@@ -460,6 +454,12 @@ const AuthenticatedMonPagesIndexRoute =
   AuthenticatedMonPagesIndexRouteImport.update({
     id: '/mon/pages/',
     path: '/mon/pages/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonNotificationsIndexRoute =
+  AuthenticatedMonNotificationsIndexRouteImport.update({
+    id: '/mon/notifications/',
+    path: '/mon/notifications/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonHelpCenterIndexRoute =
@@ -706,6 +706,7 @@ export interface FileRoutesByFullPath {
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
@@ -729,7 +730,6 @@ export interface FileRoutesByFullPath {
   '/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media/': typeof AuthenticatedOpMediaIndexRoute
-  '/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
@@ -804,6 +804,7 @@ export interface FileRoutesByTo {
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/mon/notifications': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
   '/op/accounting': typeof AuthenticatedOpAccountingIndexRoute
@@ -827,7 +828,6 @@ export interface FileRoutesByTo {
   '/op/inventory': typeof AuthenticatedOpInventoryIndexRoute
   '/op/landing-pages': typeof AuthenticatedOpLandingPagesIndexRoute
   '/op/media': typeof AuthenticatedOpMediaIndexRoute
-  '/op/notifications': typeof AuthenticatedOpNotificationsIndexRoute
   '/op/orders': typeof AuthenticatedOpOrdersIndexRoute
   '/op/packing': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
@@ -904,6 +904,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
+  '/_authenticated/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/_authenticated/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
@@ -927,7 +928,6 @@ export interface FileRoutesById {
   '/_authenticated/op/inventory/': typeof AuthenticatedOpInventoryIndexRoute
   '/_authenticated/op/landing-pages/': typeof AuthenticatedOpLandingPagesIndexRoute
   '/_authenticated/op/media/': typeof AuthenticatedOpMediaIndexRoute
-  '/_authenticated/op/notifications/': typeof AuthenticatedOpNotificationsIndexRoute
   '/_authenticated/op/orders/': typeof AuthenticatedOpOrdersIndexRoute
   '/_authenticated/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
@@ -1004,6 +1004,7 @@ export interface FileRouteTypes {
     | '/mon/activity-logs/'
     | '/mon/analytics/'
     | '/mon/help-center/'
+    | '/mon/notifications/'
     | '/mon/pages/'
     | '/mon/users/'
     | '/op/accounting/'
@@ -1027,7 +1028,6 @@ export interface FileRouteTypes {
     | '/op/inventory/'
     | '/op/landing-pages/'
     | '/op/media/'
-    | '/op/notifications/'
     | '/op/orders/'
     | '/op/packing/'
     | '/op/payments/'
@@ -1102,6 +1102,7 @@ export interface FileRouteTypes {
     | '/mon/activity-logs'
     | '/mon/analytics'
     | '/mon/help-center'
+    | '/mon/notifications'
     | '/mon/pages'
     | '/mon/users'
     | '/op/accounting'
@@ -1125,7 +1126,6 @@ export interface FileRouteTypes {
     | '/op/inventory'
     | '/op/landing-pages'
     | '/op/media'
-    | '/op/notifications'
     | '/op/orders'
     | '/op/packing'
     | '/op/payments'
@@ -1201,6 +1201,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
     | '/_authenticated/mon/help-center/'
+    | '/_authenticated/mon/notifications/'
     | '/_authenticated/mon/pages/'
     | '/_authenticated/mon/users/'
     | '/_authenticated/op/accounting/'
@@ -1224,7 +1225,6 @@ export interface FileRouteTypes {
     | '/_authenticated/op/inventory/'
     | '/_authenticated/op/landing-pages/'
     | '/_authenticated/op/media/'
-    | '/_authenticated/op/notifications/'
     | '/_authenticated/op/orders/'
     | '/_authenticated/op/packing/'
     | '/_authenticated/op/payments/'
@@ -1548,13 +1548,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/op/notifications/': {
-      id: '/_authenticated/op/notifications/'
-      path: '/op/notifications'
-      fullPath: '/op/notifications/'
-      preLoaderRoute: typeof AuthenticatedOpNotificationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/op/media/': {
       id: '/_authenticated/op/media/'
       path: '/op/media'
@@ -1714,6 +1707,13 @@ declare module '@tanstack/react-router' {
       path: '/mon/pages'
       fullPath: '/mon/pages/'
       preLoaderRoute: typeof AuthenticatedMonPagesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/notifications/': {
+      id: '/_authenticated/mon/notifications/'
+      path: '/mon/notifications'
+      fullPath: '/mon/notifications/'
+      preLoaderRoute: typeof AuthenticatedMonNotificationsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/help-center/': {
@@ -2075,6 +2075,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
+  AuthenticatedMonNotificationsIndexRoute: typeof AuthenticatedMonNotificationsIndexRoute
   AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
   AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
   AuthenticatedOpAccountingIndexRoute: typeof AuthenticatedOpAccountingIndexRoute
@@ -2098,7 +2099,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpInventoryIndexRoute: typeof AuthenticatedOpInventoryIndexRoute
   AuthenticatedOpLandingPagesIndexRoute: typeof AuthenticatedOpLandingPagesIndexRoute
   AuthenticatedOpMediaIndexRoute: typeof AuthenticatedOpMediaIndexRoute
-  AuthenticatedOpNotificationsIndexRoute: typeof AuthenticatedOpNotificationsIndexRoute
   AuthenticatedOpOrdersIndexRoute: typeof AuthenticatedOpOrdersIndexRoute
   AuthenticatedOpPackingIndexRoute: typeof AuthenticatedOpPackingIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
@@ -2151,6 +2151,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonActivityLogsIndexRoute,
   AuthenticatedMonAnalyticsIndexRoute: AuthenticatedMonAnalyticsIndexRoute,
   AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
+  AuthenticatedMonNotificationsIndexRoute:
+    AuthenticatedMonNotificationsIndexRoute,
   AuthenticatedMonPagesIndexRoute: AuthenticatedMonPagesIndexRoute,
   AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
   AuthenticatedOpAccountingIndexRoute: AuthenticatedOpAccountingIndexRoute,
@@ -2176,8 +2178,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpInventoryIndexRoute: AuthenticatedOpInventoryIndexRoute,
   AuthenticatedOpLandingPagesIndexRoute: AuthenticatedOpLandingPagesIndexRoute,
   AuthenticatedOpMediaIndexRoute: AuthenticatedOpMediaIndexRoute,
-  AuthenticatedOpNotificationsIndexRoute:
-    AuthenticatedOpNotificationsIndexRoute,
   AuthenticatedOpOrdersIndexRoute: AuthenticatedOpOrdersIndexRoute,
   AuthenticatedOpPackingIndexRoute: AuthenticatedOpPackingIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,

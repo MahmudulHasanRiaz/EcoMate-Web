@@ -253,6 +253,7 @@ export class CheckoutLeadsService {
     id: string,
     userId: string,
     overrides?: ConvertOrderDto,
+    clientIp?: string,
   ) {
     const lead = await this.findOne(id);
     if (lead.status !== 'PENDING') {
@@ -295,6 +296,7 @@ export class CheckoutLeadsService {
       const customer = await this.customersService.findOrCreateCustomer(
         guestPhone,
         guestName,
+        clientIp,
       );
       resolvedCustomerId = customer.id;
     }

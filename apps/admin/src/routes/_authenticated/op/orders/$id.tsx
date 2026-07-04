@@ -364,7 +364,7 @@ function OrderDetailPage() {
                                           <p className='text-sm font-medium truncate'>{p.name}</p>
                                           <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
                                         </div>
-                                        <div className='text-sm font-medium'>৳{fmt(p.price)}</div>
+                                        <div className='text-sm font-medium'>৳{fmt(p.price || 0)}</div>
                                       </CommandItem>
                                     ))}
                                 </CommandGroup>
@@ -766,7 +766,7 @@ function OrderDetailPage() {
                       <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
                     </div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price)}</div>
+                  <div className='text-sm font-medium'>৳{fmt(v.price || selectedProductForVariants.price || 0)}</div>
                 </div>
               ))}
             </div>

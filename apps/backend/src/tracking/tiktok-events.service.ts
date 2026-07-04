@@ -110,7 +110,7 @@ export class TikTokEventsService {
             referrer: referrer || undefined,
           },
           user: {
-            email: email ? this.hash(email) : undefined,
+            email: email && !this.isSyntheticEmail(email) ? this.hash(email) : undefined,
             phone_number: phone
               ? this.hash(this.normalizePhone(phone))
               : undefined,
@@ -195,6 +195,11 @@ export class TikTokEventsService {
     }
     if (envKey) return this.config.get(envKey) || null;
     return null;
+  }
+
+  private isSyntheticEmail(email: string): boolean {
+    const localPart = email.split('@')[0]?.toLowerCase() || '';
+    return localPart.startsWith('cust_') || /^\d+$/.test(localPart);
   }
 
   private hash(data: string): string {

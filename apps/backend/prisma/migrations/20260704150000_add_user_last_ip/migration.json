@@ -1,0 +1,19 @@
+{
+  "version": "5.2",
+  "steps": [
+    {
+      "tag": "CreateMigration",
+      "migrations": [
+        {
+          "tag": "AlterTable",
+          "table": "User",
+          "operations": [
+            {
+              "sql": "ALTER TABLE \"User\" ADD COLUMN IF NOT EXISTS \"lastIp\" TEXT"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
