@@ -362,7 +362,7 @@ describe('RefundsService', () => {
         expect(prisma.order.update).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { id: 'order-id-1' },
-            data: expect.objectContaining({ paymentStatus: 'PAID' }),
+            data: expect.objectContaining({ paymentStatus: 'PARTIAL_REFUNDED' }),
           }),
         );
       });

@@ -101,6 +101,37 @@ export class RefundsService {
     });
 
     if (dto.targetStatusId) {
+      const targetStatus = await this.prisma.orderStatus.findUnique({
+        where: { id: dto.targetStatusId },
+      });
+      if (!targetStatus) throw new BadRequestException('Invalid target status');
+
+      const isPreShippingTarget = ['Cancelled', 'Hold'].includes(
+        targetStatus.name,
+      );
+
+      if (isPreShippingTarget) {
+        const activeDispatchCount = await this.prisma.dispatch.count({
+          where: {
+            orderId: dto.orderId,
+            status: {
+              in: ['HANDED_OVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED'],
+            },
+          },
+        });
+
+        const order = await this.prisma.order.findUnique({
+          where: { id: dto.orderId },
+          include: { status: true },
+        });
+
+        if (activeDispatchCount > 0 || order?.status?.name === 'Shipping') {
+          throw new BadRequestException(
+            `Cannot set status to "${targetStatus.name}" — order is already in courier pipeline. Select "Return Pending" or "Returned" instead.`,
+          );
+        }
+      }
+
       const allRefunds = await this.prisma.refund.findMany({
         where: {
           orderId: dto.orderId,
@@ -118,7 +149,7 @@ export class RefundsService {
         where: { id: dto.orderId },
         data: {
           statusId: dto.targetStatusId,
-          paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_PAID',
+          paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUNDED',
         },
       });
     }
@@ -175,7 +206,7 @@ export class RefundsService {
         await tx.order.update({
           where: { id: updated.order.id },
           data: {
-            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_PAID',
+            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_REFUNDED',
           },
         });
 
