@@ -4,6 +4,7 @@ import React from 'react';
 import { MapPin, Phone, Mail } from 'lucide-react';
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
+import EcoMateAttribution from "./EcoMateAttribution";
 import { usePathname } from "next/navigation";
 import Link from 'next/link';
 
@@ -69,7 +70,7 @@ export default function Footer({}: {}) {
   const colCount = columns.length;
 
   return (
-    <footer className="bg-white pt-16 pb-20 md:pb-8 border-t border-gray-100">
+    <footer className="bg-white pt-16 pb-0 border-t border-gray-100">
       <div className="max-w-7xl mx-auto px-4">
         {/* Top Grid */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-10 md:gap-8 mb-12">
@@ -157,28 +158,7 @@ export default function Footer({}: {}) {
           </div>
         </div>
 
-        {/* Bottom Area */}
-        <div className="pt-8 border-t border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 md:pb-0">
-          <div className="flex flex-wrap items-center gap-4 opacity-50">
-             <span className="text-sm font-semibold text-gray-500">Secure Payments:</span>
-             <div className="flex items-center gap-2">
-               <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded">bKash</span>
-               <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded">Nagad</span>
-               <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded">VISA</span>
-               <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded">MasterCard</span>
-             </div>
-          </div>
-          <div className="text-[12px] text-gray-400 flex items-center justify-between md:justify-end gap-2 w-full md:w-auto">
-            <span>&copy; {new Date().getFullYear()} {store.name} | All Rights Reserved</span>
-            <button 
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="hidden md:flex bg-brand-blue p-1.5 rounded-full text-white shadow-lg hover:scale-110 transition-transform"
-              aria-label="Back to top"
-            >
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"></path></svg>
-            </button>
-          </div>
-        </div>
+        <EcoMateAttribution storeName={store.name} />
       </div>
     </footer>
   );
