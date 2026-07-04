@@ -1614,3 +1614,33 @@ model LicenseActivation {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
+
+model ProductFeedConfig {
+  id                String    @id @default(uuid())
+  tenantId          String
+  platform          String    // meta, google, tiktok
+  secureToken       String    @unique
+  isActive          Boolean   @default(true)
+  excludeOutOfStock Boolean   @default(false)
+  minPriceFilter    Decimal?  @db.Decimal(10, 2)
+  lastFetchedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([secureToken, isActive])
+}
+
+model ProductFeedLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  platform   String
+  ipAddress  String
+  userAgent  String
+  statusCode Int
+  durationMs Int
+  fetchedAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([fetchedAt])
+}
