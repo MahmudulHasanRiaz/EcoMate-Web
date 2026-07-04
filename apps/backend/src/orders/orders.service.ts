@@ -250,6 +250,7 @@ export class OrdersService {
           },
         },
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
+        dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order) throw new NotFoundException('Order not found');
@@ -859,6 +860,7 @@ export class OrdersService {
             },
           },
           payments: true,
+          dispatches: { orderBy: { createdAt: 'desc' } },
         },
       });
     });

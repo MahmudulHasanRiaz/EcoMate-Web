@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send, AlertTriangle } from 'lucide-react'
+import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 
 const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -432,15 +433,44 @@ function OrderDetailPage() {
               </CardContent>
             </Card>
 
-            {order.dispatchLogs && order.dispatchLogs.length > 0 && (
+            {order.dispatches && order.dispatches.length > 0 && (
               <Card>
-                <CardHeader className='pb-2'><CardTitle className='text-base flex items-center gap-2'><Truck className='h-4 w-4' /> Dispatch History</CardTitle></CardHeader>
+                <CardHeader className='pb-2'>
+                  <CardTitle className='text-base flex items-center gap-2'>
+                    <Truck className='h-4 w-4' /> Dispatch History
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className='p-0'>
                   <Table>
-                    <TableHeader><TableRow><TableHead>Courier</TableHead><TableHead>Status</TableHead><TableHead>ID</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
-                    <TableBody>{order.dispatchLogs.map((log: any) => (
-                      <TableRow key={log.id}><TableCell className='font-medium text-sm capitalize'>{log.courier}</TableCell><TableCell><Badge variant={log.status === 'success' ? 'default' : 'destructive'} className='text-xs'>{log.status}</Badge></TableCell><TableCell className='text-sm font-mono'>{log.consignmentId || log.trackingCode || '—'}</TableCell><TableCell className='text-xs text-muted-foreground'>{new Date(log.createdAt).toLocaleString()}</TableCell></TableRow>
-                    ))}</TableBody>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Courier</TableHead>
+                        <TableHead>Consignment ID</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Tracking</TableHead>
+                        <TableHead>Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {order.dispatches.slice().reverse().map((d: any) => {
+                        const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status);
+                        return (
+                          <TableRow key={d.id}>
+                            <TableCell className='font-medium text-sm capitalize'>{d.courier}</TableCell>
+                            <TableCell className='text-sm font-mono'>{d.consignmentId}</TableCell>
+                            <TableCell>
+                              <Badge className={`text-xs ${statusConfig?.color || 'bg-gray-500'}`}>
+                                {statusConfig?.label || d.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className='text-sm'>{d.trackingCode || '—'}</TableCell>
+                            <TableCell className='text-xs text-muted-foreground'>
+                              {new Date(d.createdAt).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
                   </Table>
                 </CardContent>
               </Card>
