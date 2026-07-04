@@ -69,6 +69,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
 import { PosModule } from './pos/pos.module';
 import { FinancialPeriodsModule } from './financial-periods/financial-periods.module';
 import { OpeningBalancesModule } from './opening-balances/opening-balances.module';
+import { PackingModule } from './packing/packing.module';
 import { AccountingModule } from './accounting/accounting.module';
 
 @Module({
@@ -86,6 +87,7 @@ import { AccountingModule } from './accounting/accounting.module';
     AttributesModule,
     ProductsModule,
     OrdersModule,
+    PackingModule,
     PaymentsModule,
     UploadModule,
     SystemSettingsModule,
