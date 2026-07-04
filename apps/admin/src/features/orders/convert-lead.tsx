@@ -50,8 +50,8 @@ export function ConvertLead({ id }: { id: string }) {
   const [district, setDistrict] = useState('')
   const [thana, setThana] = useState('')
   const [allProducts, setAllProducts] = useState<any[]>([])
-  const [cities, setCities] = useState<any[]>([])
-  const [zones, setZones] = useState<any[]>([])
+  const [districts, setDistricts] = useState<any[]>([])
+  const [thanas, setThanas] = useState<any[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
@@ -86,18 +86,18 @@ export function ConvertLead({ id }: { id: string }) {
   }, [])
 
   useEffect(() => {
-    apiClient.get('/couriers/cities')
-      .then(r => setCities(r.data as any[]))
-      .catch(() => toast.error('Failed to fetch cities'))
+    apiClient.get('/delivery-areas/districts')
+      .then(r => setDistricts(r.data as any[]))
+      .catch(() => toast.error('Failed to load districts'))
   }, [])
 
   useEffect(() => {
     if (district) {
-      apiClient.get(`/couriers/zones?cityId=${district}`)
-        .then(r => setZones(r.data as any[]))
-        .catch(() => toast.error('Failed to fetch zones'))
+      apiClient.get(`/delivery-areas/districts/${encodeURIComponent(district)}/thanas`)
+        .then(r => setThanas(r.data as any[]))
+        .catch(() => toast.error('Failed to load thanas'))
     } else {
-      setZones([])
+      setThanas([])
     }
   }, [district])
 
@@ -363,14 +363,14 @@ export function ConvertLead({ id }: { id: string }) {
                   <Label className='text-xs'>District</Label>
                   <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={district} onChange={e => { setDistrict(e.target.value); setThana('') }}>
                     <option value=''>Select District...</option>
-                    {cities.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {districts.map((d: any) => <option key={d.name} value={d.name}>{d.nameBn ? `${d.name} - ${d.nameBn}` : d.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <Label className='text-xs'>Thana / Zone</Label>
                   <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={thana} onChange={e => setThana(e.target.value)}>
                     <option value=''>Select Thana...</option>
-                    {zones.map((z: any) => <option key={z.id} value={z.id}>{z.name}</option>)}
+                    {thanas.map((t: any) => <option key={t.name} value={t.name}>{t.nameBn ? `${t.name} - ${t.nameBn}` : t.name}</option>)}
                   </select>
                 </div>
                 <div>
