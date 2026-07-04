@@ -26,18 +26,22 @@ export default async function HomePage() {
     console.error('Brands fetch failed:', error);
   }
 
-  const fetchSectionProducts = async (sec: any): Promise<{ title: string; products: Product[] } | null> => {
+  const fetchSectionProducts = async (sec: any): Promise<{ title: string; products: Product[]; href: string } | null> => {
     if (!sec.enabled) return null;
     try {
       let products: Product[] = [];
+      let href = '/products';
       const limit = sec.limit || 4;
       if (sec.type === 'featured') {
         products = await getFeaturedProductsServer(limit);
       } else if (sec.type === 'new_arrivals') {
         products = await getNewArrivalsServer(limit);
+        href = '/products?sort=newest';
       } else if (sec.type === 'popular') {
         products = await getPopularItemsServer(limit);
+        href = '/products?sort=popularity';
       } else if (sec.type === 'category' && sec.categoryId) {
+        href = `/products?categoryId=${sec.categoryId}`;
         let sort: string | undefined;
         let order: string | undefined;
         if (sec.categorySort === 'new_arrivals') {
@@ -56,7 +60,7 @@ export default async function HomePage() {
         });
         products = res.data;
       }
-      return { title: sec.title, products };
+      return { title: sec.title, products, href };
     } catch (e) {
       console.error(`Failed to fetch products for section ${sec.title}:`, e);
       return null;
@@ -66,7 +70,7 @@ export default async function HomePage() {
   const renderedSectionsData = await Promise.all(
     sections.map(sec => fetchSectionProducts(sec))
   );
-  const activeSections = renderedSectionsData.filter(Boolean) as { title: string; products: Product[] }[];
+  const activeSections = renderedSectionsData.filter(Boolean) as { title: string; products: Product[]; href: string }[];
 
   return (
     <>
@@ -75,7 +79,7 @@ export default async function HomePage() {
       
       {activeSections.map((sec, idx) => (
         <Fragment key={sec.title + idx}>
-          <ProductSection title={sec.title} products={sec.products} />
+          <ProductSection title={sec.title} products={sec.products} href={sec.href} />
           {idx === 0 && <BrandSection brands={brands} />}
           {idx === 1 && <ComboDeals />}
         </Fragment>

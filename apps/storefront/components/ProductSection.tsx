@@ -5,11 +5,13 @@ import Link from "next/link";
 interface ProductSectionProps {
   title: string;
   products: Product[];
+  href?: string;
 }
 
 export default function ProductSection({
   title,
   products,
+  href = "/products",
 }: ProductSectionProps) {
   return (
     <section className="py-10 md:py-14 bg-white border-b border-gray-50">
@@ -20,7 +22,7 @@ export default function ProductSection({
              <div className="absolute bottom-0 left-0 w-20 h-[4px] bg-brand-blue rounded-full"></div>
           </div>
           <Link 
-            href="/products"
+            href={href}
             className="text-brand-blue text-[13px] md:text-[14px] font-black hover:text-brand-blue/80 transition-colors uppercase tracking-widest pb-2"
           >
             Show More
