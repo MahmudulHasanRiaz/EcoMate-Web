@@ -27,6 +27,7 @@ export interface Product {
   slug?: string;
   price: number;
   originalPrice?: number;
+  priceRange?: { min: number; max: number };
   image: string;
   images?: string[];
   category: string;

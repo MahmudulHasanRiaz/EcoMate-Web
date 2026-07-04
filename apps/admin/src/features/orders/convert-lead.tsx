@@ -271,7 +271,7 @@ export function ConvertLead({ id }: { id: string }) {
                                 const exact = allProducts.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
                                 if (exact) {
                                   const variant = exact.variants?.find((v: any) => v.sku === productSearchQuery)
-                                  setOrderItems([...orderItems, { productId: exact.id, variantId: variant?.id, product: exact, quantity: 1, price: variant?.price || exact.price || 0 }])
+                                  setOrderItems([...orderItems, { productId: exact.id, variantId: variant?.id, product: exact, quantity: 1, price: variant?.salePrice ?? variant?.price ?? exact.salePrice ?? exact.basePrice ?? 0 }])
                                   setProductSearchQuery('')
                                   toast.success('Product added')
                                 } else {
@@ -294,7 +294,7 @@ export function ConvertLead({ id }: { id: string }) {
                                         if (p.type === 'variable' || p.variants?.length > 0) {
                                           setSelectedProductForVariants(p)
                                         } else {
-                                          setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.price || 0 }])
+                                          setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.salePrice ?? p.basePrice ?? 0 }])
                                           setProductSearchQuery('')
                                         }
                                       }}

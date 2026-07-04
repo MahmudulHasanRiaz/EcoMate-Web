@@ -398,6 +398,7 @@ export class OrdersService {
               select: {
                 id: true,
                 price: true,
+                salePrice: true,
                 isActive: true,
                 productId: true,
               },
@@ -465,10 +466,9 @@ export class OrdersService {
           if (!parentProduct.isActive) {
             throw new BadRequestException(`Product is no longer active`);
           }
-          item.price =
-            variant.price !== null && variant.price !== undefined
-              ? Number(variant.price)
-              : Number(parentProduct.salePrice ?? parentProduct.basePrice);
+          item.price = Number(
+            variant.salePrice ?? variant.price ?? parentProduct.salePrice ?? parentProduct.basePrice ?? 0,
+          );
         } else if (item.productId) {
           const product = productMap.get(item.productId);
           if (!product) {

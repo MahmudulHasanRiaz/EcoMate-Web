@@ -154,8 +154,14 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
         <div className="mt-auto space-y-3">
           <div className="flex items-center gap-1.5 flex-wrap">
-            {isVar && <span className="text-[11px] text-gray-500 font-medium">From</span>}
-            <span className="text-[15px] md:text-[18px] font-black text-brand-blue-text">{config.currency.symbol}{product.price.toLocaleString()}</span>
+            {product.priceRange ? (
+              <span className="text-[15px] md:text-[18px] font-black text-brand-blue-text">{config.currency.symbol}{product.priceRange.min.toLocaleString()} – {config.currency.symbol}{product.priceRange.max.toLocaleString()}</span>
+            ) : (
+              <>
+                {isVar && <span className="text-[11px] text-gray-500 font-medium">From</span>}
+                <span className="text-[15px] md:text-[18px] font-black text-brand-blue-text">{config.currency.symbol}{product.price.toLocaleString()}</span>
+              </>
+            )}
             {product.originalPrice && (
               <span className="text-[12px] md:text-[14px] font-medium text-gray-500 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
             )}

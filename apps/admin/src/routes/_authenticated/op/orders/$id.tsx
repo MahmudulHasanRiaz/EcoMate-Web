@@ -322,7 +322,7 @@ function OrderDetailPage() {
                                       variantId: variant?.id,
                                       product: exact, 
                                       quantity: 1, 
-                                      price: variant?.price || exact.price || 0 
+                                      price: variant?.salePrice ?? variant?.price ?? exact.salePrice ?? exact.basePrice ?? 0 
                                     }])
                                     setProductSearchQuery('')
                                     toast.success('Product added')
@@ -349,7 +349,7 @@ function OrderDetailPage() {
                                           if (p.type === 'variable' || p.variants?.length > 0) {
                                             setSelectedProductForVariants(p)
                                           } else {
-                                            setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.price || 0 }])
+                                            setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.salePrice ?? p.basePrice ?? 0 }])
                                             setProductSearchQuery('')
                                           }
                                         }}

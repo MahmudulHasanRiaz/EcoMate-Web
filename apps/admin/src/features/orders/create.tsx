@@ -220,7 +220,7 @@ export function CreateOrder() {
         variantId: variant?.id || null,
         product: { ...product, name: variant ? `${product.name} (${variant.name || variant.sku})` : product.name },
         quantity: 1,
-        price: variant?.price || product.price || 0,
+        price: variant?.salePrice ?? variant?.price ?? product.salePrice ?? product.basePrice ?? 0,
         variant: variant || null,
       }]
     })

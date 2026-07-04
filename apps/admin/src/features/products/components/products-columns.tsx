@@ -72,7 +72,7 @@ export function productsColumns(
       cell: ({ row }) => {
         if (row.original.type === 'variable') {
           const prices = row.original.variants
-            .map(v => parseFloat(String(v.price ?? 0)))
+            .map(v => parseFloat(String(v.salePrice ?? v.price ?? 0)))
             .filter(p => p >= 0)
           if (prices.length === 0) return <span className='text-muted-foreground'>—</span>
           const min = Math.min(...prices)

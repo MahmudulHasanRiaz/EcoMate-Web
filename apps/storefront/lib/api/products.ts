@@ -48,10 +48,13 @@ export function transformBackendProduct(raw: any): Product {
   let displayOriginalPrice: number | undefined;
   let displaySalePrice: number | undefined;
   let displayBasePrice: number;
+  let minPrice: number | undefined;
+  let maxPrice: number | undefined;
 
   if (isVar && variants.length > 0) {
     const prices = variants.map((v) => v.price);
-    const minPrice = Math.min(...prices);
+    minPrice = Math.min(...prices);
+    maxPrice = Math.max(...prices);
     const minRegPrice = Math.min(...variants.map((v) => v.regularPrice));
     const hasSale = variants.some((v) => v.salePrice !== undefined && v.salePrice! < v.regularPrice);
     displayPrice = minPrice;
@@ -80,6 +83,7 @@ export function transformBackendProduct(raw: any): Product {
     basePrice: displayBasePrice,
     originalPrice: displayOriginalPrice,
     salePrice: displaySalePrice,
+    priceRange: isVar && variants.length > 0 && minPrice !== undefined && maxPrice !== undefined && minPrice !== maxPrice ? { min: minPrice, max: maxPrice } : undefined,
     image: firstImage,
     images: rawImages,
     category: raw.category?.name || "",
