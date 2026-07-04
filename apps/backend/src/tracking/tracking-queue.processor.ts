@@ -21,7 +21,7 @@ export class TrackingQueueProcessor extends WorkerHost {
   }
 
   async process(job: Job<TrackingJob>): Promise<void> {
-    const { eventId, eventName, eventTime, userId, userData, customData } = job.data;
+    const { eventId, eventName, eventTime, actionSource, userId, userData, customData } = job.data;
 
     this.logger.debug(`Processing tracking event: ${eventName} [${eventId}]`);
 
@@ -32,6 +32,7 @@ export class TrackingQueueProcessor extends WorkerHost {
       eventName: platformEventName,
       eventId,
       eventTime,
+      actionSource,
       userId,
       userData: { ...userData },
       customData,
@@ -68,6 +69,7 @@ export class TrackingQueueProcessor extends WorkerHost {
       search: 'Search',
       complete_registration: 'CompleteRegistration',
       page_view: 'PageView',
+      lead: 'Lead',
     };
     return map[name] || null;
   }

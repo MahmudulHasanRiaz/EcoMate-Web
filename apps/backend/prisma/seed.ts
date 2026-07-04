@@ -887,6 +887,7 @@ async function main() {
     { key: 'free_delivery_min', value: '1000' },
     { key: 'meta_pixel_enabled', value: 'false' },
     { key: 'tiktok_pixel_enabled', value: 'false' },
+    { key: 'tracking_refund_enabled', value: 'true' },
 { key: 'hero_slides', value: JSON.stringify([
       { image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=1600', link: '/products' },
       { image: 'https://images.unsplash.com/photo-1616348436168-de43ad0db179?auto=format&fit=crop&q=80&w=1600', link: '/combos' },

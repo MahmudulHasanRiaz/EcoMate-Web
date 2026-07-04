@@ -7,6 +7,7 @@ interface TrackEvent {
   eventName: string;
   eventId: string;
   eventTime: number;
+  actionSource?: string;
   userId?: string;
   userData: {
     email?: string;

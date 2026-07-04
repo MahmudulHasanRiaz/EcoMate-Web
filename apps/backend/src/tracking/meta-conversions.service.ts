@@ -7,6 +7,7 @@ interface TrackEvent {
   eventName: string;
   eventId: string;
   eventTime: number;
+  actionSource?: string;
   userId?: string;
   userData: {
     email?: string;
@@ -101,7 +102,7 @@ export class MetaConversionsService {
             event_name: event.eventName,
             event_time: event.eventTime,
             event_id: event.eventId,
-            action_source: 'website',
+            action_source: event.actionSource || 'website',
             event_source_url: url || undefined,
             user_data: {
               em: email ? this.hash(email) : undefined,

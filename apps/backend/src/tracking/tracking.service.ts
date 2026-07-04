@@ -6,6 +6,8 @@ import { v4 as uuid } from 'uuid';
 export interface TrackingEvent {
   eventName: string;
   eventId?: string;
+  eventTime?: number;
+  actionSource?: string;
   userId?: string;
   userData?: {
     email?: string;
@@ -39,13 +41,14 @@ export class TrackingService {
 
   async track(event: TrackingEvent) {
     const eventId = event.eventId || uuid();
-    const eventTime = Math.floor(Date.now() / 1000);
+    const eventTime = event.eventTime ?? Math.floor(Date.now() / 1000);
     const userData = event.userData || {};
 
     await this.queue.enqueue({
       eventId,
       eventName: event.eventName,
       eventTime,
+      actionSource: event.actionSource,
       userId: event.userId,
       userData: { ...userData },
       customData: event.customData,

@@ -1010,6 +1010,13 @@ export class OrdersService {
       ).catch((err) => {
         this.logger.error('Failed to fire validated purchase event:', err);
       });
+
+      // Fire refund for cancelled/returned orders
+      if (['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)) {
+        this.fireRefundEvent(updatedWithItems as any).catch((err) => {
+          this.logger.error('Failed to fire refund event:', err);
+        });
+      }
     }
 
     return updated;
@@ -1478,6 +1485,23 @@ export class OrdersService {
       },
     });
 
+    // Fire refund for customer-cancelled orders
+    this.prisma.order
+      .findUnique({
+        where: { id: orderId },
+        include: {
+          items: { include: { product: { select: { id: true, name: true } } } },
+          customer: true,
+        },
+      })
+      .then((refundOrder) => {
+        if (refundOrder) {
+          this.fireRefundEvent(refundOrder as any).catch((err) => {
+            this.logger.error('Failed to fire refund for customer cancel:', err);
+          });
+        }
+      });
+
     return updated;
   }
 
@@ -1570,7 +1594,6 @@ export class OrdersService {
     const savedCtx = await this.tracking.getContext(order.id);
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || 0);
-    const timestamp = Date.now();
 
     const customData = {
       value: totalValue,
@@ -1590,9 +1613,17 @@ export class OrdersService {
       })),
     };
 
+    const createdAt = order.createdAt
+      ? Math.floor(new Date(order.createdAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
+
+    const actionSource = order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+
     await this.tracking.track({
       eventName: 'purchase',
-      eventId: `purchase_${mode}_${order.id}_${timestamp}`,
+      eventTime: createdAt,
+      eventId: `purchase_${order.id}`,
+      actionSource,
       userId: order.customerId || undefined,
       userData: {
         email,
@@ -1609,5 +1640,62 @@ export class OrdersService {
       },
       customData,
     });
+  }
+
+  private async fireRefundEvent(order: any) {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'tracking_refund_enabled' },
+      });
+      if (setting?.value === 'false') return;
+
+      const itemsList = (order.items as any[]) || [];
+      const totalValue = Number(order.total || 0);
+      if (totalValue <= 0) return;
+
+      const savedCtx = await this.tracking.getContext(order.id);
+
+      let phone = '';
+      let firstName = '';
+      let country = 'BD';
+      if (order.customer) {
+        phone = order.customer.phoneNumber || '';
+        firstName = order.customer.firstName || '';
+      }
+      if (!phone) phone = order.guestPhone || '';
+      if (!firstName) firstName = order.guestName || '';
+
+      const actionSource = order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+
+      await this.tracking.track({
+        eventName: 'purchase',
+        eventTime: Math.floor(Date.now() / 1000),
+        eventId: `refund_${order.id}`,
+        actionSource,
+        userData: {
+          phone,
+          name: firstName || undefined,
+          country,
+          ip: '',
+          userAgent: '',
+          fbp: savedCtx?.fbp || undefined,
+          fbc: savedCtx?.fbc || undefined,
+        },
+        customData: {
+          value: -totalValue,
+          currency: 'BDT',
+          content_ids: itemsList
+            .map((i: any) => i.productId || i.comboId || '')
+            .filter(Boolean),
+          order_id: order.id,
+          num_items: itemsList.reduce(
+            (s: number, i: any) => s + (i.quantity || 0),
+            0,
+          ),
+        },
+      });
+    } catch (err) {
+      this.logger.error('Failed to fire refund event:', err);
+    }
   }
 }

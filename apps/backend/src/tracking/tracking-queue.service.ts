@@ -6,6 +6,7 @@ export interface TrackingJob {
   eventId: string;
   eventName: string;
   eventTime: number;
+  actionSource?: string;
   userId?: string;
   userData: Record<string, any>;
   customData?: Record<string, any>;

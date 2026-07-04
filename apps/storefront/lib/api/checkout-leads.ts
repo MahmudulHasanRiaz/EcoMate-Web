@@ -8,6 +8,8 @@ export interface SaveLeadData {
   items?: any;
   paymentMethod?: string;
   fingerprint?: string;
+  fbp?: string;
+  fbc?: string;
 }
 
 export async function saveCheckoutLead(data: SaveLeadData) {

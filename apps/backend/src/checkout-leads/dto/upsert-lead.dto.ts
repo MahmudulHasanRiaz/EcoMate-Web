@@ -30,4 +30,6 @@ export class UpsertLeadDto {
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsString() fingerprint?: string;
+  @IsOptional() @IsString() fbp?: string;
+  @IsOptional() @IsString() fbc?: string;
 }

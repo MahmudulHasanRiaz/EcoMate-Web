@@ -61,7 +61,18 @@ export class CheckoutLeadsController {
   @Public()
   @Post()
   upsert(@Body() dto: UpsertLeadDto) {
-    return this.svc.upsert(dto);
+    return this.svc.upsert({
+      phone: dto.phone,
+      name: dto.name,
+      email: dto.email,
+      address: dto.address,
+      items: dto.items,
+      payload: dto.payload,
+      paymentMethod: dto.paymentMethod,
+      fingerprint: dto.fingerprint,
+      fbp: dto.fbp,
+      fbc: dto.fbc,
+    });
   }
 
   @Roles('superadmin', 'admin', 'manager')

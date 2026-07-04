@@ -16,7 +16,7 @@ import { submitPayment } from '@/lib/api/payments';
 import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { trackEvent } from '@/lib/tracking';
+import { trackEvent, getCookie } from '@/lib/tracking';
 
 function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
@@ -620,6 +620,8 @@ export default function CheckoutPage() {
       })),
       paymentMethod: paymentOptionType,
       fingerprint: simpleFingerprint(phone, items),
+      fbp: getCookie('_fbp') || undefined,
+      fbc: getCookie('_fbc') || undefined,
     };
   }, [guestPhone, guestName, items, district, thana, addressLine, paymentOptionType, user]);
 
@@ -640,7 +642,8 @@ export default function CheckoutPage() {
     const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
     const sendLead = () => {
       const data = leadDataRef.current;
-      if (data) navigator.sendBeacon(beaconUrl, new Blob([JSON.stringify(data)], { type: 'application/json' }));
+      if (!data) return;
+      navigator.sendBeacon(beaconUrl, new Blob([JSON.stringify(data)], { type: 'application/json' }));
     };
     window.addEventListener('beforeunload', sendLead);
     return () => {

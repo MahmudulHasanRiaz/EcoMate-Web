@@ -2,18 +2,23 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
+import { TrackingService } from '../tracking/tracking.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 
 @Injectable()
 export class CheckoutLeadsService {
+  private readonly logger = new Logger(CheckoutLeadsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly customersService: CustomersService,
+    private readonly tracking: TrackingService,
   ) {}
 
   async findAll(query: {
@@ -116,6 +121,8 @@ export class CheckoutLeadsService {
     payload?: any;
     paymentMethod?: string;
     fingerprint?: string;
+    fbp?: string;
+    fbc?: string;
   }) {
     if (dto.phone) {
       const normalized = normalizePhone(dto.phone);
@@ -148,7 +155,7 @@ export class CheckoutLeadsService {
       }
     }
 
-    return this.prisma.checkoutLead.create({
+    const lead = await this.prisma.checkoutLead.create({
       data: {
         displayId: await this.leadDisplayId(),
         phone: dto.phone,
@@ -163,6 +170,68 @@ export class CheckoutLeadsService {
         lastSeenAt: new Date(),
       },
     });
+
+    // Fire Lead event for new leads (with 1hr cooldown per phone)
+    this.fireLeadEvent(lead, dto).catch((err) => {
+      this.logger.error('Failed to fire lead event:', err);
+    });
+
+    return lead;
+  }
+
+  private async fireLeadEvent(lead: any, dto: { phone?: string; name?: string; fbp?: string; fbc?: string }) {
+    const phone = lead.phone || dto.phone;
+    if (!phone) return;
+
+    // 1hr cooldown: skip if same phone had Lead event in last 60 min
+    const recent = await this.prisma.trackingEvent.findFirst({
+      where: {
+        eventType: 'lead',
+        orderId: phone,
+        createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+      },
+    });
+    if (recent) return;
+
+    const items = Array.isArray(lead.items) ? (lead.items as any[]) : [];
+    const estimatedTotal = items.reduce(
+      (s: number, i: any) => s + (i.price || 0) * (i.quantity || 1),
+      0,
+    );
+
+    await this.tracking.track({
+      eventName: 'lead',
+      eventId: `lead_${lead.id}`,
+      actionSource: 'website',
+      userData: {
+        phone,
+        name: lead.name || dto.name || undefined,
+        fbp: dto.fbp || undefined,
+        fbc: dto.fbc || undefined,
+        country: 'BD',
+      },
+      customData: {
+        value: estimatedTotal || undefined,
+        currency: 'BDT',
+        lead_id: lead.id,
+      },
+    });
+
+    // Track event in DB for cooldown tracking
+    try {
+      await this.prisma.trackingEvent.create({
+        data: {
+          eventId: `lead_${lead.id}`,
+          orderId: phone,
+          eventType: 'lead',
+          fbp: dto.fbp,
+          fbc: dto.fbc,
+          status: 'sent',
+        },
+      });
+    } catch {
+      // non-critical
+    }
   }
 
   async updateStatus(id: string, status: string, userId?: string) {
@@ -260,7 +329,9 @@ export class CheckoutLeadsService {
 
     const pm = overrides?.paymentMethod ?? lead.paymentMethod;
 
-    return this.prisma.$transaction(async (tx) => {
+    let fullOrder: any = null;
+
+    await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
           displayId,
@@ -285,6 +356,7 @@ export class CheckoutLeadsService {
               price: i.price || 0,
             })),
           },
+          salesChannel: (overrides?.salesChannel || 'CALL') as any,
           paymentOptionType:
             overrides?.paymentMode === 'cod'
               ? 'CASH_ON_DELIVERY'
@@ -347,15 +419,74 @@ export class CheckoutLeadsService {
         });
       }
 
-      return tx.order.findUnique({
+      fullOrder = await tx.order.findUnique({
         where: { id: order.id },
         include: {
+          customer: true,
           status: true,
           items: {
             include: { product: { select: { id: true, name: true } } },
           },
         },
       });
+    });
+
+    // Fire offline Purchase for lead-converted order
+    if (fullOrder) {
+      this.fireOfflinePurchase(fullOrder as any, lead).catch((err) => {
+        this.logger.error('Failed to fire offline purchase:', err);
+      });
+    }
+
+    return fullOrder;
+  }
+
+  private async fireOfflinePurchase(order: any, lead: any) {
+    let email = '';
+    let phone = '';
+    let firstName = '';
+    let lastName = '';
+
+    if (order.customer) {
+      email = order.customer.email || '';
+      firstName = order.customer.firstName || '';
+      lastName = order.customer.lastName || '';
+      phone = order.customer.phoneNumber || '';
+    }
+    if (!phone) phone = order.guestPhone || '';
+    if (!firstName) firstName = order.guestName || '';
+
+    const itemsList = (order.items as any[]) || [];
+    const totalValue = Number(order.total || 0);
+
+    // Use same eventId pattern as main purchase flow so Meta dedups
+    // if firePurchaseValidated fires later for the same order
+    await this.tracking.track({
+      eventName: 'purchase',
+      eventId: `purchase_${order.id}`,
+      eventTime: Math.floor(new Date(order.createdAt).getTime() / 1000),
+      actionSource: 'physical_store',
+      userData: {
+        email,
+        phone,
+        name: firstName || undefined,
+        lastName: lastName || undefined,
+        country: 'BD',
+      },
+      customData: {
+        value: totalValue,
+        currency: 'BDT',
+        content_ids: itemsList
+          .map((i: any) => i.productId || i.comboId || '')
+          .filter(Boolean),
+        order_id: order.id,
+        lead_id: lead.id,
+        source: 'lead_conversion',
+        num_items: itemsList.reduce(
+          (s: number, i: any) => s + (i.quantity || 0),
+          0,
+        ),
+      },
     });
   }
 

@@ -74,7 +74,7 @@ if (typeof window !== 'undefined') {
   window.__flushTrackingQueue = flushQueue;
 }
 
-function getCookie(name: string): string {
+export function getCookie(name: string): string {
   if (typeof document === 'undefined') return '';
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
