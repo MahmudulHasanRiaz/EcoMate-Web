@@ -87,7 +87,7 @@ export default function CategoryList() {
             <div className="flex gap-4 md:gap-6 pb-6 overflow-hidden">
               {[1,2,3,4,5,6].map((i) => (
                 <div key={i} className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] animate-pulse">
-                  <div className="w-[85px] h-[85px] md:w-[120px] md:h-[120px] bg-gray-200 rounded-full" />
+                  <div className="w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-gray-200 rounded-xl" />
                   <div className="h-3 w-16 bg-gray-200 rounded" />
                 </div>
               ))}
@@ -109,18 +109,18 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
       href={`/products?category=${category.slug}`}
       className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
     >
-      <div className="relative w-[85px] h-[85px] md:w-[120px] md:h-[120px] bg-white rounded-full shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-brand-soft group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
+      <div className="relative w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-md group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
         <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         <Image
           src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (category.image || PLACEHOLDER_IMAGE)}
           alt=""
           fill
-          sizes="120px"
+          sizes="100px"
           className="object-cover group-hover:scale-110 transition-transform duration-500 ease-out relative z-10"
           onError={() => setImgErrors(prev => ({ ...prev, [category.id]: true }))}
         />
       </div>
-      <span className="text-[12px] md:text-[14px] font-semibold text-gray-700 text-center block w-full truncate group-hover:text-brand-blue transition-colors px-1" title={category.name}>
+      <span className="text-[12px] md:text-[14px] font-semibold text-gray-700 text-center block w-full truncate group-hover:text-brand-blue transition-colors px-1 mt-2" title={category.name}>
         {category.name}
       </span>
     </Link>
