@@ -518,6 +518,7 @@ model Order {
   posSessionId             String?
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
   paymentStatus            PaymentStatus      @default(PAYMENT_PENDING)
+  paymentProof             Json?              @default("{}")
   partialAmount            Decimal?           @db.Decimal(10, 2)
   viewToken                String?            @unique
   selectedShippingOptionId String?

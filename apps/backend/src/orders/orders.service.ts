@@ -95,6 +95,7 @@ export class OrdersService {
     perPage?: number;
     search?: string;
     statusId?: string;
+    paymentStatus?: string;
     courier?: string;
     assignedToId?: string;
     dateFrom?: string;
@@ -129,6 +130,7 @@ export class OrdersService {
       ];
     }
     if (query.statusId) where.statusId = query.statusId;
+    if (query.paymentStatus) where.paymentStatus = query.paymentStatus;
     if (query.courier) where.courierService = query.courier;
     if (query.assignedToId === 'unassigned') where.assignedToId = null;
     else if (query.assignedToId) where.assignedToId = query.assignedToId;
@@ -1017,6 +1019,63 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  async submitPaymentProof(orderId: string, proofData: { transactionId?: string; screenshot?: string }) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status?.name !== 'Payment Pending' && order.status?.name !== 'Payment Verifying') {
+      throw new BadRequestException('Order is not in Payment Pending or Payment Verifying status');
+    }
+
+    const paymentVerifyingStatus = await this.prisma.orderStatus.findUnique({
+      where: { name: 'Payment Verifying' },
+    });
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        statusId: paymentVerifyingStatus!.id,
+        paymentStatus: 'PAYMENT_VERIFYING',
+        paymentProof: proofData,
+      },
+      include: {
+        status: true,
+        payments: true,
+      },
+    });
+  }
+
+  async verifyPayment(orderId: string, verified: boolean, note?: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
+      throw new BadRequestException('Order is not awaiting payment verification');
+    }
+
+    const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
+    const targetStatus = await this.prisma.orderStatus.findUnique({
+      where: { name: targetStatusName },
+    });
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paymentStatus: verified ? 'PAID' : 'PAYMENT_PENDING',
+        statusId: targetStatus!.id,
+        ...(note ? { internalNote: note } : {}),
+      },
+      include: {
+        status: true,
+        payments: true,
+      },
+    });
   }
 
   async addItem(orderId: string, dto: UpdateOrderItemDto) {

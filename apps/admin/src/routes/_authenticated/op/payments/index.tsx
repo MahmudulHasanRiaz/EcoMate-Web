@@ -1,3 +1,6 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Payments } from '@/features/payments'
-export const Route = createFileRoute('/_authenticated/op/payments/')({ component: Payments })
+import { createFileRoute } from '@tanstack/react-router';
+import { PaymentsPage } from '@/features/payments';
+
+export const Route = createFileRoute('/_authenticated/op/payments/')({
+  component: PaymentsPage,
+});

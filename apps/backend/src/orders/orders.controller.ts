@@ -45,6 +45,7 @@ export class OrdersController {
     @Query('perPage') perPage?: string,
     @Query('search') search?: string,
     @Query('statusId') statusId?: string,
+    @Query('paymentStatus') paymentStatus?: string,
     @Query('courier') courier?: string,
     @Query('assignedToId') assignedToId?: string,
     @Query('dateFrom') dateFrom?: string,
@@ -57,6 +58,7 @@ export class OrdersController {
       perPage: perPage ? parseInt(perPage) : undefined,
       search,
       statusId,
+      paymentStatus,
       courier,
       assignedToId,
       dateFrom,
@@ -122,6 +124,23 @@ export class OrdersController {
     @Query('t') token?: string,
   ) {
     return this.svc.findOne(id, { token, userId: user?.userId });
+  }
+
+  @Post(':id/submit-payment-proof')
+  async submitPaymentProof(
+    @Param('id') id: string,
+    @Body() proofData: { transactionId?: string; screenshot?: string },
+  ) {
+    return this.svc.submitPaymentProof(id, proofData);
+  }
+
+  @Post(':id/verify-payment')
+  async verifyPayment(
+    @Param('id') id: string,
+    @Body('verified') verified: boolean,
+    @Body('note') note?: string,
+  ) {
+    return this.svc.verifyPayment(id, verified, note);
   }
 
   @Public()
