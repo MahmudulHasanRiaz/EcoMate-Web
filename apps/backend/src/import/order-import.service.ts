@@ -14,14 +14,14 @@ import type {
 const STATUS_MAP: Record<string, string> = {
   completed: 'Delivered',
   cancelled: 'Cancelled',
-  refunded: 'Refunded',
-  processing: 'Processing',
-  'in-courier': 'Shipped',
-  'on-hold': 'Pending',
+  refunded: 'Returned',
+  processing: 'Confirmed',
+  'in-courier': 'Shipping',
+  'on-hold': 'Hold',
   pending: 'Pending',
   failed: 'Cancelled',
   trash: 'Cancelled',
-  'pending-payment': 'Payment Pending',
+  'pending-payment': 'Pending',
 };
 
 const BATCH_SIZE = 50;
@@ -663,17 +663,18 @@ export class OrderImportService {
 
   private getStatusColor(name: string): string {
     const colors: Record<string, string> = {
-      Delivered: '#16A34A',
-      Cancelled: '#DC2626',
-      Refunded: '#F59E0B',
-      Processing: '#3B82F6',
-      Shipped: '#06B6D4',
-      'Return Pending': '#EC4899',
       Pending: '#F59E0B',
-      'Payment Pending': '#F59E0B',
-      Failed: '#EF4444',
-      Returned: '#DC2626',
+      Hold: '#F97316',
+      Confirmed: '#3B82F6',
+      Packed: '#059669',
+      'Packing Hold': '#D97706',
+      Shipping: '#06B6D4',
+      Delivered: '#16A34A',
+      Partial: '#8B5CF6',
+      'Return Pending': '#EC4899',
+      Returned: '#F43F5E',
       Damaged: '#991B1B',
+      Cancelled: '#DC2626',
     };
     return colors[name] || '#6B7280';
   }
