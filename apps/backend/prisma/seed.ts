@@ -8,7 +8,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -1015,6 +1015,25 @@ async function main() {
   if (failed > 0) {
     console.log(`  ⚠ ${failed} image(s) failed — may still have external URLs in DB`);
   }
+  }
+
+  // ── Product Feed Configs ──
+  const feedPlatforms = ['meta', 'google', 'tiktok'];
+  for (const platform of feedPlatforms) {
+    const existing = await prisma.productFeedConfig.findFirst({
+      where: { platform },
+    });
+    if (!existing) {
+      await prisma.productFeedConfig.create({
+        data: {
+          tenantId: 'default',
+          platform,
+          secureToken: randomBytes(32).toString('hex'),
+          isActive: true,
+        },
+      });
+      console.log(`  ✓ ProductFeedConfig created for ${platform}`);
+    }
   }
 
   console.log('\n✅ Database seeded successfully!');

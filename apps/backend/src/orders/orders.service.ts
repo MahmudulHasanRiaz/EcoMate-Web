@@ -966,22 +966,6 @@ export class OrdersService {
       }
 
       if (newStatus.name === 'Delivered') {
-        const deliverItems = await tx.orderItem.findMany({
-          where: { orderId: id },
-        });
-        for (const item of deliverItems) {
-          await this.stockService.deduct({
-            productId: item.productId || undefined,
-            variantId: item.variantId || undefined,
-            comboId: item.comboId || undefined,
-            comboSelection:
-              (item.comboSelection as Record<string, string>) || undefined,
-            quantity: item.quantity,
-            reference: order.displayId,
-            tx,
-          });
-        }
-
         const codPayment = u.payments?.find(
           (p) => p.gatewayCode === 'cash' && p.status === PaymentStatus.UNPAID,
         );

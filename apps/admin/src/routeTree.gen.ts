@@ -102,6 +102,7 @@ import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './rout
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
+import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/$id/convert'
@@ -645,6 +646,12 @@ const AuthenticatedMonSettingsBrandingIndexRoute =
     path: '/branding/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonMarketingCatalogIndexRoute =
+  AuthenticatedMonMarketingCatalogIndexRouteImport.update({
+    id: '/mon/marketing/catalog/',
+    path: '/mon/marketing/catalog/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpPrintStickerIdRoute =
   AuthenticatedOpPrintStickerIdRouteImport.update({
     id: '/sticker/$id',
@@ -741,6 +748,7 @@ export interface FileRoutesByFullPath {
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -838,6 +846,7 @@ export interface FileRoutesByTo {
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/marketing/catalog': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -937,6 +946,7 @@ export interface FileRoutesById {
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/_authenticated/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -1036,6 +1046,7 @@ export interface FileRouteTypes {
     | '/op/transactions/'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/marketing/catalog/'
     | '/mon/settings/branding/'
     | '/mon/settings/courier/'
     | '/mon/settings/gateways/'
@@ -1133,6 +1144,7 @@ export interface FileRouteTypes {
     | '/op/transactions'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/marketing/catalog'
     | '/mon/settings/branding'
     | '/mon/settings/courier'
     | '/mon/settings/gateways'
@@ -1231,6 +1243,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/transactions/'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
+    | '/_authenticated/mon/marketing/catalog/'
     | '/_authenticated/mon/settings/branding/'
     | '/_authenticated/mon/settings/courier/'
     | '/_authenticated/mon/settings/gateways/'
@@ -1920,6 +1933,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsBrandingIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/marketing/catalog/': {
+      id: '/_authenticated/mon/marketing/catalog/'
+      path: '/mon/marketing/catalog'
+      fullPath: '/mon/marketing/catalog/'
+      preLoaderRoute: typeof AuthenticatedMonMarketingCatalogIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/print/sticker/$id': {
       id: '/_authenticated/op/print/sticker/$id'
       path: '/sticker/$id'
@@ -2095,6 +2115,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
+  AuthenticatedMonMarketingCatalogIndexRoute: typeof AuthenticatedMonMarketingCatalogIndexRoute
   AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
@@ -2173,6 +2194,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
+  AuthenticatedMonMarketingCatalogIndexRoute:
+    AuthenticatedMonMarketingCatalogIndexRoute,
   AuthenticatedOpDispatchDuplicateReviewIndexRoute:
     AuthenticatedOpDispatchDuplicateReviewIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:

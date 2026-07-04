@@ -113,6 +113,7 @@ export const sidebarData: SidebarData = {
         { title: 'User Management', url: '/mon/users', icon: Users },
         { title: 'Pages', url: '/mon/pages', icon: FileText },
         { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck },
+        { title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Megaphone },
       ],
     },
 
