@@ -9,12 +9,13 @@ EcoMate Web/
 ├── apps/
 │   ├── admin/          React 19 SPA — Dashboard, orders, products, CRM, HR/accounting
 │   ├── backend/        NestJS 11 (Fastify) — REST API, Prisma 7 + PostgreSQL 16
+│   ├── pos/            React 19 SPA — Point of Sale (PWA, offline-capable)
 │   └── storefront/     Next.js 16 — Public storefront, landing pages, checkout
 ├── packages/
 │   ├── feature-flags/  NestJS module — runtime feature gating via license entitlements
 │   ├── license-engine/ License validation client — KeyMate API + 7-day local cache
 │   └── shared-types/   Shared TypeScript definitions across workspaces
-├── docker-compose.yml  6 services (postgres, redis, backend, migrate, storefront, admin)
+├── docker-compose.yml  5 services (postgres, redis, backend, storefront, admin)
 ├── portainer/          Portainer stack config + self-hosted Keygen CE license server
 ├── docs/               Feature specs, deployment guides, superpowers design docs
 └── .github/workflows/  CI (lint/test/build) + CD (Docker build/push + Portainer deploy)
@@ -26,7 +27,7 @@ EcoMate Web/
 |-------|------------|
 | **Monorepo** | npm workspaces (no Turborepo) |
 | **Backend** | NestJS 11 + Fastify, TypeScript (strict) |
-| **Admin** | React 19, Vite 8, TanStack Router, TanStack Query, TanStack Table |
+| **Admin** | React 19, Vite 6, TanStack Router, TanStack Query, TanStack Table |
 | **Storefront** | Next.js 16 (App Router, standalone output) |
 | **Database** | PostgreSQL 16 + Prisma 7 ORM |
 | **Cache/Queue** | Redis 7 + BullMQ |
@@ -50,15 +51,17 @@ EcoMate Web/
 Fastify-based API at port 4000. Key modules:
 
 - **Auth** — JWT login/register, refresh tokens, failed attempt lockout, RBAC
-- **Catalog** — Products, variants, categories, brands, inventory, purchasing, GRN
-- **Orders** — Checkout, payments, order lifecycle, shipping (Steadfast, Pathao, Redx, Carrybee), refunds
-- **CRM** — Customers, leads, referrals, email campaigns, notification templates
-- **Finance** — Chart of Accounts, double-entry journal entries, financial periods, expense management
+- **Catalog** — Products, variants, categories, brands, inventory, purchasing, GRN, size charts, attributes, tags, combos
+- **Orders** — Checkout, payments, order lifecycle, shipping (Steadfast, Pathao, Redx, Carrybee), refunds, dispatch, packing, shipment tracking
+- **CRM** — Customers, leads, referrals, email campaigns, notification templates, reviews
+- **POS** — Point of Sale endpoints, offline sync support
+- **Finance** — Chart of Accounts, double-entry journal entries, financial periods, expense management, opening balances
 - **HR** — Employee management, payroll, attendance
 - **CMS** — Pages, landing pages (template + custom HTML), media gallery
-- **Operations** — Warehouses, suppliers, costing lots, pixel tracking
+- **Operations** — Warehouses, suppliers, costing lots, pixel tracking, delivery areas, coupons, tasks
 - **License** — License activation via KeyMate, encrypted credential storage (AES-256-GCM)
 - **Security** — IP/phone blocking system, throttling, Helmet CSP
+- **Platform** — Search, import/export, product feed (Google/Meta), queue management, cache, image processing, uploads, system settings
 
 ### `apps/admin` — React SPA Dashboard
 
@@ -73,6 +76,18 @@ Served at `/admin/` base path. Features:
 - Settings: store config, shipping zones, tax rates, email templates
 - RBAC-based access control
 - License activation page (first-run setup)
+
+### `apps/pos` — React 19 SPA Point of Sale
+
+PWA with offline support via service worker + IndexedDB. Features:
+
+- Barcode/QR scanner for quick product lookup
+- Offline mode with local queue, auto-sync on reconnect
+- Cash, card, mobile banking payment handling
+- Receipt printing (Bluetooth thermal printer)
+- Customer display (dual-screen support)
+- Order holds, splits, and discounts
+- Shift management with cash-in/cash-out logging
 
 ### `apps/storefront` — Next.js 16 Public Site
 
@@ -102,6 +117,7 @@ npm install
 cp apps/backend/.env.example apps/backend/.env
 cp apps/storefront/.env.example apps/storefront/.env
 cp apps/admin/.env.example apps/admin/.env
+cp apps/pos/.env.example apps/pos/.env
 
 # 3. Start PostgreSQL + Redis (Docker)
 docker compose up -d postgres redis
@@ -116,6 +132,7 @@ npm run dev
 npm run backend:dev    # http://localhost:4000
 npm run admin:dev      # http://localhost:5173
 npm run storefront:dev # http://localhost:3000
+npm run pos:dev        # http://localhost:5174
 ```
 
 ### Dev Bypass (No License Required)
@@ -148,7 +165,7 @@ cd apps/storefront && npx vitest run && npm run build
 
 ### CI/CD Pipeline (GitHub Actions)
 
-Push to `main` triggers automated build + push to ghcr.io:
+Push to `main` or `develop` (and PRs to `main`) triggers automated build + push to ghcr.io:
 
 1. **detect-changes** — determines which apps changed
 2. **backend** — lint, test (with postgres service container)
@@ -192,8 +209,8 @@ Full list: `apps/backend/.env.example` and root `.env.example`.
 ## Database
 
 - **ORM:** Prisma 7
-- **Schema:** `apps/backend/prisma/schema.prisma` (~1490 lines, 40+ models)
-- **Migrations:** 9 migrations (initial → license activation)
+- **Schema:** `apps/backend/prisma/schema.prisma` (~1710 lines, 84 models)
+- **Migrations:** 30 migrations
 - **Hard rule:** Every `schema.prisma` change REQUIRES a migration file. `db push --accept-data-loss` is FORBIDDEN.
 
 ```bash
