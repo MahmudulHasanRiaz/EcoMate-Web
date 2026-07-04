@@ -19,12 +19,30 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
     throw new StorefrontConfigError('Storefront config is empty or invalid');
   }
 
+  const categories = await getCategoriesServer();
+  const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
+
+  const enrichMenuItemsWithSlug = (items: any[]) => {
+    for (const item of items) {
+      if (item.type === 'category' && item.categoryId && !item.slug) {
+        const cat = categoryMap.get(item.categoryId);
+        if (cat?.slug) item.slug = cat.slug;
+      }
+      if (item.children?.length) enrichMenuItemsWithSlug(item.children);
+    }
+  };
+
   if (config?.menu) {
+    enrichMenuItemsWithSlug(config.menu.header?.items || []);
+    enrichMenuItemsWithSlug(config.menu.mobile?.items || []);
+    for (const col of config.menu.footer?.columns || []) {
+      enrichMenuItemsWithSlug(col.items || []);
+    }
+
     const headerShowAll = config.menu.header?.showAllCategories;
     const mobileShowAll = config.menu.mobile?.showAllCategories;
 
     if (headerShowAll || mobileShowAll) {
-      const categories = await getCategoriesServer();
       const shownCategories = categories.filter((c: any) => c.showInMenu !== false);
 
       const cloneItems = (items: any[]): any[] => {

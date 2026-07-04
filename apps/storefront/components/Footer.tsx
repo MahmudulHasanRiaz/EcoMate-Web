@@ -171,7 +171,9 @@ function FooterColumn({ title, items }: { title: string, items: any[] }) {
       <ul className="space-y-2.5">
         {items.map((item: any) => {
           const href = item.type === 'category'
-            ? `/products?categoryId=${item.categoryId || item.id}`
+            ? item.slug
+              ? `/products?category=${item.slug}`
+              : `/products?categoryId=${item.categoryId || item.id}`
             : item.url;
           if (href) {
             return (

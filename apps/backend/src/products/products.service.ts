@@ -397,6 +397,7 @@ export class ProductsService {
       ];
     }
     const cursorWhere: any = { ...filters };
+    const existingAnd = cursorWhere.AND?.length ? [...cursorWhere.AND] : undefined;
     if (query.cursor) {
       const decoded = this.decodeCursor(query.cursor);
       if (decoded) {
@@ -406,12 +407,15 @@ export class ProductsService {
             { createdAt: decoded.createdAt, id: { lt: decoded.id } },
           ],
         };
+        const conditions: any[] = [cursorFilter];
         if (cursorWhere.OR) {
-          cursorWhere.AND = [cursorFilter, { OR: cursorWhere.OR }];
+          conditions.push({ OR: cursorWhere.OR });
           delete cursorWhere.OR;
-        } else {
-          cursorWhere.AND = [cursorFilter];
         }
+        if (existingAnd?.length) {
+          conditions.push(...existingAnd);
+        }
+        cursorWhere.AND = conditions;
       }
     }
     const [data, total] = await Promise.all([

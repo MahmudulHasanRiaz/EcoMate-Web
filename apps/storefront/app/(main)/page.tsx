@@ -7,7 +7,7 @@ import BrandSection from "@/components/BrandSection";
 import ComboDeals from "@/components/ComboDeals";
 import Testimonials from "@/components/Testimonials";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
-import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer, getBrandsServer, fetchProductsServer } from "@/lib/api/products-server";
+import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer, getBrandsServer, fetchProductsServer, getCategoriesServer } from "@/lib/api/products-server";
 
 export const revalidate = 300;
 
@@ -41,7 +41,9 @@ export default async function HomePage() {
         products = await getPopularItemsServer(limit);
         href = '/products?sort=popularity';
       } else if (sec.type === 'category' && sec.categoryId) {
-        href = `/products?categoryId=${sec.categoryId}`;
+        const allCats = await getCategoriesServer();
+        const cat = allCats.find((c: any) => c.id === sec.categoryId);
+        href = cat?.slug ? `/products?category=${cat.slug}` : `/products?categoryId=${sec.categoryId}`;
         let sort: string | undefined;
         let order: string | undefined;
         if (sec.categorySort === 'new_arrivals') {
