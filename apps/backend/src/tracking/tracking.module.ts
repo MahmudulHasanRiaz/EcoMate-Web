@@ -8,6 +8,7 @@ import { GoogleAdsService } from './google-ads.service';
 import { TrackingController } from './tracking.controller';
 import { TrackingQueueService } from './tracking-queue.service';
 import { TrackingQueueProcessor } from './tracking-queue.processor';
+import { PageViewBufferService } from './page-view-buffer.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -21,7 +22,8 @@ import { PrismaModule } from '../prisma/prisma.module';
     GoogleAdsService,
     TrackingQueueService,
     TrackingQueueProcessor,
+    PageViewBufferService,
   ],
-  exports: [TrackingService],
+  exports: [TrackingService, PageViewBufferService],
 })
 export class TrackingModule {}
