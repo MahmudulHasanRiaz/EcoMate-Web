@@ -86,36 +86,35 @@ export class DashboardService {
 
   async getAnalytics(startDate?: string, endDate?: string) {
     try {
-      const dateFilter = this.dateFilter(startDate, endDate);
       const effectiveDateFilter =
-        Object.keys(dateFilter).length > 0
-          ? dateFilter
-          : {
-              createdAt: {
-                gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-              },
-            };
+        startDate || endDate
+          ? this.dateFilter(startDate, endDate)
+          : { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } };
 
-      const [ordersLast30Days, revenueLast30Days] = await Promise.all([
+      const [ordersLast30Days, revenueLast30Days, pageViewCount] = await Promise.all([
         this.prisma.order.count({ where: { ...effectiveDateFilter } }),
         this.prisma.payment.aggregate({
           _sum: { amount: true },
-          where: { ...effectiveDateFilter },
+          where: { ...effectiveDateFilter, status: 'PAID' },
+        }),
+        this.prisma.pageView.count({
+          where: {
+            timestamp: effectiveDateFilter.createdAt
+              ? { gte: effectiveDateFilter.createdAt.gte, lte: effectiveDateFilter.createdAt.lte }
+              : { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+          },
         }),
       ]);
 
       return {
         ordersLast30Days,
         revenueLast30Days: Number(revenueLast30Days._sum.amount || 0),
-        totalClicks: 0,
+        totalClicks: pageViewCount,
         uniqueVisitors: 0,
         bounceRate: '0%',
       };
     } catch (error) {
-      this.logger.error(
-        `getAnalytics failed: ${(error as Error).message}`,
-        (error as Error).stack,
-      );
+      this.logger.error(`getAnalytics failed: ${(error as Error).message}`, (error as Error).stack);
       throw new InternalServerErrorException('Failed to fetch analytics');
     }
   }
