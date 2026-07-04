@@ -54,6 +54,7 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Packing', url: '/op/packing', icon: Package },
+        { title: 'Dispatch', url: '/op/dispatch', icon: Truck },
         { title: 'Customers', url: '/op/customers', icon: Users },
         { title: 'Payments', url: '/op/payments', icon: Coins },
         { title: 'Shipments', url: '/op/shipments', icon: Truck },
