@@ -112,6 +112,7 @@ export default function FloatingWidgets() {
           
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)}
+            aria-label={isChatOpen ? "Close chat options" : "Open chat options"}
             className={`w-14 h-14 ${isChatOpen ? 'bg-gray-800' : 'bg-brand-coral'} text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-all outline outline-4 ${isChatOpen ? 'outline-gray-800/20' : 'outline-brand-coral/20'} z-50`}
           >
             {isChatOpen ? <X size={26} strokeWidth={2.5} /> : <MessageSquare size={26} fill="currentColor" />}

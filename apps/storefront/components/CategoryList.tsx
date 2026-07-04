@@ -55,12 +55,14 @@ export default function CategoryList() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => scroll('left')}
+              aria-label="Scroll categories left"
               className="w-8 h-8 md:w-10 md:h-10 rounded-full border border-gray-200 bg-white text-gray-600 flex items-center justify-center hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all"
             >
               <ChevronLeft size={20} />
             </button>
             <button
               onClick={() => scroll('right')}
+              aria-label="Scroll categories right"
               className="w-8 h-8 md:w-10 md:h-10 rounded-full border border-gray-200 bg-white text-gray-600 flex items-center justify-center hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all"
             >
               <ChevronRight size={20} />
@@ -99,7 +101,7 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
         <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         <img
           src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (category.image || PLACEHOLDER_IMAGE)}
-          alt={category.name}
+          alt=""
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out relative z-10"
           onError={() => setImgErrors(prev => ({ ...prev, [category.id]: true }))}
         />

@@ -5,7 +5,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   allowedDevOrigins: ['mac.riaz.com.bd'],
   images: {
-    unoptimized: true,
+    loader: 'custom',
+    loaderFile: './lib/image-loader.ts',
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn.example.com' },
       { protocol: 'http', hostname: 'localhost', port: '4000' },
@@ -16,6 +17,10 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.cloudfront.net' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
+    formats: ['image/webp', 'image/avif'],
+    deviceSizes: [640, 768, 1024, 1280, 1536],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    minimumCacheTTL: 31536000,
   },
 };
 

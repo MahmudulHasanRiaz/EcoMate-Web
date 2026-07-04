@@ -1,8 +1,9 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAMES = {
   pages: `ecomate-pages-${CACHE_VERSION}`,
   static: `ecomate-static-${CACHE_VERSION}`,
   images: `ecomate-images-${CACHE_VERSION}`,
+  scripts: `ecomate-scripts-${CACHE_VERSION}`,
 };
 
 const ALL_CACHES = Object.values(CACHE_NAMES);
@@ -14,6 +15,13 @@ const PRECACHE_ASSETS = [
   '/placeholder.svg',
 ];
 
+const THIRD_PARTY_SCRIPT_DOMAINS = [
+  'connect.facebook.net',
+  'static.cloudflareinsights.com',
+  'www.googletagmanager.com',
+  'analytics.tiktok.com',
+];
+
 const OFFLINE_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><circle fill="#d1d5db" cx="200" cy="130" r="40"/><path fill="#d1d5db" d="M60 250 L140 180 L220 250 L300 160 L340 250 Z"/><text fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14" text-anchor="middle" x="200" y="215">Image unavailable offline</text></svg>`;
 
 self.addEventListener('install', (event) => {
@@ -22,6 +30,7 @@ self.addEventListener('install', (event) => {
       cache.addAll(PRECACHE_ASSETS)
     )
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -33,24 +42,28 @@ self.addEventListener('activate', (event) => {
       );
     })()
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  if (url.pathname.startsWith('/api/')) {
-    return;
-  }
-
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request, CACHE_NAMES.pages));
     return;
   }
 
-  if (
-    url.pathname.startsWith('/_next/static/')
-  ) {
+  if (url.pathname.startsWith('/api/images/resize')) {
+    event.respondWith(cacheFirst(request, CACHE_NAMES.images));
+    return;
+  }
+
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(cacheFirst(request, CACHE_NAMES.static));
     return;
   }
@@ -62,6 +75,11 @@ self.addEventListener('fetch', (event) => {
     request.headers.get('Accept')?.includes('image/')
   ) {
     event.respondWith(imageFirst(request));
+    return;
+  }
+
+  if (THIRD_PARTY_SCRIPT_DOMAINS.some((d) => url.hostname.includes(d))) {
+    event.respondWith(cacheFirst(request, CACHE_NAMES.scripts));
     return;
   }
 

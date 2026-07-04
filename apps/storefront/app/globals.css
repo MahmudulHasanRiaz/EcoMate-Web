@@ -5,10 +5,12 @@
   --font-mono: var(--font-geist-mono);
   --color-brand-blue: #0089CD;
   --color-brand-blue-dark: #006da3;
+  --color-brand-blue-text: #005a8c;
   --color-brand-coral: #E77250;
   --color-brand-dark: #0a0a0a;
   --color-brand-bg: #FFFFFF;
   --color-brand-success: #22C55E;
+  --color-brand-success-dark: #059669;
   --color-brand-danger: #EF4444;
   --color-brand-border: #E5E7EB;
   --radius-xl: 1rem;

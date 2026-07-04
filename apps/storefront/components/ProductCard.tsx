@@ -81,7 +81,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   return (
     <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
       {(product.saveAmount && product.originalPrice) && (
-        <div className="absolute top-2 right-2 bg-[#2ecc71] text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
+        <div className="absolute top-2 right-2 bg-brand-success-dark text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
         </div>
       )}
@@ -107,6 +107,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
         />
         <button
           onClick={(e) => { e.stopPropagation(); toggle(product.id); }}
+          aria-label={isWishlisted(product.id) ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
           className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
             isWishlisted(product.id)
               ? 'bg-red-500 text-white shadow-md'
@@ -125,7 +126,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
         <div className="mt-auto space-y-3">
           <div className="flex items-center gap-1.5 flex-wrap">
             {isVar && <span className="text-[11px] text-gray-500 font-medium">From</span>}
-            <span className="text-[15px] md:text-[18px] font-black text-brand-blue">{config.currency.symbol}{product.price.toLocaleString()}</span>
+            <span className="text-[15px] md:text-[18px] font-black text-brand-blue-text">{config.currency.symbol}{product.price.toLocaleString()}</span>
             {product.originalPrice && (
               <span className="text-[12px] md:text-[14px] font-medium text-gray-300 line-through">{config.currency.symbol}{product.originalPrice.toLocaleString()}</span>
             )}
@@ -134,14 +135,14 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
           {inCart ? (
             <div className="flex items-center h-[34px] md:h-[40px] w-full border-2 border-brand-blue/20 rounded-lg overflow-hidden">
               <button onClick={() => updateQuantity(product.id, quantity - 1)}
-                className="w-10 h-full bg-white text-brand-blue border-r border-brand-blue/10 flex items-center justify-center font-black hover:bg-brand-blue/5 transition-colors">-</button>
-              <div className="flex-1 h-full flex items-center justify-center font-black text-brand-blue bg-brand-blue/5 text-[14px]">{quantity}</div>
+                className="w-10 h-full bg-white text-brand-blue-text border-r border-brand-blue/10 flex items-center justify-center font-black hover:bg-brand-blue/5 transition-colors">-</button>
+              <div className="flex-1 h-full flex items-center justify-center font-black text-brand-blue-text bg-brand-blue/5 text-[14px]">{quantity}</div>
               <button onClick={() => updateQuantity(product.id, quantity + 1)}
-                className="w-10 h-full bg-white text-brand-blue border-l border-brand-blue/10 flex items-center justify-center font-black hover:bg-brand-blue/5 transition-colors">+</button>
+                className="w-10 h-full bg-white text-brand-blue-text border-l border-brand-blue/10 flex items-center justify-center font-black hover:bg-brand-blue/5 transition-colors">+</button>
             </div>
           ) : (
             <button onClick={handleAddToCart}
-              className="w-full h-[34px] md:h-[40px] bg-white text-brand-blue font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all group/btn">
+              className="w-full h-[34px] md:h-[40px] bg-white text-brand-blue-text font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all group/btn">
               <ShoppingCart size={16} strokeWidth={2.5} className="group-hover/btn:scale-110 transition-transform" />
               {isVar ? 'ADD TO CART' : 'ADD TO CART'}
             </button>

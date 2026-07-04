@@ -38,6 +38,7 @@ export default function Header({}: {}) {
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('open-mobile-menu'));
               }}
+              aria-label="Open menu"
               className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-full transition-colors md:hidden"
             >
               <Menu size={20} strokeWidth={2} />
@@ -73,6 +74,7 @@ export default function Header({}: {}) {
               <button 
                 className="p-2 md:hidden text-gray-600 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors"
                 onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
+                aria-label="Toggle search"
               >
                 <Search size={18} strokeWidth={2} />
               </button>

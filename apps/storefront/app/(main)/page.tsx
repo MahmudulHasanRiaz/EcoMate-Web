@@ -74,7 +74,11 @@ export default async function HomePage() {
 
   return (
     <>
-      <Hero />
+      <Hero
+        slides={config.hero.slides}
+        secondaryBanner={config.hero.secondaryBanner}
+        secondaryBannerAlt={config.hero.secondaryBannerAlt}
+      />
       <CategoryList />
       
       {activeSections.map((sec, idx) => (

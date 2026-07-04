@@ -29,6 +29,7 @@ export default function BottomNav() {
           </Link>
           <button 
             onClick={() => window.dispatchEvent(new CustomEvent('open-mobile-menu'))}
+            aria-label="Open menu"
             className="flex flex-col items-center justify-center w-12 h-full text-gray-400 hover:text-gray-800 transition-colors"
           >
             <LayoutGrid size={20} className="stroke-[2.5]" />

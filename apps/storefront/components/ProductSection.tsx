@@ -23,7 +23,7 @@ export default function ProductSection({
           </div>
           <Link 
             href={href}
-            className="text-brand-blue text-[13px] md:text-[14px] font-black hover:text-brand-blue/80 transition-colors uppercase tracking-widest pb-2"
+            className="text-brand-blue-text text-[13px] md:text-[14px] font-black hover:text-brand-blue/80 transition-colors uppercase tracking-widest pb-2"
           >
             Show More
           </Link>

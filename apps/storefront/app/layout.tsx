@@ -144,6 +144,25 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
+
+        {/* Preconnect to critical third-party origins */}
+        <link rel="preconnect" href="https://connect.facebook.net" />
+        <link rel="preconnect" href="https://static.cloudflareinsights.com" />
+
+        {/* Preload hero image for instant LCP */}
+        {initialConfig?.hero?.slides?.[0]?.image && (
+          <link
+            rel="preload"
+            href={`/api/images/resize?path=${encodeURIComponent(initialConfig.hero.slides[0].image)}&w=800&q=75`}
+            as="image"
+            fetchPriority="high"
+          />
+        )}
+
+        {/* DNS prefetch for faster connection setup */}
+        <link rel="dns-prefetch" href="//connect.facebook.net" />
+        <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />
+
         <script
           dangerouslySetInnerHTML={{
             __html: `
