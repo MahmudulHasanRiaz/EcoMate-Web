@@ -1,45 +1,16 @@
--- Fix OrderStatuses to match Order & Dispatch Split Lifecycle Guide
--- Remove payment-domain statuses (Processing, Refunded), add missing ones,
--- re-add Payment Pending, add Payment Verifying, set default nextStatuses
+-- Re-add Payment Pending + add Payment Verifying + set default nextStatuses
 
--- 1. Remove wrongly added payment-domain statuses
-DELETE FROM "OrderStatus" WHERE "name" IN ('Processing', 'Refunded');
-
--- 2. If "Shipped" exists, rename to "Shipping" per plan
-UPDATE "OrderStatus" SET "name" = 'Shipping'
-WHERE "name" = 'Shipped'
-AND NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Shipping');
-
--- 3. Insert missing statuses
+-- 1. Re-add Payment Pending (was deleted in previous migration)
 INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
 SELECT gen_random_uuid(), 'Payment Pending', '#F59E0B', false, false, 2, NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Payment Pending');
 
+-- 2. Add Payment Verifying
 INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
 SELECT gen_random_uuid(), 'Payment Verifying', '#F97316', false, false, 3, NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Payment Verifying');
 
-INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
-SELECT gen_random_uuid(), 'Hold', '#F97316', false, false, 4, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Hold');
-
-INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
-SELECT gen_random_uuid(), 'Shipping', '#06B6D4', false, false, 9, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Shipping');
-
-INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
-SELECT gen_random_uuid(), 'Partial', '#8B5CF6', false, false, 10, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Partial');
-
-INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
-SELECT gen_random_uuid(), 'Returned', '#F43F5E', false, false, 13, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Returned');
-
-INSERT INTO "OrderStatus" ("id", "name", "color", "isInitial", "isFinal", "sortOrder", "createdAt")
-SELECT gen_random_uuid(), 'Damaged', '#991B1B', false, true, 14, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM "OrderStatus" WHERE "name" = 'Damaged');
-
--- 4. Fix sort orders for all statuses
+-- 3. Fix sort orders (shift Hold+, Confirmed+ etc to make room)
 UPDATE "OrderStatus" SET "sortOrder" = 1  WHERE "name" = 'Pending';
 UPDATE "OrderStatus" SET "sortOrder" = 2  WHERE "name" = 'Payment Pending';
 UPDATE "OrderStatus" SET "sortOrder" = 3  WHERE "name" = 'Payment Verifying';
@@ -55,13 +26,8 @@ UPDATE "OrderStatus" SET "sortOrder" = 12 WHERE "name" = 'Returned';
 UPDATE "OrderStatus" SET "sortOrder" = 13 WHERE "name" = 'Damaged';
 UPDATE "OrderStatus" SET "sortOrder" = 14 WHERE "name" = 'Cancelled';
 
--- 5. Fix isInitial/isFinal per plan
-UPDATE "OrderStatus" SET "isInitial" = true WHERE "name" = 'Pending';
-UPDATE "OrderStatus" SET "isInitial" = false WHERE "name" != 'Pending';
-UPDATE "OrderStatus" SET "isFinal" = true WHERE "name" = 'Damaged';
-UPDATE "OrderStatus" SET "isFinal" = false WHERE "name" != 'Damaged';
+-- 4. Set default nextStatuses for each status
 
--- 6. Set default nextStatuses for each status
 -- Pending → Payment Pending, Hold, Confirmed, Cancelled
 UPDATE "OrderStatus" SET "nextStatuses" = (
   SELECT jsonb_agg(s.id) FROM "OrderStatus" s
@@ -104,7 +70,7 @@ UPDATE "OrderStatus" SET "nextStatuses" = (
   WHERE s."name" = ANY(ARRAY['Packed','Confirmed','Cancelled'])
 ) WHERE "name" = 'Packing Hold';
 
--- Shipping → Delivered, Partial, Return Pending (dispatch sync)
+-- Shipping → Delivered, Partial, Return Pending
 UPDATE "OrderStatus" SET "nextStatuses" = (
   SELECT jsonb_agg(s.id) FROM "OrderStatus" s
   WHERE s."name" = ANY(ARRAY['Delivered','Partial','Return Pending'])
