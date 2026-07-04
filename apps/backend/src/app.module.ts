@@ -57,6 +57,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { PurchasesModule } from './purchases/purchases.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module';
+import { FeedModule } from './feed/feed.module';
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
@@ -125,6 +126,7 @@ import { AccountingModule } from './accounting/accounting.module';
     PurchasesModule,
     ExpensesModule,
     ExpenseCategoriesModule,
+    FeedModule,
     NotificationsModule,
     ReferralsModule,
     CampaignsModule,
