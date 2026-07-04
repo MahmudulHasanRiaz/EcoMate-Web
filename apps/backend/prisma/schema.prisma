@@ -54,6 +54,7 @@ enum PaymentStatus {
   PENDING
   PAID
   PARTIAL_PAID
+  PARTIAL_REFUNDED
   UNPAID
   FAILED
   CANCELLED
@@ -866,6 +867,7 @@ model Dispatch {
   deliveredAt     DateTime?
   productMapping  Json?          @default("[]")
   notes           String?
+  flaggedAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

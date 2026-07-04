@@ -54,7 +54,14 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Packing', url: '/op/packing', icon: Package },
-        { title: 'Dispatch', url: '/op/dispatch', icon: Truck },
+        {
+          title: 'Dispatch',
+          icon: Truck,
+          items: [
+            { title: 'Dispatch List', url: '/op/dispatch' },
+            { title: 'Duplication Review', url: '/op/dispatch/duplicate-review' },
+          ],
+        },
         { title: 'Customers', url: '/op/customers', icon: Users },
         { title: 'Payments', url: '/op/payments', icon: Coins },
         { title: 'Shipments', url: '/op/shipments', icon: Truck },

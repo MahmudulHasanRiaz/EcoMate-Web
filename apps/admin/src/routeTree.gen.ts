@@ -57,6 +57,7 @@ import { Route as AuthenticatedOpHelpCenterIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpExpensesIndexRouteImport } from './routes/_authenticated/op/expenses/index'
 import { Route as AuthenticatedOpExpenseCategoriesIndexRouteImport } from './routes/_authenticated/op/expense-categories/index'
 import { Route as AuthenticatedOpEmployeesIndexRouteImport } from './routes/_authenticated/op/employees/index'
+import { Route as AuthenticatedOpDispatchIndexRouteImport } from './routes/_authenticated/op/dispatch/index'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
 import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
@@ -86,6 +87,7 @@ import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
+import { Route as AuthenticatedOpDispatchDuplicateReviewIndexRouteImport } from './routes/_authenticated/op/dispatch/duplicate-review/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
@@ -375,6 +377,12 @@ const AuthenticatedOpEmployeesIndexRoute =
     path: '/op/employees/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpDispatchIndexRoute =
+  AuthenticatedOpDispatchIndexRouteImport.update({
+    id: '/op/dispatch/',
+    path: '/op/dispatch/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpCustomersIndexRoute =
   AuthenticatedOpCustomersIndexRouteImport.update({
     id: '/op/customers/',
@@ -547,6 +555,12 @@ const AuthenticatedOpOrdersIncompleteLeadsIndexRoute =
     path: '/op/orders/incomplete-leads/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpDispatchDuplicateReviewIndexRoute =
+  AuthenticatedOpDispatchDuplicateReviewIndexRouteImport.update({
+    id: '/op/dispatch/duplicate-review/',
+    path: '/op/dispatch/duplicate-review/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsTrackingIndexRoute =
   AuthenticatedMonSettingsTrackingIndexRouteImport.update({
     id: '/tracking/',
@@ -698,6 +712,7 @@ export interface FileRoutesByFullPath {
   '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/dispatch/': typeof AuthenticatedOpDispatchIndexRoute
   '/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
   '/op/expense-categories/': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
@@ -740,6 +755,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -793,6 +809,7 @@ export interface FileRoutesByTo {
   '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
+  '/op/dispatch': typeof AuthenticatedOpDispatchIndexRoute
   '/op/employees': typeof AuthenticatedOpEmployeesIndexRoute
   '/op/expense-categories': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/op/expenses': typeof AuthenticatedOpExpensesIndexRoute
@@ -835,6 +852,7 @@ export interface FileRoutesByTo {
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/dispatch/duplicate-review': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -890,6 +908,7 @@ export interface FileRoutesById {
   '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
+  '/_authenticated/op/dispatch/': typeof AuthenticatedOpDispatchIndexRoute
   '/_authenticated/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
   '/_authenticated/op/expense-categories/': typeof AuthenticatedOpExpenseCategoriesIndexRoute
   '/_authenticated/op/expenses/': typeof AuthenticatedOpExpensesIndexRoute
@@ -932,6 +951,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/_authenticated/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -987,6 +1007,7 @@ export interface FileRouteTypes {
     | '/op/combos/'
     | '/op/coupons/'
     | '/op/customers/'
+    | '/op/dispatch/'
     | '/op/employees/'
     | '/op/expense-categories/'
     | '/op/expenses/'
@@ -1029,6 +1050,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
+    | '/op/dispatch/duplicate-review/'
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
     | '/op/settings/personal/'
@@ -1082,6 +1104,7 @@ export interface FileRouteTypes {
     | '/op/combos'
     | '/op/coupons'
     | '/op/customers'
+    | '/op/dispatch'
     | '/op/employees'
     | '/op/expense-categories'
     | '/op/expenses'
@@ -1124,6 +1147,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storefront'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
+    | '/op/dispatch/duplicate-review'
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
     | '/op/settings/personal'
@@ -1178,6 +1202,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
     | '/_authenticated/op/customers/'
+    | '/_authenticated/op/dispatch/'
     | '/_authenticated/op/employees/'
     | '/_authenticated/op/expense-categories/'
     | '/_authenticated/op/expenses/'
@@ -1220,6 +1245,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
+    | '/_authenticated/op/dispatch/duplicate-review/'
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/settings/personal/'
@@ -1579,6 +1605,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpEmployeesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/dispatch/': {
+      id: '/_authenticated/op/dispatch/'
+      path: '/op/dispatch'
+      fullPath: '/op/dispatch/'
+      preLoaderRoute: typeof AuthenticatedOpDispatchIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/customers/': {
       id: '/_authenticated/op/customers/'
       path: '/op/customers'
@@ -1780,6 +1813,13 @@ declare module '@tanstack/react-router' {
       path: '/op/orders/incomplete-leads'
       fullPath: '/op/orders/incomplete-leads/'
       preLoaderRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/dispatch/duplicate-review/': {
+      id: '/_authenticated/op/dispatch/duplicate-review/'
+      path: '/op/dispatch/duplicate-review'
+      fullPath: '/op/dispatch/duplicate-review/'
+      preLoaderRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/settings/tracking/': {
@@ -2028,6 +2068,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
+  AuthenticatedOpDispatchIndexRoute: typeof AuthenticatedOpDispatchIndexRoute
   AuthenticatedOpEmployeesIndexRoute: typeof AuthenticatedOpEmployeesIndexRoute
   AuthenticatedOpExpenseCategoriesIndexRoute: typeof AuthenticatedOpExpenseCategoriesIndexRoute
   AuthenticatedOpExpensesIndexRoute: typeof AuthenticatedOpExpensesIndexRoute
@@ -2054,6 +2095,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
+  AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -2101,6 +2143,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
+  AuthenticatedOpDispatchIndexRoute: AuthenticatedOpDispatchIndexRoute,
   AuthenticatedOpEmployeesIndexRoute: AuthenticatedOpEmployeesIndexRoute,
   AuthenticatedOpExpenseCategoriesIndexRoute:
     AuthenticatedOpExpenseCategoriesIndexRoute,
@@ -2130,6 +2173,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
+  AuthenticatedOpDispatchDuplicateReviewIndexRoute:
+    AuthenticatedOpDispatchDuplicateReviewIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:
     AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute:
