@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { X, User, ChevronRight, ChevronDown, HelpCircle, Heart, Calendar } from 'lucide-react';
+import { X, User, LogOut, ChevronRight, ChevronDown, HelpCircle, Heart, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
 
 export default function MobileMenu({}: {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { config } = useStorefrontConfig();
+  const { user, logout } = useAuth();
   const menuItems = config.menu?.mobile?.items || [];
 
   useEffect(() => {
@@ -50,15 +52,40 @@ export default function MobileMenu({}: {}) {
         
         {/* Header User Area */}
         <div className="p-4 pt-5">
-          <div className="bg-brand-blue rounded-xl p-4 flex items-center gap-4 shadow-md transition-all active:scale-[0.98]">
-             <div className="w-[46px] h-[46px] bg-white rounded-full flex items-center justify-center shadow-inner">
-                <User size={24} className="text-brand-blue fill-brand-blue" strokeWidth={1.5} />
-             </div>
-             <div className="text-white pt-0.5">
-                <p className="text-[14px] opacity-90 font-light leading-snug">Hello there!</p>
-                <p className="text-[16px] font-medium leading-snug">Sign in / Register</p>
-             </div>
-          </div>
+          {user ? (
+            <>
+              <Link href="/account" onClick={closeMenu} className="block bg-brand-blue rounded-xl p-4 shadow-md transition-all active:scale-[0.98]">
+                <div className="flex items-center gap-4">
+                  <div className="w-[46px] h-[46px] bg-white rounded-full flex items-center justify-center shadow-inner shrink-0">
+                    <span className="text-brand-blue text-[18px] font-bold">{(user.firstName?.[0] || user.email[0]).toUpperCase()}</span>
+                  </div>
+                  <div className="text-white min-w-0 pt-0.5">
+                    <p className="text-[14px] opacity-90 font-light leading-snug truncate">Hello {user.firstName || 'there'}!</p>
+                    <p className="text-[16px] font-medium leading-snug truncate">{user.email}</p>
+                  </div>
+                </div>
+              </Link>
+              <button
+                onClick={() => { logout(); closeMenu(); }}
+                className="w-full flex items-center justify-center gap-2 mt-3 py-2.5 text-[13px] text-white/70 hover:text-white bg-brand-blue/80 hover:bg-brand-blue rounded-lg transition-all active:scale-[0.98]"
+              >
+                <LogOut size={14} strokeWidth={1.5} />
+                <span>Sign Out</span>
+              </button>
+            </>
+          ) : (
+            <Link href="/account" onClick={closeMenu} className="block bg-brand-blue rounded-xl p-4 shadow-md transition-all active:scale-[0.98]">
+              <div className="flex items-center gap-4">
+                <div className="w-[46px] h-[46px] bg-white rounded-full flex items-center justify-center shadow-inner shrink-0">
+                  <User size={24} className="text-brand-blue fill-brand-blue" strokeWidth={1.5} />
+                </div>
+                <div className="text-white pt-0.5">
+                  <p className="text-[14px] opacity-90 font-light leading-snug">Hello there!</p>
+                  <p className="text-[16px] font-medium leading-snug">Sign in / Register</p>
+                </div>
+              </div>
+            </Link>
+          )}
         </div>
 
         {/* Links */}

@@ -43,12 +43,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Base URL for the customer-facing storefront. */
-export const STOREFRONT_URL =
-  import.meta.env.VITE_STOREFRONT_URL || 'http://localhost:3000'
-
 export function getStorefrontUrl(): string {
-  return STOREFRONT_URL.replace(/\/+$/, '')
+  const configured = import.meta.env.VITE_STOREFRONT_URL
+  if (configured) return configured.replace(/\/+$/, '')
+  if (typeof window !== 'undefined') return window.location.origin.replace(/\/+$/, '')
+  return 'http://localhost:3000'
 }
 
 export function buildThankYouUrl(
