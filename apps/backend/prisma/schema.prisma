@@ -58,6 +58,7 @@ enum PaymentStatus {
   FAILED
   CANCELLED
   REFUNDED
+  PAYMENT_VERIFYING
 }
 
 enum WarehouseType {
@@ -529,6 +530,7 @@ model Order {
   payments     Payment[]
   shipment     Shipment?
   dispatchLogs CourierDispatchLog[]
+  dispatches   Dispatch[]
   refunds      Refund[]
   couponUsages CouponUsage[]
   referralLeads ReferralLead[]
@@ -837,6 +839,41 @@ model CourierDispatchLog {
 
   @@index([orderId])
   @@index([courier])
+}
+
+enum DispatchStatus {
+  DISPATCHED
+  HANDED_OVER
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  PARTIAL
+  RETURN_PENDING
+  RETURNED
+  CANCELLED
+}
+
+model Dispatch {
+  id              String         @id @default(uuid())
+  orderId         String
+  courier         CourierService
+  consignmentId   String
+  trackingCode    String?
+  status          DispatchStatus @default(DISPATCHED)
+  handedOverAt    DateTime?
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+  productMapping  Json?          @default("[]")
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([courier, consignmentId])
+  @@index([orderId])
+  @@index([courier])
+  @@index([status])
 }
 
 model Coupon {
