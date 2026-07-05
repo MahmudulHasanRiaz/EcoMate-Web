@@ -41,7 +41,7 @@ COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
 COPY apps/backend/startup.sh ./startup.sh
-RUN mkdir -p /app/uploads && chown -R nestjs:nodejs /app/uploads && \
+RUN mkdir -p /app/uploads /app/.cache && chown -R nestjs:nodejs /app/uploads /app/.cache && \
     chmod +x startup.sh
 USER nestjs
 EXPOSE 4000
