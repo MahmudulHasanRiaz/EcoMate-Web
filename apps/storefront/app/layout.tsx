@@ -11,7 +11,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
-import type { CSSProperties } from "react";
+import { Suspense, type CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import { headers } from "next/headers";
 
@@ -254,7 +254,7 @@ export default async function RootLayout({
             <OfflineBanner />
             <PWAInstallBanner />
             </StorefrontConfigProvider>
-            <PageViewTracker />
+            <Suspense fallback={null}><PageViewTracker /></Suspense>
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
