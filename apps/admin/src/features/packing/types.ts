@@ -5,6 +5,8 @@ export interface QueueItem {
   items: QueueItemProduct[]
   totalItems: number
   packingLock: PackingLockInfo | null
+  statusName: string
+  statusColor: string
   createdAt: string
 }
 
@@ -12,6 +14,7 @@ export interface QueueItemProduct {
   id: string
   productName: string
   variantName: string
+  sku?: string
   quantity: number
   image: string | null
 }

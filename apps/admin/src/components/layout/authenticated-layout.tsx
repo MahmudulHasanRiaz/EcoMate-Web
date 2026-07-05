@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Outlet, useNavigate } from '@tanstack/react-router'
+import { Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -19,7 +19,9 @@ type AuthenticatedLayoutProps = {
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const navigate = useNavigate()
+  const location = useLocation()
   const accessToken = useAuthStore((s) => s.auth.accessToken)
+  const user = useAuthStore((s) => s.auth.user)
 
   useEffect(() => {
     if (!accessToken) {
@@ -45,6 +47,16 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
       navigate({ to: '/sign-in', replace: true })
     })
   }, [accessToken, navigate])
+
+  // Enforce redirection for packing_assistant role on path changes
+  useEffect(() => {
+    if (user?.role === 'packing_assistant') {
+      const isOnPacking = location.pathname.startsWith('/op/packing')
+      if (!isOnPacking) {
+        navigate({ to: '/op/packing', replace: true })
+      }
+    }
+  }, [user, location.pathname, navigate])
 
   useEffect(() => {
     if (!accessToken) return
@@ -85,6 +97,23 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         />
         <style>{`@keyframes auth-spin { to { transform: rotate(360deg); } }`}</style>
       </div>
+    )
+  }
+
+  const isPackingWorkspace = location.pathname.startsWith('/op/packing')
+
+  if (isPackingWorkspace) {
+    return (
+      <SearchProvider>
+        <PanelProvider>
+          <LayoutProvider>
+            <div className="no-print"><SkipToMain /></div>
+            <main className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+              {children ?? <Outlet />}
+            </main>
+          </LayoutProvider>
+        </PanelProvider>
+      </SearchProvider>
     )
   }
 

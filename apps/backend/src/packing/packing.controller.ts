@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Param, Query, Body,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Query, Body } from '@nestjs/common';
 import { PackingService } from './packing.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -19,13 +17,17 @@ export class PackingController {
   @Roles('packing_assistant', 'admin', 'superadmin')
   @Get('queue/:id')
   async openOrder(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.svc.openOrder(id, user.id);
+    return this.svc.openOrder(id, user.userId);
   }
 
   @Roles('packing_assistant', 'admin', 'superadmin')
   @Post('queue/:id/done')
-  async markDone(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.svc.markDone(id, user.id);
+  async markDone(
+    @Param('id') id: string,
+    @Body('verificationMode') verificationMode: string,
+    @CurrentUser() user: any
+  ) {
+    return this.svc.markDone(id, user.userId, verificationMode);
   }
 
   @Roles('packing_assistant', 'admin', 'superadmin')
@@ -35,9 +37,13 @@ export class PackingController {
     @Body() dto: HoldOrderDto,
     @CurrentUser() user: any,
   ) {
-    return this.svc.markHold(id, user.id, dto.reason, dto.notes);
+    return this.svc.markHold(id, user.userId, dto.reason, dto.notes);
   }
-
+  @Roles('packing_assistant', 'admin', 'superadmin')
+  @Delete('queue/:id/lock')
+  async releaseLock(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.svc.releaseLock(id, user.userId);
+  }
   @Roles('admin', 'superadmin')
   @Get('locks')
   async getActiveLocks() {
@@ -50,7 +56,13 @@ export class PackingController {
     if (all && (user.role === 'admin' || user.role === 'superadmin')) {
       return this.svc.getStats();
     }
-    return this.svc.getStats(user.id);
+    return this.svc.getStats(user.userId);
+  }
+
+  @Roles('packing_assistant', 'admin', 'superadmin')
+  @Get('check/:code')
+  async checkOrderStatus(@Param('code') code: string) {
+    return this.svc.checkOrderStatus(code);
   }
 
   @Roles('admin', 'superadmin')

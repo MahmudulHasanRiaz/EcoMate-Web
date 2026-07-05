@@ -53,7 +53,7 @@ export const sidebarData: SidebarData = {
             { title: 'Reviews', url: '/op/reviews' },
           ],
         },
-        { title: 'Packing', url: '/op/packing', icon: Package },
+
         {
           title: 'Dispatch',
           icon: Truck,

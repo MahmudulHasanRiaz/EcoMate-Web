@@ -19,6 +19,7 @@ export function TeamSwitcher() {
   const teams = [
     { name: 'Operational', key: 'operational' as PanelType, plan: 'Orders & Catalog', route: '/op', visible: true },
     { name: 'Admin', key: 'monitoring' as PanelType, plan: 'Settings & Overview', route: '/mon', visible: role === 'superadmin' || role === 'admin' },
+    { name: 'Packing Workspace', key: 'packing' as any, plan: 'Order Packing Workspace', route: '/op/packing', visible: role === 'superadmin' || role === 'admin' },
   ].filter(t => t.visible)
 
   const active = teams.find(t => t.key === activePanel) || teams[0]

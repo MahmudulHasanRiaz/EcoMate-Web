@@ -10,13 +10,25 @@ describe('PackingService', () => {
   const mockPrisma = {
     $transaction: jest.fn(),
     orderStatus: { findUnique: jest.fn() },
-    order: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
+    order: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn() },
     packingLock: { findUnique: jest.fn(), upsert: jest.fn(), delete: jest.fn(), findMany: jest.fn() },
+    systemSetting: { findUnique: jest.fn(), upsert: jest.fn() },
+    user: { findUnique: jest.fn() },
   };
 
   beforeEach(async () => {
     mockPrisma.$transaction.mockImplementation(async (operations) => {
       return Promise.all(operations);
+    });
+
+    const statusMap: Record<string, { id: string; name: string }> = {
+      'Confirmed': { id: 'status-confirmed', name: 'Confirmed' },
+      'Packing Hold': { id: 'status-hold', name: 'Packing Hold' },
+      'Packed': { id: 'status-packed', name: 'Packed' },
+    };
+    (mockPrisma.orderStatus.findUnique as jest.Mock).mockImplementation(async (args) => {
+      const name = args.where.name;
+      return statusMap[name] || null;
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -38,14 +50,13 @@ describe('PackingService', () => {
     const confirmedStatus = { id: 'status-confirmed', name: 'Confirmed' };
 
     it('should return empty array when no confirmed orders', async () => {
-      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(confirmedStatus);
       (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.getQueue();
 
       expect(result).toEqual([]);
       expect(prisma.order.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { statusId: confirmedStatus.id } }),
+        expect.objectContaining({ where: { statusId: { in: ['status-confirmed', 'status-hold'] } } }),
       );
     });
 
@@ -57,7 +68,6 @@ describe('PackingService', () => {
     });
 
     it('should filter by search in displayId, guestName, guestPhone', async () => {
-      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(confirmedStatus);
       (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
 
       await service.getQueue('ORD-123');
@@ -65,7 +75,7 @@ describe('PackingService', () => {
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            statusId: confirmedStatus.id,
+            statusId: { in: ['status-confirmed', 'status-hold'] },
             OR: [
               { displayId: { contains: 'ORD-123', mode: 'insensitive' } },
               { guestName: { contains: 'ORD-123', mode: 'insensitive' } },
@@ -88,7 +98,14 @@ describe('PackingService', () => {
           {
             id: 'item-1',
             quantity: 2,
-            variant: { sku: 'SKU-001', product: { name: 'Product A', images: [{ url: '/img.jpg' }] } },
+            variant: {
+              sku: 'SKU-001',
+              product: { name: 'Product A', images: ['/img.jpg'] },
+              attributeValues: [
+                { attributeValue: { value: 'Red' } },
+                { attributeValue: { value: 'M' } }
+              ]
+            },
           },
         ],
         packingLock: null,
@@ -108,13 +125,16 @@ describe('PackingService', () => {
           {
             id: 'item-1',
             productName: 'Product A',
-            variantName: 'SKU-001',
+            variantName: 'Red / M',
+            sku: 'SKU-001',
             quantity: 2,
             image: '/img.jpg',
           },
         ],
         totalItems: 2,
         packingLock: null,
+        statusName: 'Confirmed',
+        statusColor: 'blue',
         createdAt: mockOrder.createdAt,
       });
     });
@@ -247,12 +267,28 @@ describe('PackingService', () => {
       expect(prisma.packingLock.upsert).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when order not confirmed', async () => {
+    it('should throw BadRequestException when order is not confirmed or on packing hold', async () => {
       const mockOrder = { id: 'order-1', status: { name: 'Pending' }, packingLock: null };
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
       await expect(service.openOrder('order-1', 'packer-1')).rejects.toThrow(BadRequestException);
       expect(prisma.packingLock.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should upsert lock for packing hold order', async () => {
+      const mockOrder = {
+        id: 'order-1',
+        status: { name: 'Packing Hold' },
+        packingLock: null,
+      };
+      const mockLock = { id: 'lock-1', orderId: 'order-1', packerId: 'packer-1', expiresAt };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.packingLock.upsert as jest.Mock).mockResolvedValue(mockLock);
+
+      const result = await service.openOrder('order-1', 'packer-1');
+
+      expect(result).toEqual(mockLock);
+      expect(prisma.packingLock.upsert).toHaveBeenCalled();
     });
 
     it('should throw ConflictException when locked by another packer (not expired)', async () => {
@@ -322,15 +358,21 @@ describe('PackingService', () => {
       const mockUpdatedOrder = { id: 'order-1', statusId: packedStatus.id, assignedToId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(packedStatus);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockUpdatedOrder);
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
 
-      const result = await service.markDone('order-1', 'packer-1');
+      const result = await service.markDone('order-1', 'packer-1', 'strict_scan');
 
       expect(result).toEqual({ success: true, orderId: 'order-1' });
       expect(prisma.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
-        data: { statusId: packedStatus.id, assignedToId: 'packer-1' },
+        data: { 
+          statusId: packedStatus.id, 
+          assignedToId: 'packer-1',
+          timeline: expect.any(Array)
+        },
       });
       expect(prisma.packingLock.delete).toHaveBeenCalledWith({ where: { orderId: 'order-1' } });
     });
@@ -338,7 +380,7 @@ describe('PackingService', () => {
     it('should throw BadRequestException when no lock exists', async () => {
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.markDone('order-1', 'packer-1')).rejects.toThrow(BadRequestException);
+      await expect(service.markDone('order-1', 'packer-1', 'strict_scan')).rejects.toThrow(BadRequestException);
       expect(prisma.order.update).not.toHaveBeenCalled();
       expect(prisma.packingLock.delete).not.toHaveBeenCalled();
     });
@@ -347,7 +389,7 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-2' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
 
-      await expect(service.markDone('order-1', 'packer-1')).rejects.toThrow(ConflictException);
+      await expect(service.markDone('order-1', 'packer-1', 'strict_scan')).rejects.toThrow(ConflictException);
       expect(prisma.order.update).not.toHaveBeenCalled();
       expect(prisma.packingLock.delete).not.toHaveBeenCalled();
     });
@@ -357,7 +399,7 @@ describe('PackingService', () => {
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.markDone('order-1', 'packer-1')).rejects.toThrow(NotFoundException);
+      await expect(service.markDone('order-1', 'packer-1', 'strict_scan')).rejects.toThrow(NotFoundException);
       expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
@@ -365,10 +407,12 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(packedStatus);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
 
-      await service.markDone('order-1', 'packer-1');
+      await service.markDone('order-1', 'packer-1', 'strict_scan');
 
       expect(prisma.order.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -386,6 +430,8 @@ describe('PackingService', () => {
       const mockUpdatedOrder = { id: 'order-1', statusId: holdStatus.id, assignedToId: 'packer-1', officeNotes: 'Missing item' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockUpdatedOrder);
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
 
@@ -394,7 +440,12 @@ describe('PackingService', () => {
       expect(result).toEqual({ success: true, orderId: 'order-1', reason: 'Missing item', notes: undefined });
       expect(prisma.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
-        data: { statusId: holdStatus.id, assignedToId: 'packer-1', officeNotes: '' },
+        data: { 
+          statusId: holdStatus.id, 
+          assignedToId: 'packer-1', 
+          officeNotes: '',
+          timeline: expect.any(Array)
+        },
       });
       expect(prisma.packingLock.delete).toHaveBeenCalledWith({ where: { orderId: 'order-1' } });
     });
@@ -427,6 +478,8 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
 
@@ -445,6 +498,8 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
 
@@ -455,6 +510,63 @@ describe('PackingService', () => {
           data: expect.objectContaining({ officeNotes: '' }),
         }),
       );
+    });
+  });
+
+  describe('releaseLock', () => {
+    it('should delete lock if packer holds the lock', async () => {
+      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
+      (prisma.packingLock.delete as jest.Mock).mockResolvedValue(mockLock);
+
+      const result = await service.releaseLock('order-1', 'packer-1');
+
+      expect(result).toEqual({ success: true });
+      expect(prisma.packingLock.delete).toHaveBeenCalledWith({ where: { orderId: 'order-1' } });
+    });
+
+    it('should return success immediately if no lock exists', async () => {
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.releaseLock('order-1', 'packer-1');
+
+      expect(result).toEqual({ success: true });
+      expect(prisma.packingLock.delete).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException if lock is held by different packer', async () => {
+      const mockLock = { orderId: 'order-1', packerId: 'packer-2' };
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
+
+      await expect(service.releaseLock('order-1', 'packer-1')).rejects.toThrow(ConflictException);
+      expect(prisma.packingLock.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('checkOrderStatus', () => {
+    it('should return exists false if order not found', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.checkOrderStatus('ORD-NOT-FOUND');
+
+      expect(result).toEqual({ exists: false });
+    });
+
+    it('should return details if order exists', async () => {
+      const mockOrder = {
+        id: 'order-123',
+        displayId: 'ORD-260705-0002',
+        status: { name: 'Shipped' }
+      };
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+
+      const result = await service.checkOrderStatus('ORD-260705-0002');
+
+      expect(result).toEqual({
+        exists: true,
+        displayId: 'ORD-260705-0002',
+        status: 'Shipped'
+      });
     });
   });
 
@@ -554,7 +666,7 @@ describe('PackingService', () => {
       expect(result[0]).toEqual({
         id: 'order-1',
         displayId: 'ORD-001',
-        status: 'Packed',
+        statusName: 'Packed',
         statusColor: 'green',
         packerName: 'Alice Smith',
         updatedAt: mockOrders[0].updatedAt,
@@ -562,14 +674,14 @@ describe('PackingService', () => {
       expect(result[1]).toEqual({
         id: 'order-2',
         displayId: 'ORD-002',
-        status: 'Packing Hold',
+        statusName: 'Packing Hold',
         statusColor: 'yellow',
         packerName: 'N/A',
         updatedAt: mockOrders[1].updatedAt,
       });
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { OR: [{ statusId: packedStatus.id }, { statusId: holdStatus.id }], assignedToId: 'packer-1' },
+          where: { statusId: { in: [packedStatus.id, holdStatus.id] }, assignedToId: 'packer-1' },
           take: 50,
           orderBy: { updatedAt: 'desc' },
         }),
@@ -586,7 +698,7 @@ describe('PackingService', () => {
       expect(result).toEqual([]);
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { OR: [{ statusId: packedStatus.id }, { statusId: holdStatus.id }] },
+          where: { statusId: { in: [packedStatus.id, holdStatus.id] } },
         }),
       );
     });

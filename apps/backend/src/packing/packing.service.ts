@@ -9,9 +9,12 @@ export class PackingService {
 
   async getQueue(search?: string) {
     const confirmedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } });
-    if (!confirmedStatus) throw new NotFoundException('Confirmed status not found');
+    const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
+    if (!confirmedStatus || !holdStatus) throw new NotFoundException('Required statuses not found');
 
-    const where: any = { statusId: confirmedStatus.id };
+    const where: any = {
+      statusId: { in: [confirmedStatus.id, holdStatus.id] }
+    };
     if (search) {
       where.OR = [
         { displayId: { contains: search, mode: 'insensitive' } },
@@ -23,7 +26,16 @@ export class PackingService {
     const orders = await this.prisma.order.findMany({
       where,
       include: {
-        items: { include: { variant: { include: { product: true } } } },
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: true,
+                attributeValues: { include: { attributeValue: true } },
+              },
+            },
+          },
+        },
         packingLock: { include: { packer: { select: { id: true, firstName: true, lastName: true } } } },
         customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
         status: { select: { id: true, name: true, color: true } },
@@ -41,12 +53,16 @@ export class PackingService {
           : null,
       items: o.items.map((i) => {
         const productImages = i.variant?.product?.images as any[] | null | undefined;
+        const variantAttrs = i.variant?.attributeValues
+          ? i.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')
+          : '';
         return {
           id: i.id,
           productName: i.variant?.product?.name ?? 'Unknown',
-          variantName: i.variant?.sku ?? '',
+          variantName: variantAttrs || '',
+          sku: i.variant?.sku ?? '',
           quantity: i.quantity,
-          image: productImages?.[0]?.url ?? null,
+          image: i.variant?.image || (Array.isArray(productImages) && typeof productImages[0] === 'string' ? productImages[0] : null),
         };
       }),
       totalItems: o.items.reduce((sum, i) => sum + i.quantity, 0),
@@ -56,6 +72,8 @@ export class PackingService {
         startedAt: o.packingLock.startedAt,
         expiresAt: o.packingLock.expiresAt,
       } : null,
+      statusName: o.status.name,
+      statusColor: o.status.color,
       createdAt: o.createdAt,
     }));
   }
@@ -66,7 +84,9 @@ export class PackingService {
       include: { packingLock: true, status: { select: { name: true } } },
     });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status.name !== 'Confirmed') throw new BadRequestException('Order is not in Confirmed status');
+    if (order.status.name !== 'Confirmed' && order.status.name !== 'Packing Hold') {
+      throw new BadRequestException('Order is not in Confirmed or Packing Hold status');
+    }
 
     const existingLock = order.packingLock;
     if (existingLock && existingLock.packerId !== packerId) {
@@ -86,7 +106,7 @@ export class PackingService {
     return lock;
   }
 
-  async markDone(orderId: string, packerId: string) {
+  async markDone(orderId: string, packerId: string, verificationMode: string) {
     const lock = await this.prisma.packingLock.findUnique({ where: { orderId } });
     if (!lock) throw new BadRequestException('Order is not opened for packing');
     if (lock.packerId !== packerId) throw new ConflictException('Order is locked by another packer');
@@ -94,10 +114,34 @@ export class PackingService {
     const packedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } });
     if (!packedStatus) throw new NotFoundException('Packed status not found');
 
+    const packer = await this.prisma.user.findUnique({
+      where: { id: packerId },
+      select: { firstName: true, lastName: true }
+    });
+    const packerName = packer ? `${packer.firstName} ${packer.lastName}` : 'System Packer';
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { timeline: true }
+    });
+    const existingTimeline = Array.isArray(order?.timeline) ? order.timeline : [];
+    const newEntry = {
+      type: 'status',
+      status: 'Packed',
+      timestamp: new Date().toISOString(),
+      note: `Order packed successfully. Verification mode: ${verificationMode}.`,
+      performedBy: packerName,
+    };
+    const updatedTimeline = [...existingTimeline, newEntry];
+
     await this.prisma.$transaction([
       this.prisma.order.update({
         where: { id: orderId },
-        data: { statusId: packedStatus.id, assignedToId: packerId },
+        data: { 
+          statusId: packedStatus.id, 
+          assignedToId: packerId,
+          timeline: updatedTimeline as any
+        },
       }),
       this.prisma.packingLock.delete({ where: { orderId } }),
     ]);
@@ -113,15 +157,50 @@ export class PackingService {
     const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
     if (!holdStatus) throw new NotFoundException('Packing Hold status not found');
 
+    const packer = await this.prisma.user.findUnique({
+      where: { id: packerId },
+      select: { firstName: true, lastName: true }
+    });
+    const packerName = packer ? `${packer.firstName} ${packer.lastName}` : 'System Packer';
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { timeline: true }
+    });
+    const existingTimeline = Array.isArray(order?.timeline) ? order.timeline : [];
+    const newEntry = {
+      type: 'status',
+      status: 'Packing Hold',
+      timestamp: new Date().toISOString(),
+      note: `Order placed on packing hold. Reason: ${reason}. Notes: ${notes ?? 'N/A'}`,
+      performedBy: packerName,
+    };
+    const updatedTimeline = [...existingTimeline, newEntry];
+
     await this.prisma.$transaction([
       this.prisma.order.update({
         where: { id: orderId },
-        data: { statusId: holdStatus.id, assignedToId: packerId, officeNotes: notes ?? '' },
+        data: { 
+          statusId: holdStatus.id, 
+          assignedToId: packerId, 
+          officeNotes: notes ?? '',
+          timeline: updatedTimeline as any
+        },
       }),
       this.prisma.packingLock.delete({ where: { orderId } }),
     ]);
 
     return { success: true, orderId, reason, notes };
+  }
+
+  async releaseLock(orderId: string, packerId: string) {
+    const lock = await this.prisma.packingLock.findUnique({ where: { orderId } });
+    if (!lock) return { success: true };
+    if (lock.packerId !== packerId) {
+      throw new ConflictException('Cannot release lock held by another packer');
+    }
+    await this.prisma.packingLock.delete({ where: { orderId } });
+    return { success: true };
   }
 
   async getActiveLocks() {
@@ -167,17 +246,20 @@ export class PackingService {
   async getHistory(packerId?: string) {
     const packedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } });
     const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
+    if (!packedStatus || !holdStatus) {
+      throw new NotFoundException('Required order status not found');
+    }
 
-    const where: any = {
-      OR: [{ statusId: packedStatus!.id }, { statusId: holdStatus!.id }],
-    };
-    if (packerId) where.assignedToId = packerId;
+    const where = packerId ? { assignedToId: packerId } : {};
 
     const orders = await this.prisma.order.findMany({
-      where,
+      where: {
+        ...where,
+        statusId: { in: [packedStatus.id, holdStatus.id] },
+      },
       include: {
-        status: { select: { name: true, color: true } },
-        assignee: { select: { id: true, firstName: true, lastName: true } },
+        status: true,
+        assignee: { select: { firstName: true, lastName: true } },
       },
       orderBy: { updatedAt: 'desc' },
       take: 50,
@@ -186,10 +268,34 @@ export class PackingService {
     return orders.map((o) => ({
       id: o.id,
       displayId: o.displayId,
-      status: o.status.name,
+      statusName: o.status.name,
       statusColor: o.status.color,
       packerName: o.assignee ? `${o.assignee.firstName} ${o.assignee.lastName}` : 'N/A',
       updatedAt: o.updatedAt,
     }));
+  }
+
+  async checkOrderStatus(code: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        OR: [
+          { id: code },
+          { displayId: { equals: code, mode: 'insensitive' } }
+        ]
+      },
+      include: {
+        status: { select: { name: true } }
+      }
+    });
+
+    if (!order) {
+      return { exists: false };
+    }
+
+    return {
+      exists: true,
+      displayId: order.displayId,
+      status: order.status.name
+    };
   }
 }

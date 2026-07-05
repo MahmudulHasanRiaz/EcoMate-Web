@@ -49,10 +49,12 @@ export function useOpenOrder() {
 export function useMarkDone() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (orderId: string) => packingApi.markDone(orderId),
+    mutationFn: ({ orderId, verificationMode }: { orderId: string; verificationMode: string }) =>
+      packingApi.markDone(orderId, verificationMode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PACKING_KEYS.queue })
       queryClient.invalidateQueries({ queryKey: PACKING_KEYS.stats })
+      queryClient.invalidateQueries({ queryKey: PACKING_KEYS.history })
     },
   })
 }
@@ -65,6 +67,23 @@ export function useMarkHold() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PACKING_KEYS.queue })
       queryClient.invalidateQueries({ queryKey: PACKING_KEYS.stats })
+      queryClient.invalidateQueries({ queryKey: PACKING_KEYS.history })
     },
+  })
+}
+
+export function useReleaseLock() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (orderId: string) => packingApi.releaseLock(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PACKING_KEYS.queue })
+    },
+  })
+}
+
+export function useCheckOrderStatus() {
+  return useMutation({
+    mutationFn: (code: string) => packingApi.checkOrderStatus(code),
   })
 }

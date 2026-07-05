@@ -20,7 +20,7 @@ export function PackingQueue({
 }: Props) {
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center p-6">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     )
@@ -28,18 +28,17 @@ export function PackingQueue({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-zinc-400 dark:text-zinc-600 p-6 text-center select-none">
         <Package className="h-12 w-12" />
-        <p className="text-lg font-medium">No orders to pack</p>
-        <p className="text-sm">All Confirmed orders are packed. Good job!</p>
+        <p className="text-base font-bold">No orders to pack</p>
+        <p className="text-xs">All Confirmed orders are packed. Good job!</p>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 space-y-3 overflow-y-auto p-6">
-      <p className="text-sm text-muted-foreground">{items.length} order{items.length !== 1 ? 's' : ''} waiting</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3">
+      <div className="flex flex-col gap-2.5">
         {items.map((item, i) => (
           <PackingCard
             key={item.id}
