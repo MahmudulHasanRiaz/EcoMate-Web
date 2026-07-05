@@ -1,6 +1,6 @@
 'use client'
 
-import { useDateFilter } from '../../dashboard/use-date-filter'
+import { useDateFilter } from '../dashboard/use-date-filter'
 import { SalesKpiCards } from './components/SalesKpiCards'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { MarketingKpiWidget } from './components/MarketingKpiWidget'
