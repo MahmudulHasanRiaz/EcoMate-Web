@@ -1,16 +1,20 @@
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ecomate_web';
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log('[Migration] Starting customer migration...');
 
+  // UserProfile no longer has orders relation (moved to CustomerProfile)
+  // addresses relation still exists on UserProfile
   const customers = await prisma.userProfile.findMany({
     where: { role: 'customer' },
-    include: {
-      orders: true,
-      addresses: true,
-    },
+    include: { addresses: true },
   });
 
   console.log(`[Migration] Found ${customers.length} customer profiles to migrate.`);
@@ -29,13 +33,18 @@ async function main() {
         },
       });
 
-      if (customer.orders.length > 0) {
+      // Orders: query separately since relation moved to CustomerProfile
+      const orderCount = await prisma.order.count({
+        where: { customerId: customer.id },
+      });
+      if (orderCount > 0) {
         await prisma.order.updateMany({
           where: { customerId: customer.id },
           data: { customerId: profile.id },
         });
       }
 
+      // Addresses: still on UserProfile, included above
       if (customer.addresses.length > 0) {
         await prisma.address.updateMany({
           where: { userId: customer.id },
