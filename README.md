@@ -31,7 +31,7 @@ EcoMate Web/
 | **Storefront** | Next.js 16 (App Router, standalone output) |
 | **Database** | PostgreSQL 16 + Prisma 7 ORM |
 | **Cache/Queue** | Redis 7 + BullMQ |
-| **Auth** | Passport (JWT strategy), bcryptjs |
+| **Auth** | better-auth + Passport (JWT), bcryptjs |
 | **Admin UI** | shadcn/ui (Radix primitives), Tailwind CSS v4, Recharts, TipTap editor |
 | **Storefront UI** | Tailwind CSS v4, Motion (Framer Motion), Lucide icons |
 | **Validation** | Zod, class-validator, class-transformer |
@@ -50,7 +50,7 @@ EcoMate Web/
 
 Fastify-based API at port 4000. Key modules:
 
-- **Auth** — JWT login/register, refresh tokens, failed attempt lockout, RBAC
+- **Auth** — better-auth (email/password, social login), JWT refresh tokens, failed attempt lockout, RBAC
 - **Catalog** — Products, variants, categories, brands, inventory, purchasing, GRN, size charts, attributes, tags, combos
 - **Orders** — Checkout, payments, order lifecycle, shipping (Steadfast, Pathao, Redx, Carrybee), refunds, dispatch, packing, shipment tracking
 - **CRM** — Customers, leads, referrals, email campaigns, notification templates, reviews
