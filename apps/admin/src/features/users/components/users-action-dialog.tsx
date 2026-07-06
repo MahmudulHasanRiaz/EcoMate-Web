@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -24,6 +26,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
 import { SelectDropdown } from '@/components/select-dropdown'
+import { Label } from '@/components/ui/label'
+import { PermissionCheckboxMatrix } from '@/components/permissions/PermissionCheckboxMatrix'
 import { roles } from '../data/data'
 import { type UserResponse } from '../api'
 
@@ -108,6 +112,8 @@ export function UsersActionDialog({
   const isEdit = !!currentRow
   const { createUser, updateUser } = useUserMutations()
 
+  const [permissions, setPermissions] = useState<string[]>(currentRow?.override_permissions || [])
+
   const form = useForm<UserForm>({
     resolver: zodResolver(formSchema),
     defaultValues: isEdit
@@ -130,6 +136,8 @@ export function UsersActionDialog({
         },
   })
 
+  const { watch } = form
+
   const onSubmit = (values: UserForm) => {
     if (isEdit && currentRow) {
       const updateData: any = {
@@ -139,6 +147,7 @@ export function UsersActionDialog({
         email: values.email,
         phoneNumber: values.phoneNumber,
         role: values.role,
+        override_permissions: permissions,
       }
       if (values.password) {
         updateData.password = values.password
@@ -153,6 +162,7 @@ export function UsersActionDialog({
         phoneNumber: values.phoneNumber,
         password: values.password,
         role: values.role,
+        override_permissions: permissions,
       })
     }
     onOpenChange(false)
@@ -298,6 +308,18 @@ export function UsersActionDialog({
                   </FormItem>
                 )}
               />
+              {watch('role') === 'admin' && (
+                <div className='col-span-6 border rounded-lg p-4 space-y-3'>
+                  <Label className='font-semibold'>Permissions</Label>
+                  <p className='text-sm text-muted-foreground mb-3'>
+                    Assign permissions directly (bypasses Employee module)
+                  </p>
+                  <PermissionCheckboxMatrix
+                    selected={permissions}
+                    onChange={setPermissions}
+                  />
+                </div>
+              )}
               <FormField
                 control={form.control}
                 name='password'
