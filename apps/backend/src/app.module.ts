@@ -48,6 +48,7 @@ import { CacheModule } from './cache/cache.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { DualModeAuthGuard } from './common/guards/dual-mode-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 import { BetterAuthModule } from './better-auth/better-auth.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
@@ -169,6 +170,7 @@ import { AuthSettingsModule } from './auth-settings/auth-settings.module';
     { provide: APP_GUARD, useClass: LicenseGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
 export class AppModule implements NestModule {

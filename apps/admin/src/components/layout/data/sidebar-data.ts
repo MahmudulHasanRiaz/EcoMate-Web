@@ -94,7 +94,16 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus },
-        { title: 'Employees', url: '/op/employees', icon: UserCog },
+        {
+          title: 'Employees',
+          icon: UserCog,
+          items: [
+            { title: 'All Employees', url: '/op/employees' },
+            { title: 'Create Employee', url: '/op/employees/create' },
+            { title: 'Designations', url: '/op/employees/designations' },
+            { title: 'Access Presets', url: '/op/employees/presets' },
+          ],
+        },
         { title: 'Payroll', url: '/op/payroll', icon: DollarSign },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck },
