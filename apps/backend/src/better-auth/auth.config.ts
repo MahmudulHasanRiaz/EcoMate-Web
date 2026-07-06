@@ -28,7 +28,13 @@ export const auth = betterAuth({
       generateId: false,
     },
   },
-  user: { modelName: "betterAuthUser" },
+  user: {
+    modelName: "betterAuthUser",
+    additionalFields: {
+      role: { type: "string", required: false, defaultValue: "customer" },
+      override_permissions: { type: "string[]", required: false },
+    },
+  },
   account: { modelName: "betterAuthAccount" },
   session: {
     modelName: "betterAuthSession",
@@ -43,15 +49,56 @@ export const auth = betterAuth({
   plugins: [
     customSession(async ({ user, session }) => {
       try {
-        const profile = await baPrisma.userProfile.findUnique({
-          where: { betterAuthUserId: user.id },
-        });
+        let permissions: string[] = [];
+        let customerProfileId: string | undefined;
+        let employeeId: string | undefined;
+
+        const role = (user as any).role || 'customer';
+        const overridePerms: string[] = (user as any).override_permissions || [];
+
+        if (role === 'employee') {
+          const emp = await baPrisma.employee.findUnique({
+            where: { betterAuthUserId: user.id },
+            include: { accessPreset: true },
+          });
+          if (emp) {
+            employeeId = emp.id;
+            if (emp.accessPreset) {
+              permissions = [...emp.accessPreset.permissions];
+            }
+            if (overridePerms.length > 0) {
+              permissions = [...new Set([...permissions, ...overridePerms])];
+            }
+          }
+        } else if (role === 'admin' || role === 'superadmin') {
+          permissions = overridePerms;
+        }
+
+        if (role === 'customer') {
+          const profile = await baPrisma.customerProfile.findUnique({
+            where: { betterAuthUserId: user.id },
+          });
+          if (profile) {
+            customerProfileId = profile.id;
+          }
+        }
+
         return {
-          user: { ...user, profile: profile || null },
+          user: {
+            ...user,
+            role,
+            permissions,
+            customerProfileId,
+            employeeId,
+          },
           session,
         };
-      } catch {
-        return { user: { ...user, profile: null }, session };
+      } catch (error) {
+        console.error('[BA] customSession error:', error);
+        return {
+          user: { ...user, role: 'customer', permissions: [] },
+          session,
+        };
       }
     }),
   ],
