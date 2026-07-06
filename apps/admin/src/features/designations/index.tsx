@@ -100,7 +100,7 @@ export default function DesignationsPage() {
                       <TableCell className='font-medium'>{designation.name}</TableCell>
                       <TableCell>{designation.level}</TableCell>
                       <TableCell>
-                        <Badge variant={designation.isActive ? 'success' : 'secondary'}>
+                        <Badge variant={designation.isActive ? 'default' : 'secondary'}>
                           {designation.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>

@@ -142,25 +142,27 @@ export default function CreateEmployeePage() {
                 <div className='grid gap-2'>
                   <Label>Designation</Label>
                   <SelectDropdown
-                    value={formData.designationId}
+                    defaultValue={formData.designationId}
                     onValueChange={(v) => setFormData({ ...formData, designationId: v })}
                     placeholder='Select designation'
                     items={(designations || []).map((d: any) => ({ label: d.name, value: d.id }))}
+                    isControlled
                   />
                 </div>
                 <div className='grid gap-2'>
                   <Label>Access Preset</Label>
                   <SelectDropdown
-                    value={formData.accessPresetId}
+                    defaultValue={formData.accessPresetId}
                     onValueChange={(v) => setFormData({ ...formData, accessPresetId: v })}
                     placeholder='Select preset'
                     items={(presets?.data || []).map((p: any) => ({ label: p.name, value: p.id }))}
+                    isControlled
                   />
                 </div>
                 <div className='grid gap-2'>
                   <Label>Employment Type</Label>
                   <SelectDropdown
-                    value={formData.employmentType}
+                    defaultValue={formData.employmentType}
                     onValueChange={(v) => setFormData({ ...formData, employmentType: v })}
                     placeholder='Select type'
                     items={[
@@ -169,6 +171,7 @@ export default function CreateEmployeePage() {
                       { label: 'Contract', value: 'contract' },
                       { label: 'Internship', value: 'internship' },
                     ]}
+                    isControlled
                   />
                 </div>
                 <div className='grid gap-2'>
