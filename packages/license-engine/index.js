@@ -22,6 +22,8 @@ class LicenseEngine {
 
   canUseFeature(license, featureKey) {
     if (!license || !license.valid) return false;
+    if (license.customFeatures.includes('*')) return true;
+    if (license.packages.includes('*')) return true;
     const FEATURE_PLAN_MAP = {
       'pos': ['growth', 'enterprise', 'ultimate'],
       'multi-warehouse': ['enterprise', 'ultimate'],

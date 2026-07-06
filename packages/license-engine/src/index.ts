@@ -2,6 +2,8 @@ import { ApiClient } from './api-client';
 import { createCache, type CacheStore } from './cache';
 import type { LicenseInfo, LicenseEngineOptions, LimitResult } from './types';
 
+export const EVERYTHING_FEATURE = '*';
+
 const DEFAULT_OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type { LicenseInfo, LicenseEngineOptions, LimitResult, CacheStore };
@@ -63,6 +65,7 @@ export class LicenseEngine {
   canUseFeature(license: LicenseInfo | null, featureKey: string): boolean {
     if (!license?.valid) return false;
     if (!license.features) return false;
+    if (license.features.includes(EVERYTHING_FEATURE)) return true;
     return license.features.includes(featureKey);
   }
 
