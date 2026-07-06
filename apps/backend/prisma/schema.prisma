@@ -210,13 +210,15 @@ model AccessPreset {
 }
 
 model AuthSettings {
-  id            String   @id @default(uuid())
-  provider_name  String   @unique
-  is_enabled    Boolean  @default(false)
-  client_id     String
-  client_secret String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(uuid())
+  providerName String   @unique
+  isEnabled    Boolean  @default(false)
+  clientId     String
+  clientSecret String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("auth_settings")
 }
 
 model CustomerProfile {
@@ -231,6 +233,8 @@ model CustomerProfile {
   betterAuthUser   betterAuthUser?  @relation(fields: [betterAuthUserId], references: [id], onDelete: SetNull)
   orders           Order[]
   addresses        Address[]
+
+  @@index([email])
 }
 
 model Task {
@@ -301,6 +305,7 @@ model Address {
   customerProfile   CustomerProfile? @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([customerProfileId])
   @@index([userId, isDefault, createdAt])
 }
 
@@ -1446,6 +1451,7 @@ model Employee {
 
   @@index([departmentId])
   @@index([designationId])
+  @@index([accessPresetId])
   @@index([status])
 }
 
