@@ -101,9 +101,8 @@ export class CourierManagerService {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
+            name: true,
+            phone: true,
             email: true,
           },
         },

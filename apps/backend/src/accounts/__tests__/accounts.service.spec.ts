@@ -16,11 +16,13 @@ describe('AccountsService', () => {
     id: 'acc-1',
     code: '1-1000',
     name: 'Cash',
-    type: 'asset',
+    type: 'asset' as const,
     parentId: null,
     description: null,
     isActive: true,
     isGroup: false,
+    createdBy: null,
+    updatedBy: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     children: [],
@@ -30,11 +32,13 @@ describe('AccountsService', () => {
     id: 'acc-parent',
     code: '1-0000',
     name: 'Current Assets',
-    type: 'asset',
+    type: 'asset' as const,
     parentId: null,
     description: null,
     isActive: true,
     isGroup: true,
+    createdBy: null,
+    updatedBy: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     children: [mockAccount],
@@ -107,13 +111,12 @@ describe('AccountsService', () => {
     });
 
     it('should create leaf account under a group parent', async () => {
-      jest
-        .spyOn(prisma.account, 'findUnique')
-        .mockImplementation(async ({ where }: any) => {
-          if (where.id === 'acc-parent')
-            return Promise.resolve(mockParentAccount);
-          return Promise.resolve(null);
-        });
+      jest.spyOn(prisma.account, 'findUnique').mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(
+            where.id === 'acc-parent' ? (mockParentAccount as any) : null,
+          ) as any,
+      );
       jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       const dto: CreateAccountDto = {
         code: '1-1001',

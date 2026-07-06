@@ -178,9 +178,7 @@ export class PayrollService {
             select: {
               id: true,
               employeeId: true,
-              firstName: true,
-              lastName: true,
-              email: true,
+              betterAuthUser: { select: { name: true, email: true } },
             },
           },
         },

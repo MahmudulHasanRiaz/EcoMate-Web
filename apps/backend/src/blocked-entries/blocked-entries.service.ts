@@ -327,7 +327,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
       where: {
         createdAt: { gte: since },
         OR: [
-          { customer: { phoneNumber: normalized } },
+          { customer: { phone: normalized } },
           { guestPhone: normalized },
         ],
       },

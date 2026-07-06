@@ -37,7 +37,7 @@ export class PackingService {
           },
         },
         packingLock: { include: { packer: { select: { id: true, firstName: true, lastName: true } } } },
-        customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
+        customer: { select: { id: true, name: true, phone: true } },
         status: { select: { id: true, name: true, color: true } },
       },
       orderBy: { createdAt: 'asc' },
@@ -47,7 +47,7 @@ export class PackingService {
       id: o.id,
       displayId: o.displayId,
       customer: o.customer
-        ? { id: o.customer.id, name: `${o.customer.firstName} ${o.customer.lastName}`, phone: o.customer.phoneNumber }
+        ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
         : o.guestName
           ? { name: o.guestName, phone: o.guestPhone }
           : null,

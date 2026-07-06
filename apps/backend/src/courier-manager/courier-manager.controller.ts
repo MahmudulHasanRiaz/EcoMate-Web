@@ -219,9 +219,8 @@ export class CourierManagerController {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
+            name: true,
+            phone: true,
           },
         },
         items: { include: { product: { select: { name: true } } } },

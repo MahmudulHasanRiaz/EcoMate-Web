@@ -101,9 +101,7 @@ describe('EmployeesService', () => {
   describe('create', () => {
     it('should create an employee', async () => {
       const dto: CreateEmployeeDto = {
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john@example.com',
+        betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
         departmentId: 'dept-1',
         designationId: 'desig-1',
@@ -117,9 +115,7 @@ describe('EmployeesService', () => {
     it('should throw if department not found', async () => {
       jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
       const dto: CreateEmployeeDto = {
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john@example.com',
+        betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
         departmentId: 'invalid',
       };
@@ -131,9 +127,7 @@ describe('EmployeesService', () => {
         .spyOn(prisma.employee, 'findFirst')
         .mockResolvedValue(mockEmployee as any);
       const dto: CreateEmployeeDto = {
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john@example.com',
+        betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
       };
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
@@ -164,7 +158,7 @@ describe('EmployeesService', () => {
 
   describe('update', () => {
     it('should update an employee', async () => {
-      const result = await service.update('emp-1', { firstName: 'Jane' });
+      const result = await service.update('emp-1', { departmentId: 'dept-2' });
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'emp-1' } }),
@@ -176,7 +170,7 @@ describe('EmployeesService', () => {
         .spyOn(prisma.employee, 'findFirst')
         .mockResolvedValue(mockEmployee as any);
       await expect(
-        service.update('emp-2', { email: 'john@example.com' }),
+        service.update('emp-2', { bankName: 'Test Bank' }),
       ).rejects.toThrow(ConflictException);
     });
 

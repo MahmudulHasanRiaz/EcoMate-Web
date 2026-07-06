@@ -133,9 +133,8 @@ export class DashboardService {
           customer: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
-              phoneNumber: true,
+              name: true,
+              phone: true,
             },
           },
           _count: { select: { items: true } },
@@ -146,10 +145,8 @@ export class DashboardService {
         displayId: o.displayId,
         total: Number(o.total),
         status: o.status.name,
-        customerName: o.customer
-          ? `${o.customer.firstName} ${o.customer.lastName}`
-          : 'Unknown',
-        customerPhone: o.customer?.phoneNumber || '',
+        customerName: o.customer?.name || 'Unknown',
+        customerPhone: o.customer?.phone || '',
         itemCount: o._count.items,
         createdAt: o.createdAt,
       }));
@@ -427,16 +424,14 @@ export class DashboardService {
           displayId: true,
           status: { select: { name: true } },
           updatedAt: true,
-          customer: { select: { firstName: true, lastName: true } },
+          customer: { select: { name: true } },
         },
       });
       return activities.map((a) => ({
         id: a.id,
         displayId: a.displayId,
         status: a.status.name,
-        customerName: a.customer
-          ? `${a.customer.firstName} ${a.customer.lastName}`
-          : 'Unknown',
+        customerName: a.customer?.name || 'Unknown',
         updatedAt: a.updatedAt,
       }));
     } catch (error) {

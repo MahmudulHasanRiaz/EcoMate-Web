@@ -152,10 +152,9 @@ export class OrdersService {
           customer: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
+              name: true,
               email: true,
-              phoneNumber: true,
+              phone: true,
             },
           },
           status: true,
@@ -266,10 +265,9 @@ export class OrdersService {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
+            name: true,
             email: true,
-            phoneNumber: true,
+            phone: true,
           },
         },
         status: true,
@@ -576,10 +574,9 @@ export class OrdersService {
           customer: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
+              name: true,
               email: true,
-              phoneNumber: true,
+              phone: true,
             },
           },
           status: true,
@@ -611,7 +608,7 @@ export class OrdersService {
         }
       }
 
-      const phoneToClose = dto.guestPhone || created.customer?.phoneNumber;
+      const phoneToClose = dto.guestPhone || created.customer?.phone;
       if (phoneToClose) {
         await tx.checkoutLead.updateMany({
           where: { phone: phoneToClose, status: 'PENDING' },
@@ -844,10 +841,9 @@ export class OrdersService {
           customer: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
+              name: true,
               email: true,
-              phoneNumber: true,
+              phone: true,
             },
           },
           status: true,
@@ -895,7 +891,7 @@ export class OrdersService {
       data: { timeline: timeline as any },
       include: {
         status: true,
-        customer: { select: { id: true, firstName: true, lastName: true } },
+        customer: { select: { id: true, name: true } },
       },
     });
   }
@@ -941,7 +937,7 @@ export class OrdersService {
         data: { statusId: dto.statusId, timeline: timeline as any },
         include: {
           status: true,
-          customer: { select: { id: true, firstName: true, lastName: true } },
+          customer: { select: { id: true, name: true } },
           payments: true,
         },
       });
@@ -1196,10 +1192,9 @@ export class OrdersService {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
+            name: true,
             email: true,
-            phoneNumber: true,
+            phone: true,
           },
         },
         status: true,
@@ -1349,9 +1344,8 @@ export class OrdersService {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
+            name: true,
+            phone: true,
           },
         },
         items: {
@@ -1380,16 +1374,15 @@ export class OrdersService {
       where: {
         OR: [
           { guestPhone: normalized },
-          { customer: { phoneNumber: normalized } },
+          { customer: { phone: normalized } },
         ],
       },
       include: {
         customer: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
+            name: true,
+            phone: true,
           },
         },
         items: {

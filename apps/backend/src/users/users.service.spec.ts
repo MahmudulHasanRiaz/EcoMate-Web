@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserRole } from '@prisma/client';
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('$2a$12$hashedpassword'),
@@ -197,7 +198,7 @@ describe('UsersService', () => {
       email: 'jane@example.com',
       phoneNumber: '01798765432',
       password: 'securepassword',
-      role: 'admin',
+      role: UserRole.admin,
     };
 
     it('should create a user successfully', async () => {
@@ -210,7 +211,7 @@ describe('UsersService', () => {
         email: 'jane@example.com',
         phoneNumber: '+8801798765432',
         status: 'active',
-        role: 'admin',
+      role: UserRole.admin,
         createdAt: new Date(),
         updatedAt: new Date(),
       });

@@ -22,10 +22,9 @@ const orderInclude = {
   customer: {
     select: {
       id: true,
-      firstName: true,
-      lastName: true,
+      name: true,
       email: true,
-      phoneNumber: true,
+      phone: true,
     },
   },
   items: {

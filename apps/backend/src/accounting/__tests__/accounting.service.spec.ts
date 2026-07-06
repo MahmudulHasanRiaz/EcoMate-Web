@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AccountingService } from '../accounting.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 describe('AccountingService', () => {
   let service: AccountingService;
@@ -442,21 +443,23 @@ describe('AccountingService', () => {
 
   describe('accountLedger', () => {
     it('should return ledger entries for an account', async () => {
-      jest.spyOn(prisma.journalEntryLine, 'findMany').mockResolvedValue([
-        {
-          id: 'jel-1',
-          entryId: 'je-1',
-          accountId: 'acc-cash',
-          debit: 10000,
-          credit: 0,
-          description: null,
-          entry: {
-            entryNo: 'JE-250701-0001',
-            entryDate: new Date('2026-07-15'),
-            description: 'Test entry',
+      jest
+        .spyOn(prisma.journalEntryLine, 'findMany')
+        .mockResolvedValue([
+          {
+            id: 'jel-1',
+            entryId: 'je-1',
+            accountId: 'acc-cash',
+            debit: new Prisma.Decimal(10000),
+            credit: new Prisma.Decimal(0),
+            description: null,
+            entry: {
+              entryNo: 'JE-250701-0001',
+              entryDate: new Date('2026-07-15'),
+              description: 'Test entry',
+            },
           },
-        },
-      ]);
+        ] as any);
 
       const result = await service.accountLedger('acc-cash', 'fp-open');
       expect(result.entries).toHaveLength(1);
