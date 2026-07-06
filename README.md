@@ -181,6 +181,14 @@ Push to `main` or `develop` (and PRs to `main`) triggers automated build + push 
 # Portainer auto-redeploys via webhook after CI
 ```
 
+**Migrations run automatically** on each container start via `apps/backend/startup.sh`:
+1. `prisma migrate deploy` runs before server starts
+2. Built-in retry loop (5 attempts) handles transient failures
+3. Auto-resolves `P3018` (DB objects exist — marks migration as applied)
+4. Auto-rolls back `P3009` (failed migration) and retries
+
+**Zero-data-loss migrations:** All cumulative migrations use `IF NOT EXISTS` / `IF EXISTS` guards. No `DROP COLUMN` or `DROP TABLE` in production migrations. See `apps/backend/prisma/migrations/20260707100000_production_safe_cumulative/migration.sql`.
+
 ### Per-Client Deployment
 
 ```bash
@@ -202,6 +210,8 @@ Key variables for production (set in Portainer stack):
 | `KEYMATE_API_URL` | KeyMate license server URL |
 | `REDIS_PASSWORD` | Redis password |
 | `CORS_ORIGIN` | Comma-separated allowed origins |
+| `BETTER_AUTH_SECRET` | `openssl rand -base64 32` (better-auth) |
+| `BETTER_AUTH_URL` | Public-facing API URL (e.g., https://api.example.com) |
 | `META_PIXEL_ID`, `TIKTOK_PIXEL_CODE` | Tracking pixels |
 
 Full list: `apps/backend/.env.example` and root `.env.example`.
@@ -210,14 +220,15 @@ Full list: `apps/backend/.env.example` and root `.env.example`.
 
 - **ORM:** Prisma 7
 - **Schema:** `apps/backend/prisma/schema.prisma` (~1710 lines, 84 models)
-- **Migrations:** 30 migrations
+- **Migrations:** 35 migrations
 - **Hard rule:** Every `schema.prisma` change REQUIRES a migration file. `db push --accept-data-loss` is FORBIDDEN.
+- **Hard rule:** Production migrations must be fully idempotent — every statement guarded by `IF NOT EXISTS` / `IF EXISTS`. No `DROP COLUMN`, no `DROP TABLE`.
 
 ```bash
 # Create migration
 cd apps/backend && npx prisma migrate dev --name <description>
 
-# Apply in production
+# Apply in production (auto-run in Docker container on start)
 npx prisma migrate deploy
 
 # Generate client
@@ -258,7 +269,7 @@ Backend Docker build applies `javascript-obfuscator` (control flow flattening, s
 - **Shared types** in `packages/shared-types/`
 - **Strict app boundaries** — no direct imports between apps
 - **API-first** — core commerce should not depend on realtime
-- **Migration safety** — every schema change gets a migration file
+- **Migration safety** — every schema change gets a migration file; production migrations must be idempotent (all `IF NOT EXISTS`), zero destructive ops
 - **Tests required** for critical flows (checkout, payment, inventory, orders, auth, RBAC, refunds)
 - **JS obfuscation** applied to backend production builds only
 
