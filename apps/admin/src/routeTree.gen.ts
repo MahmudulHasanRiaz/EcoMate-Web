@@ -80,11 +80,15 @@ import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedOpInventoryWarehousesRouteImport } from './routes/_authenticated/op/inventory/warehouses'
 import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/_authenticated/op/inventory/valuation'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
+import { Route as AuthenticatedOpEmployeesPresetsRouteImport } from './routes/_authenticated/op/employees/presets'
+import { Route as AuthenticatedOpEmployeesDesignationsRouteImport } from './routes/_authenticated/op/employees/designations'
+import { Route as AuthenticatedOpEmployeesCreateRouteImport } from './routes/_authenticated/op/employees/create'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
+import { Route as AuthenticatedOpSettingsAuthIndexRouteImport } from './routes/_authenticated/op/settings/auth/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
 import { Route as AuthenticatedOpDispatchDuplicateReviewIndexRouteImport } from './routes/_authenticated/op/dispatch/duplicate-review/index'
@@ -515,6 +519,24 @@ const AuthenticatedOpInventoryOverviewRoute =
     path: '/op/inventory/overview',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpEmployeesPresetsRoute =
+  AuthenticatedOpEmployeesPresetsRouteImport.update({
+    id: '/op/employees/presets',
+    path: '/op/employees/presets',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpEmployeesDesignationsRoute =
+  AuthenticatedOpEmployeesDesignationsRouteImport.update({
+    id: '/op/employees/designations',
+    path: '/op/employees/designations',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpEmployeesCreateRoute =
+  AuthenticatedOpEmployeesCreateRouteImport.update({
+    id: '/op/employees/create',
+    path: '/op/employees/create',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpCustomersIdRoute =
   AuthenticatedOpCustomersIdRouteImport.update({
     id: '/op/customers/$id',
@@ -542,6 +564,12 @@ const AuthenticatedOpSettingsPersonalIndexRoute =
   AuthenticatedOpSettingsPersonalIndexRouteImport.update({
     id: '/personal/',
     path: '/personal/',
+    getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
+  } as any)
+const AuthenticatedOpSettingsAuthIndexRoute =
+  AuthenticatedOpSettingsAuthIndexRouteImport.update({
+    id: '/auth/',
+    path: '/auth/',
     getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
   } as any)
 const AuthenticatedOpPrintBulkIndexRoute =
@@ -697,6 +725,9 @@ export interface FileRoutesByFullPath {
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
+  '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
+  '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
@@ -766,6 +797,7 @@ export interface FileRoutesByFullPath {
   '/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/op/settings/auth/': typeof AuthenticatedOpSettingsAuthIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -795,6 +827,9 @@ export interface FileRoutesByTo {
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
+  '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
+  '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
@@ -864,6 +899,7 @@ export interface FileRoutesByTo {
   '/op/dispatch/duplicate-review': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/op/settings/auth': typeof AuthenticatedOpSettingsAuthIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -895,6 +931,9 @@ export interface FileRoutesById {
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
+  '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/_authenticated/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
+  '/_authenticated/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
   '/_authenticated/op/inventory/warehouses': typeof AuthenticatedOpInventoryWarehousesRoute
@@ -964,6 +1003,7 @@ export interface FileRoutesById {
   '/_authenticated/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/_authenticated/op/settings/auth/': typeof AuthenticatedOpSettingsAuthIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/_authenticated/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -995,6 +1035,9 @@ export interface FileRouteTypes {
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/customers/$id'
+    | '/op/employees/create'
+    | '/op/employees/designations'
+    | '/op/employees/presets'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
     | '/op/inventory/warehouses'
@@ -1064,6 +1107,7 @@ export interface FileRouteTypes {
     | '/op/dispatch/duplicate-review/'
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
+    | '/op/settings/auth/'
     | '/op/settings/personal/'
     | '/op/orders/incomplete-leads/$id/convert'
   fileRoutesByTo: FileRoutesByTo
@@ -1093,6 +1137,9 @@ export interface FileRouteTypes {
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/customers/$id'
+    | '/op/employees/create'
+    | '/op/employees/designations'
+    | '/op/employees/presets'
     | '/op/inventory/overview'
     | '/op/inventory/valuation'
     | '/op/inventory/warehouses'
@@ -1162,6 +1209,7 @@ export interface FileRouteTypes {
     | '/op/dispatch/duplicate-review'
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
+    | '/op/settings/auth'
     | '/op/settings/personal'
     | '/op/orders/incomplete-leads/$id/convert'
   id:
@@ -1192,6 +1240,9 @@ export interface FileRouteTypes {
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
     | '/_authenticated/op/customers/$id'
+    | '/_authenticated/op/employees/create'
+    | '/_authenticated/op/employees/designations'
+    | '/_authenticated/op/employees/presets'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/inventory/valuation'
     | '/_authenticated/op/inventory/warehouses'
@@ -1261,6 +1312,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/dispatch/duplicate-review/'
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
+    | '/_authenticated/op/settings/auth/'
     | '/_authenticated/op/settings/personal/'
     | '/_authenticated/op/orders/incomplete-leads/$id/convert'
   fileRoutesById: FileRoutesById
@@ -1779,6 +1831,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/employees/presets': {
+      id: '/_authenticated/op/employees/presets'
+      path: '/op/employees/presets'
+      fullPath: '/op/employees/presets'
+      preLoaderRoute: typeof AuthenticatedOpEmployeesPresetsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/employees/designations': {
+      id: '/_authenticated/op/employees/designations'
+      path: '/op/employees/designations'
+      fullPath: '/op/employees/designations'
+      preLoaderRoute: typeof AuthenticatedOpEmployeesDesignationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/employees/create': {
+      id: '/_authenticated/op/employees/create'
+      path: '/op/employees/create'
+      fullPath: '/op/employees/create'
+      preLoaderRoute: typeof AuthenticatedOpEmployeesCreateRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/customers/$id': {
       id: '/_authenticated/op/customers/$id'
       path: '/op/customers/$id'
@@ -1812,6 +1885,13 @@ declare module '@tanstack/react-router' {
       path: '/personal'
       fullPath: '/op/settings/personal/'
       preLoaderRoute: typeof AuthenticatedOpSettingsPersonalIndexRouteImport
+      parentRoute: typeof AuthenticatedOpSettingsRouteRoute
+    }
+    '/_authenticated/op/settings/auth/': {
+      id: '/_authenticated/op/settings/auth/'
+      path: '/auth'
+      fullPath: '/op/settings/auth/'
+      preLoaderRoute: typeof AuthenticatedOpSettingsAuthIndexRouteImport
       parentRoute: typeof AuthenticatedOpSettingsRouteRoute
     }
     '/_authenticated/op/print/bulk/': {
@@ -2037,11 +2117,14 @@ const AuthenticatedOpPrintRouteRouteWithChildren =
   )
 
 interface AuthenticatedOpSettingsRouteRouteChildren {
+  AuthenticatedOpSettingsAuthIndexRoute: typeof AuthenticatedOpSettingsAuthIndexRoute
   AuthenticatedOpSettingsPersonalIndexRoute: typeof AuthenticatedOpSettingsPersonalIndexRoute
 }
 
 const AuthenticatedOpSettingsRouteRouteChildren: AuthenticatedOpSettingsRouteRouteChildren =
   {
+    AuthenticatedOpSettingsAuthIndexRoute:
+      AuthenticatedOpSettingsAuthIndexRoute,
     AuthenticatedOpSettingsPersonalIndexRoute:
       AuthenticatedOpSettingsPersonalIndexRoute,
   }
@@ -2066,6 +2149,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
+  AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
+  AuthenticatedOpEmployeesDesignationsRoute: typeof AuthenticatedOpEmployeesDesignationsRoute
+  AuthenticatedOpEmployeesPresetsRoute: typeof AuthenticatedOpEmployeesPresetsRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpInventoryValuationRoute: typeof AuthenticatedOpInventoryValuationRoute
   AuthenticatedOpInventoryWarehousesRoute: typeof AuthenticatedOpInventoryWarehousesRoute
@@ -2139,6 +2225,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpAccountingJournalEntriesRoute,
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
+  AuthenticatedOpEmployeesCreateRoute: AuthenticatedOpEmployeesCreateRoute,
+  AuthenticatedOpEmployeesDesignationsRoute:
+    AuthenticatedOpEmployeesDesignationsRoute,
+  AuthenticatedOpEmployeesPresetsRoute: AuthenticatedOpEmployeesPresetsRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpInventoryValuationRoute:
     AuthenticatedOpInventoryValuationRoute,
