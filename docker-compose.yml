@@ -66,6 +66,8 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       PORT: 4000
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       APP_URL: ${APP_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
