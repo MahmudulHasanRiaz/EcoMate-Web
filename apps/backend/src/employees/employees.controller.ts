@@ -40,6 +40,11 @@ export class EmployeesController {
     );
   }
 
+  @Get('search/ba-users')
+  searchBaUsers(@Query('q') q: string) {
+    return this.employeesService.searchBaUsers(q || '');
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.employeesService.findOne(id);

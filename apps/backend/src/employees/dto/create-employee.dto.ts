@@ -1,31 +1,12 @@
 import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsEmail,
-  IsEnum,
-  IsDateString,
-  IsNumber,
-  Min,
+  IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString, IsNumber, Min,
 } from 'class-validator';
 import { EmploymentType } from '@prisma/client';
 
 export class CreateEmployeeDto {
   @IsString()
   @IsNotEmpty()
-  firstName: string;
-
-  @IsString()
-  @IsNotEmpty()
-  lastName: string;
-
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
+  betterAuthUserId: string;
 
   @IsOptional()
   @IsString()
@@ -34,6 +15,10 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsString()
   designationId?: string;
+
+  @IsOptional()
+  @IsString()
+  accessPresetId?: string;
 
   @IsOptional()
   @IsEnum(EmploymentType)
@@ -58,15 +43,7 @@ export class CreateEmployeeDto {
 
   @IsOptional()
   @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsString()
-  city?: string;
-
-  @IsOptional()
-  @IsString()
-  emergencyContact?: string;
+  profilePictureUrl?: string;
 
   @IsOptional()
   @IsString()
