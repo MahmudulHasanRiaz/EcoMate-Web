@@ -52,19 +52,36 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   })
 
   const categoryOptions = React.useMemo(() => {
-    const flatten = (items: any[], depth: number): MultiSearchableOption[] => {
-      const result: MultiSearchableOption[] = []
-      for (const c of items) {
-        result.push({ id: c.id, label: c.name, depth })
-        if (c.children?.length) result.push(...flatten(c.children, depth + 1))
+    const flat = Array.isArray(cats) ? cats : []
+    const map = new Map<string, any>()
+    for (const c of flat) map.set(c.id, { id: c.id, name: c.name })
+    const children = new Map<string, any[]>()
+    const roots: any[] = []
+    for (const c of flat) {
+      if (c.parentId && map.has(c.parentId)) {
+        const list = children.get(c.parentId) || []
+        list.push(c.id)
+        children.set(c.parentId, list)
+      } else {
+        roots.push(c.id)
       }
-      return result
     }
-    return flatten(cats || [], 0)
+    const result: MultiSearchableOption[] = []
+    const walk = (ids: string[], depth: number) => {
+      for (const id of ids) {
+        const c = map.get(id)
+        if (!c) continue
+        result.push({ id: c.id, label: c.name, depth })
+        const childIds = children.get(id)
+        if (childIds) walk(childIds, depth + 1)
+      }
+    }
+    walk(roots, 0)
+    return result
   }, [cats])
 
   const brandOptions = useMemo(() => {
-    return (brands || []).map((b: any) => ({ label: b.name, value: b.id }))
+    return (brands || []).map((b: any) => ({ id: b.id, label: b.name }))
   }, [brands])
 
   const [name, setName] = useState('')

@@ -19,18 +19,22 @@ export class CategoriesService {
   async findMenuCategories() {
     const cached = await this.cache.get<any[]>('categories:menu');
     if (cached) return cached;
-    const data = await this.prisma.category.findMany({
+    const all = await this.prisma.category.findMany({
       where: { showInMenu: true, isActive: true },
-      include: {
-        children: {
-          where: { showInMenu: true, isActive: true },
-          orderBy: { menuSortOrder: 'asc' },
-        },
-      },
       orderBy: { menuSortOrder: 'asc' },
     });
-    await this.cache.set('categories:menu', data);
-    return data;
+    const map = new Map<string, any>();
+    for (const c of all) map.set(c.id, { ...c, children: [] });
+    const roots: any[] = [];
+    for (const c of map.values()) {
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.children.push(c);
+      } else {
+        roots.push(c);
+      }
+    }
+    await this.cache.set('categories:menu', roots);
+    return roots;
   }
 
   async findTree() {
@@ -38,12 +42,18 @@ export class CategoriesService {
     if (cached) return cached;
     const all = await this.prisma.category.findMany({
       where: { isActive: true },
-      include: {
-        children: { where: { isActive: true }, include: { children: { where: { isActive: true } } } },
-      },
       orderBy: { sortOrder: 'asc' },
     });
-    const roots = all.filter((c) => !c.parentId);
+    const map = new Map<string, any>();
+    for (const c of all) map.set(c.id, { ...c, children: [] });
+    const roots: any[] = [];
+    for (const c of map.values()) {
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.children.push(c);
+      } else {
+        roots.push(c);
+      }
+    }
     await this.cache.set('categories:tree', roots);
     return roots;
   }

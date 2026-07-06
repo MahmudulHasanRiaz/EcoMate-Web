@@ -22,14 +22,13 @@ export class DualModeAuthGuard {
 
     const request = context.switchToHttp().getRequest();
 
-    // 1. Try Better Auth session (profile attached via customSession plugin, cached by cookieCache)
+    // 1. Try Better Auth session (role/permissions attached directly to user by customSession plugin)
     const headers = fromNodeHeaders(request.headers);
     const session = await auth.api.getSession({ headers }).catch(() => null);
 
-    const sessionUser = session?.user as { profile?: unknown } | undefined;
-    if (sessionUser?.profile) {
-      const profile = sessionUser.profile as { id?: string };
-      request.user = { ...profile, userId: profile.id, betterAuthSession: session };
+    const sessionUser = session?.user;
+    if (sessionUser) {
+      request.user = { ...sessionUser, userId: sessionUser.id, betterAuthSession: session };
       return true;
     }
 
