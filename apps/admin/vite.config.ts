@@ -12,6 +12,11 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     proxy: {
+      '/pos': {
+        target: 'http://localhost:5174',
+        changeOrigin: true,
+        ws: true,
+      },
       '/uploads': 'http://localhost:4000',
       '/assets': 'http://localhost:4000',
       '/api': {

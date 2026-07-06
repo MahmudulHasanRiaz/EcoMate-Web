@@ -72,7 +72,8 @@ function NavBadge({ children }: { children: ReactNode }) {
 
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
   const { setOpenMobile } = useSidebar()
-  const isActive = checkIsActive(href, item)
+  const isExternal = !item.url.startsWith('/op/') && !item.url.startsWith('/mon/')
+  const isActive = isExternal ? false : checkIsActive(href, item)
 
   return (
     <SidebarMenuItem>
@@ -86,11 +87,19 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
             : 'text-muted-foreground/90 border-transparent hover:text-foreground hover:bg-muted/40'
         }`}
       >
-        <Link to={item.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
-          {item.icon && <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/85'}`} />}
-          <span className="truncate flex-1">{item.title}</span>
-          {item.badge && <NavBadge>{item.badge}</NavBadge>}
-        </Link>
+        {isExternal ? (
+          <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+            {item.icon && <item.icon className="h-4 w-4 shrink-0 text-muted-foreground/85" />}
+            <span className="truncate flex-1">{item.title}</span>
+            {item.badge && <NavBadge>{item.badge}</NavBadge>}
+          </a>
+        ) : (
+          <Link to={item.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+            {item.icon && <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/85'}`} />}
+            <span className="truncate flex-1">{item.title}</span>
+            {item.badge && <NavBadge>{item.badge}</NavBadge>}
+          </Link>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
