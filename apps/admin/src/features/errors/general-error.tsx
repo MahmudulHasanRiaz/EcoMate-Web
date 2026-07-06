@@ -20,7 +20,7 @@ export function GeneralError({
     console.error('[GeneralError]', error)
   }
 
-  const errorMessage = import.meta.env.DEV && error
+  const errorMessage = error
     ? error instanceof Error ? error.message : String(error)
     : null
 
