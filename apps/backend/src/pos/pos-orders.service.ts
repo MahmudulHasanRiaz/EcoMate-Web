@@ -86,21 +86,21 @@ export class PosOrdersService {
   }
 
   async findCustomerByPhone(phone: string) {
-    return this.prisma.user.findFirst({
+    return this.prisma.userProfile.findFirst({
       where: { phoneNumber: phone, role: 'customer' },
       select: { id: true, firstName: true, lastName: true, phoneNumber: true },
     });
   }
 
   async quickCreateCustomer(phone: string, name?: string) {
-    const existing = await this.prisma.user.findFirst({
+    const existing = await this.prisma.userProfile.findFirst({
       where: { phoneNumber: phone, role: 'customer' },
     });
     if (existing) return existing;
 
     const domain = this.getEmailDomain();
 
-    return this.prisma.user.create({
+    return this.prisma.userProfile.create({
       data: {
         firstName: name || phone,
         lastName: '',

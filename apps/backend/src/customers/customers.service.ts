@@ -49,7 +49,7 @@ export class CustomersService {
     }
 
     const [data, total] = await Promise.all([
-      this.prisma.user.findMany({
+      this.prisma.userProfile.findMany({
         where,
         skip: (page - 1) * perPage,
         take: perPage,
@@ -63,7 +63,7 @@ export class CustomersService {
           createdAt: true,
         },
       }),
-      this.prisma.user.count({ where }),
+      this.prisma.userProfile.count({ where }),
     ]);
 
     return {
@@ -73,7 +73,7 @@ export class CustomersService {
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id },
       select: {
         id: true,
@@ -128,7 +128,7 @@ export class CustomersService {
   async isPhoneBlocked(phone: string): Promise<boolean> {
     const normalized = normalizePhone(phone);
     if (!normalized) return false;
-    const user = await this.prisma.user.findFirst({
+    const user = await this.prisma.userProfile.findFirst({
       where: { phoneNumber: normalized, role: 'customer', status: 'suspended' },
       select: { id: true },
     });
@@ -136,28 +136,28 @@ export class CustomersService {
   }
 
   async blockPhone(id: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id },
       select: { id: true, role: true },
     });
     if (!user || user.role !== 'customer')
       throw new NotFoundException('Customer not found');
 
-    await this.prisma.user.update({
+    await this.prisma.userProfile.update({
       where: { id },
       data: { status: 'suspended' },
     });
   }
 
   async unblockPhone(id: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id },
       select: { id: true, role: true },
     });
     if (!user || user.role !== 'customer')
       throw new NotFoundException('Customer not found');
 
-    await this.prisma.user.update({
+    await this.prisma.userProfile.update({
       where: { id },
       data: { status: 'active' },
     });
@@ -182,7 +182,7 @@ export class CustomersService {
     const firstName = nameParts[0] || 'Unknown';
     const lastName = nameParts.slice(1).join(' ') || '';
 
-    const existing = await this.prisma.user.findFirst({
+    const existing = await this.prisma.userProfile.findFirst({
       where: { phoneNumber: normalized, role: 'customer' },
     });
 
@@ -196,7 +196,7 @@ export class CustomersService {
         updateData.lastIp = clientIp;
       }
       if (Object.keys(updateData).length > 0) {
-        await this.prisma.user.update({
+        await this.prisma.userProfile.update({
           where: { id: existing.id },
           data: updateData,
         });
@@ -211,7 +211,7 @@ export class CustomersService {
     const hashedPassword =
       '$2a$12$5K1R68iJb0Z2kYf.p0jOeuZ/XmS9M0d.6oZc1p9e6p9z1a2b3c4d5';
 
-    const user = await this.prisma.user.create({
+    const user = await this.prisma.userProfile.create({
       data: {
         firstName,
         lastName,
@@ -235,7 +235,7 @@ export class CustomersService {
     const normalized = normalizePhone(phoneNumber);
     if (!normalized) return null;
 
-    const user = await this.prisma.user.findFirst({
+    const user = await this.prisma.userProfile.findFirst({
       where: { phoneNumber: normalized, role: 'customer' },
       select: { id: true, firstName: true, lastName: true, phoneNumber: true },
     });

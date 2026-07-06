@@ -69,7 +69,7 @@ export class UsersService {
     orderBy[sortField] = sortOrder;
 
     const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
+      this.prisma.userProfile.findMany({
         where,
         skip,
         take: perPage,
@@ -87,7 +87,7 @@ export class UsersService {
           updatedAt: true,
         },
       }),
-      this.prisma.user.count({ where }),
+      this.prisma.userProfile.count({ where }),
     ]);
 
     return {
@@ -102,7 +102,7 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { email },
       select: {
         id: true,
@@ -126,7 +126,7 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id },
       select: {
         id: true,
@@ -150,7 +150,7 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
-    const existingUser = await this.prisma.user.findFirst({
+    const existingUser = await this.prisma.userProfile.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
       },
@@ -168,7 +168,7 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
+      const user = await tx.userProfile.create({
         data: {
           firstName: dto.firstName,
           lastName: dto.lastName,
@@ -201,7 +201,7 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
-    const existingUser = await this.prisma.user.findUnique({
+    const existingUser = await this.prisma.userProfile.findUnique({
       where: { id },
     });
 
@@ -210,7 +210,7 @@ export class UsersService {
     }
 
     if (dto.email && dto.email !== existingUser.email) {
-      const emailTaken = await this.prisma.user.findUnique({
+      const emailTaken = await this.prisma.userProfile.findUnique({
         where: { email: dto.email },
       });
       if (emailTaken) {
@@ -219,7 +219,7 @@ export class UsersService {
     }
 
     if (dto.username && dto.username !== existingUser.username) {
-      const usernameTaken = await this.prisma.user.findUnique({
+      const usernameTaken = await this.prisma.userProfile.findUnique({
         where: { username: dto.username },
       });
       if (usernameTaken) {
@@ -244,7 +244,7 @@ export class UsersService {
       data.password = await bcrypt.hash(dto.password, 12);
     }
 
-    return this.prisma.user.update({
+    return this.prisma.userProfile.update({
       where: { id },
       data,
       select: {
@@ -263,24 +263,24 @@ export class UsersService {
   }
 
   async remove(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
+    const user = await this.prisma.userProfile.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    await this.prisma.user.delete({ where: { id } });
+    await this.prisma.userProfile.delete({ where: { id } });
     return { message: 'User deleted successfully' };
   }
 
   async bulkDelete(ids: string[]) {
-    const result = await this.prisma.user.deleteMany({
+    const result = await this.prisma.userProfile.deleteMany({
       where: { id: { in: ids } },
     });
     return { message: `${result.count} users deleted successfully` };
   }
 
   async bulkUpdateStatus(ids: string[], status: string) {
-    const result = await this.prisma.user.updateMany({
+    const result = await this.prisma.userProfile.updateMany({
       where: { id: { in: ids } },
       data: { status: status as UserStatus },
     });

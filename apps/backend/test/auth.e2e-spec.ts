@@ -39,7 +39,7 @@ describe('Auth (e2e)', () => {
       await prisma.userSettings.deleteMany({
         where: { user: { email: testUser.email } },
       });
-      await prisma.user.deleteMany({ where: { email: testUser.email } });
+      await prisma.userProfile.deleteMany({ where: { email: testUser.email } });
     } catch {
       /* ignore cleanup errors */
     }
@@ -62,7 +62,7 @@ describe('Auth (e2e)', () => {
   it('POST /auth/login → 200 with accessToken', async () => {
     await request(app.getHttpServer()).post('/auth/register').send(testUser);
 
-    await prisma.user.updateMany({
+    await prisma.userProfile.updateMany({
       where: { email: testUser.email },
       data: { status: 'active' },
     });

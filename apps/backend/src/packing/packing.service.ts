@@ -114,7 +114,7 @@ export class PackingService {
     const packedStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } });
     if (!packedStatus) throw new NotFoundException('Packed status not found');
 
-    const packer = await this.prisma.user.findUnique({
+    const packer = await this.prisma.userProfile.findUnique({
       where: { id: packerId },
       select: { firstName: true, lastName: true }
     });
@@ -157,7 +157,7 @@ export class PackingService {
     const holdStatus = await this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } });
     if (!holdStatus) throw new NotFoundException('Packing Hold status not found');
 
-    const packer = await this.prisma.user.findUnique({
+    const packer = await this.prisma.userProfile.findUnique({
       where: { id: packerId },
       select: { firstName: true, lastName: true }
     });

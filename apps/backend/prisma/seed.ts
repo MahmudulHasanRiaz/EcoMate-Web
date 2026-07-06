@@ -34,7 +34,7 @@ async function main() {
   const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
   const plainPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
   const adminPassword = await bcrypt.hash(plainPassword, 12);
-  const admin = await prisma.user.upsert({
+  const admin = await prisma.userProfile.upsert({
     where: { email },
     update: {
       password: adminPassword,
@@ -56,7 +56,7 @@ async function main() {
   if (seedDummyData) {
     // ── Customer User ──
   const customerPassword = await bcrypt.hash('Customer@123', 12);
-  customer = await prisma.user.upsert({
+  customer = await prisma.userProfile.upsert({
     where: { email: 'customer@example.com' },
     update: {},
     create: {

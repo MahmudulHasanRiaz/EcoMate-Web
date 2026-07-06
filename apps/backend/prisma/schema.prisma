@@ -87,7 +87,7 @@ enum SalesChannel {
   OTHER
 }
 
-model User {
+model UserProfile {
   id                  String     @id @default(uuid())
   firstName           String
   lastName            String
@@ -99,6 +99,7 @@ model User {
   failedLoginAttempts Int        @default(0)
   lockoutUntil        DateTime?
   lastIp              String?
+  betterAuthUserId    String?    @unique
   status              UserStatus @default(active)
   role                UserRole   @default(admin)
   createdAt           DateTime   @default(now())
@@ -120,9 +121,64 @@ model User {
   packingLocks  PackingLock[]
   heldCarts     HeldCart[]
 
+  @@map("User")
   @@index([role])
   @@index([status])
   @@index([phoneNumber])
+}
+
+model betterAuthUser {
+  @@map("better_auth_users")
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      betterAuthAccount[]
+  sessions      betterAuthSession[]
+}
+
+model betterAuthSession {
+  @@map("session")
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      betterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model betterAuthAccount {
+  @@map("account")
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  betterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model betterAuthVerification {
+  @@map("verification")
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model VerificationToken {
@@ -152,7 +208,7 @@ model Task {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  createdBy User @relation(fields: [createdById], references: [id])
+  createdBy UserProfile @relation(fields: [createdById], references: [id])
 
   @@index([createdById])
   @@index([assignee])
@@ -183,7 +239,7 @@ model UserSettings {
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Address {
@@ -201,7 +257,7 @@ model Address {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([userId, isDefault, createdAt])
@@ -214,7 +270,7 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -425,7 +481,7 @@ model PosSession {
   showroomId      String
   showroom        Warehouse        @relation(fields: [showroomId], references: [id])
   cashierId       String
-  cashier         User             @relation(fields: [cashierId], references: [id])
+  cashier         UserProfile             @relation(fields: [cashierId], references: [id])
   openingBalance  Decimal          @db.Decimal(10, 2)
   closingBalance  Decimal?         @db.Decimal(10, 2)
   expectedBalance Decimal?         @db.Decimal(10, 2)
@@ -457,7 +513,7 @@ model HeldCart {
   updatedAt    DateTime @updatedAt
 
   session   PosSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  cashier   User       @relation(fields: [cashierId], references: [id])
+  cashier   UserProfile       @relation(fields: [cashierId], references: [id])
 
   @@index([sessionId])
   @@index([cashierId])
@@ -468,7 +524,7 @@ model PackingLock {
   orderId   String   @unique
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   packerId  String
-  packer    User     @relation(fields: [packerId], references: [id])
+  packer    UserProfile     @relation(fields: [packerId], references: [id])
   startedAt DateTime @default(now())
   expiresAt DateTime?
 
@@ -526,8 +582,8 @@ model Order {
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean            @default(false)
 
-  customer     User?                @relation(fields: [customerId], references: [id])
-  assignee     User?                @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  customer     UserProfile?                @relation(fields: [customerId], references: [id])
+  assignee     UserProfile?                @relation("OrderAssignee", fields: [assignedToId], references: [id])
   status       OrderStatus          @relation(fields: [statusId], references: [id])
   items        OrderItem[]
   payments     Payment[]
@@ -590,7 +646,7 @@ model Payment {
   createdAt     DateTime      @default(now())
 
   order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  verifier User? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
+  verifier UserProfile? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
 
   @@index([orderId])
   @@index([gatewayCode])
@@ -621,9 +677,9 @@ model CheckoutLead {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  assignedTo  User? @relation("CheckoutLeadAssignedTo", fields: [assignedToId], references: [id])
-  assignedBy  User? @relation("CheckoutLeadAssignedBy", fields: [assignedById], references: [id])
-  convertedBy User? @relation("CheckoutLeadConvertedBy", fields: [convertedById], references: [id])
+  assignedTo  UserProfile? @relation("CheckoutLeadAssignedTo", fields: [assignedToId], references: [id])
+  assignedBy  UserProfile? @relation("CheckoutLeadAssignedBy", fields: [assignedById], references: [id])
+  convertedBy UserProfile? @relation("CheckoutLeadConvertedBy", fields: [convertedById], references: [id])
 
   @@index([phone])
   @@index([status])
@@ -928,7 +984,7 @@ model Refund {
   updatedAt   DateTime  @updatedAt
 
   order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  processor User? @relation("RefundProcessor", fields: [processedBy], references: [id])
+  processor UserProfile? @relation("RefundProcessor", fields: [processedBy], references: [id])
 
   @@index([orderId])
 }
@@ -1242,7 +1298,7 @@ model Referral {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  referrer User       @relation(fields: [referrerId], references: [id])
+  referrer UserProfile       @relation(fields: [referrerId], references: [id])
   leads    ReferralLead[]
   rewards  ReferralReward[]
 

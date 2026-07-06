@@ -848,7 +848,7 @@ export class PrismaService
         'SystemSetting',
         'Tag',
         'Task',
-        'User',
+        'UserProfile',
         'UserSettings',
         'VerificationToken',
         'Warehouse',
@@ -884,7 +884,7 @@ export class PrismaService
       const plainPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || 'Admin@123';
       const adminPassword = await bcrypt.hash(plainPassword, 12);
 
-      await this.user.upsert({
+      await this.userProfile.upsert({
         where: { email },
         update: {
           password: adminPassword,

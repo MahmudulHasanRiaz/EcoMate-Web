@@ -282,7 +282,7 @@ export class CheckoutLeadsService {
 
     const displayId = await this.generateOrderDisplayId();
 
-    const userData = await this.prisma.user.findUnique({
+    const userData = await this.prisma.userProfile.findUnique({
       where: { id: userId },
       select: { firstName: true, lastName: true },
     });

@@ -98,7 +98,7 @@ describe('Payments (e2e)', () => {
       await prisma.refreshToken.deleteMany({
         where: { user: { email: { startsWith: 'e2e-pay-' } } },
       });
-      await prisma.user.deleteMany({
+      await prisma.userProfile.deleteMany({
         where: { email: { startsWith: 'e2e-pay-' } },
       });
     } catch {

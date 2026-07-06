@@ -51,7 +51,7 @@ export class DashboardService {
           _sum: { amount: true },
           where: { ...dateFilter },
         }),
-        this.prisma.user.count({ where: { role: 'customer' } }),
+        this.prisma.userProfile.count({ where: { role: 'customer' } }),
         this.prisma.product.count({ where: { isActive: true } }),
         this.prisma.order.findMany({
           where: { ...dateFilter },
@@ -312,7 +312,7 @@ export class DashboardService {
 
   async getNewCustomers(startDate?: string, endDate?: string) {
     try {
-      return this.prisma.user.findMany({
+      return this.prisma.userProfile.findMany({
         where: { ...this.dateFilter(startDate, endDate), role: 'customer' },
         orderBy: { createdAt: 'desc' },
         take: 10,

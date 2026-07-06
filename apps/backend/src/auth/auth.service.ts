@@ -6,9 +6,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomInt, createHash } from 'crypto';
+import { randomInt, randomUUID, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { baPrisma } from '../better-auth/prisma';
+import { hashPassword } from 'better-auth/crypto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -29,7 +31,7 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const existingUser = await this.prisma.user.findFirst({
+    const existingUser = await this.prisma.userProfile.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
       },
@@ -45,7 +47,7 @@ export class AuthService {
     if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
+    const user = await this.prisma.userProfile.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -59,6 +61,34 @@ export class AuthService {
     await this.prisma.userSettings.create({
       data: { userId: user.id },
     });
+
+    // Create BA user+account for the new user
+    try {
+      const baHashedPassword = await hashPassword(dto.password);
+      const baUser = await baPrisma.betterAuthUser.create({
+        data: {
+          id: randomUUID(),
+          name: `${dto.firstName} ${dto.lastName}`,
+          email: dto.email,
+          emailVerified: false,
+        },
+      });
+      await baPrisma.betterAuthAccount.create({
+        data: {
+          id: randomUUID(),
+          userId: baUser.id,
+          accountId: dto.email,
+          providerId: 'email',
+          password: baHashedPassword,
+        },
+      });
+      await this.prisma.userProfile.update({
+        where: { id: user.id },
+        data: { betterAuthUserId: baUser.id },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to create BA user for ${dto.email}`, err);
+    }
 
     this.sendVerificationEmail(user.id).catch((err) =>
       this.logger.error(
@@ -74,7 +104,7 @@ export class AuthService {
     console.log(
       `[LOGIN ATTEMPT] Email: "${dto.email}", Password length: ${dto.password?.length}`,
     );
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { email: dto.email },
     });
 
@@ -101,7 +131,7 @@ export class AuthService {
     if (!isPasswordValid) {
       // Increment failed attempts in one atomic operation
       // If this is the 5th attempt (attempts was 4), also lock the account
-      const result = await this.prisma.user.updateMany({
+      const result = await this.prisma.userProfile.updateMany({
         where: {
           id: user.id,
           failedLoginAttempts: { lt: 4 },
@@ -132,11 +162,42 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    // BA password migration: silently create BA user+account for legacy users
+    if (!user.betterAuthUserId) {
+      try {
+        const baHashedPassword = await hashPassword(dto.password);
+        const baUser = await baPrisma.betterAuthUser.create({
+          data: {
+            id: randomUUID(),
+            name: `${user.firstName} ${user.lastName}`,
+            email: user.email,
+            emailVerified: user.emailVerified,
+          },
+        });
+        await baPrisma.betterAuthAccount.create({
+          data: {
+            id: randomUUID(),
+            userId: baUser.id,
+            accountId: user.email,
+            providerId: 'email',
+            password: baHashedPassword,
+          },
+        });
+        await this.prisma.userProfile.update({
+          where: { id: user.id },
+          data: { betterAuthUserId: baUser.id },
+        });
+        this.logger.log(`BA user created for legacy user ${user.email}`);
+      } catch (err) {
+        this.logger.warn(`Failed to migrate user ${user.email} to BA`, err);
+      }
+    }
+
     const tokens = await this.generateTokens(user);
 
     // Reset failed login attempts on successful login
     if (user.failedLoginAttempts > 0 || user.lockoutUntil) {
-      await this.prisma.user.update({
+      await this.prisma.userProfile.update({
         where: { id: user.id },
         data: {
           failedLoginAttempts: 0,
@@ -170,7 +231,7 @@ export class AuthService {
 
     await this.prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
 
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
     });
 
@@ -189,7 +250,7 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -217,7 +278,7 @@ export class AuthService {
     if (dto.firstName !== undefined) data.firstName = dto.firstName;
     if (dto.lastName !== undefined) data.lastName = dto.lastName;
     if (dto.email !== undefined) {
-      const existing = await this.prisma.user.findUnique({
+      const existing = await this.prisma.userProfile.findUnique({
         where: { email: dto.email },
         select: { id: true },
       });
@@ -232,7 +293,7 @@ export class AuthService {
       data.phoneNumber = normalized;
     }
 
-    return this.prisma.user.update({
+    return this.prisma.userProfile.update({
       where: { id: userId },
       data,
       select: {
@@ -257,7 +318,7 @@ export class AuthService {
       );
     }
 
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
     });
 
@@ -274,10 +335,23 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.newPassword, 12);
-    await this.prisma.user.update({
+    await this.prisma.userProfile.update({
       where: { id: userId },
       data: { password: hashedPassword },
     });
+
+    // Sync password to BA if user has been migrated
+    if (user.betterAuthUserId) {
+      try {
+        const baHashedPassword = await hashPassword(dto.newPassword);
+        await baPrisma.betterAuthAccount.updateMany({
+          where: { userId: user.betterAuthUserId, providerId: 'email' },
+          data: { password: baHashedPassword },
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to sync password to BA for user ${userId}`, err);
+      }
+    }
 
     await this.prisma.refreshToken.deleteMany({
       where: { userId },
@@ -287,7 +361,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { email },
       select: { id: true },
     });
@@ -370,7 +444,7 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    await this.prisma.user.update({
+    const updatedUser = await this.prisma.userProfile.update({
       where: { email: payload.email },
       data: { password: hashedPassword },
     });
@@ -380,20 +454,28 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findUnique({
-      where: { email: payload.email },
-    });
-    if (user) {
-      await this.prisma.refreshToken.deleteMany({
-        where: { userId: user.id },
-      });
+    // Sync password to BA if user has been migrated
+    if (updatedUser.betterAuthUserId) {
+      try {
+        const baHashedPassword = await hashPassword(password);
+        await baPrisma.betterAuthAccount.updateMany({
+          where: { userId: updatedUser.betterAuthUserId, providerId: 'email' },
+          data: { password: baHashedPassword },
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to sync reset password to BA for ${payload.email}`, err);
+      }
     }
+
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId: updatedUser.id },
+    });
 
     return { message: 'Password has been reset successfully' };
   }
 
   async sendVerificationEmail(userId: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
       select: { emailVerified: true, email: true },
     });
@@ -433,7 +515,7 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired verification token');
     }
 
-    await this.prisma.user.update({
+    await this.prisma.userProfile.update({
       where: { email: matched.email },
       data: { emailVerified: true },
     });

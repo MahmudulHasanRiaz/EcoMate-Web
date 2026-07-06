@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { JwtModule } from '@nestjs/jwt';
 import { FeatureGuard } from '@ecomate/feature-flags';
 import { LicenseGuard } from './license/license.guard';
 import { LicenseModule } from './license/license.module';
@@ -46,6 +47,8 @@ import { AddressesModule } from './addresses/addresses.module';
 import { CacheModule } from './cache/cache.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
+import { DualModeAuthGuard } from './common/guards/dual-mode-auth.guard';
+import { BetterAuthModule } from './better-auth/better-auth.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
 import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
@@ -80,6 +83,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    JwtModule.register({}),
     AuthModule,
     UsersModule,
     TasksModule,
@@ -143,6 +147,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     StockModule,
     WarehousesModule,
     PosModule,
+    BetterAuthModule,
   ],
 
   providers: [
@@ -153,7 +158,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
         transform: true,
       }),
     },
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: LicenseGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },

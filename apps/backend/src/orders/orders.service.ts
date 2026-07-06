@@ -358,7 +358,7 @@ export class OrdersService {
     }
 
     if (dto.customerId) {
-      const user = await this.prisma.user.findUnique({
+      const user = await this.prisma.userProfile.findUnique({
         where: { id: dto.customerId },
         select: { status: true },
       });
@@ -830,7 +830,7 @@ export class OrdersService {
           safeData.phoneNumber = normalized;
         }
         if (Object.keys(safeData).length > 0) {
-          await tx.user.update({
+          await tx.userProfile.update({
             where: { id: order.customerId },
             data: safeData,
           });
@@ -1323,7 +1323,7 @@ export class OrdersService {
   }
 
   async getStaff() {
-    return this.prisma.user.findMany({
+    return this.prisma.userProfile.findMany({
       where: {
         role: { in: ['admin', 'manager', 'cashier', 'superadmin'] },
         status: 'active',

@@ -195,7 +195,7 @@ export class OrderImportService {
           })
         : [],
       phoneList.length > 0
-        ? this.prisma.user.findMany({
+        ? this.prisma.userProfile.findMany({
             where: {
               role: 'customer',
               phoneNumber: { in: phoneList },

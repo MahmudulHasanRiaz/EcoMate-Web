@@ -13,7 +13,7 @@ describe('PackingService', () => {
     order: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn() },
     packingLock: { findUnique: jest.fn(), upsert: jest.fn(), delete: jest.fn(), findMany: jest.fn() },
     systemSetting: { findUnique: jest.fn(), upsert: jest.fn() },
-    user: { findUnique: jest.fn() },
+    userProfile: { findUnique: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -358,7 +358,7 @@ describe('PackingService', () => {
       const mockUpdatedOrder = { id: 'order-1', statusId: packedStatus.id, assignedToId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(packedStatus);
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockUpdatedOrder);
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
@@ -407,7 +407,7 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(packedStatus);
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
@@ -430,7 +430,7 @@ describe('PackingService', () => {
       const mockUpdatedOrder = { id: 'order-1', statusId: holdStatus.id, assignedToId: 'packer-1', officeNotes: 'Missing item' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockUpdatedOrder);
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
@@ -478,7 +478,7 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
@@ -498,7 +498,7 @@ describe('PackingService', () => {
       const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
       (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({ firstName: 'Mahmudul', lastName: 'Riaz' });
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({ id: 'order-1', timeline: [] });
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});

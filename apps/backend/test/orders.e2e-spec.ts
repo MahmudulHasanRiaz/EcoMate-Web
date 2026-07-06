@@ -90,7 +90,7 @@ describe('Orders (e2e)', () => {
       await prisma.refreshToken.deleteMany({
         where: { user: { email: { startsWith: 'e2e-orders-' } } },
       });
-      await prisma.user.deleteMany({
+      await prisma.userProfile.deleteMany({
         where: { email: { startsWith: 'e2e-orders-' } },
       });
     } catch {

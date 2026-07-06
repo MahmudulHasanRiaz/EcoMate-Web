@@ -51,7 +51,7 @@ describe('UsersService', () => {
             $transaction: jest
               .fn()
               .mockImplementation(async (cb) => cb(prisma)),
-            user: {
+            userProfile: {
               findMany: jest.fn(),
               findUnique: jest.fn(),
               findFirst: jest.fn(),
@@ -82,15 +82,15 @@ describe('UsersService', () => {
 
   describe('findAll', () => {
     it('should return paginated users', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(1);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, perPage: 10 });
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 10 }),
       );
-      expect(prisma.user.count).toHaveBeenCalled();
+      expect(prisma.userProfile.count).toHaveBeenCalled();
       expect(result.data).toHaveLength(1);
       expect(result.meta).toEqual({
         total: 1,
@@ -101,12 +101,12 @@ describe('UsersService', () => {
     });
 
     it('should filter by search term across name, username, and email', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(0);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(0);
 
       await service.findAll({ search: 'john', page: 1, perPage: 10 });
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             OR: [
@@ -121,12 +121,12 @@ describe('UsersService', () => {
     });
 
     it('should filter by status and role', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(0);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(0);
 
       await service.findAll({ status: 'active', role: 'customer' });
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { status: 'active', role: 'customer' },
         }),
@@ -134,34 +134,34 @@ describe('UsersService', () => {
     });
 
     it('should use default sort by createdAt desc', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(0);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(0);
 
       await service.findAll({});
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
       );
     });
 
     it('should handle custom sorting', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(1);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(1);
 
       await service.findAll({ sort: 'email', order: 'asc' });
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { email: 'asc' } }),
       );
     });
 
     it('should handle second page correctly', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(11);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.count as jest.Mock).mockResolvedValue(11);
 
       await service.findAll({ page: 2, perPage: 10 });
 
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 10, take: 10 }),
       );
     });
@@ -169,11 +169,11 @@ describe('UsersService', () => {
 
   describe('findOne', () => {
     it('should return a user by id', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
 
       const result = await service.findOne('user-id-1');
 
-      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'user-id-1' } }),
       );
       expect(result).not.toHaveProperty('password');
@@ -181,7 +181,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent-id')).rejects.toThrow(
         NotFoundException,
@@ -201,8 +201,8 @@ describe('UsersService', () => {
     };
 
     it('should create a user successfully', async () => {
-      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.user.create as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.create as jest.Mock).mockResolvedValue({
         id: 'user-id-2',
         firstName: 'Jane',
         lastName: 'Smith',
@@ -221,13 +221,13 @@ describe('UsersService', () => {
 
       const result = await service.create(createDto);
 
-      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      expect(prisma.userProfile.findFirst).toHaveBeenCalledWith({
         where: {
           OR: [{ email: createDto.email }, { username: createDto.username }],
         },
       });
       expect(bcrypt.hash).toHaveBeenCalledWith(createDto.password, 12);
-      expect(prisma.user.create).toHaveBeenCalled();
+      expect(prisma.userProfile.create).toHaveBeenCalled();
       expect(prisma.userSettings.create).toHaveBeenCalledWith({
         data: { userId: 'user-id-2' },
       });
@@ -235,12 +235,12 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if email or username exists', async () => {
-      (prisma.user.findFirst as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(mockUser);
 
       await expect(service.create(createDto)).rejects.toThrow(
         ConflictException,
       );
-      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.userProfile.create).not.toHaveBeenCalled();
     });
   });
 
@@ -251,11 +251,11 @@ describe('UsersService', () => {
     };
 
     it('should update a user successfully', async () => {
-      (prisma.user.findUnique as jest.Mock)
+      (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
-      (prisma.user.update as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue({
         ...mockUserResponse,
         firstName: 'Johnny',
         email: 'johnny@example.com',
@@ -263,7 +263,7 @@ describe('UsersService', () => {
 
       const result = await service.update('user-id-1', updateDto);
 
-      expect(prisma.user.update).toHaveBeenCalledWith(
+      expect(prisma.userProfile.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'user-id-1' } }),
       );
       expect(result.firstName).toBe('Johnny');
@@ -271,7 +271,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.update('nonexistent-id', updateDto)).rejects.toThrow(
         NotFoundException,
@@ -279,7 +279,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if new email is already taken', async () => {
-      (prisma.user.findUnique as jest.Mock)
+      (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce({
           id: 'other-user',
@@ -292,7 +292,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if new username is already taken', async () => {
-      (prisma.user.findUnique as jest.Mock)
+      (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce({ id: 'other-user', username: 'takenuser' });
 
@@ -302,12 +302,12 @@ describe('UsersService', () => {
     });
 
     it('should hash password when updating password', async () => {
-      (prisma.user.findUnique as jest.Mock)
+      (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
       (bcrypt.hash as jest.Mock).mockResolvedValueOnce('$2a$12$newhashed');
-      (prisma.user.update as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(mockUserResponse);
 
       await service.update('user-id-1', { password: 'newpassword123' });
 
@@ -315,15 +315,15 @@ describe('UsersService', () => {
     });
 
     it('should omit status, role, password from the data if not provided', async () => {
-      (prisma.user.findUnique as jest.Mock)
+      (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
-      (prisma.user.update as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(mockUserResponse);
 
       await service.update('user-id-1', { firstName: 'Johnny' });
 
-      const updateCall = (prisma.user.update as jest.Mock).mock.calls[0][0];
+      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data).not.toHaveProperty('password');
       expect(updateCall.data).not.toHaveProperty('status');
       expect(updateCall.data).not.toHaveProperty('role');
@@ -332,42 +332,42 @@ describe('UsersService', () => {
 
   describe('remove', () => {
     it('should delete a user successfully', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
-      (prisma.user.delete as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.delete as jest.Mock).mockResolvedValue(mockUserResponse);
 
       const result = await service.remove('user-id-1');
 
-      expect(prisma.user.delete).toHaveBeenCalledWith({
+      expect(prisma.userProfile.delete).toHaveBeenCalledWith({
         where: { id: 'user-id-1' },
       });
       expect(result).toEqual({ message: 'User deleted successfully' });
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.remove('nonexistent-id')).rejects.toThrow(
         NotFoundException,
       );
-      expect(prisma.user.delete).not.toHaveBeenCalled();
+      expect(prisma.userProfile.delete).not.toHaveBeenCalled();
     });
   });
 
   describe('bulkDelete', () => {
     it('should delete multiple users', async () => {
       const ids = ['user-id-1', 'user-id-2', 'user-id-3'];
-      (prisma.user.deleteMany as jest.Mock).mockResolvedValue({ count: 3 });
+      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({ count: 3 });
 
       const result = await service.bulkDelete(ids);
 
-      expect(prisma.user.deleteMany).toHaveBeenCalledWith({
+      expect(prisma.userProfile.deleteMany).toHaveBeenCalledWith({
         where: { id: { in: ids } },
       });
       expect(result).toEqual({ message: '3 users deleted successfully' });
     });
 
     it('should handle empty array without error', async () => {
-      (prisma.user.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
 
       const result = await service.bulkDelete([]);
 
@@ -378,11 +378,11 @@ describe('UsersService', () => {
   describe('bulkUpdateStatus', () => {
     it('should update status for multiple users', async () => {
       const ids = ['user-id-1', 'user-id-2'];
-      (prisma.user.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.userProfile.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
 
       const result = await service.bulkUpdateStatus(ids, 'inactive');
 
-      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      expect(prisma.userProfile.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ids } },
         data: { status: 'inactive' },
       });
