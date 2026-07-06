@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List, Mail, Key } from 'lucide-react'
+import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List, Mail, Key, Shield } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -20,6 +20,12 @@ export function Settings() {
       groupLabel: 'Profile',
       items: [
         { title: 'Profile', href: '/op/settings/personal', icon: <UserCog size={18} /> },
+      ],
+    },
+    {
+      groupLabel: 'Integrations',
+      items: [
+        { title: 'Auth & Integrations', href: '/op/settings/auth', icon: <Shield size={18} /> },
       ],
     },
   ]

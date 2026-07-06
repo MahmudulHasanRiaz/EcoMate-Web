@@ -79,6 +79,7 @@ import { PackingModule } from './packing/packing.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AuthSettingsModule } from './auth-settings/auth-settings.module';
 
 @Module({
   imports: [
@@ -152,6 +153,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     WarehousesModule,
     PosModule,
     BetterAuthModule,
+    AuthSettingsModule,
   ],
 
   providers: [
