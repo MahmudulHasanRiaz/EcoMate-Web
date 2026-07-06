@@ -84,7 +84,7 @@ jobs:
       - name: Build and push admin image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: apps/admin
           file: apps/admin/Dockerfile
           push: true
           tags: |
