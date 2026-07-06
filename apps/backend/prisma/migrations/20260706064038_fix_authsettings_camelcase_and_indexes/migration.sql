@@ -5,7 +5,7 @@
 
 */
 -- DropTable
-DROP TABLE "AuthSettings";
+DROP TABLE IF EXISTS "AuthSettings";
 
 -- CreateTable
 CREATE TABLE "auth_settings" (
