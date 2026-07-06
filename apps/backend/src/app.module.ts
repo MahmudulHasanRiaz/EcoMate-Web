@@ -67,6 +67,7 @@ import { ReferralsModule } from './referrals/referrals.module';
 import { EmployeesModule } from './employees/employees.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccessPresetsModule } from './access-presets/access-presets.module';
+import { DesignationsModule } from './designations/designations.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
@@ -139,6 +140,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     ReferralsModule,
     CampaignsModule,
     AccessPresetsModule,
+    DesignationsModule,
     EmployeesModule,
     PayrollModule,
     FinancialPeriodsModule,
