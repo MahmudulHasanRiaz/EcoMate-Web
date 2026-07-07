@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
 export default async function (phase: string) {
   const isProd = phase === PHASE_PRODUCTION_SERVER || phase === PHASE_PRODUCTION_BUILD;
   const apiUrl = process.env.API_URL || (isProd ? 'http://backend:4000' : 'http://localhost:4000');
+  const posUrl = process.env.POS_URL || (isProd ? 'http://pos:80' : 'http://localhost:5174');
 
   return {
     ...nextConfig,
@@ -67,6 +68,14 @@ export default async function (phase: string) {
         {
           source: '/assets/:path*',
           destination: `${apiUrl}/assets/:path*`,
+        },
+        {
+          source: '/pos',
+          destination: `${posUrl}/pos/`,
+        },
+        {
+          source: '/pos/:path*',
+          destination: `${posUrl}/pos/:path*`,
         },
       ];
       if (!isProd) {

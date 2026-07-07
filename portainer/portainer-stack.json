@@ -21,6 +21,7 @@
     { "name": "STOREFRONT_PORT", "label": "Storefront Host Port (localhost)", "default": "3000" },
     { "name": "BACKEND_PORT", "label": "Backend Host Port (localhost)", "default": "4000" },
     { "name": "ADMIN_PORT", "label": "Admin Host Port (localhost)", "default": "8080" },
+    { "name": "POS_PORT", "label": "POS Host Port (localhost)", "default": "8081" },
 
     { "name": "CORS_ORIGIN", "label": "CORS Origins (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
     { "name": "APP_URL", "label": "App URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
