@@ -31,6 +31,7 @@
     { "name": "ADMIN_VITE_API_URL", "label": "Admin API URL", "default": "/api" },
 
     { "name": "SEED_DUMMY_DATA", "label": "Seed Dummy Data on first deploy? (true/false)", "default": "false" },
+    { "name": "RUN_SEED", "label": "Run Seeding on startup? (true/false)", "default": "false" },
 
     { "name": "META_PIXEL_ID", "label": "Meta Pixel ID (Optional)", "default": "" },
     { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token (Optional)", "default": "" },

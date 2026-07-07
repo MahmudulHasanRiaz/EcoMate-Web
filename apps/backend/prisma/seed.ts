@@ -52,25 +52,51 @@ async function main() {
   });
   console.log(`  ✓ Super admin created/updated: ${email} / ${plainPassword}`);
 
+  // ── Default Showroom ──
+  const defaultShowroom = await prisma.warehouse.upsert({
+    where: { slug: 'main-showroom' },
+    update: {},
+    create: {
+      name: 'Main Showroom',
+      slug: 'main-showroom',
+      type: 'showroom',
+      address: 'Main Store Address',
+      city: 'Dhaka',
+      isActive: true,
+    },
+  });
+  console.log(`  ✓ Default showroom created/updated: ${defaultShowroom.name}`);
+
   let customer: any = null;
   if (seedDummyData) {
     // ── Customer User ──
-  const customerPassword = await bcrypt.hash('Customer@123', 12);
-  customer = await prisma.userProfile.upsert({
-    where: { email: 'customer@example.com' },
-    update: {},
-    create: {
-      firstName: 'Md.',
-      lastName: 'Rahim',
-      username: 'rahim_customer',
-      email: 'customer@example.com',
-      phoneNumber: '+8801711111111',
-      password: customerPassword,
-      role: UserRole.customer,
-      status: UserStatus.active,
-    },
-  });
-  console.log(`  ✓ Customer created: customer@example.com / Customer@123`);
+    const customerPassword = await bcrypt.hash('Customer@123', 12);
+    customer = await prisma.userProfile.upsert({
+      where: { email: 'customer@example.com' },
+      update: {},
+      create: {
+        firstName: 'Md.',
+        lastName: 'Rahim',
+        username: 'rahim_customer',
+        email: 'customer@example.com',
+        phoneNumber: '+8801711111111',
+        password: customerPassword,
+        role: UserRole.customer,
+        status: UserStatus.active,
+      },
+    });
+
+    await prisma.customerProfile.upsert({
+      where: { phone: '+8801711111111' },
+      update: {},
+      create: {
+        id: customer.id,
+        name: 'Md. Rahim',
+        phone: '+8801711111111',
+        email: 'customer@example.com',
+      },
+    });
+    console.log(`  ✓ Customer created: customer@example.com / Customer@123`);
   }
 
   // ── Order Statuses ──
@@ -541,6 +567,12 @@ async function main() {
       continue;
     }
 
+    const existingProduct = await prisma.product.findUnique({ where: { slug: productData.slug } });
+    if (existingProduct) {
+      createdProductIds.push(existingProduct.id);
+      continue;
+    }
+
     const product = await prisma.product.create({
       data: {
         ...productData,
@@ -643,6 +675,11 @@ async function main() {
 
   for (const combo of combos) {
     const catId = categoryMap[combo.category];
+    const existingCombo = await prisma.combo.findUnique({ where: { slug: combo.slug } });
+    if (existingCombo) {
+      continue;
+    }
+
     const comboRecord = await prisma.combo.create({
       data: {
         name: combo.name,

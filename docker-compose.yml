@@ -82,6 +82,8 @@ services:
       GA_ADS_CONVERSION_LABEL: ${GA_ADS_CONVERSION_LABEL:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
+      RUN_SEED: ${RUN_SEED:-false}
     depends_on:
       postgres:
         condition: service_healthy
