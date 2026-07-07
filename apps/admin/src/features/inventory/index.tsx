@@ -53,7 +53,7 @@ export function Inventory() {
       const label = v.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || v.sku
       return {
         id: v.id,
-        label: `${label} — Stock: ${v.stock} ${v.price ? `| ৳${v.price}` : ''}`,
+        label: `${label} — Stock: ${v.managedStockQuantity} ${v.price ? `| ৳${v.price}` : ''}`,
       }
     })
   }, [variants])

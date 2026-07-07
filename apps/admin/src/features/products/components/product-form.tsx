@@ -1160,7 +1160,7 @@ function VariantRow({
           ? <SafeImage src={imgUrl(variant.image)} alt='' className='h-full w-full object-cover' />
           : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
       </div>
-      <div className='flex-1 min-w-0 grid grid-cols-5 gap-3 items-center'>
+      <div className='flex-1 min-w-0 grid grid-cols-6 gap-3 items-center'>
         <div className='min-w-0'>
           <p className='font-medium text-xs text-muted-foreground mb-0.5'>Attribute</p>
           <p className='truncate'>{variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>
@@ -1215,6 +1215,14 @@ function VariantRow({
               <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
             </button>
           )}
+        </div>
+
+        {/* Stock (read-only — edit via Inventory) */}
+        <div className='min-w-0'>
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
+          <Badge variant={variant.managedStockQuantity > 0 ? 'secondary' : 'destructive'} className='text-xs'>
+            {variant.managedStockQuantity}
+          </Badge>
         </div>
 
         {/* Standard Cost */}

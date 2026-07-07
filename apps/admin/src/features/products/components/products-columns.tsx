@@ -100,7 +100,7 @@ export function productsColumns(
     {
       id: 'stock',
       header: 'Stock',
-      accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.stock, 0) : row.stock,
+      accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.managedStockQuantity, 0) : row.managedStockQuantity,
       cell: ({ row, getValue }) => {
         const s = getValue<number>()
         const stockStatus = row.original.seoMeta?.stockStatus as string | undefined

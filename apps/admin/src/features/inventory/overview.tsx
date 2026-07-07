@@ -23,7 +23,7 @@ interface Product {
   slug: string
   sku: string | null
   type: string
-  stock: number
+  managedStockQuantity: number
   manageStock: boolean
   lowStockQty: number | null
   basePrice: string
@@ -34,7 +34,7 @@ interface Product {
   variants: {
     id: string
     sku: string
-    stock: number
+    managedStockQuantity: number
     price: string | null
     attributeValues: { attributeValue: { value: string } }[]
   }[]
@@ -84,7 +84,7 @@ export function StockOverview() {
   }
 
   const isLowStock = (p: Product) =>
-    p.manageStock && p.stock <= (p.lowStockQty || 5)
+    p.manageStock && p.managedStockQuantity <= (p.lowStockQty || 5)
 
   const meta = data?.meta
   const products = data?.data ?? []
@@ -225,15 +225,15 @@ export function StockOverview() {
                           <Badge
                             variant={
                               !p.manageStock ? 'secondary' :
-                              p.stock <= 0 ? 'destructive' :
+                              p.managedStockQuantity <= 0 ? 'destructive' :
                               lowStock ? 'outline' : 'default'
                             }
                             className={
                               !p.manageStock ? '' :
-                              lowStock && p.stock > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-400' : ''
+                              lowStock && p.managedStockQuantity > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-400' : ''
                             }
                           >
-                            {p.manageStock ? p.stock : '—'}
+                            {p.manageStock ? p.managedStockQuantity : '—'}
                           </Badge>
                         </TableCell>
                         <TableCell className='text-right font-medium text-sm'>

@@ -157,7 +157,7 @@ export function ProductDetail() {
                                 <><span className='line-through text-muted-foreground text-xs mr-1'>৳{Number(v.price).toFixed(2)}</span>৳{Number(v.salePrice).toFixed(2)}</>
                               ) : v.price ? `৳${Number(v.price).toFixed(2)}` : '—'}
                             </td>
-                            <td className='py-2 text-right'><Badge variant={v.stock > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.stock}</Badge></td>
+                            <td className='py-2 text-right'><Badge variant={v.managedStockQuantity > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.managedStockQuantity}</Badge></td>
                           </tr>
                         ))}
                       </tbody>
@@ -176,7 +176,7 @@ export function ProductDetail() {
                 <div className='flex justify-between'><span className='text-muted-foreground'>Slug</span><span className='font-mono text-xs'>{product.slug}</span></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Price</span><span className='font-medium'>৳{Number(product.basePrice).toFixed(2)}</span></div>
                 {product.salePrice != null && <div className='flex justify-between'><span className='text-muted-foreground'>Sale Price</span><span className='font-medium text-green-600'>৳{Number(product.salePrice).toFixed(2)}</span></div>}
-                <div className='flex justify-between'><span className='text-muted-foreground'>Stock</span><Badge variant={product.stock > 0 ? 'outline' : 'destructive'}>{isVar ? `From ${variants.reduce((s, v: any) => s + v.stock, 0)}` : product.stock}</Badge></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Stock</span><Badge variant={product.managedStockQuantity > 0 ? 'outline' : 'destructive'}>{isVar ? `From ${variants.reduce((s, v: any) => s + v.managedStockQuantity, 0)}` : product.managedStockQuantity}</Badge></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Active</span><Badge variant={product.isActive ? 'default' : 'secondary'} className={product.isActive ? 'bg-green-500' : ''}>{product.isActive ? 'Yes' : 'No'}</Badge></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Featured</span><span>{product.isFeatured ? 'Yes' : 'No'}</span></div>
                 {product.brandId && <div className='flex justify-between'><span className='text-muted-foreground'>Brand</span><span>{p.brand?.name || product.brandId}</span></div>}
