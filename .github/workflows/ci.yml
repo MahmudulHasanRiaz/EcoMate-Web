@@ -181,13 +181,27 @@ jobs:
         working-directory: apps/pos
         run: npm run build
 
-  build-push-backend:
-    needs: [detect-changes, backend]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.backend == 'true'
+  build-and-push:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        service:
+          - name: backend
+            context: .
+            dockerfile: apps/backend/Dockerfile
+          - name: storefront
+            context: apps/storefront
+            dockerfile: apps/storefront/Dockerfile
+          - name: admin
+            context: apps/admin
+            dockerfile: apps/admin/Dockerfile
+          - name: pos
+            context: apps/pos
+            dockerfile: apps/pos/Dockerfile
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -206,125 +220,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Backend
+      - name: Build and push ${{ matrix.service.name }}
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: apps/backend/Dockerfile
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
           push: true
           tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-backend:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-backend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-push-storefront:
-    needs: [detect-changes, storefront]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.storefront == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Downcase registry owner
-        id: owner
-        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Storefront
-        uses: docker/build-push-action@v5
-        with:
-          context: apps/storefront
-          file: apps/storefront/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-storefront:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-storefront:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-push-admin:
-    needs: [detect-changes, admin]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.admin == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Downcase registry owner
-        id: owner
-        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Admin
-        uses: docker/build-push-action@v5
-        with:
-          context: apps/admin
-          file: apps/admin/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-admin:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-admin:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-push-pos:
-    needs: [detect-changes, pos]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.detect-changes.outputs.pos == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Downcase registry owner
-        id: owner
-        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push POS
-        uses: docker/build-push-action@v5
-        with:
-          context: apps/pos
-          file: apps/pos/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-pos:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-pos:${{ github.sha }}
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:latest
+            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
