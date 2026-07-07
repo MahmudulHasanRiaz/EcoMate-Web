@@ -31,8 +31,8 @@ api.interceptors.response.use(
 
 export default api;
 
-export const loginApi = (username: string, password: string) =>
-  api.post('/auth/login', { username, password });
+export const loginApi = (email: string, password: string) =>
+  api.post('/auth/login', { email, password });
 
 export const openSession = (showroomId: string, openingBalance: number) =>
   api.post('/pos/sessions', { showroomId, openingBalance });

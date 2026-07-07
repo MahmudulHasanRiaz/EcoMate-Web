@@ -4,7 +4,7 @@ import { loginApi } from '../api/client'
 interface Props { onSuccess: () => void }
 
 export function LoginPage({ onSuccess }: Props) {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -14,7 +14,7 @@ export function LoginPage({ onSuccess }: Props) {
     setLoading(true)
     setError('')
     try {
-      const res = await loginApi(username, password)
+      const res = await loginApi(email, password)
       const { accessToken, user } = res.data
       if (!['cashier', 'admin'].includes(user.role)) {
         setError('Access denied. Cashier or admin role required.')
@@ -36,9 +36,10 @@ export function LoginPage({ onSuccess }: Props) {
         {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</p>}
         <input
           className="mb-4 w-full rounded-lg border border-gray-300 p-3 text-lg"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           required
           autoFocus
         />
