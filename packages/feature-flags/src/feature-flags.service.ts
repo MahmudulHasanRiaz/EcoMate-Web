@@ -1,11 +1,11 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { LicenseEngine } from '@ecomate/license-engine';
+import { FEATURES } from '@ecomate/shared-types';
 
 export interface LicenseInfo {
   valid: boolean;
   code?: string;
   detail?: string;
-  plan?: { id: string; name: string; planType: string; price: number };
   features?: string[];
   limits?: Record<string, number>;
   domains?: string[];
@@ -67,10 +67,20 @@ export class FeatureFlagsService {
 
   canUse(featureKey: string): boolean {
     if (!this.license?.valid) return false;
-    if (this.licenseEngine) {
-      return this.licenseEngine.canUseFeature(this.license, featureKey);
+
+    if (this.license.features?.includes('*')) return true;
+
+    const licensed = this.license.features?.includes(featureKey);
+    if (!licensed) return false;
+
+    const feature = FEATURES[featureKey];
+    if (feature?.dependencies?.length) {
+      for (const dep of feature.dependencies) {
+        if (!this.license.features?.includes(dep)) return false;
+      }
     }
-    return this.license.valid;
+
+    return true;
   }
 
   getLicense(): LicenseInfo | null {

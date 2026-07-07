@@ -9,6 +9,10 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 
+jest.mock('better-auth/crypto', () => ({
+  hashPassword: jest.fn().mockResolvedValue('$2a$12$hashedpassword'),
+}));
+
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('$2a$12$hashedpassword'),
   compare: jest.fn().mockResolvedValue(true),

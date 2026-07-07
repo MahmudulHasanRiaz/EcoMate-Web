@@ -693,7 +693,7 @@ describe('ProductsService', () => {
       });
       expect(prisma.product.update).toHaveBeenCalledWith({
         where: { id: 'prod-1' },
-        data: { type: 'variable', manageStock: false, stock: 0 },
+        data: { type: 'variable', manageStock: false, managedStockQuantity: 0 },
       });
     });
   });

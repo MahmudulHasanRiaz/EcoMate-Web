@@ -22,6 +22,13 @@ enum UserRole {
   customer
 }
 
+enum AvailabilityMode {
+  ALWAYS_IN_STOCK
+  ALWAYS_OUT_OF_STOCK
+  MANAGED_STOCK
+  INVENTORY_CONTROLLED
+}
+
 enum TaskStatus {
   backlog
   todo
@@ -390,11 +397,13 @@ model Product {
   type        String   @default("simple")
   description String?  @db.Text
   shortDesc   String?  @db.Text
-  basePrice   Decimal  @db.Decimal(10, 2)
-  salePrice   Decimal? @db.Decimal(10, 2)
-  sku         String?
-  stock       Int      @default(0)
-  lowStockQty Int?
+  basePrice             Decimal            @db.Decimal(10, 2)
+  salePrice             Decimal?           @db.Decimal(10, 2)
+  sku                   String?
+  managedStockQuantity  Int                @default(0) @map("stock")
+  lowStockQty           Int?
+  availabilityMode      AvailabilityMode   @default(MANAGED_STOCK)
+  standardCost          Decimal?           @db.Decimal(10, 2)
   categoryId  String?
   tags        Json?    @default("[]")
   images      Json?    @default("[]")
@@ -435,9 +444,10 @@ model ProductVariant {
   id        String   @id @default(uuid())
   productId String
   sku       String   @unique
-  price     Decimal? @db.Decimal(10, 2)
-  salePrice Decimal? @db.Decimal(10, 2)
-  stock     Int      @default(0)
+  price                 Decimal?           @db.Decimal(10, 2)
+  salePrice             Decimal?           @db.Decimal(10, 2)
+  managedStockQuantity  Int                @default(0) @map("stock")
+  standardCost          Decimal?           @db.Decimal(10, 2)
   image     String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -663,6 +673,8 @@ model OrderItem {
   comboSelection Json?
   quantity       Int      @default(1)
   price          Decimal  @db.Decimal(10, 2)
+  costSnapshot   Decimal? @db.Decimal(10, 2)
+  costType       String?  // 'estimated' | 'actual'
   createdAt      DateTime @default(now())
 
   order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1047,6 +1059,25 @@ model InventoryLog {
   createdAt   DateTime @default(now())
 
   @@index([productId, variantId, createdAt])
+}
+
+model ManagedStockLedger {
+  id            String   @id @default(uuid())
+  productId     String?
+  variantId     String?
+  quantity      Int
+  direction     String   // IN | OUT
+  type          String   // ORDER_DEDUCTION | CANCEL_RELEASE | RETURN | MANUAL_ADD | MANUAL_REMOVE
+  stockBefore   Int
+  stockAfter    Int
+  referenceType String?  // ORDER | ADJUSTMENT | RETURN
+  referenceId   String?
+  note          String?
+  performedBy   String?
+  createdAt     DateTime @default(now())
+
+  @@index([productId, variantId, createdAt])
+  @@index([referenceType, referenceId])
 }
 
 model OrderCounter {

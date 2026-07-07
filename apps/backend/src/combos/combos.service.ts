@@ -202,7 +202,7 @@ export class CombosService {
                 sku: true,
                 basePrice: true,
                 salePrice: true,
-                stock: true,
+                managedStockQuantity: true,
                 images: true,
                 type: true,
                 variants: {
@@ -210,7 +210,7 @@ export class CombosService {
                     id: true,
                     sku: true,
                     price: true,
-                    stock: true,
+                    managedStockQuantity: true,
                     image: true,
                     isActive: true,
                     attributeValues: {
@@ -233,7 +233,7 @@ export class CombosService {
                 id: true,
                 sku: true,
                 price: true,
-                stock: true,
+                managedStockQuantity: true,
                 image: true,
               },
             },
@@ -254,9 +254,9 @@ export class CombosService {
       select: {
         id: true,
         name: true,
-        stock: true,
+        managedStockQuantity: true,
         manageStock: true,
-        variants: { select: { id: true } },
+        variants: { select: { id: true, managedStockQuantity: true } },
       },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -273,7 +273,7 @@ export class CombosService {
             `Variant ${item.variantId} does not belong to product ${item.productId}`,
           );
       }
-      if (product.manageStock && item.quantity > product.stock) {
+      if (product.manageStock && item.quantity > product.managedStockQuantity) {
         throw new BadRequestException(
           `Insufficient stock for product "${product.name}"`,
         );

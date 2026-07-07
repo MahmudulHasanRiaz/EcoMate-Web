@@ -573,9 +573,11 @@ async function main() {
       continue;
     }
 
+    const { stock: seedStock, ...restProductData } = productData;
     const product = await prisma.product.create({
       data: {
-        ...productData,
+        ...restProductData,
+        managedStockQuantity: seedStock,
         categoryId: catId,
         basePrice: productData.basePrice,
         salePrice: productData.salePrice ?? null,
@@ -598,7 +600,7 @@ async function main() {
           productId: product.id,
           sku: v.sku,
           price: v.price,
-          stock: v.stock,
+          managedStockQuantity: v.stock,
           image: v.image,
           isActive: true,
           attributeValues: {
@@ -689,7 +691,7 @@ async function main() {
         basePrice: combo.basePrice,
         salePrice: combo.salePrice,
         image: combo.image,
-        stock: combo.stock,
+        managedStockQuantity: combo.stock,
         manageStock: combo.manageStock,
         isFeatured: combo.isFeatured,
         isActive: combo.isActive,

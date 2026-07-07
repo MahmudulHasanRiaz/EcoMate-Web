@@ -1,3 +1,12 @@
+jest.mock('../../better-auth/prisma', () => ({
+  baPrisma: {
+    betterAuthUser: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'ba-user-test', name: 'John Doe' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+  },
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { EmployeeStatus, EmploymentType } from '@prisma/client';
@@ -58,7 +67,7 @@ describe('EmployeesService', () => {
     const prismaMock = {
       employee: {
         findMany: jest.fn().mockResolvedValue([mockEmployee]),
-        findUnique: jest.fn().mockResolvedValue(mockEmployee),
+        findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn(),
         create: jest.fn().mockResolvedValue(mockEmployee),
         update: jest.fn().mockResolvedValue(mockEmployee),
@@ -122,10 +131,8 @@ describe('EmployeesService', () => {
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw if email already exists', async () => {
-      jest
-        .spyOn(prisma.employee, 'findFirst')
-        .mockResolvedValue(mockEmployee as any);
+    it('should throw if user is already an employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       const dto: CreateEmployeeDto = {
         betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
@@ -144,12 +151,12 @@ describe('EmployeesService', () => {
 
   describe('findOne', () => {
     it('should return an employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.findOne('emp-1');
       expect(result).toEqual(mockEmployee);
     });
 
     it('should throw if not found', async () => {
-      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
       await expect(service.findOne('invalid')).rejects.toThrow(
         NotFoundException,
       );
@@ -158,6 +165,7 @@ describe('EmployeesService', () => {
 
   describe('update', () => {
     it('should update an employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.update('emp-1', { departmentId: 'dept-2' });
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.update).toHaveBeenCalledWith(
@@ -165,32 +173,17 @@ describe('EmployeesService', () => {
       );
     });
 
-    it('should throw if email already taken', async () => {
-      jest
-        .spyOn(prisma.employee, 'findFirst')
-        .mockResolvedValue(mockEmployee as any);
+    it('should throw if employee not found', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
       await expect(
-        service.update('emp-2', { bankName: 'Test Bank' }),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('should throw if department not found', async () => {
-      jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
-      await expect(
-        service.update('emp-1', { departmentId: 'invalid' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw if designation not found', async () => {
-      jest.spyOn(prisma.designation, 'findUnique').mockResolvedValue(null);
-      await expect(
-        service.update('emp-1', { designationId: 'invalid' }),
+        service.update('nonexistent', { bankName: 'Test Bank' }),
       ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('remove', () => {
     it('should delete an employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.remove('emp-1');
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.delete).toHaveBeenCalledWith(

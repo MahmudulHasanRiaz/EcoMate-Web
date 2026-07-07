@@ -533,7 +533,7 @@ export class ProductsService {
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         sku: dto.sku,
-        stock: dto.type === 'variable' ? 0 : dto.stock || 0,
+        managedStockQuantity: dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
         lowStockQty: dto.lowStockQty,
         categoryId: categoryId || undefined,
         productCategories: categoryIds.length > 0
@@ -552,7 +552,7 @@ export class ProductsService {
                 sku: v.sku,
                 price: v.price,
                 salePrice: v.salePrice,
-                stock: v.stock || 0,
+                managedStockQuantity: v.managedStockQuantity || 0,
                 image: v.image,
                 attributeValues: v.attributeValues
                   ? {
@@ -631,7 +631,7 @@ export class ProductsService {
     delete data.categoryIds;
 
     if (p.type === 'variable' || p.type === 'combo') {
-      delete data.stock;
+      delete data.managedStockQuantity;
       delete data.manageStock;
     }
 
@@ -696,19 +696,19 @@ export class ProductsService {
         await this.prisma.inventoryLog.create({
           data: {
             productId: id,
-            quantity: dto.stock ?? 0,
+            quantity: dto.managedStockQuantity ?? 0,
             type: 'stock_tracking_enabled',
             reason: 'Stock tracking enabled',
             performedBy,
           },
         });
-      } else if (p.stock > 0) {
+      } else if (p.managedStockQuantity > 0) {
         await this.prisma.inventoryLog.create({
           data: {
             productId: id,
-            quantity: -p.stock,
+            quantity: -p.managedStockQuantity,
             type: 'stock_tracking_disabled',
-            reason: `Stock tracking disabled, removed ${p.stock} units`,
+            reason: `Stock tracking disabled, removed ${p.managedStockQuantity} units`,
             performedBy,
           },
         });
@@ -815,7 +815,7 @@ export class ProductsService {
         sku,
         price: dto.defaultPrice || Number(product.basePrice),
         salePrice: dto.defaultSalePrice ?? undefined,
-        stock: dto.defaultStock || 0,
+        managedStockQuantity: dto.defaultManagedStockQuantity || 0,
         attributeValues: {
           create: combo.map((av) => ({ attributeValueId: av.id })),
         },
@@ -830,7 +830,7 @@ export class ProductsService {
       if (variants.length > 0) {
         await tx.product.update({
           where: { id: productId },
-          data: { type: 'variable', stock: 0, manageStock: false },
+          data: { type: 'variable', managedStockQuantity: 0, manageStock: false },
         });
       }
     });
@@ -856,7 +856,7 @@ export class ProductsService {
     if (!variant || variant.productId !== productId) {
       throw new NotFoundException('Variant not found');
     }
-    if (dto.stock !== undefined) {
+    if (dto.managedStockQuantity !== undefined) {
       throw new BadRequestException(
         'Variant stock cannot be edited directly. Use Inventory > Adjust Stock to change stock levels.',
       );

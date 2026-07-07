@@ -6,7 +6,7 @@ function createMockEngine() {
     verify: vi.fn().mockResolvedValue({
       valid: true,
       plan: { id: 'p1', name: 'Enterprise', planType: 'fixed', price: 199 },
-      features: ['storefront_catalog', 'admin_products'],
+      features: ['storefront', 'admin_products'],
       limits: { orders_per_month: 50000 },
       domains: ['example.com'],
       expiry: '2026-12-31T00:00:00Z',
@@ -31,15 +31,30 @@ describe('FeatureFlagsService', () => {
     expect(engine.verify).toHaveBeenCalledWith('test-license-key', 'example.com', undefined);
   });
 
-  it('delegates canUse to license engine', async () => {
+  it('checks feature from license list', async () => {
     const engine = createMockEngine();
     const svc = new FeatureFlagsService(engine as any);
     await svc.initialize('test-license-key');
-    expect(svc.canUse('storefront_catalog')).toBe(true);
-    expect(engine.canUseFeature).toHaveBeenCalledWith(
-      expect.objectContaining({ valid: true }),
-      'storefront_catalog',
-    );
+    expect(svc.canUse('storefront')).toBe(true);
+    expect(svc.canUse('admin_products')).toBe(true);
+  });
+
+  it('returns false for unlicensed feature', async () => {
+    const engine = createMockEngine();
+    const svc = new FeatureFlagsService(engine as any);
+    await svc.initialize('test-license-key');
+    expect(svc.canUse('pos_system')).toBe(false);
+  });
+
+  it('validates feature dependencies', async () => {
+    const engine = createMockEngine();
+    engine.verify = vi.fn().mockResolvedValue({
+      valid: true,
+      features: ['admin_products'],
+    });
+    const svc = new FeatureFlagsService(engine as any);
+    await svc.initialize('test-license-key');
+    expect(svc.canUse('admin_coupons')).toBe(false);
   });
 
   it('returns null license before initialize call', () => {

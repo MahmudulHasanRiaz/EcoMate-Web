@@ -162,6 +162,10 @@ describe('OrdersService', () => {
             inventoryLog: {
               create: jest.fn(),
             },
+            userProfile: {
+              findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
+              findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
+            },
           },
         },
         {

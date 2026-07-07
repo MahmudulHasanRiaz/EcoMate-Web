@@ -93,7 +93,7 @@ describe('PackingService', () => {
         guestName: null,
         guestPhone: null,
         createdAt: new Date('2025-01-15'),
-        customer: { id: 'cust-1', firstName: 'John', lastName: 'Doe', phoneNumber: '555-0100' },
+        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
         items: [
           {
             id: 'item-1',
@@ -186,7 +186,7 @@ describe('PackingService', () => {
         guestName: null,
         guestPhone: null,
         createdAt: new Date('2025-01-15'),
-        customer: { id: 'cust-1', firstName: 'John', lastName: 'Doe', phoneNumber: '555-0100' },
+        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
         items: [
           {
             id: 'item-2',
@@ -212,7 +212,7 @@ describe('PackingService', () => {
         guestName: null,
         guestPhone: null,
         createdAt: new Date('2025-01-15'),
-        customer: { id: 'cust-1', firstName: 'John', lastName: 'Doe', phoneNumber: '555-0100' },
+        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
         items: [],
         packingLock: {
           packerId: 'packer-1',

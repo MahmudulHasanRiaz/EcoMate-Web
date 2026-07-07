@@ -21,7 +21,7 @@ export class CreateVariantDto {
   @IsString() @MinLength(1) sku: string;
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsNumber() salePrice?: number;
-  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsString() image?: string;
   @IsOptional()
   @IsArray()
@@ -39,7 +39,7 @@ export class CreateProductDto {
   @IsNumber() basePrice: number;
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsString() sku?: string;
-  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() brandId?: string;
@@ -67,7 +67,7 @@ export class UpdateProductDto {
   @IsOptional() @IsNumber() basePrice?: number;
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsString() sku?: string;
-  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional()
   @ValidateIf((o) => o.categoryId !== null)
@@ -94,13 +94,13 @@ export class GenerateVariantsDto {
   attributeValueIds?: string[];
   @IsOptional() @IsNumber() defaultPrice?: number;
   @IsOptional() @IsNumber() defaultSalePrice?: number;
-  @IsOptional() @IsInt() defaultStock?: number;
+  @IsOptional() @IsInt() defaultManagedStockQuantity?: number;
 }
 
 export class UpdateVariantDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsNumber() salePrice?: number;
-  @IsOptional() @IsInt() stock?: number;
+  @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsString() image?: string | null;
 }

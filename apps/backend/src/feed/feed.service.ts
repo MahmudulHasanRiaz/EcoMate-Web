@@ -82,7 +82,7 @@ export class FeedService {
             brand: { select: { name: true } },
             variants: {
               where: { isActive: true },
-              select: { id: true, sku: true, price: true, salePrice: true, stock: true, image: true },
+              select: { id: true, sku: true, price: true, salePrice: true, managedStockQuantity: true, image: true },
             },
           },
         };
@@ -108,7 +108,7 @@ export class FeedService {
                 description: this.stripHtml(product.shortDesc || product.description || ''),
                 link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
                 imageLink: variant.image || images[0] || '',
-                availability: variant.stock > 0 ? 'in stock' : 'out of stock',
+                availability: variant.managedStockQuantity > 0 ? 'in stock' : 'out of stock',
                 price: variant.price || product.basePrice,
                 salePrice: variant.salePrice || product.salePrice,
                 brand: product.brand?.name || 'Store Brand',
@@ -123,7 +123,7 @@ export class FeedService {
               description: this.stripHtml(product.shortDesc || product.description || ''),
               link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
               imageLink: images[0] || '',
-              availability: product.stock > 0 ? 'in stock' : 'out of stock',
+              availability: product.managedStockQuantity > 0 ? 'in stock' : 'out of stock',
               price: product.basePrice,
               salePrice: product.salePrice,
               brand: product.brand?.name || 'Store Brand',
@@ -156,7 +156,7 @@ export class FeedService {
     const filter: any = { isActive: true };
 
     if (config.excludeOutOfStock) {
-      filter.stock = { gt: 0 };
+      filter.managedStockQuantity = { gt: 0 };
     }
 
     if (config.minPriceFilter) {

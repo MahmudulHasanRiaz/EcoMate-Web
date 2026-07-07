@@ -56,7 +56,7 @@ export class InventoryService {
         p."lowStockQty",
         pv.id AS "variantId",
         pv.sku AS "variantSku",
-        pv.stock AS "variantStock",
+        pv.managedStockQuantity AS "variantStock",
         COALESCE(
           (SELECT string_agg(av.value, ' / ' ORDER BY av.value)
            FROM "ProductVariantAttributeValue" pvav
@@ -68,7 +68,7 @@ export class InventoryService {
       JOIN "ProductVariant" pv ON pv."productId" = p.id
       WHERE p."isActive" = true
         AND p.type = 'variable'
-        AND pv.stock <= COALESCE(p."lowStockQty", 5)
+        AND pv.managedStockQuantity <= COALESCE(p."lowStockQty", 5)
       ORDER BY p.name ASC
     `;
     const lowStockVariants = variableProducts.map((v) => ({
@@ -187,10 +187,10 @@ export class InventoryService {
                   name: true,
                   type: true,
                   manageStock: true,
-                  stock: true,
+                  managedStockQuantity: true,
                 },
               },
-              variant: { select: { id: true, sku: true, stock: true } },
+              variant: { select: { id: true, sku: true, managedStockQuantity: true } },
             },
           },
         },
@@ -208,7 +208,7 @@ export class InventoryService {
         const qty = (quantity || 0) * item.quantity;
 
         if (item.variantId) {
-          const avail = item.variant?.stock ?? 0;
+          const avail = item.variant?.managedStockQuantity ?? 0;
           if (qty < 0 && avail + qty < 0) {
             throw new BadRequestException(
               `Insufficient stock for variant ${item.variant?.sku ?? 'unknown'}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
@@ -216,7 +216,7 @@ export class InventoryService {
           }
           await this.prisma.productVariant.update({
             where: { id: item.variantId },
-            data: { stock: { increment: qty } },
+            data: { managedStockQuantity: { increment: qty } },
           });
           await this.prisma.inventoryLog.create({
             data: {
@@ -235,7 +235,7 @@ export class InventoryService {
             quantity: qty,
           });
         } else if (item.product.manageStock) {
-          const avail = item.product.stock;
+          const avail = item.product.managedStockQuantity;
           if (qty < 0 && avail + qty < 0) {
             throw new BadRequestException(
               `Insufficient stock for product ${item.product.name}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
@@ -243,7 +243,7 @@ export class InventoryService {
           }
           await this.prisma.product.update({
             where: { id: item.productId },
-            data: { stock: { increment: qty } },
+            data: { managedStockQuantity: { increment: qty } },
           });
           await this.prisma.inventoryLog.create({
             data: {
@@ -286,14 +286,14 @@ export class InventoryService {
       });
       if (!variant) throw new NotFoundException('Variant not found');
       const q = quantity ?? 0;
-      if (q < 0 && variant.stock + q < 0) {
+      if (q < 0 && variant.managedStockQuantity + q < 0) {
         throw new BadRequestException(
-          `Insufficient stock for variant ${variant.sku}. Available: ${variant.stock}, needed: ${Math.abs(q)}.`,
+          `Insufficient stock for variant ${variant.sku}. Available: ${variant.managedStockQuantity}, needed: ${Math.abs(q)}.`,
         );
       }
       const updated = await this.prisma.productVariant.update({
         where: { id: variantId },
-        data: { stock: { increment: q } },
+        data: { managedStockQuantity: { increment: q } },
       });
       await this.prisma.inventoryLog.create({
         data: {
@@ -308,7 +308,7 @@ export class InventoryService {
       return {
         id: variant.id,
         sku: variant.sku,
-        stock: updated.stock,
+        stock: updated.managedStockQuantity,
         productId: variant.productId,
         productName: variant.product.name,
       };
@@ -337,15 +337,15 @@ export class InventoryService {
       );
     }
 
-    if (q < 0 && product.stock + q < 0) {
+    if (q < 0 && product.managedStockQuantity + q < 0) {
       throw new BadRequestException(
-        `Insufficient stock for product ${product.name}. Available: ${product.stock}, needed: ${Math.abs(q)}.`,
+        `Insufficient stock for product ${product.name}. Available: ${product.managedStockQuantity}, needed: ${Math.abs(q)}.`,
       );
     }
 
     await this.prisma.product.update({
       where: { id: productId },
-      data: { stock: { increment: q } },
+      data: { managedStockQuantity: { increment: q } },
     });
 
     await this.prisma.inventoryLog.create({
@@ -360,7 +360,7 @@ export class InventoryService {
 
     return this.prisma.product.findUnique({
       where: { id: productId },
-      select: { id: true, name: true, stock: true, sku: true },
+      select: { id: true, name: true, managedStockQuantity: true, sku: true },
     });
   }
 
@@ -406,7 +406,7 @@ export class InventoryService {
           if (effectiveVariantId) {
             await client.productVariant.update({
               where: { id: effectiveVariantId },
-              data: { stock: { increment: qty } },
+              data: { managedStockQuantity: { increment: qty } },
             });
           }
           const product = await client.product.findUnique({
@@ -419,7 +419,7 @@ export class InventoryService {
           ) {
             await client.product.update({
               where: { id: ci.productId },
-              data: { stock: { increment: qty } },
+              data: { managedStockQuantity: { increment: qty } },
             });
           }
           await client.inventoryLog.create({
@@ -439,7 +439,7 @@ export class InventoryService {
         if (item.variantId) {
           await client.productVariant.update({
             where: { id: item.variantId },
-            data: { stock: { increment: item.quantity } },
+            data: { managedStockQuantity: { increment: item.quantity } },
           });
         }
         const product = item.productId
@@ -456,7 +456,7 @@ export class InventoryService {
         ) {
           await client.product.update({
             where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
+            data: { managedStockQuantity: { increment: item.quantity } },
           });
         }
         await client.inventoryLog.create({
@@ -499,7 +499,7 @@ export class InventoryService {
     const orderBy: any = {};
     if (params.sortBy === 'name') orderBy.name = params.sortOrder || 'asc';
     else if (params.sortBy === 'stock')
-      orderBy.stock = params.sortOrder || 'desc';
+      orderBy.managedStockQuantity = params.sortOrder || 'desc';
     else if (params.sortBy === 'price')
       orderBy.basePrice = params.sortOrder || 'desc';
     else orderBy.updatedAt = 'desc';
@@ -516,7 +516,7 @@ export class InventoryService {
           slug: true,
           sku: true,
           type: true,
-          stock: true,
+          managedStockQuantity: true,
           manageStock: true,
           lowStockQty: true,
           basePrice: true,
@@ -528,7 +528,7 @@ export class InventoryService {
             select: {
               id: true,
               sku: true,
-              stock: true,
+              managedStockQuantity: true,
               price: true,
               attributeValues: {
                 include: { attributeValue: { select: { value: true } } },
@@ -592,14 +592,14 @@ export class InventoryService {
         id: true,
         name: true,
         sku: true,
-        stock: true,
+        managedStockQuantity: true,
         basePrice: true,
         salePrice: true,
         variants: {
           select: {
             id: true,
             sku: true,
-            stock: true,
+            managedStockQuantity: true,
             price: true,
           },
         },
@@ -614,29 +614,29 @@ export class InventoryService {
       if (product.variants.length > 0) {
         for (const v of product.variants) {
           const price = Number(v.price || product.basePrice);
-          totalValue += price * v.stock;
-          totalStock += v.stock;
+          totalValue += price * v.managedStockQuantity;
+          totalStock += v.managedStockQuantity;
           items.push({
             id: v.id,
             type: 'variant',
             sku: v.sku,
-            stock: v.stock,
+            stock: v.managedStockQuantity,
             unitPrice: price,
-            totalValue: price * v.stock,
+            totalValue: price * v.managedStockQuantity,
           });
         }
       } else {
         const price = Number(product.salePrice || product.basePrice);
-        totalValue += price * product.stock;
-        totalStock += product.stock;
+        totalValue += price * product.managedStockQuantity;
+        totalStock += product.managedStockQuantity;
         items.push({
           id: product.id,
           type: 'product',
           name: product.name,
           sku: product.sku,
-          stock: product.stock,
+          stock: product.managedStockQuantity,
           unitPrice: price,
-          totalValue: price * product.stock,
+          totalValue: price * product.managedStockQuantity,
         });
       }
     }
@@ -647,7 +647,7 @@ export class InventoryService {
   async transfer(dto: StockTransferDto, performedBy?: string) {
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
-      select: { id: true, name: true, stock: true },
+      select: { id: true, name: true, managedStockQuantity: true },
     });
     if (!product) throw new NotFoundException('Product not found');
 

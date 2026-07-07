@@ -556,7 +556,7 @@ export class ImportService {
         shortDesc: data['Short description']?.trim() || null,
         basePrice,
         salePrice: salePrice ?? undefined,
-        stock,
+        managedStockQuantity: stock,
         categoryId: categoryId || undefined,
         productCategories: categoryIds.length > 0
           ? { create: categoryIds.map((id) => ({ categoryId: id })) }
@@ -676,7 +676,7 @@ export class ImportService {
       updateData.shortDesc = data['Short description'].trim() || null;
     updateData.basePrice = basePrice;
     updateData.salePrice = salePrice ?? null;
-    updateData.stock = stock;
+    updateData.managedStockQuantity = stock;
     updateData.categoryId = categoryId;
     updateData.productCategories = categoryIds.length > 0
       ? { deleteMany: {}, create: categoryIds.map((id) => ({ categoryId: id })) }
@@ -787,7 +787,7 @@ export class ImportService {
       const updateData: Record<string, unknown> = {};
       if (regPrice !== undefined) updateData.price = regPrice;
       if (salePrice !== undefined) updateData.salePrice = salePrice;
-      updateData.stock = stock;
+      updateData.managedStockQuantity = stock;
       if (mainImage) updateData.image = mainImage;
 
       if (await this.isVariantUnchanged(existingId, updateData, productId)) {
@@ -841,7 +841,7 @@ export class ImportService {
         sku: varSku,
         price: regPrice ?? undefined,
         salePrice: salePrice ?? undefined,
-        stock,
+        managedStockQuantity: stock,
         image: mainImage || undefined,
         attributeValues:
           resolvedVarAttrs.length > 0
@@ -958,7 +958,7 @@ export class ImportService {
         shortDesc: true,
         basePrice: true,
         salePrice: true,
-        stock: true,
+        managedStockQuantity: true,
         type: true,
         isFeatured: true,
         isActive: true,
@@ -986,11 +986,11 @@ export class ImportService {
     if (!eq(current.shortDesc, intended.shortDesc)) return false;
     if (!eq(Number(current.basePrice), intended.basePrice)) return false;
     if (!eq(current.salePrice != null ? Number(current.salePrice) : null, intended.salePrice ?? null)) return false;
-    if (!eq(current.stock, intended.stock)) return false;
     if (!eq(current.type, intended.type)) return false;
     if (!eq(current.isFeatured, intended.isFeatured)) return false;
     if (!eq(current.isActive, intended.isActive)) return false;
     if (!eq(current.manageStock, intended.manageStock)) return false;
+    if (!eq(current.managedStockQuantity, intended.managedStockQuantity)) return false;
     if (!eq(current.categoryId ?? null, intended.categoryId ?? null)) return false;
     if (!eq(current.brandId ?? null, intended.brandId ?? null)) return false;
 
@@ -1026,7 +1026,7 @@ export class ImportService {
   ): Promise<boolean> {
     const current = await this.prisma.productVariant.findUnique({
       where: { id: variantId },
-      select: { price: true, salePrice: true, stock: true, image: true, productId: true },
+      select: { price: true, salePrice: true, managedStockQuantity: true, image: true, productId: true },
     });
     if (!current) return false;
 
@@ -1040,7 +1040,7 @@ export class ImportService {
 
     if (!eq(Number(current.price ?? 0), intended.price ?? 0)) return false;
     if (!eq(current.salePrice != null ? Number(current.salePrice) : null, intended.salePrice ?? null)) return false;
-    if (!eq(current.stock, intended.stock)) return false;
+    if (!eq(current.managedStockQuantity, intended.managedStockQuantity)) return false;
     if (!eq(current.image ?? null, intended.image ?? null)) return false;
     if (current.productId !== productId) return false;
 
@@ -1368,7 +1368,7 @@ export class ImportService {
           productId,
           sku: varSku,
           price: productBasePrice ?? undefined,
-          stock: 0,
+          managedStockQuantity: 0,
           attributeValues: {
             create: combo.map((v) => ({
               attributeValueId: v.id,

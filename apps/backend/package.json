@@ -112,7 +112,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!(uuid)/)"
+      "node_modules/(?!(uuid|better-auth)/)"
     ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"

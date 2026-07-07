@@ -118,7 +118,7 @@ export class StockService {
 
   private async applyStockChange(
     targets: StockTarget[],
-    field: 'stock' | 'reservedStock',
+    field: 'managedStockQuantity' | 'reservedStock',
     op: StockOp,
     tx: Prisma.TransactionClient,
   ) {
@@ -133,7 +133,7 @@ export class StockService {
         id: true,
         type: true,
         manageStock: true,
-        stock: true,
+        managedStockQuantity: true,
         reservedStock: true,
       },
     });
@@ -145,7 +145,7 @@ export class StockService {
             where: { id: { in: vIds } },
             select: {
               id: true,
-              stock: true,
+              managedStockQuantity: true,
               reservedStock: true,
               productId: true,
             },
@@ -179,7 +179,7 @@ export class StockService {
         if (!v)
           throw new BadRequestException(`Variant ${t.variantId} not found`);
         const avail =
-          field === 'reservedStock' ? v.stock - v.reservedStock : v.stock;
+          field === 'reservedStock' ? v.managedStockQuantity - v.reservedStock : v.managedStockQuantity;
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
             `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
@@ -201,7 +201,7 @@ export class StockService {
         if (!p)
           throw new BadRequestException(`Product ${t.productId} not found`);
         const avail =
-          field === 'reservedStock' ? p.stock - p.reservedStock : p.stock;
+          field === 'reservedStock' ? p.managedStockQuantity - p.reservedStock : p.managedStockQuantity;
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
@@ -290,7 +290,7 @@ export class StockService {
           tx,
         );
       } else if (operation === 'deduct') {
-        await this.applyStockChange(targets, 'stock', 'decrement', tx);
+        await this.applyStockChange(targets, 'managedStockQuantity', 'decrement', tx);
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
         if (!params.comboId) {
           await this.deductCostingLots(targets, tx);
@@ -303,7 +303,7 @@ export class StockService {
           tx,
         );
       } else if (operation === 'add') {
-        await this.applyStockChange(targets, 'stock', 'increment', tx);
+        await this.applyStockChange(targets, 'managedStockQuantity', 'increment', tx);
         await this.logInventory(
           targets,
           params.reference.startsWith('GRN-') ||
@@ -315,7 +315,7 @@ export class StockService {
           tx,
         );
       } else if (operation === 'scrap') {
-        await this.applyStockChange(targets, 'stock', 'decrement', tx);
+        await this.applyStockChange(targets, 'managedStockQuantity', 'decrement', tx);
         await this.logInventory(
           targets,
           'scrap',
@@ -357,24 +357,24 @@ export class StockService {
     if (variantId) {
       const v = await this.prisma.productVariant.findUnique({
         where: { id: variantId },
-        select: { stock: true, reservedStock: true },
+        select: { managedStockQuantity: true, reservedStock: true },
       });
       if (!v) throw new NotFoundException(`Variant ${variantId} not found`);
       return {
-        stock: v.stock,
+        stock: v.managedStockQuantity,
         reserved: v.reservedStock,
-        available: v.stock - v.reservedStock,
+        available: v.managedStockQuantity - v.reservedStock,
       };
     }
     const p = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { stock: true, reservedStock: true },
+      select: { managedStockQuantity: true, reservedStock: true },
     });
     if (!p) throw new NotFoundException(`Product ${productId} not found`);
     return {
-      stock: p.stock,
+      stock: p.managedStockQuantity,
       reserved: p.reservedStock,
-      available: p.stock - p.reservedStock,
+      available: p.managedStockQuantity - p.reservedStock,
     };
   }
 
@@ -384,7 +384,7 @@ export class StockService {
       select: {
         id: true,
         name: true,
-        stock: true,
+        managedStockQuantity: true,
         basePrice: true,
         salePrice: true,
       },
@@ -394,7 +394,7 @@ export class StockService {
       select: {
         id: true,
         productId: true,
-        stock: true,
+        managedStockQuantity: true,
         price: true,
         sku: true,
       },
@@ -409,30 +409,30 @@ export class StockService {
 
     for (const v of variants) {
       const price = Number(v.price || productPriceMap.get(v.productId) || 0);
-      totalValue += price * v.stock;
-      totalStock += v.stock;
+      totalValue += price * v.managedStockQuantity;
+      totalStock += v.managedStockQuantity;
       items.push({
         id: v.id,
         type: 'variant',
         sku: v.sku,
-        stock: v.stock,
+        stock: v.managedStockQuantity,
         unitPrice: price,
-        totalValue: price * v.stock,
+        totalValue: price * v.managedStockQuantity,
       });
     }
     for (const p of products) {
       const vCount = variants.filter((v) => v.productId === p.id).length;
       if (vCount === 0) {
         const price = productPriceMap.get(p.id) || 0;
-        totalValue += price * p.stock;
-        totalStock += p.stock;
+        totalValue += price * p.managedStockQuantity;
+        totalStock += p.managedStockQuantity;
         items.push({
           id: p.id,
           type: 'product',
           name: p.name,
-          stock: p.stock,
+          stock: p.managedStockQuantity,
           unitPrice: price,
-          totalValue: price * p.stock,
+          totalValue: price * p.managedStockQuantity,
         });
       }
     }
