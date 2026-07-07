@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { CategorySidebar } from '../components/category-sidebar'
 import { ProductGrid } from '../components/product-grid'
 import { SearchBar } from '../components/search-bar'
 import { CartPanel } from '../components/cart-panel'
+import { CashierDashboard } from '../components/cashier-dashboard'
 import { useSessionStore } from '../stores/session-store'
 import { useCartStore } from '../stores/cart-store'
 import { getPosProducts } from '../api/client'
 import { VariantModal } from '../components/variant-modal'
 import { toast } from 'sonner'
-import { LogOut, ShoppingCart, User, Wifi, Menu, X } from 'lucide-react'
+import { LogOut, ShoppingCart, User, Wifi, Menu, X, BarChart3, ChevronRight, Store } from 'lucide-react'
 
 interface Props { onCloseSession: () => void }
 
@@ -18,13 +19,29 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
   
   // States for parent-level exact-match variant modal triggering
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [variantModalOpen, setVariantModalOpen] = useState(false)
   
-  const { showroomName } = useSessionStore()
+  const { showroomName, cashierName } = useSessionStore()
   const { items } = useCartStore()
+
+  // Close profile popover on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setIsProfileOpen(false)
+      }
+    }
+    if (isProfileOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isProfileOpen])
 
   const handleSearchSubmit = async () => {
     const query = searchQuery.trim()
@@ -151,7 +168,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Connection Status */}
           <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600 transition">
             <Wifi size={12} className="text-emerald-500" />
@@ -160,18 +177,67 @@ export function PosTerminalPage({ onCloseSession }: Props) {
 
           <div className="h-4 w-px bg-slate-200" />
 
-          {/* User profile / Logout */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600 border border-slate-200">
-              <User size={16} />
-            </div>
-            <button 
-              onClick={onCloseSession}
-              className="flex items-center gap-1.5 rounded-xl border border-orange-200/80 bg-orange-50/50 px-3 py-1.5 text-xs font-bold text-orange-600 hover:bg-orange-100 hover:text-orange-700 active:scale-[0.98] transition cursor-pointer"
+          {/* Dashboard Button */}
+          <button
+            onClick={() => setIsDashboardOpen(true)}
+            title="Session Dashboard"
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition cursor-pointer"
+          >
+            <BarChart3 size={15} />
+          </button>
+
+          {/* User Profile Popover */}
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={() => setIsProfileOpen((v) => !v)}
+              title="Cashier Profile"
+              className="flex h-8 items-center gap-2 rounded-xl bg-slate-100 border border-slate-200 pl-1.5 pr-2.5 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
             >
-              <LogOut size={13} />
-              <span className="hidden sm:inline">Close Session</span>
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500 text-white font-black text-[11px] shadow-sm">
+                {cashierName ? cashierName.charAt(0).toUpperCase() : <User size={12} />}
+              </div>
+              <span className="hidden text-xs font-bold sm:block max-w-[80px] truncate">{cashierName || 'Cashier'}</span>
             </button>
+
+            {/* Popover Dropdown */}
+            {isProfileOpen && (
+              <div className="absolute right-0 top-full mt-2 w-60 rounded-2xl border border-slate-200 bg-white shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                {/* Profile Header */}
+                <div className="px-4 py-3.5 bg-gradient-to-br from-slate-50 to-emerald-50 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white font-black text-base shadow-sm">
+                      {cashierName ? cashierName.charAt(0).toUpperCase() : '?'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900 truncate">{cashierName || 'Cashier'}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Store size={10} className="text-slate-400 shrink-0" />
+                        <p className="text-[11px] text-slate-500 truncate">{showroomName}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="p-2">
+                  <button
+                    onClick={() => { setIsProfileOpen(false); setIsDashboardOpen(true) }}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2"><BarChart3 size={14} className="text-emerald-500" /> Session Dashboard</span>
+                    <ChevronRight size={13} className="text-slate-300" />
+                  </button>
+                  <div className="my-1 border-t border-slate-100" />
+                  <button
+                    onClick={() => { setIsProfileOpen(false); onCloseSession() }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold text-orange-600 hover:bg-orange-50 transition cursor-pointer"
+                  >
+                    <LogOut size={14} />
+                    <span>Close Session</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -262,6 +328,12 @@ export function PosTerminalPage({ onCloseSession }: Props) {
         onOpenChange={setVariantModalOpen}
         product={selectedProduct}
         onAdd={handleAddVariant}
+      />
+
+      {/* Cashier Session Dashboard */}
+      <CashierDashboard
+        open={isDashboardOpen}
+        onOpenChange={setIsDashboardOpen}
       />
     </div>
   )

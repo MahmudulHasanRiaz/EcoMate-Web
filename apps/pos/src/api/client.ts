@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useSessionStore } from '../stores/session-store';
 
 const api = axios.create({
   baseURL: '/api',
@@ -10,7 +11,7 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  const sessionId = localStorage.getItem('pos_session_id');
+  const sessionId = useSessionStore.getState().sessionId;
   if (sessionId) {
     config.headers['x-pos-session-id'] = sessionId;
   }
@@ -60,3 +61,9 @@ export const quickCreateCustomer = (phone: string, name?: string) =>
 
 export const getShowrooms = () =>
   api.get('/warehouses', { params: { type: 'showroom' } });
+
+export const getPaymentGateways = () =>
+  api.get('/gateways');
+
+export const getSessionOrders = (sessionId: string) =>
+  api.get(`/pos/sessions/${sessionId}/orders`);

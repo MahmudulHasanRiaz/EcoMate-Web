@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useCartStore } from '../stores/cart-store'
-import { createPosOrder } from '../api/client'
+import { createPosOrder, getPaymentGateways } from '../api/client'
 import { toast } from 'sonner'
-import { CreditCard, X, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react'
+import { CreditCard, X, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, Loader2, Banknote, Smartphone, Building2 } from 'lucide-react'
 
 interface Props {
   open: boolean
@@ -11,29 +11,69 @@ interface Props {
   onSuccess: () => void
 }
 
-const PAYMENT_METHODS = [
-  { value: 'CASH', label: 'Cash' },
-  { value: 'CARD', label: 'Card' },
-  { value: 'MOBILE_BANKING', label: 'Mobile Banking' },
-]
+interface Gateway {
+  id: string
+  code: string
+  name: string
+  type: string
+  paymentOptionType: string
+}
+
+const GATEWAY_ICONS: Record<string, React.ReactNode> = {
+  cash: <Banknote size={13} />,
+  bkash: <Smartphone size={13} />,
+  nagad: <Smartphone size={13} />,
+  rocket: <Smartphone size={13} />,
+  upay: <Smartphone size={13} />,
+  cellfin: <Smartphone size={13} />,
+  card: <CreditCard size={13} />,
+  bkash_pgw: <Smartphone size={13} />,
+  bank_transfer: <Building2 size={13} />,
+}
 
 export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const { items, orderDiscount, orderDiscountType, customerId, guestName, guestPhone, salesChannel, deliveryMethod, notes, clearCart, total } = useCartStore()
   const cartTotal = total()
 
+  const [gateways, setGateways] = useState<Gateway[]>([])
+  const [gatewaysLoading, setGatewaysLoading] = useState(true)
   const [splits, setSplits] = useState<{ method: string; amount: string }[]>([
     { method: 'CASH', amount: cartTotal.toFixed(2) },
   ])
   const [loading, setLoading] = useState(false)
 
+  // Fetch enabled payment gateways from settings
+  useEffect(() => {
+    setGatewaysLoading(true)
+    getPaymentGateways()
+      .then((res) => {
+        const data: Gateway[] = res.data || []
+        setGateways(data)
+        // Reset splits to use first available gateway
+        if (data.length > 0) {
+          setSplits([{ method: data[0].code, amount: cartTotal.toFixed(2) }])
+        }
+      })
+      .catch(() => {
+        // Fallback to cash if API fails
+        setGateways([{ id: 'cash', code: 'cash', name: 'Cash', type: 'cash', paymentOptionType: 'CASH_ON_DELIVERY' }])
+      })
+      .finally(() => setGatewaysLoading(false))
+  }, [open]) // Re-fetch whenever modal opens
+
   const handleOpenChange = (open: boolean) => {
-    if (open) {
+    if (open && gateways.length > 0) {
+      setSplits([{ method: gateways[0].code, amount: cartTotal.toFixed(2) }])
+    } else if (open) {
       setSplits([{ method: 'CASH', amount: cartTotal.toFixed(2) }])
     }
     onOpenChange(open)
   }
 
-  const addSplit = () => setSplits([...splits, { method: 'CARD', amount: '0' }])
+  const addSplit = () => {
+    const nextMethod = gateways.length > 1 ? gateways[1].code : (gateways[0]?.code || 'CASH')
+    setSplits([...splits, { method: nextMethod, amount: '0' }])
+  }
 
   const updateSplit = (i: number, field: 'method' | 'amount', value: string) => {
     const next = [...splits]
@@ -48,7 +88,6 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const isValid = Math.abs(difference) < 0.01 && splits.every((sp) => parseFloat(sp.amount) > 0)
 
   const handleQuickCash = (amount: number) => {
-    // Set the first split amount to the quick cash selection
     if (splits.length > 0) {
       updateSplit(0, 'amount', amount.toFixed(2))
     }
@@ -112,7 +151,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
             <p className="text-3xl font-black text-slate-900">৳{cartTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
 
-          {/* Quick Cash Presets (only applies to first split for quick operations) */}
+          {/* Quick Cash Presets */}
           <div className="mb-5">
             <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">Quick Cash Presets</span>
             <div className="flex gap-2">
@@ -133,47 +172,58 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
           <div className="space-y-3 mb-5 max-h-[30vh] overflow-y-auto pr-1">
             <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Payment Breakdown</span>
             
-            {splits.map((sp, i) => (
-              <div key={i} className="flex gap-2.5 items-center">
-                {/* Method selector */}
-                <div className="relative w-36 shrink-0">
-                  <select
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3.5 pr-8 text-xs font-bold text-slate-700 outline-none transition focus:border-emerald-500 cursor-pointer"
-                    value={sp.method}
-                    onChange={(e) => updateSplit(i, 'method', e.target.value)}
-                  >
-                    {PAYMENT_METHODS.map((pm) => (
-                      <option key={pm.value} value={pm.value}>{pm.label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-
-                {/* Amount Input */}
-                <input
-                  className="flex-1 rounded-xl border border-slate-200 py-2 pl-3 pr-3.5 text-right text-base font-extrabold text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={sp.amount}
-                  onChange={(e) => updateSplit(i, 'amount', e.target.value)}
-                />
-
-                {splits.length > 1 && (
-                  <button 
-                    onClick={() => removeSplit(i)} 
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition shrink-0 cursor-pointer"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
+            {gatewaysLoading ? (
+              <div className="flex items-center justify-center gap-2 py-4 text-slate-400 text-xs">
+                <Loader2 size={14} className="animate-spin" />
+                <span>Loading payment methods...</span>
               </div>
-            ))}
+            ) : (
+              splits.map((sp, i) => (
+                <div key={i} className="flex gap-2.5 items-center">
+                  {/* Method selector with gateway icons */}
+                  <div className="relative w-40 shrink-0">
+                    <select
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3.5 pr-8 text-xs font-bold text-slate-700 outline-none transition focus:border-emerald-500 cursor-pointer"
+                      value={sp.method}
+                      onChange={(e) => updateSplit(i, 'method', e.target.value)}
+                    >
+                      {gateways.map((gw) => (
+                        <option key={gw.code} value={gw.code}>{gw.name}</option>
+                      ))}
+                    </select>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none hidden">
+                      {GATEWAY_ICONS[sp.method] || <CreditCard size={13} />}
+                    </div>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+
+                  {/* Amount Input */}
+                  <input
+                    className="flex-1 rounded-xl border border-slate-200 py-2 pl-3 pr-3.5 text-right text-base font-extrabold text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={sp.amount}
+                    onChange={(e) => updateSplit(i, 'amount', e.target.value)}
+                  />
+
+                  {splits.length > 1 && (
+                    <button 
+                      onClick={() => removeSplit(i)} 
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition shrink-0 cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
 
             <div className="flex items-center justify-between mt-2.5">
               <button 
                 onClick={addSplit} 
-                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
+                disabled={gatewaysLoading}
+                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer disabled:opacity-40"
               >
                 <Plus size={14} />
                 <span>Add split payment</span>
@@ -202,11 +252,11 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
             
             <button
               onClick={handlePay}
-              disabled={!isValid || loading}
+              disabled={!isValid || loading || gatewaysLoading}
               className="flex-1 rounded-xl bg-emerald-500 py-3.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-md border border-emerald-400 transition cursor-pointer flex items-center justify-center gap-1.5"
             >
               {loading ? (
-                <span>Settling...</span>
+                <><Loader2 size={14} className="animate-spin" /><span>Settling...</span></>
               ) : (
                 <span>Complete Checkout</span>
               )}

@@ -24,7 +24,8 @@ export function SessionOpenPage({ onOpened }: Props) {
           id: existing.data.id,
           showroomId: existing.data.showroomId,
           showroomName: existing.data.showroom.name,
-          cashierName: '',
+          cashierName: existing.data.cashierName || '',
+          openedAt: existing.data.openedAt || existing.data.createdAt,
         })
         onOpened()
         return
@@ -36,7 +37,8 @@ export function SessionOpenPage({ onOpened }: Props) {
         id: session.id,
         showroomId: session.showroomId,
         showroomName: session.showroom.name,
-        cashierName: '',
+        cashierName: session.cashierName || '',
+        openedAt: session.openedAt || session.createdAt,
       })
       localStorage.setItem('pos_session_id', session.id)
       onOpened()

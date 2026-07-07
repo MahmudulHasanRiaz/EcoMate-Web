@@ -74,22 +74,36 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
     })
   }
 
-  const getProductPriceDisplay = (p: any) => {
+  const getProductPriceNode = (p: any) => {
     if (p.type === 'variable' && p.variants && p.variants.length > 0) {
-      const prices = p.variants
+      const salePrices = p.variants
         .map((v: any) => Number(v.salePrice || v.price || 0))
         .filter((pr: number) => pr > 0)
-      if (prices.length > 0) {
-        const minPrice = Math.min(...prices)
-        const maxPrice = Math.max(...prices)
-        if (minPrice === maxPrice) {
-          return `৳${minPrice.toLocaleString()}`
-        }
-        return `৳${minPrice.toLocaleString()} - ৳${maxPrice.toLocaleString()}`
+      if (salePrices.length > 0) {
+        const minPrice = Math.min(...salePrices)
+        const maxPrice = Math.max(...salePrices)
+        const displaySale = minPrice === maxPrice
+          ? `৳${minPrice.toLocaleString()}`
+          : `৳${minPrice.toLocaleString()} – ৳${maxPrice.toLocaleString()}`
+        return <span className="text-xs font-black text-emerald-600">{displaySale}</span>
       }
     }
-    const price = Number(p.salePrice || p.basePrice || 0)
-    return `৳${price.toLocaleString()}`
+    const salePrice = Number(p.salePrice || 0)
+    const basePrice = Number(p.basePrice || 0)
+    const hasDiscount = salePrice > 0 && basePrice > salePrice
+    const displayPrice = salePrice > 0 ? salePrice : basePrice
+    return (
+      <span className="flex flex-col items-center gap-0.5">
+        {hasDiscount && (
+          <span className="text-[10px] font-semibold text-slate-400 line-through leading-none">
+            ৳{basePrice.toLocaleString()}
+          </span>
+        )}
+        <span className="text-xs font-black text-emerald-600 leading-none">
+          ৳{displayPrice.toLocaleString()}
+        </span>
+      </span>
+    )
   }
 
   if (loading) {
@@ -159,13 +173,13 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
               </div>
 
               {/* Product Meta padding */}
-              <div className="px-3 pt-2.5 flex flex-col items-center flex-1">
+              <div className="px-3 pt-2 pb-1 flex flex-col items-center flex-1">
                 <p className="line-clamp-2 text-center text-xs font-bold text-slate-700 group-hover:text-slate-900 transition-colors min-h-[2rem]">
                   {p.name}
                 </p>
-                <p className="mt-2 text-xs font-black text-emerald-600">
-                  {getProductPriceDisplay(p)}
-                </p>
+                <div className="mt-1.5 flex flex-col items-center">
+                  {getProductPriceNode(p)}
+                </div>
               </div>
             </button>
           )
