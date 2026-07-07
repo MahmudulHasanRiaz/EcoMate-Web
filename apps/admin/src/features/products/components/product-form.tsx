@@ -99,6 +99,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [isActive, setIsActive] = useState(true)
   const [isFeatured, setIsFeatured] = useState(false)
   const [manageStock, setManageStock] = useState(false)
+  const [availabilityMode, setAvailabilityMode] = useState<string>('MANAGED_STOCK')
+  const [standardCost, setStandardCost] = useState('')
   const [images, setImages] = useState<string[]>([])
   const [tags, setTags] = useState<string>('')
   const [sizeChartId, setSizeChartId] = useState<string>('')
@@ -153,13 +155,15 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setBasePrice(String(currentRow.basePrice ?? ''))
       setSalePrice(currentRow.salePrice != null ? String(currentRow.salePrice) : '')
       setSku(currentRow.sku || '')
-      setStock(String(currentRow.stock ?? 0))
+      setStock(String(currentRow.managedStockQuantity ?? 0))
       setLowStockQty(currentRow.lowStockQty != null ? String(currentRow.lowStockQty) : '')
       setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || [])
       setBrandId(currentRow.brandId || '')
       setIsActive(currentRow.isActive ?? true)
       setIsFeatured(currentRow.isFeatured ?? false)
       setManageStock(currentRow.manageStock ?? false)
+      setAvailabilityMode(currentRow.availabilityMode || 'MANAGED_STOCK')
+      setStandardCost(currentRow.standardCost != null ? String(currentRow.standardCost) : '')
       setImages(Array.isArray(currentRow.images) ? currentRow.images : [])
       setTags(Array.isArray(currentRow.tags) ? currentRow.tags.join(', ') : '')
       setSizeChartId((currentRow as any).sizeChartId || '')
@@ -169,7 +173,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
-      setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+      setManageStock(false); setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
       setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
     setTab('general')
@@ -221,7 +225,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const reset = () => {
     setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
-    setManageStock(false); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+    setManageStock(false); setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({}); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 });
     setCreatedProductId(null); setRegenerateConfirm(false);
     setOverrideFormState({
@@ -325,12 +329,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
     }
+    payload.availabilityMode = availabilityMode
+    payload.standardCost = standardCost ? parseFloat(standardCost) : undefined
     if (type !== 'variable') {
       payload.manageStock = manageStock
-      if (!isEdit) {
-        payload.stock = parseInt(stock) || 0
-      } else if (manageStockJustToggled) {
-        payload.stock = parseInt(stock) || 0
+      if (!isEdit && availabilityMode === 'MANAGED_STOCK') {
+        payload.managedStockQuantity = parseInt(stock) || 0
+      } else if (manageStockJustToggled && availabilityMode === 'MANAGED_STOCK') {
+        payload.managedStockQuantity = parseInt(stock) || 0
       }
     }
     if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
@@ -375,7 +381,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
         attributeIds: selectedAttrs,
         attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
         defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
-        defaultStock: manageStock ? (parseInt(stock) || 0) : 10,
+        defaultManagedStockQuantity: manageStock ? (parseInt(stock) || 0) : 10,
       },
     })
   }
@@ -583,13 +589,117 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                     <Label>Sale Price</Label>
                     <Input type='number' step='0.01' value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder='0.00' />
                   </div>
+                  <div className='space-y-1.5'>
+                    <Label>Standard Cost (COGS)</Label>
+                    <Input type='number' step='0.01' value={standardCost} onChange={e => setStandardCost(e.target.value)} placeholder='0.00' />
+                  </div>
                 </div>
               </section>
 
               {/* Inventory */}
               <section className='bg-muted/20 rounded-lg p-5 space-y-4'>
                 <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Inventory</h3>
-                {type === 'variable' ? (
+                <div className='space-y-1.5'>
+                  <Label>Availability Mode</Label>
+                  <select
+                    className='flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+                    value={availabilityMode}
+                    onChange={e => setAvailabilityMode(e.target.value)}
+                  >
+                    <option value='MANAGED_STOCK'>Managed Stock</option>
+                    <option value='ALWAYS_IN_STOCK'>Always In Stock</option>
+                    <option value='ALWAYS_OUT_OF_STOCK'>Always Out Of Stock</option>
+                    <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>
+                  </select>
+                </div>
+                {availabilityMode === 'MANAGED_STOCK' && type !== 'variable' && (
+                  isEdit ? (
+                    <div className='space-y-3'>
+                      <div className='flex items-center gap-3'>
+                        <Switch checked={manageStock} onCheckedChange={(v) => {
+                          if (!v && parseInt(stock) > 0) {
+                            setConfirmDialog({ open: true, stock: parseInt(stock) })
+                          } else {
+                            setManageStock(v)
+                            if (v) setManageStockJustToggled(true)
+                          }
+                        }} />
+                        <Label>Manage Stock</Label>
+                      </div>
+                      {manageStock ? (
+                        <>
+                          <div className='flex items-center gap-3'>
+                            <Badge variant='outline' className='text-sm px-3 py-1'>
+                              {manageStockJustToggled ? 'Initial Stock:' : 'Current Stock:'} <strong className='ml-1'>{stock}</strong>
+                            </Badge>
+                            {manageStockJustToggled ? (
+                              <div className='space-y-1.5 w-40'>
+                                <Label className='text-xs'>Quantity</Label>
+                                <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' className='h-8 text-xs' />
+                              </div>
+                            ) : (
+                              <div className='space-y-1.5 w-40'>
+                                <Label className='text-xs'>Low Stock Alert</Label>
+                                <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' className='h-8 text-xs' />
+                              </div>
+                            )}
+                          </div>
+                          {!manageStockJustToggled && (
+                            <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                              <p className='text-xs text-blue-700 dark:text-blue-300'>
+                                Stock can only be adjusted from <strong>Inventory → Adjust Stock</strong>.
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className='text-sm text-muted-foreground'>Stock status-based (In Stock / Out of Stock). No quantity tracking.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className='space-y-3'>
+                      <div className='flex items-center gap-3'>
+                        <Switch checked={manageStock} onCheckedChange={setManageStock} />
+                        <Label>Manage Stock</Label>
+                      </div>
+                      {manageStock ? (
+                        <div className='grid grid-cols-3 gap-6'>
+                          <div className='space-y-1.5'>
+                            <Label>Stock Quantity</Label>
+                            <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
+                          </div>
+                          <div className='space-y-1.5'>
+                            <Label>Low Stock Alert</Label>
+                            <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className='flex items-center gap-3'>
+                          <Label>Stock Status:</Label>
+                          <div className='flex gap-1 border rounded-md p-0.5'>
+                            <Button
+                              variant={parseInt(stock) > 0 ? 'default' : 'ghost'}
+                              size='sm'
+                              className='h-7 text-xs'
+                              onClick={() => setStock('10')}
+                            >
+                              In Stock
+                            </Button>
+                            <Button
+                              variant={parseInt(stock) <= 0 ? 'default' : 'ghost'}
+                              size='sm'
+                              className='h-7 text-xs'
+                              onClick={() => setStock('0')}
+                            >
+                              Out of Stock
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+                {availabilityMode === 'MANAGED_STOCK' && type === 'variable' && (
                   isEdit ? (
                     <div className='space-y-3'>
                       <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
@@ -602,90 +712,27 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   ) : (
                     <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
                   )
-                ) : isEdit ? (
-                  <div className='space-y-3'>
-                    <div className='flex items-center gap-3'>
-                      <Switch checked={manageStock} onCheckedChange={(v) => {
-                        if (!v && parseInt(stock) > 0) {
-                          setConfirmDialog({ open: true, stock: parseInt(stock) })
-                        } else {
-                          setManageStock(v)
-                          if (v) setManageStockJustToggled(true)
-                        }
-                      }} />
-                      <Label>Manage Stock</Label>
-                    </div>
-                    {manageStock ? (
-                      <>
-                        <div className='flex items-center gap-3'>
-                          <Badge variant='outline' className='text-sm px-3 py-1'>
-                            {manageStockJustToggled ? 'Initial Stock:' : 'Current Stock:'} <strong className='ml-1'>{stock}</strong>
-                          </Badge>
-                          {manageStockJustToggled ? (
-                            <div className='space-y-1.5 w-40'>
-                              <Label className='text-xs'>Quantity</Label>
-                              <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' className='h-8 text-xs' />
-                            </div>
-                          ) : (
-                            <div className='space-y-1.5 w-40'>
-                              <Label className='text-xs'>Low Stock Alert</Label>
-                              <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' className='h-8 text-xs' />
-                            </div>
-                          )}
-                        </div>
-                        {!manageStockJustToggled && (
-                          <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
-                            <p className='text-xs text-blue-700 dark:text-blue-300'>
-                              Stock can only be adjusted from <strong>Inventory → Adjust Stock</strong>.
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className='text-sm text-muted-foreground'>Stock status-based (In Stock / Out of Stock). No quantity tracking.</p>
-                    )}
+                )}
+                {availabilityMode === 'ALWAYS_IN_STOCK' && (
+                  <div className='bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-md px-3 py-2'>
+                    <p className='text-xs text-green-700 dark:text-green-300'>
+                      Product is always in stock. No quantity tracking.
+                    </p>
                   </div>
-                ) : (
-                  <>
-                    <div className='flex items-center gap-3'>
-                      <Switch checked={manageStock} onCheckedChange={setManageStock} />
-                      <Label>Manage Stock</Label>
-                    </div>
-                    {manageStock ? (
-                      <div className='grid grid-cols-3 gap-6'>
-                        <div className='space-y-1.5'>
-                          <Label>Stock Quantity</Label>
-                          <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
-                        </div>
-                        <div className='space-y-1.5'>
-                          <Label>Low Stock Alert</Label>
-                          <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className='flex items-center gap-3'>
-                        <Label>Stock Status:</Label>
-                        <div className='flex gap-1 border rounded-md p-0.5'>
-                          <Button
-                            variant={parseInt(stock) > 0 ? 'default' : 'ghost'}
-                            size='sm'
-                            className='h-7 text-xs'
-                            onClick={() => setStock('10')}
-                          >
-                            In Stock
-                          </Button>
-                          <Button
-                            variant={parseInt(stock) <= 0 ? 'default' : 'ghost'}
-                            size='sm'
-                            className='h-7 text-xs'
-                            onClick={() => setStock('0')}
-                          >
-                            Out of Stock
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
+                )}
+                {availabilityMode === 'ALWAYS_OUT_OF_STOCK' && (
+                  <div className='bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md px-3 py-2'>
+                    <p className='text-xs text-red-700 dark:text-red-300'>
+                      Product is marked as out of stock.
+                    </p>
+                  </div>
+                )}
+                {availabilityMode === 'INVENTORY_CONTROLLED' && (
+                  <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                    <p className='text-xs text-blue-700 dark:text-blue-300'>
+                      Stock is controlled by the Inventory module.
+                    </p>
+                  </div>
                 )}
               </section>
             </TabsContent>
@@ -1068,7 +1115,7 @@ function VariantRow({
 
   const saveEdit = () => {
     if (!editing) return
-    const field = editing as 'price' | 'salePrice' | 'stock' | 'sku'
+    const field = editing as 'price' | 'salePrice' | 'standardCost' | 'sku'
     if (field === 'sku') {
       if (!editValue.trim()) {
         toast.error('SKU cannot be empty')
@@ -1092,14 +1139,14 @@ function VariantRow({
         return
       }
       onUpdate({ salePrice: val })
-    } else if (field === 'stock') {
-      const val = parseInt(editValue)
-      if (isNaN(val) || val < 0) {
-        toast.error('Stock must be a valid non-negative number')
+    } else if (field === 'standardCost') {
+      const val = editValue === '' ? null : parseFloat(editValue)
+      if (val !== null && (isNaN(val) || val < 0)) {
+        toast.error('Standard cost must be a valid positive number')
         cancelEdit()
         return
       }
-      onUpdate({ stock: val })
+      onUpdate({ standardCost: val })
     }
     setEditing(null)
   }
@@ -1170,16 +1217,21 @@ function VariantRow({
           )}
         </div>
 
-        {/* Stock (editable inline) */}
+        {/* Standard Cost */}
         <div className='min-w-0'>
-          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
-          {editing === 'stock' ? (
+          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Std. Cost</p>
+          {editing === 'standardCost' ? (
             <div className='flex items-center gap-1'>
-              <Input type='number' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-20' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
+              <span className='text-xs text-muted-foreground'>{currencySymbol}</span>
+              <Input type='number' step='0.01' value={editValue} onChange={e => setEditValue(e.target.value)} className='h-7 text-xs py-0 px-2 w-24' autoFocus onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }} />
             </div>
           ) : (
-            <button onClick={() => startEdit('stock', variant.stock)} className='flex items-center gap-1 group'>
-              <Badge variant={variant.stock > 0 ? 'secondary' : 'destructive'} className='text-xs cursor-pointer'>{variant.stock}</Badge>
+            <button onClick={() => startEdit('standardCost', variant.standardCost)} className='flex items-center gap-1 group'>
+              {variant.standardCost != null ? (
+                <span>{currencySymbol}{Number(variant.standardCost).toFixed(2)}</span>
+              ) : (
+                <span className='text-muted-foreground italic text-xs'>—</span>
+              )}
               <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
             </button>
           )}

@@ -3,7 +3,7 @@ import { apiClient } from '@/lib/api-client'
 export interface ProductVariantResponse {
   id: string; productId: string; sku: string; price?: number | string | null;
   salePrice?: number | string | null;
-  stock: number; image?: string | null; isActive: boolean;
+  managedStockQuantity: number; standardCost?: number | string | null; image?: string | null; isActive: boolean;
   attributeValues: { attributeValue: { id: string; value: string; attribute: { id: string; name: string } } }[];
 }
 
@@ -11,9 +11,10 @@ export interface ProductResponse {
   id: string; name: string; slug: string; type: string;
   description?: string | null; shortDesc?: string | null;
   basePrice: number | string; salePrice?: number | string | null;
-  sku?: string | null; stock: number; lowStockQty?: number | null;
+  sku?: string | null; managedStockQuantity: number; lowStockQty?: number | null;
   categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean; manageStock: boolean;
+  availabilityMode?: string; standardCost?: number | string | null;
   createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;
   variants: ProductVariantResponse[];
@@ -29,9 +30,9 @@ export const productsApi = {
   delete: (id: string) => apiClient.delete(`/products/${id}`),
   bulkDelete: (ids: string[]) => apiClient.post('/products/bulk/delete', { ids }),
   bulkUpdate: (ids: string[], data: any) => apiClient.post('/products/bulk/update', { ids, data }),
-  generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultStock?: number }) =>
+  generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultManagedStockQuantity?: number }) =>
     apiClient.post<ProductResponse>(`/products/${id}/variants/generate`, data),
-  updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; salePrice?: number; stock?: number; image?: string | null }) =>
+  updateVariant: (id: string, variantId: string, data: { sku?: string; price?: number; salePrice?: number; standardCost?: number | null; image?: string | null }) =>
     apiClient.put<ProductVariantResponse>(`/products/${id}/variants/${variantId}`, data),
 }
 

@@ -49,7 +49,7 @@ function transformBackendCombo(raw: any): Combo {
           id: v.id,
           sku: v.sku,
           price: Number(v.price),
-          stock: v.stock,
+          stock: v.managedStockQuantity,
           image: v.image || "",
           isActive: v.isActive ?? true,
           attributeValues: v.attributeValues?.map((av: any) => ({

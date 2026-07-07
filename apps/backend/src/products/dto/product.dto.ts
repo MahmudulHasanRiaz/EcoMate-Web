@@ -10,6 +10,7 @@ import {
   ValidateIf,
   MinLength,
   IsObject,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -22,6 +23,7 @@ export class CreateVariantDto {
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsInt() managedStockQuantity?: number;
+  @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsString() image?: string;
   @IsOptional()
   @IsArray()
@@ -40,6 +42,10 @@ export class CreateProductDto {
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsInt() managedStockQuantity?: number;
+  @IsOptional()
+  @IsIn(['ALWAYS_IN_STOCK', 'ALWAYS_OUT_OF_STOCK', 'MANAGED_STOCK', 'INVENTORY_CONTROLLED'])
+  availabilityMode?: string;
+  @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() brandId?: string;
@@ -68,6 +74,10 @@ export class UpdateProductDto {
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsInt() managedStockQuantity?: number;
+  @IsOptional()
+  @IsIn(['ALWAYS_IN_STOCK', 'ALWAYS_OUT_OF_STOCK', 'MANAGED_STOCK', 'INVENTORY_CONTROLLED'])
+  availabilityMode?: string;
+  @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
   @IsOptional()
   @ValidateIf((o) => o.categoryId !== null)
@@ -95,6 +105,7 @@ export class GenerateVariantsDto {
   @IsOptional() @IsNumber() defaultPrice?: number;
   @IsOptional() @IsNumber() defaultSalePrice?: number;
   @IsOptional() @IsInt() defaultManagedStockQuantity?: number;
+  @IsOptional() @IsNumber() defaultStandardCost?: number;
 }
 
 export class UpdateVariantDto {
@@ -102,5 +113,6 @@ export class UpdateVariantDto {
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsInt() managedStockQuantity?: number;
+  @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsString() image?: string | null;
 }

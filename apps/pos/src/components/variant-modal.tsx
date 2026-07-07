@@ -43,7 +43,7 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                 .join(' / ') || v.sku || 'Default Variant'
 
               const price = Number(v.salePrice || v.price || 0)
-              const hasStock = v.stock > 0
+              const hasStock = (v.managedStockQuantity ?? 0) > 0
 
               const parentImages = Array.isArray(product.images) ? product.images : []
               const parentImgUrl = parentImages[0]?.url || parentImages[0] || null
@@ -71,7 +71,7 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                       <span className="text-slate-400">SKU: {v.sku}</span>
                       <span className="h-1 w-1 rounded-full bg-slate-200" />
                       <span className={hasStock ? 'text-emerald-600' : 'text-rose-500'}>
-                        {hasStock ? `${v.stock} in stock` : 'Out of stock'}
+                        {hasStock ? `${v.managedStockQuantity ?? 0} in stock` : 'Out of stock'}
                       </span>
                     </div>
                   </div>
