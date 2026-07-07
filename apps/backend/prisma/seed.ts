@@ -691,7 +691,7 @@ async function main() {
         basePrice: combo.basePrice,
         salePrice: combo.salePrice,
         image: combo.image,
-        managedStockQuantity: combo.stock,
+        stock: combo.stock,
         manageStock: combo.manageStock,
         isFeatured: combo.isFeatured,
         isActive: combo.isActive,
