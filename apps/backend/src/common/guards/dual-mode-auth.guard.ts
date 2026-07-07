@@ -22,17 +22,7 @@ export class DualModeAuthGuard {
 
     const request = context.switchToHttp().getRequest();
 
-    // 1. Try Better Auth session (role/permissions attached directly to user by customSession plugin)
-    const headers = fromNodeHeaders(request.headers);
-    const session = await auth.api.getSession({ headers }).catch(() => null);
-
-    const sessionUser = session?.user;
-    if (sessionUser) {
-      request.user = { ...sessionUser, userId: sessionUser.id, betterAuthSession: session };
-      return true;
-    }
-
-    // 2. Try legacy JWT
+    // 1. Try legacy JWT first if Authorization header is present
     const authHeader = request.headers?.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       try {
@@ -50,6 +40,16 @@ export class DualModeAuthGuard {
       } catch {
         // Invalid token — continue
       }
+    }
+
+    // 2. Try Better Auth session (role/permissions attached directly to user by customSession plugin)
+    const headers = fromNodeHeaders(request.headers);
+    const session = await auth.api.getSession({ headers }).catch(() => null);
+
+    const sessionUser = session?.user;
+    if (sessionUser) {
+      request.user = { ...sessionUser, userId: sessionUser.id, betterAuthSession: session };
+      return true;
     }
 
     // 3. Public routes: allow through

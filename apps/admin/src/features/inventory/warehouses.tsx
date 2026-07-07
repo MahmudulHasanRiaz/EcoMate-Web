@@ -14,12 +14,14 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Plus, Pencil, Trash2, Building2, Search, X } from 'lucide-react'
 
 interface Warehouse {
   id: string
   name: string
   slug: string
+  type: 'main' | 'showroom' | 'storage'
   address?: string | null
   city?: string | null
   phone?: string | null
@@ -33,6 +35,7 @@ interface Warehouse {
 interface WarehouseForm {
   name: string
   slug: string
+  type: 'main' | 'showroom' | 'storage'
   address: string
   city: string
   phone: string
@@ -43,6 +46,7 @@ interface WarehouseForm {
 const emptyForm: WarehouseForm = {
   name: '',
   slug: '',
+  type: 'main',
   address: '',
   city: '',
   phone: '',
@@ -107,6 +111,7 @@ export function Warehouses() {
     setForm({
       name: w.name,
       slug: w.slug,
+      type: w.type || 'main',
       address: w.address || '',
       city: w.city || '',
       phone: w.phone || '',
@@ -185,6 +190,7 @@ export function Warehouses() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
@@ -196,7 +202,7 @@ export function Warehouses() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className='text-center py-8'>
+                    <TableCell colSpan={8} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto' />
                     </TableCell>
                   </TableRow>
@@ -211,6 +217,9 @@ export function Warehouses() {
                             {w.address && <div className='text-xs text-muted-foreground'>{w.address}</div>}
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant='outline' className='capitalize'>{w.type}</Badge>
                       </TableCell>
                       <TableCell className='text-sm'>{w.city || '-'}</TableCell>
                       <TableCell className='text-sm'>{w.phone || '-'}</TableCell>
@@ -239,7 +248,7 @@ export function Warehouses() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className='text-center py-12 text-muted-foreground'>
+                    <TableCell colSpan={8} className='text-center py-12 text-muted-foreground'>
                       {search ? 'No warehouses match your search.' : 'No warehouses found. Create your first warehouse.'}
                     </TableCell>
                   </TableRow>
@@ -275,6 +284,22 @@ export function Warehouses() {
                 onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
                 placeholder='e.g. main-warehouse'
               />
+            </div>
+            <div className='grid gap-2'>
+              <Label>Type</Label>
+              <Select
+                value={form.type}
+                onValueChange={(value: 'main' | 'showroom' | 'storage') => setForm(f => ({ ...f, type: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder='Select type' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='main'>Main Warehouse</SelectItem>
+                  <SelectItem value='showroom'>Showroom</SelectItem>
+                  <SelectItem value='storage'>Storage</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className='grid gap-2'>
               <Label>Address</Label>

@@ -10,8 +10,13 @@ export function SessionSelectPage({ onSelected }: Props) {
 
   useEffect(() => {
     getShowrooms()
-      .then((res) => setShowrooms(res.data))
-      .catch(() => {})
+      .then((res) => {
+        console.log('POS: Showrooms fetched:', res.data)
+        setShowrooms(res.data)
+      })
+      .catch((err) => {
+        console.error('POS: Error fetching showrooms:', err?.response?.data || err?.message || err)
+      })
       .finally(() => setLoading(false))
   }, [])
 
