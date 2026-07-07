@@ -16,7 +16,7 @@ export function LoginPage({ onSuccess }: Props) {
     try {
       const res = await loginApi(email, password)
       const { accessToken, user } = res.data
-      if (!['cashier', 'admin'].includes(user.role)) {
+      if (!['cashier', 'admin', 'superadmin'].includes(user.role)) {
         setError('Access denied. Cashier or admin role required.')
         return
       }
