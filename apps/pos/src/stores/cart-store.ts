@@ -9,6 +9,7 @@ interface CartItem {
   quantity: number;
   discount?: number;
   discountType?: 'flat' | 'percentage';
+  image?: string;
 }
 
 interface CartState {

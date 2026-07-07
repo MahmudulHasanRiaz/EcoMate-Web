@@ -228,11 +228,15 @@ export class PosOrdersService {
     const where: any = { isActive: true };
 
     if (query.barcode) {
-      where.sku = query.barcode;
+      where.OR = [
+        { sku: query.barcode },
+        { variants: { some: { sku: query.barcode } } },
+      ];
     } else if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { sku: { contains: query.search, mode: 'insensitive' } },
+        { variants: { some: { sku: { contains: query.search, mode: 'insensitive' } } } },
       ];
     }
 
@@ -250,8 +254,20 @@ export class PosOrdersService {
       this.prisma.product.findMany({
         where,
         include: {
-          variants: { where: { isActive: true }, take: 5 },
-
+          variants: {
+            where: { isActive: true },
+            include: {
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    include: {
+                      attribute: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           category: true,
         },
         skip: (page - 1) * perPage,

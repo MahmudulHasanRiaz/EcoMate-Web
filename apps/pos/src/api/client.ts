@@ -23,7 +23,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 || error.response?.status === 403) {
       localStorage.removeItem('pos_access_token');
       localStorage.removeItem('pos_session_id');
-      window.location.href = '/login';
+      window.location.href = '/pos/';
     }
     return Promise.reject(error);
   },
