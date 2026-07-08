@@ -15,7 +15,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Plus, Pencil, Trash2, Building2, Search, X } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Building2, Search, X, Eye } from 'lucide-react'
+import { WarehouseWorkspaceDrawer } from './components/warehouse-workspace-drawer'
 
 interface Warehouse {
   id: string
@@ -61,6 +62,8 @@ export function Warehouses() {
   const [editing, setEditing] = useState<Warehouse | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [form, setForm] = useState<WarehouseForm>(emptyForm)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null)
 
   const { data: warehouses, isLoading } = useQuery({
     queryKey: ['warehouses'],
@@ -119,6 +122,11 @@ export function Warehouses() {
       isActive: w.isActive,
     })
     setOpen(true)
+  }
+
+  const openWorkspace = (w: Warehouse) => {
+    setSelectedWarehouse(w)
+    setWorkspaceOpen(true)
   }
 
   const handleSave = () => {
@@ -235,7 +243,10 @@ export function Warehouses() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className='flex gap-1'>
+                        <div className='flex gap-1 justify-end'>
+                          <Button variant='ghost' size='sm' onClick={() => openWorkspace(w)}>
+                            <Eye className='h-3.5 w-3.5 mr-1' /> View Workspace
+                          </Button>
                           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(w)}>
                             <Pencil className='h-3.5 w-3.5' />
                           </Button>
@@ -374,6 +385,12 @@ export function Warehouses() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <WarehouseWorkspaceDrawer 
+        open={workspaceOpen} 
+        onOpenChange={setWorkspaceOpen} 
+        warehouse={selectedWarehouse} 
+      />
     </>
   )
 }

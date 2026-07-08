@@ -5,12 +5,13 @@ import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check } from 'lu
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
-import { apiClient } from '@/lib/api-client'
 import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 const imgUrl = appUrl
+import { apiClient } from '@/lib/api-client'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
@@ -131,6 +132,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; stock: number }>({ open: false, stock: 0 })
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
   const [manageStockJustToggled, setManageStockJustToggled] = useState(false)
+  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -233,6 +235,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     })
+    setAdjustmentModalOpen(false)
   }
 
   const createMut = useMutation({
@@ -645,10 +648,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                             )}
                           </div>
                           {!manageStockJustToggled && (
-                            <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                            <div className='flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                               <p className='text-xs text-blue-700 dark:text-blue-300'>
-                                Stock can only be adjusted from <strong>Inventory → Adjust Stock</strong>.
+                                Stock adjustments are tracked in the Managed Stock Ledger.
                               </p>
+                              <Button type="button" variant="outline" size="sm" onClick={() => setAdjustmentModalOpen(true)}>
+                                Adjust Stock
+                              </Button>
                             </div>
                           )}
                         </>
@@ -703,10 +709,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   isEdit ? (
                     <div className='space-y-3'>
                       <p className='text-sm text-muted-foreground'>Stock is managed at the variant level. Each variant has its own stock quantity.</p>
-                      <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                      <div className='flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                         <p className='text-xs text-blue-700 dark:text-blue-300'>
-                          To adjust stock, go to <strong>Inventory → Adjust Stock</strong> and select a variant.
+                          Adjust variant stock using the Managed Stock tool.
                         </p>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setAdjustmentModalOpen(true)}>
+                          Adjust Variants
+                        </Button>
                       </div>
                     </div>
                   ) : (
@@ -728,10 +737,17 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                   </div>
                 )}
                 {availabilityMode === 'INVENTORY_CONTROLLED' && (
-                  <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                  <div className='flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                     <p className='text-xs text-blue-700 dark:text-blue-300'>
-                      Stock is controlled by the Inventory module.
+                      Stock is controlled by the physical Inventory module. Managed Stock rules do not apply.
                     </p>
+                    {isEdit && (
+                       <Button type="button" variant="default" size="sm" onClick={() => {
+                         window.open(`/op/inventory?productId=${currentRow?.id}`, '_blank')
+                       }}>
+                         Open Inventory
+                       </Button>
+                    )}
                   </div>
                 )}
               </section>
@@ -1042,14 +1058,22 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
           </div>
         </Tabs>
 
-        <div className='border-t px-6 py-3 flex justify-end gap-2'>
+        <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
           <Button variant='outline' onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
-          <Button onClick={handleSave} disabled={!name || !basePrice || createMut.isPending || updateMut.isPending}>
-            {createMut.isPending || updateMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-1' /> : null}
-            {isEdit ? 'Update' : 'Create'} Product
+          <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}>
+            {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {isEdit ? 'Update Product' : 'Create Product'}
           </Button>
         </div>
       </DialogContent>
+      {adjustmentModalOpen && currentRow?.id && (
+        <ManagedStockAdjustmentModal
+          open={adjustmentModalOpen}
+          onOpenChange={setAdjustmentModalOpen}
+          initialProductId={currentRow.id}
+          initialVariantId={activeVariantId || undefined}
+        />
+      )}
 
       {confirmDialog.open && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setConfirmDialog({ open: false, stock: 0 })}>

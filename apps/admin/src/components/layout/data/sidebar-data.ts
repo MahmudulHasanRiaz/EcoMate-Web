@@ -40,10 +40,13 @@ export const sidebarData: SidebarData = {
           icon: AlertTriangle,
           feature: 'admin_inventory',
           items: [
-            { title: 'All Inventory', url: '/op/inventory' },
-            { title: 'Stock Overview', url: '/op/inventory/overview' },
+            { title: 'Stock Levels', url: '/op/inventory' },
+            { title: 'Overview', url: '/op/inventory/overview' },
+            { title: 'Adjustments', url: '/op/inventory/adjustments' },
+            { title: 'Transfers', url: '/op/inventory/transfers' },
             { title: 'Valuation', url: '/op/inventory/valuation', feature: 'admin_inventory_valuation' },
-            { title: 'Warehouses', url: '/op/inventory/warehouses', icon: Building2, feature: 'admin_warehouses' },
+            { title: 'Reports', url: '/op/inventory/reports' },
+            { title: 'Warehouses', url: '/op/inventory/warehouses', feature: 'admin_warehouses' },
           ],
         },
         {

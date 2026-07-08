@@ -1,7 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { useState } from 'react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -10,137 +7,38 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, AlertTriangle, Plus, X, Package, Search as SearchIcon, LayoutGrid } from 'lucide-react'
-import { toast } from 'sonner'
-
-const inventoryApi = {
-  lowStock: () => apiClient.get('/inventory/low-stock'),
-  logs: (q: any) => apiClient.get('/inventory/logs', { params: q }),
-  adjust: (data: any) => apiClient.post('/inventory/adjust', data),
-}
+import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
+import { QuickAdjustmentModal } from './components/quick-adjustment-modal'
+import { Link } from '@tanstack/react-router'
 
 export function Inventory() {
-  const qc = useQueryClient()
-  const { data: lowStock, isLoading: lsLoading } = useQuery({ queryKey: ['inventory-low'], queryFn: () => inventoryApi.lowStock().then(r => r.data) })
-  const { data: logs, isLoading: logLoading } = useQuery({ queryKey: ['inventory-logs'], queryFn: () => inventoryApi.logs({ page: 1, perPage: 20 }).then(r => r.data) })
-
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
+  
   const [adjustOpen, setAdjustOpen] = useState(false)
-  const [adjustType, setAdjustType] = useState<'product' | 'combo'>('product')
+  const [adjustProduct, setAdjustProduct] = useState<string | undefined>()
 
-  const [productId, setProductId] = useState('')
-  const [productName, setProductName] = useState('')
-  const [productType, setProductType] = useState<string | null>(null)
-  const [productSearch, setProductSearch] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [searching, setSearching] = useState(false)
+  const stockLevels = [
+    { id: '1', name: 'Organic Cotton T-Shirt', sku: 'OCT-WHT-M', warehouse: 'Main Warehouse', lot: 'L-2023-11', expiry: '—', available: 120, reserved: 5, allocated: 10, onHand: 135, cost: 450, updated: '2 hours ago', status: 'optimal' },
+    { id: '2', name: 'Stainless Steel Water Bottle', sku: 'SSWB-750', warehouse: 'Retail Store', lot: '—', expiry: '—', available: 5, reserved: 0, allocated: 0, onHand: 5, cost: 320, updated: 'Yesterday', status: 'low' },
+    { id: '3', name: 'Arabica Coffee Beans', sku: 'ACB-250G', warehouse: 'Main Warehouse', lot: 'B-2401', expiry: '2024-12-31', available: 12, reserved: 20, allocated: 0, onHand: 32, cost: 850, updated: '3 days ago', status: 'optimal' },
+    { id: '4', name: 'Bamboo Toothbrush', sku: 'BAM-104', warehouse: 'Main Warehouse', lot: 'L-2024-01', expiry: '—', available: -2, reserved: 0, allocated: 0, onHand: -2, cost: 45, updated: '1 hour ago', status: 'negative' },
+  ]
 
-  const [comboId, setComboId] = useState('')
-  const [comboName, setComboName] = useState('')
-  const [comboSearch, setComboSearch] = useState('')
-  const [comboResults, setComboResults] = useState<any[]>([])
-  const [comboSearching, setComboSearching] = useState(false)
-
-  const [variants, setVariants] = useState<any[]>([])
-  const [variantId, setVariantId] = useState('')
-  const [loadingVariants, setLoadingVariants] = useState(false)
-  const [selectedProductAvailability, setSelectedProductAvailability] = useState<string | null>(null)
-
-  const variantOptions = useMemo(() => {
-    return (variants || []).map((v: any) => {
-      const label = v.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || v.sku
-      return {
-        id: v.id,
-        label: `${label} — Stock: ${v.managedStockQuantity} ${v.price ? `| ৳${v.price}` : ''}`,
-      }
-    })
-  }, [variants])
-
-  const [quantity, setQuantity] = useState('0')
-  const [reason, setReason] = useState('')
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-  useEffect(() => {
-    if (productSearch.length < 2) { setSearchResults([]); return }
-    setSearching(true)
-    clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const res = await apiClient.get('/products', { params: { search: productSearch, perPage: 8 } })
-        setSearchResults((res.data as any)?.data || [])
-      } catch { setSearchResults([]) }
-      setSearching(false)
-    }, 350)
-    return () => clearTimeout(searchTimer.current)
-  }, [productSearch])
-
-  useEffect(() => {
-    if (comboSearch.length < 2) { setComboResults([]); return }
-    setComboSearching(true)
-    clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const res = await apiClient.get('/combos', { params: { search: comboSearch, perPage: 8 } })
-        setComboResults((res.data as any)?.data || [])
-      } catch { setComboResults([]) }
-      setComboSearching(false)
-    }, 350)
-    return () => clearTimeout(searchTimer.current)
-  }, [comboSearch])
-
-  useEffect(() => {
-    if (!productId) { setVariants([]); setVariantId(''); setSelectedProductAvailability(null); return }
-    if (productType === 'variable') setLoadingVariants(true)
-    apiClient.get(`/products/${productId}`).then(r => {
-      const p = r.data as any
-      setVariants(p?.variants || [])
-      setSelectedProductAvailability(p?.availabilityMode || null)
-      if (p?.variants?.length > 0) setVariantId(p.variants[0].id)
-    }).catch(() => { setVariants([]); setSelectedProductAvailability(null) }).finally(() => setLoadingVariants(false))
-  }, [productId, productType])
-
-  const adjustMut = useMutation({
-    mutationFn: (data: any) => inventoryApi.adjust(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-low'] }); qc.invalidateQueries({ queryKey: ['inventory-logs'] }); resetDialog(); toast.success('Stock adjusted'); },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to adjust stock'),
-  })
-
-  const resetDialog = () => {
-    setAdjustOpen(false)
-    setProductId(''); setProductName(''); setProductType(null); setProductSearch(''); setSearchResults([])
-    setComboId(''); setComboName(''); setComboSearch(''); setComboResults([])
-    setVariants([]); setVariantId('')
-    setQuantity('0'); setReason(''); setSelectedProductAvailability(null)
+  const handleRowClick = (product: any) => {
+    setSelectedProduct(product)
+    setDetailOpen(true)
   }
 
-  const qtyNum = parseInt(quantity)
-  const qtyValid = quantity !== '' && !isNaN(qtyNum) && qtyNum !== 0
-  const showAdjustBtn = adjustType === 'combo'
-    ? (comboId && qtyValid)
-    : (productId && qtyValid && (productType !== 'variable' || variantId))
-
-  const handleAdjust = () => {
-    if (selectedProductAvailability && selectedProductAvailability !== 'MANAGED_STOCK') {
-      toast.error('Stock adjustments not allowed for this product availability mode')
-      return
-    }
-    const qty = parseInt(quantity)
-    if (isNaN(qty) || qty === 0) return
-    if (!reason.trim()) {
-      toast.error('Please provide a reason for the adjustment')
-      return
-    }
-    if (adjustType === 'combo') {
-      if (!comboId) return
-      adjustMut.mutate({ comboId, quantity: qty, reason })
-    } else {
-      if (!productId) return
-      if (productType === 'variable' && !variantId) { toast.error('Please select a variant'); return }
-      adjustMut.mutate({ productId, variantId: productType === 'variable' ? variantId : undefined, quantity: qty, reason })
-    }
+  const handleQuickAdjust = (productName?: string) => {
+    setAdjustProduct(productName)
+    setAdjustOpen(true)
   }
 
   return (
@@ -148,211 +46,141 @@ export function Inventory() {
       <Header fixed><GlobalSearchBar className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-center justify-between'>
-          <div><h2 className='text-2xl font-bold tracking-tight'>Inventory</h2><p className='text-muted-foreground text-sm'>Monitor and adjust stock levels.</p></div>
-          <Button onClick={() => setAdjustOpen(true)}><Plus className='h-4 w-4 mr-1' /> Adjust Stock</Button>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>Stock Levels</h2>
+            <p className='text-muted-foreground text-sm'>Primary operational view of all physical stock.</p>
+          </div>
+          <Button onClick={() => handleQuickAdjust()}><Edit3 className='h-4 w-4 mr-1' /> Quick Adjust</Button>
         </div>
 
-        <Card className='border-orange-200 dark:border-orange-800'>
-          <CardHeader className='pb-2'><CardTitle className='text-base flex items-center gap-2'><AlertTriangle className='h-4 w-4 text-orange-500' /> Low Stock Alerts {(lowStock as any)?.count > 0 && <Badge variant='destructive'>{(lowStock as any)?.count}</Badge>}</CardTitle></CardHeader>
-          <CardContent className='p-0'>
-            <Table>
-              <TableHeader><TableRow><TableHead>Product</TableHead><TableHead>SKU</TableHead><TableHead className='text-right'>Stock</TableHead><TableHead className='text-right'>Alert At</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {lsLoading ? <TableRow><TableCell colSpan={4} className='text-center'><Loader2 className='animate-spin h-4 w-4 mx-auto' /></TableCell></TableRow> :
-                                   (lowStock as any)?.products?.length ? (lowStock as any).products.map((p: any) => (
-                  <TableRow key={p.id}>
-                    <TableCell className='font-medium'>
-                      {p.name}{p.type === 'variant' ? <span className='text-muted-foreground text-xs ml-1'>({p.variantAttributes || ''})</span> : ''}
-                    </TableCell>
-                    <TableCell className='text-muted-foreground text-sm'>{p.type === 'variant' ? (p.variantSku || '—') : (p.sku || '—')}</TableCell>
-                    <TableCell className='text-right'><Badge variant='destructive'>{p.stock}</Badge></TableCell>
-                    <TableCell className='text-right text-sm text-muted-foreground'>{p.lowStockQty || 5}{p.type === 'variant' ? <Badge variant='secondary' className='text-[10px] ml-1'>Variant</Badge> : null}</TableCell>
-                  </TableRow>
-                )) : <TableRow><TableCell colSpan={4} className='text-center py-4 text-muted-foreground text-sm'>No low stock alerts</TableCell></TableRow>}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-4 bg-muted/30 p-2 rounded-lg border">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mr-2 shrink-0">
+            <Filter className="h-4 w-4" /> Filters:
+          </div>
+          <Input placeholder="Search name or SKU..." className="h-9 w-[200px] bg-background" />
+          <Select defaultValue="all_wh">
+            <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all_wh">All Warehouses</SelectItem>
+              <SelectItem value="main">Main Warehouse</SelectItem>
+              <SelectItem value="retail">Retail Store</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select defaultValue="all_status">
+            <SelectTrigger className="h-9 w-[150px] bg-background"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all_status">All Statuses</SelectItem>
+              <SelectItem value="low">Low Stock</SelectItem>
+              <SelectItem value="negative">Negative Stock</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input type="date" className="h-9 w-[150px] bg-background" title="Expiry before" />
+        </div>
 
         <Card>
-          <CardHeader className='pb-2'><CardTitle className='text-base'>Stock Movement Logs</CardTitle></CardHeader>
           <CardContent className='p-0'>
             <Table>
-              <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Product</TableHead><TableHead>Variant/Combo</TableHead><TableHead className='text-right'>Qty</TableHead><TableHead>Reason</TableHead><TableHead>Performer</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TooltipProvider>
+                    <TableHead className='text-right'>
+                      <Tooltip>
+                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">Available <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
+                        <TooltipContent>On Hand - (Reserved + Allocated)</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                    <TableHead className='text-right'>
+                      <Tooltip>
+                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">Reserved <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
+                        <TooltipContent>Stock committed to pending sales orders</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                    <TableHead className='text-right'>
+                      <Tooltip>
+                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">Allocated <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
+                        <TooltipContent>Stock currently being picked or dispatched</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                    <TableHead className='text-right'>
+                      <Tooltip>
+                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">On Hand <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
+                        <TooltipContent>Total physical stock physically present in warehouse</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                  </TooltipProvider>
+                  <TableHead>Last Updated</TableHead>
+                  <TableHead className='w-[50px]'></TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {logLoading ? <TableRow><TableCell colSpan={7} className='text-center'><Loader2 className='animate-spin h-4 w-4 mx-auto' /></TableCell></TableRow> :
-                 (logs as any)?.data?.length ? (logs as any).data.map((l: any) => (
-                  <TableRow key={l.id}>
-                    <TableCell><Badge variant='outline'>{l.type}</Badge></TableCell>
-                    <TableCell className='text-xs text-muted-foreground'>{l.productName || l.productId?.slice(0,8) || '—'}</TableCell>
-                    <TableCell className='text-xs text-muted-foreground'>
-                      {l.variantName || (l.variantId ? `V:${l.variantId.slice(0,8)}` : l.comboName || (l.comboId ? `C:${l.comboId.slice(0,8)}` : '—'))}
+                {stockLevels.map((p) => (
+                  <TableRow key={p.id} className={`cursor-pointer hover:bg-muted/50 transition-colors ${p.status === 'negative' ? 'bg-red-50/50 dark:bg-red-950/20' : ''}`} onClick={() => handleRowClick(p)}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
+                          <Package className="h-5 w-5 text-muted-foreground/50" />
+                        </div>
+                        <div>
+                          <div className="font-medium flex items-center gap-2">
+                            {p.status === 'negative' && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                            {p.status === 'low' && <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                            {p.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{p.sku}</div>
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell className='text-right font-medium'><Badge variant={l.quantity > 0 ? 'default' : 'destructive'} className='text-xs'>{l.quantity > 0 ? '+' : ''}{l.quantity}</Badge></TableCell>
-                    <TableCell className='text-sm text-muted-foreground'>{l.reason || '—'}</TableCell>
-                    <TableCell className='text-xs text-muted-foreground'>{l.performedBy || 'System'}</TableCell>
-                    <TableCell className='text-xs text-muted-foreground'>{l.createdAt ? new Date(l.createdAt).toLocaleString() : ''}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{p.warehouse}</div>
+                      <div className="text-xs text-muted-foreground mt-1 flex gap-2">
+                        {p.lot !== '—' && <span>Lot: {p.lot}</span>}
+                        {p.expiry !== '—' && <span className="text-amber-600">Exp: {p.expiry}</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className={`text-right font-medium ${p.available < 0 ? 'text-red-600' : p.available < 10 ? 'text-amber-600' : ''}`}>{p.available}</TableCell>
+                    <TableCell className='text-right text-orange-600'>{p.reserved}</TableCell>
+                    <TableCell className='text-right text-blue-600'>{p.allocated}</TableCell>
+                    <TableCell className='text-right font-bold'>{p.onHand}</TableCell>
+                    <TableCell className='text-sm text-muted-foreground'>{p.updated}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => handleRowClick(p)}>Quick Drawer</DropdownMenuItem>
+                          <DropdownMenuItem asChild><Link to="/op/inventory/detail">Full Detail Page</Link></DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleQuickAdjust(p.name)}><Edit3 className="mr-2 h-4 w-4" /> Quick Adjust</DropdownMenuItem>
+                          <DropdownMenuItem asChild><Link to="/op/inventory/transfers"><ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer</Link></DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                   </TableRow>
-                )) : <TableRow><TableCell colSpan={7} className='text-center py-4 text-muted-foreground text-sm'>No logs yet</TableCell></TableRow>}
+                ))}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
       </Main>
 
-      <Dialog open={adjustOpen} onOpenChange={(v) => { if (!v) resetDialog(); else setAdjustOpen(true) }}>
-        <DialogContent className='sm:max-w-md'>
-          <DialogHeader><DialogTitle>Adjust Stock</DialogTitle></DialogHeader>
-          <div className='space-y-4'>
-            <div className='flex rounded-md border p-0.5 bg-muted/20'>
-              <button
-                type='button'
-                className={`flex-1 px-3 py-1.5 text-sm rounded-sm font-medium transition-colors ${adjustType === 'product' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => { setAdjustType('product'); setComboId(''); setComboSearch(''); setComboResults([]) }}
-              >
-                <Package className='h-3.5 w-3.5 inline mr-1.5' />Product
-              </button>
-              <button
-                type='button'
-                className={`flex-1 px-3 py-1.5 text-sm rounded-sm font-medium transition-colors ${adjustType === 'combo' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => { setAdjustType('combo'); setProductId(''); setProductName(''); setProductType(null); setProductSearch(''); setSearchResults([]); setVariants([]); setVariantId('') }}
-              >
-                <LayoutGrid className='h-3.5 w-3.5 inline mr-1.5' />Combo
-              </button>
-            </div>
+      <InventoryDetailDrawer 
+        open={detailOpen} 
+        onOpenChange={setDetailOpen} 
+        productDetails={selectedProduct} 
+        onAdjust={() => handleQuickAdjust(selectedProduct?.name)}
+      />
 
-            {adjustType === 'product' ? (
-              <div className='space-y-2'>
-                <Label>Product</Label>
-                {productId ? (
-                  <div className='flex items-center justify-between bg-muted rounded-md px-3 py-2'>
-                    <div className='flex items-center gap-2 min-w-0'>
-                      <Package className='h-4 w-4 text-muted-foreground shrink-0' />
-                      <span className='text-sm font-medium truncate'>{productName}</span>
-                      {productType === 'variable' && <Badge variant='secondary' className='text-[10px]'>Variable</Badge>}
-                    </div>
-                    <button onClick={() => { setProductId(''); setProductName(''); setProductType(null); setProductSearch(''); setSearchResults([]); setVariants([]); setVariantId('') }} className='text-muted-foreground hover:text-foreground shrink-0 ml-2'>
-                      <X className='h-4 w-4' />
-                    </button>
-                  </div>
-                ) : (
-                  <div className='relative'>
-                    <SearchIcon className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                    <Input value={productSearch} onChange={e => setProductSearch(e.target.value)}
-                      placeholder='Search products by name...' className='pl-9' autoFocus />
-                    {searchResults.length > 0 && (
-                      <div className='absolute z-10 mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-auto'>
-                        {searchResults.map((p: any) => (
-                          <button key={p.id} type='button' className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2'
-                            onClick={() => { setProductId(p.id); setProductName(p.name); setProductType(p.type); setProductSearch(''); setSearchResults([]) }}>
-                            <Package className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-                            <span className='font-medium'>{p.name}</span>
-                            <span className='text-xs text-muted-foreground ml-auto'>
-                              {p.type === 'variable' ? 'Variable' : (p.sku || '—')}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {searching && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
-                  </div>
-                )}
-
-                {productType === 'variable' && productId && (
-                  <div className='space-y-2'>
-                    <Label>Variant</Label>
-                    {loadingVariants ? (
-                      <div className='flex items-center gap-2 text-sm text-muted-foreground'><Loader2 className='h-4 w-4 animate-spin' /> Loading variants...</div>
-                    ) : variants.length > 0 ? (
-                      <SearchableSelect
-                        options={variantOptions}
-                        value={variantId}
-                        onChange={setVariantId}
-                        placeholder='Select variant...'
-                        searchPlaceholder='Search variants...'
-                      />
-                    ) : (
-                      <p className='text-sm text-muted-foreground'>No variants found for this product.</p>
-                    )}
-                  </div>
-                )}
-                {productId && selectedProductAvailability && selectedProductAvailability !== 'MANAGED_STOCK' && (
-                  <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2'>
-                    <p className='text-xs text-amber-700 dark:text-amber-300'>
-                      Availability mode: <strong>{selectedProductAvailability}</strong>. Stock adjustments not allowed for this product.
-                    </p>
-                  </div>
-                )}
-                {productId && selectedProductAvailability === 'MANAGED_STOCK' && (
-                  <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
-                    <p className='text-xs text-blue-700 dark:text-blue-300'>
-                      Availability mode: <strong>Managed Stock</strong>. Adjustments will update stock and create a ledger entry.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className='space-y-2'>
-                <Label>Combo</Label>
-                {comboId ? (
-                  <div className='flex items-center justify-between bg-muted rounded-md px-3 py-2'>
-                    <div className='flex items-center gap-2'>
-                      <LayoutGrid className='h-4 w-4 text-muted-foreground' />
-                      <span className='text-sm font-medium'>{comboName}</span>
-                    </div>
-                    <button onClick={() => { setComboId(''); setComboName(''); setComboSearch(''); setComboResults([]) }} className='text-muted-foreground hover:text-foreground'>
-                      <X className='h-4 w-4' />
-                    </button>
-                  </div>
-                ) : (
-                  <div className='relative'>
-                    <SearchIcon className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                    <Input value={comboSearch} onChange={e => setComboSearch(e.target.value)}
-                      placeholder='Search combos by name...' className='pl-9' autoFocus />
-                    {comboResults.length > 0 && (
-                      <div className='absolute z-10 mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-auto'>
-                        {comboResults.map((c: any) => (
-                          <button key={c.id} type='button' className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2'
-                            onClick={() => { setComboId(c.id); setComboName(c.name); setComboSearch(''); setComboResults([]) }}>
-                            <LayoutGrid className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-                            <span className='font-medium'>{c.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {comboSearching && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className='space-y-2'>
-              <Label>Quantity (positive to add, negative to reduce)</Label>
-              <Input type='number' value={quantity} onChange={e => setQuantity(e.target.value)} placeholder='e.g. 10 or -5' />
-            </div>
-            <div className='space-y-2'>
-              <Label>Reason</Label>
-              <div className='flex flex-wrap gap-1.5'>
-                {['Physical count correction', 'Supplier restock', 'Damaged/Defective', 'Customer return', 'Stock transfer', 'Inventory write-off'].map(preset => (
-                  <button
-                    key={preset}
-                    type='button'
-                    className={`text-xs px-2 py-1 rounded-md border transition-colors ${reason === preset ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted'}`}
-                    onClick={() => setReason(reason === preset ? '' : preset)}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <Input value={reason} onChange={e => setReason(e.target.value)} placeholder='Or type custom reason...' />
-            </div>
-            <Button className='w-full' disabled={!showAdjustBtn || adjustMut.isPending} onClick={handleAdjust}>
-              {adjustMut.isPending && <Loader2 className='h-4 w-4 mr-1 animate-spin' />}
-              Apply Adjustment
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <QuickAdjustmentModal 
+        open={adjustOpen} 
+        onOpenChange={setAdjustOpen} 
+        productName={adjustProduct} 
+      />
     </>
   )
 }

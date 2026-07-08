@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
-import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { type ProductResponse } from './api'
 import { categoriesApi } from '@/features/categories/api'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
+import { ManagedStockAdjustmentModal } from './components/managed-stock-adjustment-modal'
 
 export function Products() {
   const queryClient = useQueryClient()
@@ -29,6 +30,8 @@ export function Products() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null)
   const [filterCategoryId, setFilterCategoryId] = useState<string[]>([])
+  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
+  const [adjustmentProductId, setAdjustmentProductId] = useState<string | undefined>()
 
   const { data: allCats } = useQuery({
     queryKey: ['categories'],
@@ -158,6 +161,9 @@ export function Products() {
             <p className='text-muted-foreground'>Manage products, inventory, and variants.</p>
           </div>
           <div className='flex items-center gap-2'>
+            <Button variant='outline' onClick={() => { setAdjustmentProductId(undefined); setAdjustmentModalOpen(true); }}>
+              <Package className='h-4 w-4 mr-1' /> Adjust Managed Stock
+            </Button>
             <Button variant='outline' asChild>
               <Link to='/op/import-products'><Upload className='h-4 w-4 mr-1' /> Import</Link>
             </Button>
@@ -263,6 +269,12 @@ export function Products() {
         destructive={bulkAction === 'delete'}
         isLoading={isBulkPending}
         handleConfirm={handleBulkAction}
+      />
+
+      <ManagedStockAdjustmentModal
+        open={adjustmentModalOpen}
+        onOpenChange={setAdjustmentModalOpen}
+        initialProductId={adjustmentProductId}
       />
     </>
   )

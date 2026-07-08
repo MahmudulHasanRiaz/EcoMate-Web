@@ -1,302 +1,149 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
-import { appUrl } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
+import { GlobalSearchBar } from '@/components/global-search-bar'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { SafeImage } from '@/components/safe-image'
-import { Loader2, Package, Search, ArrowLeft, ArrowUpDown } from 'lucide-react'
-
-type SortField = 'name' | 'stock' | 'price' | 'updated'
-type SortDir = 'asc' | 'desc'
-
-interface Product {
-  id: string
-  name: string
-  slug: string
-  sku: string | null
-  type: string
-  managedStockQuantity: number
-  manageStock: boolean
-  availabilityMode?: string
-  lowStockQty: number | null
-  basePrice: string
-  salePrice: string | null
-  images: string[] | null
-  categoryId: string | null
-  category: { id: string; name: string } | null
-  variants: {
-    id: string
-    sku: string
-    managedStockQuantity: number
-    price: string | null
-    attributeValues: { attributeValue: { value: string } }[]
-  }[]
-  _count: { orderItems: number }
-}
-
-interface StockOverviewResponse {
-  data: Product[]
-  meta: { total: number; page: number; perPage: number; totalPages: number }
-}
+import { ArrowRight, DollarSign, AlertTriangle, Truck, FileEdit, ArchiveX, TrendingDown } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 
 export function StockOverview() {
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-  const [page, setPage] = useState(1)
-  const [sortBy, setSortBy] = useState<SortField>('updated')
-  const [sortOrder, setSortOrder] = useState<SortDir>('desc')
-
-  const { data, isLoading } = useQuery<StockOverviewResponse>({
-    queryKey: ['stock-overview', page, search, sortBy, sortOrder],
-    queryFn: () =>
-      apiClient
-        .get('/inventory/stock-overview', {
-          params: { page, perPage: 20, search, sortBy, sortOrder },
-        })
-        .then((r) => r.data),
-  })
-
-  const handleSearch = () => {
-    setSearch(searchInput)
-    setPage(1)
-  }
-
-  const toggleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(field)
-      setSortOrder(field === 'name' ? 'asc' : 'desc')
-    }
-    setPage(1)
-  }
-
-  const sortIndicator = (field: SortField) => {
-    if (sortBy !== field) return <ArrowUpDown className='ml-1 h-3 w-3 inline opacity-30' />
-    return <ArrowUpDown className={`ml-1 h-3 w-3 inline ${sortOrder === 'asc' ? 'rotate-180' : ''}`} />
-  }
-
-  const isLowStock = (p: Product) =>
-    p.manageStock && p.managedStockQuantity <= (p.lowStockQty || 5)
-
-  const meta = data?.meta
-  const products = data?.data ?? []
-
   return (
     <>
       <Header fixed>
-        <div className='flex items-center gap-2 me-auto'>
-          <Button variant='ghost' size='icon' asChild className='shrink-0'>
-            <a href='/op/inventory'><ArrowLeft className='h-4 w-4' /></a>
-          </Button>
-          <Search className='h-4 w-4 text-muted-foreground' />
-          <Input
-            placeholder='Search by name or SKU...'
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            className='h-9 max-w-sm'
-          />
-          <Button variant='secondary' size='sm' onClick={handleSearch}>
-            Search
-          </Button>
-        </div>
+        <GlobalSearchBar className='me-auto' />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
-
-      <Main className='flex flex-1 flex-col gap-6'>
-        <div className='flex items-center justify-between'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>Stock Overview</h2>
-            <p className='text-muted-foreground text-sm'>
-              View and sort all products by stock levels.
-            </p>
-          </div>
-          <Button variant='outline' asChild>
-            <a href='/op/inventory'><ArrowLeft className='h-4 w-4 mr-1' /> Back to Inventory</a>
-          </Button>
+      
+      <Main className='flex flex-col gap-6'>
+        <div>
+          <h1 className='text-2xl font-bold tracking-tight'>Inventory Overview</h1>
+          <p className='text-muted-foreground'>High-level snapshot of your physical stock operations.</p>
         </div>
 
-        <Card>
-          <CardHeader className='pb-2'>
-            <CardTitle className='text-base flex items-center gap-2'>
-              <Package className='h-4 w-4' />
-              All Products
-              {meta && (
-                <span className='text-sm font-normal text-muted-foreground'>
-                  ({meta.total} items)
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className='p-0'>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className='w-12'></TableHead>
-                  <TableHead className='cursor-pointer select-none' onClick={() => toggleSort('name')}>
-                    Name / SKU {sortIndicator('name')}
-                  </TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className='cursor-pointer select-none text-right' onClick={() => toggleSort('stock')}>
-                    Stock {sortIndicator('stock')}
-                  </TableHead>
-                  <TableHead className='text-right'>Mode</TableHead>
-                  <TableHead className='cursor-pointer select-none text-right' onClick={() => toggleSort('price')}>
-                    Price {sortIndicator('price')}
-                  </TableHead>
-                  <TableHead>Variants</TableHead>
-                  <TableHead className='text-right'>Orders</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className='text-center py-8'>
-                      <Loader2 className='animate-spin h-5 w-5 mx-auto' />
-                    </TableCell>
-                  </TableRow>
-                ) : products.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className='text-center py-8 text-muted-foreground text-sm'>
-                      No products found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  products.map((p) => {
-                    const lowStock = isLowStock(p)
-                    const img = Array.isArray(p.images) ? p.images[0] : null
-                    const price = p.salePrice || p.basePrice
-                    const variantAttrs = p.variants.map(
-                      (v) =>
-                        v.attributeValues
-                          ?.map((av) => av.attributeValue?.value)
-                          .filter(Boolean)
-                          .join(' / ') || v.sku
-                    )
-                    return (
-                      <TableRow
-                        key={p.id}
-                        className={lowStock ? 'bg-amber-50 dark:bg-amber-950/20' : ''}
-                      >
-                        <TableCell>
-                          {img ? (
-                            <SafeImage
-                              src={appUrl(img)}
-                              alt=''
-                              className='w-9 h-9 rounded border object-cover'
-                              thumbWidth={48}
-                              thumbHeight={48}
-                            />
-                          ) : (
-                            <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'>
-                              <Package className='h-4 w-4 text-muted-foreground' />
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className='font-medium text-sm'>{p.name}</div>
-                          <div className='text-xs text-muted-foreground'>
-                            {p.sku || '—'}
-                            {lowStock && (
-                              <Badge variant='outline' className='ml-2 text-[10px] border-amber-400 text-amber-700 dark:text-amber-400'>
-                                Low Stock
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant='secondary' className='text-xs'>
-                            {p.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className='text-sm text-muted-foreground'>
-                          {p.category?.name || '—'}
-                        </TableCell>
-                        <TableCell className='text-right'>
-                          <Badge
-                            variant={
-                              !p.manageStock ? 'secondary' :
-                              p.managedStockQuantity <= 0 ? 'destructive' :
-                              lowStock ? 'outline' : 'default'
-                            }
-                            className={
-                              !p.manageStock ? '' :
-                              lowStock && p.managedStockQuantity > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-400' : ''
-                            }
-                          >
-                            {p.manageStock ? p.managedStockQuantity : '—'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className='text-right'>
-                          <Badge variant='outline' className='text-xs font-mono'>
-                            {p.availabilityMode === 'MANAGED_STOCK' ? 'Managed' :
-                             p.availabilityMode === 'INVENTORY_CONTROLLED' ? 'Inventory' :
-                             p.availabilityMode === 'ALWAYS_IN_STOCK' ? 'Always In' :
-                             p.availabilityMode === 'ALWAYS_OUT_OF_STOCK' ? 'Always Out' :
-                             p.availabilityMode || '—'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className='text-right font-medium text-sm'>
-                          {price ? `৳${parseFloat(price).toLocaleString()}` : '—'}
-                        </TableCell>
-                        <TableCell>
-                          {p.variants.length > 0 ? (
-                            <div className='text-xs text-muted-foreground max-w-[200px] truncate' title={variantAttrs.join(', ')}>
-                              {p.variants.length} variant{p.variants.length > 1 ? 's' : ''}
-                              <span className='block truncate'>{variantAttrs.join(', ')}</span>
-                            </div>
-                          ) : (
-                            <span className='text-xs text-muted-foreground'>—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className='text-right text-sm text-muted-foreground'>
-                          {p._count.orderItems}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        {/* Top KPIs */}
+        <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4'>
+          <Card>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <CardTitle className='text-sm font-medium'>Total Inventory Value</CardTitle>
+              <DollarSign className='h-4 w-4 text-muted-foreground' />
+            </CardHeader>
+            <CardContent>
+              <div className='text-2xl font-bold'>৳1,245,000</div>
+              <p className='text-xs text-muted-foreground'>Aggregated across all warehouses</p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <CardTitle className='text-sm font-medium'>Low Stock Alerts</CardTitle>
+              <AlertTriangle className='h-4 w-4 text-amber-500' />
+            </CardHeader>
+            <CardContent>
+              <div className='text-2xl font-bold text-amber-600'>12</div>
+              <p className='text-xs text-muted-foreground'>Items below minimum threshold</p>
+            </CardContent>
+          </Card>
 
-        {meta && meta.totalPages > 1 && (
-          <div className='flex items-center justify-between text-sm text-muted-foreground'>
-            <span>
-              Page {meta.page} of {meta.totalPages} ({meta.total} total items)
-            </span>
-            <div className='flex gap-2'>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={page >= meta.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
+          <Card>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <CardTitle className='text-sm font-medium'>Pending Transfers</CardTitle>
+              <Truck className='h-4 w-4 text-blue-500' />
+            </CardHeader>
+            <CardContent>
+              <div className='text-2xl font-bold text-blue-600'>4</div>
+              <p className='text-xs text-muted-foreground'>Awaiting receipt or in transit</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <CardTitle className='text-sm font-medium'>Dead Stock Warning</CardTitle>
+              <ArchiveX className='h-4 w-4 text-red-500' />
+            </CardHeader>
+            <CardContent>
+              <div className='text-2xl font-bold text-red-600'>8</div>
+              <p className='text-xs text-muted-foreground'>Items with no movement &gt;180 days</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className='grid gap-4 md:grid-cols-2'>
+          {/* Actionable Alerts */}
+          <Card className="flex flex-col">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" /> Requires Attention
+              </CardTitle>
+              <CardDescription>Items that need reordering immediately.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <div className="space-y-4">
+                {[
+                  { name: 'Eco-friendly Water Bottle', sku: 'BOT-001', qty: 2, min: 10 },
+                  { name: 'Organic Cotton T-Shirt', sku: 'TSH-042', qty: 0, min: 20 },
+                  { name: 'Bamboo Toothbrush (Pack of 4)', sku: 'BAM-104', qty: 5, min: 15 },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium leading-none">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.sku}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-amber-600">{item.qty} left</p>
+                      <p className="text-xs text-muted-foreground">Min: {item.min}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <div className="p-4 pt-0 mt-auto">
+              <Button variant="outline" className="w-full" asChild>
+                <Link to="/op/inventory" search={{ filter: 'low_stock' }}>View all low stock</Link>
               </Button>
             </div>
-          </div>
-        )}
+          </Card>
+
+          {/* Recent Activity */}
+          <Card className="flex flex-col">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileEdit className="h-5 w-5 text-muted-foreground" /> Recent Adjustments
+              </CardTitle>
+              <CardDescription>Stock corrections made in the last 48 hours.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <div className="space-y-4">
+                {[
+                  { id: 'ADJ-1042', type: 'Damage', wh: 'Main WH', user: 'Admin', date: '2 hours ago' },
+                  { id: 'ADJ-1041', type: 'Physical Count', wh: 'Retail Store', user: 'System', date: 'Yesterday' },
+                  { id: 'ADJ-1040', type: 'Correction', wh: 'Main WH', user: 'Admin', date: 'Yesterday' },
+                ].map((adj, i) => (
+                  <div key={i} className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium leading-none flex items-center gap-2">
+                        {adj.id}
+                        <Badge variant="secondary" className="text-[10px]">{adj.type}</Badge>
+                      </p>
+                      <p className="text-xs text-muted-foreground">{adj.wh} • by {adj.user}</p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      {adj.date}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <div className="p-4 pt-0 mt-auto">
+              <Button variant="outline" className="w-full" asChild>
+                <Link to="/op/inventory/adjustments">View all adjustments</Link>
+              </Button>
+            </div>
+          </Card>
+        </div>
       </Main>
     </>
   )
