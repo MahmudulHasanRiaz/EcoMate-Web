@@ -24,8 +24,8 @@ export class ReferralsController {
   }
 
   @Get('my')
-  async getMyReferral(@CurrentUser() user: { id: string }) {
-    return this.referralsService.getOrCreateReferral(user.id);
+  async getMyReferral(@CurrentUser() user: { userId: string }) {
+    return this.referralsService.getOrCreateReferral(user.userId);
   }
 
   @Roles('superadmin', 'admin', 'manager')

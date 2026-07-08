@@ -55,6 +55,7 @@ export class AuthService {
         email: dto.email,
         phoneNumber: normalizedPhone,
         password: hashedPassword,
+        role: 'customer',
       },
     });
 
@@ -71,6 +72,7 @@ export class AuthService {
           name: `${dto.firstName} ${dto.lastName}`,
           email: dto.email,
           emailVerified: false,
+          role: 'customer',
         },
       });
       await baPrisma.betterAuthAccount.create({
@@ -172,6 +174,7 @@ export class AuthService {
             name: `${user.firstName} ${user.lastName}`,
             email: user.email,
             emailVerified: user.emailVerified,
+            role: user.role,
           },
         });
         await baPrisma.betterAuthAccount.create({
@@ -246,6 +249,22 @@ export class AuthService {
         where: { userId },
       });
     }
+
+    // Revoke BA sessions for this user
+    try {
+      const user = await this.prisma.userProfile.findUnique({
+        where: { id: userId },
+        select: { betterAuthUserId: true },
+      });
+      if (user?.betterAuthUserId) {
+        await baPrisma.betterAuthSession.deleteMany({
+          where: { userId: user.betterAuthUserId },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to revoke BA sessions for user ${userId}`, err);
+    }
+
     return { message: 'Logged out successfully' };
   }
 
@@ -293,7 +312,15 @@ export class AuthService {
       data.phoneNumber = normalized;
     }
 
-    return this.prisma.userProfile.update({
+    const user = await this.prisma.userProfile.findUnique({
+      where: { id: userId },
+      select: { id: true, betterAuthUserId: true, firstName: true, lastName: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const updated = await this.prisma.userProfile.update({
       where: { id: userId },
       data,
       select: {
@@ -309,6 +336,27 @@ export class AuthService {
         updatedAt: true,
       },
     });
+
+    // Sync to BA
+    if (user.betterAuthUserId) {
+      try {
+        const baData: any = {};
+        if (dto.email !== undefined) baData.email = dto.email;
+        if (dto.firstName !== undefined || dto.lastName !== undefined) {
+          baData.name = `${updated.firstName} ${updated.lastName}`;
+        }
+        if (Object.keys(baData).length > 0) {
+          await baPrisma.betterAuthUser.update({
+            where: { id: user.betterAuthUserId },
+            data: baData,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to sync profile to BA for user ${userId}`, err);
+      }
+    }
+
+    return updated;
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -515,10 +563,21 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired verification token');
     }
 
-    await this.prisma.userProfile.update({
+    const updatedUser = await this.prisma.userProfile.update({
       where: { email: matched.email },
       data: { emailVerified: true },
     });
+
+    if (updatedUser.betterAuthUserId) {
+      try {
+        await baPrisma.betterAuthUser.update({
+          where: { id: updatedUser.betterAuthUserId },
+          data: { emailVerified: true },
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to sync email verification to BA for user ${updatedUser.id}`, err);
+      }
+    }
 
     await this.prisma.verificationToken.update({
       where: { id: matched.id },

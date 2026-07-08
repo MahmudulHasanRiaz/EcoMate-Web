@@ -1,13 +1,10 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { WarehousesService } from './warehouses.service';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 
 @Controller('warehouses')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class WarehousesController {
   constructor(private readonly svc: WarehousesService) {}
 

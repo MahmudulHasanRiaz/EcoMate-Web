@@ -45,7 +45,6 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { ImagesModule } from './images/images.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { CacheModule } from './cache/cache.module';
-import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { DualModeAuthGuard } from './common/guards/dual-mode-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';

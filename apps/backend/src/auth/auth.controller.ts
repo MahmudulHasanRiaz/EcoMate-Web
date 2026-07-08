@@ -20,7 +20,6 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { JwtAuthGuard } from './auth.guard';
 import { RefreshJwtGuard } from './refresh-jwt.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';

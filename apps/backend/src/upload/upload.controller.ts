@@ -27,7 +27,7 @@ export class UploadController {
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadImage(
     @Req() req: fastify.FastifyRequest,
-    @CurrentUser() user: { id: string } | null,
+    @CurrentUser() user: { userId: string } | null,
   ) {
     const file = await req.file();
     if (!file) throw new BadRequestException('No file uploaded');
@@ -60,7 +60,7 @@ export class UploadController {
     return this.media.ingestFromMulter(uploadFile, {
       filename,
       alt,
-      uploadedBy: user?.id,
+      uploadedBy: user?.userId,
     });
   }
 
@@ -69,7 +69,7 @@ export class UploadController {
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadImages(
     @Req() req: fastify.FastifyRequest,
-    @CurrentUser() user: { id: string } | null,
+    @CurrentUser() user: { userId: string } | null,
   ) {
     const parts = req.files();
     const results: Array<{
@@ -118,7 +118,7 @@ export class UploadController {
           };
 
           const out = await this.media.ingestFromMulter(uploadFile, {
-            uploadedBy: user?.id,
+            uploadedBy: user?.userId,
           });
           results.push({ ok: true, originalname: part.filename, ...out });
         } catch (err) {

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -11,6 +12,8 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
 import * as bcrypt from 'bcryptjs';
 import { UserRole, UserStatus } from '@prisma/client';
+import { baPrisma } from '../better-auth/prisma';
+import { hashPassword } from 'better-auth/crypto';
 
 @Injectable()
 export class UsersService {
@@ -196,6 +199,35 @@ export class UsersService {
         data: { userId: user.id },
       });
 
+      try {
+        const baHashedPassword = await hashPassword(dto.password);
+        const { randomUUID } = await import('crypto');
+        const baUser = await baPrisma.betterAuthUser.create({
+          data: {
+            id: randomUUID(),
+            name: `${dto.firstName} ${dto.lastName}`,
+            email: dto.email,
+            emailVerified: false,
+            role: dto.role,
+          },
+        });
+        await baPrisma.betterAuthAccount.create({
+          data: {
+            id: randomUUID(),
+            userId: baUser.id,
+            accountId: dto.email,
+            providerId: 'email',
+            password: baHashedPassword,
+          },
+        });
+        await tx.userProfile.update({
+          where: { id: user.id },
+          data: { betterAuthUserId: baUser.id },
+        });
+      } catch (err) {
+        console.warn(`Failed to create BA user for ${dto.email}`, err);
+      }
+
       return user;
     });
   }
@@ -244,7 +276,7 @@ export class UsersService {
       data.password = await bcrypt.hash(dto.password, 12);
     }
 
-    return this.prisma.userProfile.update({
+    const updated = await this.prisma.userProfile.update({
       where: { id },
       data,
       select: {
@@ -260,6 +292,35 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    // Sync to BA
+    if (existingUser.betterAuthUserId) {
+      try {
+        const baUserData: any = {};
+        if (dto.firstName !== undefined || dto.lastName !== undefined) {
+          baUserData.name = `${updated.firstName} ${updated.lastName}`;
+        }
+        if (dto.email !== undefined) baUserData.email = dto.email;
+        if (dto.role !== undefined) baUserData.role = dto.role;
+        if (Object.keys(baUserData).length > 0) {
+          await baPrisma.betterAuthUser.update({
+            where: { id: existingUser.betterAuthUserId },
+            data: baUserData,
+          });
+        }
+        if (dto.password) {
+          const baHashedPassword = await hashPassword(dto.password);
+          await baPrisma.betterAuthAccount.updateMany({
+            where: { userId: existingUser.betterAuthUserId, providerId: 'email' },
+            data: { password: baHashedPassword },
+          });
+        }
+      } catch (err) {
+        console.warn(`Failed to sync BA user for ${id}`, err);
+      }
+    }
+
+    return updated;
   }
 
   async remove(id: string) {
@@ -268,11 +329,38 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    if (user.betterAuthUserId) {
+      try {
+        await baPrisma.betterAuthUser.delete({
+          where: { id: user.betterAuthUserId },
+        });
+      } catch (err) {
+        console.warn(`Failed to delete BA user ${user.betterAuthUserId}`, err);
+      }
+    }
+
     await this.prisma.userProfile.delete({ where: { id } });
     return { message: 'User deleted successfully' };
   }
 
   async bulkDelete(ids: string[]) {
+    const users = await this.prisma.userProfile.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, betterAuthUserId: true },
+    });
+
+    for (const user of users) {
+      if (user.betterAuthUserId) {
+        try {
+          await baPrisma.betterAuthUser.delete({
+            where: { id: user.betterAuthUserId },
+          });
+        } catch (err) {
+          console.warn(`Failed to delete BA user ${user.betterAuthUserId}`, err);
+        }
+      }
+    }
+
     const result = await this.prisma.userProfile.deleteMany({
       where: { id: { in: ids } },
     });

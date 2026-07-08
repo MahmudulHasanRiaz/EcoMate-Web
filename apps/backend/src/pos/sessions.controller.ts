@@ -1,13 +1,10 @@
-import { Controller, Post, Get, Patch, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, Query, Req } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { OpenSessionDto } from './dto/open-session.dto';
 import { CloseSessionDto } from './dto/close-session.dto';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('pos/sessions')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class SessionsController {
   constructor(private readonly svc: SessionsService) {}
 
