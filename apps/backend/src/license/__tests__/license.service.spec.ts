@@ -3,6 +3,7 @@ import { LicenseService } from '../license.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { ConfigService } from '@nestjs/config';
 import { LicenseActivationService } from '../license-activation.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 describe('LicenseService', () => {
   let service: LicenseService;
@@ -13,6 +14,13 @@ describe('LicenseService', () => {
     activate: jest.fn(),
     updateLicenseInfo: jest.fn(),
     deactivate: jest.fn(),
+  };
+
+  const mockPrisma = {
+    license: {
+      findFirst: jest.fn(),
+      upsert: jest.fn(),
+    },
   };
 
   beforeEach(async () => {
@@ -26,6 +34,7 @@ describe('LicenseService', () => {
         },
         { provide: ConfigService, useValue: { get: () => null } },
         { provide: LicenseActivationService, useValue: mockActivation },
+        { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
     service = module.get<LicenseService>(LicenseService);
