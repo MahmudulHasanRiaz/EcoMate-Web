@@ -131,8 +131,6 @@ export default async function RootLayout({
         '--color-brand-success': initialConfig.branding.colors.success,
         '--color-brand-danger': initialConfig.branding.colors.danger,
         '--color-brand-border': initialConfig.branding.colors.border,
-        '--brand-shadow-soft': initialConfig.branding.colors.shadowSoft,
-        '--brand-shadow-strong': initialConfig.branding.colors.shadowStrong,
       } as React.CSSProperties : undefined}
     >
       <head>

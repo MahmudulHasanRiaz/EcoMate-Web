@@ -11,16 +11,16 @@
 :root {
   --color-brand-blue: #0089CD;
   --color-brand-blue-dark: #006da3;
-  --color-brand-blue-text: #005a8c;
+  --color-brand-blue-text: color-mix(in srgb, var(--color-brand-blue) 85%, black);
   --color-brand-coral: #E77250;
   --color-brand-dark: #0a0a0a;
   --color-brand-bg: #FFFFFF;
   --color-brand-success: #22C55E;
-  --color-brand-success-dark: #047857;
+  --color-brand-success-dark: color-mix(in srgb, var(--color-brand-success) 85%, black);
   --color-brand-danger: #EF4444;
   --color-brand-border: #E5E7EB;
-  --brand-shadow-soft: 0 8px 25px rgba(0, 137, 205, 0.15);
-  --brand-shadow-strong: 0 15px 45px -5px rgba(0, 137, 205, 0.6);
+  --brand-shadow-soft: 0 8px 25px color-mix(in srgb, var(--color-brand-blue) 15%, transparent);
+  --brand-shadow-strong: 0 15px 45px -5px color-mix(in srgb, var(--color-brand-blue) 35%, transparent);
 }
 
 @layer utilities {
@@ -39,6 +39,7 @@
   .bg-brand-blue\/\[0\.04\] { background-color: color-mix(in srgb, var(--color-brand-blue) 4%, transparent); }
   .bg-brand-coral { background-color: var(--color-brand-coral); }
   .bg-brand-success { background-color: var(--color-brand-success); }
+  .bg-brand-success-dark { background-color: var(--color-brand-success-dark); }
   .bg-brand-danger { background-color: var(--color-brand-danger); }
 
   /* Text */
