@@ -66,11 +66,7 @@ export class LicenseService implements OnModuleInit {
 
       const { licenseKey, domain, apiKey } = creds;
 
-      await this.featureFlags.initialize(
-        licenseKey,
-        domain ?? undefined,
-        apiKey ?? undefined,
-      );
+      await this.featureFlags.initializeWithEngine(licenseKey, domain ?? undefined, apiKey ?? undefined);
       const lic = this.featureFlags.getLicense();
       if (lic?.valid) {
         console.log(
@@ -112,7 +108,7 @@ export class LicenseService implements OnModuleInit {
       'https://keygen-keymate.commercians.com/v1/saas';
 
     try {
-      await this.featureFlags.initialize(licenseKey, domain, apiKey);
+      await this.featureFlags.initializeWithEngine(licenseKey, domain, apiKey);
       const lic = this.featureFlags.getLicense();
 
       if (lic?.valid) {

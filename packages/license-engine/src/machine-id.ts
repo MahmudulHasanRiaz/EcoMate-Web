@@ -9,23 +9,20 @@ function getMachineIdPath(): string {
     try {
       fs.accessSync(d, fs.constants.W_OK);
       return path.join(d, '.ecomate-machine-id');
-    } catch {}
+    } catch { /* skip unwritable dirs */ }
   }
   return path.join(os.tmpdir(), '.ecomate-machine-id');
 }
 
 export function getMachineId(): string {
   const filePath = getMachineIdPath();
-
   try {
     const existing = fs.readFileSync(filePath, 'utf-8').trim();
     if (existing) return existing;
-  } catch {}
-
+  } catch { /* file doesn't exist yet */ }
   const id = crypto.randomUUID();
   try {
     fs.writeFileSync(filePath, id, 'utf-8');
-  } catch {}
-
+  } catch { /* best-effort */ }
   return id;
 }

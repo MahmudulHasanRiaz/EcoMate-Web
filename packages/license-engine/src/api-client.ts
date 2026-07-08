@@ -1,4 +1,3 @@
-import type { LicenseInfo } from './types';
 import { getMachineId } from './machine-id';
 
 export class ApiClient {
@@ -12,33 +11,29 @@ export class ApiClient {
     this.machineId = getMachineId();
   }
 
-  async verify(licenseKey: string, domain?: string, apiKey?: string): Promise<LicenseInfo> {
+  async verify(licenseKey: string, domain?: string, apiKey?: string): Promise<any> {
     const key = apiKey || this.defaultApiKey;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (key) headers['X-API-Key'] = key;
-
     const res = await fetch(`${this.baseUrl}/licenses/verify`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ licenseKey, domain, machineId: this.machineId }),
       signal: AbortSignal.timeout(10_000),
     });
-
-    return res.json() as Promise<LicenseInfo>;
+    return res.json();
   }
 
-  async checkIn(licenseKey: string, domain?: string, apiKey?: string): Promise<LicenseInfo> {
+  async checkIn(licenseKey: string, domain?: string, apiKey?: string): Promise<any> {
     const key = apiKey || this.defaultApiKey;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (key) headers['X-API-Key'] = key;
-
     const res = await fetch(`${this.baseUrl}/licenses/${encodeURIComponent(licenseKey)}/check-in`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ domain, machineId: this.machineId }),
       signal: AbortSignal.timeout(10_000),
     });
-
-    return res.json() as Promise<LicenseInfo>;
+    return res.json();
   }
 }

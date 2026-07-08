@@ -17,6 +17,17 @@ export interface LicenseInfo {
   lastCheckIn?: string;
 }
 
+export interface LicensePayload {
+  clientId: string;
+  plan: string;
+  features: string[];
+  domains?: string[];
+  limits?: Record<string, number>;
+  exp?: number;
+  iat?: number;
+  machineId?: string;
+}
+
 export interface LimitResult {
   ok: boolean;
   allowed: number;

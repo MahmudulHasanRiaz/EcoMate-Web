@@ -49,9 +49,9 @@ describe('LicenseService', () => {
     expect(status).toHaveProperty('active');
   });
 
-  it('activateWithKeymate handles KeyMate unreachable', async () => {
+  it('activateWithKeymate handles engine unavailable', async () => {
     const result = await service.activateWithKeymate('test-key', 'test.com');
     expect(result.success).toBe(false);
-    expect(result.error).toBe('unreachable');
+    expect(result.error).toBe('engine_unavailable');
   });
 });
