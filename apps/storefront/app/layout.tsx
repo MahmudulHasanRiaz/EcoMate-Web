@@ -86,7 +86,7 @@ export default async function RootLayout({
   let licenseMessage = '';
   try {
     const licenseRes = await fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300 },
+      cache: 'no-store',
     });
     const licenseStatus = await licenseRes.json();
     licenseActive = licenseStatus?.active ?? true;

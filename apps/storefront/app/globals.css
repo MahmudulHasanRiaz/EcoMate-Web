@@ -3,6 +3,12 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+:root {
   --color-brand-blue: #0089CD;
   --color-brand-blue-dark: #006da3;
   --color-brand-blue-text: #005a8c;
@@ -13,23 +19,90 @@
   --color-brand-success-dark: #047857;
   --color-brand-danger: #EF4444;
   --color-brand-border: #E5E7EB;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.5rem;
-  --radius-3xl: 2rem;
+  --brand-shadow-soft: 0 8px 25px rgba(0, 137, 205, 0.15);
+  --brand-shadow-strong: 0 15px 45px -5px rgba(0, 137, 205, 0.6);
 }
 
-@utility shadow-brand-soft {
-  box-shadow: var(--brand-shadow-soft, 0 8px 25px rgba(0, 137, 205, 0.15));
-}
+@layer utilities {
+  /* Background */
+  .bg-brand-blue { background-color: var(--color-brand-blue); }
+  .bg-brand-blue-dark { background-color: var(--color-brand-blue-dark); }
+  .bg-brand-blue\/5 { background-color: color-mix(in srgb, var(--color-brand-blue) 5%, transparent); }
+  .bg-brand-blue\/10 { background-color: color-mix(in srgb, var(--color-brand-blue) 10%, transparent); }
+  .bg-brand-blue\/20 { background-color: color-mix(in srgb, var(--color-brand-blue) 20%, transparent); }
+  .bg-brand-blue\/30 { background-color: color-mix(in srgb, var(--color-brand-blue) 30%, transparent); }
+  .bg-brand-blue\/40 { background-color: color-mix(in srgb, var(--color-brand-blue) 40%, transparent); }
+  .bg-brand-blue\/80 { background-color: color-mix(in srgb, var(--color-brand-blue) 80%, transparent); }
+  .bg-brand-blue\/90 { background-color: color-mix(in srgb, var(--color-brand-blue) 90%, transparent); }
+  .bg-brand-blue\/\[0\.02\] { background-color: color-mix(in srgb, var(--color-brand-blue) 2%, transparent); }
+  .bg-brand-blue\/\[0\.03\] { background-color: color-mix(in srgb, var(--color-brand-blue) 3%, transparent); }
+  .bg-brand-blue\/\[0\.04\] { background-color: color-mix(in srgb, var(--color-brand-blue) 4%, transparent); }
+  .bg-brand-coral { background-color: var(--color-brand-coral); }
+  .bg-brand-success { background-color: var(--color-brand-success); }
+  .bg-brand-danger { background-color: var(--color-brand-danger); }
 
-@utility shadow-brand-strong {
-  box-shadow: var(--brand-shadow-strong, 0 15px 45px -5px rgba(0, 137, 205, 0.6));
-}
+  /* Text */
+  .text-brand-blue { color: var(--color-brand-blue); }
+  .text-brand-blue-text { color: var(--color-brand-blue-text); }
+  .text-brand-coral { color: var(--color-brand-coral); }
+  .text-brand-dark { color: var(--color-brand-dark); }
+  .text-brand-bg { color: var(--color-brand-bg); }
+  .text-brand-success { color: var(--color-brand-success); }
+  .text-brand-danger { color: var(--color-brand-danger); }
 
-@utility hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
+  /* Border */
+  .border-brand-blue { border-color: var(--color-brand-blue); }
+  .border-brand-blue\/10 { border-color: color-mix(in srgb, var(--color-brand-blue) 10%, transparent); }
+  .border-brand-blue\/20 { border-color: color-mix(in srgb, var(--color-brand-blue) 20%, transparent); }
+  .border-brand-blue-dark { border-color: var(--color-brand-blue-dark); }
+  .border-brand-coral { border-color: var(--color-brand-coral); }
+  .border-brand-border { border-color: var(--color-brand-border); }
+  .border-brand-success { border-color: var(--color-brand-success); }
+  .border-brand-danger { border-color: var(--color-brand-danger); }
+
+  /* Ring */
+  .ring-brand-blue { --tw-ring-color: var(--color-brand-blue); }
+
+  /* Shadow */
+  .shadow-brand-blue { --tw-shadow-color: var(--color-brand-blue); }
+  .shadow-brand-soft { box-shadow: var(--brand-shadow-soft); }
+  .shadow-brand-strong { box-shadow: var(--brand-shadow-strong); }
+
+  /* Gradient */
+  .from-brand-blue { --tw-gradient-from: var(--color-brand-blue); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, color-mix(in srgb, var(--color-brand-blue) 0%, transparent)); }
+  .via-brand-blue { --tw-gradient-via: var(--color-brand-blue); }
+  .to-brand-blue { --tw-gradient-to: var(--color-brand-blue); }
+
+  /* Fill / Outline */
+  .fill-brand-blue { fill: var(--color-brand-blue); }
+  .outline-brand-coral { outline-color: var(--color-brand-coral); }
+
+  /* Hover variants */
+  .hover\:bg-brand-blue:hover { background-color: var(--color-brand-blue); }
+  .hover\:bg-brand-blue-dark:hover { background-color: var(--color-brand-blue-dark); }
+  .hover\:text-brand-blue:hover { color: var(--color-brand-blue); }
+  .hover\:border-brand-blue:hover { border-color: var(--color-brand-blue); }
+  .hover\:ring-brand-blue:hover { --tw-ring-color: var(--color-brand-blue); }
+
+  /* Focus variants */
+  .focus\:border-brand-blue:focus { border-color: var(--color-brand-blue); }
+  .focus\:ring-brand-blue:focus { --tw-ring-color: var(--color-brand-blue); }
+
+  /* Focus-within variants */
+  .within\:border-brand-blue:focus-within { border-color: var(--color-brand-blue); }
+  .within\:ring-brand-blue:focus-within { --tw-ring-color: var(--color-brand-blue); }
+
+  /* Group hover variants */
+  .group:hover .group-hover\:text-brand-blue { color: var(--color-brand-blue); }
+  .group:hover .group-hover\:border-brand-blue { border-color: var(--color-brand-blue); }
+  .group:hover .group-hover\:bg-brand-blue { background-color: var(--color-brand-blue); }
+
+  /* Hide scrollbar */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
 }

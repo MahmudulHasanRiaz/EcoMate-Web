@@ -65,7 +65,7 @@ function formatDate(dateStr: string): string {
 }
 
 function sanitizeHTML(html: string): string {
-  return DOMPurify.sanitize(html.replace(/\\n/g, '<br>').replace(/##/g, ''), {
+  return DOMPurify.sanitize(html.replace(/\n/g, '<br>').replace(/##/g, ''), {
     ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
     ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
   });
@@ -937,7 +937,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
               {descExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
             {descExpanded && (
-              <div className="text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn" dangerouslySetInnerHTML={{
+              <div className="text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn whitespace-pre-wrap" dangerouslySetInnerHTML={{
                 __html: sanitizeHTML(product.description)
               }} />
             )}

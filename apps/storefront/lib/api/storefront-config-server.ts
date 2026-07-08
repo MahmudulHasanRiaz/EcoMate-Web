@@ -14,7 +14,7 @@ export class StorefrontConfigError extends Error {
 
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
   const config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
-    revalidate: 300,
+    cache: 'no-store',
   });
 
   if (!config || !config.store?.name) {
@@ -123,7 +123,7 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
 
   try {
     const licenseRes = await fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300 },
+      cache: 'no-store',
     });
     const licenseStatus = await licenseRes.json();
     config.licenseFeatures = licenseStatus.features || [];
