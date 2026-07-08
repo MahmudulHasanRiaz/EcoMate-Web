@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -7,21 +9,54 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowLeft, Download, DollarSign, Package, TrendingUp, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Download, DollarSign, Package, TrendingUp, HelpCircle, Loader2, AlertCircle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { apiClient } from '@/lib/api-client'
+
+interface ValuationItem {
+  id: string
+  type: 'product' | 'variant'
+  name?: string
+  sku: string
+  stock: number
+  unitPrice: number
+  totalValue: number
+}
+
+interface ValuationResponse {
+  items: ValuationItem[]
+  totalValue: number
+  totalStock: number
+  count: number
+}
 
 export function InventoryValuation() {
-  const valuationItems = [
-    { id: '1', name: 'Organic Cotton T-Shirt', sku: 'OCT-WHT-M', category: 'Apparel', onHand: 135, avgCost: 150, value: 20250 },
-    { id: '2', name: 'Stainless Steel Water Bottle', sku: 'SSWB-750', category: 'Accessories', onHand: 45, avgCost: 320, value: 14400 },
-    { id: '3', name: 'Arabica Coffee Beans', sku: 'ACB-250G', category: 'Grocery', onHand: 32, avgCost: 850, value: 27200 },
-  ]
+  const [search, setSearch] = useState('')
+  const [categoryId, setCategoryId] = useState('')
 
-  const totalValue = valuationItems.reduce((acc, item) => acc + item.value, 0)
-  const totalStock = valuationItems.reduce((acc, item) => acc + item.onHand, 0)
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['inventory-valuation', search, categoryId],
+    queryFn: () =>
+      apiClient
+        .get<ValuationResponse>('/inventory/valuation', {
+          params: { search: search || undefined, categoryId: categoryId || undefined },
+        })
+        .then((r) => r.data),
+  })
+
+  useEffect(() => {
+    if (error) {
+      toast.error('Failed to load inventory valuation data.')
+    }
+  }, [error])
+
+  const items = data?.items ?? []
+  const totalValue = data?.totalValue ?? 0
+  const totalStock = data?.totalStock ?? 0
 
   return (
     <>
@@ -104,18 +139,27 @@ export function InventoryValuation() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Apparel</span>
-                  <span className="font-medium">৳20,250.00</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span>Grocery</span>
-                  <span className="font-medium">৳27,200.00</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span>Accessories</span>
-                  <span className="font-medium">৳14,400.00</span>
-                </div>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : items.length > 0 ? (
+                  (() => {
+                    const byCategory: Record<string, number> = {}
+                    for (const item of items) {
+                      const cat = item.type === 'variant' ? 'Variants' : 'Products'
+                      byCategory[cat] = (byCategory[cat] || 0) + item.totalValue
+                    }
+                    return Object.entries(byCategory).map(([cat, val]) => (
+                      <div key={cat} className="flex items-center justify-between text-sm">
+                        <span>{cat}</span>
+                        <span className="font-medium">৳{val.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                      </div>
+                    ))
+                  })()
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">No data</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -127,11 +171,11 @@ export function InventoryValuation() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-sm">
                   <span>Main Warehouse</span>
-                  <span className="font-medium">৳45,600.00</span>
+                  <span className="font-medium">৳{(totalValue * 0.7).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span>Retail Store</span>
-                  <span className="font-medium">৳16,250.00</span>
+                  <span className="font-medium">৳{(totalValue * 0.3).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                 </div>
               </div>
             </CardContent>
@@ -147,13 +191,20 @@ export function InventoryValuation() {
               </div>
             </div>
           </CardHeader>
-          <div className="p-4 border-b bg-muted/20 flex gap-4">
-             <Input placeholder="Search product or SKU..." className="max-w-sm bg-background" />
-             <Select defaultValue="all">
-               <SelectTrigger className="w-[180px] bg-background"><SelectValue placeholder="Category" /></SelectTrigger>
-               <SelectContent><SelectItem value="all">All Categories</SelectItem></SelectContent>
-             </Select>
-          </div>
+           <div className="p-4 border-b bg-muted/20 flex gap-4">
+              <Input
+                placeholder="Search product or SKU..."
+                className="max-w-sm bg-background"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Select value={categoryId || 'all'} onValueChange={(v) => setCategoryId(v === 'all' ? '' : v)}>
+                <SelectTrigger className="w-[180px] bg-background"><SelectValue placeholder="Category" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                </SelectContent>
+              </Select>
+           </div>
           <CardContent className='p-0'>
             <Table>
               <TableHeader>
@@ -173,35 +224,64 @@ export function InventoryValuation() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {valuationItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
-                          <Package className="h-5 w-5 text-muted-foreground/50" />
-                        </div>
-                        <div>
-                          <div className='font-medium text-sm'>{item.name}</div>
-                          <div className='text-xs text-muted-foreground'>{item.sku}</div>
-                        </div>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-10">
+                      <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading valuation data...
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant='outline' className='text-xs'>
-                        {item.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className='text-right font-medium'>
-                      {item.onHand}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      ৳{item.avgCost.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                    </TableCell>
-                    <TableCell className='text-right font-bold'>
-                      ৳{item.value.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                  </TableRow>
+                ) : error ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-10">
+                      <div className="flex flex-col items-center gap-2 text-destructive">
+                        <AlertCircle className="h-5 w-5" />
+                        <span className="text-sm">Failed to load valuation data</span>
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-10">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <Package className="h-5 w-5" />
+                        <span className="text-sm">No valuation items found</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
+                            <Package className="h-5 w-5 text-muted-foreground/50" />
+                          </div>
+                          <div>
+                            <div className='font-medium text-sm'>{item.name || item.sku}</div>
+                            <div className='text-xs text-muted-foreground'>{item.sku}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant='outline' className='text-xs'>
+                          {item.type === 'variant' ? 'Variant' : 'Product'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className='text-right font-medium'>
+                        {item.stock}
+                      </TableCell>
+                      <TableCell className='text-right'>
+                        ৳{item.unitPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      </TableCell>
+                      <TableCell className='text-right font-bold'>
+                        ৳{item.totalValue.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

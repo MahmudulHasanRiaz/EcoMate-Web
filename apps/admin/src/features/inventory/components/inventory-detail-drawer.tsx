@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowLeftRight, Edit3, FileText, Package, Filter, Building2, Tag, ShieldCheck, DollarSign, Clock } from 'lucide-react'
+import { ArrowLeftRight, Edit3, FileText, Package, Filter, Building2, Tag, ShieldCheck, DollarSign, Clock, Loader2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { Link } from '@tanstack/react-router'
 
 interface InventoryDetailDrawerProps {
@@ -21,6 +23,12 @@ interface InventoryDetailDrawerProps {
 }
 
 export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAdjust }: InventoryDetailDrawerProps) {
+  const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
+    queryKey: ['inventory-ledger', productDetails?.id],
+    queryFn: () => apiClient.get('/inventory/ledger', { params: { productId: productDetails.id, perPage: 10 } }).then(r => r.data),
+    enabled: !!productDetails?.id,
+  })
+
   if (!productDetails) return null
 
   return (
@@ -102,22 +110,24 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <h4 className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" /> Cost Information</h4>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Unit Cost (Avg)</span>
-                      <span className="font-medium">৳150.00</span>
+                      <span className="font-medium">{productDetails.cost != null ? `৳${productDetails.cost.toFixed(2)}` : '—'}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Total Inventory Value</span>
-                      <span className="font-medium">৳{(productDetails.onHand * 150).toLocaleString()}</span>
+                      <span className="font-medium">{productDetails.cost != null ? `৳${(productDetails.onHand * productDetails.cost).toLocaleString()}` : '—'}</span>
                     </div>
                   </div>
                   <div className="rounded-lg border bg-card p-4 space-y-2">
                     <h4 className="text-sm font-semibold flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Health & Rules</h4>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Minimum Stock Level</span>
-                      <span className="font-medium">20</span>
+                      <span className="text-muted-foreground">Low Stock Threshold</span>
+                      <span className="font-medium">{productDetails.lowStockQty != null ? productDetails.lowStockQty : '—'}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Health Status</span>
-                      <span className="font-medium text-amber-600">Low Stock</span>
+                      <span className={`font-medium ${productDetails.status === 'negative' ? 'text-red-600' : productDetails.status === 'low' ? 'text-amber-600' : 'text-green-600'}`}>
+                        {productDetails.status === 'negative' ? 'Negative Stock' : productDetails.status === 'low' ? 'Low Stock' : 'Optimal'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -183,19 +193,37 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell>
-                          <div className="text-xs font-medium">Today, 10:00 AM</div>
-                          <div className="text-[10px] text-blue-600 hover:underline cursor-pointer">GRN-2026-104</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs">Main Warehouse</div>
-                          <div className="text-[10px] text-muted-foreground">Lot: L-2023-11</div>
-                        </TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">Purchase Receipt</Badge></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">Admin</TableCell>
-                        <TableCell className="text-right text-green-600 font-medium">+{productDetails.onHand}</TableCell>
-                      </TableRow>
+                      {ledgerLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8">
+                            <Loader2 className="animate-spin h-5 w-5 mx-auto" />
+                          </TableCell>
+                        </TableRow>
+                      ) : (ledgerData as any)?.data?.length ? (
+                        (ledgerData as any).data.map((entry: any) => (
+                          <TableRow key={entry.id}>
+                            <TableCell>
+                              <div className="text-xs font-medium">{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}</div>
+                              <div className="text-[10px] text-blue-600 hover:underline cursor-pointer">{entry.reference || '—'}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-xs">{entry.warehouseName || entry.warehouse || '—'}</div>
+                              <div className="text-[10px] text-muted-foreground">Lot: {entry.lotNumber || entry.lot || '—'}</div>
+                            </TableCell>
+                            <TableCell><Badge variant="outline" className="text-[10px]">{entry.type || '—'}</Badge></TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{entry.userName || entry.user || '—'}</TableCell>
+                            <TableCell className={`text-right font-medium ${entry.quantity > 0 ? 'text-green-600' : entry.quantity < 0 ? 'text-red-600' : ''}`}>
+                              {entry.quantity > 0 ? '+' : ''}{entry.quantity}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
+                            No ledger entries found.
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>

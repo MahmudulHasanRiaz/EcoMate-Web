@@ -3,4 +3,7 @@ import { InventoryDetail } from '@/features/inventory/detail'
 
 export const Route = createFileRoute('/_authenticated/op/inventory/detail')({
   component: InventoryDetail,
+  validateSearch: (search: Record<string, unknown>) => ({
+    productId: search.productId as string | undefined,
+  }),
 })

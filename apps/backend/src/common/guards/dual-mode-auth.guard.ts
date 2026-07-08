@@ -1,4 +1,4 @@
-import { Injectable, ExecutionContext, Inject } from '@nestjs/common';
+import { Injectable, ExecutionContext, Inject, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { fromNodeHeaders } from 'better-auth/node';
@@ -55,6 +55,7 @@ export class DualModeAuthGuard {
     // 3. Public routes: allow through
     if (isPublic) return true;
 
-    return false;
+    // 401 so admin panel auto-refresh can detect and re-try with new token
+    throw new UnauthorizedException('Authentication required');
   }
 }

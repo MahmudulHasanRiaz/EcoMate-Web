@@ -65,7 +65,7 @@ export function Warehouses() {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null)
 
-  const { data: warehouses, isLoading } = useQuery({
+  const { data: warehouses, isLoading, isError, error } = useQuery({
     queryKey: ['warehouses'],
     queryFn: () => apiClient.get<Warehouse[]>('/warehouses').then(r => r.data),
   })
@@ -208,7 +208,13 @@ export function Warehouses() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isError ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className='text-center py-8 text-destructive'>
+                      <p className='text-sm'>{error instanceof Error ? error.message : 'Failed to load warehouses.'}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : isLoading ? (
                   <TableRow>
                     <TableCell colSpan={8} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto' />

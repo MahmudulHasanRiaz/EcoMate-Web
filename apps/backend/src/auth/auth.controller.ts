@@ -107,8 +107,10 @@ export class AuthController {
   async logout(
     @CurrentUser() user: { userId: string },
     @Res({ passthrough: true }) res: FastifyReply,
+    @Req() req: any,
   ) {
-    await this.authService.logout(user.userId);
+    const refreshToken = req.cookies?.['refreshToken'];
+    await this.authService.logout(user.userId, refreshToken);
     res.clearCookie('refreshToken', { path: '/' });
     return { message: 'Logged out successfully' };
   }

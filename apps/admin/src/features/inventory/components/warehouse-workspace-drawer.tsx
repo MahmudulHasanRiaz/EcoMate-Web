@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import {
   Sheet,
   SheetContent,
@@ -8,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Building2, Package, MapPin, Truck, ArrowLeftRight, Settings, ExternalLink } from 'lucide-react'
+import { Building2, Package, MapPin, Truck, ArrowLeftRight, Settings, ExternalLink, Loader2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -21,6 +23,12 @@ interface WarehouseWorkspaceDrawerProps {
 
 export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: WarehouseWorkspaceDrawerProps) {
   if (!warehouse) return null
+
+  const { data: activityData, isLoading: activityLoading } = useQuery({
+    queryKey: ['warehouse-activity', warehouse.id],
+    queryFn: () => apiClient.get('/inventory/logs', { params: { warehouseId: warehouse.id } }).then(r => r.data),
+    enabled: open,
+  })
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -66,10 +74,12 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Total Items</div>
+                {/* TODO: Replace with GET /api/warehouses/:id/stats */}
                 <div className="text-xl font-bold mt-1">1,245</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Total Value</div>
+                {/* TODO: Replace with GET /api/warehouses/:id/stats */}
                 <div className="text-xl font-bold mt-1">৳450k</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
@@ -78,6 +88,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
               </div>
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Pending Receipts</div>
+                {/* TODO: Replace with GET /api/purchase-orders?warehouseId=...&status=pending */}
                 <div className="text-xl font-bold mt-1 text-blue-600">3</div>
               </div>
             </div>
@@ -94,6 +105,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                   <h4 className="text-sm font-medium">Active Bins</h4>
                   <Button variant="ghost" size="sm" className="text-xs h-7">Manage Bins</Button>
                 </div>
+                {/* TODO: Replace hardcoded data with GET /api/warehouses/:id/bin-locations */}
                 <div className="rounded-md border bg-card">
                   <Table>
                     <TableHeader>
@@ -104,54 +116,69 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell className="font-medium"><MapPin className="h-3 w-3 inline mr-1 text-muted-foreground"/> A1-01</TableCell>
-                        <TableCell>Dry Goods</TableCell>
-                        <TableCell className="text-right">145</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="font-medium"><MapPin className="h-3 w-3 inline mr-1 text-muted-foreground"/> B2-12</TableCell>
-                        <TableCell>Cold Storage</TableCell>
-                        <TableCell className="text-right">32</TableCell>
-                      </TableRow>
+                      {warehouse._count?.binLocations ? (
+                        <>
+                          <TableRow>
+                            <TableCell className="font-medium"><MapPin className="h-3 w-3 inline mr-1 text-muted-foreground"/> A1-01</TableCell>
+                            <TableCell>Dry Goods</TableCell>
+                            <TableCell className="text-right">145</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium"><MapPin className="h-3 w-3 inline mr-1 text-muted-foreground"/> B2-12</TableCell>
+                            <TableCell>Cold Storage</TableCell>
+                            <TableCell className="text-right">32</TableCell>
+                          </TableRow>
+                        </>
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">
+                            <Package className="h-4 w-4 mx-auto mb-1" />
+                            No bin locations configured.
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
               </TabsContent>
 
               <TabsContent value="activity" className="space-y-4 pt-4">
-                <div className="rounded-md border bg-card">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead>Reference</TableHead>
-                        <TableHead>User</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <TableRow>
-                        <TableCell className="text-xs">Today, 10:30 AM</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">Transfer Out</Badge></TableCell>
-                        <TableCell className="text-xs text-blue-600 cursor-pointer">TRF-0012 <ExternalLink className="h-3 w-3 inline" /></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">Admin</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="text-xs">Yesterday, 02:15 PM</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">Transfer In</Badge></TableCell>
-                        <TableCell className="text-xs text-blue-600 cursor-pointer">TRF-0011 <ExternalLink className="h-3 w-3 inline" /></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">System</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell className="text-xs">2 Days Ago</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">Adjustment</Badge></TableCell>
-                        <TableCell className="text-xs text-blue-600 cursor-pointer">ADJ-0045 <ExternalLink className="h-3 w-3 inline" /></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">Admin</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
+                {activityLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="rounded-md border bg-card">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Action</TableHead>
+                          <TableHead>Reference</TableHead>
+                          <TableHead>User</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activityData?.length ? (
+                          activityData.map((log: any, i: number) => (
+                            <TableRow key={log.id || i}>
+                              <TableCell className="text-xs">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.date || '-'}</TableCell>
+                              <TableCell><Badge variant="outline" className="text-[10px]">{log.action || log.type || '-'}</Badge></TableCell>
+                              <TableCell className="text-xs text-blue-600 cursor-pointer">{log.reference || log.ref || '-'} <ExternalLink className="h-3 w-3 inline" /></TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{log.user || log.createdBy || '-'}</TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                              No recent activity for this warehouse.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="details" className="space-y-4 pt-4">

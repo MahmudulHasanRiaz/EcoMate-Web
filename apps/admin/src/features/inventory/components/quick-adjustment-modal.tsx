@@ -1,19 +1,53 @@
 import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
+import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Loader2 } from 'lucide-react'
 
 interface QuickAdjustmentModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  productId?: string
   productName?: string
+  onSuccess?: () => void
 }
 
-export function QuickAdjustmentModal({ open, onOpenChange, productName }: QuickAdjustmentModalProps) {
+export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, onSuccess }: QuickAdjustmentModalProps) {
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
+
+  const adjustMut = useMutation({
+    mutationFn: (data: { productId?: string; quantity: number; reason: string }) =>
+      apiClient.post('/inventory/adjust', data),
+    onSuccess: () => {
+      toast.success('Stock adjusted successfully')
+      onOpenChange(false)
+      onSuccess?.()
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to adjust stock'),
+  })
+
+  const handleSave = () => {
+    if (!productId) {
+      toast.error('No product selected for adjustment')
+      return
+    }
+    const qty = parseInt(quantity)
+    if (isNaN(qty) || qty === 0) {
+      toast.error('Please enter a valid non-zero quantity')
+      return
+    }
+    if (!reason.trim()) {
+      toast.error('Please select or enter a reason')
+      return
+    }
+    adjustMut.mutate({ productId, quantity: qty, reason })
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,13 +82,9 @@ export function QuickAdjustmentModal({ open, onOpenChange, productName }: QuickA
             {quantity && !isNaN(Number(quantity)) && (
               <div className="bg-muted/50 p-3 rounded-lg border flex items-center justify-between">
                 <span className="text-sm font-medium">Stock Impact:</span>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">120</span>
-                  <span className="text-muted-foreground">→</span>
-                  <span className={`font-bold ${Number(quantity) > 0 ? 'text-green-600' : Number(quantity) < 0 ? 'text-red-600' : ''}`}>
-                    {120 + Number(quantity)}
-                  </span>
-                </div>
+                <span className={`font-bold ${Number(quantity) > 0 ? 'text-green-600' : Number(quantity) < 0 ? 'text-red-600' : ''}`}>
+                  {Number(quantity) > 0 ? '+' : ''}{quantity} units
+                </span>
               </div>
             )}
 
@@ -78,7 +108,10 @@ export function QuickAdjustmentModal({ open, onOpenChange, productName }: QuickA
           </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" onClick={() => onOpenChange(false)}>Save Adjustment</Button>
+          <Button type="submit" onClick={handleSave} disabled={adjustMut.isPending}>
+            {adjustMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            Save Adjustment
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

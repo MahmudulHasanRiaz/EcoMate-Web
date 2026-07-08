@@ -1,18 +1,86 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Filter, Download, ExternalLink } from 'lucide-react'
+import { Filter, Download, ExternalLink, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export function MovementLedger() {
-  const ledgerData = [
-    { id: '1', date: '2026-07-08 10:00 AM', refType: 'Purchase Receipt', refId: 'GRN-2026-104', location: 'Main Warehouse', lot: 'L-2023-11', user: 'Admin', qty: 100, cost: 150 },
-    { id: '2', date: '2026-07-07 02:30 PM', refType: 'Transfer', refId: 'TRF-0012', location: 'Retail Store', lot: 'L-2023-12', user: 'System', qty: 35, cost: 150 },
-    { id: '3', date: '2026-07-05 11:15 AM', refType: 'Adjustment', refId: 'ADJ-1042', location: 'Main Warehouse', lot: 'L-2023-11', user: 'Admin', qty: -5, cost: 150, reason: 'Damage' },
-    { id: '4', date: '2026-07-01 09:00 AM', refType: 'Initial Balance', refId: 'SYS-INIT', location: 'Main Warehouse', lot: 'L-2023-11', user: 'System', qty: 150, cost: 150 },
-  ]
+interface LedgerEntry {
+  id: string
+  productId: string
+  variantId: string | null
+  comboId: string | null
+  quantity: number
+  direction: 'IN' | 'OUT'
+  type: string
+  stockBefore: number
+  stockAfter: number
+  referenceType: string | null
+  referenceId: string | null
+  note: string | null
+  performedBy: string | null
+  performedAt: string
+  createdAt: string
+}
+
+interface LedgerResponse {
+  data: LedgerEntry[]
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    totalPages: number
+  }
+}
+
+const typeLabels: Record<string, string> = {
+  MANUAL_ADD: 'Manual Add',
+  MANUAL_REMOVE: 'Manual Remove',
+  SALE: 'Sale',
+  PURCHASE: 'Purchase',
+  RETURN: 'Return',
+  TRANSFER_IN: 'Transfer In',
+  TRANSFER_OUT: 'Transfer Out',
+  INITIAL: 'Initial Balance',
+  CORRECTION: 'Correction',
+}
+
+interface MovementLedgerProps {
+  productId?: string
+  variantId?: string
+}
+
+export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
+  const [page, setPage] = useState(1)
+  const perPage = 20
+
+  const { data, isLoading, isError } = useQuery<LedgerResponse>({
+    queryKey: ['inventory-ledger', productId, variantId, page],
+    queryFn: () =>
+      apiClient
+        .get('/inventory/ledger', {
+          params: { productId, variantId, page, perPage },
+        })
+        .then((r) => r.data),
+    enabled: !!productId,
+  })
+
+  const entries = data?.data ?? []
+  const meta = data?.meta
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr)
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -61,31 +129,82 @@ export function MovementLedger() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {ledgerData.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="text-sm font-medium">{item.date}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1 text-sm text-blue-600 hover:underline cursor-pointer">
-                    {item.refId} <ExternalLink className="h-3 w-3" />
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-sm">{item.location}</div>
-                  <div className="text-xs text-muted-foreground">Lot: {item.lot}</div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-xs">{item.refType}</Badge>
-                  {item.reason && <div className="text-[10px] text-muted-foreground mt-1">Reason: {item.reason}</div>}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{item.user}</TableCell>
-                <TableCell className={`text-right font-bold ${item.qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {item.qty > 0 ? '+' : ''}{item.qty}
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8">
+                  <Loader2 className="animate-spin h-6 w-6 mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-destructive">
+                  Failed to load ledger entries.
+                </TableCell>
+              </TableRow>
+            ) : entries.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No ledger entries found.
+                </TableCell>
+              </TableRow>
+            ) : (
+              entries.map((entry) => (
+                <TableRow key={entry.id}>
+                  <TableCell className="text-sm font-medium">{formatDate(entry.performedAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1 text-sm text-blue-600 hover:underline cursor-pointer">
+                      {entry.referenceId || '-'} <ExternalLink className="h-3 w-3" />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm">-</div>
+                    <div className="text-xs text-muted-foreground">-</div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={entry.direction === 'IN' ? 'default' : 'destructive'} className="text-xs">
+                      {typeLabels[entry.type] || entry.type}
+                    </Badge>
+                    {entry.note && <div className="text-[10px] text-muted-foreground mt-1">{entry.note}</div>}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{entry.performedBy || 'System'}</TableCell>
+                  <TableCell
+                    className={`text-right font-bold ${entry.direction === 'IN' ? 'text-green-600' : 'text-red-600'}`}
+                  >
+                    {entry.direction === 'IN' ? '+' : '-'}
+                    {entry.quantity}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
+
+      {meta && meta.totalPages > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <div className="text-muted-foreground">
+            Page {meta.page} of {meta.totalPages} ({meta.total} total)
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= (meta.totalPages || 1)}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
