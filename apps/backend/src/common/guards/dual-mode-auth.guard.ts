@@ -1,4 +1,4 @@
-import { Injectable, ExecutionContext, Inject, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { fromNodeHeaders } from 'better-auth/node';
@@ -60,38 +60,50 @@ export class DualModeAuthGuard {
         if (userProfile.lockoutUntil && userProfile.lockoutUntil > new Date()) {
           throw new UnauthorizedException('Account is temporarily locked');
         }
-        request.user = { ...userProfile, userId: userProfile.id, betterAuthSession: session };
+        request.user = { ...userProfile, userId: userProfile.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
       } else {
         // Auto-create UserProfile for social-login / BA-only users
-        const nameParts = (sessionUser.name || sessionUser.email || 'User').split(' ');
-        const firstName = nameParts[0] || 'User';
-        const lastName = nameParts.slice(1).join(' ') || 'User';
-        const baseUsername = (sessionUser.email || 'user').split('@')[0];
-        let username = baseUsername;
-        let counter = 1;
-        while (await this.prisma.userProfile.findUnique({ where: { username } })) {
-          username = `${baseUsername}${counter++}`;
+        try {
+          const nameParts = (sessionUser.name || sessionUser.email || 'User').split(' ');
+          const firstName = nameParts[0] || 'User';
+          const lastName = nameParts.slice(1).join(' ') || 'User';
+          const baseUsername = (sessionUser.email || 'user').split('@')[0];
+          let username = baseUsername;
+          let counter = 1;
+          while (await this.prisma.userProfile.findUnique({ where: { username } })) {
+            username = `${baseUsername}${counter++}`;
+          }
+
+          const newProfile = await this.prisma.userProfile.create({
+            data: {
+              firstName,
+              lastName,
+              username,
+              email: sessionUser.email || '',
+              phoneNumber: '',
+              password: '',
+              role: (sessionUser as any).role || 'customer',
+              emailVerified: sessionUser.emailVerified || false,
+              betterAuthUserId: sessionUser.id,
+            },
+          });
+
+          await this.prisma.userSettings.create({
+            data: { userId: newProfile.id },
+          });
+
+          request.user = { ...newProfile, userId: newProfile.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
+        } catch {
+          // Race condition: another concurrent request created the UserProfile first.
+          // Retry findFirst to get the existing record.
+          const existing = await this.prisma.userProfile.findFirst({
+            where: { betterAuthUserId: sessionUser.id },
+          });
+          if (!existing) {
+            throw new UnauthorizedException('Failed to create user profile');
+          }
+          request.user = { ...existing, userId: existing.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
         }
-
-        const newProfile = await this.prisma.userProfile.create({
-          data: {
-            firstName,
-            lastName,
-            username,
-            email: sessionUser.email || '',
-            phoneNumber: '',
-            password: '',
-            role: (sessionUser as any).role || 'customer',
-            emailVerified: sessionUser.emailVerified || false,
-            betterAuthUserId: sessionUser.id,
-          },
-        });
-
-        await this.prisma.userSettings.create({
-          data: { userId: newProfile.id },
-        });
-
-        request.user = { ...newProfile, userId: newProfile.id, betterAuthSession: session };
       }
       return true;
     }

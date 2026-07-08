@@ -116,8 +116,20 @@ export class AuthController {
 
   @SkipThrottle()
   @Get('me')
-  async me(@CurrentUser() user: { userId: string }) {
-    return this.authService.me(user.userId);
+  async me(@CurrentUser() user: any) {
+    const profile = await this.authService.me(user.userId);
+    // Include permissions from BA customSession (available on BA path)
+    // or compute from role for JWT path
+    let permissions = user.permissions;
+    if (!permissions || !Array.isArray(permissions)) {
+      if (user.role === 'superadmin' || user.role === 'admin') {
+        const { getAllPermissions } = await import('../common/permissions/registry.js');
+        permissions = getAllPermissions();
+      } else {
+        permissions = [];
+      }
+    }
+    return { ...profile, permissions };
   }
 
   @SkipThrottle()

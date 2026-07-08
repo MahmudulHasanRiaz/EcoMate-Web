@@ -164,6 +164,65 @@ async function bootstrap() {
         res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
       }
+      // BA → UserProfile sync: after successful BA handler response
+      if (response.status === 200 && rawBody && request.method === 'POST') {
+        const urlPath = url.pathname;
+        try {
+          const { PrismaClient } = await import('@prisma/client');
+          const { Pool } = await import('pg');
+          const { PrismaPg } = await import('@prisma/adapter-pg');
+          const pool = new Pool({ connectionString: process.env['DATABASE_URL'] || 'postgresql://postgres@localhost:5432/ecomate_web' });
+          const adapter = new PrismaPg(pool);
+          const prisma = new PrismaClient({ adapter });
+          const baPrisma2 = new PrismaClient({ adapter });
+
+          const parsedBody = JSON.parse(rawBody);
+
+          if (urlPath.endsWith('/change-password') && parsedBody.newPassword) {
+            // Get user from BA session to find which user made this request
+            const { fromNodeHeaders } = await import('better-auth/node');
+            const bHeaders = fromNodeHeaders(request.headers);
+            const session = await auth.api.getSession({ headers: bHeaders });
+            if (session?.user?.id) {
+              const profile = await prisma.userProfile.findFirst({
+                where: { betterAuthUserId: session.user.id },
+                select: { id: true, betterAuthUserId: true },
+              });
+              if (profile?.betterAuthUserId) {
+                const bcrypt = await import('bcryptjs');
+                const hashedPassword = await bcrypt.hash(parsedBody.newPassword, 12);
+                await prisma.userProfile.update({
+                  where: { id: profile.id },
+                  data: { password: hashedPassword },
+                });
+              }
+            }
+          }
+
+          if (urlPath.endsWith('/change-email') && parsedBody.newEmail) {
+            const { fromNodeHeaders } = await import('better-auth/node');
+            const bHeaders = fromNodeHeaders(request.headers);
+            const session = await auth.api.getSession({ headers: bHeaders });
+            if (session?.user?.id) {
+              const profile = await prisma.userProfile.findFirst({
+                where: { betterAuthUserId: session.user.id },
+                select: { id: true, betterAuthUserId: true },
+              });
+              if (profile?.betterAuthUserId) {
+                await prisma.userProfile.update({
+                  where: { id: profile.id },
+                  data: { email: parsedBody.newEmail },
+                });
+              }
+            }
+          }
+
+          await Promise.all([prisma.$disconnect(), baPrisma2.$disconnect()]).catch(() => {});
+        } catch (syncErr) {
+          console.error('[BA-sync] Failed to sync BA change to UserProfile:', syncErr);
+        }
+      }
+
       res.end(body);
     } catch (error) {
       request.log.error(error);
