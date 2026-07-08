@@ -39,6 +39,9 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  optimizeDeps: {
+    include: ['@ecomate/shared-types'],
+  },
   test: {
     silent: 'passed-only',
     unstubEnvs: true,
