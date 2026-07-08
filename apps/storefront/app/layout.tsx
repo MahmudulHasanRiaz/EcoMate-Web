@@ -175,7 +175,7 @@ export default async function RootLayout({
 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
-      <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
+      <body className="min-h-screen flex flex-col bg-brand-bg text-gray-900 antialiased" suppressHydrationWarning>
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>

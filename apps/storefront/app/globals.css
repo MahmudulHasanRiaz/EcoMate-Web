@@ -6,6 +6,17 @@
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
+
+  --color-brand-blue: var(--color-brand-blue);
+  --color-brand-blue-dark: var(--color-brand-blue-dark);
+  --color-brand-blue-text: var(--color-brand-blue-text);
+  --color-brand-coral: var(--color-brand-coral);
+  --color-brand-dark: var(--color-brand-dark);
+  --color-brand-bg: var(--color-brand-bg);
+  --color-brand-success: var(--color-brand-success);
+  --color-brand-success-dark: var(--color-brand-success-dark);
+  --color-brand-danger: var(--color-brand-danger);
+  --color-brand-border: var(--color-brand-border);
 }
 
 :root {
@@ -41,6 +52,9 @@
   .bg-brand-success { background-color: var(--color-brand-success); }
   .bg-brand-success-dark { background-color: var(--color-brand-success-dark); }
   .bg-brand-danger { background-color: var(--color-brand-danger); }
+  .bg-brand-dark { background-color: var(--color-brand-dark); }
+  .bg-brand-bg { background-color: var(--color-brand-bg); }
+  .bg-brand-border { background-color: var(--color-brand-border); }
 
   /* Text */
   .text-brand-blue { color: var(--color-brand-blue); }
@@ -60,6 +74,8 @@
   .border-brand-border { border-color: var(--color-brand-border); }
   .border-brand-success { border-color: var(--color-brand-success); }
   .border-brand-danger { border-color: var(--color-brand-danger); }
+  .border-brand-dark { border-color: var(--color-brand-dark); }
+  .border-brand-bg { border-color: var(--color-brand-bg); }
 
   /* Ring */
   .ring-brand-blue { --tw-ring-color: var(--color-brand-blue); }
