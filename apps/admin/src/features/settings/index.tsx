@@ -22,12 +22,6 @@ export function Settings() {
         { title: 'Profile', href: '/op/settings/personal', icon: <UserCog size={18} /> },
       ],
     },
-    {
-      groupLabel: 'Integrations',
-      items: [
-        { title: 'Auth & Integrations', href: '/op/settings/auth', icon: <Shield size={18} /> },
-      ],
-    },
   ]
 
   const monNavGroups = [
@@ -53,6 +47,7 @@ export function Settings() {
         { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
         { title: 'Tracking & Analytics', href: '/mon/settings/tracking', icon: <Radio size={18} /> },
         { title: 'SMTP / Email', href: '/mon/settings/smtp', icon: <Mail size={18} /> },
+        { title: 'Auth & Integrations', href: '/mon/settings/auth', icon: <Shield size={18} /> },
       ],
     },
     {

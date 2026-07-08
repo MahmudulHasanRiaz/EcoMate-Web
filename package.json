@@ -11,11 +11,11 @@
     "storefront:dev": "npm run dev --workspace=storefront",
     "backend:dev": "npm run start:dev --workspace=backend",
     "pos:dev": "npm run dev --workspace=pos",
-    "dev": "concurrently \"npm run admin:dev\" \"npm run storefront:dev\" \"npm run backend:dev\" \"npm run pos:dev\"",
+    "dev": "concurrently -n backend,storefront,admin,pos -c blue,green,yellow,magenta \"npm run backend:dev\" \"node scripts/wait-for-backend.js && npm run storefront:dev\" \"node scripts/wait-for-backend.js && npm run admin:dev\" \"node scripts/wait-for-backend.js && npm run pos:dev\"",
     "storefront:build": "npm run build --workspace=storefront",
     "storefront:start": "npm run start --workspace=storefront",
     "build": "concurrently \"npm run build:skip-tsc --workspace=admin\" \"npm run build --workspace=storefront\" \"npm run build --workspace=backend\" \"npm run build --workspace=pos\"",
-    "start": "concurrently \"npm run preview --workspace=admin\" \"npm run start --workspace=storefront\" \"npm run start:prod --workspace=backend\" \"npm run preview --workspace=pos\"",
+    "start": "concurrently -n backend,storefront,admin,pos -c blue,green,yellow,magenta \"npm run start:prod --workspace=backend\" \"node scripts/wait-for-backend.js && npm run start --workspace=storefront\" \"node scripts/wait-for-backend.js && npm run preview --workspace=admin\" \"node scripts/wait-for-backend.js && npm run preview --workspace=pos\"",
     "prod": "npm run build && npm run start",
     "install:all": "npm install"
   },

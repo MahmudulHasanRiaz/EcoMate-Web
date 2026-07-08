@@ -2,19 +2,20 @@ import { create } from 'zustand'
 
 const EVERYTHING_FEATURE = '*'
 const PREV_FEATURES_KEY = 'ecomate_previous_features'
+const FEATURES_CACHE_KEY = 'eco_mate_features'
 
-function loadPreviousFeatures(): string[] {
+function loadFromStorage(key: string): string[] {
   try {
-    const raw = localStorage.getItem(PREV_FEATURES_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? JSON.parse(raw) : []
   } catch {
     return []
   }
 }
 
-function savePreviousFeatures(features: string[]) {
+function saveToStorage(key: string, features: string[]) {
   try {
-    localStorage.setItem(PREV_FEATURES_KEY, JSON.stringify(features.sort()))
+    localStorage.setItem(key, JSON.stringify(features.sort()))
   } catch { /* ignore */ }
 }
 
@@ -28,8 +29,8 @@ interface LicenseStore {
 }
 
 export const useLicenseStore = create<LicenseStore>((set, get) => ({
-  features: [],
-  previousFeatures: loadPreviousFeatures(),
+  features: loadFromStorage(FEATURES_CACHE_KEY),
+  previousFeatures: loadFromStorage(PREV_FEATURES_KEY),
   loaded: false,
   setFeatures: (features) => {
     const prev = get().previousFeatures
@@ -43,8 +44,8 @@ export const useLicenseStore = create<LicenseStore>((set, get) => ({
       ? prev.filter(f => !sorted.includes(f))
       : []
 
-    localStorage.setItem('eco_mate_features', JSON.stringify(features))
-    savePreviousFeatures(features)
+    saveToStorage(FEATURES_CACHE_KEY, features)
+    saveToStorage(PREV_FEATURES_KEY, features)
     set({ features, previousFeatures: features, loaded: true })
     return { added, removed }
   },
@@ -53,7 +54,7 @@ export const useLicenseStore = create<LicenseStore>((set, get) => ({
     return features.includes(EVERYTHING_FEATURE) || features.includes(key)
   },
   clearPreviousFeatures: () => {
-    savePreviousFeatures([])
+    saveToStorage(PREV_FEATURES_KEY, [])
     set({ previousFeatures: [] })
   },
 }))

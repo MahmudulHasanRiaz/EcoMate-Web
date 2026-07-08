@@ -57,15 +57,27 @@ export class ImagesService {
       sourceBuffer = this.readLocalFile(params.path).buffer;
     }
 
-    const result = await sharp(sourceBuffer)
-      .resize({
-        width: params.w,
-        height: params.h,
-        fit: params.fit || 'cover',
-        withoutEnlargement: true,
-      })
-      .webp({ quality: params.q ?? 80 })
-      .toBuffer();
+    let result: Buffer;
+    try {
+      result = await sharp(sourceBuffer)
+        .resize({
+          width: params.w,
+          height: params.h,
+          fit: params.fit || 'cover',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: params.q ?? 80 })
+        .toBuffer();
+    } catch (err) {
+      this.logger.warn(`sharp processing failed: ${(err as Error).message}`);
+      const fallbackExt = extname(params.path.split('?')[0]).toLowerCase();
+      const fallbackMimeMap: Record<string, string> = {
+        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+        '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
+      };
+      const fext = fallbackExt && fallbackMimeMap[fallbackExt] ? fallbackExt : '.jpg';
+      return { buffer: sourceBuffer, ext: fext, mime: fallbackMimeMap[fext] || 'image/jpeg' };
+    }
 
     try {
       mkdirSync(this.cacheRoot, { recursive: true });
@@ -115,25 +127,38 @@ export class ImagesService {
       return readFileSync(originalCache);
     }
 
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch external image: ${url} (${response.status})`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
     try {
-      mkdirSync(this.cacheRoot, { recursive: true });
-      writeFileSync(originalCache, buffer);
-    } catch (e) {
-      this.logger.warn('Failed to cache external image', e);
-    }
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+      });
 
-    return buffer;
+      if (!response.ok) {
+        this.logger.warn(`Failed to fetch external image: ${url} (${response.status})`);
+        return this.generateFallback();
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      try {
+        mkdirSync(this.cacheRoot, { recursive: true });
+        writeFileSync(originalCache, buffer);
+      } catch (e) {
+        this.logger.warn('Failed to cache external image', e);
+      }
+
+      return buffer;
+    } catch {
+      this.logger.warn(`Failed to download external image: ${url}`);
+      return this.generateFallback();
+    }
+  }
+
+  private generateFallback(): Buffer {
+    return Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    );
   }
 
   private guessMimeFromUrl(url: string): string {

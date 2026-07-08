@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { settingsApi } from './api'
+import { apiClient } from '@/lib/api-client'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, User, Settings, Palette, Bell, Monitor } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Loader2, Save, User, Settings, Palette, Bell, Monitor, KeyRound, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { PasswordInput } from '@/components/password-input'
 
 export function PersonalSettings() {
   const queryClient = useQueryClient()
@@ -78,16 +80,81 @@ function AccountForm({ data, onSave, saving }: { data: any; onSave: (d: any) => 
   const [name, setName] = useState(data.name || '')
   const [dob, setDob] = useState(data.dob || '')
   const [lang, setLang] = useState(data.language || 'en')
+
+  const [cpw, setCpw] = useState({ current: '', newPass: '', confirm: '' })
+  const [cpwOpen, setCpwOpen] = useState(false)
+  const pwMut = useMutation({
+    mutationFn: (d: { currentPassword: string; newPassword: string }) =>
+      apiClient.post('/auth/change-password', d),
+    onSuccess: () => {
+      toast.success('Password changed successfully')
+      setCpw({ current: '', newPass: '', confirm: '' })
+      setCpwOpen(false)
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to change password'),
+  })
+
+  const canSubmitPw = cpw.current && cpw.newPass && cpw.newPass === cpw.confirm && cpw.newPass.length >= 6
+
   return (
-    <Card>
-      <CardHeader><CardTitle className='text-base'>Account</CardTitle></CardHeader>
-      <CardContent className='space-y-3'>
-        <div><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} /></div>
-        <div><Label>Date of Birth</Label><Input type='date' value={dob} onChange={e => setDob(e.target.value)} /></div>
-        <div><Label>Language</Label><select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={lang} onChange={e => setLang(e.target.value)}><option value='en'>English</option><option value='bn'>Bangla</option></select></div>
-        <Button size='sm' onClick={() => onSave({ name, dob, language: lang })} disabled={saving}><Save className='h-4 w-4 mr-1' /> Save</Button>
-      </CardContent>
-    </Card>
+    <div className='space-y-4'>
+      <Card>
+        <CardHeader><CardTitle className='text-base'>Account</CardTitle></CardHeader>
+        <CardContent className='space-y-3'>
+          <div><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} /></div>
+          <div><Label>Date of Birth</Label><Input type='date' value={dob} onChange={e => setDob(e.target.value)} /></div>
+          <div><Label>Language</Label><select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={lang} onChange={e => setLang(e.target.value)}><option value='en'>English</option><option value='bn'>Bangla</option></select></div>
+          <Button size='sm' onClick={() => onSave({ name, dob, language: lang })} disabled={saving}><Save className='h-4 w-4 mr-1' /> Save</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className='flex items-center justify-between'>
+            <div>
+              <CardTitle className='text-base flex items-center gap-2'><KeyRound className='h-4 w-4' /> Password</CardTitle>
+              <CardDescription>Change your account password</CardDescription>
+            </div>
+            <Button variant='outline' size='sm' onClick={() => setCpwOpen(!cpwOpen)}>
+              {cpwOpen ? 'Cancel' : 'Change Password'}
+            </Button>
+          </div>
+        </CardHeader>
+        {cpwOpen && (
+          <CardContent className='space-y-3 border-t pt-4'>
+            {pwMut.isSuccess && (
+              <div className='flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950 p-3 text-sm text-amber-700 dark:text-amber-300'>
+                <AlertTriangle className='h-4 w-4 mt-0.5 shrink-0' />
+                <span>You have been logged out from all other devices for security.</span>
+              </div>
+            )}
+            <div>
+              <Label>Current Password</Label>
+              <PasswordInput value={cpw.current} onChange={e => setCpw(p => ({ ...p, current: e.target.value }))} />
+            </div>
+            <div>
+              <Label>New Password</Label>
+              <PasswordInput value={cpw.newPass} onChange={e => setCpw(p => ({ ...p, newPass: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Confirm New Password</Label>
+              <PasswordInput value={cpw.confirm} onChange={e => setCpw(p => ({ ...p, confirm: e.target.value }))} />
+              {cpw.confirm && cpw.newPass !== cpw.confirm && (
+                <p className='text-xs text-red-500 mt-1'>Passwords do not match</p>
+              )}
+            </div>
+            <Button
+              size='sm'
+              onClick={() => pwMut.mutate({ currentPassword: cpw.current, newPassword: cpw.newPass })}
+              disabled={!canSubmitPw || pwMut.isPending}
+            >
+              {pwMut.isPending ? <Loader2 className='h-4 w-4 mr-1 animate-spin' /> : <Save className='h-4 w-4 mr-1' />}
+              Update Password
+            </Button>
+          </CardContent>
+        )}
+      </Card>
+    </div>
   )
 }
 

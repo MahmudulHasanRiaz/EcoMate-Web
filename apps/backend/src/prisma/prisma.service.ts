@@ -881,15 +881,18 @@ export class PrismaService
   private async seedAdminUser(): Promise<void> {
     try {
       const email = process.env.ADMIN_EMAIL || process.env.ADMIN_USER || 'admin@ecomate.com';
+
+      const existing = await this.userProfile.findUnique({ where: { email } });
+      if (existing) {
+        this.logger.log(`[Seed] Admin user already exists: ${email}`);
+        return;
+      }
+
       const plainPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || 'Admin@123';
       const adminPassword = await bcrypt.hash(plainPassword, 12);
 
-      await this.userProfile.upsert({
-        where: { email },
-        update: {
-          password: adminPassword,
-        },
-        create: {
+      await this.userProfile.create({
+        data: {
           firstName: 'Super',
           lastName: 'Admin',
           username: 'superadmin',
@@ -900,7 +903,7 @@ export class PrismaService
           status: 'active',
         },
       });
-      this.logger.log(`[License/Seed] Admin user synced/seeded: ${email}`);
+      this.logger.log(`[Seed] Admin user created: ${email}`);
     } catch (err: any) {
       this.logger.warn(`Failed to auto-seed admin user: ${err.message}`);
     }

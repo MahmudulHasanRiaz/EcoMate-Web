@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
@@ -13,7 +14,7 @@ import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
-import { headers } from "next/headers";
+
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -78,11 +79,6 @@ export default async function RootLayout({
     } else {
       console.error('[Layout] Unexpected error fetching config:', err);
     }
-  }
-
-  if (configError) {
-    const h = await headers();
-    h.set('X-Robots-Tag', 'noindex, nofollow');
   }
 
   const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
@@ -174,19 +170,18 @@ export default async function RootLayout({
             `,
           }}
         />
+
+        {initialConfig && (
+          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
+        )}
+
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
-        {initialConfig ? (
-          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
-        ) : null}
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
             <StorefrontConfigProvider initialConfig={initialConfig}>
-            <script
-              type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-            />
             <TrackingScripts />
             {configError ? (
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
@@ -202,12 +197,12 @@ export default async function RootLayout({
                   <p className="text-gray-600 text-sm mb-6 leading-relaxed">
                     We couldn't load the store configuration. This is a temporary issue — please refresh the page or try again in a moment.
                   </p>
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="bg-brand-blue text-white font-bold px-6 py-3 rounded-xl hover:bg-brand-blue-dark transition-colors text-sm"
+                  <a
+                    href=""
+                    className="inline-block bg-brand-blue text-white font-bold px-6 py-3 rounded-xl hover:bg-brand-blue-dark transition-colors text-sm"
                   >
                     Refresh Page
-                  </button>
+                  </a>
                 </div>
               </div>
             ) : !licenseActive ? (
@@ -259,17 +254,15 @@ export default async function RootLayout({
           </CartProvider>
         </AuthProvider>
         {process.env.NODE_ENV === 'production' && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                if ('serviceWorker' in navigator) {
-                  window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('/sw.js').catch(() => {});
-                  });
-                }
-              `,
-            }}
-          />
+          <Script id="sw-register" strategy="afterInteractive">
+            {`
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `}
+          </Script>
         )}
       </body>
     </html>

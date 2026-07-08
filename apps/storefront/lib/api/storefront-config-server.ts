@@ -14,7 +14,7 @@ export class StorefrontConfigError extends Error {
 
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
   const config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
-    next: { revalidate: 300 },
+    revalidate: 300,
   });
 
   if (!config || !config.store?.name) {

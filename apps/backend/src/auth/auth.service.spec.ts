@@ -254,9 +254,9 @@ describe('AuthService', () => {
       (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
         mockTokenRecord,
       );
-      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
-        mockTokenRecord,
-      );
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUser);
       (jwtService.sign as jest.Mock)
         .mockReturnValueOnce('new-access-token')
@@ -271,7 +271,7 @@ describe('AuthService', () => {
       expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
         where: { token: refreshToken },
       });
-      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { id: mockTokenRecord.id },
       });
       expect(result.accessToken).toBe('new-access-token');
@@ -293,14 +293,14 @@ describe('AuthService', () => {
       (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
         mockExpiredToken,
       );
-      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
-        mockExpiredToken,
-      );
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
 
       await expect(service.refresh(userId, 'expired-token')).rejects.toThrow(
         UnauthorizedException,
       );
-      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { id: mockExpiredToken.id },
       });
     });
@@ -309,9 +309,9 @@ describe('AuthService', () => {
       (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
         mockTokenRecord,
       );
-      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
-        mockTokenRecord,
-      );
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.refresh(userId, refreshToken)).rejects.toThrow(

@@ -66,6 +66,13 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
         return apiClient(originalRequest)
       } catch (refreshError) {
+        if (!originalRequest._retried) {
+          originalRequest._retried = true
+          originalRequest._retry = false
+          refreshPromise = null
+          await new Promise(r => setTimeout(r, 1000))
+          return apiClient(originalRequest)
+        }
         useAuthStore.getState().auth.reset()
         window.location.href = '/admin/sign-in'
         return Promise.reject(refreshError)

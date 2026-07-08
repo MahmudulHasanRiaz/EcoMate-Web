@@ -216,20 +216,14 @@ export class AuthService {
 
     if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
       if (tokenRecord) {
-        await this.prisma.refreshToken.delete({
-          where: { id: tokenRecord.id },
-        });
-      } else {
-        // Token reuse detected — JWT was valid but DB record gone
-        // Invalidates all tokens for user (token may be compromised)
         await this.prisma.refreshToken.deleteMany({
-          where: { userId },
+          where: { id: tokenRecord.id },
         });
       }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    await this.prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
+    await this.prisma.refreshToken.deleteMany({ where: { id: tokenRecord.id } });
 
     const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },

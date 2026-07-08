@@ -8,16 +8,19 @@ import { TeamSwitcher } from './team-switcher'
 import { useLicenseStore } from '@/stores/license-store'
 import type { NavCollapsible, NavItem, NavLink } from './types'
 
-function filterNavItems(items: NavItem[]): NavItem[] {
+const EVERYTHING_FEATURE = '*'
+
+function filterNavItems(items: NavItem[], features: string[]): NavItem[] {
+  const hasFeature = (key: string) => features.includes(EVERYTHING_FEATURE) || features.includes(key)
   return items.reduce<NavItem[]>((acc, item) => {
     if ('items' in item && item.items) {
-      const subItems = filterNavItems(item.items)
-      const parentHasFeature = !item.feature || useLicenseStore.getState().hasFeature(item.feature)
+      const subItems = filterNavItems(item.items, features)
+      const parentHasFeature = !item.feature || hasFeature(item.feature)
       if (!parentHasFeature) return acc
       if (subItems.length === 0) return acc
       acc.push({ ...item, items: subItems } as NavCollapsible)
     } else {
-      if (item.feature && !useLicenseStore.getState().hasFeature(item.feature)) return acc
+      if (item.feature && !hasFeature(item.feature)) return acc
       acc.push(item as NavLink)
     }
     return acc
@@ -27,12 +30,13 @@ function filterNavItems(items: NavItem[]): NavItem[] {
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
+  const features = useLicenseStore((s) => s.features)
 
   const mainGroups = sidebarData.navGroups
     .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
     .map((g) => ({
       ...g,
-      items: filterNavItems(g.items),
+      items: filterNavItems(g.items, features),
     }))
     .filter((g) => g.items.length > 0)
 
@@ -40,7 +44,7 @@ export function AppSidebar() {
   const footerItems = secondaryGroup?.items.filter(
     (item) => !item.panel || item.panel === activePanel
   )
-  const filteredFooter = footerItems ? filterNavItems(footerItems) : []
+  const filteredFooter = footerItems ? filterNavItems(footerItems, features) : []
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
