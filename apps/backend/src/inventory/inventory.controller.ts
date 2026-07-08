@@ -8,6 +8,7 @@ import {
   BulkAdjustInventoryDto,
 } from './dto/adjust-inventory.dto';
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
+import { LedgerQueryDto } from './dto/ledger-query.dto';
 
 @Controller('inventory')
 @RequiresFeature('admin_inventory')
@@ -85,6 +86,12 @@ export class InventoryController {
   @Get('valuation')
   async valuation(@Query() query: ValuationQueryDto) {
     return this.inventoryService.valuation(query);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('ledger')
+  async getLedger(@Query() query: LedgerQueryDto) {
+    return this.inventoryService.getLedger(query);
   }
 
   @Roles('superadmin', 'admin', 'manager')

@@ -25,6 +25,7 @@ interface Product {
   type: string
   managedStockQuantity: number
   manageStock: boolean
+  availabilityMode?: string
   lowStockQty: number | null
   basePrice: string
   salePrice: string | null
@@ -150,6 +151,7 @@ export function StockOverview() {
                   <TableHead className='cursor-pointer select-none text-right' onClick={() => toggleSort('stock')}>
                     Stock {sortIndicator('stock')}
                   </TableHead>
+                  <TableHead className='text-right'>Mode</TableHead>
                   <TableHead className='cursor-pointer select-none text-right' onClick={() => toggleSort('price')}>
                     Price {sortIndicator('price')}
                   </TableHead>
@@ -160,13 +162,13 @@ export function StockOverview() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className='text-center py-8'>
+                    <TableCell colSpan={9} className='text-center py-8'>
                       <Loader2 className='animate-spin h-5 w-5 mx-auto' />
                     </TableCell>
                   </TableRow>
                 ) : products.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className='text-center py-8 text-muted-foreground text-sm'>
+                    <TableCell colSpan={9} className='text-center py-8 text-muted-foreground text-sm'>
                       No products found
                     </TableCell>
                   </TableRow>
@@ -234,6 +236,15 @@ export function StockOverview() {
                             }
                           >
                             {p.manageStock ? p.managedStockQuantity : '—'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className='text-right'>
+                          <Badge variant='outline' className='text-xs font-mono'>
+                            {p.availabilityMode === 'MANAGED_STOCK' ? 'Managed' :
+                             p.availabilityMode === 'INVENTORY_CONTROLLED' ? 'Inventory' :
+                             p.availabilityMode === 'ALWAYS_IN_STOCK' ? 'Always In' :
+                             p.availabilityMode === 'ALWAYS_OUT_OF_STOCK' ? 'Always Out' :
+                             p.availabilityMode || '—'}
                           </Badge>
                         </TableCell>
                         <TableCell className='text-right font-medium text-sm'>

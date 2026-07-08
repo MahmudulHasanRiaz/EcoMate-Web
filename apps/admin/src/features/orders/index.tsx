@@ -6,6 +6,7 @@ import { ordersApi, mediaUrl } from './api'
 import type { OrderResponse } from './api'
 import { SafeImage } from '@/components/safe-image'
 import { apiClient } from '@/lib/api-client'
+import { useLicenseStore } from '@/stores/license-store'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -303,7 +304,9 @@ export function Orders() {
   })
 
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]) })
-  const activeCouriers = (Array.isArray(courierCreds) ? courierCreds : []) as any[]
+  const activeCouriers = ((Array.isArray(courierCreds) ? courierCreds : []) as any[]).filter(
+    (c: any) => useLicenseStore.getState().hasFeature(`courier_${c.courier}`)
+  )
   const [dispatchCourier, setDispatchCourier] = useState('')
 
   const dispatchMut = useMutation({

@@ -19,11 +19,29 @@ import {
   UpdateOrderItemDto,
   CustomerInfoDto,
 } from './dto/order.dto';
-import { PaymentStatus, PaymentOptionType, Prisma } from '@prisma/client';
+import { PaymentStatus, PaymentOptionType, Prisma, ManagedStockMovementType, MovementDirection, ReferenceEntity } from '@prisma/client';
+import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
+
+const ORDER_TRANSITIONS: Record<string, string[]> = {
+  Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
+  'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
+  'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
+  Hold: ['Pending', 'Confirmed', 'Cancelled'],
+  Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
+  Packed: ['Shipping', 'Packing Hold'],
+  'Packing Hold': ['Packed', 'Cancelled'],
+  Shipping: ['Delivered', 'Partial'],
+  Delivered: ['Return Pending'],
+  Partial: ['Return Pending'],
+  'Return Pending': ['Returned', 'Damaged'],
+  Returned: ['Damaged'],
+  Cancelled: ['Confirmed'],
+  Damaged: [],
+}
 
 @Injectable()
 export class OrdersService {
@@ -38,6 +56,7 @@ export class OrdersService {
     private readonly blockedEntries: BlockedEntriesService,
     private readonly security: SecurityService,
     private readonly couponsService: CouponsService,
+    private readonly managedStockLedger: ManagedStockLedgerService,
   ) {}
 
   private parseTimeline(timeline: unknown): any[] {
@@ -942,6 +961,11 @@ export class OrdersService {
         },
       });
 
+      if (newStatus.name === 'Confirmed') {
+        await this.takeCostSnapshot(id, tx);
+        await this.deductStockForOrder(id, tx);
+      }
+
       if (newStatus.name === 'Cancelled') {
         const cancelItems = await tx.orderItem.findMany({
           where: { orderId: id },
@@ -958,6 +982,8 @@ export class OrdersService {
             tx,
           });
         }
+
+        await this.restoreStockForCancelledOrder(id, tx);
       }
 
       if (newStatus.name === 'Delivered') {
@@ -1272,6 +1298,10 @@ export class OrdersService {
               });
             }
           }
+
+          for (const cancelOrderId of validIds) {
+            await this.restoreStockForCancelledOrder(cancelOrderId, tx);
+          }
         }
 
         for (const order of orders) {
@@ -1466,6 +1496,8 @@ export class OrdersService {
         });
       }
 
+      await this.restoreStockForCancelledOrder(orderId, tx);
+
       return u;
     });
 
@@ -1513,6 +1545,293 @@ export class OrdersService {
       updated += 1;
     }
     return { updated, total: orders.length };
+  }
+
+  async transitionOrderStatus(orderId: string, newStatus: string, performedBy?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { status: true, items: { include: { product: true, variant: true } } },
+      })
+      if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+
+      const currentStatus = order.status.name as string
+      const allowed = ORDER_TRANSITIONS[currentStatus]
+      if (!allowed || !allowed.includes(newStatus)) {
+        throw new BadRequestException(
+          `Cannot transition from "${currentStatus}" to "${newStatus}". Allowed: ${allowed?.join(', ') || 'none'}`,
+        )
+      }
+
+      const targetStatus = await tx.orderStatus.findUnique({ where: { name: newStatus } })
+      if (!targetStatus) throw new NotFoundException(`Status "${newStatus}" not found`)
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { statusId: targetStatus.id },
+      })
+
+      await this.executeTransitionSideEffects(tx, order, currentStatus, newStatus, performedBy)
+
+      return { success: true, from: currentStatus, to: newStatus }
+    })
+  }
+
+  private async executeTransitionSideEffects(
+    tx: Prisma.TransactionClient,
+    order: any,
+    fromStatus: string,
+    toStatus: string,
+    performedBy?: string,
+  ) {
+    switch (toStatus) {
+      case 'Confirmed':
+        await this.handleConfirmedSideEffects(tx, order.id, performedBy)
+        break
+      case 'Cancelled':
+        await this.handleCancelledSideEffects(tx, order.id, performedBy)
+        break
+      case 'Returned':
+        await this.handleReturnedSideEffects(tx, order.id, performedBy)
+        break
+      case 'Delivered':
+        await this.handleDeliveredSideEffects(tx, order, performedBy)
+        break
+    }
+  }
+
+  private async handleConfirmedSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
+    await this.takeCostSnapshot(orderId, tx)
+    await this.deductStockForOrder(orderId, tx)
+  }
+
+  private async handleCancelledSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
+    await this.restoreStockForCancelledOrder(orderId, tx)
+  }
+
+  private async handleReturnedSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
+    const alreadyRestocked = await this.managedStockLedger.hasExistingRestock(orderId)
+    if (alreadyRestocked) return
+
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
+            variant: { select: { id: true, managedStockQuantity: true } },
+          },
+        },
+      },
+    })
+
+    if (!order) return
+
+    for (const item of order.items) {
+      const product = item.product
+      if (!product) continue
+      if (product.availabilityMode !== 'MANAGED_STOCK') continue
+      if (!product.manageStock) continue
+
+      if (item.variantId && item.variant) {
+        const before = item.variant.managedStockQuantity
+        const qty = item.quantity
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { managedStockQuantity: { increment: qty } },
+        })
+        await this.managedStockLedger.record({
+          variantId: item.variantId,
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.IN,
+          type: ManagedStockMovementType.RETURN,
+          stockBefore: before,
+          stockAfter: before + qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} returned — stock restored`,
+        }, tx)
+      } else if (product.type !== 'variable') {
+        const before = product.managedStockQuantity
+        const qty = item.quantity
+        await tx.product.update({
+          where: { id: item.productId! },
+          data: { managedStockQuantity: { increment: qty } },
+        })
+        await this.managedStockLedger.record({
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.IN,
+          type: ManagedStockMovementType.RETURN,
+          stockBefore: before,
+          stockAfter: before + qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} returned — stock restored`,
+        }, tx)
+      }
+    }
+  }
+
+  private async handleDeliveredSideEffects(tx: Prisma.TransactionClient, order: any, performedBy?: string) {
+    this.logger.log(`Order ${order.id} delivered — payment confirmation stub`)
+  }
+
+  private async takeCostSnapshot(orderId: string, tx?: Prisma.TransactionClient) {
+    const order = await (tx || this.prisma).order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: { select: { standardCost: true, availabilityMode: true } },
+            variant: { select: { standardCost: true } },
+          },
+        },
+      },
+    });
+
+    if (!order) return;
+
+    for (const item of order.items) {
+      const cost = item.variant?.standardCost ?? item.product?.standardCost;
+      if (cost != null) {
+        await (tx || this.prisma).orderItem.update({
+          where: { id: item.id },
+          data: {
+            costSnapshot: cost,
+            costType: 'estimated',
+          },
+        });
+      }
+    }
+  }
+
+  private async deductStockForOrder(orderId: string, tx: Prisma.TransactionClient) {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
+            variant: { select: { id: true, managedStockQuantity: true } },
+          },
+        },
+      },
+    });
+
+    if (!order) return;
+
+    for (const item of order.items) {
+      const product = item.product;
+      if (!product) continue;
+      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
+      if (!product.manageStock) continue;
+
+      if (item.variantId && item.variant) {
+        const before = item.variant.managedStockQuantity;
+        const qty = item.quantity;
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { managedStockQuantity: { decrement: qty } },
+        });
+        await this.managedStockLedger.record({
+          variantId: item.variantId,
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.OUT,
+          type: ManagedStockMovementType.ORDER_DEDUCTION,
+          stockBefore: before,
+          stockAfter: before - qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} confirmed — variant stock deducted`,
+        }, tx);
+      } else if (product.type !== 'variable') {
+        const before = product.managedStockQuantity;
+        const qty = item.quantity;
+        await tx.product.update({
+          where: { id: item.productId! },
+          data: { managedStockQuantity: { decrement: qty } },
+        });
+        await this.managedStockLedger.record({
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.OUT,
+          type: ManagedStockMovementType.ORDER_DEDUCTION,
+          stockBefore: before,
+          stockAfter: before - qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} confirmed — product stock deducted`,
+        }, tx);
+      }
+    }
+  }
+
+  private async restoreStockForCancelledOrder(orderId: string, tx: Prisma.TransactionClient) {
+    const alreadyRestocked = await this.managedStockLedger.hasExistingRestock(orderId);
+    if (alreadyRestocked) return;
+
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
+            variant: { select: { id: true, managedStockQuantity: true } },
+          },
+        },
+      },
+    });
+
+    if (!order) return;
+
+    for (const item of order.items) {
+      const product = item.product;
+      if (!product) continue;
+      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
+      if (!product.manageStock) continue;
+
+      if (item.variantId && item.variant) {
+        const before = item.variant.managedStockQuantity;
+        const qty = item.quantity;
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { managedStockQuantity: { increment: qty } },
+        });
+        await this.managedStockLedger.record({
+          variantId: item.variantId,
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.IN,
+          type: ManagedStockMovementType.CANCEL_RELEASE,
+          stockBefore: before,
+          stockAfter: before + qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} cancelled — stock restored`,
+        }, tx);
+      } else if (product.type !== 'variable') {
+        const before = product.managedStockQuantity;
+        const qty = item.quantity;
+        await tx.product.update({
+          where: { id: item.productId! },
+          data: { managedStockQuantity: { increment: qty } },
+        });
+        await this.managedStockLedger.record({
+          productId: item.productId ?? undefined,
+          quantity: qty,
+          direction: MovementDirection.IN,
+          type: ManagedStockMovementType.CANCEL_RELEASE,
+          stockBefore: before,
+          stockAfter: before + qty,
+          referenceType: ReferenceEntity.ORDER,
+          referenceId: orderId,
+          note: `Order ${orderId} cancelled — stock restored`,
+        }, tx);
+      }
+    }
   }
 
   private async firePurchaseInstant(order: any) {

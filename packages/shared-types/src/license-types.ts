@@ -1,3 +1,25 @@
+export interface LicenseInfoResponse {
+  features: string[];
+  clientId?: string;
+  domains?: string[];
+  exp?: number;
+  iat?: number;
+}
+
+export class LicenseInfo {
+  features: string[];
+  raw: any;
+
+  constructor(data: { features: string[]; raw?: any }) {
+    this.features = data.features;
+    this.raw = data.raw;
+  }
+
+  hasFeature(key: string): boolean {
+    return this.features.includes(key);
+  }
+}
+
 export type ResourceLimits = Record<string, number>;
 
 export interface FeatureFlag {
@@ -120,3 +142,29 @@ export const FEATURES: Record<string, FeatureFlag> = {
 };
 
 export const FEATURE_KEYS = Object.keys(FEATURES);
+
+export const DEPENDENCY_MAP: Record<string, string[]> = {
+  admin_warehouses: ['admin_inventory'],
+  admin_inventory_valuation: ['admin_inventory'],
+  admin_purchases: ['admin_suppliers', 'admin_inventory'],
+  admin_financial_periods: ['admin_accounting'],
+  admin_refunds: ['admin_orders'],
+  admin_packing: ['admin_orders'],
+  admin_dispatch: ['admin_products', 'admin_orders'],
+  admin_incomplete_orders: ['admin_orders'],
+  admin_reviews: ['storefront_reviews'],
+  admin_referrals: ['storefront_referral'],
+  courier_steadfast: ['admin_orders'],
+  courier_pathao: ['admin_orders'],
+  courier_redx: ['admin_orders'],
+  courier_carrybee: ['admin_orders'],
+  gateway_bkash: ['storefront'],
+  gateway_nagad: ['storefront'],
+  gateway_rocket: ['storefront'],
+  gateway_sslcommerz: ['storefront'],
+  gateway_surjopay: ['storefront'],
+  gateway_aamarpay: ['storefront'],
+  pos_system: ['admin_products'],
+  admin_barcode_search: ['pos_system'],
+  admin_order_import: ['admin_orders'],
+};

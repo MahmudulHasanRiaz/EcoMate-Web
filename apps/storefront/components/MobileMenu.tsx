@@ -116,14 +116,16 @@ export default function MobileMenu({}: {}) {
                   <Calendar size={18} strokeWidth={1.5} /> 
                   <span className="text-[13px] font-medium tracking-wide">Track Your Order</span>
                 </Link>
-                <Link 
-                  href="/wishlist" 
-                  onClick={closeMenu} 
-                  className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-brand-blue/[0.02] active:bg-gray-100 transition-all border-b border-gray-100/70 text-gray-700 hover:text-brand-blue"
-                >
-                  <Heart size={18} strokeWidth={1.5} /> 
-                  <span className="text-[13px] font-medium tracking-wide">My Wishlists</span>
-                </Link>
+                {config.licenseFeatures?.includes('storefront_wishlist') && (
+                  <Link 
+                    href="/wishlist" 
+                    onClick={closeMenu} 
+                    className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-brand-blue/[0.02] active:bg-gray-100 transition-all border-b border-gray-100/70 text-gray-700 hover:text-brand-blue"
+                  >
+                    <Heart size={18} strokeWidth={1.5} /> 
+                    <span className="text-[13px] font-medium tracking-wide">My Wishlists</span>
+                  </Link>
+                )}
                 <Link 
                   href="/faq" 
                   onClick={closeMenu} 

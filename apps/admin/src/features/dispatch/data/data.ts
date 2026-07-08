@@ -10,9 +10,13 @@ export const DISPATCH_STATUSES = [
   { value: 'CANCELLED', label: 'Cancelled', color: 'bg-gray-700' },
 ] as const
 
-export const COURIER_OPTIONS = [
+export const ALL_COURIERS = [
   { value: 'steadfast', label: 'Steadfast' },
   { value: 'pathao', label: 'Pathao' },
   { value: 'redx', label: 'Redx' },
   { value: 'carrybee', label: 'Carrybee' },
 ] as const
+
+export function getCourierOptions(hasFeature: (key: string) => boolean) {
+  return ALL_COURIERS.filter((c) => hasFeature(`courier_${c.value}`))
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,13 +7,16 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
-import { Loader2, RefreshCw, Key, ShieldCheck, Calendar, Globe, Award, HelpCircle } from 'lucide-react'
+import { Loader2, RefreshCw, Key, ShieldCheck, Calendar, Globe, Award, HelpCircle, ArrowUpCircle, DollarSign, ListChecks } from 'lucide-react'
+import { UpgradeDialog } from './components/UpgradeDialog'
+import { FeatureComparison } from './components/FeatureComparison'
 
 interface LicenseStatusResponse {
   active: boolean
   state: string
   message: string
   code: string | null
+  dashboardUrl?: string | null
   license: {
     valid: boolean
     plan?: { id: string; name: string; planType: string; price: number }
@@ -28,6 +31,8 @@ interface LicenseStatusResponse {
 export function LicenseSettings() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
 
   const { data, isLoading, refetch } = useQuery<LicenseStatusResponse>({
     queryKey: ['license-status'],
@@ -61,6 +66,8 @@ export function LicenseSettings() {
 
   const license = data?.license
   const isActive = data?.active ?? false
+  const features = license?.features ?? []
+  const featureCount = features.length
 
   return (
     <div className='space-y-6 w-full max-w-4xl'>
@@ -110,6 +117,28 @@ export function LicenseSettings() {
                   </div>
                 </div>
 
+                <div className='flex items-center gap-3 p-3 bg-muted/50 rounded-lg'>
+                  <DollarSign className='text-primary h-5 w-5 shrink-0' />
+                  <div>
+                    <p className='text-xs text-muted-foreground'>Price</p>
+                    <p className='font-medium text-foreground'>
+                      {license.plan?.price != null
+                        ? `$${license.plan.price}/${license.plan.planType === 'monthly' ? 'mo' : 'yr'}`
+                        : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className='flex items-center gap-3 p-3 bg-muted/50 rounded-lg'>
+                  <ListChecks className='text-primary h-5 w-5 shrink-0' />
+                  <div>
+                    <p className='text-xs text-muted-foreground'>Features</p>
+                    <p className='font-medium text-foreground'>
+                      {featureCount} feature{featureCount !== 1 ? 's' : ''} unlocked
+                    </p>
+                  </div>
+                </div>
+
                 <div className='flex items-center gap-3 p-3 bg-muted/50 rounded-lg sm:col-span-2'>
                   <Globe className='text-primary h-5 w-5 shrink-0' />
                   <div>
@@ -139,7 +168,7 @@ export function LicenseSettings() {
                 ) : (
                   <RefreshCw className='h-4 w-4' />
                 )}
-                Sync & Revalidate Features
+                Sync & Revalidate
               </Button>
               <Button
                 variant='secondary'
@@ -150,6 +179,17 @@ export function LicenseSettings() {
                 <Key className='h-4 w-4' />
                 Change License Key
               </Button>
+              {isActive && (
+                <Button
+                  variant='default'
+                  size='sm'
+                  onClick={() => setUpgradeOpen(true)}
+                  className='flex items-center gap-2'
+                >
+                  <ArrowUpCircle className='h-4 w-4' />
+                  Upgrade Plan
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -161,9 +201,9 @@ export function LicenseSettings() {
             <CardDescription>Features enabled under your active plan.</CardDescription>
           </CardHeader>
           <CardContent>
-            {license?.features && license.features.length > 0 ? (
+            {featureCount > 0 ? (
               <div className='flex flex-wrap gap-2'>
-                {license.features.map((feat) => (
+                {features.map((feat) => (
                   <Badge key={feat} variant='secondary' className='font-mono text-xs px-2 py-0.5'>
                     {feat}
                   </Badge>
@@ -178,6 +218,39 @@ export function LicenseSettings() {
           </CardContent>
         </Card>
       </div>
+
+      <Button
+        variant='ghost'
+        size='sm'
+        onClick={() => setShowComparison(!showComparison)}
+        className='flex items-center gap-2'
+      >
+        <ListChecks className='h-4 w-4' />
+        {showComparison ? 'Hide' : 'Show'} Full Feature Comparison
+      </Button>
+
+      {showComparison && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Feature Comparison</CardTitle>
+            <CardDescription>
+              All available features and their availability in your current plan.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FeatureComparison activeFeatures={features} />
+          </CardContent>
+        </Card>
+      )}
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        currentPlan={license?.plan}
+        expiry={license?.expiry}
+        featureCount={featureCount}
+        dashboardUrl={data?.dashboardUrl}
+      />
     </div>
   )
 }

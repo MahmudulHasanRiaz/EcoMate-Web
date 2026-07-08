@@ -23,7 +23,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SelectDropdown } from '@/components/select-dropdown'
 import { useDispatchMutations } from './hooks'
-import { COURIER_OPTIONS } from './data/data'
+import { useLicenseStore } from '@/stores/license-store'
+import { ALL_COURIERS, getCourierOptions } from './data/data'
 
 type CreateDispatchDialogProps = {
   open: boolean
@@ -45,6 +46,8 @@ export function CreateDispatchDialog({
   onOpenChange,
 }: CreateDispatchDialogProps) {
   const { create } = useDispatchMutations()
+  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const courierOptions = getCourierOptions(hasFeature)
 
   const form = useForm<DispatchForm>({
     resolver: zodResolver(formSchema),
@@ -108,7 +111,7 @@ export function CreateDispatchDialog({
                     defaultValue={field.value}
                     onValueChange={field.onChange}
                     placeholder='Select courier'
-                    items={COURIER_OPTIONS.map((c) => ({
+                    items={courierOptions.map((c) => ({
                       label: c.label,
                       value: c.value,
                     }))}

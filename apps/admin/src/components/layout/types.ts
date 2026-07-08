@@ -16,12 +16,13 @@ type BaseNavItem = {
   title: string
   badge?: string
   icon?: React.ElementType
+  feature?: string
+  panel?: 'operational' | 'monitoring'
 }
 
 type NavLink = BaseNavItem & {
   url: LinkProps['to'] | (string & {})
   items?: never
-  panel?: 'operational' | 'monitoring'
 }
 
 type NavCollapsible = BaseNavItem & {

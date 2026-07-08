@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as errorsLicenseDeniedRouteImport } from './routes/(errors)/license-denied'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
@@ -119,6 +120,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const errorsLicenseDeniedRoute = errorsLicenseDeniedRouteImport.update({
+  id: '/(errors)/license-denied',
+  path: '/license-denied',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const errors503Route = errors503RouteImport.update({
   id: '/(errors)/503',
@@ -711,6 +717,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/license-denied': typeof errorsLicenseDeniedRoute
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
@@ -812,6 +819,7 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/license-denied': typeof errorsLicenseDeniedRoute
   '/': typeof AuthenticatedIndexRoute
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
@@ -916,6 +924,7 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
+  '/(errors)/license-denied': typeof errorsLicenseDeniedRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
@@ -1021,6 +1030,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/license-denied'
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
@@ -1122,6 +1132,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/license-denied'
     | '/'
     | '/mon/settings'
     | '/op/print'
@@ -1225,6 +1236,7 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
+    | '/(errors)/license-denied'
     | '/_authenticated/'
     | '/_authenticated/mon/settings'
     | '/_authenticated/op/print'
@@ -1329,6 +1341,7 @@ export interface RootRouteChildren {
   errors404Route: typeof errors404Route
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
+  errorsLicenseDeniedRoute: typeof errorsLicenseDeniedRoute
   authLicenseActivateRoute: typeof authLicenseActivateRoute
 }
 
@@ -1347,6 +1360,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/(errors)/license-denied': {
+      id: '/(errors)/license-denied'
+      path: '/license-denied'
+      fullPath: '/license-denied'
+      preLoaderRoute: typeof errorsLicenseDeniedRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/(errors)/503': {
       id: '/(errors)/503'
@@ -2309,6 +2329,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors404Route: errors404Route,
   errors500Route: errors500Route,
   errors503Route: errors503Route,
+  errorsLicenseDeniedRoute: errorsLicenseDeniedRoute,
   authLicenseActivateRoute: authLicenseActivateRoute,
 }
 export const routeTree = rootRouteImport

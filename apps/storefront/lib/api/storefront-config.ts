@@ -140,6 +140,11 @@ export interface StorefrontConfig {
     defaultVariantSelected: boolean;
     showReviews: boolean;
   };
+  licenseFeatures: string[];
+}
+
+export function hasLicenseFeature(config: StorefrontConfig, key: string): boolean {
+  return config.licenseFeatures?.includes(key) ?? false;
 }
 
 let cachedConfig: StorefrontConfig | null = null;

@@ -1061,22 +1061,52 @@ model InventoryLog {
   @@index([productId, variantId, createdAt])
 }
 
-model ManagedStockLedger {
-  id            String   @id @default(uuid())
-  productId     String?
-  variantId     String?
-  quantity      Int
-  direction     String   // IN | OUT
-  type          String   // ORDER_DEDUCTION | CANCEL_RELEASE | RETURN | MANUAL_ADD | MANUAL_REMOVE
-  stockBefore   Int
-  stockAfter    Int
-  referenceType String?  // ORDER | ADJUSTMENT | RETURN
-  referenceId   String?
-  note          String?
-  performedBy   String?
-  createdAt     DateTime @default(now())
+enum ManagedStockMovementType {
+  INITIAL
+  ORDER_DEDUCTION
+  MANUAL_ADD
+  MANUAL_REMOVE
+  ADJUSTMENT
+  RETURN
+  CANCEL_RELEASE
+}
 
-  @@index([productId, variantId, createdAt])
+enum MovementDirection {
+  IN
+  OUT
+}
+
+enum ReferenceEntity {
+  ORDER
+  ORDER_ITEM
+  RETURN
+  MANUAL
+  ADJUSTMENT
+  IMPORT
+}
+
+model ManagedStockLedger {
+  id              String                    @id @default(uuid())
+  productId       String?
+  variantId       String?
+  comboId         String?
+
+  quantity        Int
+  direction       MovementDirection
+  type            ManagedStockMovementType
+
+  stockBefore     Int?
+  stockAfter      Int?
+
+  referenceType   ReferenceEntity?
+  referenceId     String?
+
+  note            String?
+  reason          String?
+  performedById   String?
+  performedAt     DateTime                  @default(now())
+
+  @@index([productId, variantId, performedAt])
   @@index([referenceType, referenceId])
 }
 

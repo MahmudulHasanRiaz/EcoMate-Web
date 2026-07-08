@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { useLicenseStore } from '@/stores/license-store'
 import steadfastLogo from '@/assets/payment-logos/steadfast.png'
 import pathaoLogo from '@/assets/payment-logos/pathao.png'
 import redxLogo from '@/assets/payment-logos/redx.webp'
@@ -83,8 +84,13 @@ export function CourierSettings() {
   })
 
   const [forms, setForms] = useState<Record<string, CourierFormState>>({})
+  const hasFeature = useLicenseStore((s) => s.hasFeature)
 
-  const list = Array.isArray(creds) ? creds : (creds as Record<string, unknown>)?.data as unknown[] || []
+  const rawList = Array.isArray(creds) ? creds : (creds as Record<string, unknown>)?.data as unknown[] || []
+  const list = useMemo(
+    () => rawList.filter((c) => hasFeature(`courier_${(c as Record<string, unknown>)['courier'] as string}`)),
+    [rawList, hasFeature],
+  )
 
   useEffect(() => {
     console.log('Courier credentials API response:', creds, 'Parsed list:', list)

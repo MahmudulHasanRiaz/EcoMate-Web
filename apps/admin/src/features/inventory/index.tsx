@@ -47,6 +47,7 @@ export function Inventory() {
   const [variants, setVariants] = useState<any[]>([])
   const [variantId, setVariantId] = useState('')
   const [loadingVariants, setLoadingVariants] = useState(false)
+  const [selectedProductAvailability, setSelectedProductAvailability] = useState<string | null>(null)
 
   const variantOptions = useMemo(() => {
     return (variants || []).map((v: any) => {
@@ -91,13 +92,14 @@ export function Inventory() {
   }, [comboSearch])
 
   useEffect(() => {
-    if (!productId || productType !== 'variable') { setVariants([]); setVariantId(''); return }
-    setLoadingVariants(true)
+    if (!productId) { setVariants([]); setVariantId(''); setSelectedProductAvailability(null); return }
+    if (productType === 'variable') setLoadingVariants(true)
     apiClient.get(`/products/${productId}`).then(r => {
       const p = r.data as any
       setVariants(p?.variants || [])
+      setSelectedProductAvailability(p?.availabilityMode || null)
       if (p?.variants?.length > 0) setVariantId(p.variants[0].id)
-    }).catch(() => setVariants([])).finally(() => setLoadingVariants(false))
+    }).catch(() => { setVariants([]); setSelectedProductAvailability(null) }).finally(() => setLoadingVariants(false))
   }, [productId, productType])
 
   const adjustMut = useMutation({
@@ -111,7 +113,7 @@ export function Inventory() {
     setProductId(''); setProductName(''); setProductType(null); setProductSearch(''); setSearchResults([])
     setComboId(''); setComboName(''); setComboSearch(''); setComboResults([])
     setVariants([]); setVariantId('')
-    setQuantity('0'); setReason('')
+    setQuantity('0'); setReason(''); setSelectedProductAvailability(null)
   }
 
   const qtyNum = parseInt(quantity)
@@ -121,6 +123,10 @@ export function Inventory() {
     : (productId && qtyValid && (productType !== 'variable' || variantId))
 
   const handleAdjust = () => {
+    if (selectedProductAvailability && selectedProductAvailability !== 'MANAGED_STOCK') {
+      toast.error('Stock adjustments not allowed for this product availability mode')
+      return
+    }
     const qty = parseInt(quantity)
     if (isNaN(qty) || qty === 0) return
     if (!reason.trim()) {
@@ -268,6 +274,20 @@ export function Inventory() {
                     ) : (
                       <p className='text-sm text-muted-foreground'>No variants found for this product.</p>
                     )}
+                  </div>
+                )}
+                {productId && selectedProductAvailability && selectedProductAvailability !== 'MANAGED_STOCK' && (
+                  <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2'>
+                    <p className='text-xs text-amber-700 dark:text-amber-300'>
+                      Availability mode: <strong>{selectedProductAvailability}</strong>. Stock adjustments not allowed for this product.
+                    </p>
+                  </div>
+                )}
+                {productId && selectedProductAvailability === 'MANAGED_STOCK' && (
+                  <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                    <p className='text-xs text-blue-700 dark:text-blue-300'>
+                      Availability mode: <strong>Managed Stock</strong>. Adjustments will update stock and create a ledger entry.
+                    </p>
                   </div>
                 )}
               </div>

@@ -68,7 +68,9 @@ export default function Header({}: {}) {
             ) : (
               <HeaderAction icon={<User size={20} />} label="Sign In" hideOnMobile href="/account" />
             )}
-            <HeaderAction icon={<Heart size={20} />} label="Wishlist" hideOnMobile href="/wishlist" />
+            {config.licenseFeatures?.includes('storefront_wishlist') && (
+              <HeaderAction icon={<Heart size={20} />} label="Wishlist" hideOnMobile href="/wishlist" />
+            )}
             
             <div className="flex items-center gap-1 md:gap-2">
               <button 

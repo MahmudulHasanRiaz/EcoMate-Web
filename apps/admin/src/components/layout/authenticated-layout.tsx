@@ -11,6 +11,7 @@ import { PanelProvider } from '@/context/panel-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { SkipToMain } from '@/components/skip-to-main'
+import { toast } from 'sonner'
 
 type AuthenticatedLayoutProps = {
   children?: React.ReactNode
@@ -63,15 +64,70 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (window.location.pathname.includes('/license/activate')) return
 
     apiClient.get('/license/status').then(r => {
-      if (!r.data?.active) {
+      const isActive = r.data?.active
+      if (!isActive) {
         navigate({ to: '/license/activate', replace: true })
+        return
       }
-      useLicenseStore.getState().setFeatures(r.data?.license?.features || [])
+      const newFeatures: string[] = r.data?.license?.features || []
+      const { added, removed } = useLicenseStore.getState().setFeatures(newFeatures)
+
+      if (added.length > 0 && removed.length > 0) {
+        toast.info(
+          `Your plan has been updated. New: ${added.join(', ')}. Removed: ${removed.join(', ')}.`,
+          { duration: 6000 }
+        )
+      } else if (added.length > 0) {
+        toast.success(
+          `New features unlocked: ${added.join(', ')}.`,
+          { duration: 6000 }
+        )
+      } else if (removed.length > 0) {
+        const hasInventory = removed.includes('admin_inventory')
+        const inventoryNote = hasInventory
+          ? ' Inventory is now read-only — existing products reverted to basic stock.'
+          : ''
+        toast.warning(
+          `Features removed from your plan: ${removed.join(', ')}. Some sections may be hidden.${inventoryNote}`,
+          { duration: 6000 }
+        )
+      }
     }).catch(() => {
-      // Allow access on status check failure, but mark store as loaded
       useLicenseStore.getState().setFeatures([])
     })
   }, [accessToken, navigate])
+
+  useEffect(() => {
+    if (!accessToken) return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiClient.get('/license/status')
+        if (res.data?.state === 'expired' || res.data?.state === 'invalid') {
+          useLicenseStore.getState().setFeatures([])
+          toast.error('Your license has expired. Redirecting to license page...')
+          setTimeout(() => navigate({ to: '/license/activate', replace: true }), 3000)
+        }
+      } catch {
+        // Silently fail — network issues shouldn't interrupt work
+      }
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [accessToken, navigate])
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'eco_mate_features' && e.newValue) {
+        try {
+          const features = JSON.parse(e.newValue)
+          useLicenseStore.getState().setFeatures(features)
+        } catch {}
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
 
   if (!accessToken) {
     return (

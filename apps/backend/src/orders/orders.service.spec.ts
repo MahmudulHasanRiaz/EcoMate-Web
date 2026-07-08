@@ -9,6 +9,7 @@ import { StockService } from '../stock/stock.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -224,6 +225,13 @@ describe('OrdersService', () => {
           provide: SecurityService,
           useValue: {
             recordOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: ManagedStockLedgerService,
+          useValue: {
+            record: jest.fn().mockResolvedValue({}),
+            hasExistingRestock: jest.fn().mockResolvedValue(false),
           },
         },
       ],

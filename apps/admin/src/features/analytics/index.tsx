@@ -8,14 +8,32 @@ import { TrafficSourcesChart } from './components/TrafficSourcesChart'
 import { OrderStatusPieChart } from './components/OrderStatusPieChart'
 import { PaymentMethodPieChart } from './components/PaymentMethodPieChart'
 import { TopProductsTable } from './components/TopProductsTable'
+import { useLicenseStore } from '../../stores/license-store'
+
+const WIDGET_FEATURES = {
+  SalesKpiCards: 'admin_analytics',
+  RevenueTrendChart: 'admin_analytics',
+  MarketingKpiWidget: 'integration_ga4',
+  TrafficSourcesChart: 'integration_ga4',
+  OrderStatusPieChart: 'admin_orders',
+  PaymentMethodPieChart: 'admin_payments',
+  TopProductsTable: 'admin_products',
+} as const
 
 export default function AnalyticsPage() {
   const { preset, dateRange, setPreset, setCustomRange, formatParam } = useDateFilter()
+  const hasFeature = useLicenseStore((s) => s.hasFeature)
 
   const range = {
     startDate: formatParam(dateRange.start),
     endDate: formatParam(dateRange.end),
   }
+
+  const showAnalytics = hasFeature('admin_analytics')
+  const showGa4 = hasFeature('integration_ga4')
+  const showOrders = hasFeature('admin_orders')
+  const showPayments = hasFeature('admin_payments')
+  const showProducts = hasFeature('admin_products')
 
   return (
     <div className="p-6 space-y-6">
@@ -36,22 +54,28 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <SalesKpiCards dateRange={range} />
+      {showAnalytics && <SalesKpiCards dateRange={range} />}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RevenueTrendChart dateRange={range} />
-        <MarketingKpiWidget dateRange={range} />
-      </div>
+      {(showAnalytics || showGa4) && (
+        <div className={`grid grid-cols-1 gap-6 ${showAnalytics && showGa4 ? 'lg:grid-cols-2' : ''}`}>
+          {showAnalytics && <RevenueTrendChart dateRange={range} />}
+          {showGa4 && <MarketingKpiWidget dateRange={range} />}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TrafficSourcesChart dateRange={range} />
-        <PaymentMethodPieChart dateRange={range} />
-      </div>
+      {(showGa4 || showPayments) && (
+        <div className={`grid grid-cols-1 gap-6 ${showGa4 && showPayments ? 'lg:grid-cols-2' : ''}`}>
+          {showGa4 && <TrafficSourcesChart dateRange={range} />}
+          {showPayments && <PaymentMethodPieChart dateRange={range} />}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <OrderStatusPieChart dateRange={range} />
-        <TopProductsTable dateRange={range} />
-      </div>
+      {(showOrders || showProducts) && (
+        <div className={`grid grid-cols-1 gap-6 ${showOrders && showProducts ? 'lg:grid-cols-2' : ''}`}>
+          {showOrders && <OrderStatusPieChart dateRange={range} />}
+          {showProducts && <TopProductsTable dateRange={range} />}
+        </div>
+      )}
     </div>
   )
 }

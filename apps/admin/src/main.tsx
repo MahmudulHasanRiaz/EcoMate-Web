@@ -12,6 +12,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
+import { FeaturesProvider } from './context/features-provider'
 import { routeTree } from './routeTree.gen'
 import { GeneralError } from '@/features/errors/general-error'
 // Styles
@@ -131,7 +132,9 @@ if (!rootElement.innerHTML) {
         <ThemeProvider>
           <FontProvider>
             <DirectionProvider>
-              <RouterProvider router={router} />
+              <FeaturesProvider>
+                <RouterProvider router={router} />
+              </FeaturesProvider>
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>

@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ComboDetailClient from '@/components/ComboDetailClient';
+import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
 
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
@@ -46,6 +47,21 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 export default async function ComboDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const config = await getStorefrontConfigServer();
+  if (!config.licenseFeatures?.includes('admin_combos')) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-gray-400">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-3">Not Available</h2>
+        <p className="text-gray-500 max-w-md">Combo deals are not available on your current plan.</p>
+      </div>
+    );
+  }
+
   const { id } = await params;
   const combo = await getCombo(id);
   if (!combo) notFound();

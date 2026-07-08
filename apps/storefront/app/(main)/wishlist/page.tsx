@@ -17,6 +17,18 @@ export default function WishlistPage() {
   const { ids, remove } = useWishlist();
   const { config } = useStorefrontConfig();
   const router = useRouter();
+
+  if (!config.licenseFeatures?.includes('storefront_wishlist')) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Heart size={32} className="text-gray-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-3">Not Available</h2>
+        <p className="text-gray-500 max-w-md">Wishlist is not available on your current plan.</p>
+      </div>
+    );
+  }
   const [products, setProducts] = useState<Product[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);

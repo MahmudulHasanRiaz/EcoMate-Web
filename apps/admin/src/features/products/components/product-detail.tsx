@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProductForm } from './product-form'
+import { apiClient } from '@/lib/api-client'
 
 export function ProductDetail() {
   const { id } = useParams({ from: '/_authenticated/op/products/$id' })
@@ -35,6 +36,12 @@ export function ProductDetail() {
       navigate({ to: '/op/products' })
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Delete failed'),
+  })
+
+  const { data: ledgerData } = useQuery({
+    queryKey: ['product-ledger', product?.id],
+    queryFn: () => apiClient.get('/inventory/ledger', { params: { productId: product?.id, perPage: 10 } }).then(r => r.data),
+    enabled: !!product?.id,
   })
 
   if (isLoading) {
@@ -183,6 +190,35 @@ export function ProductDetail() {
                 {product.category && <div className='flex justify-between'><span className='text-muted-foreground'>Category</span><span>{(product.category as any)?.name}</span></div>}
               </CardContent>
             </Card>
+
+            {ledgerData?.data?.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className='text-base'>Stock History</CardTitle></CardHeader>
+                <CardContent>
+                  <div className='space-y-2 max-h-48 overflow-y-auto'>
+                    {ledgerData.data.map((entry: any) => (
+                      <div key={entry.id} className='flex items-center justify-between text-xs py-1 border-b border-border/40 last:border-0'>
+                        <div className='flex items-center gap-2'>
+                          <Badge variant={entry.direction === 'IN' ? 'default' : 'destructive'} className='text-[10px] px-1 py-0 h-4'>
+                            {entry.direction === 'IN' ? '+' : '-'}{entry.quantity}
+                          </Badge>
+                          <span className='text-muted-foreground capitalize'>{entry.type.replace(/_/g, ' ').toLowerCase()}</span>
+                        </div>
+                        <div className='text-muted-foreground'>
+                          {entry.stockBefore} → {entry.stockAfter}
+                          {entry.performedBy && <span className='ml-2 font-medium'>{entry.performedBy}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {(ledgerData.meta?.totalPages || 0) > 1 && (
+                    <p className='text-xs text-muted-foreground mt-2 text-center'>
+                      +{ledgerData.meta.total - 10} more entries
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {categories.length > 0 && (
               <Card>

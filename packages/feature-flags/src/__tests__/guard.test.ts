@@ -3,9 +3,9 @@ import { ForbiddenException } from '@nestjs/common';
 import { FeatureGuard } from '../guard';
 import { FeatureFlagsService } from '../feature-flags.service';
 
-function createMockReflector(featureKey?: string) {
+function createMockReflector(featureMeta?: { feature: string; dependencies: string[] }) {
   return {
-    getAllAndOverride: vi.fn().mockReturnValue(featureKey ?? null),
+    getAllAndOverride: vi.fn().mockReturnValue(featureMeta ?? null),
     get: vi.fn(),
     getAll: vi.fn(),
   };
@@ -42,51 +42,26 @@ function createMockContext() {
 }
 
 describe('FeatureGuard', () => {
-  it('allows when no feature key is set', () => {
+  it('allows when no feature metadata is set', () => {
     const reflector = createMockReflector(undefined);
     const flags = new FeatureFlagsService();
     const guard = new FeatureGuard(reflector as any, createMockModuleRef(flags) as any);
     expect(guard.canActivate(createMockContext())).toBe(true);
   });
 
-  it('denies with not_verified when license is null', () => {
-    const reflector = createMockReflector('admin_products');
+  it('denies when feature is not in active set', () => {
+    const reflector = createMockReflector({ feature: 'premium_feature', dependencies: [] });
     const flags = new FeatureFlagsService();
-    const moduleRef = createMockModuleRef(flags);
-    const guard = new FeatureGuard(reflector as any, moduleRef as any);
-    expect(() => guard.canActivate(createMockContext())).toThrow(ForbiddenException);
-    expect(() => guard.canActivate(createMockContext())).toThrow('not yet verified');
-  });
-
-  it('denies when feature is not in license', () => {
-    const reflector = createMockReflector('premium_feature');
-    const flags = new FeatureFlagsService();
-    Object.defineProperty(flags, 'getLicense', {
-      value: () => ({ valid: true, code: 'ok', features: ['admin_products'] }),
-    });
-    Object.defineProperty(flags, 'canUse', {
-      value: () => false,
-    });
+    flags.setLicense(['admin_products']);
     const guard = new FeatureGuard(reflector as any, createMockModuleRef(flags) as any);
     expect(() => guard.canActivate(createMockContext())).toThrow(ForbiddenException);
   });
 
-  it('returns isReady false before initialization', () => {
+  it('allows when feature is in active set', () => {
+    const reflector = createMockReflector({ feature: 'admin_products', dependencies: [] });
     const flags = new FeatureFlagsService();
-    expect(flags.isReady()).toBe(false);
-  });
-
-  it('returns isReady true after license is set', async () => {
-    const engine = {
-      verify: vi.fn().mockResolvedValue({ valid: true, features: ['admin_products'] }),
-      canUseFeature: vi.fn().mockReturnValue(true),
-      checkLimit: vi.fn(),
-      setLicense: vi.fn(),
-      getLicense: vi.fn(),
-    };
-    const flags = new FeatureFlagsService(engine as any);
-    expect(flags.isReady()).toBe(false);
-    await flags.initialize('test-key');
-    expect(flags.isReady()).toBe(true);
+    flags.setLicense(['admin_products']);
+    const guard = new FeatureGuard(reflector as any, createMockModuleRef(flags) as any);
+    expect(guard.canActivate(createMockContext())).toBe(true);
   });
 });

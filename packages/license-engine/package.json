@@ -9,6 +9,9 @@
     "build:native": "node-gyp rebuild",
     "test": "node test/index.test.js"
   },
+  "dependencies": {
+    "@ecomate/shared-types": "*"
+  },
   "devDependencies": {
     "@types/node": "^25",
     "typescript": "^5"

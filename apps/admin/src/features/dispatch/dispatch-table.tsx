@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import { type DispatchResponse } from './api'
-import { DISPATCH_STATUSES, COURIER_OPTIONS } from './data/data'
+import { DISPATCH_STATUSES, ALL_COURIERS } from './data/data'
 
 type DispatchTableProps = {
   data: DispatchResponse[]
@@ -170,7 +170,7 @@ export function DispatchTable({
     value: s.value,
   }))
 
-  const courierFilterOpts = COURIER_OPTIONS.map((c) => ({
+  const courierFilterOpts = ALL_COURIERS.map((c) => ({
     label: c.label,
     value: c.value,
   }))

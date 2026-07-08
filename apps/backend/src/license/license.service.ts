@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
 import { LicenseActivationService } from './license-activation.service';
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -33,6 +34,7 @@ function friendlyError(code?: string, fallback?: string): string {
 @Injectable()
 export class LicenseService implements OnModuleInit {
   constructor(
+    private prisma: PrismaService,
     private featureFlags: FeatureFlagsService,
     private config: ConfigService,
     private licenseActivation: LicenseActivationService,
@@ -171,13 +173,45 @@ export class LicenseService implements OnModuleInit {
       };
     }
 
+    const oldFeatures = this.featureFlags.getActiveFeatures();
     const { licenseKey, domain, apiKey } = creds;
-    return this.activateWithKeymate(licenseKey, domain, apiKey || undefined);
+    const result = await this.activateWithKeymate(licenseKey, domain, apiKey || undefined);
+
+    if (result.success) {
+      const newFeatures = result.license?.features ?? [];
+      await this.handleDowngrade(oldFeatures, newFeatures);
+    }
+
+    return result;
+  }
+
+  private async handleDowngrade(oldFeatures: string[], newFeatures: string[]) {
+    const newSet = new Set(newFeatures);
+    const removed = oldFeatures.filter(f => !newSet.has(f));
+
+    for (const feature of removed) {
+      switch (feature) {
+        case 'admin_inventory':
+          await this.revertInventoryControlledProducts();
+          break;
+      }
+    }
+  }
+
+  private async revertInventoryControlledProducts() {
+    const result = await this.prisma.product.updateMany({
+      where: { availabilityMode: 'INVENTORY_CONTROLLED' },
+      data: { availabilityMode: 'MANAGED_STOCK' },
+    });
+    if (result.count > 0) {
+      console.log(`[License] Downgrade: reverted ${result.count} products from INVENTORY_CONTROLLED to MANAGED_STOCK`);
+    }
   }
 
   getStatus() {
     const lic = this.featureFlags.getLicense();
     const active = lic?.valid ?? false;
+    const features = lic?.features ?? [];
     let state = 'unknown';
     if (!lic) state = 'uninitialized';
     else if (active) state = 'active';
@@ -187,9 +221,17 @@ export class LicenseService implements OnModuleInit {
     else if (lic.code) state = lic.code;
     else state = 'invalid';
 
+    const keymateApiUrl =
+      this.config.get<string>('KEYMATE_API_URL') ||
+      'https://keygen-keymate.commercians.com/v1/saas';
+    const dashboardUrl = keymateApiUrl.replace(/\/v1\/saas\/?$/, '');
+    const dashboardUrlFinal = dashboardUrl || keymateApiUrl;
+
     return {
       active,
       state,
+      features,
+      dashboardUrl: dashboardUrlFinal,
       message: active
         ? `License active — ${lic?.plan?.name || 'custom'} plan`
         : friendlyError(lic?.code, 'License not activated'),

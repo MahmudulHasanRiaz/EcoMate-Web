@@ -3,6 +3,8 @@ import { serverFetch } from "../api-server";
 import type { StorefrontConfig } from "./storefront-config";
 import { getCategoriesServer } from "./products-server";
 
+const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+
 export class StorefrontConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -117,6 +119,16 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
       if (headerShowAll) config.menu.header = injectCategories(config.menu.header);
       if (mobileShowAll) config.menu.mobile = injectCategories(config.menu.mobile);
     }
+  }
+
+  try {
+    const licenseRes = await fetch(`${API_URL}/license/status`, {
+      next: { revalidate: 300 },
+    });
+    const licenseStatus = await licenseRes.json();
+    config.licenseFeatures = licenseStatus.features || [];
+  } catch {
+    config.licenseFeatures = [];
   }
 
   return config;
