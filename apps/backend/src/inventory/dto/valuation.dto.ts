@@ -14,6 +14,10 @@ export class StockTransferDto {
   @IsString()
   productId: string;
 
+  @IsOptional()
+  @IsString()
+  variantId?: string;
+
   @IsString()
   sourceLocation: string;
 

@@ -28,6 +28,7 @@ interface StockOverviewItem {
   type: string
   availabilityMode: string
   managedStockQuantity: number
+  availableStock: number | null
   manageStock: boolean
   lowStockQty: number | null
   basePrice: number | null
@@ -39,6 +40,7 @@ interface StockOverviewItem {
     id: string
     sku: string
     managedStockQuantity: number
+    availableStock: number | null
     price: number
     attributeValues: Array<{ attributeValue: { value: string } }>
   }>
@@ -68,23 +70,34 @@ export function Inventory() {
       }).then((r) => r.data),
   })
 
+  const availabilityModeLabel = (mode: string) => {
+    switch (mode) {
+      case 'MANAGED_STOCK': return 'Managed'
+      case 'INVENTORY_CONTROLLED': return 'Inventory'
+      case 'ALWAYS_IN_STOCK': return 'Always In'
+      case 'ALWAYS_OUT_OF_STOCK': return 'Always Out'
+      default: return mode
+    }
+  }
+
   const stockLevels = useMemo(() => {
     if (!stockData?.data) return []
     return stockData.data.map((p: StockOverviewItem) => ({
       id: p.id,
       name: p.name,
       sku: p.sku,
-      warehouse: 'Main Warehouse',
+      availabilityMode: p.availabilityMode,
+      warehouse: p.availabilityMode === 'INVENTORY_CONTROLLED' ? '—' : 'Main Warehouse',
       lot: '—',
       expiry: '—',
-      available: p.managedStockQuantity,
+      available: p.availableStock,
       reserved: 0,
       allocated: 0,
-      onHand: p.managedStockQuantity,
+      onHand: p.availableStock,
       cost: p.basePrice || 0,
       lowStockQty: p.lowStockQty,
       updated: '—',
-      status: p.managedStockQuantity < 0 ? 'negative' : (p.lowStockQty != null && p.managedStockQuantity <= p.lowStockQty ? 'low' : 'optimal'),
+      status: p.availableStock != null && p.availableStock < 0 ? 'negative' : (p.availableStock != null && p.lowStockQty != null && p.availableStock <= p.lowStockQty ? 'low' : 'optimal'),
     }))
   }, [stockData])
 
@@ -99,8 +112,10 @@ export function Inventory() {
     setDetailOpen(true)
   }
 
+  const [adjustAvailabilityMode, setAdjustAvailabilityMode] = useState<string | undefined>()
   const handleQuickAdjust = (productId?: string) => {
     setAdjustProductId(productId)
+    setAdjustAvailabilityMode(stockLevels.find(p => p.id === productId)?.availabilityMode)
     setAdjustOpen(true)
   }
 
@@ -213,12 +228,17 @@ export function Inventory() {
                         <div className="text-xs text-muted-foreground mt-1 flex gap-2">
                           {p.lot !== '—' && <span>Lot: {p.lot}</span>}
                           {p.expiry !== '—' && <span className="text-amber-600">Exp: {p.expiry}</span>}
+                          <Badge variant='outline' className='text-[10px] font-mono'>{availabilityModeLabel(p.availabilityMode)}</Badge>
                         </div>
                       </TableCell>
-                      <TableCell className={`text-right font-medium ${p.available < 0 ? 'text-red-600' : p.available < 10 ? 'text-amber-600' : ''}`}>{p.available}</TableCell>
+                      <TableCell className={`text-right font-medium ${p.available === null ? 'text-muted-foreground' : p.available < 0 ? 'text-red-600' : p.available < 10 ? 'text-amber-600' : ''}`}>
+                        {p.available === null ? '∞' : p.available}
+                      </TableCell>
                       <TableCell className='text-right text-orange-600'>{p.reserved}</TableCell>
                       <TableCell className='text-right text-blue-600'>{p.allocated}</TableCell>
-                      <TableCell className='text-right font-bold'>{p.onHand}</TableCell>
+                      <TableCell className='text-right font-bold'>
+                        {p.onHand === null ? '∞' : p.onHand}
+                      </TableCell>
                       <TableCell className='text-sm text-muted-foreground'>{p.updated}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -272,6 +292,7 @@ export function Inventory() {
         onOpenChange={setAdjustOpen} 
         productId={adjustProductId} 
         productName={stockLevels.find(p => p.id === adjustProductId)?.name}
+        availabilityMode={adjustAvailabilityMode}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })}
       />
     </>

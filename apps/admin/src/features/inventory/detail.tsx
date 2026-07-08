@@ -23,6 +23,7 @@ interface StockItem {
   type: string
   availabilityMode: string
   managedStockQuantity: number
+  availableStock: number | null
   manageStock: boolean
 }
 
@@ -130,7 +131,7 @@ export function InventoryDetail() {
             </h1>
             <div className="text-sm text-muted-foreground mt-1 flex items-center gap-3">
               <span>SKU: {product.sku}</span>
-              <Badge variant="outline" className="font-mono text-[10px]">INVENTORY CONTROLLED</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]">{product.availabilityMode}</Badge>
             </div>
           </div>
           
@@ -147,7 +148,7 @@ export function InventoryDetail() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Available</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{product.managedStockQuantity}</div>
+              <div className="text-2xl font-bold">{product.availableStock === null ? '∞' : product.availableStock}</div>
             </CardContent>
           </Card>
           <Card>
@@ -171,7 +172,7 @@ export function InventoryDetail() {
               <CardTitle className="text-sm font-medium text-primary">Total On Hand</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">{product.managedStockQuantity}</div>
+              <div className="text-2xl font-bold text-primary">{product.availableStock === null ? '∞' : product.availableStock}</div>
             </CardContent>
           </Card>
         </div>
@@ -208,7 +209,7 @@ export function InventoryDetail() {
                       <TableCell><Badge variant="outline">-</Badge></TableCell>
                       <TableCell className="text-muted-foreground">—</TableCell>
                       <TableCell>-</TableCell>
-                      <TableCell className="text-right font-medium">{product.managedStockQuantity}</TableCell>
+                      <TableCell className="text-right font-medium">{product.availableStock === null ? '∞' : product.availableStock}</TableCell>
                       <TableCell className="text-right"><Button variant="ghost" size="sm">Lot Info</Button></TableCell>
                     </TableRow>
                   </TableBody>

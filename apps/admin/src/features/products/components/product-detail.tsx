@@ -164,7 +164,11 @@ export function ProductDetail() {
                                 <><span className='line-through text-muted-foreground text-xs mr-1'>৳{Number(v.price).toFixed(2)}</span>৳{Number(v.salePrice).toFixed(2)}</>
                               ) : v.price ? `৳${Number(v.price).toFixed(2)}` : '—'}
                             </td>
-                            <td className='py-2 text-right'><Badge variant={v.managedStockQuantity > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.managedStockQuantity}</Badge></td>
+                            <td className='py-2 text-right'>
+                              {p.availabilityMode === 'ALWAYS_IN_STOCK' ? <Badge variant='outline' className='text-xs'>∞</Badge> :
+                               p.availabilityMode === 'INVENTORY_CONTROLLED' ? <Badge variant='outline' className='text-xs text-muted-foreground'>—</Badge> :
+                               <Badge variant={v.managedStockQuantity > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.managedStockQuantity}</Badge>}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -180,10 +184,23 @@ export function ProductDetail() {
               <CardHeader><CardTitle className='text-base'>Details</CardTitle></CardHeader>
               <CardContent className='space-y-3 text-sm'>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Type</span><Badge variant='outline' className='capitalize'>{product.type}</Badge></div>
+                <div className='flex justify-between'><span className='text-muted-foreground'>Availability</span><Badge variant='outline' className='font-mono text-[10px]'>{product.availabilityMode || '—'}</Badge></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Slug</span><span className='font-mono text-xs'>{product.slug}</span></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Price</span><span className='font-medium'>৳{Number(product.basePrice).toFixed(2)}</span></div>
                 {product.salePrice != null && <div className='flex justify-between'><span className='text-muted-foreground'>Sale Price</span><span className='font-medium text-green-600'>৳{Number(product.salePrice).toFixed(2)}</span></div>}
-                <div className='flex justify-between'><span className='text-muted-foreground'>Stock</span><Badge variant={product.managedStockQuantity > 0 ? 'outline' : 'destructive'}>{isVar ? `From ${variants.reduce((s, v: any) => s + v.managedStockQuantity, 0)}` : product.managedStockQuantity}</Badge></div>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>Stock</span>
+                  <Badge variant={
+                    product.availabilityMode === 'ALWAYS_IN_STOCK' ? 'outline' :
+                    product.availabilityMode === 'INVENTORY_CONTROLLED' ? 'secondary' :
+                    product.managedStockQuantity > 0 ? 'outline' : 'destructive'
+                  }>
+                    {product.availabilityMode === 'ALWAYS_IN_STOCK' ? '∞ Unlimited' :
+                     product.availabilityMode === 'INVENTORY_CONTROLLED' ? '0 (Track via PO)' :
+                     isVar ? `From ${variants.reduce((s, v: any) => s + v.managedStockQuantity, 0)}` :
+                     product.managedStockQuantity}
+                  </Badge>
+                </div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Active</span><Badge variant={product.isActive ? 'default' : 'secondary'} className={product.isActive ? 'bg-green-500' : ''}>{product.isActive ? 'Yes' : 'No'}</Badge></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Featured</span><span>{product.isFeatured ? 'Yes' : 'No'}</span></div>
                 {product.brandId && <div className='flex justify-between'><span className='text-muted-foreground'>Brand</span><span>{p.brand?.name || product.brandId}</span></div>}

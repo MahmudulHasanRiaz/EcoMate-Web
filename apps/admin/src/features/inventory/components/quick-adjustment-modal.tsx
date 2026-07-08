@@ -14,10 +14,11 @@ interface QuickAdjustmentModalProps {
   onOpenChange: (open: boolean) => void
   productId?: string
   productName?: string
+  availabilityMode?: string
   onSuccess?: () => void
 }
 
-export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, onSuccess }: QuickAdjustmentModalProps) {
+export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, availabilityMode, onSuccess }: QuickAdjustmentModalProps) {
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
 
@@ -56,6 +57,13 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
           <DialogTitle>Quick Adjust: {productName || 'Stock'}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          {availabilityMode && availabilityMode !== 'MANAGED_STOCK' && (
+            <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2'>
+              <p className='text-xs text-amber-700 dark:text-amber-300'>
+                Availability mode: <strong>{availabilityMode}</strong>. Stock adjustments are not available for this product.
+              </p>
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="warehouse">Warehouse</Label>
             <Select defaultValue="main">
@@ -108,7 +116,7 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
           </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" onClick={handleSave} disabled={adjustMut.isPending}>
+          <Button type="submit" onClick={handleSave} disabled={adjustMut.isPending || (availabilityMode != null && availabilityMode !== 'MANAGED_STOCK')}>
             {adjustMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
             Save Adjustment
           </Button>

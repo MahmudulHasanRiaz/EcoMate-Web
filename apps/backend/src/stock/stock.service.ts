@@ -133,6 +133,7 @@ export class StockService {
         id: true,
         type: true,
         manageStock: true,
+        availabilityMode: true,
         managedStockQuantity: true,
         reservedStock: true,
       },
@@ -173,11 +174,16 @@ export class StockService {
       }
     };
 
+    const isManagedField = (p: { availabilityMode: string | null }) =>
+      field !== 'managedStockQuantity' || p.availabilityMode === 'MANAGED_STOCK' || p.availabilityMode === null;
+
     for (const t of targets) {
       if (t.variantId) {
         const v = variantMap.get(t.variantId);
         if (!v)
           throw new BadRequestException(`Variant ${t.variantId} not found`);
+        const p = productMap.get(t.productId);
+        if (!isManagedField(p!)) continue;
         const avail =
           field === 'reservedStock' ? v.managedStockQuantity - v.reservedStock : v.managedStockQuantity;
         if (op === 'decrement' && avail < t.qty) {
@@ -187,7 +193,6 @@ export class StockService {
         }
         await adjust('productVariant', t.variantId, field, t.qty);
         // Also update parent product stock if it manages stock
-        const p = productMap.get(t.productId);
         if (p && p.manageStock && p.type === 'simple') {
           if (op === 'decrement' && Number(p[field]) < t.qty) {
             throw new BadRequestException(
@@ -200,6 +205,7 @@ export class StockService {
         const p = productMap.get(t.productId);
         if (!p)
           throw new BadRequestException(`Product ${t.productId} not found`);
+        if (!isManagedField(p)) continue;
         const avail =
           field === 'reservedStock' ? p.managedStockQuantity - p.reservedStock : p.managedStockQuantity;
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
@@ -380,7 +386,7 @@ export class StockService {
 
   async getTotalValuation() {
     const products = await this.prisma.product.findMany({
-      where: { manageStock: true },
+      where: { availabilityMode: 'MANAGED_STOCK' },
       select: {
         id: true,
         name: true,
@@ -390,7 +396,7 @@ export class StockService {
       },
     });
     const variants = await this.prisma.productVariant.findMany({
-      where: { product: { manageStock: true } },
+      where: { product: { availabilityMode: 'MANAGED_STOCK' } },
       select: {
         id: true,
         productId: true,

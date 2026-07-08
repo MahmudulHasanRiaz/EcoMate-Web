@@ -693,24 +693,26 @@ export class ProductsService {
       dto.manageStock !== p.manageStock
     ) {
       if (dto.manageStock) {
-        await this.prisma.inventoryLog.create({
+        await this.prisma.product.update({
+          where: { id },
+          data: { availabilityMode: 'MANAGED_STOCK' },
+        });
+        await this.prisma.managedStockLedger.create({
           data: {
             productId: id,
             quantity: dto.managedStockQuantity ?? 0,
-            type: 'stock_tracking_enabled',
-            reason: 'Stock tracking enabled',
-            performedBy,
+            direction: 'IN',
+            type: 'INITIAL',
+            stockBefore: 0,
+            stockAfter: dto.managedStockQuantity ?? 0,
+            note: 'Stock tracking enabled — initial balance',
+            performedById: performedBy,
           },
         });
-      } else if (p.managedStockQuantity > 0) {
-        await this.prisma.inventoryLog.create({
-          data: {
-            productId: id,
-            quantity: -p.managedStockQuantity,
-            type: 'stock_tracking_disabled',
-            reason: `Stock tracking disabled, removed ${p.managedStockQuantity} units`,
-            performedBy,
-          },
+      } else {
+        await this.prisma.product.update({
+          where: { id },
+          data: { availabilityMode: 'ALWAYS_IN_STOCK' },
         });
       }
     }
