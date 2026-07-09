@@ -626,6 +626,35 @@ export class StockService {
     return this.operatePhysical('add', params);
   }
 
+  async listPhysical(productId?: string, warehouseId?: string) {
+    const where: any = {};
+    if (productId) where.productId = productId;
+    if (warehouseId) where.warehouseId = warehouseId;
+    return this.prisma.physicalInventory.findMany({
+      where,
+      include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async listReservations(warehouseId?: string, productId?: string) {
+    const where: any = { reservedQuantity: { gt: 0 } };
+    if (warehouseId) where.warehouseId = warehouseId;
+    if (productId) where.productId = productId;
+    return this.prisma.physicalInventory.findMany({
+      where,
+      include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async getPhysicalRecord(id: string) {
+    return this.prisma.physicalInventory.findUnique({
+      where: { id },
+      include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
+    });
+  }
+
   async getTotalValuation() {
     const products = await this.prisma.product.findMany({
       where: { availabilityMode: 'MANAGED_STOCK' },
