@@ -1016,7 +1016,7 @@ export class OrdersService {
 
       if (newStatus.name === 'Confirmed') {
         await this.takeCostSnapshot(id, tx);
-        await this.reserveStockForOrder(id, tx);
+        await this.verifyStockForOrder(id, tx);
       }
 
       if (newStatus.name === 'Cancelled') {
@@ -1699,7 +1699,7 @@ export class OrdersService {
     performedBy?: string,
   ) {
     await this.takeCostSnapshot(orderId, tx);
-    await this.reserveStockForOrder(orderId, tx);
+    await this.verifyStockForOrder(orderId, tx);
   }
 
   private async handleCancelledSideEffects(
@@ -1730,6 +1730,7 @@ export class OrdersService {
                 availabilityMode: true,
                 manageStock: true,
                 type: true,
+                warehouseId: true,
               },
             },
             variant: { select: { id: true } },
@@ -1743,16 +1744,29 @@ export class OrdersService {
     for (const item of order.items) {
       const product = item.product;
       if (!product) continue;
-      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
-      if (!product.manageStock) continue;
 
-      await this.stockService.add({
-        productId: item.productId ?? undefined,
-        variantId: item.variantId ?? undefined,
-        quantity: item.quantity,
-        reference: `return-${orderId}`,
-        tx,
-      });
+      // Restore managed stock for MANAGED_STOCK products
+      if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
+        await this.stockService.add({
+          productId: item.productId ?? undefined,
+          variantId: item.variantId ?? undefined,
+          quantity: item.quantity,
+          reference: `return-${orderId}`,
+          tx,
+        });
+      }
+
+      // Restore physical inventory for INVENTORY_CONTROLLED products
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
+        await this.stockService.addPhysical({
+          productId: item.productId ?? undefined,
+          variantId: item.variantId ?? undefined,
+          quantity: item.quantity,
+          reference: `return-${orderId}`,
+          warehouseId: product.warehouseId,
+          tx,
+        });
+      }
     }
   }
 
@@ -1796,7 +1810,7 @@ export class OrdersService {
     }
   }
 
-  private async reserveStockForOrder(
+  private async verifyStockForOrder(
     orderId: string,
     tx: Prisma.TransactionClient,
   ) {
@@ -1811,6 +1825,7 @@ export class OrdersService {
                 availabilityMode: true,
                 manageStock: true,
                 type: true,
+                warehouseId: true,
                 name: true,
               },
             },
@@ -1833,13 +1848,16 @@ export class OrdersService {
       if (product.availabilityMode !== 'MANAGED_STOCK') continue;
       if (!product.manageStock) continue;
 
-      await this.stockService.reserve({
-        productId: item.productId ?? undefined,
-        variantId: item.variantId ?? undefined,
-        quantity: item.quantity,
-        reference: orderId,
-        tx,
-      });
+      // Verify stock is still sufficient — already reserved at Create
+      const avail = await this.stockService.getAvailableStock(
+        item.productId!,
+        item.variantId ?? undefined,
+      );
+      if (avail.available < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for "${product.name}". Available: ${avail.available}, needed: ${item.quantity}.`,
+        );
+      }
     }
   }
 
@@ -1862,6 +1880,7 @@ export class OrdersService {
                 availabilityMode: true,
                 manageStock: true,
                 type: true,
+                warehouseId: true,
               },
             },
             variant: { select: { id: true } },

@@ -268,8 +268,8 @@ export class ProductsService {
         ...(where.AND || []),
         {
           OR: [
-            { type: { not: 'variable' }, stock: { gt: 0 } },
-            { type: 'variable', variants: { some: { stock: { gt: 0 } } } },
+            { type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
+            { type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
           ],
         },
       ];
@@ -408,8 +408,8 @@ export class ProductsService {
         ...(filters.AND || []),
         {
           OR: [
-            { type: { not: 'variable' }, stock: { gt: 0 } },
-            { type: 'variable', variants: { some: { stock: { gt: 0 } } } },
+            { type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
+            { type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
           ],
         },
       ];

@@ -604,6 +604,24 @@ export class InventoryService {
               },
             });
           }
+
+          if (isInventoryControlled && effectiveVariantId) {
+            // Get product's warehouseId and call addPhysical
+            const invProduct = await client.product.findUnique({
+              where: { id: ci.productId },
+              select: { warehouseId: true }
+            });
+            if (invProduct?.warehouseId) {
+              await this.stockService.addPhysical({
+                productId: ci.productId,
+                variantId: effectiveVariantId,
+                quantity: qty,
+                warehouseId: invProduct.warehouseId,
+                reference: `restock-${orderId}`,
+                tx: tx || undefined,
+              });
+            }
+          }
         }
       } else {
         if (isManaged) {
@@ -642,6 +660,23 @@ export class InventoryService {
               createdAt: new Date(),
             },
           });
+        }
+
+        if (isInventoryControlled && item.productId) {
+          const invProduct = await client.product.findUnique({
+            where: { id: item.productId },
+            select: { warehouseId: true }
+          });
+          if (invProduct?.warehouseId) {
+            await this.stockService.addPhysical({
+              productId: item.productId,
+              variantId: item.variantId ?? undefined,
+              quantity: item.quantity,
+              warehouseId: invProduct.warehouseId,
+              reference: `restock-${orderId}`,
+              tx: tx || undefined,
+            });
+          }
         }
       }
     }
@@ -692,6 +727,7 @@ export class InventoryService {
           availabilityMode: true,
           managedStockQuantity: true,
           manageStock: true,
+          reservedStock: true,
           lowStockQty: true,
           basePrice: true,
           salePrice: true,
@@ -703,6 +739,7 @@ export class InventoryService {
               id: true,
               sku: true,
               managedStockQuantity: true,
+              reservedStock: true,
               price: true,
               attributeValues: {
                 include: { attributeValue: { select: { value: true } } },
@@ -720,6 +757,7 @@ export class InventoryService {
       by: ['productId'],
       _sum: {
         quantity: true,
+        reservedQuantity: true,
       },
       where: {
         productId: { in: productIds },
@@ -728,6 +766,10 @@ export class InventoryService {
 
     const sumMap = new Map(
       physicalSums.map((s) => [s.productId, s._sum.quantity ?? 0]),
+    );
+
+    const reservedSumMap = new Map(
+      physicalSums.map((s) => [s.productId, s._sum.reservedQuantity ?? 0]),
     );
 
     const dataWithAvailableStock = data.map((p) => {
@@ -741,9 +783,9 @@ export class InventoryService {
         managedStockQuantity: managedStockSum,
         availableStock:
           p.availabilityMode === 'MANAGED_STOCK'
-            ? managedStockSum
+            ? managedStockSum - (p.reservedStock ?? 0)
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
-              ? physicalStockSum
+              ? physicalStockSum - (reservedSumMap.get(p.id) ?? 0)
               : p.availabilityMode === 'ALWAYS_IN_STOCK'
                 ? null
                 : 0,
@@ -751,9 +793,9 @@ export class InventoryService {
           ...v,
           availableStock:
             p.availabilityMode === 'MANAGED_STOCK'
-              ? v.managedStockQuantity
+              ? v.managedStockQuantity - (v.reservedStock ?? 0)
               : p.availabilityMode === 'INVENTORY_CONTROLLED'
-                ? physicalStockSum // simple product fallback
+                ? physicalStockSum - (reservedSumMap.get(p.id) ?? 0)
                 : p.availabilityMode === 'ALWAYS_IN_STOCK'
                   ? null
                   : 0,

@@ -388,7 +388,7 @@ export class StockService {
           },
         },
       });
-      if (!existing && field === 'quantity' && op === 'decrement') {
+      if (!existing && op === 'decrement') {
         throw new BadRequestException(
           `No physical inventory record for product ${t.productId} in warehouse ${t.warehouseId}`,
         );
