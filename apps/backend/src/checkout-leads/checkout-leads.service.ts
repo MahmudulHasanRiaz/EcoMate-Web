@@ -179,7 +179,10 @@ export class CheckoutLeadsService {
     return lead;
   }
 
-  private async fireLeadEvent(lead: any, dto: { phone?: string; name?: string; fbp?: string; fbc?: string }) {
+  private async fireLeadEvent(
+    lead: any,
+    dto: { phone?: string; name?: string; fbp?: string; fbc?: string },
+  ) {
     const phone = lead.phone || dto.phone;
     if (!phone) return;
 
@@ -435,7 +438,7 @@ export class CheckoutLeadsService {
 
     // Fire offline Purchase for lead-converted order
     if (fullOrder) {
-      this.fireOfflinePurchase(fullOrder as any, lead).catch((err) => {
+      this.fireOfflinePurchase(fullOrder, lead).catch((err) => {
         this.logger.error('Failed to fire offline purchase:', err);
       });
     }

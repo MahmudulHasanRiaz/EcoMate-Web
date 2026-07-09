@@ -31,7 +31,8 @@ export class DesignationsService {
     const existing = await this.prisma.designation.findUnique({
       where: { name: dto.name },
     });
-    if (existing) throw new ConflictException('Designation name already exists');
+    if (existing)
+      throw new ConflictException('Designation name already exists');
 
     return this.prisma.designation.create({
       data: {

@@ -72,11 +72,20 @@ export class ImagesService {
       this.logger.warn(`sharp processing failed: ${(err as Error).message}`);
       const fallbackExt = extname(params.path.split('?')[0]).toLowerCase();
       const fallbackMimeMap: Record<string, string> = {
-        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-        '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+        '.avif': 'image/avif',
       };
-      const fext = fallbackExt && fallbackMimeMap[fallbackExt] ? fallbackExt : '.jpg';
-      return { buffer: sourceBuffer, ext: fext, mime: fallbackMimeMap[fext] || 'image/jpeg' };
+      const fext =
+        fallbackExt && fallbackMimeMap[fallbackExt] ? fallbackExt : '.jpg';
+      return {
+        buffer: sourceBuffer,
+        ext: fext,
+        mime: fallbackMimeMap[fext] || 'image/jpeg',
+      };
     }
 
     try {
@@ -89,7 +98,11 @@ export class ImagesService {
     return { buffer: result, ext: cacheExt, mime: 'image/webp' };
   }
 
-  private readLocalFile(path: string): { buffer: Buffer; ext: string; mime: string } {
+  private readLocalFile(path: string): {
+    buffer: Buffer;
+    ext: string;
+    mime: string;
+  } {
     const relativePath = path.replace(/^\/uploads\//, '');
     const sourcePath = resolve(join(this.uploadRoot, relativePath));
 
@@ -101,7 +114,14 @@ export class ImagesService {
       throw new Error(`Image not found: ${path}`);
     }
 
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+    const allowedExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.gif',
+      '.avif',
+    ];
     const ext = extname(relativePath).toLowerCase();
     if (!allowedExtensions.includes(ext)) {
       throw new Error('Invalid file type');
@@ -133,7 +153,9 @@ export class ImagesService {
       });
 
       if (!response.ok) {
-        this.logger.warn(`Failed to fetch external image: ${url} (${response.status})`);
+        this.logger.warn(
+          `Failed to fetch external image: ${url} (${response.status})`,
+        );
         return this.generateFallback();
       }
 

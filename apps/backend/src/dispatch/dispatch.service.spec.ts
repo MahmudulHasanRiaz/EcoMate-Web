@@ -12,7 +12,11 @@ describe('DispatchService', () => {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 'd-1', courier: 'pathao', consignmentId: 'CG-001' }),
+        create: jest.fn().mockResolvedValue({
+          id: 'd-1',
+          courier: 'pathao',
+          consignmentId: 'CG-001',
+        }),
         update: jest.fn().mockResolvedValue({ id: 'd-1' }),
         delete: jest.fn().mockResolvedValue({}),
         count: jest.fn().mockResolvedValue(0),

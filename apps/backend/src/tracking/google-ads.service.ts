@@ -30,9 +30,13 @@ export class GoogleAdsService {
     // Using the Google Ads API is preferred for production; gtag REST fallback here
 
     const gclid = event.email
-      ? createHash('sha256').update(event.email.toLowerCase().trim()).digest('hex')
+      ? createHash('sha256')
+          .update(event.email.toLowerCase().trim())
+          .digest('hex')
       : event.phone
-        ? createHash('sha256').update(event.phone.replace(/\D/g, '')).digest('hex')
+        ? createHash('sha256')
+            .update(event.phone.replace(/\D/g, ''))
+            .digest('hex')
         : '';
 
     if (!gclid) return;

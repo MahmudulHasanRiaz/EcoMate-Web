@@ -87,6 +87,8 @@ export class RefundsService {
       throw new BadRequestException('Total refund would exceed order total');
     }
 
+    await this.assertNoActiveDispatches(dto.orderId);
+
     const refund = await this.prisma.refund.create({
       data: {
         orderId: dto.orderId,
@@ -105,32 +107,6 @@ export class RefundsService {
         where: { id: dto.targetStatusId },
       });
       if (!targetStatus) throw new BadRequestException('Invalid target status');
-
-      const isPreShippingTarget = ['Cancelled', 'Hold'].includes(
-        targetStatus.name,
-      );
-
-      if (isPreShippingTarget) {
-        const activeDispatchCount = await this.prisma.dispatch.count({
-          where: {
-            orderId: dto.orderId,
-            status: {
-              in: ['HANDED_OVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED'],
-            },
-          },
-        });
-
-        const order = await this.prisma.order.findUnique({
-          where: { id: dto.orderId },
-          include: { status: true },
-        });
-
-        if (activeDispatchCount > 0 || order?.status?.name === 'Shipping') {
-          throw new BadRequestException(
-            `Cannot set status to "${targetStatus.name}" — order is already in courier pipeline. Select "Return Pending" or "Returned" instead.`,
-          );
-        }
-      }
 
       const allRefunds = await this.prisma.refund.findMany({
         where: {
@@ -157,6 +133,17 @@ export class RefundsService {
     return refund;
   }
 
+  private async assertNoActiveDispatches(orderId: string): Promise<void> {
+    const activeDispatch = await this.prisma.dispatch.findFirst({
+      where: { orderId, status: { not: 'CANCELLED' } },
+    });
+    if (activeDispatch) {
+      throw new BadRequestException(
+        `Cannot process refund while order has active dispatch (${activeDispatch.status}). Please cancel the dispatch first.`,
+      );
+    }
+  }
+
   async updateStatus(
     id: string,
     dto: UpdateRefundStatusDto,
@@ -165,6 +152,10 @@ export class RefundsService {
   ) {
     const refund = await this.prisma.refund.findUnique({ where: { id } });
     if (!refund) throw new NotFoundException('Refund not found');
+
+    if (dto.status === 'completed') {
+      await this.assertNoActiveDispatches(refund.orderId);
+    }
 
     const allowed = VALID_TRANSITIONS[refund.status];
     if (!allowed || !allowed.includes(dto.status)) {
@@ -206,7 +197,8 @@ export class RefundsService {
         await tx.order.update({
           where: { id: updated.order.id },
           data: {
-            paymentStatus: totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_REFUNDED',
+            paymentStatus:
+              totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_REFUNDED',
           },
         });
 

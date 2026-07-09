@@ -226,7 +226,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    await this.prisma.refreshToken.deleteMany({ where: { id: tokenRecord.id } });
+    await this.prisma.refreshToken.deleteMany({
+      where: { id: tokenRecord.id },
+    });
 
     const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
@@ -314,7 +316,12 @@ export class AuthService {
 
     const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
-      select: { id: true, betterAuthUserId: true, firstName: true, lastName: true },
+      select: {
+        id: true,
+        betterAuthUserId: true,
+        firstName: true,
+        lastName: true,
+      },
     });
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -352,7 +359,10 @@ export class AuthService {
           });
         }
       } catch (err) {
-        this.logger.warn(`Failed to sync profile to BA for user ${userId}`, err);
+        this.logger.warn(
+          `Failed to sync profile to BA for user ${userId}`,
+          err,
+        );
       }
     }
 
@@ -397,7 +407,10 @@ export class AuthService {
           data: { password: baHashedPassword },
         });
       } catch (err) {
-        this.logger.warn(`Failed to sync password to BA for user ${userId}`, err);
+        this.logger.warn(
+          `Failed to sync password to BA for user ${userId}`,
+          err,
+        );
       }
     }
 
@@ -511,7 +524,10 @@ export class AuthService {
           data: { password: baHashedPassword },
         });
       } catch (err) {
-        this.logger.warn(`Failed to sync reset password to BA for ${payload.email}`, err);
+        this.logger.warn(
+          `Failed to sync reset password to BA for ${payload.email}`,
+          err,
+        );
       }
     }
 
@@ -575,7 +591,10 @@ export class AuthService {
           data: { emailVerified: true },
         });
       } catch (err) {
-        this.logger.warn(`Failed to sync email verification to BA for user ${updatedUser.id}`, err);
+        this.logger.warn(
+          `Failed to sync email verification to BA for user ${updatedUser.id}`,
+          err,
+        );
       }
     }
 

@@ -223,7 +223,9 @@ describe('AuthService', () => {
 
     it('should throw UnauthorizedException if account is not active', async () => {
       const inactiveUser = { ...mockUser, status: 'inactive' };
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(inactiveUser);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+        inactiveUser,
+      );
 
       await expect(service.login(loginDto)).rejects.toThrow(
         UnauthorizedException,

@@ -119,19 +119,27 @@ async function bootstrap() {
   // BA: intercept via onRequest hook with hijack
   const corsOrigins = process.env['CORS_ORIGIN']
     ? process.env['CORS_ORIGIN'].split(',').map((o) => o.trim())
-    : ['http://localhost:5173', 'http://localhost:3000', 'https://mac.riaz.com.bd'];
+    : [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://mac.riaz.com.bd',
+      ];
   fastifyInstance.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/better-auth/')) return;
     try {
       reply.hijack();
       const rawBody = await new Promise<string>((resolve) => {
-        if (['GET', 'HEAD', 'DELETE'].includes(request.method)) return resolve('');
+        if (['GET', 'HEAD', 'DELETE'].includes(request.method))
+          return resolve('');
         const chunks: Buffer[] = [];
         const raw = request.raw;
         raw.on('data', (chunk: Buffer) => chunks.push(chunk));
         raw.on('end', () => resolve(Buffer.concat(chunks).toString()));
         raw.on('error', () => resolve(''));
-        const timer = setTimeout(() => resolve(Buffer.concat(chunks).toString()), 1000);
+        const timer = setTimeout(
+          () => resolve(Buffer.concat(chunks).toString()),
+          1000,
+        );
         raw.on('end', () => clearTimeout(timer));
       });
       const url = new URL(request.url, `http://${request.headers.host}`);
@@ -155,14 +163,21 @@ async function bootstrap() {
         if (key.toLowerCase() === 'set-cookie') setCookieHeaders.push(value);
         else res.setHeader(key, value);
       });
-      if (setCookieHeaders.length) res.setHeader('set-cookie', setCookieHeaders);
+      if (setCookieHeaders.length)
+        res.setHeader('set-cookie', setCookieHeaders);
       // CORS: since hijack bypasses @fastify/cors, set headers manually
       const origin = request.headers.origin;
       if (origin && corsOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+        res.setHeader(
+          'Access-Control-Allow-Methods',
+          'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+        );
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          'Content-Type,Authorization',
+        );
       }
       // BA → UserProfile sync: after successful BA handler response
       if (response.status === 200 && rawBody && request.method === 'POST') {
@@ -171,7 +186,11 @@ async function bootstrap() {
           const { PrismaClient } = await import('@prisma/client');
           const { Pool } = await import('pg');
           const { PrismaPg } = await import('@prisma/adapter-pg');
-          const pool = new Pool({ connectionString: process.env['DATABASE_URL'] || 'postgresql://postgres@localhost:5432/ecomate_web' });
+          const pool = new Pool({
+            connectionString:
+              process.env['DATABASE_URL'] ||
+              'postgresql://postgres@localhost:5432/ecomate_web',
+          });
           const adapter = new PrismaPg(pool);
           const prisma = new PrismaClient({ adapter });
           const baPrisma2 = new PrismaClient({ adapter });
@@ -190,7 +209,10 @@ async function bootstrap() {
               });
               if (profile?.betterAuthUserId) {
                 const bcrypt = await import('bcryptjs');
-                const hashedPassword = await bcrypt.hash(parsedBody.newPassword, 12);
+                const hashedPassword = await bcrypt.hash(
+                  parsedBody.newPassword,
+                  12,
+                );
                 await prisma.userProfile.update({
                   where: { id: profile.id },
                   data: { password: hashedPassword },
@@ -217,9 +239,15 @@ async function bootstrap() {
             }
           }
 
-          await Promise.all([prisma.$disconnect(), baPrisma2.$disconnect()]).catch(() => {});
+          await Promise.all([
+            prisma.$disconnect(),
+            baPrisma2.$disconnect(),
+          ]).catch(() => {});
         } catch (syncErr) {
-          console.error('[BA-sync] Failed to sync BA change to UserProfile:', syncErr);
+          console.error(
+            '[BA-sync] Failed to sync BA change to UserProfile:',
+            syncErr,
+          );
         }
       }
 
@@ -229,12 +257,20 @@ async function bootstrap() {
       try {
         reply.raw.statusCode = 500;
         reply.raw.setHeader('content-type', 'application/json');
-        if (request.headers.origin && corsOrigins.includes(request.headers.origin as string)) {
-          reply.raw.setHeader('Access-Control-Allow-Origin', request.headers.origin);
+        if (
+          request.headers.origin &&
+          corsOrigins.includes(request.headers.origin)
+        ) {
+          reply.raw.setHeader(
+            'Access-Control-Allow-Origin',
+            request.headers.origin,
+          );
           reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
         }
         reply.raw.end(JSON.stringify({ error: 'Authentication error' }));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   });
 

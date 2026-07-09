@@ -73,7 +73,8 @@ export class TrackingController {
     if (!referrer) return 'direct';
     try {
       const hostname = new URL(referrer).hostname;
-      if (/facebook|fb\.(com|me)|\.facebook\./.test(hostname)) return 'facebook';
+      if (/facebook|fb\.(com|me)|\.facebook\./.test(hostname))
+        return 'facebook';
       if (/instagram|\.cdninstagram/.test(hostname)) return 'instagram';
       if (/google\.|goo\.gl/.test(hostname)) return 'google';
       if (/tiktok/.test(hostname)) return 'tiktok';

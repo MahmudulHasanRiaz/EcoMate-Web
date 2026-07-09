@@ -123,7 +123,7 @@ describe('ProductsService', () => {
           slug: 'test-category',
         }),
       },
-    }
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

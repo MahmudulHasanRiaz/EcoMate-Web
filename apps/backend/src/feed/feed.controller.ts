@@ -1,5 +1,12 @@
 import {
-  Controller, Get, Post, Param, Query, Body, Res, HttpCode,
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  Res,
+  HttpCode,
 } from '@nestjs/common';
 import { FeedService } from './feed.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -41,7 +48,10 @@ export class FeedController {
   @Roles('admin', 'superadmin')
   @RequiresFeature('admin_product_feeds')
   @Post('config/:id')
-  async updateConfig(@Param('id') id: string, @Body() dto: UpdateFeedConfigDto) {
+  async updateConfig(
+    @Param('id') id: string,
+    @Body() dto: UpdateFeedConfigDto,
+  ) {
     return this.svc.updateConfig(id, dto);
   }
 

@@ -111,12 +111,14 @@ describe('AccountsService', () => {
     });
 
     it('should create leaf account under a group parent', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockImplementation(
-        ({ where }: any) =>
-          Promise.resolve(
-            where.id === 'acc-parent' ? (mockParentAccount as any) : null,
-          ) as any,
-      );
+      jest
+        .spyOn(prisma.account, 'findUnique')
+        .mockImplementation(
+          ({ where }: any) =>
+            Promise.resolve(
+              where.id === 'acc-parent' ? (mockParentAccount as any) : null,
+            ) as any,
+        );
       jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       const dto: CreateAccountDto = {
         code: '1-1001',

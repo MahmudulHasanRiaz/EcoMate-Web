@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { FeedService } from './feed.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
@@ -75,22 +79,32 @@ describe('FeedService', () => {
     it('should throw NotFoundException when token invalid', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(null);
 
-      await expect(service.validateToken('bad-token', 'meta')).rejects.toThrow(NotFoundException);
-      await expect(service.validateToken('bad-token', 'meta')).rejects.toThrow('Feed not found');
+      await expect(service.validateToken('bad-token', 'meta')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.validateToken('bad-token', 'meta')).rejects.toThrow(
+        'Feed not found',
+      );
     });
 
     it('should throw NotFoundException when config inactive', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(null);
 
-      await expect(service.validateToken('valid-token', 'meta')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.validateToken('valid-token', 'meta'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ForbiddenException when feature not licensed', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(mockConfig);
       mockFeatureFlags.canUse.mockReturnValue(false);
 
-      await expect(service.validateToken('valid-token', 'meta')).rejects.toThrow(ForbiddenException);
-      await expect(service.validateToken('valid-token', 'meta')).rejects.toThrow('Feature is not licensed');
+      await expect(
+        service.validateToken('valid-token', 'meta'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.validateToken('valid-token', 'meta'),
+      ).rejects.toThrow('Feature is not licensed');
     });
   });
 
@@ -119,7 +133,10 @@ describe('FeedService', () => {
   describe('createConfig', () => {
     it('should create config with random 64-char hex token', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(null);
-      mockPrisma.productFeedConfig.create.mockResolvedValue({ ...mockConfig, secureToken: 'a'.repeat(64) });
+      mockPrisma.productFeedConfig.create.mockResolvedValue({
+        ...mockConfig,
+        secureToken: 'a'.repeat(64),
+      });
 
       const result = await service.createConfig({ platform: 'google' });
 
@@ -138,8 +155,12 @@ describe('FeedService', () => {
     it('should throw BadRequestException if config for platform already exists', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(mockConfig);
 
-      await expect(service.createConfig({ platform: 'meta' })).rejects.toThrow(BadRequestException);
-      await expect(service.createConfig({ platform: 'meta' })).rejects.toThrow('already exists');
+      await expect(service.createConfig({ platform: 'meta' })).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.createConfig({ platform: 'meta' })).rejects.toThrow(
+        'already exists',
+      );
     });
   });
 
@@ -158,7 +179,11 @@ describe('FeedService', () => {
     });
 
     it('should update multiple fields at once', async () => {
-      const updated = { ...mockConfig, excludeOutOfStock: true, minPriceFilter: 500 };
+      const updated = {
+        ...mockConfig,
+        excludeOutOfStock: true,
+        minPriceFilter: 500,
+      };
       mockPrisma.productFeedConfig.update.mockResolvedValue(updated);
 
       const result = await service.updateConfig('cfg-1', {

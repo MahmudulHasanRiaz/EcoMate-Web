@@ -1,26 +1,34 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ManagedStockMovementType, MovementDirection, ReferenceEntity, Prisma } from '@prisma/client';
+import {
+  ManagedStockMovementType,
+  MovementDirection,
+  ReferenceEntity,
+  Prisma,
+} from '@prisma/client';
 
 @Injectable()
 export class ManagedStockLedgerService {
   constructor(private prisma: PrismaService) {}
 
-  async record(params: {
-    productId?: string;
-    variantId?: string;
-    comboId?: string;
-    quantity: number;
-    direction: MovementDirection;
-    type: ManagedStockMovementType;
-    stockBefore?: number;
-    stockAfter?: number;
-    referenceType?: ReferenceEntity;
-    referenceId?: string;
-    note?: string;
-    reason?: string;
-    performedById?: string;
-  }, tx?: Prisma.TransactionClient) {
+  async record(
+    params: {
+      productId?: string;
+      variantId?: string;
+      comboId?: string;
+      quantity: number;
+      direction: MovementDirection;
+      type: ManagedStockMovementType;
+      stockBefore?: number;
+      stockAfter?: number;
+      referenceType?: ReferenceEntity;
+      referenceId?: string;
+      note?: string;
+      reason?: string;
+      performedById?: string;
+    },
+    tx?: Prisma.TransactionClient,
+  ) {
     const client = tx || this.prisma;
     return client.managedStockLedger.create({
       data: {
@@ -78,7 +86,12 @@ export class ManagedStockLedgerService {
       where: {
         referenceType: ReferenceEntity.ORDER,
         referenceId,
-        type: { in: [ManagedStockMovementType.RETURN, ManagedStockMovementType.CANCEL_RELEASE] },
+        type: {
+          in: [
+            ManagedStockMovementType.RETURN,
+            ManagedStockMovementType.CANCEL_RELEASE,
+          ],
+        },
       },
     });
     return !!existing;

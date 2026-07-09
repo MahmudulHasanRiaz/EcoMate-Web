@@ -56,7 +56,8 @@ export class AccessPresetsService {
     const existing = await this.prisma.accessPreset.findUnique({
       where: { name: dto.name },
     });
-    if (existing) throw new ConflictException('Access preset name already exists');
+    if (existing)
+      throw new ConflictException('Access preset name already exists');
 
     return this.prisma.accessPreset.create({
       data: {
@@ -91,9 +92,7 @@ export class AccessPresetsService {
       where: { accessPresetId: id },
     });
     if (employeeCount > 0)
-      throw new ConflictException(
-        'Cannot delete preset assigned to employees',
-      );
+      throw new ConflictException('Cannot delete preset assigned to employees');
 
     await this.prisma.accessPreset.delete({ where: { id } });
     return { message: 'Deleted' };

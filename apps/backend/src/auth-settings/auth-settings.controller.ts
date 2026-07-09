@@ -15,7 +15,8 @@ export class AuthSettingsController {
   @Put(':provider')
   upsert(
     @Param('provider') provider: string,
-    @Body() data: { isEnabled?: boolean; clientId?: string; clientSecret?: string },
+    @Body()
+    data: { isEnabled?: boolean; clientId?: string; clientSecret?: string },
   ) {
     return this.service.upsert(provider, data);
   }

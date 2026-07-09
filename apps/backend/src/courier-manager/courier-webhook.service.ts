@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { OrdersService } from '../orders/orders.service';
 
 const ADVANCED_STATUSES = new Set([
   'In Courier',
@@ -16,7 +17,10 @@ const ADVANCED_STATUSES = new Set([
 export class CourierWebhookService {
   private readonly logger = new Logger(CourierWebhookService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ordersService: OrdersService,
+  ) {}
 
   async handleSteadfast(body: Record<string, unknown>) {
     const consignmentId = body['consignment_id'] as string;
@@ -49,7 +53,12 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'steadfast', mappedStatus);
-    await this.syncToDispatch(order.id, 'steadfast', consignmentId, mappedStatus);
+    await this.syncToDispatch(
+      order.id,
+      'steadfast',
+      consignmentId,
+      mappedStatus,
+    );
     this.logger.log(`Steadfast: ${consignmentId} → ${mappedStatus}`);
     return { ok: true, status: mappedStatus };
   }
@@ -131,7 +140,12 @@ export class CourierWebhookService {
     });
     await this.addTimelineEntry(order.id, 'redx', mappedStatus);
     const redxConsignmentId = trackingNumber || invoiceNumber || '';
-    await this.syncToDispatch(order.id, 'redx', redxConsignmentId, mappedStatus);
+    await this.syncToDispatch(
+      order.id,
+      'redx',
+      redxConsignmentId,
+      mappedStatus,
+    );
     this.logger.log(
       `RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`,
     );
@@ -179,7 +193,12 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'carrybee', mappedStatus);
-    await this.syncToDispatch(order.id, 'carrybee', consignmentId || '', mappedStatus);
+    await this.syncToDispatch(
+      order.id,
+      'carrybee',
+      consignmentId || '',
+      mappedStatus,
+    );
     this.logger.log(
       `Carrybee: ${consignmentId || orderNumber} → ${mappedStatus}`,
     );
@@ -238,13 +257,20 @@ export class CourierWebhookService {
     });
   }
 
-  private async syncToDispatch(orderId: string, courier: string, consignmentId: string, status: string) {
+  private async syncToDispatch(
+    orderId: string,
+    courier: string,
+    consignmentId: string,
+    status: string,
+  ) {
     if (!consignmentId) return;
     const mappedStatus = mapToDispatchStatus(status);
     if (!mappedStatus) return;
 
     const existingDispatch = await this.prisma.dispatch.findUnique({
-      where: { courier_consignmentId: { courier: courier as any, consignmentId } },
+      where: {
+        courier_consignmentId: { courier: courier as any, consignmentId },
+      },
     });
 
     if (existingDispatch) {
@@ -266,11 +292,14 @@ export class CourierWebhookService {
         where: { name: targetOrderStatusName },
       });
       if (targetStatus) {
-        await this.prisma.order.update({
-          where: { id: orderId },
-          data: { statusId: targetStatus.id },
-        });
-        this.logger.log(`Order ${orderId} status auto-synced to ${targetOrderStatusName} via dispatch webhook`);
+        await this.ordersService.updateStatus(
+          orderId,
+          { statusId: targetStatus.id },
+          'system',
+        );
+        this.logger.log(
+          `Order ${orderId} status auto-synced to ${targetOrderStatusName} via dispatch webhook`,
+        );
       }
     }
   }

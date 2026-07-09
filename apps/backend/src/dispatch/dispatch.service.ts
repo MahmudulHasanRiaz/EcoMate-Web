@@ -1,9 +1,26 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
+
+const DISPATCH_TRANSITIONS: Record<string, string[]> = {
+  DISPATCHED: ['HANDED_OVER', 'CANCELLED'],
+  HANDED_OVER: ['PICKED_UP', 'CANCELLED'],
+  PICKED_UP: ['IN_TRANSIT', 'CANCELLED'],
+  IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'CANCELLED'],
+  ASSIGNED_TO_RIDER: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['PARTIAL', 'RETURN_PENDING'],
+  PARTIAL: ['RETURN_PENDING', 'CANCELLED'],
+  RETURN_PENDING: ['RETURNED', 'CANCELLED'],
+  RETURNED: ['CANCELLED'],
+  CANCELLED: [],
+};
 
 @Injectable()
 export class DispatchService {
@@ -83,7 +100,8 @@ export class DispatchService {
           courier: dto.courier as any,
           consignmentId: dto.consignmentId,
           trackingCode: dto.trackingCode,
-          productMapping: (dto.productMapping || []) as unknown as Prisma.InputJsonValue,
+          productMapping: (dto.productMapping ||
+            []) as unknown as Prisma.InputJsonValue,
           notes: dto.notes,
           flaggedAt: new Date(),
         },
@@ -111,7 +129,12 @@ export class DispatchService {
         },
       });
 
-      return { duplicate: true, id: flagged.id, message: 'Duplicate dispatch flagged for review', flagged: true };
+      return {
+        duplicate: true,
+        id: flagged.id,
+        message: 'Duplicate dispatch flagged for review',
+        flagged: true,
+      };
     }
 
     return this.prisma.dispatch.create({
@@ -120,7 +143,8 @@ export class DispatchService {
         courier: dto.courier as any,
         consignmentId: dto.consignmentId,
         trackingCode: dto.trackingCode,
-        productMapping: (dto.productMapping || []) as unknown as Prisma.InputJsonValue,
+        productMapping: (dto.productMapping ||
+          []) as unknown as Prisma.InputJsonValue,
         notes: dto.notes,
       },
       include: {
@@ -139,6 +163,14 @@ export class DispatchService {
 
   async updateStatus(id: string, status: string, performedBy?: string) {
     const dispatch = await this.findOne(id);
+
+    const allowed = DISPATCH_TRANSITIONS[dispatch.status] || [];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(
+        `Cannot transition from "${dispatch.status}" to "${status}". Allowed: ${allowed.join(', ') || 'none'}`,
+      );
+    }
+
     const data: any = { status: status as any };
 
     switch (status) {
@@ -164,14 +196,22 @@ export class DispatchService {
     // Stock operations based on status transition
     const productMapping = dispatch.productMapping as any[] | null;
 
-    if (status === 'HANDED_OVER' || status === 'RETURNED' || status === 'DAMAGED') {
-      const items = productMapping && productMapping.length > 0
-        ? productMapping
-        : await this.getOrderItemsForStock(dispatch.orderId);
+    if (
+      status === 'HANDED_OVER' ||
+      status === 'RETURNED' ||
+      status === 'DAMAGED'
+    ) {
+      const items =
+        productMapping && productMapping.length > 0
+          ? productMapping
+          : await this.getOrderItemsForStock(dispatch.orderId);
 
-      const operation = status === 'HANDED_OVER' ? 'deduct'
-        : status === 'RETURNED' ? 'add'
-        : 'scrap';
+      const operation =
+        status === 'HANDED_OVER'
+          ? 'deduct'
+          : status === 'RETURNED'
+            ? 'add'
+            : 'scrap';
 
       const reference = `Dispatch ${operation.toUpperCase()}: ${dispatch.consignmentId}`;
 
@@ -181,14 +221,14 @@ export class DispatchService {
         const productId = item.productId;
 
         if (variantId) {
-          await this.stockService.operate(operation as any, {
+          await this.stockService.operate(operation, {
             variantId,
             quantity: qty,
             reference,
             performedBy: performedBy || 'system',
           });
         } else if (productId) {
-          await this.stockService.operate(operation as any, {
+          await this.stockService.operate(operation, {
             productId,
             quantity: qty,
             reference,
@@ -201,7 +241,9 @@ export class DispatchService {
     return updated;
   }
 
-  private async getOrderItemsForStock(orderId: string): Promise<{ productId?: string; variantId?: string; quantity: number }[]> {
+  private async getOrderItemsForStock(
+    orderId: string,
+  ): Promise<{ productId?: string; variantId?: string; quantity: number }[]> {
     const orderItems = await this.prisma.orderItem.findMany({
       where: { orderId },
       select: {
@@ -213,7 +255,11 @@ export class DispatchService {
       },
     });
 
-    const items: { productId?: string; variantId?: string; quantity: number }[] = [];
+    const items: {
+      productId?: string;
+      variantId?: string;
+      quantity: number;
+    }[] = [];
 
     for (const oi of orderItems) {
       if (oi.comboId) {
@@ -223,7 +269,10 @@ export class DispatchService {
         });
         if (combo) {
           for (const ci of combo.items) {
-            const effectiveVariantId = ci.variantId || (oi.comboSelection as any)?.[ci.productId] || null;
+            const effectiveVariantId =
+              ci.variantId ||
+              (oi.comboSelection as any)?.[ci.productId] ||
+              null;
             items.push({
               productId: ci.productId,
               variantId: effectiveVariantId || undefined,
@@ -247,13 +296,26 @@ export class DispatchService {
     return this.prisma.dispatch.findMany({
       where: { flaggedAt: { not: null } },
       orderBy: { flaggedAt: 'desc' },
-      include: { order: { select: { displayId: true, total: true, guestName: true, guestPhone: true } } },
+      include: {
+        order: {
+          select: {
+            displayId: true,
+            total: true,
+            guestName: true,
+            guestPhone: true,
+          },
+        },
+      },
     });
   }
 
-  async resolveFlagged(id: string, action: 'accept' | 'accessories' | 'cancel') {
+  async resolveFlagged(
+    id: string,
+    action: 'accept' | 'accessories' | 'cancel',
+  ) {
     const dispatch = await this.findOne(id);
-    if (!dispatch.flaggedAt) throw new BadRequestException('Dispatch is not flagged');
+    if (!dispatch.flaggedAt)
+      throw new BadRequestException('Dispatch is not flagged');
 
     if (action === 'cancel') {
       await this.prisma.dispatch.delete({ where: { id } });
@@ -262,9 +324,12 @@ export class DispatchService {
 
     const updated = await this.prisma.dispatch.update({
       where: { id },
-      data: { flaggedAt: null, notes: dispatch.notes
-        ? `${dispatch.notes}\n[${action === 'accessories' ? 'Accessories' : 'Accepted'}]`
-        : `[${action === 'accessories' ? 'Accessories' : 'Accepted'}]` },
+      data: {
+        flaggedAt: null,
+        notes: dispatch.notes
+          ? `${dispatch.notes}\n[${action === 'accessories' ? 'Accessories' : 'Accepted'}]`
+          : `[${action === 'accessories' ? 'Accessories' : 'Accepted'}]`,
+      },
     });
     return updated;
   }
@@ -288,7 +353,10 @@ export class DispatchService {
 
     return {
       total,
-      byCourier: byCourier.map((g) => ({ courier: g.courier, count: g._count })),
+      byCourier: byCourier.map((g) => ({
+        courier: g.courier,
+        count: g._count,
+      })),
       byStatus: byStatus.map((g) => ({ status: g.status, count: g._count })),
     };
   }

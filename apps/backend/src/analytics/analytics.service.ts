@@ -20,16 +20,32 @@ export class AnalyticsService {
     const refundFilter = this.dateFilter(startDate, endDate, 'createdAt');
 
     const [orderAgg, revenueAgg, refundAgg] = await Promise.all([
-      this.prisma.order.aggregate({ _count: true, _sum: { total: true }, where: { ...dateFilter } }),
-      this.prisma.payment.aggregate({ _sum: { amount: true }, where: { ...dateFilter, status: 'PAID' } }),
-      this.prisma.refund.aggregate({ _sum: { amount: true }, where: { ...refundFilter, status: 'completed' } }),
+      this.prisma.order.aggregate({
+        _count: true,
+        _sum: { total: true },
+        where: { ...dateFilter },
+      }),
+      this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { ...dateFilter, status: 'PAID' },
+      }),
+      this.prisma.refund.aggregate({
+        _sum: { amount: true },
+        where: { ...refundFilter, status: 'completed' },
+      }),
     ]);
 
     const totalRevenue = Number(revenueAgg._sum.amount || 0);
     const totalOrders = orderAgg._count;
     const totalRefunds = Number(refundAgg._sum.amount || 0);
-    const aov = totalOrders > 0 ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0;
-    const refundRate = totalRevenue > 0 ? Math.round((totalRefunds / totalRevenue) * 10000) / 100 : 0;
+    const aov =
+      totalOrders > 0
+        ? Math.round((totalRevenue / totalOrders) * 100) / 100
+        : 0;
+    const refundRate =
+      totalRevenue > 0
+        ? Math.round((totalRefunds / totalRevenue) * 10000) / 100
+        : 0;
 
     const result = { totalRevenue, totalOrders, aov, refundRate, totalRefunds };
     await this.cache.set(cacheKey, result, 300_000);
@@ -52,10 +68,13 @@ export class AnalyticsService {
          AND ($2::timestamptz IS NULL OR p."createdAt" <= $2)
        GROUP BY DATE(p."createdAt" AT TIME ZONE 'Asia/Dhaka')
        ORDER BY date ASC`,
-      start, end,
+      start,
+      end,
     );
 
-    const result = { data: rows.map(r => ({ date: r.date, revenue: Number(r.revenue) })) };
+    const result = {
+      data: rows.map((r) => ({ date: r.date, revenue: Number(r.revenue) })),
+    };
     await this.cache.set(cacheKey, result, 300_000);
     return result;
   }
@@ -74,14 +93,16 @@ export class AnalyticsService {
         `SELECT COUNT(*)::text AS count FROM "PageView"
          WHERE ($1::timestamptz IS NULL OR "timestamp" >= $1)
            AND ($2::timestamptz IS NULL OR "timestamp" <= $2)`,
-        start, end,
+        start,
+        end,
       ),
       this.prisma.$queryRawUnsafe<CountRow[]>(
         `SELECT COUNT(DISTINCT "sessionId")::text AS count FROM "PageView"
          WHERE "sessionId" IS NOT NULL
            AND ($1::timestamptz IS NULL OR "timestamp" >= $1)
            AND ($2::timestamptz IS NULL OR "timestamp" <= $2)`,
-        start, end,
+        start,
+        end,
       ),
       this.prisma.$queryRawUnsafe<SessionsRow[]>(
         `SELECT "sessionId", COUNT(*)::text AS cnt FROM "PageView"
@@ -89,18 +110,28 @@ export class AnalyticsService {
            AND ($1::timestamptz IS NULL OR "timestamp" >= $1)
            AND ($2::timestamptz IS NULL OR "timestamp" <= $2)
          GROUP BY "sessionId"`,
-        start, end,
+        start,
+        end,
       ),
     ]);
 
     const pv = Number(pageViews[0]?.count || 0);
     const uv = Number(visitors[0]?.count || 0);
     const sessions = sessionsRaw.length;
-    const bounceSessions = sessionsRaw.filter(s => Number(s.cnt) === 1).length;
-    const bounceRate = sessions > 0 ? Math.round((bounceSessions / sessions) * 10000) / 100 : 0;
-    const pagesPerSession = sessions > 0 ? Math.round((pv / sessions) * 100) / 100 : 0;
+    const bounceSessions = sessionsRaw.filter(
+      (s) => Number(s.cnt) === 1,
+    ).length;
+    const bounceRate =
+      sessions > 0 ? Math.round((bounceSessions / sessions) * 10000) / 100 : 0;
+    const pagesPerSession =
+      sessions > 0 ? Math.round((pv / sessions) * 100) / 100 : 0;
 
-    const result = { pageViews: pv, uniqueVisitors: uv, bounceRate, pagesPerSession };
+    const result = {
+      pageViews: pv,
+      uniqueVisitors: uv,
+      bounceRate,
+      pagesPerSession,
+    };
     await this.cache.set(cacheKey, result, 900_000);
     return result;
   }
@@ -119,14 +150,16 @@ export class AnalyticsService {
          AND ($2::timestamptz IS NULL OR "timestamp" <= $2)
        GROUP BY "source"
        ORDER BY visits DESC`,
-      start, end,
+      start,
+      end,
     );
 
     const total = rows.reduce((s, r) => s + Number(r.visits), 0);
-    const sources = rows.map(r => ({
+    const sources = rows.map((r) => ({
       source: r.source,
       visits: Number(r.visits),
-      percentage: total > 0 ? Math.round((Number(r.visits) / total) * 10000) / 100 : 0,
+      percentage:
+        total > 0 ? Math.round((Number(r.visits) / total) * 10000) / 100 : 0,
     }));
 
     const result = { sources };
@@ -134,12 +167,22 @@ export class AnalyticsService {
     return result;
   }
 
-  private dateFilter(startDate?: string, endDate?: string, field: string = 'createdAt'): Record<string, any> {
+  private dateFilter(
+    startDate?: string,
+    endDate?: string,
+    field: string = 'createdAt',
+  ): Record<string, any> {
     if (!startDate && !endDate) return {};
     const filter: Record<string, any> = {};
-    if (startDate) filter[field] = { ...filter[field], gte: new Date(startDate) };
+    if (startDate)
+      filter[field] = { ...filter[field], gte: new Date(startDate) };
     if (endDate) {
-      filter[field] = { ...filter[field], lte: endDate.includes('T') ? new Date(endDate) : new Date(endDate + 'T23:59:59.999Z') };
+      filter[field] = {
+        ...filter[field],
+        lte: endDate.includes('T')
+          ? new Date(endDate)
+          : new Date(endDate + 'T23:59:59.999Z'),
+      };
     }
     return filter;
   }
@@ -147,7 +190,11 @@ export class AnalyticsService {
   private getDateRange(startDate?: string, endDate?: string) {
     return {
       start: startDate ? new Date(startDate) : null,
-      end: endDate ? (endDate.includes('T') ? new Date(endDate) : new Date(endDate + 'T23:59:59.999Z')) : null,
+      end: endDate
+        ? endDate.includes('T')
+          ? new Date(endDate)
+          : new Date(endDate + 'T23:59:59.999Z')
+        : null,
     };
   }
 }

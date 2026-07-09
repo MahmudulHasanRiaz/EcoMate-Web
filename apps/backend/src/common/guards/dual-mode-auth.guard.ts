@@ -1,4 +1,8 @@
-import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { fromNodeHeaders } from 'better-auth/node';
@@ -60,17 +64,28 @@ export class DualModeAuthGuard {
         if (userProfile.lockoutUntil && userProfile.lockoutUntil > new Date()) {
           throw new UnauthorizedException('Account is temporarily locked');
         }
-        request.user = { ...userProfile, userId: userProfile.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
+        request.user = {
+          ...userProfile,
+          userId: userProfile.id,
+          permissions: (session.user as any).permissions || [],
+          betterAuthSession: session,
+        };
       } else {
         // Auto-create UserProfile for social-login / BA-only users
         try {
-          const nameParts = (sessionUser.name || sessionUser.email || 'User').split(' ');
+          const nameParts = (
+            sessionUser.name ||
+            sessionUser.email ||
+            'User'
+          ).split(' ');
           const firstName = nameParts[0] || 'User';
           const lastName = nameParts.slice(1).join(' ') || 'User';
           const baseUsername = (sessionUser.email || 'user').split('@')[0];
           let username = baseUsername;
           let counter = 1;
-          while (await this.prisma.userProfile.findUnique({ where: { username } })) {
+          while (
+            await this.prisma.userProfile.findUnique({ where: { username } })
+          ) {
             username = `${baseUsername}${counter++}`;
           }
 
@@ -92,7 +107,12 @@ export class DualModeAuthGuard {
             data: { userId: newProfile.id },
           });
 
-          request.user = { ...newProfile, userId: newProfile.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
+          request.user = {
+            ...newProfile,
+            userId: newProfile.id,
+            permissions: (session.user as any).permissions || [],
+            betterAuthSession: session,
+          };
         } catch {
           // Race condition: another concurrent request created the UserProfile first.
           // Retry findFirst to get the existing record.
@@ -102,7 +122,12 @@ export class DualModeAuthGuard {
           if (!existing) {
             throw new UnauthorizedException('Failed to create user profile');
           }
-          request.user = { ...existing, userId: existing.id, permissions: (session.user as any).permissions || [], betterAuthSession: session };
+          request.user = {
+            ...existing,
+            userId: existing.id,
+            permissions: (session.user as any).permissions || [],
+            betterAuthSession: session,
+          };
         }
       }
       return true;

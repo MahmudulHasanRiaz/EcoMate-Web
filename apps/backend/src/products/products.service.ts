@@ -415,7 +415,9 @@ export class ProductsService {
       ];
     }
     const cursorWhere: any = { ...filters };
-    const existingAnd = cursorWhere.AND?.length ? [...cursorWhere.AND] : undefined;
+    const existingAnd = cursorWhere.AND?.length
+      ? [...cursorWhere.AND]
+      : undefined;
     if (query.cursor) {
       const decoded = this.decodeCursor(query.cursor);
       if (decoded) {
@@ -519,12 +521,15 @@ export class ProductsService {
     });
     if (existing) throw new ConflictException('Slug already exists');
 
-    const categoryIds = dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
-    const categoryId = dto.categoryId || (categoryIds[0] || null);
+    const categoryIds =
+      dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
+    const categoryId = dto.categoryId || categoryIds[0] || null;
 
-    const avMode: string = dto.type === 'variable'
-      ? 'MANAGED_STOCK'
-      : (dto.availabilityMode || (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'));
+    const avMode: string =
+      dto.type === 'variable'
+        ? 'MANAGED_STOCK'
+        : dto.availabilityMode ||
+          (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED');
 
     const product = await this.prisma.product.create({
       data: {
@@ -537,12 +542,14 @@ export class ProductsService {
         basePrice: dto.basePrice,
         salePrice: dto.salePrice,
         sku: dto.sku,
-        managedStockQuantity: dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
+        managedStockQuantity:
+          dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
         lowStockQty: dto.lowStockQty,
         categoryId: categoryId || undefined,
-        productCategories: categoryIds.length > 0
-          ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
-          : undefined,
+        productCategories:
+          categoryIds.length > 0
+            ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
+            : undefined,
         sizeChartId: dto.sizeChartId,
         tags: dto.tags as any,
         images: (dto.images || []) as any,
@@ -590,7 +597,11 @@ export class ProductsService {
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
 
-    if (avMode === 'MANAGED_STOCK' && dto.type !== 'variable' && (dto.managedStockQuantity ?? 0) > 0) {
+    if (
+      avMode === 'MANAGED_STOCK' &&
+      dto.type !== 'variable' &&
+      (dto.managedStockQuantity ?? 0) > 0
+    ) {
       await this.prisma.managedStockLedger.create({
         data: {
           productId: product.id,
@@ -709,8 +720,13 @@ export class ProductsService {
     }
 
     if (p.type !== 'variable' && p.type !== 'combo') {
-      const newMode: string | undefined = dto.availabilityMode
-        ?? (dto.manageStock !== undefined ? (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED') : undefined);
+      const newMode: string | undefined =
+        dto.availabilityMode ??
+        (dto.manageStock !== undefined
+          ? dto.manageStock
+            ? 'MANAGED_STOCK'
+            : 'INVENTORY_CONTROLLED'
+          : undefined);
 
       if (newMode && newMode !== p.availabilityMode) {
         if (newMode === 'MANAGED_STOCK') {
@@ -859,7 +875,11 @@ export class ProductsService {
       if (variants.length > 0) {
         await tx.product.update({
           where: { id: productId },
-          data: { type: 'variable', managedStockQuantity: 0, manageStock: false },
+          data: {
+            type: 'variable',
+            managedStockQuantity: 0,
+            manageStock: false,
+          },
         });
       }
     });

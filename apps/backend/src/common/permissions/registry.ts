@@ -1,16 +1,28 @@
 export const PERMISSIONS = {
-  DASHBOARD:   ['view_analytics', 'view_financial_summary'],
-  USER_MGMT:   ['view_users', 'create_users', 'edit_users', 'delete_users'],
-  CUSTOMER:    ['view_customers', 'edit_customers', 'delete_customers'],
-  EMPLOYEE:    ['view_employees', 'create_employees', 'edit_employees',
-                 'delete_employees', 'manage_designations', 'manage_presets'],
-  SALES:       ['create_orders', 'view_orders', 'refund_orders', 'apply_discounts'],
-  INVENTORY:   ['view_products', 'create_products', 'edit_products',
-                 'delete_products', 'manage_stock'],
-  SETTINGS:    ['view_system_settings', 'modify_integrations'],
+  DASHBOARD: ['view_analytics', 'view_financial_summary'],
+  USER_MGMT: ['view_users', 'create_users', 'edit_users', 'delete_users'],
+  CUSTOMER: ['view_customers', 'edit_customers', 'delete_customers'],
+  EMPLOYEE: [
+    'view_employees',
+    'create_employees',
+    'edit_employees',
+    'delete_employees',
+    'manage_designations',
+    'manage_presets',
+  ],
+  SALES: ['create_orders', 'view_orders', 'refund_orders', 'apply_discounts'],
+  INVENTORY: [
+    'view_products',
+    'create_products',
+    'edit_products',
+    'delete_products',
+    'manage_stock',
+  ],
+  SETTINGS: ['view_system_settings', 'modify_integrations'],
 } as const;
 
-export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS][number];
+export type PermissionKey =
+  (typeof PERMISSIONS)[keyof typeof PERMISSIONS][number];
 
 export function getAllPermissions(): string[] {
   return Object.values(PERMISSIONS).flat();
@@ -45,7 +57,10 @@ export function getPermissionLabel(key: string): string {
     view_system_settings: 'View System Settings',
     modify_integrations: 'Modify Integrations',
   };
-  return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    labels[key] ||
+    key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
 }
 
 export function getModuleLabel(key: string): string {

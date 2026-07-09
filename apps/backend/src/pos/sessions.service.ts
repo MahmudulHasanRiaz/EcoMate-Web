@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenSessionDto } from './dto/open-session.dto';
 import { CloseSessionDto } from './dto/close-session.dto';
@@ -12,7 +16,9 @@ export class SessionsService {
       where: { cashierId, showroomId: dto.showroomId, status: 'open' },
     });
     if (active) {
-      throw new BadRequestException('Active session already exists for this showroom');
+      throw new BadRequestException(
+        'Active session already exists for this showroom',
+      );
     }
 
     const showroom = await this.prisma.warehouse.findUnique({
@@ -46,7 +52,10 @@ export class SessionsService {
     });
     if (!session) throw new NotFoundException('Active session not found');
 
-    const totalSales = session.orders.reduce((sum, o) => sum + Number(o.total), 0);
+    const totalSales = session.orders.reduce(
+      (sum, o) => sum + Number(o.total),
+      0,
+    );
     const expectedBalance = Number(session.openingBalance) + totalSales;
 
     return this.prisma.posSession.update({

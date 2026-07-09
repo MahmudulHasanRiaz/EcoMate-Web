@@ -103,17 +103,18 @@ async function main() {
   const statuses = [
     { name: 'Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 0, nextStatuses: [] },
     { name: 'Payment Pending', color: '#F59E0B', isInitial: false, isFinal: false, sortOrder: 1, nextStatuses: [] },
-    { name: 'Confirmed', color: '#3B82F6', isInitial: false, isFinal: false, sortOrder: 2, nextStatuses: [] },
-    { name: 'Packed', color: '#059669', isInitial: false, isFinal: false, sortOrder: 3, nextStatuses: [] },
-    { name: 'Packing Hold', color: '#D97706', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
-    { name: 'Processing', color: '#8B5CF6', isInitial: false, isFinal: false, sortOrder: 5, nextStatuses: [] },
-    { name: 'Shipped', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 6, nextStatuses: [] },
-    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 7, nextStatuses: [] },
-    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 8, nextStatuses: [] },
-    { name: 'Refunded', color: '#EC4899', isInitial: false, isFinal: true, sortOrder: 9, nextStatuses: [] },
-    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 10, nextStatuses: [] },
-    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 11, nextStatuses: [] },
+    { name: 'Payment Verifying', color: '#8B5CF6', isInitial: false, isFinal: false, sortOrder: 2, nextStatuses: [] },
+    { name: 'Hold', color: '#D97706', isInitial: false, isFinal: false, sortOrder: 3, nextStatuses: [] },
+    { name: 'Confirmed', color: '#3B82F6', isInitial: false, isFinal: false, sortOrder: 4, nextStatuses: [] },
+    { name: 'Packed', color: '#059669', isInitial: false, isFinal: false, sortOrder: 5, nextStatuses: [] },
+    { name: 'Packing Hold', color: '#D97706', isInitial: false, isFinal: false, sortOrder: 6, nextStatuses: [] },
+    { name: 'Shipping', color: '#06B6D4', isInitial: false, isFinal: false, sortOrder: 7, nextStatuses: [] },
+    { name: 'Delivered', color: '#10B981', isInitial: false, isFinal: true, sortOrder: 8, nextStatuses: [] },
+    { name: 'Partial', color: '#F59E0B', isInitial: false, isFinal: false, sortOrder: 9, nextStatuses: [] },
+    { name: 'Return Pending', color: '#EC4899', isInitial: false, isFinal: false, sortOrder: 10, nextStatuses: [] },
+    { name: 'Returned', color: '#DC2626', isInitial: false, isFinal: true, sortOrder: 11, nextStatuses: [] },
     { name: 'Damaged', color: '#991B1B', isInitial: false, isFinal: true, sortOrder: 12, nextStatuses: [] },
+    { name: 'Cancelled', color: '#EF4444', isInitial: false, isFinal: true, sortOrder: 13, nextStatuses: [] },
   ];
 
   const orderStatusMap: Record<string, string> = {};
@@ -128,18 +129,19 @@ async function main() {
 
   // Define allowed transitions
   const transitions: Record<string, string[]> = {
-    'Pending': ['Payment Pending', 'Confirmed', 'Cancelled'],
-    'Payment Pending': ['Confirmed', 'Cancelled'],
+    'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
+    'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
+    'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
+    'Hold': ['Pending', 'Confirmed', 'Cancelled'],
     'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
-    'Packed': ['Shipped', 'Cancelled'],
-    'Packing Hold': ['Confirmed', 'Cancelled'],
-    'Processing': ['Shipped', 'Cancelled'],
-    'Shipped': ['Delivered', 'Return Pending', 'Damaged'],
-    'Delivered': [],
-    'Cancelled': [],
-    'Refunded': [],
-    'Returned': [],
-    'Return Pending': ['Returned', 'Refunded'],
+    'Packed': ['Shipping', 'Packing Hold'],
+    'Packing Hold': ['Packed', 'Cancelled'],
+    'Shipping': ['Delivered', 'Partial'],
+    'Delivered': ['Return Pending'],
+    'Partial': ['Return Pending'],
+    'Return Pending': ['Returned', 'Damaged'],
+    'Returned': ['Damaged'],
+    'Cancelled': ['Confirmed'],
     'Damaged': [],
   };
 
@@ -752,7 +754,7 @@ async function main() {
       discount: 50,
       discountType: 'flat',
       total: 980,
-      status: 'Processing',
+      status: 'Confirmed',
       items: [
         { productName: 'Chicken Breast Boneless', variantSku: 'MF-CHK-1K', quantity: 2, price: 320 },
         { productName: 'Fresh Broccoli', variantSku: 'FV-BROC-1K', quantity: 1, price: 180 },
@@ -774,7 +776,7 @@ async function main() {
       shippingCharge: 60,
       discount: 0,
       total: 530,
-      status: 'Shipped',
+      status: 'Shipping',
       items: [
         { productName: 'Healthy Breakfast Combo', variantSku: null, quantity: 1, price: 470, isCombo: true },
       ],

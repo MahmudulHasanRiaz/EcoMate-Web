@@ -4,8 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stock/stock.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
-import { Prisma, ManagedStockMovementType, MovementDirection, ReferenceEntity } from '@prisma/client';
+import {
+  Prisma,
+  ManagedStockMovementType,
+  MovementDirection,
+  ReferenceEntity,
+} from '@prisma/client';
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 import { LedgerQueryDto } from './dto/ledger-query.dto';
 
@@ -13,6 +19,7 @@ import { LedgerQueryDto } from './dto/ledger-query.dto';
 export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly stockService: StockService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
   ) {}
 
@@ -185,24 +192,34 @@ export class InventoryService {
       const guardProduct: any = productId
         ? await this.prisma.product.findUnique({ where: { id: productId } })
         : variantId
-          ? (await this.prisma.productVariant.findUnique({
-              where: { id: variantId },
-              include: { product: true },
-            }))?.product
+          ? (
+              await this.prisma.productVariant.findUnique({
+                where: { id: variantId },
+                include: { product: true },
+              })
+            )?.product
           : null;
 
       if (guardProduct) {
         if (guardProduct.availabilityMode === 'ALWAYS_IN_STOCK') {
-          throw new BadRequestException('Product is always in stock — no adjustments allowed');
+          throw new BadRequestException(
+            'Product is always in stock — no adjustments allowed',
+          );
         }
         if (guardProduct.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
-          throw new BadRequestException('Product is always out of stock — no adjustments allowed');
+          throw new BadRequestException(
+            'Product is always out of stock — no adjustments allowed',
+          );
         }
         if (guardProduct.availabilityMode === 'INVENTORY_CONTROLLED') {
-          throw new BadRequestException('Use Purchase Orders for inventory-controlled products');
+          throw new BadRequestException(
+            'Use Purchase Orders for inventory-controlled products',
+          );
         }
         if (!guardProduct.manageStock) {
-          throw new BadRequestException('Stock tracking is disabled for this product');
+          throw new BadRequestException(
+            'Stock tracking is disabled for this product',
+          );
         }
       }
     }
@@ -222,7 +239,9 @@ export class InventoryService {
                   managedStockQuantity: true,
                 },
               },
-              variant: { select: { id: true, sku: true, managedStockQuantity: true } },
+              variant: {
+                select: { id: true, sku: true, managedStockQuantity: true },
+              },
             },
           },
         },
@@ -256,7 +275,10 @@ export class InventoryService {
             variantId: item.variantId,
             quantity: Math.abs(qty),
             direction: qty > 0 ? MovementDirection.IN : MovementDirection.OUT,
-            type: qty > 0 ? ManagedStockMovementType.MANUAL_ADD : ManagedStockMovementType.MANUAL_REMOVE,
+            type:
+              qty > 0
+                ? ManagedStockMovementType.MANUAL_ADD
+                : ManagedStockMovementType.MANUAL_REMOVE,
             stockBefore: before,
             stockAfter: before + qty,
             referenceType: ReferenceEntity.ADJUSTMENT,
@@ -285,7 +307,10 @@ export class InventoryService {
             productId: item.productId,
             quantity: Math.abs(qty),
             direction: qty > 0 ? MovementDirection.IN : MovementDirection.OUT,
-            type: qty > 0 ? ManagedStockMovementType.MANUAL_ADD : ManagedStockMovementType.MANUAL_REMOVE,
+            type:
+              qty > 0
+                ? ManagedStockMovementType.MANUAL_ADD
+                : ManagedStockMovementType.MANUAL_REMOVE,
             stockBefore: before,
             stockAfter: before + qty,
             referenceType: ReferenceEntity.ADJUSTMENT,
@@ -329,27 +354,20 @@ export class InventoryService {
           `Insufficient stock for variant ${variant.sku}. Available: ${variant.managedStockQuantity}, needed: ${Math.abs(q)}.`,
         );
       }
-      const updated = await this.prisma.productVariant.update({
-        where: { id: variantId },
-        data: { managedStockQuantity: { increment: q } },
-      });
-      const before = variant.managedStockQuantity;
-      await this.managedStockLedgerService.record({
+      const op =
+        q >= 0
+          ? this.stockService.add.bind(this.stockService)
+          : this.stockService.scrap.bind(this.stockService);
+      const targets = await op({
         productId: variant.productId,
         variantId,
         quantity: Math.abs(q),
-        direction: q > 0 ? MovementDirection.IN : MovementDirection.OUT,
-        type: q > 0 ? ManagedStockMovementType.MANUAL_ADD : ManagedStockMovementType.MANUAL_REMOVE,
-        stockBefore: before,
-        stockAfter: before + q,
-        referenceType: ReferenceEntity.ADJUSTMENT,
-        note: reason || 'Manual variant stock adjustment',
-        performedById: performedBy,
+        reference: reason ? `adjust-${reason}` : 'manual-adjustment',
       });
       return {
         id: variant.id,
         sku: variant.sku,
-        stock: updated.managedStockQuantity,
+        stock: variant.managedStockQuantity + q,
         productId: variant.productId,
         productName: variant.product.name,
       };
@@ -384,7 +402,12 @@ export class InventoryService {
       );
     }
 
-    return this.adjustProductWithRetry(productId, q, reason || 'Manual stock adjustment', performedBy);
+    return this.adjustProductWithRetry(
+      productId,
+      q,
+      reason || 'Manual stock adjustment',
+      performedBy,
+    );
   }
 
   private async adjustProductWithRetry(
@@ -403,34 +426,36 @@ export class InventoryService {
             });
             if (!product) throw new NotFoundException('Product not found');
 
-            const before = product.managedStockQuantity;
-
-            await tx.product.update({
-              where: { id: productId },
-              data: { managedStockQuantity: { increment: quantity } },
-            });
-
-            await this.managedStockLedgerService.record({
+            const op =
+              quantity >= 0
+                ? this.stockService.add.bind(this.stockService)
+                : this.stockService.scrap.bind(this.stockService);
+            await op({
               productId,
               quantity: Math.abs(quantity),
-              direction: quantity > 0 ? MovementDirection.IN : MovementDirection.OUT,
-              type: quantity > 0 ? ManagedStockMovementType.MANUAL_ADD : ManagedStockMovementType.MANUAL_REMOVE,
-              stockBefore: before,
-              stockAfter: before + quantity,
-              referenceType: ReferenceEntity.ADJUSTMENT,
-              note: reason,
-              performedById: performedBy,
-            }, tx);
+              reference: `adjust-${reason}`,
+              performedBy,
+              tx,
+            });
 
             return tx.product.findUnique({
               where: { id: productId },
-              select: { id: true, name: true, managedStockQuantity: true, sku: true },
+              select: {
+                id: true,
+                name: true,
+                managedStockQuantity: true,
+                sku: true,
+              },
             });
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && attempt < MAX_RETRIES) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < MAX_RETRIES
+        ) {
           continue;
         }
         throw error;
@@ -456,7 +481,10 @@ export class InventoryService {
       }));
     if (alreadyRestocked) return;
 
-    const ledgerType = logType === 'refund_restock' ? ManagedStockMovementType.RETURN : ManagedStockMovementType.CANCEL_RELEASE;
+    const ledgerType =
+      logType === 'refund_restock'
+        ? ManagedStockMovementType.RETURN
+        : ManagedStockMovementType.CANCEL_RELEASE;
 
     const orderItems = await client.orderItem.findMany({
       where: { orderId },
@@ -466,14 +494,23 @@ export class InventoryService {
       const product = item.productId
         ? await client.product.findUnique({
             where: { id: item.productId },
-            select: { id: true, availabilityMode: true, manageStock: true, type: true, managedStockQuantity: true },
+            select: {
+              id: true,
+              availabilityMode: true,
+              manageStock: true,
+              type: true,
+              managedStockQuantity: true,
+            },
           })
         : null;
 
       if (!product) continue;
 
-      const isManaged = product.availabilityMode === 'MANAGED_STOCK' || (!product.availabilityMode && product.manageStock);
-      const isInventoryControlled = product.availabilityMode === 'INVENTORY_CONTROLLED';
+      const isManaged =
+        product.availabilityMode === 'MANAGED_STOCK' ||
+        (!product.availabilityMode && product.manageStock);
+      const isInventoryControlled =
+        product.availabilityMode === 'INVENTORY_CONTROLLED';
       const isAlwaysIn = product.availabilityMode === 'ALWAYS_IN_STOCK';
       const isAlwaysOut = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK';
 
@@ -496,50 +533,40 @@ export class InventoryService {
             null;
 
           if (isManaged) {
-            if (effectiveVariantId) {
-              const variantBefore = await client.productVariant.findUnique({
-                where: { id: effectiveVariantId },
-                select: { managedStockQuantity: true },
-              });
-              const beforeQty = variantBefore?.managedStockQuantity ?? 0;
-              await client.productVariant.update({
-                where: { id: effectiveVariantId },
-                data: { managedStockQuantity: { increment: qty } },
-              });
-              await this.managedStockLedgerService.record({
-                productId: ci.productId,
-                variantId: effectiveVariantId,
-                quantity: Math.abs(qty),
-                direction: MovementDirection.IN,
-                type: ledgerType,
-                stockBefore: beforeQty,
-                stockAfter: beforeQty + qty,
-                referenceType: ReferenceEntity.ORDER,
-                referenceId: orderId,
-                note: `Order ${orderId} ${logType === 'refund_restock' ? 'refund' : 'cancellation'} restock`,
-              }, tx);
-            }
-            const ciProduct = await client.product.findUnique({
-              where: { id: ci.productId },
-              select: { manageStock: true, type: true, managedStockQuantity: true },
-            });
-            if (ciProduct?.manageStock && (!effectiveVariantId || ciProduct.type === 'simple')) {
-              const beforeQty = ciProduct.managedStockQuantity;
-              await client.product.update({
+            const execOp = async (client: any) => {
+              if (effectiveVariantId) {
+                await this.stockService.add({
+                  productId: ci.productId,
+                  variantId: effectiveVariantId,
+                  quantity: qty,
+                  reference: `restock-${orderId}`,
+                  tx: client,
+                });
+              }
+              const ciProduct = await client.product.findUnique({
                 where: { id: ci.productId },
-                data: { managedStockQuantity: { increment: qty } },
+                select: {
+                  manageStock: true,
+                  type: true,
+                  managedStockQuantity: true,
+                },
               });
-              await this.managedStockLedgerService.record({
-                productId: ci.productId,
-                quantity: Math.abs(qty),
-                direction: MovementDirection.IN,
-                type: ledgerType,
-                stockBefore: beforeQty,
-                stockAfter: beforeQty + qty,
-                referenceType: ReferenceEntity.ORDER,
-                referenceId: orderId,
-                note: `Order ${orderId} ${logType === 'refund_restock' ? 'refund' : 'cancellation'} restock`,
-              }, tx);
+              if (
+                ciProduct?.manageStock &&
+                (!effectiveVariantId || ciProduct.type === 'simple')
+              ) {
+                await this.stockService.add({
+                  productId: ci.productId,
+                  quantity: qty,
+                  reference: `restock-${orderId}`,
+                  tx: client,
+                });
+              }
+            };
+            if (tx) {
+              await execOp(tx);
+            } else {
+              await this.prisma.$transaction(execOp);
             }
           }
 
@@ -561,45 +588,25 @@ export class InventoryService {
       } else {
         if (isManaged) {
           if (item.variantId) {
-            const variantBefore = await client.productVariant.findUnique({
-              where: { id: item.variantId },
-              select: { managedStockQuantity: true },
-            });
-            const beforeQty = variantBefore?.managedStockQuantity ?? 0;
-            await client.productVariant.update({
-              where: { id: item.variantId },
-              data: { managedStockQuantity: { increment: item.quantity } },
-            });
-            await this.managedStockLedgerService.record({
+            await this.stockService.add({
               productId: item.productId || undefined,
               variantId: item.variantId,
               quantity: item.quantity,
-              direction: MovementDirection.IN,
-              type: ledgerType,
-              stockBefore: beforeQty,
-              stockAfter: beforeQty + item.quantity,
-              referenceType: ReferenceEntity.ORDER,
-              referenceId: orderId,
-              note: `Order ${orderId} ${logType === 'refund_restock' ? 'refund' : 'cancellation'} restock`,
-            }, tx);
-          }
-          if (product.manageStock && item.productId && (!item.variantId || product.type === 'simple')) {
-            const beforeQty = product.managedStockQuantity;
-            await client.product.update({
-              where: { id: item.productId },
-              data: { managedStockQuantity: { increment: item.quantity } },
+              reference: `restock-${orderId}`,
+              tx: tx || undefined,
             });
-            await this.managedStockLedgerService.record({
+          }
+          if (
+            product.manageStock &&
+            item.productId &&
+            (!item.variantId || product.type === 'simple')
+          ) {
+            await this.stockService.add({
               productId: item.productId,
               quantity: item.quantity,
-              direction: MovementDirection.IN,
-              type: ledgerType,
-              stockBefore: beforeQty,
-              stockAfter: beforeQty + item.quantity,
-              referenceType: ReferenceEntity.ORDER,
-              referenceId: orderId,
-              note: `Order ${orderId} ${logType === 'refund_restock' ? 'refund' : 'cancellation'} restock`,
-            }, tx);
+              reference: `restock-${orderId}`,
+              tx: tx || undefined,
+            });
           }
         }
 

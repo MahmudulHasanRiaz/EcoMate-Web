@@ -468,7 +468,9 @@ export class PrismaService
       const fieldType = fieldParts[1];
 
       const baseType = fieldType.replace(/\[\]$/, '');
-      const isRelation = trimmed.includes('@relation') || (modelNames.has(baseType) && !isScalarType(baseType));
+      const isRelation =
+        trimmed.includes('@relation') ||
+        (modelNames.has(baseType) && !isScalarType(baseType));
 
       if (isRelation) {
         currentModel.relationFieldNames.push(fieldName);
@@ -755,12 +757,19 @@ export class PrismaService
 
         for (const relName of model.relationFieldNames) {
           if (!existing.has(relName)) continue;
-          if (model.scalarFields.some((f) => f.columnName === relName)) continue;
+          if (model.scalarFields.some((f) => f.columnName === relName))
+            continue;
 
           try {
-            await this.runRaw(`ALTER TABLE "${model.tableName}" DROP COLUMN IF EXISTS "${relName}"`);
-            this.logger.log(`Dropped stale relation column "${model.tableName}"."${relName}"`);
-          } catch { /* ignore */ }
+            await this.runRaw(
+              `ALTER TABLE "${model.tableName}" DROP COLUMN IF EXISTS "${relName}"`,
+            );
+            this.logger.log(
+              `Dropped stale relation column "${model.tableName}"."${relName}"`,
+            );
+          } catch {
+            /* ignore */
+          }
         }
       }
     } catch (err: any) {
@@ -880,7 +889,10 @@ export class PrismaService
 
   private async seedAdminUser(): Promise<void> {
     try {
-      const email = process.env.ADMIN_EMAIL || process.env.ADMIN_USER || 'admin@ecomate.com';
+      const email =
+        process.env.ADMIN_EMAIL ||
+        process.env.ADMIN_USER ||
+        'admin@ecomate.com';
 
       const existing = await this.userProfile.findUnique({ where: { email } });
       if (existing) {
@@ -888,7 +900,8 @@ export class PrismaService
         return;
       }
 
-      const plainPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || 'Admin@123';
+      const plainPassword =
+        process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || 'Admin@123';
       const adminPassword = await bcrypt.hash(plainPassword, 12);
 
       await this.userProfile.create({

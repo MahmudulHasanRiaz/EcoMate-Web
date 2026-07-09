@@ -123,7 +123,8 @@ export class AuthController {
     let permissions = user.permissions;
     if (!permissions || !Array.isArray(permissions)) {
       if (user.role === 'superadmin' || user.role === 'admin') {
-        const { getAllPermissions } = await import('../common/permissions/registry.js');
+        const { getAllPermissions } =
+          await import('../common/permissions/registry.js');
         permissions = getAllPermissions();
       } else {
         permissions = [];

@@ -311,7 +311,10 @@ export class UsersService {
         if (dto.password) {
           const baHashedPassword = await hashPassword(dto.password);
           await baPrisma.betterAuthAccount.updateMany({
-            where: { userId: existingUser.betterAuthUserId, providerId: 'email' },
+            where: {
+              userId: existingUser.betterAuthUserId,
+              providerId: 'email',
+            },
             data: { password: baHashedPassword },
           });
         }
@@ -356,7 +359,10 @@ export class UsersService {
             where: { id: user.betterAuthUserId },
           });
         } catch (err) {
-          console.warn(`Failed to delete BA user ${user.betterAuthUserId}`, err);
+          console.warn(
+            `Failed to delete BA user ${user.betterAuthUserId}`,
+            err,
+          );
         }
       }
     }

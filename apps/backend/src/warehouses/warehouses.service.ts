@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -18,9 +22,9 @@ export class WarehousesService {
       orderBy: { name: 'asc' },
       include: {
         _count: {
-          select: { binLocations: true }
-        }
-      }
+          select: { binLocations: true },
+        },
+      },
     });
   }
 
@@ -35,8 +39,15 @@ export class WarehousesService {
   }
 
   async create(dto: CreateWarehouseDto) {
-    const slug = dto.slug || dto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const existing = await this.prisma.warehouse.findUnique({ where: { slug } });
+    const slug =
+      dto.slug ||
+      dto.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+    const existing = await this.prisma.warehouse.findUnique({
+      where: { slug },
+    });
     if (existing) {
       throw new ConflictException('Warehouse slug already exists');
     }
@@ -51,7 +62,9 @@ export class WarehousesService {
   async update(id: string, dto: UpdateWarehouseDto) {
     await this.findOne(id);
     if (dto.slug) {
-      const existing = await this.prisma.warehouse.findUnique({ where: { slug: dto.slug } });
+      const existing = await this.prisma.warehouse.findUnique({
+        where: { slug: dto.slug },
+      });
       if (existing && existing.id !== id) {
         throw new ConflictException('Warehouse slug already exists');
       }

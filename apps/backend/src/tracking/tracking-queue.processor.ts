@@ -21,7 +21,15 @@ export class TrackingQueueProcessor extends WorkerHost {
   }
 
   async process(job: Job<TrackingJob>): Promise<void> {
-    const { eventId, eventName, eventTime, actionSource, userId, userData, customData } = job.data;
+    const {
+      eventId,
+      eventName,
+      eventTime,
+      actionSource,
+      userId,
+      userData,
+      customData,
+    } = job.data;
 
     this.logger.debug(`Processing tracking event: ${eventName} [${eventId}]`);
 
@@ -39,22 +47,30 @@ export class TrackingQueueProcessor extends WorkerHost {
     };
 
     await Promise.allSettled([
-      this.meta.sendEvent(payload).catch((e) => this.logger.error(`Meta send failed: ${e}`)),
-      this.tiktok.sendEvent(payload).catch((e) => this.logger.error(`TikTok send failed: ${e}`)),
-      this.ga4.sendEvent(payload).catch((e) => this.logger.error(`GA4 send failed: ${e}`)),
+      this.meta
+        .sendEvent(payload)
+        .catch((e) => this.logger.error(`Meta send failed: ${e}`)),
+      this.tiktok
+        .sendEvent(payload)
+        .catch((e) => this.logger.error(`TikTok send failed: ${e}`)),
+      this.ga4
+        .sendEvent(payload)
+        .catch((e) => this.logger.error(`GA4 send failed: ${e}`)),
     ]);
 
     if (platformEventName === 'Purchase') {
-      this.googleAds.sendConversion({
-        eventName: platformEventName,
-        eventId,
-        conversionId: userData?.conversionId || '',
-        value: customData?.value,
-        currency: customData?.currency,
-        email: userData?.email,
-        phone: userData?.phone,
-        orderId: customData?.order_id,
-      }).catch((e) => this.logger.error(`Google Ads send failed: ${e}`));
+      this.googleAds
+        .sendConversion({
+          eventName: platformEventName,
+          eventId,
+          conversionId: userData?.conversionId || '',
+          value: customData?.value,
+          currency: customData?.currency,
+          email: userData?.email,
+          phone: userData?.phone,
+          orderId: customData?.order_id,
+        })
+        .catch((e) => this.logger.error(`Google Ads send failed: ${e}`));
     }
   }
 

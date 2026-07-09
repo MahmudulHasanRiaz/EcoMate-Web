@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import * as zlib from 'zlib';
@@ -34,7 +39,10 @@ export class FeedService {
     return str.replace(/<[^>]*>/g, '').trim();
   }
 
-  async validateToken(token: string, platform: string): Promise<{ config: any; tenantId: string }> {
+  async validateToken(
+    token: string,
+    platform: string,
+  ): Promise<{ config: any; tenantId: string }> {
     const config = await this.prisma.productFeedConfig.findFirst({
       where: { secureToken: token, platform, isActive: true },
     });
@@ -66,9 +74,15 @@ export class FeedService {
       gzip.write(`<?xml version="1.0" encoding="UTF-8"?>\n`);
       gzip.write(`<rss xmlns:g="${this.escapeXml(ns)}" version="2.0">\n`);
       gzip.write(`  <channel>\n`);
-      gzip.write(`    <title>Product Catalog — ${this.escapeXml(platform)}</title>\n`);
-      gzip.write(`    <link>${process.env.STOREFRONT_URL || 'https://yourstore.com'}</link>\n`);
-      gzip.write(`    <description>Auto-generated product catalog feed for ${this.escapeXml(platform)}</description>\n`);
+      gzip.write(
+        `    <title>Product Catalog — ${this.escapeXml(platform)}</title>\n`,
+      );
+      gzip.write(
+        `    <link>${process.env.STOREFRONT_URL || 'https://yourstore.com'}</link>\n`,
+      );
+      gzip.write(
+        `    <description>Auto-generated product catalog feed for ${this.escapeXml(platform)}</description>\n`,
+      );
 
       let lastId: string | undefined;
       const chunkSize = this.CHUNK_SIZE;
@@ -82,7 +96,14 @@ export class FeedService {
             brand: { select: { name: true } },
             variants: {
               where: { isActive: true },
-              select: { id: true, sku: true, price: true, salePrice: true, managedStockQuantity: true, image: true },
+              select: {
+                id: true,
+                sku: true,
+                price: true,
+                salePrice: true,
+                managedStockQuantity: true,
+                image: true,
+              },
             },
           },
         };
@@ -92,43 +113,66 @@ export class FeedService {
           queryOpts.cursor = { id: lastId };
         }
 
-        const products = await this.prisma.product.findMany(queryOpts) as any[];
+        const products = (await this.prisma.product.findMany(
+          queryOpts,
+        )) as any[];
 
         if (products.length === 0) break;
 
         for (const product of products) {
           const images = (product.images as string[]) || [];
-          const hasVariants = product.type === 'variable' && product.variants.length > 0;
+          const hasVariants =
+            product.type === 'variable' && product.variants.length > 0;
 
           if (hasVariants) {
             for (const variant of product.variants) {
-              gzip.write(this.mapToItemXml({
-                id: variant.sku || `${product.sku}-${variant.id}`,
-                title: `${product.name} - ${variant.sku}`,
-                description: this.stripHtml(product.shortDesc || product.description || ''),
-                link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
-                imageLink: variant.image || images[0] || '',
-                availability: variant.managedStockQuantity > 0 ? 'in stock' : 'out of stock',
-                price: variant.price || product.basePrice,
-                salePrice: variant.salePrice || product.salePrice,
-                brand: product.brand?.name || 'Store Brand',
-                itemGroupId: product.id,
-              }, platform));
+              gzip.write(
+                this.mapToItemXml(
+                  {
+                    id: variant.sku || `${product.sku}-${variant.id}`,
+                    title: `${product.name} - ${variant.sku}`,
+                    description: this.stripHtml(
+                      product.shortDesc || product.description || '',
+                    ),
+                    link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
+                    imageLink: variant.image || images[0] || '',
+                    availability:
+                      variant.managedStockQuantity > 0
+                        ? 'in stock'
+                        : 'out of stock',
+                    price: variant.price || product.basePrice,
+                    salePrice: variant.salePrice || product.salePrice,
+                    brand: product.brand?.name || 'Store Brand',
+                    itemGroupId: product.id,
+                  },
+                  platform,
+                ),
+              );
               productCount++;
             }
           } else {
-            gzip.write(this.mapToItemXml({
-              id: product.sku || product.id,
-              title: product.name,
-              description: this.stripHtml(product.shortDesc || product.description || ''),
-              link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
-              imageLink: images[0] || '',
-              availability: product.managedStockQuantity > 0 ? 'in stock' : 'out of stock',
-              price: product.basePrice,
-              salePrice: product.salePrice,
-              brand: product.brand?.name || 'Store Brand',
-              itemGroupId: undefined,
-            }, platform));
+            gzip.write(
+              this.mapToItemXml(
+                {
+                  id: product.sku || product.id,
+                  title: product.name,
+                  description: this.stripHtml(
+                    product.shortDesc || product.description || '',
+                  ),
+                  link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
+                  imageLink: images[0] || '',
+                  availability:
+                    product.managedStockQuantity > 0
+                      ? 'in stock'
+                      : 'out of stock',
+                  price: product.basePrice,
+                  salePrice: product.salePrice,
+                  brand: product.brand?.name || 'Store Brand',
+                  itemGroupId: undefined,
+                },
+                platform,
+              ),
+            );
             productCount++;
           }
         }
@@ -140,7 +184,7 @@ export class FeedService {
       gzip.write(`</rss>`);
       gzip.end();
     } catch (err) {
-      gzip.destroy(err as any);
+      gzip.destroy(err);
       throw err;
     }
 
@@ -169,7 +213,8 @@ export class FeedService {
   private mapToItemXml(p: any, platform: string): string {
     const e = (s: any) => this.escapeXml(String(s ?? ''));
 
-    return `    <item>\n` +
+    return (
+      `    <item>\n` +
       `      <g:id>${e(p.id)}</g:id>\n` +
       `      <g:title>${e(p.title)}</g:title>\n` +
       `      <g:description>${e(p.description)}</g:description>\n` +
@@ -177,37 +222,53 @@ export class FeedService {
       `      <g:image_link>${e(p.imageLink)}</g:image_link>\n` +
       `      <g:availability>${p.availability}</g:availability>\n` +
       `      <g:price>${e(p.price)} BDT</g:price>\n` +
-      (p.salePrice ? `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n` : '') +
+      (p.salePrice
+        ? `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n`
+        : '') +
       `      <g:brand>${e(p.brand)}</g:brand>\n` +
       `      <g:condition>new</g:condition>\n` +
-      (p.itemGroupId ? `      <g:item_group_id>${e(p.itemGroupId)}</g:item_group_id>\n` : '') +
-      `    </item>\n`;
+      (p.itemGroupId
+        ? `      <g:item_group_id>${e(p.itemGroupId)}</g:item_group_id>\n`
+        : '') +
+      `    </item>\n`
+    );
   }
 
-  private async logAccess(tenantId: string, platform: string, durationMs: number) {
-    await this.prisma.productFeedLog.create({
-      data: {
-        tenantId,
-        platform,
-        ipAddress: '0.0.0.0',
-        userAgent: 'feed-generator',
-        statusCode: 200,
-        durationMs,
-      },
-    }).catch(() => {});
+  private async logAccess(
+    tenantId: string,
+    platform: string,
+    durationMs: number,
+  ) {
+    await this.prisma.productFeedLog
+      .create({
+        data: {
+          tenantId,
+          platform,
+          ipAddress: '0.0.0.0',
+          userAgent: 'feed-generator',
+          statusCode: 200,
+          durationMs,
+        },
+      })
+      .catch(() => {});
   }
 
   // -- Admin methods --
 
   async listConfigs() {
-    return this.prisma.productFeedConfig.findMany({ orderBy: { platform: 'asc' } });
+    return this.prisma.productFeedConfig.findMany({
+      orderBy: { platform: 'asc' },
+    });
   }
 
   async createConfig(dto: any) {
     const existing = await this.prisma.productFeedConfig.findFirst({
       where: { platform: dto.platform },
     });
-    if (existing) throw new BadRequestException(`Feed config for ${dto.platform} already exists`);
+    if (existing)
+      throw new BadRequestException(
+        `Feed config for ${dto.platform} already exists`,
+      );
 
     const token = crypto.randomBytes(32).toString('hex');
     return this.prisma.productFeedConfig.create({

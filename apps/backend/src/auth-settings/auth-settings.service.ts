@@ -5,7 +5,8 @@ import * as crypto from 'crypto';
 const ALGORITHM = 'aes-256-gcm';
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY || 'default-dev-key-change-in-production-1234';
+  const key =
+    process.env.ENCRYPTION_KEY || 'default-dev-key-change-in-production-1234';
   return crypto.scryptSync(key, 'salt', 32);
 }
 
@@ -22,11 +23,16 @@ export class AuthSettingsService {
     }));
   }
 
-  async upsert(providerName: string, data: { isEnabled?: boolean; clientId?: string; clientSecret?: string }) {
+  async upsert(
+    providerName: string,
+    data: { isEnabled?: boolean; clientId?: string; clientSecret?: string },
+  ) {
     const updateData: any = {};
     if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
-    if (data.clientId !== undefined) updateData.clientId = this.encrypt(data.clientId);
-    if (data.clientSecret !== undefined) updateData.clientSecret = this.encrypt(data.clientSecret);
+    if (data.clientId !== undefined)
+      updateData.clientId = this.encrypt(data.clientId);
+    if (data.clientSecret !== undefined)
+      updateData.clientSecret = this.encrypt(data.clientSecret);
 
     return this.prisma.authSettings.upsert({
       where: { providerName },

@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  Inject,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
@@ -44,7 +49,12 @@ export class PosOrdersService {
   }
 
   private recalculate(
-    items: { price: number; quantity: number; discount?: number; discountType?: string }[],
+    items: {
+      price: number;
+      quantity: number;
+      discount?: number;
+      discountType?: string;
+    }[],
     orderDiscount: number,
     orderDiscountType: string,
   ) {
@@ -55,25 +65,29 @@ export class PosOrdersService {
       const lineTotal = item.price * item.quantity;
       subtotal += lineTotal;
       if (item.discount) {
-        totalItemDiscount += item.discountType === 'percentage'
-          ? (lineTotal * item.discount) / 100
-          : item.discount;
+        totalItemDiscount +=
+          item.discountType === 'percentage'
+            ? (lineTotal * item.discount) / 100
+            : item.discount;
       }
     }
 
     const afterItemDiscount = subtotal - totalItemDiscount;
     let orderDiscountVal = 0;
     if (orderDiscount) {
-      orderDiscountVal = orderDiscountType === 'percentage'
-        ? (afterItemDiscount * orderDiscount) / 100
-        : orderDiscount;
+      orderDiscountVal =
+        orderDiscountType === 'percentage'
+          ? (afterItemDiscount * orderDiscount) / 100
+          : orderDiscount;
     }
 
     const total = subtotal - totalItemDiscount - orderDiscountVal;
     return { subtotal, total, discount: totalItemDiscount + orderDiscountVal };
   }
 
-  private async getDescendantCategoryIds(categoryId: string): Promise<string[]> {
+  private async getDescendantCategoryIds(
+    categoryId: string,
+  ): Promise<string[]> {
     const children = await this.prisma.category.findMany({
       where: { parentId: categoryId, isActive: true },
       select: { id: true },
@@ -132,12 +146,17 @@ export class PosOrdersService {
     );
 
     const deliveryMethod = dto.deliveryMethod || 'Counter Sale';
-    const isInstantDelivery = ['Counter Sale', 'Takeaway'].includes(deliveryMethod);
+    const isInstantDelivery = ['Counter Sale', 'Takeaway'].includes(
+      deliveryMethod,
+    );
 
     const status = await this.prisma.orderStatus.findFirst({
       where: { name: isInstantDelivery ? 'delivered' : 'confirmed' },
     });
-    if (!status) throw new BadRequestException(`Status "${isInstantDelivery ? 'delivered' : 'confirmed'}" not found`);
+    if (!status)
+      throw new BadRequestException(
+        `Status "${isInstantDelivery ? 'delivered' : 'confirmed'}" not found`,
+      );
 
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
@@ -224,7 +243,13 @@ export class PosOrdersService {
     });
   }
 
-  async findProducts(query: { search?: string; categoryId?: string; barcode?: string; page?: number; perPage?: number }) {
+  async findProducts(query: {
+    search?: string;
+    categoryId?: string;
+    barcode?: string;
+    page?: number;
+    perPage?: number;
+  }) {
     const where: any = { isActive: true };
 
     if (query.barcode) {
@@ -236,12 +261,18 @@ export class PosOrdersService {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { sku: { contains: query.search, mode: 'insensitive' } },
-        { variants: { some: { sku: { contains: query.search, mode: 'insensitive' } } } },
+        {
+          variants: {
+            some: { sku: { contains: query.search, mode: 'insensitive' } },
+          },
+        },
       ];
     }
 
     if (query.categoryId) {
-      const descendantIds = await this.getDescendantCategoryIds(query.categoryId);
+      const descendantIds = await this.getDescendantCategoryIds(
+        query.categoryId,
+      );
       where.productCategories = {
         some: { categoryId: { in: [query.categoryId, ...descendantIds] } },
       };

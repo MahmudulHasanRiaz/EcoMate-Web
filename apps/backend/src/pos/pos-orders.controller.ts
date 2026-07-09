@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Delete, Param, Body, Query, Req, Headers, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Param,
+  Body,
+  Query,
+  Req,
+  Headers,
+  BadRequestException,
+} from '@nestjs/common';
 import { PosOrdersService } from './pos-orders.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
@@ -10,8 +21,15 @@ export class PosOrdersController {
 
   @Post('orders')
   @Roles('cashier', 'admin')
-  create(@Body() dto: CreatePosOrderDto, @Req() req: any, @Headers('x-pos-session-id') sessionId?: string) {
-    if (!sessionId) throw new BadRequestException('POS session required (x-pos-session-id header)');
+  create(
+    @Body() dto: CreatePosOrderDto,
+    @Req() req: any,
+    @Headers('x-pos-session-id') sessionId?: string,
+  ) {
+    if (!sessionId)
+      throw new BadRequestException(
+        'POS session required (x-pos-session-id header)',
+      );
     return this.svc.create(dto, sessionId, req.user.id);
   }
 
@@ -24,7 +42,9 @@ export class PosOrdersController {
 
   @Post('customers/quick')
   @Roles('cashier', 'admin')
-  async quickCreateCustomer(@Body() dto: { phoneNumber: string; firstName?: string }) {
+  async quickCreateCustomer(
+    @Body() dto: { phoneNumber: string; firstName?: string },
+  ) {
     if (!dto.phoneNumber) throw new BadRequestException('Phone required');
     return this.svc.quickCreateCustomer(dto.phoneNumber, dto.firstName);
   }

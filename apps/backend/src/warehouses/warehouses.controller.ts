@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { WarehousesService } from './warehouses.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';

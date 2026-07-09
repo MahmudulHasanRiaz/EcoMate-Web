@@ -43,7 +43,12 @@ export class CreateProductDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional()
-  @IsIn(['ALWAYS_IN_STOCK', 'ALWAYS_OUT_OF_STOCK', 'MANAGED_STOCK', 'INVENTORY_CONTROLLED'])
+  @IsIn([
+    'ALWAYS_IN_STOCK',
+    'ALWAYS_OUT_OF_STOCK',
+    'MANAGED_STOCK',
+    'INVENTORY_CONTROLLED',
+  ])
   availabilityMode?: string;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
@@ -75,7 +80,12 @@ export class UpdateProductDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional()
-  @IsIn(['ALWAYS_IN_STOCK', 'ALWAYS_OUT_OF_STOCK', 'MANAGED_STOCK', 'INVENTORY_CONTROLLED'])
+  @IsIn([
+    'ALWAYS_IN_STOCK',
+    'ALWAYS_OUT_OF_STOCK',
+    'MANAGED_STOCK',
+    'INVENTORY_CONTROLLED',
+  ])
   availabilityMode?: string;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;

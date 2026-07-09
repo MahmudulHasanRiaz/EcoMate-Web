@@ -1,5 +1,11 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString, IsNumber, Min,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsNumber,
+  Min,
 } from 'class-validator';
 import { EmploymentType } from '@prisma/client';
 

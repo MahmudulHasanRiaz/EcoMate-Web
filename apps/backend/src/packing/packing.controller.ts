@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Delete, Param, Query, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Query,
+  Body,
+} from '@nestjs/common';
 import { PackingService } from './packing.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -25,7 +33,7 @@ export class PackingController {
   async markDone(
     @Param('id') id: string,
     @Body('verificationMode') verificationMode: string,
-    @CurrentUser() user: any
+    @CurrentUser() user: any,
   ) {
     return this.svc.markDone(id, user.userId, verificationMode);
   }

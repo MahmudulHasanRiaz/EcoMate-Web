@@ -17,6 +17,7 @@ export interface StockOperationParams {
   performedBy?: string;
   unitCost?: number;
   tx?: Prisma.TransactionClient;
+  warehouseId?: string;
 }
 
 interface StockTarget {
@@ -175,7 +176,9 @@ export class StockService {
     };
 
     const isManagedField = (p: { availabilityMode: string | null }) =>
-      field !== 'managedStockQuantity' || p.availabilityMode === 'MANAGED_STOCK' || p.availabilityMode === null;
+      field !== 'managedStockQuantity' ||
+      p.availabilityMode === 'MANAGED_STOCK' ||
+      p.availabilityMode === null;
 
     for (const t of targets) {
       if (t.variantId) {
@@ -185,7 +188,9 @@ export class StockService {
         const p = productMap.get(t.productId);
         if (!isManagedField(p!)) continue;
         const avail =
-          field === 'reservedStock' ? v.managedStockQuantity - v.reservedStock : v.managedStockQuantity;
+          field === 'reservedStock'
+            ? v.managedStockQuantity - v.reservedStock
+            : v.managedStockQuantity;
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
             `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
@@ -207,7 +212,9 @@ export class StockService {
           throw new BadRequestException(`Product ${t.productId} not found`);
         if (!isManagedField(p)) continue;
         const avail =
-          field === 'reservedStock' ? p.managedStockQuantity - p.reservedStock : p.managedStockQuantity;
+          field === 'reservedStock'
+            ? p.managedStockQuantity - p.reservedStock
+            : p.managedStockQuantity;
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
@@ -225,6 +232,11 @@ export class StockService {
   ) {
     for (const t of targets) {
       if (t.variantId) continue;
+      const product = await tx.product.findUnique({
+        where: { id: t.productId },
+        select: { availabilityMode: true },
+      });
+      if (product && product.availabilityMode !== 'MANAGED_STOCK') continue;
       let remaining = t.qty;
       while (remaining > 0) {
         const lot = await tx.costingLot.findFirst({
@@ -269,6 +281,136 @@ export class StockService {
     }
   }
 
+  private async logManagedStockLedger(
+    targets: StockTarget[],
+    direction: Prisma.$ManagedStockLedgerPayload['scalars']['direction'],
+    type: Prisma.$ManagedStockLedgerPayload['scalars']['type'],
+    referenceType: Prisma.$ManagedStockLedgerPayload['scalars']['referenceType'],
+    referenceId: string | undefined,
+    performedBy: string | undefined,
+    note: string | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    for (const t of targets) {
+      await tx.managedStockLedger.create({
+        data: {
+          productId: t.productId,
+          variantId: t.variantId,
+          comboId: null,
+          quantity: t.qty,
+          direction,
+          type,
+          stockBefore: null,
+          stockAfter: null,
+          referenceType,
+          referenceId,
+          reason: note,
+          performedById: performedBy,
+        },
+      });
+    }
+  }
+
+  private async applyPhysicalChange(
+    targets: { productId: string; warehouseId: string; qty: number }[],
+    op: 'increment' | 'decrement',
+    field: 'quantity' | 'reservedQuantity',
+    tx: Prisma.TransactionClient,
+  ) {
+    for (const t of targets) {
+      const existing = await tx.physicalInventory.findUnique({
+        where: {
+          productId_warehouseId: {
+            productId: t.productId,
+            warehouseId: t.warehouseId,
+          },
+        },
+      });
+      if (!existing && field === 'quantity' && op === 'decrement') {
+        throw new BadRequestException(
+          `No physical inventory record for product ${t.productId} in warehouse ${t.warehouseId}`,
+        );
+      }
+      await tx.physicalInventory.upsert({
+        where: {
+          productId_warehouseId: {
+            productId: t.productId,
+            warehouseId: t.warehouseId,
+          },
+        },
+        create: {
+          productId: t.productId,
+          warehouseId: t.warehouseId,
+          quantity: field === 'quantity' ? (op === 'increment' ? t.qty : 0) : 0,
+          reservedQuantity:
+            field === 'reservedQuantity' ? (op === 'increment' ? t.qty : 0) : 0,
+        },
+        update: { [field]: { [op]: t.qty } },
+      });
+    }
+  }
+
+  private async operatePhysical(
+    operation: 'reserve' | 'release' | 'deduct' | 'add',
+    params: StockOperationParams,
+  ) {
+    if (!params.warehouseId) {
+      throw new BadRequestException(
+        'warehouseId required for physical inventory operations',
+      );
+    }
+    const exec = async (tx: Prisma.TransactionClient) => {
+      const targets = await this.resolveTargets(params, tx);
+      const physicalTargets = targets.map((t) => ({
+        productId: t.productId,
+        warehouseId: params.warehouseId!,
+        qty: t.qty,
+      }));
+
+      if (operation === 'reserve') {
+        await this.applyPhysicalChange(
+          physicalTargets,
+          'increment',
+          'reservedQuantity',
+          tx,
+        );
+      } else if (operation === 'release') {
+        await this.applyPhysicalChange(
+          physicalTargets,
+          'decrement',
+          'reservedQuantity',
+          tx,
+        );
+      } else if (operation === 'deduct') {
+        await this.applyPhysicalChange(
+          physicalTargets,
+          'decrement',
+          'quantity',
+          tx,
+        );
+        await this.applyPhysicalChange(
+          physicalTargets,
+          'decrement',
+          'reservedQuantity',
+          tx,
+        );
+      } else if (operation === 'add') {
+        await this.applyPhysicalChange(
+          physicalTargets,
+          'increment',
+          'quantity',
+          tx,
+        );
+      }
+      return targets;
+    };
+
+    if (params.tx) {
+      return exec(params.tx);
+    }
+    return this.prisma.$transaction(exec);
+  }
+
   async operate(
     operation: 'reserve' | 'release' | 'deduct' | 'add' | 'scrap',
     params: StockOperationParams,
@@ -286,6 +428,16 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        await this.logManagedStockLedger(
+          targets,
+          'IN',
+          'ADJUSTMENT',
+          'ORDER',
+          params.reference,
+          params.performedBy,
+          `Reserved for ${params.reference}`,
+          tx,
+        );
       } else if (operation === 'release') {
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
         await this.logInventory(
@@ -295,12 +447,25 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        await this.logManagedStockLedger(
+          targets,
+          'OUT',
+          'CANCEL_RELEASE',
+          'ORDER',
+          params.reference,
+          params.performedBy,
+          `Released for ${params.reference}`,
+          tx,
+        );
       } else if (operation === 'deduct') {
-        await this.applyStockChange(targets, 'managedStockQuantity', 'decrement', tx);
+        await this.applyStockChange(
+          targets,
+          'managedStockQuantity',
+          'decrement',
+          tx,
+        );
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
-        if (!params.comboId) {
-          await this.deductCostingLots(targets, tx);
-        }
+        await this.deductCostingLots(targets, tx);
         await this.logInventory(
           targets,
           'order_fulfilled',
@@ -308,8 +473,23 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        await this.logManagedStockLedger(
+          targets,
+          'OUT',
+          'ORDER_DEDUCTION',
+          'ORDER',
+          params.reference,
+          params.performedBy,
+          `Deducted for ${params.reference}`,
+          tx,
+        );
       } else if (operation === 'add') {
-        await this.applyStockChange(targets, 'managedStockQuantity', 'increment', tx);
+        await this.applyStockChange(
+          targets,
+          'managedStockQuantity',
+          'increment',
+          tx,
+        );
         await this.logInventory(
           targets,
           params.reference.startsWith('GRN-') ||
@@ -320,13 +500,38 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        await this.logManagedStockLedger(
+          targets,
+          'IN',
+          'MANUAL_ADD',
+          'MANUAL',
+          params.reference,
+          params.performedBy,
+          `Added via ${params.reference}`,
+          tx,
+        );
       } else if (operation === 'scrap') {
-        await this.applyStockChange(targets, 'managedStockQuantity', 'decrement', tx);
+        await this.applyStockChange(
+          targets,
+          'managedStockQuantity',
+          'decrement',
+          tx,
+        );
         await this.logInventory(
           targets,
           'scrap',
           `Scrapped: ${params.reference}`,
           params.performedBy,
+          tx,
+        );
+        await this.logManagedStockLedger(
+          targets,
+          'OUT',
+          'MANUAL_REMOVE',
+          'MANUAL',
+          params.reference,
+          params.performedBy,
+          `Scrapped: ${params.reference}`,
           tx,
         );
       }
@@ -382,6 +587,43 @@ export class StockService {
       reserved: p.reservedStock,
       available: p.managedStockQuantity - p.reservedStock,
     };
+  }
+
+  async checkPhysicalAvailability(productId: string, warehouseId: string) {
+    const inv = await this.prisma.physicalInventory.findUnique({
+      where: { productId_warehouseId: { productId, warehouseId } },
+    });
+    if (!inv) {
+      return {
+        available: false,
+        currentStock: 0,
+        reserved: 0,
+        availableStock: 0,
+      };
+    }
+    const availableStock = inv.quantity - inv.reservedQuantity;
+    return {
+      available: true,
+      currentStock: inv.quantity,
+      reserved: inv.reservedQuantity,
+      availableStock,
+    };
+  }
+
+  reservePhysical(params: StockOperationParams) {
+    return this.operatePhysical('reserve', params);
+  }
+
+  releasePhysical(params: StockOperationParams) {
+    return this.operatePhysical('release', params);
+  }
+
+  deductPhysical(params: StockOperationParams) {
+    return this.operatePhysical('deduct', params);
+  }
+
+  addPhysical(params: StockOperationParams) {
+    return this.operatePhysical('add', params);
   }
 
   async getTotalValuation() {

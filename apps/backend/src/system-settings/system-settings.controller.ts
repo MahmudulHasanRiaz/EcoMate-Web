@@ -228,292 +228,297 @@ export class SystemSettingsController {
       const map: Record<string, string> = {};
       for (const s of settings) map[s.key] = s.value;
 
-    const parseJson = <T>(val: string, fallback: T): T => {
+      const parseJson = <T>(val: string, fallback: T): T => {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return fallback;
+        }
+      };
+
+      let heroSlides: HeroSlide[] = [];
       try {
-        return JSON.parse(val);
+        heroSlides = JSON.parse(map['hero_slides'] || '[]');
       } catch {
-        return fallback;
+        heroSlides = [];
       }
-    };
 
-    let heroSlides: HeroSlide[] = [];
-    try {
-      heroSlides = JSON.parse(map['hero_slides'] || '[]');
-    } catch {
-      heroSlides = [];
-    }
+      const systems = parseJson<StoreSystem[]>(
+        map['store_systems'] || '[]',
+        [],
+      );
 
-    const systems = parseJson<StoreSystem[]>(map['store_systems'] || '[]', []);
+      // Shipping mode
+      const shippingMode = map['shipping_mode'] || 'auto_district';
 
-    // Shipping mode
-    const shippingMode = map['shipping_mode'] || 'auto_district';
+      // Get active shipping options
+      let shippingOptions: {
+        id: string;
+        name: string;
+        amount: number;
+        sortOrder: number;
+      }[] = [];
+      try {
+        const opts = await this.prisma.shippingOption.findMany({
+          where: { isActive: true },
+          orderBy: { sortOrder: 'asc' },
+          select: { id: true, name: true, amount: true, sortOrder: true },
+        });
+        shippingOptions = opts.map((o) => ({ ...o, amount: Number(o.amount) }));
+      } catch {}
 
-    // Get active shipping options
-    let shippingOptions: {
-      id: string;
-      name: string;
-      amount: number;
-      sortOrder: number;
-    }[] = [];
-    try {
-      const opts = await this.prisma.shippingOption.findMany({
-        where: { isActive: true },
-        orderBy: { sortOrder: 'asc' },
-        select: { id: true, name: true, amount: true, sortOrder: true },
-      });
-      shippingOptions = opts.map((o) => ({ ...o, amount: Number(o.amount) }));
-    } catch {}
-
-    // Get active zone groups
-    let shippingZones: {
-      id: string;
-      type: string;
-      amount: number | null;
-      districts: string[];
-      label: string | null;
-    }[] = [];
-    try {
-      const zones = await this.prisma.shippingZoneGroup.findMany({
-        where: { isActive: true },
-        select: {
-          id: true,
-          type: true,
-          amount: true,
-          districts: true,
-          label: true,
-        },
-      });
-      shippingZones = zones.map((z) => ({
-        ...z,
-        amount: z.amount ? Number(z.amount) : null,
-        districts: z.districts as string[],
-      }));
-    } catch {}
-
-    let homepageSections: any[] = [];
-    try {
-      homepageSections = JSON.parse(map['homepage_sections'] || '[]');
-    } catch {
-      homepageSections = [];
-    }
-    if (!Array.isArray(homepageSections) || homepageSections.length === 0) {
-      homepageSections = [
-        {
-          id: '1',
-          title: 'Featured Gadgets',
-          type: 'featured',
-          limit: 4,
-          enabled: true,
-        },
-        {
-          id: '2',
-          title: 'New Arrivals',
-          type: 'new_arrivals',
-          limit: 4,
-          enabled: true,
-        },
-        {
-          id: '3',
-          title: 'Popular Items',
-          type: 'popular',
-          limit: 4,
-          enabled: true,
-        },
-      ];
-    }
-
-    const result = {
-      homepageSections,
-      store: {
-        name: map['store_name'] || 'EcoMate',
-        tagline: map['store_tagline'] || '',
-        email: map['store_email'] || '',
-        phone: map['store_phone'] || '',
-        address: map['store_address'] || '',
-      },
-      systems,
-      currency: {
-        code: map['currency'] || 'BDT',
-        symbol: map['currency_symbol'] || '৳',
-      },
-      delivery: {
-        charge: parseFloat(map['delivery_charge'] || '0'),
-        freeDeliveryMin: parseFloat(map['free_delivery_min'] || '0'),
-      },
-      hero: {
-        slides: heroSlides,
-        secondaryBanner: map['hero_secondary_banner'] || '',
-        secondaryBannerAlt: map['hero_secondary_banner_alt'] || '',
-      },
-      social: {
-        facebook: map['social_facebook'] || '',
-        instagram: map['social_instagram'] || '',
-        youtube: map['social_youtube'] || '',
-        whatsapp: map['social_whatsapp'] || '',
-        messengerUsername: map['social_messenger_username'] || '',
-      },
-      order: {
-        whatsapp: map['order_whatsapp'] || '',
-        callNumber: map['order_call_number'] || '',
-      },
-      branding: {
-        storefrontFavicon: map['storefront_favicon'] || '',
-        storefrontOgImage: map['storefront_og_image'] || '',
-        storeLogo: map['store_logo'] || '',
-        adminTitle: map['admin_title'] || '',
-        adminFavicon: map['admin_favicon'] || '',
-        adminTagline: map['admin_tagline'] || '',
-        colors: {
-          primary: map['brand_primary'] || '#0089CD',
-          primaryDark: map['brand_primary_dark'] || '#006da3',
-          accent: map['brand_accent'] || '#E77250',
-          text: map['brand_text'] || '#0a0a0a',
-          background: map['brand_bg'] || '#FFFFFF',
-          success: map['brand_success'] || '#22C55E',
-          danger: map['brand_danger'] || '#EF4444',
-          border: map['brand_border'] || '#E5E7EB',
-          shadowSoft:
-            map['brand_shadow_soft'] || '0 8px 25px rgba(0,137,205,0.15)',
-          shadowStrong:
-            map['brand_shadow_strong'] ||
-            '0 15px 45px -5px rgba(0,137,205,0.6)',
-        },
-      },
-      seo: {
-        title: map['seo_title'] || '',
-        description: map['seo_description'] || '',
-        keywords: map['seo_keywords'] || '',
-      },
-      footer: {
-        description: map['footer_description'] || '',
-        copyright: map['footer_copyright'] || '',
-      },
-      about: {
-        text: map['about_us_text'] || '',
-      },
-      shipping: {
-        info: map['shipping_info'] || '',
-      },
-      payment: {
-        info: map['payment_info'] || '',
-      },
-      meta: {
-        pixelEnabled:
-          (map['tracking_meta_enabled'] || map['meta_pixel_enabled']) ===
-          'true',
-        pixelId:
-          map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
-        purchaseMode: map['tracking_meta_purchase_mode'] || 'instant',
-        validatedStatus: map['tracking_meta_validated_status'] || '',
-      },
-      tiktok: {
-        pixelEnabled:
-          (map['tracking_tiktok_enabled'] || map['tiktok_pixel_enabled']) ===
-          'true',
-        pixelCode:
-          map['tracking_tiktok_pixel_code'] ||
-          process.env.TIKTOK_PIXEL_CODE ||
-          '',
-        purchaseMode: map['tracking_tiktok_purchase_mode'] || 'instant',
-        validatedStatus: map['tracking_tiktok_validated_status'] || '',
-      },
-      menu: (() => {
-        const menuConfig = parseJson<{
-          header?: {
-            mode?: string;
-            showAllCategories?: boolean;
-            excludedCategories?: string[];
-            items?: any[];
-          };
-          mobile?: {
-            mode?: string;
-            showAllCategories?: boolean;
-            excludedCategories?: string[];
-            items?: any[];
-          };
-          footer?: { columns?: any[] };
-        }>(map['menu_config'], {});
-        return {
-          header: menuConfig.header || {
-            mode: 'include',
-            showAllCategories: false,
-            excludedCategories: [],
-            items: [],
+      // Get active zone groups
+      let shippingZones: {
+        id: string;
+        type: string;
+        amount: number | null;
+        districts: string[];
+        label: string | null;
+      }[] = [];
+      try {
+        const zones = await this.prisma.shippingZoneGroup.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            districts: true,
+            label: true,
           },
-          mobile: menuConfig.mobile || {
-            mode: 'include',
-            showAllCategories: false,
-            excludedCategories: [],
-            items: [],
+        });
+        shippingZones = zones.map((z) => ({
+          ...z,
+          amount: z.amount ? Number(z.amount) : null,
+          districts: z.districts as string[],
+        }));
+      } catch {}
+
+      let homepageSections: any[] = [];
+      try {
+        homepageSections = JSON.parse(map['homepage_sections'] || '[]');
+      } catch {
+        homepageSections = [];
+      }
+      if (!Array.isArray(homepageSections) || homepageSections.length === 0) {
+        homepageSections = [
+          {
+            id: '1',
+            title: 'Featured Gadgets',
+            type: 'featured',
+            limit: 4,
+            enabled: true,
           },
-          footer: menuConfig.footer || { columns: [] },
-        };
-      })(),
-      faq: {
-        items: parseJson<{ question: string; answer: string }[]>(
-          map['faq_items'] || '[]',
-          [],
-        ),
-      },
-      hours: {
-        label: map['hours_label'] || 'Sat-Thu 10AM-10PM, Fri 3PM-10PM',
-        details: parseJson<{ day: string; time: string }[]>(
-          map['hours_details'] || '[]',
-          [],
-        ),
-      },
-      company: {
-        name: map['company_name'] || '',
-        registration: map['company_registration'] || '',
-        certifications: map['company_certifications'] || '',
-        teamSize: map['company_team_size'] || '',
-        ceoName: map['company_ceo_name'] || '',
-      },
-      checkout: {
-        districtEnabled: map['checkout_district_enabled'] !== 'false',
-        thanaEnabled: map['checkout_thana_enabled'] !== 'false',
-        districtRequired: map['checkout_district_required'] === 'true',
-        thanaRequired: map['checkout_thana_required'] === 'true',
-        paymentOptions: await (async () => {
-          const paymentOptions: Record<string, boolean> = {
-            FULL_PAYMENT: true,
-            PARTIAL_PAYMENT: true,
-            CASH_ON_DELIVERY: true,
+          {
+            id: '2',
+            title: 'New Arrivals',
+            type: 'new_arrivals',
+            limit: 4,
+            enabled: true,
+          },
+          {
+            id: '3',
+            title: 'Popular Items',
+            type: 'popular',
+            limit: 4,
+            enabled: true,
+          },
+        ];
+      }
+
+      const result = {
+        homepageSections,
+        store: {
+          name: map['store_name'] || 'EcoMate',
+          tagline: map['store_tagline'] || '',
+          email: map['store_email'] || '',
+          phone: map['store_phone'] || '',
+          address: map['store_address'] || '',
+        },
+        systems,
+        currency: {
+          code: map['currency'] || 'BDT',
+          symbol: map['currency_symbol'] || '৳',
+        },
+        delivery: {
+          charge: parseFloat(map['delivery_charge'] || '0'),
+          freeDeliveryMin: parseFloat(map['free_delivery_min'] || '0'),
+        },
+        hero: {
+          slides: heroSlides,
+          secondaryBanner: map['hero_secondary_banner'] || '',
+          secondaryBannerAlt: map['hero_secondary_banner_alt'] || '',
+        },
+        social: {
+          facebook: map['social_facebook'] || '',
+          instagram: map['social_instagram'] || '',
+          youtube: map['social_youtube'] || '',
+          whatsapp: map['social_whatsapp'] || '',
+          messengerUsername: map['social_messenger_username'] || '',
+        },
+        order: {
+          whatsapp: map['order_whatsapp'] || '',
+          callNumber: map['order_call_number'] || '',
+        },
+        branding: {
+          storefrontFavicon: map['storefront_favicon'] || '',
+          storefrontOgImage: map['storefront_og_image'] || '',
+          storeLogo: map['store_logo'] || '',
+          adminTitle: map['admin_title'] || '',
+          adminFavicon: map['admin_favicon'] || '',
+          adminTagline: map['admin_tagline'] || '',
+          colors: {
+            primary: map['brand_primary'] || '#0089CD',
+            primaryDark: map['brand_primary_dark'] || '#006da3',
+            accent: map['brand_accent'] || '#E77250',
+            text: map['brand_text'] || '#0a0a0a',
+            background: map['brand_bg'] || '#FFFFFF',
+            success: map['brand_success'] || '#22C55E',
+            danger: map['brand_danger'] || '#EF4444',
+            border: map['brand_border'] || '#E5E7EB',
+            shadowSoft:
+              map['brand_shadow_soft'] || '0 8px 25px rgba(0,137,205,0.15)',
+            shadowStrong:
+              map['brand_shadow_strong'] ||
+              '0 15px 45px -5px rgba(0,137,205,0.6)',
+          },
+        },
+        seo: {
+          title: map['seo_title'] || '',
+          description: map['seo_description'] || '',
+          keywords: map['seo_keywords'] || '',
+        },
+        footer: {
+          description: map['footer_description'] || '',
+          copyright: map['footer_copyright'] || '',
+        },
+        about: {
+          text: map['about_us_text'] || '',
+        },
+        shipping: {
+          info: map['shipping_info'] || '',
+        },
+        payment: {
+          info: map['payment_info'] || '',
+        },
+        meta: {
+          pixelEnabled:
+            (map['tracking_meta_enabled'] || map['meta_pixel_enabled']) ===
+            'true',
+          pixelId:
+            map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
+          purchaseMode: map['tracking_meta_purchase_mode'] || 'instant',
+          validatedStatus: map['tracking_meta_validated_status'] || '',
+        },
+        tiktok: {
+          pixelEnabled:
+            (map['tracking_tiktok_enabled'] || map['tiktok_pixel_enabled']) ===
+            'true',
+          pixelCode:
+            map['tracking_tiktok_pixel_code'] ||
+            process.env.TIKTOK_PIXEL_CODE ||
+            '',
+          purchaseMode: map['tracking_tiktok_purchase_mode'] || 'instant',
+          validatedStatus: map['tracking_tiktok_validated_status'] || '',
+        },
+        menu: (() => {
+          const menuConfig = parseJson<{
+            header?: {
+              mode?: string;
+              showAllCategories?: boolean;
+              excludedCategories?: string[];
+              items?: any[];
+            };
+            mobile?: {
+              mode?: string;
+              showAllCategories?: boolean;
+              excludedCategories?: string[];
+              items?: any[];
+            };
+            footer?: { columns?: any[] };
+          }>(map['menu_config'], {});
+          return {
+            header: menuConfig.header || {
+              mode: 'include',
+              showAllCategories: false,
+              excludedCategories: [],
+              items: [],
+            },
+            mobile: menuConfig.mobile || {
+              mode: 'include',
+              showAllCategories: false,
+              excludedCategories: [],
+              items: [],
+            },
+            footer: menuConfig.footer || { columns: [] },
           };
-          try {
-            const opts = await this.prisma.paymentOption.findMany({
-              select: { type: true, enabled: true },
-            });
-            for (const o of opts) {
-              paymentOptions[o.type] = o.enabled;
-            }
-          } catch {}
-          return paymentOptions;
         })(),
-      },
-      shippingMode,
-      shippingOptions,
-      shippingZones,
-      districtCharges: parseJson<Record<string, number>>(
-        map['district_charges'] || '{}',
-        {},
-      ),
-      catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
-      features: {
-        sizeChart: map['size_chart_enabled'] === 'true',
-        hideOosFromArchive: map['hide_oos_products'] === 'true',
-        maintenanceMode: map['maintenance_mode'] === 'true',
-        defaultVariantSelected: map['default_variant_selected'] !== 'false',
-        showReviews: map['show_reviews'] !== 'false',
-      },
-    };
-    await this.cache.set('storefront:config', result);
-    return result;
-  } catch {
-    const stale = await this.cache.getStale<any>('storefront:config');
-    if (stale) return stale;
-    throw new InternalServerErrorException('Failed to load storefront configuration');
-  }
+        faq: {
+          items: parseJson<{ question: string; answer: string }[]>(
+            map['faq_items'] || '[]',
+            [],
+          ),
+        },
+        hours: {
+          label: map['hours_label'] || 'Sat-Thu 10AM-10PM, Fri 3PM-10PM',
+          details: parseJson<{ day: string; time: string }[]>(
+            map['hours_details'] || '[]',
+            [],
+          ),
+        },
+        company: {
+          name: map['company_name'] || '',
+          registration: map['company_registration'] || '',
+          certifications: map['company_certifications'] || '',
+          teamSize: map['company_team_size'] || '',
+          ceoName: map['company_ceo_name'] || '',
+        },
+        checkout: {
+          districtEnabled: map['checkout_district_enabled'] !== 'false',
+          thanaEnabled: map['checkout_thana_enabled'] !== 'false',
+          districtRequired: map['checkout_district_required'] === 'true',
+          thanaRequired: map['checkout_thana_required'] === 'true',
+          paymentOptions: await (async () => {
+            const paymentOptions: Record<string, boolean> = {
+              FULL_PAYMENT: true,
+              PARTIAL_PAYMENT: true,
+              CASH_ON_DELIVERY: true,
+            };
+            try {
+              const opts = await this.prisma.paymentOption.findMany({
+                select: { type: true, enabled: true },
+              });
+              for (const o of opts) {
+                paymentOptions[o.type] = o.enabled;
+              }
+            } catch {}
+            return paymentOptions;
+          })(),
+        },
+        shippingMode,
+        shippingOptions,
+        shippingZones,
+        districtCharges: parseJson<Record<string, number>>(
+          map['district_charges'] || '{}',
+          {},
+        ),
+        catalogImageRatio: parseCatalogImageRatio(map['catalogImageRatio']),
+        features: {
+          sizeChart: map['size_chart_enabled'] === 'true',
+          hideOosFromArchive: map['hide_oos_products'] === 'true',
+          maintenanceMode: map['maintenance_mode'] === 'true',
+          defaultVariantSelected: map['default_variant_selected'] !== 'false',
+          showReviews: map['show_reviews'] !== 'false',
+        },
+      };
+      await this.cache.set('storefront:config', result);
+      return result;
+    } catch {
+      const stale = await this.cache.getStale<any>('storefront:config');
+      if (stale) return stale;
+      throw new InternalServerErrorException(
+        'Failed to load storefront configuration',
+      );
+    }
   }
 
   @Get('storage')

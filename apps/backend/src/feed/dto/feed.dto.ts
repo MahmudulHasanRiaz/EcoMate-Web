@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsBoolean, IsIn, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateFeedConfigDto {

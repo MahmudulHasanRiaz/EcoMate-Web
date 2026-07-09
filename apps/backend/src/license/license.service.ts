@@ -66,7 +66,11 @@ export class LicenseService implements OnModuleInit {
 
       const { licenseKey, domain, apiKey } = creds;
 
-      await this.featureFlags.initializeWithEngine(licenseKey, domain ?? undefined, apiKey ?? undefined);
+      await this.featureFlags.initializeWithEngine(
+        licenseKey,
+        domain ?? undefined,
+        apiKey ?? undefined,
+      );
       const lic = this.featureFlags.getLicense();
       if (lic?.valid) {
         console.log(
@@ -171,7 +175,11 @@ export class LicenseService implements OnModuleInit {
 
     const oldFeatures = this.featureFlags.getActiveFeatures();
     const { licenseKey, domain, apiKey } = creds;
-    const result = await this.activateWithKeymate(licenseKey, domain, apiKey || undefined);
+    const result = await this.activateWithKeymate(
+      licenseKey,
+      domain,
+      apiKey || undefined,
+    );
 
     if (result.success) {
       const newFeatures = result.license?.features ?? [];
@@ -183,7 +191,7 @@ export class LicenseService implements OnModuleInit {
 
   private async handleDowngrade(oldFeatures: string[], newFeatures: string[]) {
     const newSet = new Set(newFeatures);
-    const removed = oldFeatures.filter(f => !newSet.has(f));
+    const removed = oldFeatures.filter((f) => !newSet.has(f));
 
     for (const feature of removed) {
       switch (feature) {
@@ -200,7 +208,9 @@ export class LicenseService implements OnModuleInit {
       data: { availabilityMode: 'MANAGED_STOCK' },
     });
     if (result.count > 0) {
-      console.log(`[License] Downgrade: reverted ${result.count} products from INVENTORY_CONTROLLED to MANAGED_STOCK`);
+      console.log(
+        `[License] Downgrade: reverted ${result.count} products from INVENTORY_CONTROLLED to MANAGED_STOCK`,
+      );
     }
   }
 

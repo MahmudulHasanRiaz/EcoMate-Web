@@ -74,9 +74,9 @@ function sendResponse(
   body: Record<string, unknown>,
 ) {
   if ('code' in response) {
-    (response as FastifyReply).code(status).send(body);
+    response.code(status).send(body);
   } else {
-    const res = response as ServerResponse;
+    const res = response;
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
   }

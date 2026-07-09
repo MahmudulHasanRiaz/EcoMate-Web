@@ -326,10 +326,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.order.count({
       where: {
         createdAt: { gte: since },
-        OR: [
-          { customer: { phone: normalized } },
-          { guestPhone: normalized },
-        ],
+        OR: [{ customer: { phone: normalized } }, { guestPhone: normalized }],
       },
     });
   }

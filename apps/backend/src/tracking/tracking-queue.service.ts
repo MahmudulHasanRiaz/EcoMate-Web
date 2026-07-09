@@ -25,7 +25,9 @@ export class TrackingQueueService {
         removeOnComplete: 100,
         removeOnFail: 50,
       });
-      this.logger.debug(`Tracking event queued: ${job.eventName} [${job.eventId}]`);
+      this.logger.debug(
+        `Tracking event queued: ${job.eventName} [${job.eventId}]`,
+      );
     } catch (err) {
       this.logger.error(`Failed to enqueue tracking event: ${err}`);
     }

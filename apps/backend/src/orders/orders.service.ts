@@ -19,7 +19,14 @@ import {
   UpdateOrderItemDto,
   CustomerInfoDto,
 } from './dto/order.dto';
-import { PaymentStatus, PaymentOptionType, Prisma, ManagedStockMovementType, MovementDirection, ReferenceEntity } from '@prisma/client';
+import {
+  PaymentStatus,
+  PaymentOptionType,
+  Prisma,
+  ManagedStockMovementType,
+  MovementDirection,
+  ReferenceEntity,
+} from '@prisma/client';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -41,7 +48,7 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   Returned: ['Damaged'],
   Cancelled: ['Confirmed'],
   Damaged: [],
-}
+};
 
 @Injectable()
 export class OrdersService {
@@ -400,6 +407,8 @@ export class OrdersService {
                 basePrice: true,
                 salePrice: true,
                 isActive: true,
+                availabilityMode: true,
+                name: true,
               },
             })
           : [];
@@ -483,8 +492,17 @@ export class OrdersService {
           if (!parentProduct.isActive) {
             throw new BadRequestException(`Product is no longer active`);
           }
+          if (parentProduct.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+            throw new BadRequestException(
+              `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
+            );
+          }
           item.price = Number(
-            variant.salePrice ?? variant.price ?? parentProduct.salePrice ?? parentProduct.basePrice ?? 0,
+            variant.salePrice ??
+              variant.price ??
+              parentProduct.salePrice ??
+              parentProduct.basePrice ??
+              0,
           );
         } else if (item.productId) {
           const product = productMap.get(item.productId);
@@ -495,6 +513,11 @@ export class OrdersService {
           }
           if (!product.isActive) {
             throw new BadRequestException(`Product is no longer active`);
+          }
+          if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+            throw new BadRequestException(
+              `Product "${product.name}" is out of stock and cannot be ordered`,
+            );
           }
           item.price = Number(product.salePrice ?? product.basePrice);
         } else {
@@ -812,6 +835,25 @@ export class OrdersService {
         });
 
         // Reserve stock for new items
+        const newProductIds = Array.from(
+          new Set(
+            dto.items.filter((i) => i.productId).map((i) => i.productId!),
+          ),
+        );
+        if (newProductIds.length > 0) {
+          const newProducts = await tx.product.findMany({
+            where: { id: { in: newProductIds } },
+            select: { id: true, availabilityMode: true, name: true },
+          });
+          const outOfStock = newProducts.find(
+            (p) => p.availabilityMode === 'ALWAYS_OUT_OF_STOCK',
+          );
+          if (outOfStock) {
+            throw new BadRequestException(
+              `Product "${outOfStock.name}" is out of stock and cannot be ordered`,
+            );
+          }
+        }
         for (const item of dto.items) {
           await this.stockService.reserve({
             productId: item.productId,
@@ -932,10 +974,10 @@ export class OrdersService {
     });
     if (!newStatus) throw new NotFoundException('Status not found');
 
-    const allowedIds = (order.status.nextStatuses as string[]) || [];
-    if (!allowedIds.includes(dto.statusId)) {
+    const allowed = ORDER_TRANSITIONS[order.status.name] || [];
+    if (!allowed.includes(newStatus.name)) {
       throw new BadRequestException(
-        `Cannot transition from "${order.status.name}" to "${newStatus.name}"`,
+        `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
       );
     }
 
@@ -963,7 +1005,7 @@ export class OrdersService {
 
       if (newStatus.name === 'Confirmed') {
         await this.takeCostSnapshot(id, tx);
-        await this.deductStockForOrder(id, tx);
+        await this.reserveStockForOrder(id, tx);
       }
 
       if (newStatus.name === 'Cancelled') {
@@ -983,7 +1025,7 @@ export class OrdersService {
           });
         }
 
-        await this.restoreStockForCancelledOrder(id, tx);
+        await this.releaseStockForCancelledOrder(id, tx);
       }
 
       if (newStatus.name === 'Delivered') {
@@ -1035,7 +1077,9 @@ export class OrdersService {
       });
 
       // Fire refund for cancelled/returned orders
-      if (['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)) {
+      if (
+        ['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)
+      ) {
         this.fireRefundEvent(updatedWithItems as any).catch((err) => {
           this.logger.error('Failed to fire refund event:', err);
         });
@@ -1045,14 +1089,22 @@ export class OrdersService {
     return updated;
   }
 
-  async submitPaymentProof(orderId: string, proofData: { transactionId?: string; screenshot?: string }) {
+  async submitPaymentProof(
+    orderId: string,
+    proofData: { transactionId?: string; screenshot?: string },
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { status: true },
     });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status?.name !== 'Payment Pending' && order.status?.name !== 'Payment Verifying') {
-      throw new BadRequestException('Order is not in Payment Pending or Payment Verifying status');
+    if (
+      order.status?.name !== 'Payment Pending' &&
+      order.status?.name !== 'Payment Verifying'
+    ) {
+      throw new BadRequestException(
+        'Order is not in Payment Pending or Payment Verifying status',
+      );
     }
 
     const paymentVerifyingStatus = await this.prisma.orderStatus.findUnique({
@@ -1080,7 +1132,9 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
-      throw new BadRequestException('Order is not awaiting payment verification');
+      throw new BadRequestException(
+        'Order is not awaiting payment verification',
+      );
     }
 
     const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
@@ -1108,6 +1162,18 @@ export class OrdersService {
       include: { items: true },
     });
     if (!order) throw new NotFoundException('Order not found');
+
+    if (dto.productId) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: dto.productId },
+        select: { availabilityMode: true, name: true },
+      });
+      if (product?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+        throw new BadRequestException(
+          `Product "${product.name}" is out of stock and cannot be ordered`,
+        );
+      }
+    }
 
     await this.stockService.reserve({
       productId: dto.productId,
@@ -1247,7 +1313,7 @@ export class OrdersService {
         displayId: true,
         timeline: true,
         statusId: true,
-        status: { select: { nextStatuses: true } },
+        status: { select: { name: true } },
       },
     });
 
@@ -1255,8 +1321,8 @@ export class OrdersService {
     const skipped: string[] = [];
     const failedDetails: { id: string; reason: string }[] = [];
     for (const order of orders) {
-      const allowed = (order.status.nextStatuses as string[]) || [];
-      if (allowed.includes(statusId)) {
+      const allowed = ORDER_TRANSITIONS[order.status.name] || [];
+      if (allowed.includes(targetStatus.name)) {
         validIds.push(order.id);
       } else {
         skipped.push(order.id);
@@ -1300,7 +1366,7 @@ export class OrdersService {
           }
 
           for (const cancelOrderId of validIds) {
-            await this.restoreStockForCancelledOrder(cancelOrderId, tx);
+            await this.releaseStockForCancelledOrder(cancelOrderId, tx);
           }
         }
 
@@ -1402,10 +1468,7 @@ export class OrdersService {
 
     const orders = await this.prisma.order.findMany({
       where: {
-        OR: [
-          { guestPhone: normalized },
-          { customer: { phone: normalized } },
-        ],
+        OR: [{ guestPhone: normalized }, { customer: { phone: normalized } }],
       },
       include: {
         customer: {
@@ -1459,8 +1522,8 @@ export class OrdersService {
     if (!cancelled) {
       throw new BadRequestException('Cancelled status not configured');
     }
-    const allowedIds = (order.status.nextStatuses as string[]) || [];
-    if (!allowedIds.includes(cancelled.id)) {
+    const allowed = ORDER_TRANSITIONS[order.status.name] || [];
+    if (!allowed.includes('Cancelled')) {
       throw new BadRequestException(
         `Order in "${order.status.name}" status cannot be cancelled`,
       );
@@ -1496,7 +1559,7 @@ export class OrdersService {
         });
       }
 
-      await this.restoreStockForCancelledOrder(orderId, tx);
+      await this.releaseStockForCancelledOrder(orderId, tx);
 
       return u;
     });
@@ -1523,7 +1586,10 @@ export class OrdersService {
       .then((refundOrder) => {
         if (refundOrder) {
           this.fireRefundEvent(refundOrder as any).catch((err) => {
-            this.logger.error('Failed to fire refund for customer cancel:', err);
+            this.logger.error(
+              'Failed to fire refund for customer cancel:',
+              err,
+            );
           });
         }
       });
@@ -1547,34 +1613,50 @@ export class OrdersService {
     return { updated, total: orders.length };
   }
 
-  async transitionOrderStatus(orderId: string, newStatus: string, performedBy?: string) {
+  async transitionOrderStatus(
+    orderId: string,
+    newStatus: string,
+    performedBy?: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        include: { status: true, items: { include: { product: true, variant: true } } },
-      })
-      if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+        include: {
+          status: true,
+          items: { include: { product: true, variant: true } },
+        },
+      });
+      if (!order) throw new NotFoundException(`Order ${orderId} not found`);
 
-      const currentStatus = order.status.name as string
-      const allowed = ORDER_TRANSITIONS[currentStatus]
+      const currentStatus = order.status.name;
+      const allowed = ORDER_TRANSITIONS[currentStatus];
       if (!allowed || !allowed.includes(newStatus)) {
         throw new BadRequestException(
           `Cannot transition from "${currentStatus}" to "${newStatus}". Allowed: ${allowed?.join(', ') || 'none'}`,
-        )
+        );
       }
 
-      const targetStatus = await tx.orderStatus.findUnique({ where: { name: newStatus } })
-      if (!targetStatus) throw new NotFoundException(`Status "${newStatus}" not found`)
+      const targetStatus = await tx.orderStatus.findUnique({
+        where: { name: newStatus },
+      });
+      if (!targetStatus)
+        throw new NotFoundException(`Status "${newStatus}" not found`);
 
       await tx.order.update({
         where: { id: orderId },
         data: { statusId: targetStatus.id },
-      })
+      });
 
-      await this.executeTransitionSideEffects(tx, order, currentStatus, newStatus, performedBy)
+      await this.executeTransitionSideEffects(
+        tx,
+        order,
+        currentStatus,
+        newStatus,
+        performedBy,
+      );
 
-      return { success: true, from: currentStatus, to: newStatus }
-    })
+      return { success: true, from: currentStatus, to: newStatus };
+    });
   }
 
   private async executeTransitionSideEffects(
@@ -1586,99 +1668,95 @@ export class OrdersService {
   ) {
     switch (toStatus) {
       case 'Confirmed':
-        await this.handleConfirmedSideEffects(tx, order.id, performedBy)
-        break
+        await this.handleConfirmedSideEffects(tx, order.id, performedBy);
+        break;
       case 'Cancelled':
-        await this.handleCancelledSideEffects(tx, order.id, performedBy)
-        break
+        await this.handleCancelledSideEffects(tx, order.id, performedBy);
+        break;
       case 'Returned':
-        await this.handleReturnedSideEffects(tx, order.id, performedBy)
-        break
+        await this.handleReturnedSideEffects(tx, order.id, performedBy);
+        break;
       case 'Delivered':
-        await this.handleDeliveredSideEffects(tx, order, performedBy)
-        break
+        await this.handleDeliveredSideEffects(tx, order, performedBy);
+        break;
     }
   }
 
-  private async handleConfirmedSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
-    await this.takeCostSnapshot(orderId, tx)
-    await this.deductStockForOrder(orderId, tx)
+  private async handleConfirmedSideEffects(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    performedBy?: string,
+  ) {
+    await this.takeCostSnapshot(orderId, tx);
+    await this.reserveStockForOrder(orderId, tx);
   }
 
-  private async handleCancelledSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
-    await this.restoreStockForCancelledOrder(orderId, tx)
+  private async handleCancelledSideEffects(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    performedBy?: string,
+  ) {
+    await this.releaseStockForCancelledOrder(orderId, tx);
   }
 
-  private async handleReturnedSideEffects(tx: Prisma.TransactionClient, orderId: string, performedBy?: string) {
-    const alreadyRestocked = await this.managedStockLedger.hasExistingRestock(orderId)
-    if (alreadyRestocked) return
+  private async handleReturnedSideEffects(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    performedBy?: string,
+  ) {
+    const alreadyRestocked =
+      await this.managedStockLedger.hasExistingRestock(orderId);
+    if (alreadyRestocked) return;
 
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
         items: {
           include: {
-            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
-            variant: { select: { id: true, managedStockQuantity: true } },
+            product: {
+              select: {
+                id: true,
+                availabilityMode: true,
+                manageStock: true,
+                type: true,
+              },
+            },
+            variant: { select: { id: true } },
           },
         },
       },
-    })
+    });
 
-    if (!order) return
+    if (!order) return;
 
     for (const item of order.items) {
-      const product = item.product
-      if (!product) continue
-      if (product.availabilityMode !== 'MANAGED_STOCK') continue
-      if (!product.manageStock) continue
+      const product = item.product;
+      if (!product) continue;
+      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
+      if (!product.manageStock) continue;
 
-      if (item.variantId && item.variant) {
-        const before = item.variant.managedStockQuantity
-        const qty = item.quantity
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { managedStockQuantity: { increment: qty } },
-        })
-        await this.managedStockLedger.record({
-          variantId: item.variantId,
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.IN,
-          type: ManagedStockMovementType.RETURN,
-          stockBefore: before,
-          stockAfter: before + qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} returned — stock restored`,
-        }, tx)
-      } else if (product.type !== 'variable') {
-        const before = product.managedStockQuantity
-        const qty = item.quantity
-        await tx.product.update({
-          where: { id: item.productId! },
-          data: { managedStockQuantity: { increment: qty } },
-        })
-        await this.managedStockLedger.record({
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.IN,
-          type: ManagedStockMovementType.RETURN,
-          stockBefore: before,
-          stockAfter: before + qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} returned — stock restored`,
-        }, tx)
-      }
+      await this.stockService.add({
+        productId: item.productId ?? undefined,
+        variantId: item.variantId ?? undefined,
+        quantity: item.quantity,
+        reference: `return-${orderId}`,
+        tx,
+      });
     }
   }
 
-  private async handleDeliveredSideEffects(tx: Prisma.TransactionClient, order: any, performedBy?: string) {
-    this.logger.log(`Order ${order.id} delivered — payment confirmation stub`)
+  private async handleDeliveredSideEffects(
+    tx: Prisma.TransactionClient,
+    order: any,
+    performedBy?: string,
+  ) {
+    this.logger.log(`Order ${order.id} delivered — payment confirmation stub`);
   }
 
-  private async takeCostSnapshot(orderId: string, tx?: Prisma.TransactionClient) {
+  private async takeCostSnapshot(
+    orderId: string,
+    tx?: Prisma.TransactionClient,
+  ) {
     const order = await (tx || this.prisma).order.findUnique({
       where: { id: orderId },
       include: {
@@ -1707,14 +1785,25 @@ export class OrdersService {
     }
   }
 
-  private async deductStockForOrder(orderId: string, tx: Prisma.TransactionClient) {
+  private async reserveStockForOrder(
+    orderId: string,
+    tx: Prisma.TransactionClient,
+  ) {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
         items: {
           include: {
-            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
-            variant: { select: { id: true, managedStockQuantity: true } },
+            product: {
+              select: {
+                id: true,
+                availabilityMode: true,
+                manageStock: true,
+                type: true,
+                name: true,
+              },
+            },
+            variant: { select: { id: true } },
           },
         },
       },
@@ -1725,52 +1814,30 @@ export class OrdersService {
     for (const item of order.items) {
       const product = item.product;
       if (!product) continue;
+      if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+        throw new BadRequestException(
+          `Product "${product.name}" is out of stock and cannot be ordered`,
+        );
+      }
       if (product.availabilityMode !== 'MANAGED_STOCK') continue;
       if (!product.manageStock) continue;
 
-      if (item.variantId && item.variant) {
-        const before = item.variant.managedStockQuantity;
-        const qty = item.quantity;
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { managedStockQuantity: { decrement: qty } },
-        });
-        await this.managedStockLedger.record({
-          variantId: item.variantId,
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.OUT,
-          type: ManagedStockMovementType.ORDER_DEDUCTION,
-          stockBefore: before,
-          stockAfter: before - qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} confirmed — variant stock deducted`,
-        }, tx);
-      } else if (product.type !== 'variable') {
-        const before = product.managedStockQuantity;
-        const qty = item.quantity;
-        await tx.product.update({
-          where: { id: item.productId! },
-          data: { managedStockQuantity: { decrement: qty } },
-        });
-        await this.managedStockLedger.record({
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.OUT,
-          type: ManagedStockMovementType.ORDER_DEDUCTION,
-          stockBefore: before,
-          stockAfter: before - qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} confirmed — product stock deducted`,
-        }, tx);
-      }
+      await this.stockService.reserve({
+        productId: item.productId ?? undefined,
+        variantId: item.variantId ?? undefined,
+        quantity: item.quantity,
+        reference: orderId,
+        tx,
+      });
     }
   }
 
-  private async restoreStockForCancelledOrder(orderId: string, tx: Prisma.TransactionClient) {
-    const alreadyRestocked = await this.managedStockLedger.hasExistingRestock(orderId);
+  private async releaseStockForCancelledOrder(
+    orderId: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    const alreadyRestocked =
+      await this.managedStockLedger.hasExistingRestock(orderId);
     if (alreadyRestocked) return;
 
     const order = await tx.order.findUnique({
@@ -1778,8 +1845,15 @@ export class OrdersService {
       include: {
         items: {
           include: {
-            product: { select: { id: true, managedStockQuantity: true, availabilityMode: true, manageStock: true, type: true } },
-            variant: { select: { id: true, managedStockQuantity: true } },
+            product: {
+              select: {
+                id: true,
+                availabilityMode: true,
+                manageStock: true,
+                type: true,
+              },
+            },
+            variant: { select: { id: true } },
           },
         },
       },
@@ -1793,44 +1867,13 @@ export class OrdersService {
       if (product.availabilityMode !== 'MANAGED_STOCK') continue;
       if (!product.manageStock) continue;
 
-      if (item.variantId && item.variant) {
-        const before = item.variant.managedStockQuantity;
-        const qty = item.quantity;
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { managedStockQuantity: { increment: qty } },
-        });
-        await this.managedStockLedger.record({
-          variantId: item.variantId,
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.IN,
-          type: ManagedStockMovementType.CANCEL_RELEASE,
-          stockBefore: before,
-          stockAfter: before + qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} cancelled — stock restored`,
-        }, tx);
-      } else if (product.type !== 'variable') {
-        const before = product.managedStockQuantity;
-        const qty = item.quantity;
-        await tx.product.update({
-          where: { id: item.productId! },
-          data: { managedStockQuantity: { increment: qty } },
-        });
-        await this.managedStockLedger.record({
-          productId: item.productId ?? undefined,
-          quantity: qty,
-          direction: MovementDirection.IN,
-          type: ManagedStockMovementType.CANCEL_RELEASE,
-          stockBefore: before,
-          stockAfter: before + qty,
-          referenceType: ReferenceEntity.ORDER,
-          referenceId: orderId,
-          note: `Order ${orderId} cancelled — stock restored`,
-        }, tx);
-      }
+      await this.stockService.release({
+        productId: item.productId ?? undefined,
+        variantId: item.variantId ?? undefined,
+        quantity: item.quantity,
+        reference: `cancel-${orderId}`,
+        tx,
+      });
     }
   }
 
@@ -1838,12 +1881,22 @@ export class OrdersService {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
-          key: { in: ['tracking_meta_purchase_mode', 'tracking_tiktok_purchase_mode'] },
+          key: {
+            in: [
+              'tracking_meta_purchase_mode',
+              'tracking_tiktok_purchase_mode',
+            ],
+          },
         },
       });
-      const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
-      const metaInstant = (settingMap['tracking_meta_purchase_mode'] || 'instant') === 'instant';
-      const tiktokInstant = (settingMap['tracking_tiktok_purchase_mode'] || 'instant') === 'instant';
+      const settingMap = Object.fromEntries(
+        settings.map((s: any) => [s.key, s.value]),
+      );
+      const metaInstant =
+        (settingMap['tracking_meta_purchase_mode'] || 'instant') === 'instant';
+      const tiktokInstant =
+        (settingMap['tracking_tiktok_purchase_mode'] || 'instant') ===
+        'instant';
 
       if (!metaInstant && !tiktokInstant) return;
 
@@ -1853,10 +1906,7 @@ export class OrdersService {
     }
   }
 
-  private async firePurchaseValidated(
-    statusName: string,
-    order: any,
-  ) {
+  private async firePurchaseValidated(statusName: string, order: any) {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
@@ -1868,7 +1918,9 @@ export class OrdersService {
           },
         },
       });
-      const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+      const settingMap = Object.fromEntries(
+        settings.map((s: any) => [s.key, s.value]),
+      );
       const metaStatus = settingMap['tracking_meta_validated_status'] || '';
       const tiktokStatus = settingMap['tracking_tiktok_validated_status'] || '';
 
@@ -1880,7 +1932,10 @@ export class OrdersService {
     }
   }
 
-  private async buildAndSendPurchaseEvent(order: any, mode: 'instant' | 'validated') {
+  private async buildAndSendPurchaseEvent(
+    order: any,
+    mode: 'instant' | 'validated',
+  ) {
     let email = '';
     let phone = '';
     let firstName = '';
@@ -1930,7 +1985,8 @@ export class OrdersService {
       ? Math.floor(new Date(order.createdAt).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
 
-    const actionSource = order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+    const actionSource =
+      order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
 
     await this.tracking.track({
       eventName: 'purchase',
@@ -1970,7 +2026,7 @@ export class OrdersService {
 
       let phone = '';
       let firstName = '';
-      let country = 'BD';
+      const country = 'BD';
       if (order.customer) {
         phone = order.customer.phoneNumber || '';
         firstName = order.customer.firstName || '';
@@ -1978,7 +2034,8 @@ export class OrdersService {
       if (!phone) phone = order.guestPhone || '';
       if (!firstName) firstName = order.guestName || '';
 
-      const actionSource = order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+      const actionSource =
+        order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
 
       await this.tracking.track({
         eventName: 'purchase',

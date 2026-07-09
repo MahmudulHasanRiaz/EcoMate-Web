@@ -110,7 +110,10 @@ export class TikTokEventsService {
             referrer: referrer || undefined,
           },
           user: {
-            email: email && !this.isSyntheticEmail(email) ? this.hash(email) : undefined,
+            email:
+              email && !this.isSyntheticEmail(email)
+                ? this.hash(email)
+                : undefined,
             phone_number: phone
               ? this.hash(this.normalizePhone(phone))
               : undefined,

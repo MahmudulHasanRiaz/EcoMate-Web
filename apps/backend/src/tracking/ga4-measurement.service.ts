@@ -38,9 +38,13 @@ export class Ga4MeasurementService {
       });
 
       if (response.ok || response.status === 204) {
-        this.logger.log(`GA4 event sent: ${event.eventName} [${event.eventId}]`);
+        this.logger.log(
+          `GA4 event sent: ${event.eventName} [${event.eventId}]`,
+        );
       } else {
-        this.logger.error(`GA4 error: ${response.status} ${await response.text()}`);
+        this.logger.error(
+          `GA4 error: ${response.status} ${await response.text()}`,
+        );
       }
     } catch (err) {
       this.logger.error(`GA4 request failed: ${err}`);

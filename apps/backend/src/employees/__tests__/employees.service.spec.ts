@@ -1,7 +1,9 @@
 jest.mock('../../better-auth/prisma', () => ({
   baPrisma: {
     betterAuthUser: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'ba-user-test', name: 'John Doe' }),
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ id: 'ba-user-test', name: 'John Doe' }),
       update: jest.fn().mockResolvedValue({}),
     },
   },

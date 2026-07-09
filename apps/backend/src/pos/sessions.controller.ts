@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Patch, Param, Body, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Param,
+  Body,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { OpenSessionDto } from './dto/open-session.dto';
 import { CloseSessionDto } from './dto/close-session.dto';
@@ -22,7 +31,11 @@ export class SessionsController {
 
   @Patch(':id/close')
   @Roles('cashier', 'admin')
-  close(@Param('id') id: string, @Body() dto: CloseSessionDto, @Req() req: any) {
+  close(
+    @Param('id') id: string,
+    @Body() dto: CloseSessionDto,
+    @Req() req: any,
+  ) {
     return this.svc.close(id, dto, req.user.id);
   }
 

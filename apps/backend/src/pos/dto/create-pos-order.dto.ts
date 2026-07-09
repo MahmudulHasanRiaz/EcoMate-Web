@@ -1,6 +1,15 @@
 import {
-  IsString, IsOptional, IsNumber, IsArray, ValidateNested,
-  IsInt, Min, IsEnum, IsIn, ArrayMinSize, IsObject,
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  IsInt,
+  Min,
+  IsEnum,
+  IsIn,
+  ArrayMinSize,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SalesChannel } from '@prisma/client';

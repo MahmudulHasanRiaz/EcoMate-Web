@@ -105,7 +105,10 @@ export class MetaConversionsService {
             action_source: event.actionSource || 'website',
             event_source_url: url || undefined,
             user_data: {
-              em: email && !this.isSyntheticEmail(email) ? this.hash(email) : undefined,
+              em:
+                email && !this.isSyntheticEmail(email)
+                  ? this.hash(email)
+                  : undefined,
               ph: phone ? this.hash(this.normalizePhone(phone)) : undefined,
               fn,
               ln,

@@ -326,10 +326,15 @@ export class MediaService {
   }> {
     const known = await this.prisma.media.findFirst({
       where: { sourceUrl: rawUrl },
-      select: { id: true, url: true, filename: true, size: true, mimeType: true },
+      select: {
+        id: true,
+        url: true,
+        filename: true,
+        size: true,
+        mimeType: true,
+      },
     });
-    if (known)
-      return known;
+    if (known) return known;
 
     let currentUrlStr = rawUrl;
     let redirectCount = 0;
@@ -577,7 +582,11 @@ export class MediaService {
     const fname = trimmed.split('/').pop()?.split('?')[0] || '';
     const known = await this.prisma.media.findFirst({
       where: {
-        OR: [{ url: trimmed }, { sourceUrl: trimmed }, ...(fname ? [{ filename: fname }] : [])],
+        OR: [
+          { url: trimmed },
+          { sourceUrl: trimmed },
+          ...(fname ? [{ filename: fname }] : []),
+        ],
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, url: true },

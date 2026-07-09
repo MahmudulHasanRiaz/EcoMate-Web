@@ -253,7 +253,9 @@ export class ImportService {
     const maxSortOrderResult = await this.prisma.category.aggregate({
       _max: { sortOrder: true },
     });
-    const sortOrderObj = { value: (maxSortOrderResult._max.sortOrder ?? 0) + 1 };
+    const sortOrderObj = {
+      value: (maxSortOrderResult._max.sortOrder ?? 0) + 1,
+    };
 
     let processedCount = 0;
     const groupEntries = Object.entries(groups);
@@ -512,7 +514,8 @@ export class ImportService {
     const slug =
       data.Slug?.trim() || this.uniqueSlugCached(slugify(name), slugSet);
 
-    const parsedPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
+    const parsedPrice =
+      this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
     const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
@@ -558,9 +561,10 @@ export class ImportService {
         salePrice: salePrice ?? undefined,
         managedStockQuantity: stock,
         categoryId: categoryId || undefined,
-        productCategories: categoryIds.length > 0
-          ? { create: categoryIds.map((id) => ({ categoryId: id })) }
-          : undefined,
+        productCategories:
+          categoryIds.length > 0
+            ? { create: categoryIds.map((id) => ({ categoryId: id })) }
+            : undefined,
         brandId: brandId ?? undefined,
         tags: tags as any,
         productTags:
@@ -645,7 +649,8 @@ export class ImportService {
 
     const type = (data.Type || 'simple').toLowerCase().trim();
     const isVariable = type === 'variable' || type === 'variable-subscription';
-    const parsedPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
+    const parsedPrice =
+      this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
     const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
@@ -678,9 +683,13 @@ export class ImportService {
     updateData.salePrice = salePrice ?? null;
     updateData.managedStockQuantity = stock;
     updateData.categoryId = categoryId;
-    updateData.productCategories = categoryIds.length > 0
-      ? { deleteMany: {}, create: categoryIds.map((id) => ({ categoryId: id })) }
-      : { deleteMany: {} };
+    updateData.productCategories =
+      categoryIds.length > 0
+        ? {
+            deleteMany: {},
+            create: categoryIds.map((id) => ({ categoryId: id })),
+          }
+        : { deleteMany: {} };
     updateData.brandId = brandId;
     updateData.tags = tags;
     updateData.productTags =
@@ -698,7 +707,9 @@ export class ImportService {
     updateData.manageStock = manageStock;
 
     if (await this.isProductUnchanged(productId, updateData)) {
-      this.logger.log(`Product ${productId}: no changes detected, skipping update.`);
+      this.logger.log(
+        `Product ${productId}: no changes detected, skipping update.`,
+      );
       summary.productsSkipped++;
       return;
     }
@@ -770,7 +781,8 @@ export class ImportService {
       return;
     }
 
-    const regPrice = this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
+    const regPrice =
+      this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
     const salePrice = this.parsePrice(data['Sale price']);
     const price = salePrice ?? regPrice;
     const stock = this.parseInt(data.Stock) ?? 0;
@@ -791,7 +803,9 @@ export class ImportService {
       if (mainImage) updateData.image = mainImage;
 
       if (await this.isVariantUnchanged(existingId, updateData, productId)) {
-        this.logger.log(`Variant ${varSku}: no changes detected, skipping update.`);
+        this.logger.log(
+          `Variant ${varSku}: no changes detected, skipping update.`,
+        );
         summary.productsSkipped++;
         return;
       }
@@ -976,8 +990,10 @@ export class ImportService {
     const eq = (a: unknown, b: unknown): boolean => {
       if (a == null && b == null) return true;
       if (a == null || b == null) return false;
-      if (typeof a === 'number' && typeof (b as any)?.equals === 'function') return (b as any).equals(a);
-      if (typeof b === 'number' && typeof (a as any)?.equals === 'function') return (a as any).equals(b);
+      if (typeof a === 'number' && typeof (b as any)?.equals === 'function')
+        return (b as any).equals(a);
+      if (typeof b === 'number' && typeof (a as any)?.equals === 'function')
+        return (a as any).equals(b);
       return a === b;
     };
 
@@ -985,13 +1001,21 @@ export class ImportService {
     if (!eq(current.description, intended.description)) return false;
     if (!eq(current.shortDesc, intended.shortDesc)) return false;
     if (!eq(Number(current.basePrice), intended.basePrice)) return false;
-    if (!eq(current.salePrice != null ? Number(current.salePrice) : null, intended.salePrice ?? null)) return false;
+    if (
+      !eq(
+        current.salePrice != null ? Number(current.salePrice) : null,
+        intended.salePrice ?? null,
+      )
+    )
+      return false;
     if (!eq(current.type, intended.type)) return false;
     if (!eq(current.isFeatured, intended.isFeatured)) return false;
     if (!eq(current.isActive, intended.isActive)) return false;
     if (!eq(current.manageStock, intended.manageStock)) return false;
-    if (!eq(current.managedStockQuantity, intended.managedStockQuantity)) return false;
-    if (!eq(current.categoryId ?? null, intended.categoryId ?? null)) return false;
+    if (!eq(current.managedStockQuantity, intended.managedStockQuantity))
+      return false;
+    if (!eq(current.categoryId ?? null, intended.categoryId ?? null))
+      return false;
     if (!eq(current.brandId ?? null, intended.brandId ?? null)) return false;
 
     const currentTags = JSON.stringify(current.tags ?? []);
@@ -1002,19 +1026,31 @@ export class ImportService {
       const { attributes, ...rest } = o;
       return rest;
     };
-    const currentSeoMeta = JSON.stringify(stripExtra((current.seoMeta ?? {}) as Record<string, unknown>));
-    const intendedSeoMeta = JSON.stringify(stripExtra((intended.seoMeta ?? {}) as Record<string, unknown>));
+    const currentSeoMeta = JSON.stringify(
+      stripExtra((current.seoMeta ?? {}) as Record<string, unknown>),
+    );
+    const intendedSeoMeta = JSON.stringify(
+      stripExtra((intended.seoMeta ?? {}) as Record<string, unknown>),
+    );
     if (currentSeoMeta !== intendedSeoMeta) return false;
 
     if (intended.slug && current.slug !== intended.slug) return false;
 
-    const intendedCatIds = ((intended.productCategories as any)?.create || []).map((pc: any) => pc.categoryId).sort();
-    const currentCatIds = current.productCategories.map(pc => pc.categoryId).sort();
-    if (JSON.stringify(currentCatIds) !== JSON.stringify(intendedCatIds)) return false;
+    const intendedCatIds = ((intended.productCategories as any)?.create || [])
+      .map((pc: any) => pc.categoryId)
+      .sort();
+    const currentCatIds = current.productCategories
+      .map((pc) => pc.categoryId)
+      .sort();
+    if (JSON.stringify(currentCatIds) !== JSON.stringify(intendedCatIds))
+      return false;
 
-    const intendedTagIds = ((intended.productTags as any)?.create || []).map((pt: any) => pt.tagId).sort();
-    const currentTagIds = current.productTags.map(pt => pt.tagId).sort();
-    if (JSON.stringify(currentTagIds) !== JSON.stringify(intendedTagIds)) return false;
+    const intendedTagIds = ((intended.productTags as any)?.create || [])
+      .map((pt: any) => pt.tagId)
+      .sort();
+    const currentTagIds = current.productTags.map((pt) => pt.tagId).sort();
+    if (JSON.stringify(currentTagIds) !== JSON.stringify(intendedTagIds))
+      return false;
 
     return true;
   }
@@ -1026,21 +1062,36 @@ export class ImportService {
   ): Promise<boolean> {
     const current = await this.prisma.productVariant.findUnique({
       where: { id: variantId },
-      select: { price: true, salePrice: true, managedStockQuantity: true, image: true, productId: true },
+      select: {
+        price: true,
+        salePrice: true,
+        managedStockQuantity: true,
+        image: true,
+        productId: true,
+      },
     });
     if (!current) return false;
 
     const eq = (a: unknown, b: unknown): boolean => {
       if (a == null && b == null) return true;
       if (a == null || b == null) return false;
-      if (typeof a === 'number' && typeof (b as any)?.equals === 'function') return (b as any).equals(a);
-      if (typeof b === 'number' && typeof (a as any)?.equals === 'function') return (a as any).equals(b);
+      if (typeof a === 'number' && typeof (b as any)?.equals === 'function')
+        return (b as any).equals(a);
+      if (typeof b === 'number' && typeof (a as any)?.equals === 'function')
+        return (a as any).equals(b);
       return a === b;
     };
 
     if (!eq(Number(current.price ?? 0), intended.price ?? 0)) return false;
-    if (!eq(current.salePrice != null ? Number(current.salePrice) : null, intended.salePrice ?? null)) return false;
-    if (!eq(current.managedStockQuantity, intended.managedStockQuantity)) return false;
+    if (
+      !eq(
+        current.salePrice != null ? Number(current.salePrice) : null,
+        intended.salePrice ?? null,
+      )
+    )
+      return false;
+    if (!eq(current.managedStockQuantity, intended.managedStockQuantity))
+      return false;
     if (!eq(current.image ?? null, intended.image ?? null)) return false;
     if (current.productId !== productId) return false;
 
@@ -1077,7 +1128,7 @@ export class ImportService {
         .map((s) => s.trim())
         .filter(Boolean);
       let parentId: string | null = null;
-      let lastId: string | null = null;
+      const lastId: string | null = null;
       let currentPath = '';
 
       for (const seg of segments) {

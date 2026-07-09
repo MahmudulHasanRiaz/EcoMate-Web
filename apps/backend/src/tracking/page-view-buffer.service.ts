@@ -36,7 +36,10 @@ export class PageViewBufferService implements OnModuleDestroy {
     this.flushing = true;
     const batch = this.buffer.splice(0);
     try {
-      await this.prisma.pageView.createMany({ data: batch, skipDuplicates: true });
+      await this.prisma.pageView.createMany({
+        data: batch,
+        skipDuplicates: true,
+      });
       this.logger.debug(`Flushed ${batch.length} page views`);
     } catch (err) {
       this.logger.error(`Batch insert failed: ${(err as Error).message}`);

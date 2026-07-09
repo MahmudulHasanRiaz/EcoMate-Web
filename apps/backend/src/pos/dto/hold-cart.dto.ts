@@ -1,6 +1,14 @@
 import {
-  IsString, IsOptional, IsNumber, IsArray, ValidateNested,
-  IsInt, Min, IsIn, ArrayMinSize, IsObject,
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  IsInt,
+  Min,
+  IsIn,
+  ArrayMinSize,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PosOrderItemDto } from './create-pos-order.dto';

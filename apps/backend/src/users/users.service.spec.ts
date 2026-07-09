@@ -83,7 +83,9 @@ describe('UsersService', () => {
 
   describe('findAll', () => {
     it('should return paginated users', async () => {
-      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([
+        mockUserResponse,
+      ]);
       (prisma.userProfile.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, perPage: 10 });
@@ -146,7 +148,9 @@ describe('UsersService', () => {
     });
 
     it('should handle custom sorting', async () => {
-      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([
+        mockUserResponse,
+      ]);
       (prisma.userProfile.count as jest.Mock).mockResolvedValue(1);
 
       await service.findAll({ sort: 'email', order: 'asc' });
@@ -157,7 +161,9 @@ describe('UsersService', () => {
     });
 
     it('should handle second page correctly', async () => {
-      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([mockUserResponse]);
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([
+        mockUserResponse,
+      ]);
       (prisma.userProfile.count as jest.Mock).mockResolvedValue(11);
 
       await service.findAll({ page: 2, perPage: 10 });
@@ -170,7 +176,9 @@ describe('UsersService', () => {
 
   describe('findOne', () => {
     it('should return a user by id', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
 
       const result = await service.findOne('user-id-1');
 
@@ -211,7 +219,7 @@ describe('UsersService', () => {
         email: 'jane@example.com',
         phoneNumber: '+8801798765432',
         status: 'active',
-      role: UserRole.admin,
+        role: UserRole.admin,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -308,7 +316,9 @@ describe('UsersService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
       (bcrypt.hash as jest.Mock).mockResolvedValueOnce('$2a$12$newhashed');
-      (prisma.userProfile.update as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
 
       await service.update('user-id-1', { password: 'newpassword123' });
 
@@ -320,11 +330,14 @@ describe('UsersService', () => {
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
-      (prisma.userProfile.update as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
 
       await service.update('user-id-1', { firstName: 'Johnny' });
 
-      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
+      const updateCall = (prisma.userProfile.update as jest.Mock).mock
+        .calls[0][0];
       expect(updateCall.data).not.toHaveProperty('password');
       expect(updateCall.data).not.toHaveProperty('status');
       expect(updateCall.data).not.toHaveProperty('role');
@@ -333,8 +346,12 @@ describe('UsersService', () => {
 
   describe('remove', () => {
     it('should delete a user successfully', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUserResponse);
-      (prisma.userProfile.delete as jest.Mock).mockResolvedValue(mockUserResponse);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
+      (prisma.userProfile.delete as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
 
       const result = await service.remove('user-id-1');
 
@@ -357,7 +374,9 @@ describe('UsersService', () => {
   describe('bulkDelete', () => {
     it('should delete multiple users', async () => {
       const ids = ['user-id-1', 'user-id-2', 'user-id-3'];
-      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({ count: 3 });
+      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({
+        count: 3,
+      });
 
       const result = await service.bulkDelete(ids);
 
@@ -368,7 +387,9 @@ describe('UsersService', () => {
     });
 
     it('should handle empty array without error', async () => {
-      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
 
       const result = await service.bulkDelete([]);
 
@@ -379,7 +400,9 @@ describe('UsersService', () => {
   describe('bulkUpdateStatus', () => {
     it('should update status for multiple users', async () => {
       const ids = ['user-id-1', 'user-id-2'];
-      (prisma.userProfile.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.userProfile.updateMany as jest.Mock).mockResolvedValue({
+        count: 2,
+      });
 
       const result = await service.bulkUpdateStatus(ids, 'inactive');
 
