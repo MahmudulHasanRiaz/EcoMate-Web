@@ -45,7 +45,7 @@
 ### 2. ProductVariant
 **Prisma:** `ProductVariant`  
 **Definition:** SKU-level variation of a Product (size, color, etc.). Carries `managedStockQuantity` and `reservedStock`.  
-**Stock tracking:** Every stock operation goes through StockService which updates variant stock and writes ManagedStockLedger.  
+**Stock tracking:** Should route through StockService but currently has bypasses — see `docs/2-ARCHITECTURE/STATE_MACHINES.md§6` for current violations.  
 **Domain:** Products
 
 ### 3. ManagedStockLedger
@@ -238,7 +238,7 @@ Every term has exactly one definition. This is the only authoritative terminolog
 All managed stock mutations (`reserve`, `deduct`, `release`, `add`) MUST go through `StockService`. No direct Prisma writes to `managedStockQuantity` or `reservedStock`. Violations create dual-tracking drift between actual state and ManagedStockLedger.
 
 ### Order Stock Deduction Rule
-When an order is confirmed, `StockService.deduct()` is called. When cancelled/returned, `StockService.release()` or `StockService.add()` is called. OrdersService must NOT bypass StockService.
+When an order is confirmed, `StockService.deduct()` SHOULD be called. **Current implementation violates this** — OrdersService.deductStockForOrder() uses direct Prisma writes (see `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` violation table). When cancelled/returned, StockService.release() or StockService.add() should be used, but OrdersService currently bypasses StockService for restore/return paths.
 
 ### License Enforcement Rule
 Every licensed feature must have `@RequiresFeature()` on its controller. The feature must be registered in FEATURE_REGISTRY.md. The 68-feature system from `final-feature-plan.md` must be verified against actual `@RequiresFeature()` usage.

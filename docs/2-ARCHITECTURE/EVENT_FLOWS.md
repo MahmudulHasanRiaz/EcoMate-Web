@@ -1,135 +1,164 @@
 # Event Flows — Cross-Module Event Propagation
 
-> **Status:** Draft  
-> **Purpose:** Documents how events propagate across domains. These are the canonical event chains for understanding cross-domain impact.
+> **Status:** Verified against implementation  
+> **Purpose:** Documents how events propagate across domains. These are the canonical event chains for understanding cross-domain impact.  
+> **Cross-reference:** State machines documented in `docs/2-ARCHITECTURE/STATE_MACHINES.md`
 
 ---
 
-## 1. Order Confirmed
+## 1. Order Created (→ Pending)
 
 ```
-Order Confirmed
+Order Created
   │
-  ├─▶ Reservation (StockService.reserve)
+  ├─▶ StockService.reserve per item
   │     │
-  │     └─▶ ManagedStockLedger (OUT, RESERVED)
+  │     └─▶ reservedStock++ (all availability modes — even non-managed)
+  │     └─▶ InventoryLog (legacy)
   │
-  ├─▶ Managed Stock decreased (available = managedStockQuantity - reservedStock)
+  ├─▶ PaymentStatus set: PAYMENT_PENDING (FULL_PAYMENT/PARTIAL_PAYMENT)
+  │                      or UNPAID (CASH_ON_DELIVERY)
   │
-  ├─▶ Physical Inventory (no direct change — reservation is a managed stock concept)
+  ├─▶ OrderStatus set: Pending (isInitial)
   │
-  ├─▶ Analytics
-  │     └─▶ Order Confirmed event tracked
-  │
-  ├─▶ Accounting (future)
-  │     └─▶ Accounts Receivable entry
-  │
-  └─▶ Commission (future)
-        └─▶ Sales commission calculated
+  └─▶ No analytics event emitted
 ```
 
-## 2. Order Dispatched
+## 2. Order Confirmed
 
 ```
-Order Dispatched
+Order Confirmed (status → Confirmed)
   │
-  ├─▶ StockService.deduct
+  ├─▶ deductStockForOrder (DIRECT Prisma write — bypasses StockService)
   │     │
-  │     └─▶ ManagedStockLedger (OUT, SOLD)
+  │     ├─▶ managedStockQuantity-- (only for MANAGED_STOCK + manageStock)
+  │     ├─▶ ManagedStockLedger (OUT, ORDER_DEDUCTION)
+  │     └─▶ reservedStock NOT decremented (stays elevated — known issue)
   │
-  ├─▶ Managed Stock decreased (deducted)
+  ├─▶ takeCostSnapshot
+  │     └─▶ costSnapshot = standardCost per item, costType = 'estimated'
   │
-  ├─▶ Physical Inventory allocated → decremented
+  ├─▶ Order status updated to Confirmed
   │
-  ├─▶ PackingLock released
-  │
-  ├─▶ Courier assigned
-  │
-  ├─▶ Analytics
-  │     └─▶ Dispatch event tracked
-  │
-  └─▶ Accounting (future)
-        └─▶ Revenue recognition → Cost of Goods Sold entry
+  └─▶ No analytics event emitted
 ```
 
-## 3. Purchase Received (GRN)
+## 3. Dispatch HANDED_OVER
+
+```
+Dispatch HANDED_OVER
+  │
+  ├─▶ stockService.operate('deduct')
+  │     │
+  │     ├─▶ managedStockQuantity-- (via applyStockChange for MANAGED_STOCK)
+  │     ├─▶ reservedStock-- (via applyStockChange — always runs)
+  │     ├─▶ InventoryLog (legacy — NOT ManagedStockLedger)
+  │     └─▶ DeductCostingLots (runs for all modes — not just MANAGED_STOCK)
+  │
+  ├─▶ handedOverAt set on Dispatch record
+  │
+  ├─▶ Order status NOT changed (dispatch is independent)
+  │
+  └─▶ Courier tracking activated
+
+⚠️ Known Issue: Dual deduction with Order Confirmed. managedStockQuantity
+   decremented at Confirmed AND at HANDED_OVER for MANAGED_STOCK products.
+```
+
+## 4. Order Cancelled (Pre-Courier)
+
+```
+Order Cancelled (pre-courier — from Pending/Confirmed/Packed/Packing Hold)
+  │
+  ├─▶ StockService.release per item
+  │     └─▶ reservedStock--
+  │
+  ├─▶ restoreStockForCancelledOrder (DIRECT Prisma write — bypasses StockService)
+  │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK, idempotent)
+  │     └─▶ ManagedStockLedger (IN, CANCEL_RELEASE)
+  │
+  ├─▶ fireRefundEvent (tracking pixel)
+  │
+  ├─▶ order.status_changed event emitted (for admin notifications)
+  │
+  └─▶ Payment: refund flow begins if already paid
+```
+
+## 5. Order Returned
+
+```
+Order Returned (status → Returned)
+  │
+  ├─▶ handleReturnedSideEffects (DIRECT Prisma write — bypasses StockService)
+  │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK, idempotent)
+  │     └─▶ ManagedStockLedger (IN, RETURN)
+  │
+  ├─▶ Order status updated to Returned
+  │
+  └─▶ No analytics event emitted
+```
+
+## 6. Purchase Received (GRN)
 
 ```
 Purchase Received (GRN Created)
   │
-  ├─▶ StockService.add
-  │     │
-  │     └─▶ ManagedStockLedger (IN, PURCHASED)
+  ├─▶ StockService.add per item
+  │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK)
+  │     └─▶ InventoryLog (legacy)
   │
   ├─▶ Physical Inventory → quantity increased
-  │     │
   │     └─▶ CostingLot created (actual cost recorded)
   │
-  ├─▶ Managed Stock increased
+  ├─▶ Accounting (future)
+  │     └─▶ Inventory Asset increased
   │
-  ├─▶ Analytics
-  │     └─▶ Procurement event tracked
-  │
-  └─▶ Accounting
-        └─▶ Inventory Asset increased
-        └─▶ Accounts Payable entry (future)
+  └─▶ No analytics event emitted
 ```
 
-## 4. Return Processed
+## 7. Payment Verified
 
 ```
-Return Processed
+Payment Verified (admin approves proof)
   │
-  ├─▶ Money Refund
-  │     │
-  │     └─▶ Payment reversal processed
-  │     └─▶ Accounting: Revenue reversal
+  ├─▶ Payment.status → PAID
   │
-  ├─▶ Item Returned to Warehouse
-  │     │
-  │     ├─▶ Physical Inventory → quantity increased (if item returned)
-  │     │
-  │     └─▶ StockService.add (if restocking)
-  │           │
-  │           └─▶ ManagedStockLedger (IN, RETURNED)
+  ├─▶ Order.paymentStatus recalculated
+  │     ├─▶ Sum PAID >= total → PAID
+  │     ├─▶ 0 < Sum < total → PARTIAL_PAID
+  │     └─▶ Sum = 0 → PAYMENT_PENDING
   │
-  ├─▶ Analytics
-  │     └─▶ Return event tracked
-  │     └─▶ Refund value tracked
+  ├─▶ Order.status → Confirmed (if was Payment Verifying)
+  │     └─▶ Triggers Order Confirmed event chain (#2 above)
   │
-  └─▶ Accounting
-        └─▶ Revenue reversal
-        └─▶ Inventory Asset adjustment
+  └─▶ No analytics event emitted
 ```
 
-## 5. Stock Transfer
+## 8. Refund Completed
 
 ```
-Stock Transfer (between warehouses/bins)
+Refund Completed (refund status → completed)
   │
-  ├─▶ Origin Warehouse → quantity decreased
+  ├─▶ Order.paymentStatus recalculated
+  │     ├─▶ Full refund → REFUNDED
+  │     └─▶ Partial refund → PARTIAL_REFUNDED
   │
-  ├─▶ Destination Warehouse → quantity increased
+  ├─▶ restockOrderItems (InventoryService — only for MANAGED_STOCK/INVENTORY_CONTROLLED)
+  │     ├─▶ managedStockQuantity++ (direct Prisma write)
+  │     ├─▶ ManagedStockLedger (CANCEL_RELEASE or RETURN, IN)
+  │     └─▶ InventoryLog (legacy — dual write)
   │
-  ├─▶ Inventory Ledger (future)
-  │     └─▶ OUT from origin, IN to destination
-  │
-  ├─▶ Inventory Valuation → adjusted per warehouse
-  │
-  └─▶ Analytics
-        └─▶ Transfer event tracked (future)
+  └─▶ No analytics event emitted
 ```
 
-## 6. License Activated
+## 9. License Activated
 
 ```
 License Key Entered
   │
   ├─▶ KeyMate API validation
-  │     │
   │     ├─▶ Success → 7-day cache created
   │     │           └─▶ Feature flags unlocked per license plan
-  │     │
   │     └─▶ Failure → error returned, no cache
   │
   ├─▶ LicenseGuard → global license check passes
@@ -137,38 +166,16 @@ License Key Entered
   └─▶ FeatureGuard → per-route feature check passes (or blocks)
 ```
 
-## 7. Order Cancelled (Pre-Dispatch)
+## 10. Stock Transfer (between warehouses/bins)
 
 ```
-Order Cancelled (Pre-Dispatch)
+Stock Transfer
   │
-  ├─▶ StockService.release
-  │     │
-  │     └─▶ ManagedStockLedger (IN, RELEASED)
+  ├─▶ InventoryLog (legacy — transfer entry)
   │
-  ├─▶ Managed Stock increased (reservation released)
+  ├─▶ Warehouse/Bin quantities NOT changed (not implemented)
   │
-  ├─▶ Money Refund (if paid)
-  │     │
-  │     └─▶ Payment reversal
-  │
-  ├─▶ Analytics
-  │     └─▶ Cancellation event tracked
-  │
-  └─▶ Accounting (future)
-        └─▶ Revenue reversal (if paid)
-```
-
-## 8. Order Cancelled (Post-Dispatch) — Return flow
-
-```
-Order Cancelled (Post-Dispatch)
-  │
-  └─▶ Return Workflow
-        ├─▶ Item returned to warehouse
-        ├─▶ StockService.add
-        ├─▶ Money refunded
-        └─▶ Analytics tracked
+  └─▶ No managed stock or ledger impact
 ```
 
 ## Complete System Event Map
@@ -192,34 +199,37 @@ Order Cancelled (Post-Dispatch)
   └──────┬───────┘    └──────┬───────┘    └──────┬───────┘
          │                   │                   │
          ▼                   ▼                   ▼
-  ┌─────────────────────────────────────────────────────┐
-  │                      Orders                          │
-  │  Draft → Confirmed → Processing → Packed → Dispatch │
-  └──────┬──────────────┬──────────────┬────────────────┘
-         │              │              │
-         ▼              ▼              ▼
-  ┌──────────┐  ┌────────────┐  ┌──────────────┐
-  │ StockSvc │  │ PackingSvc │  │ DispatchSvc  │
-  │ reserve  │  │ lock/verify│  │ courier/hand │
-  │ deduct   │  │ unlock     │  │ over/track   │
-  │ release  │  └────────────┘  └──────┬───────┘
-  │ add      │                         │
-  └────┬─────┘                         │
-       │                               │
-       ▼                               ▼
-  ┌──────────────┐            ┌──────────────┐
-  │ ManagedStock │            │  Inventory   │
-  │   Ledger     │            │  (Physical)  │
-  └──────────────┘            └──────┬───────┘
-       │                             │
-       ▼                             ▼
-  ┌──────────────────────────────────────┐
-  │             Analytics                 │
-  │  (Page Views, Conversions, Events)   │
-  └──────────────┬───────────────────────┘
-                 │
-                 ▼
-  ┌──────────────────────────────────────┐
-  │            Accounting                 │
-  │  (Revenue, COGS, Inventory Asset)    │
-  └──────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────┐
+  │                         Orders                        │
+  │  Pending → Payment Pending → Confirmed → Packed →    │
+  │  Shipping → Delivered (+ Cancelled/Return branches)  │
+  └──────┬────────────────┬──────────────────┬───────────┘
+         │                │                  │
+         ▼                ▼                  ▼
+  ┌──────────┐    ┌──────────────┐   ┌──────────────┐
+  │ StockSvc │    │  PackingSvc  │   │ DispatchSvc  │
+  │ reserve  │    │  lock/verify │   │ courier/hand │
+  │ release  │    │  markDone →  │   │ over/status  │
+  │ add      │    │  Packed      │   │ HANDED_OVER  │
+  │ (deduct  │    │  markHold →  │   │ → deduct     │
+  │  via op) │    │  Packing Hold│   └──────┬───────┘
+  └────┬─────┘    └──────────────┘          │
+       │                                    │
+       ▼                                    ▼
+  ┌──────────────┐                 ┌──────────────┐
+  │ ManagedStock │                 │  Inventory   │
+  │   Ledger     │                 │  (Physical)  │
+  └──────────────┘                 └──────┬───────┘
+       │                                  │
+       ▼                                  ▼
+  ┌───────────────────────────────────────────┐
+  │              Analytics                     │
+  │  (order.status_changed, refund tracking)  │
+  └──────────────────┬────────────────────────┘
+                     │
+                     ▼
+  ┌───────────────────────────────────────────┐
+  │             Accounting                     │
+  │  (Cost snapshots, COD auto-pay, future)   │
+  └───────────────────────────────────────────┘
+```

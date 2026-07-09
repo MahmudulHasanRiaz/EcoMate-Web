@@ -71,10 +71,19 @@ Every significant architecture choice requires a written ADR in `docs/2-ARCHITEC
 
 | Invariant | Violation | Location | Severity |
 |-----------|-----------|----------|----------|
-| INV-001 | OrdersService directly updates managedStockQuantity | `orders.service.ts:1639-1810` | CRITICAL |
+| INV-001 | OrdersService.deductStockForOrder() directly decrements managedStockQuantity | `orders.service.ts:1639-1810` | CRITICAL |
+| INV-001 | OrdersService.restoreStockForCancelledOrder() directly increments managedStockQuantity | `orders.service.ts:1812-1845` | CRITICAL |
+| INV-001 | OrdersService.handleReturnedSideEffects() directly increments managedStockQuantity | `orders.service.ts:1847-1890` | CRITICAL |
 | INV-001 | InventoryService.adjust() directly updates managedStockQuantity | `inventory.service.ts:249-411` | CRITICAL |
+| INV-001 | InventoryService.restockOrderItems() directly increments managedStockQuantity | `inventory.service.ts:413-460` | HIGH |
+| INV-001 | reservedStock never decremented at Order Confirmed (deductStockForOrder only decrements managedStockQuantity) | `orders.service.ts:1700-1710` | CRITICAL |
 | INV-002 | StockService.operate() writes to InventoryLog instead of ManagedStockLedger | `stock.service.ts:258` | HIGH |
 | INV-002 | InventoryService.adjust() writes ManagedStockLedger bypassing StockService | `inventory.service.ts:337-348` | HIGH |
-| INV-011 | OrdersService directly writes to ProductVariant.managedStockQuantity | `orders.service.ts:1734-1755` | CRITICAL |
+| INV-002 | OrdersService writes ManagedStockLedger directly (deductStockForOrder, restoreStockForCancelledOrder, handleReturnedSideEffects) | `orders.service.ts` | CRITICAL |
+| INV-002 | InventoryService.restockOrderItems() writes ManagedStockLedger directly | `inventory.service.ts:413-460` | HIGH |
+| INV-008 | OrdersService directly mutates managedStockQuantity (violates "Orders never directly modify Inventory") | `orders.service.ts` | CRITICAL |
+| INV-010 | OrdersService bypasses StockService for managed stock mutations | `orders.service.ts:1639-1890` | CRITICAL |
+| INV-010 | InventoryService bypasses StockService for managed stock mutations | `inventory.service.ts:249-460` | HIGH |
+| INV-011 | OrdersService, InventoryService, ProductsService all write to ProductVariant.managedStockQuantity concurrently | `orders.service.ts`, `inventory.service.ts`, `products.service.ts` | CRITICAL |
 
 All violations tracked in `docs/2-ARCHITECTURE/VERIFICATION_REPORT.md` and `docs/4-TECHNICAL/TERMINOLOGY_ALIGNMENT.md`.

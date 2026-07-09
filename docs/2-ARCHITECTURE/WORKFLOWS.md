@@ -8,50 +8,92 @@
 
 ## Order Lifecycle
 
+> **Cross-reference:** Full state machine with all transitions documented in `docs/2-ARCHITECTURE/STATE_MACHINES.md`
+
 ### Trigger
 Customer completes checkout (storefront/POS).
 
-### Flow
+### State Machine (14 states)
 ```
-Draft → Confirmed → Processing → Packed → Dispatched → Delivered → Completed
-                                                                      ↓
-  Cancelled (any stage) → Refund                                  Returned
+Pending → Payment Pending → Payment Verifying → Confirmed → Packed → Shipping → Delivered
+  │            │                 │                  │          │                     │
+  │            │                 │                  ├──Packing └──Packing            │
+  │            │                 │                  │   Hold       Hold              │
+  │            │                 │                  │                            Return
+  │            │                 │                  │                            Pending
+  │            ├──Hold───────────┤                  │                              │
+  │            │                 │                  │                         ┌────┴────┐
+  │            │                 │                  │                         │         │
+  └────Cancelled (pre-courier)──┘                  │                    Returned    Damaged
+                                                   │                         │
+                                                   └───Return Pending ←─────┘
+                                                         │
+                                                    (post-courier only)
 ```
 
 ### Business Rules
-1. **Confirmation** — Order moves from draft to confirmed. StockService.reserve() is called. Payment must be authorized.
-2. **Processing** — Order is acknowledged by operations team. No stock change.
-3. **Packing** — PackingLock acquired for physical inventory. Items physically gathered.
-4. **Dispatch** — Packed items handed to courier. StockService.deduct() called. Managed Stock is reduced.
-5. **Delivery** — Customer receives items. Order moves to completed.
-6. **Cancellation** — Prior to dispatch: StockService.release(). After dispatch: return flow.
-7. **Return** — Customer returns items. StockService.add() for returned Managed Stock. Physical inventory updated if items received.
+1. **Pending** — Initial state on order creation. `StockService.reserve()` called per item. `reservedStock` incremented.
+2. **Payment Pending** — Order awaiting payment. Can transition to Payment Verifying (proof submitted), Hold, Confirmed (for COD/manual), or Cancelled.
+3. **Payment Verifying** — Customer submitted payment proof. Admin approves → Confirmed + PAID. Admin rejects → Payment Pending.
+4. **Confirmed** — `deductStockForOrder()` decrements `managedStockQuantity` (direct SQL, bypasses StockService). Writes ManagedStockLedger (ORDER_DEDUCTION, OUT). `reservedStock` NOT decremented here. `takeCostSnapshot()` captures estimated cost per item.
+5. **Packed** — Items physically packed. Set by Packing service. Allows transition to Shipping or Packing Hold.
+6. **Packing Hold** — Packing paused. Can return to Packed or Cancelled.
+7. **Shipping** — Items handed to courier. Equivalent to courier handover milestone. Allows Delivered or Partial.
+8. **Delivered** — Customer received items. COD payment auto-marked PAID. Final state (except Return Pending).
+9. **Partial** — Partial delivery. Allows Return Pending.
+10. **Cancellation** — Only allowed before Shipping (pre-courier). `StockService.release()` decrements `reservedStock`. `restoreStockForCancelledOrder()` increments `managedStockQuantity` (idempotent). After Shipping → use Return workflow.
+11. **Return Pending** — Post-courier return requested. Leads to Returned or Damaged.
+12. **Returned** — Items received back. `handleReturnedSideEffects()` increments `managedStockQuantity` (idempotent). Writes ManagedStockLedger (RETURN, IN).
+13. **Damaged** — Terminal state for damaged returns.
+14. **Hold** — Order on hold (operations decision). Can return to Pending, Confirmed, or Cancelled.
+
+### Cancel Business Rule
+**Orders can be cancelled before they are handed over to the courier.** After courier handover (Shipping status), cancellation is not allowed — only the Return workflow applies. Verified against implementation: `Cancelled` is allowed from Pending, Payment Pending, Payment Verifying, Hold, Confirmed, Packed, Packing Hold. NOT allowed from Shipping, Delivered, Partial.
+
+### Stock Impact per Transition
+| Transition | reserve | release | deductStockForOrder | restoreStock | reservedStock | managedStockQuantity | Ledger |
+|-----------|---------|---------|-------------------|-------------|--------------|-------------------|--------|
+| Create (→Pending) | ✅ | — | — | — | ++ | — | InventoryLog |
+| →Confirmed | — | — | ✅ (direct) | — | unchanged | -- | ManagedStockLedger (ORDER_DEDUCTION) |
+| →Cancelled (pre-courier) | — | ✅ | — | ✅ (direct) | -- | ++ | ManagedStockLedger (CANCEL_RELEASE) |
+| →Returned | — | — | — | ✅ (direct) | — | ++ | ManagedStockLedger (RETURN) |
+| Add item | ✅ | — | — | — | ++ | — | InventoryLog |
+| Remove item | — | ✅ | — | — | -- | — | InventoryLog |
+| Dispatch HANDED_OVER | — | — | ✅ (operate) | — | -- | -- | InventoryLog (legacy) |
+| Dispatch RETURNED | — | — | — | ✅ (operate) | — | ++ | InventoryLog (legacy) |
 
 ### Services Involved
 - OrdersService — order state machine
-- StockService — reserve, deduct, release, add
-- PackingService — packing lock management
-- DispatchService — courier handoff
-- PaymentService — payment capture and refund
+- StockService — reserve, release, add (NOT deduct — deduct is done by OrdersService directly)
+- PackingService — packing lock and status transition to Packed/Packing Hold
+- DispatchService — courier handoff and stock deduction at HANDED_OVER
+- PaymentService — payment capture, verification, and refund
+
+### Issues
+1. **Dual deduction** — `managedStockQuantity` decremented at Confirmed (via `deductStockForOrder`) AND at dispatch HANDED_OVER (via `stockService.operate('deduct')`). Potential double-deduct for MANAGED_STOCK products.
+2. **reservedStock never cleared on confirm** — Stays elevated until dispatch HANDED_OVER or cancellation.
+3. **Packing bypasses validation** — Writes `statusId` directly without checking allowed transitions.
+4. **Courier webhook bypasses validation** — Writes Order status directly for DELIVERED/PARTIAL/RETURN_PENDING.
 
 ### Ledger Impact
-- Reserve: ManagedStockLedger (OUT direction, reason: RESERVED)
-- Deduct: ManagedStockLedger (OUT direction, reason: SOLD)
-- Release: ManagedStockLedger (IN direction, reason: RELEASED)
-- Return add: ManagedStockLedger (IN direction, reason: RETURNED)
+- Order creation (reserve): InventoryLog (legacy — intended to migrate to ManagedStockLedger)
+- Order confirmed (deductStockForOrder): ManagedStockLedger (OUT, ORDER_DEDUCTION)
+- Order cancelled: ManagedStockLedger (IN, CANCEL_RELEASE)
+- Order returned: ManagedStockLedger (IN, RETURN)
 
 ### Analytics Impact
-- Order confirmed → track conversion event
-- Order delivered → track fulfillment event
-- Order cancelled → track cancellation event
+- Order created → track creation event
+- Order cancelled → track cancellation event (`order.status_changed` event + refund tracking)
+- No confirmed/delivered event emitted currently
 
 ### Accounting Impact
-- Order confirmed → Accounts Receivable entry (future)
-- Order delivered → Revenue recognition (future)
-- Refund → Accounts Receivable reversal (future)
+- Order confirmed → Cost snapshot taken (estimated)
+- Order delivered → COD auto-paid (UNPAID→PAID)
+- Refund → Refund tracking event (future: Revenue reversal entry)
+- All other accounting entries: future
 
 ### Result
-Customer receives items (or refund). Managed Stock is adjusted. Physical inventory is updated.
+Customer receives items (or refund). Managed Stock adjusted via deductStockForOrder at confirm (not at dispatch). Physical inventory updated on dispatch HANDED_OVER.
 
 ---
 
@@ -75,123 +117,158 @@ Draft → Ordered → Partially Received → Received → Completed
 
 ### Services Involved
 - PurchasesService — purchase order management
-- StockService — add() for received quantities
-- InventoryService — physical inventory receipt
+- InventoryService — GRN creation, PhysicalInventory records, calls StockService.operate('add')
+- StockService — add() for received quantities (writes InventoryLog, NOT ManagedStockLedger)
 
 ### Ledger Impact
-- GRN creation: ManagedStockLedger (IN direction, reason: PURCHASED)
+- GRN creation: InventoryLog (legacy 'add') via StockService.operate
+- ⚠️ Note: No ManagedStockLedger write for GRN (StockService.operate writes InventoryLog, not ManagedStockLedger)
 
 ### Analytics Impact
-- Purchase received → track procurement event
+- No analytics event emitted (no event wiring exists)
 
 ### Accounting Impact
-- GRN → Inventory Asset increase (Accounting domain)
 - CostingLot created with actual cost
 
 ### Result
-Managed Stock increased. Physical inventory received. Cost recorded.
+Physical inventory received. Cost recorded. Managed Stock increased (MANAGED_STOCK only).
 
 ---
 
 ## Return Workflow
 
+> **Cross-reference:** Return state machine in `docs/2-ARCHITECTURE/STATE_MACHINES.md`
+
 ### Trigger
-Customer requests return (within return window).
+Order is in Shipping/Delivered status and return is requested (post-courier only).
 
 ### Flow
 ```
-Return Request → Approval → Item Received → Quality Check → Stock Restore → Refund
+Order → Return Pending → Returned → Damaged (if applicable)
+  │                          │
+  └──Money Refund────────────┘
 ```
 
 ### Business Rules
-1. **Approval** — Return within policy? Item condition acceptable?
-2. **Item Received** — Physical item arrives at warehouse. Physical inventory updated.
-3. **Stock Restore** — Managed Stock increased via StockService.add(). Cost recorded.
-4. **Refund** — Money returned to customer. Payment reversal processed.
+1. **Return Pending** — Set via admin or courier webhook (if courier reports RETURN_PENDING). Not final.
+2. **Returned** — Items received back. `handleReturnedSideEffects()` increments `managedStockQuantity` (idempotent — guarded by `hasExistingRestock()`). Writes ManagedStockLedger (RETURN, IN).
+3. **Damaged** — Terminal state if items arrived damaged. No stock restore.
+4. **Refund** — Created via `POST /refunds`. Refund service sets Order.paymentStatus → `REFUNDED` or `PARTIAL_REFUNDED`. Refund approval triggers `inventoryService.restockOrderItems()` which increments stock + writes both ManagedStockLedger and InventoryLog.
+5. **Returns can only be initiated post-courier** (from Shipping/Delivered/Partial). Pre-courier → use Cancellation.
 
 ### Services Involved
-- OrdersService — return request management
-- StockService — add() for restored stock
-- InventoryService — physical receipt of returned items
+- OrdersService — `handleReturnedSideEffects()` (direct stock increment)
+- RefundsService — refund creation and approval
+- InventoryService — `restockOrderItems()` on refund approval (direct stock increment + dual ledger write)
 - PaymentService — refund processing
 
 ### Ledger Impact
-- Stock restore: ManagedStockLedger (IN, RETURNED)
+- Order returned: ManagedStockLedger (IN, RETURN) via handleReturnedSideEffects
+- Refund approved: ManagedStockLedger (CANCEL_RELEASE or RETURN) + InventoryLog via restockOrderItems
 
-### Analytics Impact
-- Return created → track return rate
-- Refund processed → track refund value
-
-### Accounting Impact
-- Refund → Revenue reversal (Accounting domain)
-- Inventory increase → Inventory Asset adjustment
+### ⚠️ Known Issue: Double restock risk
+If an order goes Cancelled → Confirmed → Returned, both `restoreStockForCancelledOrder()` and `handleReturnedSideEffects()` fire. The idempotency guard (`hasExistingRestock()`) prevents double increment, but the interaction between cancel restore and return restore is fragile.
 
 ### Result
-Customer refunded. Stock restored (if returned). Analytics updated.
-
----
+Customer refunded. Stock restored (if returned and MANAGED_STOCK).
 
 ## Refund Workflow
 
 ### Trigger
-Order cancellation (pre-dispatch) or return approval (post-dispatch).
+Order cancellation (pre-courier) or return approval (post-courier).
+
+### State Machine (Refund status — independent)
+```
+pending → approved → completed → (terminal)
+pending → rejected → (terminal)
+```
 
 ### Flow
 ```
-Refund Initiated → Payment Processor → Money Returned → Order Updated
+Refund Created (pending)
+  │
+  ├─▶ approved
+  │     │
+  │     └─▶ inventoryService.restockOrderItems()
+  │           ├─▶ managedStockQuantity++ (direct — only MANAGED_STOCK/INVENTORY_CONTROLLED)
+  │           ├─▶ ManagedStockLedger (CANCEL_RELEASE or RETURN)
+  │           └─▶ InventoryLog (legacy — dual write)
+  │
+  └─▶ completed
+        └─▶ Order.paymentStatus recalculated
+              ├─▶ Full refund → REFUNDED
+              └─▶ Partial refund → PARTIAL_REFUNDED
 ```
 
 ### Business Rules
 1. Full refund for cancelled orders. Prorated refund for partial returns.
 2. Refund goes to original payment method.
-3. Refund triggers reversal of any applicable commissions.
+3. Refund approval triggers stock restock via InventoryService.
+4. Refund service blocks cancellation if active dispatches exist (HANDED_OVER, PICKED_UP, IN_TRANSIT, DELIVERED).
 
 ### Services Involved
+- RefundsService — refund creation and state machine
+- InventoryService — restockOrderItems() on approval
 - PaymentService — refund API call to gateway
-- OrdersService — order status update
 
 ### Ledger Impact
-- None directly (financial ledgers are Accounting domain)
+- Restock on refund approval: ManagedStockLedger (CANCEL_RELEASE or RETURN) + InventoryLog
 
 ### Analytics Impact
-- Refund value tracked in reports
+- None currently (no analytics event emitted for refunds)
 
 ### Result
-Money returned. Order status updated.
+Money returned. Stock restored (if MANAGED_STOCK/INVENTORY_CONTROLLED). Order payment status updated.
 
 ---
 
 ## Dispatch Workflow
 
+> **Cross-reference:** Dispatch state machine in `docs/2-ARCHITECTURE/STATE_MACHINES.md`
+
 ### Trigger
-Order packed and ready for courier handoff.
+Order packed and ready for courier handoff (from Packed status).
+
+### State Machine (9 statuses — no transition validation)
+```
+PENDING → DISPATCHED → HANDED_OVER → PICKED_UP → IN_TRANSIT → DELIVERED
+                                                                    │
+   (any status at courier webhook) ←── PENDING_RETURN ←──── RETURN_PENDING
+```
 
 ### Flow
 ```
 Pack → Assign Courier → Handover → In Transit → Delivered
                                           ↓
-                                        Failed → Return to Warehouse
+                                   Return Pending → Returned
 ```
 
 ### Business Rules
-1. **Pack** — PackingLock acquired. Items physically gathered and packed.
-2. **Courier Assignment** — Courier selected based on delivery area, weight, and cost.
-3. **Handover** — Package given to courier. PackingLock released. Dispatch record created.
-4. **Stock Deduction** — Dispatch confirmation triggers StockService.deduct().
-5. **Delivery** — Courier confirms delivery. Order moves to delivered.
-6. **Failure** — Package returned to warehouse. Reverse dispatch flow.
+1. **PENDING** — Initial state when dispatch record created.
+2. **DISPATCHED** — Package handed to courier (first handoff milestone).
+3. **HANDED_OVER** — ⚠️ Triggers stockService.operate('deduct') — dual deduction for MANAGED_STOCK (also deducted at Order Confirmed). reservedStock decremented.
+4. **PICKED_UP / IN_TRANSIT** — Courier tracking updates. No stock impact.
+5. **DELIVERED** — Courier confirms delivery. `updateOrderStatusOnCourierWebhook` sets Order.status to the delivered mapping.
+6. **PENDING_RETURN / RETURN_PENDING** — Courier webhook signals return/issue. Sets order.orderStatus through webhook mapping.
+7. **Dispatch status has NO transition validation** — any string accepted via `status as any` cast. No nextStatuses DB table. No code-level transition map.
+8. **Order status follows independently** — Dispatch status does not control Order status (except via specific webhook handlers).
 
 ### Services Involved
 - PackingService — packing lock and verification
-- DispatchService — courier assignment and tracking
-- StockService — deduct() on dispatch confirmation
-- OrdersService — order status update
+- DispatchService — courier assignment, tracking, webhook handling
+- StockService — operate('deduct') on HANDED_OVER
+- OrdersService — order status update on courier webhook
 
 ### Ledger Impact
-- Dispatch: ManagedStockLedger (OUT, SOLD)
+- HANDED_OVER: InventoryLog (legacy 'deduct'), DeductCostingLots, managedStockQuantity-- (via applyStockChange), reservedStock-- (via applyStockChange)
+
+### ⚠️ Known Issues
+- No transition validation — any status transition accepted
+- Dual deduction: managedStockQuantity decremented at Order Confirmed AND at HANDED_OVER
+- DeductCostingLots runs for all availability modes (not just MANAGED_STOCK)
 
 ### Result
-Items shipped. Stock deducted. Order status updated.
+Items shipped. Stock deducted. Order status update via courier webhook.
 
 ---
 
