@@ -474,11 +474,12 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         : undefined)
     : (product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined);
   const displayImage = selectedVariant?.image || product.image;
+  const variantImages = selectedVariant?.images?.length ? selectedVariant.images : undefined;
   const displayStock = effectiveStock;
   const isOutOfStock = displayStock === 0;
 
   const itemGallery = isVariable
-    ? [displayImage, ...(product.images?.slice(1) || [])]
+    ? (variantImages || [displayImage, ...(product.images?.slice(1) || [])])
     : [product.image, ...(product.images?.slice(1) || [])];
 
   const itemKey = cartItemKey(product.id, selectedVariant?.id);

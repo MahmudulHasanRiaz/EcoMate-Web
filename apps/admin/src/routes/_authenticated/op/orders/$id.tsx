@@ -24,7 +24,6 @@ import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send, AlertTriangle } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
-import { OrderStatusMachine } from '@/features/orders/order-status-machine'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 const nn = (v: number | string) => Number(v)
 
@@ -260,12 +259,7 @@ function OrderDetailPage() {
           </div>
         </div>
 
-        <OrderStatusMachine
-          currentStatusName={order.status.name}
-          statusList={statusList}
-          allowedNextIds={order.status.nextStatuses}
-          onStatusClick={(statusId) => setShowStatusDialog(statusId)}
-        />
+        
 
         <div className='grid grid-cols-3 gap-6'>
           <div className='col-span-2 space-y-6'>

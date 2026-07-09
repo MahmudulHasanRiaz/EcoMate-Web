@@ -123,12 +123,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
   const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
+  const [defaultVariantStock, setDefaultVariantStock] = useState('10')
 
   const [uploading] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [variantPickerOpen, setVariantPickerOpen] = useState(false)
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
+  const [localVariants, setLocalVariants] = useState<any[]>([])
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -172,7 +174,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
       setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
-      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
+setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
+      setDefaultVariantStock('10'); setLocalVariants([]);
     }
     setTab('general')
   }, [open, currentRow, isEdit])
@@ -224,7 +227,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
-    setCreatedProductId(null); setRegenerateConfirm(false);
+    setCreatedProductId(null); setRegenerateConfirm(false); setLocalVariants([]);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -238,6 +241,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
+      setLocalVariants([]);
       if (type === 'variable' && selectedAttrs.length > 0 && createdId) {
         setCreatedProductId(createdId);
         setTab('variants');
@@ -259,9 +263,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const genVariantMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.generateVariants(id, data),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      if (currentRow?.id) queryClient.invalidateQueries({ queryKey: ['product', currentRow.id] });
+      const freshId = currentRow?.id || res?.data?.id;
+      if (freshId) queryClient.invalidateQueries({ queryKey: ['product', freshId] });
       toast.success('Variants generated');
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
@@ -332,6 +337,18 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     if (type !== 'variable' && availabilityMode === 'MANAGED_STOCK') {
       payload.managedStockQuantity = parseInt(stock) || 0
     }
+    if (type === 'variable' && localVariants.length > 0) {
+      payload.variants = localVariants.map(v => ({
+        sku: v.sku,
+        price: v.price,
+        salePrice: v.salePrice || undefined,
+        managedStockQuantity: v.managedStockQuantity || 0,
+        standardCost: v.standardCost || undefined,
+        image: v.images?.[0] || v.image || undefined,
+        images: v.images || undefined,
+        attributeValues: v.attributeValueIds.map((id: string) => ({ attributeValueId: id })),
+      }))
+    }
     if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
     else createMut.mutate(payload)
   }
@@ -358,30 +375,69 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     })
   }
 
+  const cartesian = <T,>(arrays: T[][]): T[][] =>
+    arrays.reduce((acc, curr) => acc.flatMap(a => curr.map(b => [...a, b])), [[]] as T[][])
+
   const handleGenerateVariants = () => {
+    if (selectedAttrs.length === 0) return
+
     const productId = currentRow?.id || createdProductId
-    if (!productId || selectedAttrs.length === 0) return
-    // If variants already exist, warn about regeneration
-    if (variantList.length > 0 && !regenerateConfirm) {
-      setRegenerateConfirm(true)
-      return
+    if (productId) {
+      // Existing product — call API
+      if (variantList.length > 0 && !regenerateConfirm) {
+        setRegenerateConfirm(true)
+        return
+      }
+      setRegenerateConfirm(false)
+      const allValueIds = Object.values(selectedValues).flat()
+      genVariantMut.mutate({
+        id: productId,
+        data: {
+          attributeIds: selectedAttrs,
+          attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
+          defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
+          defaultManagedStockQuantity: parseInt(defaultVariantStock) || 10,
+        },
+      })
+    } else {
+      // New product — compute locally
+      const groups: any[][] = []
+      for (const attrId of selectedAttrs) {
+        const attr = (attrs || []).find((a: any) => a.id === attrId)
+        if (!attr) continue
+        const vals = selectedValues[attrId]
+        const activeValues = vals?.length
+          ? attr.values.filter((v: any) => vals.includes(v.id))
+          : (attr.values || [])
+        if (activeValues.length > 0) groups.push(activeValues)
+      }
+      const combinations = cartesian(groups)
+      const generated = combinations.map((combo, idx) => {
+        const values = combo.map((av: any) => av.value)
+        const fullSku = `${sku || 'PRD'}-${values.join('-').replace(/\s+/g, '-').replace(/\//g, '_').toUpperCase()}`
+        return {
+          _tempId: `_new_${idx}`,
+          sku: fullSku,
+          price: parseFloat(basePrice) || 0,
+          salePrice: null,
+          managedStockQuantity: parseInt(defaultVariantStock) || 10,
+          standardCost: null,
+          images: [],
+          attributeValueIds: combo.map((av: any) => av.id),
+          attributeValues: combo.map((av: any) => ({
+            attributeValue: { value: av.value, id: av.id, attribute: { name: av.attribute?.name || '' } },
+          })),
+        }
+      })
+      setLocalVariants(generated)
+      toast.success(`${generated.length} variants generated. Configure them then save.`)
     }
-    setRegenerateConfirm(false)
-    const allValueIds = Object.values(selectedValues).flat()
-    genVariantMut.mutate({
-      id: productId,
-      data: {
-        attributeIds: selectedAttrs,
-        attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
-        defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
-        defaultManagedStockQuantity: availabilityMode === 'MANAGED_STOCK' ? (parseInt(stock) || 0) : 10,
-      },
-    })
   }
 
   const removeImage = (url: string) => setImages(prev => prev.filter(i => i !== url))
 
-  const variantList = fullProduct?.variants || currentRow?.variants || []
+  const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
+  const variantList = isLocalMode ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
@@ -821,15 +877,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                             total *= count
                           }
                         }
-                        const defaultPrice = basePrice ? parseFloat(basePrice) : undefined
-                        const defaultStock = 10
                         return (
                           <div className='mt-3 bg-muted/20 rounded-lg p-4 space-y-2'>
                             <div className='flex items-center justify-between'>
                               <span className='text-sm font-medium'>Expected combinations: <strong>{total}</strong></span>
-                              <span className='text-xs text-muted-foreground'>Each variant gets default stock: {defaultStock}</span>
+                              <span className='text-xs text-muted-foreground'>Default stock: {parseInt(defaultVariantStock) || 10} per variant</span>
                             </div>
-                            {defaultPrice && <p className='text-xs text-muted-foreground'>Default price: ৳{defaultPrice.toFixed(2)} per variant</p>}
+
                             {counts.map(c => (
                               <div key={c.attr} className='text-xs text-muted-foreground'>
                                 <span className='font-medium text-foreground'>{c.attr}</span>: {c.values} ({c.count})
@@ -842,16 +896,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                         )
                       })()}
                       <div className='flex items-center gap-4 mt-3'>
-                        {!currentRow && !createdProductId ? (
-                          <div className='text-sm text-muted-foreground bg-muted/30 rounded-md px-4 py-2'>
-                            Configure attributes above, then <strong>save the product first</strong> to enable variant generation.
-                          </div>
-                        ) : (
-                          <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
-                            {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
-                            Generate Variants
-                          </Button>
-                        )}
+                        <Button onClick={handleGenerateVariants} disabled={selectedAttrs.length === 0 || genVariantMut.isPending} size='default'>
+                          {genVariantMut.isPending ? <Loader2 className='animate-spin h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                          Generate Variants
+                        </Button>
                         <span className='text-xs text-muted-foreground'>
                           {selectedAttrs.length > 0
                             ? `Generates all combinations of selected attributes`
@@ -868,16 +916,37 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                         <span className='text-xs text-muted-foreground'>Click values to edit inline</span>
                       </div>
                       <div className='divide-y'>
-                        {variantList.map(v => (
-                          <VariantRow
-                            key={v.id}
-                            variant={v}
-                            productId={currentRow!.id}
-                            onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
-                            onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
-                            currencySymbol='৳'
-                          />
-                        ))}
+                        {variantList.map(v => {
+                          if (isLocalMode) {
+                            return (
+                              <VariantRow
+                                key={v._tempId}
+                                variant={v}
+                                productId=''
+                                onUpdate={(data) => {
+                                  setLocalVariants(prev => prev.map(lv =>
+                                    lv._tempId === v._tempId ? { ...lv, ...data } : lv
+                                  ))
+                                }}
+                                onImagePick={() => {
+                                  setActiveVariantId(v._tempId)
+                                  setVariantPickerOpen(true)
+                                }}
+                                currencySymbol='৳'
+                              />
+                            )
+                          }
+                          return (
+                            <VariantRow
+                              key={v.id}
+                              variant={v}
+                              productId={currentRow!.id}
+                              onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
+                              onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                              currencySymbol='৳'
+                            />
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -887,16 +956,25 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
                     onOpenChange={(v) => { setVariantPickerOpen(v); if (!v) setActiveVariantId(null) }}
                     selected={
                       activeVariantId
-                        ? [variantList.find(v => v.id === activeVariantId)?.image || ''].filter(Boolean)
+                        ? (() => {
+                            const v = variantList.find((x: any) => (x.id || x._tempId) === activeVariantId)
+                            if (!v) return []
+                            const imgs = v.images?.length ? v.images : (v.image ? [v.image] : [])
+                            return imgs
+                          })()
                         : []
                     }
-                    multiple={false}
+                    multiple={true}
                     onSelect={(urls) => {
-                      if (activeVariantId && currentRow) {
+                      if (isLocalMode && activeVariantId) {
+                        setLocalVariants(prev => prev.map(lv =>
+                          lv._tempId === activeVariantId ? { ...lv, images: urls, image: urls[0] || null } : lv
+                        ))
+                      } else if (activeVariantId && currentRow) {
                         updateVariantMut.mutate({
                           id: currentRow.id,
                           variantId: activeVariantId,
-                          data: { image: urls[urls.length - 1] || null },
+                          data: { images: urls },
                         })
                       }
                       setVariantPickerOpen(false)
@@ -1089,13 +1167,27 @@ function VariantRow({
   }
 
   const cancelEdit = () => setEditing(null)
+  const variantImages = variant.images?.length ? variant.images : (variant.image ? [variant.image] : [])
 
   return (
     <div className='p-3 flex items-center gap-3 text-sm hover:bg-muted/10 transition-colors'>
-      <div className='h-12 w-12 rounded border bg-muted overflow-hidden shrink-0 flex items-center justify-center cursor-pointer' onClick={onImagePick}>
-        {variant.image
-          ? <SafeImage src={imgUrl(variant.image)} alt='' className='h-full w-full object-cover' />
-          : <ImageIcon className='h-4 w-4 text-muted-foreground' />}
+      <div className='flex -space-x-2 hover:space-x-0.5 transition-all cursor-pointer shrink-0' onClick={onImagePick}>
+        {variantImages.length === 0 ? (
+          <div className='h-12 w-12 rounded border bg-muted overflow-hidden flex items-center justify-center'>
+            <ImageIcon className='h-4 w-4 text-muted-foreground' />
+          </div>
+        ) : (
+          variantImages.slice(0, 3).map((img: string, i: number) => (
+            <div key={i} className='h-12 w-12 rounded border bg-muted overflow-hidden shadow-sm' style={{ zIndex: 3 - i }}>
+              <SafeImage src={imgUrl(img)} alt='' className='h-full w-full object-cover' />
+            </div>
+          ))
+        )}
+        {variantImages.length > 3 && (
+          <div className='h-12 w-12 rounded border bg-muted/50 overflow-hidden flex items-center justify-center text-xs text-muted-foreground shadow-sm' style={{ zIndex: 0 }}>
+            +{variantImages.length - 3}
+          </div>
+        )}
       </div>
       <div className='flex-1 min-w-0 grid grid-cols-6 gap-3 items-center'>
         <div className='min-w-0'>

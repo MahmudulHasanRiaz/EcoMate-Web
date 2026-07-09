@@ -566,6 +566,7 @@ export class ProductsService {
                 salePrice: v.salePrice,
                 managedStockQuantity: v.managedStockQuantity || 0,
                 image: v.image,
+                images: (v.images || []) as any,
                 attributeValues: v.attributeValues
                   ? {
                       create: v.attributeValues.map((av) => ({
@@ -632,10 +633,12 @@ export class ProductsService {
 
     if (dto.variants?.length) {
       for (const variant of product.variants) {
-        if (variant.image) {
-          await this.media.syncEntityImages('variant', variant.id, [
-            variant.image,
-          ]);
+        const variantImages = ((variant as any).images as string[]) || [];
+        if (variant.image && !variantImages.includes(variant.image)) {
+          variantImages.unshift(variant.image);
+        }
+        if (variantImages.length > 0) {
+          await this.media.syncEntityImages('variant', variant.id, variantImages);
         }
       }
     }
@@ -860,6 +863,7 @@ export class ProductsService {
         sku,
         price: dto.defaultPrice || Number(product.basePrice),
         salePrice: dto.defaultSalePrice ?? undefined,
+        standardCost: dto.defaultStandardCost ?? undefined,
         managedStockQuantity: dto.defaultManagedStockQuantity || 0,
         attributeValues: {
           create: combo.map((av) => ({ attributeValueId: av.id })),
@@ -915,16 +919,14 @@ export class ProductsService {
     if (dto.price !== undefined) data.price = dto.price;
     if (dto.salePrice !== undefined) data.salePrice = dto.salePrice;
     if (dto.image !== undefined) data.image = dto.image;
+    if (dto.images !== undefined) data.images = dto.images as any;
     const updated = await this.prisma.productVariant.update({
       where: { id: variantId },
       data,
     });
-    if (dto.image !== undefined) {
-      await this.media.syncEntityImages(
-        'variant',
-        variantId,
-        dto.image ? [dto.image] : [],
-      );
+    const syncImages = dto.images || (dto.image !== undefined ? (dto.image ? [dto.image] : []) : undefined);
+    if (syncImages !== undefined) {
+      await this.media.syncEntityImages('variant', variantId, syncImages);
     }
     return updated;
   }

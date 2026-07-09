@@ -451,6 +451,7 @@ model ProductVariant {
   managedStockQuantity  Int                @default(0) @map("stock")
   standardCost          Decimal?           @db.Decimal(10, 2)
   image     String?
+  images    Json?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

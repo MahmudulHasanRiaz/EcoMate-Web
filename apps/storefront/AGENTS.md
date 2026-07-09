@@ -319,6 +319,13 @@ If uncertain:
 * prefer edge delivery
 * prefer less JavaScript
 
+# VARIANT IMAGE RULES
+
+- Variant type: `images?: string[]` (array, not single `image`)
+- Fallback: `variant.images?.length ? variant.images : [variant.image]`
+- Gallery: `variantImages || [displayImage, ...product.images.slice(1)]`
+- Never assume variant has exactly one image
+
 END NEXT.JS STOREFRONT STRATEGY
 
 <!-- ==================== ADDENDUM: CONCRETE PATTERNS ==================== -->

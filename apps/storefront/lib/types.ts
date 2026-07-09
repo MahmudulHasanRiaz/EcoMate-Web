@@ -15,6 +15,7 @@ export interface Variant {
   salePrice?: number;
   stock: number;
   image?: string;
+  images?: string[];
   isActive: boolean;
   attributeValues: {
     attributeValue: VariantAttribute;

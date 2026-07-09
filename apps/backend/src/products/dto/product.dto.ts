@@ -25,6 +25,7 @@ export class CreateVariantDto {
   @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsString() image?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) images?: string[];
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -125,4 +126,5 @@ export class UpdateVariantDto {
   @IsOptional() @IsInt() managedStockQuantity?: number;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsString() image?: string | null;
+  @IsOptional() @IsArray() @IsString({ each: true }) images?: string[];
 }

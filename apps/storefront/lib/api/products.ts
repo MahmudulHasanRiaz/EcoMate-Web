@@ -37,6 +37,7 @@ export function transformBackendProduct(raw: any): Product {
         salePrice: saleP,
         stock: v.managedStockQuantity ?? 0,
         image: v.image || undefined,
+        images: (Array.isArray(v.images) ? v.images : (v.image ? [v.image] : [])).filter(Boolean) as string[],
         isActive: v.isActive !== false,
         attributeValues: v.attributeValues || [],
       };
