@@ -82,12 +82,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         ? prev.map((item) => {
             if (getItemKey(item) === key) {
               const newQty = item.quantity + qtyToAdd;
-              const cappedQty = item.stock !== undefined ? Math.min(newQty, item.stock) : newQty;
+              const cappedQty = item.stock != null ? Math.min(newQty, item.stock) : newQty;
               return { ...item, quantity: cappedQty };
             }
             return item;
           })
-        : [...prev, { ...product, quantity: product.stock !== undefined ? Math.min(qtyToAdd, product.stock) : qtyToAdd }];
+        : [...prev, { ...product, quantity: product.stock != null ? Math.min(qtyToAdd, product.stock) : qtyToAdd }];
     });
     if (!skipOpen && !userDismissedRef.current) setIsCartOpen(true);
   }, []);
@@ -102,7 +102,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       prev.map((item) => {
         if (getItemKey(item) === productKey) {
           if (item.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return item;
-          const cappedQty = item.stock !== undefined ? Math.min(quantity, item.stock) : quantity;
+          const cappedQty = item.stock != null ? Math.min(quantity, item.stock) : quantity;
           return { ...item, quantity: cappedQty };
         }
         return item;
