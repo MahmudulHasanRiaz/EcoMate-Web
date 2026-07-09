@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 export default async function ComboDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const config = await getStorefrontConfigServer();
+  const config = await getStorefrontConfigServer().catch(() => ({ licenseFeatures: [] as string[] }));
   if (!config.licenseFeatures?.includes('admin_combos')) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">

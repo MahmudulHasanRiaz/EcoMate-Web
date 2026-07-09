@@ -12,8 +12,8 @@ import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer,
 export const revalidate = 300;
 
 export default async function HomePage() {
-  const config = await getStorefrontConfigServer();
-  const sections = config.homepageSections || [
+  const config = await getStorefrontConfigServer().catch(() => null);
+  const sections = config?.homepageSections || [
     { id: '1', title: 'Featured Gadgets', type: 'featured', limit: 4, enabled: true },
     { id: '2', title: 'New Arrivals', type: 'new_arrivals', limit: 4, enabled: true },
     { id: '3', title: 'Popular Items', type: 'popular', limit: 4, enabled: true },
@@ -77,9 +77,9 @@ export default async function HomePage() {
   return (
     <>
       <Hero
-        slides={config.hero.slides}
-        secondaryBanner={config.hero.secondaryBanner}
-        secondaryBannerAlt={config.hero.secondaryBannerAlt}
+        slides={config?.hero?.slides || []}
+        secondaryBanner={config?.hero?.secondaryBanner}
+        secondaryBannerAlt={config?.hero?.secondaryBannerAlt}
       />
       <CategoryList />
       
