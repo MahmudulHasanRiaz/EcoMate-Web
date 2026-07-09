@@ -936,12 +936,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                               />
                             )
                           }
+                          const rowId = currentRow?.id || createdProductId!
                           return (
                             <VariantRow
                               key={v.id}
                               variant={v}
-                              productId={currentRow!.id}
-                              onUpdate={(data) => updateVariantMut.mutate({ id: currentRow!.id, variantId: v.id, data })}
+                              productId={rowId}
+                              onUpdate={(data) => updateVariantMut.mutate({ id: rowId, variantId: v.id, data })}
                               onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
                               currencySymbol='৳'
                             />
