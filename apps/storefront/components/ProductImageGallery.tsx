@@ -77,10 +77,13 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
     };
   }, [activeIndex, isAutoPlaying, hasMultiple, lightboxOpen, startAutoPlay, stopAutoPlay]);
 
-  // Scroll thumbnail into view
+  // Scroll thumbnail into view (skip if gallery is off-screen to prevent page scroll jump)
   useEffect(() => {
     const thumbContainer = thumbRef.current;
     if (!thumbContainer) return;
+    // If user scrolled past gallery, don't scrollIntoView — it would jump the page
+    const containerRect = thumbContainer.getBoundingClientRect();
+    if (containerRect.bottom < 0) return;
     const activeThumb = thumbContainer.children[activeIndex] as HTMLElement;
     if (activeThumb) {
       activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });

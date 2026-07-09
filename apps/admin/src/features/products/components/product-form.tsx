@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
@@ -26,6 +26,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' }
 
@@ -288,6 +291,16 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
+  const reorderVariantsMut = useMutation({
+    mutationFn: ({ id, orderedIds }: { id: string; orderedIds: string[] }) =>
+      productsApi.reorderVariants(id, orderedIds),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+  })
+
   const addAttrValueMut = useMutation({
     mutationFn: ({ attributeId, value }: { attributeId: string; value: string }) =>
       attributesApi.addValue(attributeId, { value }),
@@ -447,6 +460,26 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
   const variantList = isLocalMode ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
+
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const handleVariantDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = variantList.findIndex((v: any) => (v.id || v._tempId) === active.id)
+    const newIndex = variantList.findIndex((v: any) => (v.id || v._tempId) === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(variantList, oldIndex, newIndex)
+    if (isLocalMode) {
+      setLocalVariants(reordered)
+    } else {
+      const rowId = currentRow?.id || createdProductId!
+      const orderedIds = reordered.map((v: any) => v.id)
+      reorderVariantsMut.mutate({ id: rowId, orderedIds })
+    }
+  }
+
+  const variantIds = variantList.map((v: any) => v.id || v._tempId)
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
@@ -923,43 +956,46 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     <div className='border rounded-lg overflow-hidden'>
                       <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
                         <h3 className='font-medium'>Variants ({variantList.length})</h3>
-                        <span className='text-xs text-muted-foreground'>Click values to edit inline</span>
+                        <span className='text-xs text-muted-foreground'>Drag to reorder · Click values to edit inline</span>
                       </div>
-                      <div className='divide-y'>
-                        {variantList.map(v => {
-                          if (isLocalMode) {
-                            return (
-                              <VariantRow
-                                key={v._tempId}
-                                variant={v}
-                                productId=''
-                                onUpdate={(data) => {
-                                  setLocalVariants(prev => prev.map(lv =>
-                                    lv._tempId === v._tempId ? { ...lv, ...data } : lv
-                                  ))
-                                }}
-                                onImagePick={() => {
-                                  setActiveVariantId(v._tempId)
-                                  setVariantPickerOpen(true)
-                                }}
-                                currencySymbol='৳'
-                              />
-                            )
-                          }
-                          const rowId = currentRow?.id || createdProductId!
-                          return (
-                            <VariantRow
-                              key={v.id}
-                              variant={v}
-                              productId={rowId}
-                              onUpdate={(data) => updateVariantMut.mutate({ id: rowId, variantId: v.id, data })}
-                              onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
-                              currencySymbol='৳'
-                              onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
-                            />
-                          )
-                        })}
-                      </div>
+                      <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleVariantDragEnd}>
+                        <SortableContext items={variantIds} strategy={verticalListSortingStrategy}>
+                          <div className='divide-y'>
+                            {variantList.map(v => {
+                              const vid = v.id || v._tempId
+                              return (
+                                <SortableVariantRow key={vid} id={vid}>
+                                  {isLocalMode ? (
+                                    <VariantRow
+                                      variant={v}
+                                      productId=''
+                                      onUpdate={(data) => {
+                                        setLocalVariants(prev => prev.map(lv =>
+                                          lv._tempId === v._tempId ? { ...lv, ...data } : lv
+                                        ))
+                                      }}
+                                      onImagePick={() => {
+                                        setActiveVariantId(v._tempId)
+                                        setVariantPickerOpen(true)
+                                      }}
+                                      currencySymbol='৳'
+                                    />
+                                  ) : (
+                                    <VariantRow
+                                      variant={v}
+                                      productId={currentRow?.id || createdProductId!}
+                                      onUpdate={(data) => updateVariantMut.mutate({ id: currentRow?.id || createdProductId!, variantId: v.id, data })}
+                                      onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                                      currencySymbol='৳'
+                                      onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
+                                    />
+                                  )}
+                                </SortableVariantRow>
+                              )
+                            })}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
                     </div>
                   )}
 
@@ -1116,6 +1152,32 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         </div>
       )}
     </Dialog>
+  )
+}
+
+function SortableVariantRow(props: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 10 : 0,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className='flex items-center'>
+      <button
+        type='button'
+        className='cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground shrink-0 touch-none'
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className='h-4 w-4' />
+      </button>
+      <div className='flex-1 min-w-0'>
+        {props.children}
+      </div>
+    </div>
   )
 }
 

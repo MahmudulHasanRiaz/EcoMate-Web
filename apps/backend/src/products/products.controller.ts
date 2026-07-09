@@ -160,4 +160,13 @@ export class ProductsController {
   ) {
     return this.svc.updateVariant(id, variantId, dto);
   }
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Put(':id/variants/reorder')
+  reorderVariants(
+    @Param('id') id: string,
+    @Body() body: { orderedIds: string[] },
+  ) {
+    return this.svc.reorderVariants(id, body.orderedIds);
+  }
 }

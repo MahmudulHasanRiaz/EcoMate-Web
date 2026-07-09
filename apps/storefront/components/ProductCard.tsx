@@ -46,6 +46,14 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
   const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
 
+  // For variable products: OOS only if ALL variants are inactive/OOS (ignore parent stock).
+  // For simple products: OOS if stock <= 0.
+  const isOos = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK'
+    ? true
+    : isVar
+      ? !(product.variants?.some(v => v.isActive && v.stock > 0))
+      : (product.stock != null && product.stock <= 0);
+
   const cartItem = items.find((item) => item.id === product.id);
   const inCart = !!cartItem && !isVar;
   const quantity = cartItem?.quantity ?? 0;
@@ -95,7 +103,6 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
   const linkUrl = product.slug ? `/products/${product.slug}` : `/products/${product.id}`;
   const aspect = getAspectStyle(config.catalogImageRatio);
-  const isOos = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK' || (product.stock != null && product.stock <= 0)
 
   return (
     <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
@@ -104,7 +111,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
         </div>
       )}
-      {(product.availabilityMode === 'ALWAYS_OUT_OF_STOCK' || (product.stock != null && product.stock <= 0)) && (
+      {isOos && (
         <div className="absolute top-2 left-12 z-10">
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             Out of Stock

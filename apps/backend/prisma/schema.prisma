@@ -447,6 +447,7 @@ model ProductVariant {
   id        String   @id @default(uuid())
   productId String
   sku       String   @unique
+  sortOrder Int      @default(0)
   price                 Decimal?           @db.Decimal(10, 2)
   salePrice             Decimal?           @db.Decimal(10, 2)
   managedStockQuantity  Int                @default(0) @map("stock")

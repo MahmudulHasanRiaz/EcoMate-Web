@@ -508,6 +508,7 @@ export class ProductsService {
               include: { attributeValue: { include: { attribute: true } } },
             },
           },
+          orderBy: { sortOrder: 'asc' },
         },
       },
     });
@@ -591,6 +592,7 @@ export class ProductsService {
               include: { attributeValue: { include: { attribute: true } } },
             },
           },
+          orderBy: { sortOrder: 'asc' },
         },
       },
     });
@@ -708,6 +710,7 @@ export class ProductsService {
               include: { attributeValue: { include: { attribute: true } } },
             },
           },
+          orderBy: { sortOrder: 'asc' },
         },
       },
     });
@@ -899,12 +902,13 @@ export class ProductsService {
     const groups = Object.values(grouped);
     const combinations = this.cartesian(groups);
 
-    const variants = combinations.map((combo) => {
+    const variants = combinations.map((combo, index) => {
       const values = combo.map((av) => av.value).join(' / ');
       const sku = `${product.sku || 'PRD'}-${values.replace(/\s+/g, '-').replace(/\//g, '_').toUpperCase()}`;
       return {
         productId,
         sku,
+        sortOrder: index,
         price: dto.defaultPrice || Number(product.basePrice),
         salePrice: dto.defaultSalePrice ?? undefined,
         standardCost: dto.defaultStandardCost ?? undefined,
@@ -973,5 +977,17 @@ export class ProductsService {
       await this.media.syncEntityImages('variant', variantId, syncImages);
     }
     return updated;
+  }
+
+  async reorderVariants(productId: string, orderedIds: string[]) {
+    await this.prisma.$transaction(
+      orderedIds.map((id, index) =>
+        this.prisma.productVariant.update({
+          where: { id },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+    return this.findOne(productId);
   }
 }
