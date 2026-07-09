@@ -299,7 +299,7 @@ Falls back to MANAGED_STOCK behavior when Inventory Management is disabled.
 
 | Trigger | Action | managedStockQuantity | reservedStock |
 |---------|--------|---------------------|---------------|
-| Order created | `reserve()` | — | ++ (unnecessary but harmless) |
+| Order created | `reserve()` | — | ++ (reservation policy: ALWAYS_IN_STOCK products reserve for order consistency) |
 | Order confirmed | SKIPPED | — | — |
 | Order cancelled | `release()` | — | -- |
 | Dispatch HANDED_OVER | `operate('deduct')` | — | -- |
@@ -345,7 +345,7 @@ Physical Inventory is the primary system. Managed Stock is secondary (per-produc
 
 | Trigger | Physical Inventory | Managed Stock |
 |---------|-------------------|---------------|
-| Order created | — | `reservedStock++` (unnecessary but harmless) |
+| Order created | — | `reservedStock++` (reservation policy: follows configured reservation timing) |
 | Order confirmed | CHECK (should always pass since ALWAYS_IN_STOCK). Reserve | Optionally deduct |
 | Dispatch HANDED_OVER | DEDUCT | Optionally deduct |
 | Order cancelled | RELEASE | release() → reservedStock-- |

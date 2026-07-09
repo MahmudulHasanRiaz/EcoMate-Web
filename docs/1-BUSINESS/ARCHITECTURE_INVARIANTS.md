@@ -77,6 +77,9 @@ Products with `availabilityMode: ALWAYS_OUT_OF_STOCK` MUST be rejected at ALL or
 ### INV-018: Cost deduction is mode-aware
 CostingLot deduction at HANDED_OVER must respect the active mode: Managed Stock costing when Inventory Management is disabled, Physical Inventory costing when enabled.
 
+### INV-019: Dispatch never owns stock
+Dispatch Status never mutates stock directly. Dispatch only requests stock operations through StockService (e.g., `stockService.operate('deduct')` at HANDED_OVER). Only StockService may mutate stock quantities or ledger entries.
+
 ---
 
 ## Current Violations

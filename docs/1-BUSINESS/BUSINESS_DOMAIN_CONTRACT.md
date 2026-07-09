@@ -32,6 +32,58 @@
 
 ---
 
+## Source of Truth for Stock
+
+Sales Availability and Physical Quantity are different concepts and may have different sources of truth.
+
+### Sales Availability
+
+Determines whether a product is shown as "in stock" on storefront/POS and whether an order can be created.
+
+| availabilityMode | Inventory Management DISABLED | Inventory Management ENABLED |
+|----------------|------------------------------|------------------------------|
+| `ALWAYS_IN_STOCK` | Product Availability (always show) | Product Availability (always show) |
+| `ALWAYS_OUT_OF_STOCK` | Product Availability (never show) | Product Availability (never show) |
+| `MANAGED_STOCK` | Managed Stock (`managedStockQuantity - reservedStock > 0`) | Managed Stock (`managedStockQuantity - reservedStock > 0`) |
+| `INVENTORY_CONTROLLED` | Falls back to MANAGED_STOCK behavior | Physical Inventory (`PhysicalInventory.quantity - PhysicalInventory.reservedQuantity > 0`) |
+
+### Physical Quantity
+
+The actual count of physical items in the warehouse. Only relevant when Inventory Management is enabled.
+
+| Context | Source of Truth |
+|---------|----------------|
+| Inventory Management DISABLED | No Physical Quantity tracking |
+| Inventory Management ENABLED | Physical Inventory (`PhysicalInventory.quantity`) |
+
+---
+
+## Canonical Domain Boundary
+
+Products and Inventory are separate domains. Neither owns the other.
+
+### Products own:
+- Product Catalog (Product, ProductVariant, Category, Brand, Attribute)
+- Availability Mode (ALWAYS_IN_STOCK, ALWAYS_OUT_OF_STOCK, MANAGED_STOCK, INVENTORY_CONTROLLED)
+- Managed Stock (managedStockQuantity, reservedStock on ProductVariant)
+- ManagedStockLedger (double-entry audit log for Managed Stock changes)
+- Per-product syncManagedStock toggle
+
+### Inventory owns:
+- Warehouses (Warehouse, BinLocation)
+- Physical Inventory (PhysicalInventory — quantity, reservedQuantity)
+- Costing Lots (CostingLot — FIFO actual cost tracking)
+- Physical Reservation (reservedQuantity on PhysicalInventory)
+- Physical Ledger (future — double-entry log for physical movements)
+- Allocation via PackingLock (Dispatch & Packing domain)
+
+### StockService coordinates both:
+- All stock mutations (Managed + Physical) route through StockService
+- StockService calls are the only way to mutate managedStockQuantity, reservedStock, PhysicalInventory.quantity, or PhysicalInventory.reservedQuantity
+- StockService does NOT own either domain — it is a coordination layer
+
+---
+
 ## Domain Definitions
 
 <!-- Each concept defined here is the single authoritative source.

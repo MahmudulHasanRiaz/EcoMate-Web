@@ -20,8 +20,9 @@ Key invariants summarized:
 - INV-015: StockService centralizes ALL stock operations (Managed + Physical)
 - INV-016: Physical Inventory must support reservation (reservedQuantity)
 - INV-017: ALWAYS_OUT_OF_STOCK blocks order creation
+- INV-019: Dispatch never owns stock (requests via StockService only)
 
-See full file at `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` for all 18 invariants with violation tracking.
+See full file at `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` for all 19 invariants with violation tracking.
 
 Dual-mode architecture: When Inventory Management is ENABLED, Physical Inventory is primary
 and Managed Stock is secondary (per-product syncManagedStock toggle). When DISABLED, 
