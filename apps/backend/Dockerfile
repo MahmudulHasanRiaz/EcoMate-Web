@@ -4,9 +4,9 @@ COPY package*.json ./
 COPY packages/ packages/
 COPY apps/backend/package.json apps/backend/package.json
 RUN npm install
-RUN npx tsc -p packages/license-engine/tsconfig.json && \
-    npx tsc -p packages/feature-flags/tsconfig.json && \
-    npx tsc -p packages/shared-types/tsconfig.json
+RUN npx tsc -p packages/shared-types/tsconfig.json && \
+    npx tsc -p packages/license-engine/tsconfig.json && \
+    npx tsc -p packages/feature-flags/tsconfig.json
 # Dereference workspace symlinks so Docker COPY produces real directories
 RUN for pkg in license-engine feature-flags shared-types; do \
       target="node_modules/@ecomate/$pkg"; \
