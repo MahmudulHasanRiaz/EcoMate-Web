@@ -95,6 +95,7 @@ import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
+import { Route as AuthenticatedOpInventoryPhysicalIndexRouteImport } from './routes/_authenticated/op/inventory/physical/index'
 import { Route as AuthenticatedOpDispatchDuplicateReviewIndexRouteImport } from './routes/_authenticated/op/dispatch/duplicate-review/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
@@ -114,6 +115,7 @@ import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/
 import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
+import { Route as AuthenticatedOpInventoryPhysicalReservationsRouteImport } from './routes/_authenticated/op/inventory/physical/reservations'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/$id/convert'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -612,6 +614,12 @@ const AuthenticatedOpOrdersIncompleteLeadsIndexRoute =
     path: '/op/orders/incomplete-leads/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpInventoryPhysicalIndexRoute =
+  AuthenticatedOpInventoryPhysicalIndexRouteImport.update({
+    id: '/op/inventory/physical/',
+    path: '/op/inventory/physical/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpDispatchDuplicateReviewIndexRoute =
   AuthenticatedOpDispatchDuplicateReviewIndexRouteImport.update({
     id: '/op/dispatch/duplicate-review/',
@@ -726,6 +734,12 @@ const AuthenticatedOpPrintInvoiceIdRoute =
     path: '/invoice/$id',
     getParentRoute: () => AuthenticatedOpPrintRouteRoute,
   } as any)
+const AuthenticatedOpInventoryPhysicalReservationsRoute =
+  AuthenticatedOpInventoryPhysicalReservationsRouteImport.update({
+    id: '/op/inventory/physical/reservations',
+    path: '/op/inventory/physical/reservations',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute =
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport.update({
     id: '/op/orders/incomplete-leads/$id/convert',
@@ -816,6 +830,7 @@ export interface FileRoutesByFullPath {
   '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
+  '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
@@ -835,6 +850,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
+  '/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -923,6 +939,7 @@ export interface FileRoutesByTo {
   '/op/tags': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
+  '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/marketing/catalog': typeof AuthenticatedMonMarketingCatalogIndexRoute
@@ -942,6 +959,7 @@ export interface FileRoutesByTo {
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/dispatch/duplicate-review': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
+  '/op/inventory/physical': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -1032,6 +1050,7 @@ export interface FileRoutesById {
   '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
+  '/_authenticated/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/_authenticated/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
@@ -1051,6 +1070,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/_authenticated/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
+  '/_authenticated/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
@@ -1141,6 +1161,7 @@ export interface FileRouteTypes {
     | '/op/tags/'
     | '/op/tasks/'
     | '/op/transactions/'
+    | '/op/inventory/physical/reservations'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
     | '/mon/marketing/catalog/'
@@ -1160,6 +1181,7 @@ export interface FileRouteTypes {
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
     | '/op/dispatch/duplicate-review/'
+    | '/op/inventory/physical/'
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
     | '/op/settings/personal/'
@@ -1248,6 +1270,7 @@ export interface FileRouteTypes {
     | '/op/tags'
     | '/op/tasks'
     | '/op/transactions'
+    | '/op/inventory/physical/reservations'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
     | '/mon/marketing/catalog'
@@ -1267,6 +1290,7 @@ export interface FileRouteTypes {
     | '/mon/settings/system'
     | '/mon/settings/tracking'
     | '/op/dispatch/duplicate-review'
+    | '/op/inventory/physical'
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
     | '/op/settings/personal'
@@ -1356,6 +1380,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/tags/'
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
+    | '/_authenticated/op/inventory/physical/reservations'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
     | '/_authenticated/mon/marketing/catalog/'
@@ -1375,6 +1400,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
     | '/_authenticated/op/dispatch/duplicate-review/'
+    | '/_authenticated/op/inventory/physical/'
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/settings/personal/'
@@ -2001,6 +2027,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/physical/': {
+      id: '/_authenticated/op/inventory/physical/'
+      path: '/op/inventory/physical'
+      fullPath: '/op/inventory/physical/'
+      preLoaderRoute: typeof AuthenticatedOpInventoryPhysicalIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/dispatch/duplicate-review/': {
       id: '/_authenticated/op/dispatch/duplicate-review/'
       path: '/op/dispatch/duplicate-review'
@@ -2133,6 +2166,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/op/print/invoice/$id'
       preLoaderRoute: typeof AuthenticatedOpPrintInvoiceIdRouteImport
       parentRoute: typeof AuthenticatedOpPrintRouteRoute
+    }
+    '/_authenticated/op/inventory/physical/reservations': {
+      id: '/_authenticated/op/inventory/physical/reservations'
+      path: '/op/inventory/physical/reservations'
+      fullPath: '/op/inventory/physical/reservations'
+      preLoaderRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/orders/incomplete-leads/$id/convert': {
       id: '/_authenticated/op/orders/incomplete-leads/$id/convert'
@@ -2305,8 +2345,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
+  AuthenticatedOpInventoryPhysicalReservationsRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   AuthenticatedMonMarketingCatalogIndexRoute: typeof AuthenticatedMonMarketingCatalogIndexRoute
   AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
+  AuthenticatedOpInventoryPhysicalIndexRoute: typeof AuthenticatedOpInventoryPhysicalIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -2394,10 +2436,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
+  AuthenticatedOpInventoryPhysicalReservationsRoute:
+    AuthenticatedOpInventoryPhysicalReservationsRoute,
   AuthenticatedMonMarketingCatalogIndexRoute:
     AuthenticatedMonMarketingCatalogIndexRoute,
   AuthenticatedOpDispatchDuplicateReviewIndexRoute:
     AuthenticatedOpDispatchDuplicateReviewIndexRoute,
+  AuthenticatedOpInventoryPhysicalIndexRoute:
+    AuthenticatedOpInventoryPhysicalIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:
     AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute:

@@ -43,6 +43,8 @@ export const sidebarData: SidebarData = {
             { title: 'Stock Levels', url: '/op/inventory' },
             { title: 'Overview', url: '/op/inventory/overview' },
             { title: 'Adjustments', url: '/op/inventory/adjustments' },
+            { title: 'Physical Stock', url: '/op/inventory/physical' },
+            { title: 'Reservations', url: '/op/inventory/physical/reservations' },
             { title: 'Transfers', url: '/op/inventory/transfers' },
             { title: 'Valuation', url: '/op/inventory/valuation', feature: 'admin_inventory_valuation' },
             { title: 'Reports', url: '/op/inventory/reports' },
