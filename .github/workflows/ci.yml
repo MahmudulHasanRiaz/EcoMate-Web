@@ -77,9 +77,9 @@ jobs:
 
       - name: Build workspace packages
         run: |
+          npx tsc -p packages/shared-types/tsconfig.json
           npx tsc -p packages/license-engine/tsconfig.json
           npx tsc -p packages/feature-flags/tsconfig.json
-          npx tsc -p packages/shared-types/tsconfig.json
 
       - name: Generate Prisma client
         working-directory: apps/backend
@@ -155,6 +155,9 @@ jobs:
         env:
           VITE_API_URL: http://localhost:4000/api
 
+      - name: Build workspace packages
+        run: npx tsc -p packages/shared-types/tsconfig.json
+
       - name: Build
         working-directory: apps/admin
         run: npm run build:skip-tsc
@@ -198,7 +201,7 @@ jobs:
             context: apps/storefront
             dockerfile: apps/storefront/Dockerfile
           - name: admin
-            context: apps/admin
+            context: .
             dockerfile: apps/admin/Dockerfile
           - name: pos
             context: .
