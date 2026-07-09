@@ -150,12 +150,13 @@ export class PosOrdersService {
       deliveryMethod,
     );
 
+    const statusName = isInstantDelivery ? 'delivered' : 'confirmed';
     const status = await this.prisma.orderStatus.findFirst({
-      where: { name: isInstantDelivery ? 'delivered' : 'confirmed' },
+      where: { name: { equals: statusName, mode: 'insensitive' } },
     });
     if (!status)
       throw new BadRequestException(
-        `Status "${isInstantDelivery ? 'delivered' : 'confirmed'}" not found`,
+        `Status "${statusName}" not found. Please create an order status named "${isInstantDelivery ? 'Delivered' : 'Confirmed'}" in settings.`,
       );
 
     return this.prisma.$transaction(async (tx) => {
