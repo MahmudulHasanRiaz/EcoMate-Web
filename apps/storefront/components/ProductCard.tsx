@@ -95,12 +95,20 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
   const linkUrl = product.slug ? `/products/${product.slug}` : `/products/${product.id}`;
   const aspect = getAspectStyle(config.catalogImageRatio);
+  const isOos = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK' || (product.stock !== undefined && product.stock <= 0)
 
   return (
     <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
       {(product.saveAmount && product.originalPrice) && (
         <div className="absolute top-2 right-2 bg-brand-success-dark text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
+        </div>
+      )}
+      {(product.availabilityMode === 'ALWAYS_OUT_OF_STOCK' || (product.stock !== undefined && product.stock <= 0)) && (
+        <div className="absolute top-2 left-12 z-10">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            Out of Stock
+          </span>
         </div>
       )}
 
@@ -175,6 +183,11 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
               <button onClick={() => updateQuantity(product.id, quantity + 1)}
                 className="w-10 h-full bg-white text-brand-blue-text border-l border-brand-blue/10 flex items-center justify-center font-black hover:bg-brand-blue/5 transition-colors">+</button>
             </div>
+          ) : isOos ? (
+            <button disabled
+              className="w-full h-[34px] md:h-[40px] bg-gray-100 text-gray-400 font-bold text-[12px] md:text-[13px] rounded-lg flex items-center justify-center gap-2 cursor-not-allowed">
+              Out of Stock
+            </button>
           ) : (
             <button onClick={handleAddToCart}
               className="w-full h-[34px] md:h-[40px] bg-white text-brand-blue-text font-bold text-[12px] md:text-[13px] border-2 border-brand-blue/20 rounded-lg flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all group/btn">

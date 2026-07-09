@@ -64,6 +64,13 @@ export function Adjustments() {
   const [adjustmentQuantity, setAdjustmentQuantity] = useState(0)
   const [adjustmentReason, setAdjustmentReason] = useState('')
   const [adjustmentDirection, setAdjustmentDirection] = useState<'IN' | 'OUT'>('IN')
+  const [adjustmentMode, setAdjustmentMode] = useState<'MANAGED' | 'PHYSICAL'>('MANAGED')
+  const [adjustmentWarehouse, setAdjustmentWarehouse] = useState('')
+
+  const { data: warehouses } = useQuery<any[]>({
+    queryKey: ['warehouses'],
+    queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
+  })
 
   const { data: logsData, isLoading, isError } = useQuery<LogsResponse>({
     queryKey: ['inventory-adjustment-logs', page],
@@ -79,10 +86,24 @@ export function Adjustments() {
   })
 
   const createMut = useMutation({
-    mutationFn: (data: { productId: string; quantity: number; reason: string }) =>
-      apiClient.post('/inventory/adjust', data),
+    mutationFn: (data: { productId: string; quantity: number; reason: string; warehouseId?: string; mode?: string }) => {
+      if (data.mode === 'PHYSICAL') {
+        return apiClient.post('/inventory/physical/adjust', {
+          productId: data.productId,
+          warehouseId: data.warehouseId,
+          quantity: data.quantity,
+          reason: data.reason,
+        })
+      }
+      return apiClient.post('/inventory/adjust', {
+        productId: data.productId,
+        quantity: data.quantity,
+        reason: data.reason,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['physical-stock'] })
       setNewAdjustmentOpen(false)
       resetAdjustmentForm()
       toast.success('Adjustment created')
@@ -96,6 +117,8 @@ export function Adjustments() {
     setAdjustmentQuantity(0)
     setAdjustmentReason('')
     setAdjustmentDirection('IN')
+    setAdjustmentMode('MANAGED')
+    setAdjustmentWarehouse('')
   }
 
   const logs = logsData?.data ?? []
@@ -108,7 +131,24 @@ export function Adjustments() {
     if (adjustmentQuantity <= 0) { toast.error('Quantity must be positive'); return }
     if (!adjustmentReason.trim()) { toast.error('Reason is required'); return }
     const quantity = adjustmentDirection === 'OUT' ? -Math.abs(adjustmentQuantity) : Math.abs(adjustmentQuantity)
-    createMut.mutate({ productId: selectedProduct.id, quantity, reason: adjustmentReason.trim() })
+
+    if (adjustmentMode === 'PHYSICAL') {
+      if (!adjustmentWarehouse) { toast.error('Select a warehouse'); return }
+      createMut.mutate({
+        productId: selectedProduct.id,
+        warehouseId: adjustmentWarehouse,
+        quantity,
+        reason: adjustmentReason.trim(),
+        mode: 'PHYSICAL',
+      })
+    } else {
+      createMut.mutate({
+        productId: selectedProduct.id,
+        quantity,
+        reason: adjustmentReason.trim(),
+        mode: 'MANAGED',
+      })
+    }
   }
 
   return (
@@ -237,17 +277,30 @@ export function Adjustments() {
       </Main>
 
       <Dialog open={newAdjustmentOpen} onOpenChange={v => { setNewAdjustmentOpen(v); if (!v) resetAdjustmentForm() }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className='sm:max-w-[550px]'>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" /> Create Inventory Adjustment
+            <DialogTitle className='flex items-center gap-2'>
+              <Package className='h-5 w-5' /> Create Inventory Adjustment
             </DialogTitle>
             <DialogDescription>
-              Adjust stock quantity for a product with a reason note.
+              Adjust stock for a product. Physical adjustments are tied to a specific warehouse.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
+          <div className='grid gap-4 py-4'>
+            <div className='space-y-2'>
+              <Label>Mode</Label>
+              <Select value={adjustmentMode} onValueChange={(v: 'MANAGED' | 'PHYSICAL') => setAdjustmentMode(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='MANAGED'>Managed Stock (virtual)</SelectItem>
+                  <SelectItem value='PHYSICAL'>Physical Stock (warehouse)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className='space-y-2'>
               <Label>Search Product</Label>
               <Command className='border rounded-md shadow-sm' shouldFilter={false}>
                 <CommandInput
@@ -260,13 +313,7 @@ export function Adjustments() {
                     <CommandEmpty>No products found.</CommandEmpty>
                     <CommandGroup>
                       {products.map((p) => (
-                        <CommandItem
-                          key={p.id}
-                          onSelect={() => {
-                            setSelectedProduct(p)
-                            setProductSearch(p.name)
-                          }}
-                        >
+                        <CommandItem key={p.id} onSelect={() => { setSelectedProduct(p); setProductSearch(p.name) }}>
                           <div className='flex items-center justify-between w-full'>
                             <span>{p.name}</span>
                             <span className='text-xs text-muted-foreground'>{p.sku}</span>
@@ -285,43 +332,47 @@ export function Adjustments() {
               )}
             </div>
 
-            <div className="space-y-2">
+            {adjustmentMode === 'PHYSICAL' && (
+              <div className='space-y-2'>
+                <Label>Warehouse</Label>
+                <Select value={adjustmentWarehouse} onValueChange={setAdjustmentWarehouse}>
+                  <SelectTrigger>
+                    <SelectValue placeholder='Select warehouse' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(warehouses || []).map((w: any) => (
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className='space-y-2'>
               <Label>Direction</Label>
               <Select value={adjustmentDirection} onValueChange={(v: 'IN' | 'OUT') => setAdjustmentDirection(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="IN">Stock In (Add)</SelectItem>
-                  <SelectItem value="OUT">Stock Out (Remove)</SelectItem>
+                  <SelectItem value='IN'>Stock In (Add)</SelectItem>
+                  <SelectItem value='OUT'>Stock Out (Remove)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className='space-y-2'>
               <Label>Quantity</Label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="e.g. 10"
-                value={adjustmentQuantity || ''}
-                onChange={e => setAdjustmentQuantity(parseInt(e.target.value) || 0)}
-              />
+              <Input type='number' min={1} placeholder='e.g. 10' value={adjustmentQuantity || ''} onChange={e => setAdjustmentQuantity(parseInt(e.target.value) || 0)} />
             </div>
 
-            <div className="space-y-2">
+            <div className='space-y-2'>
               <Label>Reason</Label>
-              <Input
-                placeholder="e.g. Cycle count correction"
-                value={adjustmentReason}
-                onChange={e => setAdjustmentReason(e.target.value)}
-              />
+              <Input placeholder='e.g. Cycle count correction' value={adjustmentReason} onChange={e => setAdjustmentReason(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setNewAdjustmentOpen(false); resetAdjustmentForm() }}>
-              Cancel
-            </Button>
+            <Button variant='outline' onClick={() => { setNewAdjustmentOpen(false); resetAdjustmentForm() }}>Cancel</Button>
             <Button onClick={handleCreateAdjustment} disabled={createMut.isPending}>
               {createMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
               Create Adjustment

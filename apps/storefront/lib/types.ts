@@ -49,6 +49,7 @@ export interface Product {
   tags?: string[];
   isActive?: boolean;
   manageStock?: boolean;
+  availabilityMode?: 'MANAGED_STOCK' | 'ALWAYS_IN_STOCK' | 'ALWAYS_OUT_OF_STOCK';
   variants?: Variant[];
   codAvailable?: boolean;
   descriptionSections?: ProductDescriptionSections;
@@ -188,4 +189,5 @@ export interface CartItem {
   variantId?: string;
   variantLabel?: string;
   variantAttributes?: { name: string; value: string }[];
+  availabilityMode?: 'MANAGED_STOCK' | 'ALWAYS_IN_STOCK' | 'ALWAYS_OUT_OF_STOCK';
 }
