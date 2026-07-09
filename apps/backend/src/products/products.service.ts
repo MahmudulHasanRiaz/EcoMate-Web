@@ -522,6 +522,10 @@ export class ProductsService {
     const categoryIds = dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
     const categoryId = dto.categoryId || (categoryIds[0] || null);
 
+    const avMode: string = dto.type === 'variable'
+      ? 'MANAGED_STOCK'
+      : (dto.availabilityMode || (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'));
+
     const product = await this.prisma.product.create({
       data: {
         name: dto.name,
@@ -545,7 +549,8 @@ export class ProductsService {
         seoMeta: dto.seoMeta,
         isFeatured: dto.isFeatured || false,
         isActive: dto.isActive ?? true,
-        manageStock: dto.type === 'variable' ? false : dto.manageStock || false,
+        availabilityMode: avMode as any,
+        manageStock: avMode === 'MANAGED_STOCK',
         variants: dto.variants
           ? {
               create: dto.variants.map((v) => ({
@@ -584,6 +589,20 @@ export class ProductsService {
 
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
+
+    if (avMode === 'MANAGED_STOCK' && dto.type !== 'variable' && (dto.managedStockQuantity ?? 0) > 0) {
+      await this.prisma.managedStockLedger.create({
+        data: {
+          productId: product.id,
+          quantity: dto.managedStockQuantity ?? 0,
+          direction: 'IN',
+          type: 'INITIAL',
+          stockBefore: 0,
+          stockAfter: dto.managedStockQuantity ?? 0,
+          note: 'Initial stock on product creation',
+        },
+      });
+    }
 
     if (dto.images?.length) {
       const synced = await this.media.syncEntityImages(
@@ -633,6 +652,8 @@ export class ProductsService {
     if (p.type === 'variable' || p.type === 'combo') {
       delete data.managedStockQuantity;
       delete data.manageStock;
+    } else if (dto.availabilityMode) {
+      data.manageStock = dto.availabilityMode === 'MANAGED_STOCK';
     }
 
     if (dto.categoryIds !== undefined) {
@@ -687,33 +708,39 @@ export class ProductsService {
       }
     }
 
-    if (
-      p.type !== 'variable' &&
-      dto.manageStock !== undefined &&
-      dto.manageStock !== p.manageStock
-    ) {
-      if (dto.manageStock) {
-        await this.prisma.product.update({
-          where: { id },
-          data: { availabilityMode: 'MANAGED_STOCK' },
-        });
-        await this.prisma.managedStockLedger.create({
-          data: {
-            productId: id,
-            quantity: dto.managedStockQuantity ?? 0,
-            direction: 'IN',
-            type: 'INITIAL',
-            stockBefore: 0,
-            stockAfter: dto.managedStockQuantity ?? 0,
-            note: 'Stock tracking enabled — initial balance',
-            performedById: performedBy,
-          },
-        });
-      } else {
-        await this.prisma.product.update({
-          where: { id },
-          data: { availabilityMode: 'ALWAYS_IN_STOCK' },
-        });
+    if (p.type !== 'variable' && p.type !== 'combo') {
+      const newMode: string | undefined = dto.availabilityMode
+        ?? (dto.manageStock !== undefined ? (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED') : undefined);
+
+      if (newMode && newMode !== p.availabilityMode) {
+        if (newMode === 'MANAGED_STOCK') {
+          const qty = dto.managedStockQuantity ?? p.managedStockQuantity;
+          await this.prisma.managedStockLedger.create({
+            data: {
+              productId: id,
+              quantity: qty,
+              direction: 'IN',
+              type: 'INITIAL',
+              stockBefore: 0,
+              stockAfter: qty,
+              note: `Mode changed to MANAGED_STOCK — initial balance ${qty}`,
+              performedById: performedBy,
+            },
+          });
+        } else if (p.availabilityMode === 'MANAGED_STOCK') {
+          await this.prisma.managedStockLedger.create({
+            data: {
+              productId: id,
+              quantity: p.managedStockQuantity,
+              direction: 'OUT',
+              type: 'ADJUSTMENT',
+              stockBefore: p.managedStockQuantity,
+              stockAfter: 0,
+              note: `Mode changed from MANAGED_STOCK to ${newMode} — snapshot: ${p.managedStockQuantity} units`,
+              performedById: performedBy,
+            },
+          });
+        }
       }
     }
 
