@@ -281,11 +281,11 @@ export function Reports() {
                                   {item.lowStockQty ?? '-'}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {item.basePrice != null ? `৳${item.basePrice.toFixed(2)}` : '-'}
+                                  {item.basePrice != null ? `৳${Number(item.basePrice).toFixed(2)}` : '-'}
                                 </TableCell>
                                 <TableCell className="text-right font-medium">
                                   {item.basePrice != null
-                                    ? `৳${(item.basePrice * item.managedStockQuantity).toFixed(2)}`
+                                    ? `৳${(Number(item.basePrice) * item.managedStockQuantity).toFixed(2)}`
                                     : '-'}
                                 </TableCell>
                               </TableRow>

@@ -15,12 +15,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProductForm } from './product-form'
 import { apiClient } from '@/lib/api-client'
+import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 
 export function ProductDetail() {
   const { id } = useParams({ from: '/_authenticated/op/products/$id' })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [formOpen, setFormOpen] = useState(false)
+  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
+  const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product', id],
@@ -164,10 +167,25 @@ export function ProductDetail() {
                                 <><span className='line-through text-muted-foreground text-xs mr-1'>৳{Number(v.price).toFixed(2)}</span>৳{Number(v.salePrice).toFixed(2)}</>
                               ) : v.price ? `৳${Number(v.price).toFixed(2)}` : '—'}
                             </td>
-                            <td className='py-2 text-right'>
+                            <td className='py-2 text-right flex items-center justify-end gap-1.5'>
                               {p.availabilityMode === 'ALWAYS_IN_STOCK' ? <Badge variant='outline' className='text-xs'>∞</Badge> :
                                p.availabilityMode === 'INVENTORY_CONTROLLED' ? <Badge variant='outline' className='text-xs text-muted-foreground'>—</Badge> :
                                <Badge variant={v.managedStockQuantity > 0 ? 'outline' : 'destructive'} className='text-xs'>{v.managedStockQuantity}</Badge>}
+                              {p.availabilityMode === 'MANAGED_STOCK' && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5"
+                                  onClick={() => {
+                                    setActiveVariantId(v.id)
+                                    setAdjustmentModalOpen(true)
+                                  }}
+                                  title="Adjust Stock"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -188,18 +206,35 @@ export function ProductDetail() {
                 <div className='flex justify-between'><span className='text-muted-foreground'>Slug</span><span className='font-mono text-xs'>{product.slug}</span></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Price</span><span className='font-medium'>৳{Number(product.basePrice).toFixed(2)}</span></div>
                 {product.salePrice != null && <div className='flex justify-between'><span className='text-muted-foreground'>Sale Price</span><span className='font-medium text-green-600'>৳{Number(product.salePrice).toFixed(2)}</span></div>}
-                <div className='flex justify-between'>
+                <div className='flex justify-between items-center'>
                   <span className='text-muted-foreground'>Stock</span>
-                  <Badge variant={
-                    product.availabilityMode === 'ALWAYS_IN_STOCK' ? 'outline' :
-                    product.availabilityMode === 'INVENTORY_CONTROLLED' ? 'secondary' :
-                    product.managedStockQuantity > 0 ? 'outline' : 'destructive'
-                  }>
-                    {product.availabilityMode === 'ALWAYS_IN_STOCK' ? '∞ Unlimited' :
-                     product.availabilityMode === 'INVENTORY_CONTROLLED' ? '0 (Track via PO)' :
-                     isVar ? `From ${variants.reduce((s, v: any) => s + v.managedStockQuantity, 0)}` :
-                     product.managedStockQuantity}
-                  </Badge>
+                  <div className='flex items-center gap-1.5'>
+                    <Badge variant={
+                      product.availabilityMode === 'ALWAYS_IN_STOCK' ? 'outline' :
+                      product.availabilityMode === 'INVENTORY_CONTROLLED' ? 'secondary' :
+                      product.managedStockQuantity > 0 ? 'outline' : 'destructive'
+                    }>
+                      {product.availabilityMode === 'ALWAYS_IN_STOCK' ? '∞ Unlimited' :
+                       product.availabilityMode === 'INVENTORY_CONTROLLED' ? '0 (Track via PO)' :
+                       isVar ? `From ${variants.reduce((s, v: any) => s + v.managedStockQuantity, 0)}` :
+                       product.managedStockQuantity}
+                    </Badge>
+                    {!isVar && product.availabilityMode === 'MANAGED_STOCK' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() => {
+                          setActiveVariantId(null)
+                          setAdjustmentModalOpen(true)
+                        }}
+                        title="Adjust Stock"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Active</span><Badge variant={product.isActive ? 'default' : 'secondary'} className={product.isActive ? 'bg-green-500' : ''}>{product.isActive ? 'Yes' : 'No'}</Badge></div>
                 <div className='flex justify-between'><span className='text-muted-foreground'>Featured</span><span>{product.isFeatured ? 'Yes' : 'No'}</span></div>
@@ -264,6 +299,20 @@ export function ProductDetail() {
         </div>
 
         <ProductForm open={formOpen} onOpenChange={setFormOpen} currentRow={product as any} mode='edit' />
+        {adjustmentModalOpen && product?.id && (
+          <ManagedStockAdjustmentModal
+            open={adjustmentModalOpen}
+            onOpenChange={(v) => {
+              setAdjustmentModalOpen(v)
+              if (!v) {
+                queryClient.invalidateQueries({ queryKey: ['product', product.id] })
+                queryClient.invalidateQueries({ queryKey: ['product-ledger', product.id] })
+              }
+            }}
+            initialProductId={product.id}
+            initialVariantId={activeVariantId || undefined}
+          />
+        )}
       </Main>
     </>
   )

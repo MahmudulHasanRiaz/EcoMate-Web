@@ -304,6 +304,15 @@ export class OrdersService {
             product: {
               select: { id: true, name: true, images: true, slug: true },
             },
+            variant: {
+              include: {
+                attributeValues: {
+                  include: {
+                    attributeValue: true,
+                  },
+                },
+              },
+            },
           },
         },
         payments: {

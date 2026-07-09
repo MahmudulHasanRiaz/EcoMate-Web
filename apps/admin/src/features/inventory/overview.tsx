@@ -219,13 +219,22 @@ export function StockOverview() {
                 <div className="space-y-4">
                   {lowStockProducts.slice(0, 5).map((item) => (
                     <div key={item.id} className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium leading-none">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.type === 'variant' && item.variantAttributes
-                            ? `${item.sku ?? ''} - ${item.variantAttributes}`
-                            : item.sku}
-                        </p>
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 shrink-0 rounded border bg-muted flex items-center justify-center overflow-hidden">
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <Package className="h-4 w-4 text-muted-foreground/50" />
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium leading-none">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.type === 'variant' && item.variantAttributes
+                              ? `${item.sku ?? ''} - ${item.variantAttributes}`
+                              : item.sku}
+                          </p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium text-amber-600">{item.stock} left</p>

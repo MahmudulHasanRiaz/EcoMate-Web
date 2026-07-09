@@ -72,7 +72,7 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                 <Tag className="mr-2 h-4 w-4" /> View Lot
               </Button>
               <Button variant="outline" size="sm" asChild onClick={() => onOpenChange(false)}>
-                <Link to="/op/inventory/detail"><FileText className="mr-2 h-4 w-4" /> Full Detail Page</Link>
+                <Link to="/op/inventory/detail" search={{ productId: productDetails.id }}><FileText className="mr-2 h-4 w-4" /> Full Detail Page</Link>
               </Button>
             </div>
 
@@ -203,7 +203,9 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                         (ledgerData as any).data.map((entry: any) => (
                           <TableRow key={entry.id}>
                             <TableCell>
-                              <div className="text-xs font-medium">{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}</div>
+                              <div className="text-xs font-medium">
+                                {(entry.performedAt || entry.createdAt) ? new Date(entry.performedAt || entry.createdAt).toLocaleString() : '—'}
+                              </div>
                               <div className="text-[10px] text-blue-600 hover:underline cursor-pointer">{entry.reference || '—'}</div>
                             </TableCell>
                             <TableCell>

@@ -22,6 +22,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
   const [quantity, setQuantity] = useState(0)
   const [reason, setReason] = useState('')
+  const [unitCost, setUnitCost] = useState('')
 
   const { data: products } = useQuery<any[]>({
     queryKey: ['product-search-physical', productSearch],
@@ -35,10 +36,12 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
   })
 
   const adjustMut = useMutation({
-    mutationFn: (data: { productId: string; warehouseId: string; quantity: number; reason: string }) =>
+    mutationFn: (data: { productId: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
       apiClient.post('/inventory/physical/adjust', data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['physical-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
       queryClient.invalidateQueries({ queryKey: ['physical-reservations'] })
       toast.success('Physical stock adjusted')
       reset()
@@ -53,6 +56,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     setSelectedWarehouse('')
     setQuantity(0)
     setReason('')
+    setUnitCost('')
   }
 
   function handleSubmit() {
@@ -60,11 +64,19 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     if (!selectedWarehouse) { toast.error('Select a warehouse'); return }
     if (!quantity || quantity === 0) { toast.error('Quantity must be non-zero'); return }
     if (!reason.trim()) { toast.error('Reason is required'); return }
+    
+    const cost = quantity > 0 ? parseFloat(unitCost) : undefined
+    if (quantity > 0 && (isNaN(cost!) || cost! <= 0)) {
+      toast.error('Unit Cost (Purchase Price) must be greater than 0 when adding stock')
+      return
+    }
+
     adjustMut.mutate({
       productId: selectedProduct.id,
       warehouseId: selectedWarehouse,
       quantity,
       reason: reason.trim(),
+      unitCost: cost,
     })
   }
 
@@ -116,6 +128,13 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
             <Label>Quantity (positive=add, negative=remove)</Label>
             <Input type='number' placeholder='e.g. 10 or -5' value={quantity || ''} onChange={e => setQuantity(parseInt(e.target.value) || 0)} />
           </div>
+
+          {quantity > 0 && (
+            <div className='space-y-2'>
+              <Label>Unit Cost / Purchase Price (৳)</Label>
+              <Input type='number' step='0.01' min='0.01' placeholder='e.g. 120.00' value={unitCost} onChange={e => setUnitCost(e.target.value)} />
+            </div>
+          )}
 
           <div className='space-y-2'>
             <Label>Reason</Label>

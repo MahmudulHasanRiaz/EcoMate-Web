@@ -666,8 +666,15 @@ export class ProductsService {
     if (p.type === 'variable' || p.type === 'combo') {
       delete data.managedStockQuantity;
       delete data.manageStock;
-    } else if (dto.availabilityMode) {
-      data.manageStock = dto.availabilityMode === 'MANAGED_STOCK';
+    } else {
+      if (dto.managedStockQuantity !== undefined && dto.managedStockQuantity !== p.managedStockQuantity) {
+        throw new BadRequestException(
+          'Product stock cannot be edited directly. Use Inventory > Adjust Stock to change stock levels.',
+        );
+      }
+      if (dto.availabilityMode) {
+        data.manageStock = dto.availabilityMode === 'MANAGED_STOCK';
+      }
     }
 
     if (dto.categoryIds !== undefined) {
@@ -722,17 +729,17 @@ export class ProductsService {
       }
     }
 
-    if (p.type !== 'variable' && p.type !== 'combo') {
-      const newMode: string | undefined =
-        dto.availabilityMode ??
-        (dto.manageStock !== undefined
-          ? dto.manageStock
-            ? 'MANAGED_STOCK'
-            : 'INVENTORY_CONTROLLED'
-          : undefined);
+    const newMode: string | undefined =
+      dto.availabilityMode ??
+      (dto.manageStock !== undefined
+        ? dto.manageStock
+          ? 'MANAGED_STOCK'
+          : 'INVENTORY_CONTROLLED'
+        : undefined);
 
-      if (newMode && newMode !== p.availabilityMode) {
-        if (newMode === 'MANAGED_STOCK') {
+    if (newMode && newMode !== p.availabilityMode) {
+      if (newMode === 'MANAGED_STOCK') {
+        if (p.type !== 'variable' && p.type !== 'combo') {
           const qty = dto.managedStockQuantity ?? p.managedStockQuantity;
           await this.prisma.managedStockLedger.create({
             data: {
@@ -746,18 +753,55 @@ export class ProductsService {
               performedById: performedBy,
             },
           });
-        } else if (p.availabilityMode === 'MANAGED_STOCK') {
-          await this.prisma.managedStockLedger.create({
-            data: {
-              productId: id,
-              quantity: p.managedStockQuantity,
-              direction: 'OUT',
-              type: 'ADJUSTMENT',
-              stockBefore: p.managedStockQuantity,
-              stockAfter: 0,
-              note: `Mode changed from MANAGED_STOCK to ${newMode} — snapshot: ${p.managedStockQuantity} units`,
-              performedById: performedBy,
-            },
+        }
+      } else if (p.availabilityMode === 'MANAGED_STOCK') {
+        if (p.type !== 'variable' && p.type !== 'combo') {
+          if (p.managedStockQuantity > 0) {
+            await this.prisma.managedStockLedger.create({
+              data: {
+                productId: id,
+                quantity: p.managedStockQuantity,
+                direction: 'OUT',
+                type: 'ADJUSTMENT',
+                stockBefore: p.managedStockQuantity,
+                stockAfter: 0,
+                note: `Mode changed from MANAGED_STOCK to ${newMode} — snapshot: ${p.managedStockQuantity} units`,
+                performedById: performedBy,
+              },
+            });
+            await this.prisma.product.update({
+              where: { id },
+              data: { managedStockQuantity: 0 },
+            });
+          }
+        } else if (p.type === 'variable') {
+          const variants = await this.prisma.productVariant.findMany({
+            where: { productId: id },
+          });
+          for (const v of variants) {
+            if (v.managedStockQuantity > 0) {
+              await this.prisma.managedStockLedger.create({
+                data: {
+                  productId: id,
+                  variantId: v.id,
+                  quantity: v.managedStockQuantity,
+                  direction: 'OUT',
+                  type: 'ADJUSTMENT',
+                  stockBefore: v.managedStockQuantity,
+                  stockAfter: 0,
+                  note: `Mode changed from MANAGED_STOCK to ${newMode} — variant snapshot: ${v.managedStockQuantity} units`,
+                  performedById: performedBy,
+                },
+              });
+              await this.prisma.productVariant.update({
+                where: { id: v.id },
+                data: { managedStockQuantity: 0 },
+              });
+            }
+          }
+          await this.prisma.product.update({
+            where: { id },
+            data: { managedStockQuantity: 0 },
           });
         }
       }

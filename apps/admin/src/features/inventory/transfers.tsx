@@ -93,6 +93,9 @@ export function Transfers() {
       apiClient.post('/inventory/transfer', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
       setNewTransferOpen(false)
       resetForm()
       toast.success('Transfer created successfully')

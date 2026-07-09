@@ -18,6 +18,7 @@ export interface StockOperationParams {
   unitCost?: number;
   tx?: Prisma.TransactionClient;
   warehouseId?: string;
+  ledgerType?: string;
 }
 
 interface StockTarget {
@@ -281,6 +282,48 @@ export class StockService {
     }
   }
 
+  private async logPhysicalInventoryLedger(
+    targets: StockTarget[],
+    warehouseId: string,
+    direction: Prisma.$PhysicalInventoryLedgerPayload['scalars']['direction'],
+    type: string,
+    reference: string,
+    performedBy: string | undefined,
+    unitCost: number | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    for (const t of targets) {
+      const pi = await tx.physicalInventory.findUnique({
+        where: {
+          productId_warehouseId: {
+            productId: t.productId,
+            warehouseId,
+          },
+        },
+        select: { quantity: true },
+      });
+      const currentQuantity = pi?.quantity ?? 0;
+      const stockAfter = currentQuantity;
+      const stockBefore =
+        direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
+
+      await tx.physicalInventoryLedger.create({
+        data: {
+          productId: t.productId,
+          warehouseId,
+          quantity: t.qty,
+          direction,
+          stockBefore,
+          stockAfter,
+          type,
+          reason: reference,
+          performedBy,
+          unitCost: unitCost != null ? new Prisma.Decimal(unitCost) : null,
+        },
+      });
+    }
+  }
+
   private async logManagedStockLedger(
     targets: StockTarget[],
     direction: Prisma.$ManagedStockLedgerPayload['scalars']['direction'],
@@ -292,6 +335,25 @@ export class StockService {
     tx: Prisma.TransactionClient,
   ) {
     for (const t of targets) {
+      let currentStock = 0;
+      if (t.variantId) {
+        const v = await tx.productVariant.findUnique({
+          where: { id: t.variantId },
+          select: { managedStockQuantity: true },
+        });
+        currentStock = v?.managedStockQuantity ?? 0;
+      } else {
+        const p = await tx.product.findUnique({
+          where: { id: t.productId },
+          select: { managedStockQuantity: true },
+        });
+        currentStock = p?.managedStockQuantity ?? 0;
+      }
+
+      const stockAfter = currentStock;
+      const stockBefore =
+        direction === 'IN' ? currentStock - t.qty : currentStock + t.qty;
+
       await tx.managedStockLedger.create({
         data: {
           productId: t.productId,
@@ -300,8 +362,8 @@ export class StockService {
           quantity: t.qty,
           direction,
           type,
-          stockBefore: null,
-          stockAfter: null,
+          stockBefore,
+          stockAfter,
           referenceType,
           referenceId,
           reason: note,
@@ -360,28 +422,58 @@ export class StockService {
       );
     }
     const exec = async (tx: Prisma.TransactionClient) => {
-      const targets = await this.resolveTargets(params, tx);
+      let targets = await this.resolveTargets(params, tx);
+      let effectiveOperation = operation;
+      let isNegative = false;
+
+      if (params.quantity < 0) {
+        isNegative = true;
+        targets = targets.map((t) => ({ ...t, qty: Math.abs(t.qty) }));
+        if (operation === 'add') {
+          effectiveOperation = 'deduct';
+        }
+      }
+
+      for (const t of targets) {
+        const product = await tx.product.findUnique({
+          where: { id: t.productId },
+          select: { availabilityMode: true },
+        });
+        if (product) {
+          if (product.availabilityMode === 'ALWAYS_IN_STOCK') {
+            throw new BadRequestException(
+              `Product is always in stock — no physical adjustments allowed`,
+            );
+          }
+          if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+            throw new BadRequestException(
+              `Product is always out of stock — no physical adjustments allowed`,
+            );
+          }
+        }
+      }
+
       const physicalTargets = targets.map((t) => ({
         productId: t.productId,
         warehouseId: params.warehouseId!,
         qty: t.qty,
       }));
 
-      if (operation === 'reserve') {
+      if (effectiveOperation === 'reserve') {
         await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'reservedQuantity',
           tx,
         );
-      } else if (operation === 'release') {
+      } else if (effectiveOperation === 'release') {
         await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
           'reservedQuantity',
           tx,
         );
-      } else if (operation === 'deduct') {
+      } else if (effectiveOperation === 'deduct') {
         await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
@@ -394,11 +486,31 @@ export class StockService {
           'reservedQuantity',
           tx,
         );
-      } else if (operation === 'add') {
+        await this.logPhysicalInventoryLedger(
+          targets,
+          params.warehouseId!,
+          'OUT',
+          params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
+          params.reference,
+          params.performedBy,
+          params.unitCost,
+          tx,
+        );
+      } else if (effectiveOperation === 'add') {
         await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'quantity',
+          tx,
+        );
+        await this.logPhysicalInventoryLedger(
+          targets,
+          params.warehouseId!,
+          'IN',
+          params.ledgerType || 'ADD',
+          params.reference,
+          params.performedBy,
+          params.unitCost,
           tx,
         );
       }
@@ -503,7 +615,7 @@ export class StockService {
         await this.logManagedStockLedger(
           targets,
           'IN',
-          'MANUAL_ADD',
+          (params.ledgerType as Prisma.$ManagedStockLedgerPayload['scalars']['type']) || 'MANUAL_ADD',
           'MANUAL',
           params.reference,
           params.performedBy,
@@ -527,7 +639,7 @@ export class StockService {
         await this.logManagedStockLedger(
           targets,
           'OUT',
-          'MANUAL_REMOVE',
+          (params.ledgerType as Prisma.$ManagedStockLedgerPayload['scalars']['type']) || 'MANUAL_REMOVE',
           'MANUAL',
           params.reference,
           params.performedBy,

@@ -123,7 +123,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
   const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
-  const [defaultVariantStock, setDefaultVariantStock] = useState('10')
+  const [defaultVariantStock, setDefaultVariantStock] = useState('0')
 
   const [uploading] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -175,7 +175,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
       setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
 setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
-      setDefaultVariantStock('10'); setLocalVariants([]);
+      setDefaultVariantStock('0'); setLocalVariants([]);
     }
     setTab('general')
   }, [open, currentRow, isEdit])
@@ -405,7 +405,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           attributeIds: selectedAttrs,
           attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
           defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
-          defaultManagedStockQuantity: parseInt(defaultVariantStock) || 10,
+          defaultManagedStockQuantity: parseInt(defaultVariantStock) || 0,
         },
       })
     } else {
@@ -429,7 +429,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           sku: fullSku,
           price: parseFloat(basePrice) || 0,
           salePrice: null,
-          managedStockQuantity: parseInt(defaultVariantStock) || 10,
+          managedStockQuantity: parseInt(defaultVariantStock) || 0,
           standardCost: null,
           images: [],
           attributeValueIds: combo.map((av: any) => av.id),
@@ -686,20 +686,21 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                         <p className='text-xs text-blue-700 dark:text-blue-300'>
                           Stock adjustments tracked in Managed Stock Ledger.
                         </p>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setAdjustmentModalOpen(true)}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setActiveVariantId(null); setAdjustmentModalOpen(true); }}>
                           Adjust Stock
                         </Button>
                       </div>
                     </div>
                   ) : (
-                    <div className='grid grid-cols-3 gap-6'>
-                      <div className='space-y-1.5'>
-                        <Label>Initial Stock Quantity</Label>
-                        <Input type='number' value={stock} onChange={e => setStock(e.target.value)} placeholder='0' />
-                      </div>
-                      <div className='space-y-1.5'>
+                    <div className='flex flex-col sm:flex-row items-start sm:items-center gap-6'>
+                      <div className='space-y-1.5 w-full sm:w-40'>
                         <Label>Low Stock Alert</Label>
                         <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
+                      </div>
+                      <div className='flex-1 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                        <p className='text-xs text-blue-700 dark:text-blue-300'>
+                          Starting stock cannot be set here. Please load initial quantities via the <strong>Inventory &gt; Stock</strong> page's adjustment tool after creating the product to preserve ledger audit trail integrity.
+                        </p>
                       </div>
                     </div>
                   )
@@ -712,7 +713,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                         <p className='text-xs text-blue-700 dark:text-blue-300'>
                           Adjust variant stock using the Managed Stock tool.
                         </p>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setAdjustmentModalOpen(true)}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setActiveVariantId(null); setAdjustmentModalOpen(true); }}>
                           Adjust Variants
                         </Button>
                       </div>
@@ -954,6 +955,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                               onUpdate={(data) => updateVariantMut.mutate({ id: rowId, variantId: v.id, data })}
                               onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
                               currencySymbol='৳'
+                              onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
                             />
                           )
                         })}
@@ -1123,12 +1125,14 @@ function VariantRow({
   onUpdate,
   onImagePick,
   currencySymbol,
+  onAdjustStock,
 }: {
   variant: ProductResponse['variants'][number]
   productId: string
   onUpdate: (data: any) => void
   onImagePick: () => void
   currencySymbol: string
+  onAdjustStock?: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -1257,11 +1261,25 @@ function VariantRow({
         </div>
 
         {/* Stock (read-only — edit via Inventory) */}
-        <div className='min-w-0'>
-          <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
-          <Badge variant={variant.managedStockQuantity > 0 ? 'secondary' : 'destructive'} className='text-xs'>
-            {variant.managedStockQuantity}
-          </Badge>
+        <div className='min-w-0 flex items-center gap-1.5'>
+          <div>
+            <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
+            <Badge variant={variant.managedStockQuantity > 0 ? 'secondary' : 'destructive'} className='text-xs'>
+              {variant.managedStockQuantity}
+            </Badge>
+          </div>
+          {onAdjustStock && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 mt-4"
+              onClick={onAdjustStock}
+              title="Adjust Stock"
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+          )}
         </div>
 
         {/* Standard Cost */}

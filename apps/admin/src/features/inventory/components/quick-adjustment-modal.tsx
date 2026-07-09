@@ -21,10 +21,12 @@ interface QuickAdjustmentModalProps {
 export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, availabilityMode, onSuccess }: QuickAdjustmentModalProps) {
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
+  const [warehouseId, setWarehouseId] = useState('main')
+  const [unitCost, setUnitCost] = useState('')
 
   const adjustMut = useMutation({
-    mutationFn: (data: { productId?: string; quantity: number; reason: string }) =>
-      apiClient.post('/inventory/adjust', data),
+    mutationFn: (data: { productId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
+      apiClient.post('/inventory/physical/adjust', data),
     onSuccess: () => {
       toast.success('Stock adjusted successfully')
       onOpenChange(false)
@@ -43,21 +45,26 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
       toast.error('Please enter a valid non-zero quantity')
       return
     }
+    const cost = qty > 0 ? parseFloat(unitCost) : undefined
+    if (qty > 0 && (isNaN(cost!) || cost! <= 0)) {
+      toast.error('Unit Cost (Purchase Price) must be greater than 0 when adding stock')
+      return
+    }
     if (!reason.trim()) {
       toast.error('Please select or enter a reason')
       return
     }
-    adjustMut.mutate({ productId, quantity: qty, reason })
+    adjustMut.mutate({ productId, warehouseId, quantity: qty, reason, unitCost: cost })
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setQuantity(''); setReason(''); setUnitCost(''); } onOpenChange(v) }}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Quick Adjust: {productName || 'Stock'}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          {availabilityMode && availabilityMode !== 'MANAGED_STOCK' && (
+          {availabilityMode && availabilityMode !== 'MANAGED_STOCK' && availabilityMode !== 'INVENTORY_CONTROLLED' && (
             <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2'>
               <p className='text-xs text-amber-700 dark:text-amber-300'>
                 Availability mode: <strong>{availabilityMode}</strong>. Stock adjustments are not available for this product.
@@ -66,7 +73,7 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
           )}
           <div className="grid gap-2">
             <Label htmlFor="warehouse">Warehouse</Label>
-            <Select defaultValue="main">
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
               <SelectTrigger>
                 <SelectValue placeholder="Select warehouse" />
               </SelectTrigger>
@@ -93,6 +100,21 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
                 <span className={`font-bold ${Number(quantity) > 0 ? 'text-green-600' : Number(quantity) < 0 ? 'text-red-600' : ''}`}>
                   {Number(quantity) > 0 ? '+' : ''}{quantity} units
                 </span>
+              </div>
+            )}
+
+            {parseInt(quantity) > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="unitCost">Unit Cost / Purchase Price (৳)</Label>
+                <Input
+                  id="unitCost"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="e.g. 120.00"
+                  value={unitCost}
+                  onChange={(e) => setUnitCost(e.target.value)}
+                />
               </div>
             )}
 

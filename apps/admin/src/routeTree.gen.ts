@@ -83,6 +83,7 @@ import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/
 import { Route as AuthenticatedOpInventoryTransfersRouteImport } from './routes/_authenticated/op/inventory/transfers'
 import { Route as AuthenticatedOpInventoryReportsRouteImport } from './routes/_authenticated/op/inventory/reports'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
+import { Route as AuthenticatedOpInventoryHistoryRouteImport } from './routes/_authenticated/op/inventory/history'
 import { Route as AuthenticatedOpInventoryDetailRouteImport } from './routes/_authenticated/op/inventory/detail'
 import { Route as AuthenticatedOpInventoryAdjustmentsRouteImport } from './routes/_authenticated/op/inventory/adjustments'
 import { Route as AuthenticatedOpEmployeesPresetsRouteImport } from './routes/_authenticated/op/employees/presets'
@@ -543,6 +544,12 @@ const AuthenticatedOpInventoryOverviewRoute =
     path: '/op/inventory/overview',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpInventoryHistoryRoute =
+  AuthenticatedOpInventoryHistoryRouteImport.update({
+    id: '/op/inventory/history',
+    path: '/op/inventory/history',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryDetailRoute =
   AuthenticatedOpInventoryDetailRouteImport.update({
     id: '/op/inventory/detail',
@@ -779,6 +786,7 @@ export interface FileRoutesByFullPath {
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
@@ -888,6 +896,7 @@ export interface FileRoutesByTo {
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
@@ -999,6 +1008,7 @@ export interface FileRoutesById {
   '/_authenticated/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/_authenticated/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/_authenticated/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/_authenticated/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/_authenticated/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
@@ -1110,6 +1120,7 @@ export interface FileRouteTypes {
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
     | '/op/inventory/detail'
+    | '/op/inventory/history'
     | '/op/inventory/overview'
     | '/op/inventory/reports'
     | '/op/inventory/transfers'
@@ -1219,6 +1230,7 @@ export interface FileRouteTypes {
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
     | '/op/inventory/detail'
+    | '/op/inventory/history'
     | '/op/inventory/overview'
     | '/op/inventory/reports'
     | '/op/inventory/transfers'
@@ -1329,6 +1341,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/employees/presets'
     | '/_authenticated/op/inventory/adjustments'
     | '/_authenticated/op/inventory/detail'
+    | '/_authenticated/op/inventory/history'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/inventory/reports'
     | '/_authenticated/op/inventory/transfers'
@@ -1943,6 +1956,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/history': {
+      id: '/_authenticated/op/inventory/history'
+      path: '/op/inventory/history'
+      fullPath: '/op/inventory/history'
+      preLoaderRoute: typeof AuthenticatedOpInventoryHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/inventory/detail': {
       id: '/_authenticated/op/inventory/detail'
       path: '/op/inventory/detail'
@@ -2294,6 +2314,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpEmployeesPresetsRoute: typeof AuthenticatedOpEmployeesPresetsRoute
   AuthenticatedOpInventoryAdjustmentsRoute: typeof AuthenticatedOpInventoryAdjustmentsRoute
   AuthenticatedOpInventoryDetailRoute: typeof AuthenticatedOpInventoryDetailRoute
+  AuthenticatedOpInventoryHistoryRoute: typeof AuthenticatedOpInventoryHistoryRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpInventoryReportsRoute: typeof AuthenticatedOpInventoryReportsRoute
   AuthenticatedOpInventoryTransfersRoute: typeof AuthenticatedOpInventoryTransfersRoute
@@ -2378,6 +2399,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpInventoryAdjustmentsRoute:
     AuthenticatedOpInventoryAdjustmentsRoute,
   AuthenticatedOpInventoryDetailRoute: AuthenticatedOpInventoryDetailRoute,
+  AuthenticatedOpInventoryHistoryRoute: AuthenticatedOpInventoryHistoryRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpInventoryReportsRoute: AuthenticatedOpInventoryReportsRoute,
   AuthenticatedOpInventoryTransfersRoute:

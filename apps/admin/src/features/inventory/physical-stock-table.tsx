@@ -28,7 +28,7 @@ export function PhysicalStockTable() {
   const [selectedWarehouse, setSelectedWarehouse] = useState('all')
   const [search, setSearch] = useState('')
   const [adjustOpen, setAdjustOpen] = useState(false)
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [selectedProductDetails, setSelectedProductDetails] = useState<any | null>(null)
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
@@ -135,7 +135,16 @@ export function PhysicalStockTable() {
                       {new Date(s.updatedAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell className='text-right'>
-                      <Button variant='ghost' size='sm' onClick={() => setSelectedProductId(s.productId)}>
+                      <Button variant='ghost' size='sm' onClick={() => setSelectedProductDetails({
+                        id: s.product.id,
+                        name: s.product.name,
+                        sku: s.product.sku,
+                        onHand: s.quantity,
+                        available: s.quantity - s.reservedQuantity,
+                        reserved: s.reservedQuantity,
+                        allocated: 0,
+                        status: (s.quantity - s.reservedQuantity) < 0 ? 'negative' : ((s.quantity - s.reservedQuantity) === 0 ? 'low' : 'optimal'),
+                      })}>
                         <Eye className='h-4 w-4' />
                       </Button>
                     </TableCell>
@@ -148,11 +157,11 @@ export function PhysicalStockTable() {
       </Main>
 
       <PhysicalAdjustDialog open={adjustOpen} onOpenChange={setAdjustOpen} />
-      {selectedProductId && (
+      {selectedProductDetails && (
         <InventoryDetailDrawer
-          productId={selectedProductId}
-          open={!!selectedProductId}
-          onClose={() => setSelectedProductId(null)}
+          productDetails={selectedProductDetails}
+          open={!!selectedProductDetails}
+          onOpenChange={(open) => { if (!open) setSelectedProductDetails(null) }}
         />
       )}
     </>

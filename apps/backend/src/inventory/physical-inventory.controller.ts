@@ -26,6 +26,7 @@ export class PhysicalInventoryController {
       warehouseId: dto.warehouseId,
       quantity: dto.quantity,
       reference: dto.reason,
+      ledgerType: 'PHYSICAL_ADJUSTMENT',
     });
     return { ok: true };
   }

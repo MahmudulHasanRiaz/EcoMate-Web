@@ -24,6 +24,22 @@ export class InventoryService {
   ) {}
 
   async lowStock() {
+    const parseImages = (imgVal: any): string | null => {
+      if (!imgVal) return null;
+      if (typeof imgVal === 'string') {
+        try {
+          const parsed = JSON.parse(imgVal);
+          return Array.isArray(parsed) && parsed.length ? parsed[0] : imgVal;
+        } catch {
+          return imgVal;
+        }
+      }
+      if (Array.isArray(imgVal) && imgVal.length) {
+        return imgVal[0];
+      }
+      return null;
+    };
+
     const products = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -32,18 +48,25 @@ export class InventoryService {
         stock: number;
         lowStockQty: number | null;
         sku: string | null;
+        images: any;
       }>
     >`
-      SELECT id, name, slug, stock, "lowStockQty", sku
+      SELECT id, name, slug, stock, "lowStockQty", sku, images
       FROM "Product"
       WHERE "availabilityMode" = 'MANAGED_STOCK'
         AND "isActive" = true
-        AND type != 'variable'
+        AND "type" != 'variable'
         AND stock <= COALESCE("lowStockQty", 5)
       ORDER BY name ASC
     `;
     const lowStockProducts = products.map((p) => ({
-      ...p,
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      stock: p.stock,
+      lowStockQty: p.lowStockQty,
+      sku: p.sku,
+      image: parseImages(p.images),
       type: 'product' as const,
     }));
 
@@ -54,9 +77,11 @@ export class InventoryService {
         slug: string;
         sku: string | null;
         lowStockQty: number | null;
+        images: any;
         variantId: string;
         variantSku: string | null;
         variantStock: number;
+        variantImage: string | null;
         variantAttributes: string | null;
       }>
     >`
@@ -66,9 +91,11 @@ export class InventoryService {
         p.slug,
         p.sku,
         p."lowStockQty",
+        p.images,
         pv.id AS "variantId",
         pv.sku AS "variantSku",
-        pv.managedStockQuantity AS "variantStock",
+        pv.stock AS "variantStock",
+        pv.image AS "variantImage",
         COALESCE(
           (SELECT string_agg(av.value, ' / ' ORDER BY av.value)
            FROM "ProductVariantAttributeValue" pvav
@@ -79,9 +106,9 @@ export class InventoryService {
       FROM "Product" p
       JOIN "ProductVariant" pv ON pv."productId" = p.id
       WHERE p."isActive" = true
-        AND p.type = 'variable'
+        AND p."type" = 'variable'
         AND p."availabilityMode" = 'MANAGED_STOCK'
-        AND pv.managedStockQuantity <= COALESCE(p."lowStockQty", 5)
+        AND pv.stock <= COALESCE(p."lowStockQty", 5)
       ORDER BY p.name ASC
     `;
     const lowStockVariants = variableProducts.map((v) => ({
@@ -91,6 +118,7 @@ export class InventoryService {
       stock: v.variantStock,
       lowStockQty: v.lowStockQty,
       sku: v.sku,
+      image: v.variantImage || parseImages(v.images),
       type: 'variant' as const,
       variantSku: v.variantSku || '',
       variantAttributes: v.variantAttributes || v.variantSku || '',
@@ -100,77 +128,66 @@ export class InventoryService {
     return { products: allLowStock, count: allLowStock.length };
   }
 
-  async logs(page = 1, perPage = 20, type?: string) {
+  async logs(page = 1, perPage = 20, type?: string, warehouseId?: string, productId?: string) {
     const where: any = {};
-    if (type) where.type = type;
+    if (type) {
+      if (type === 'adjustment') {
+        where.type = { in: ['adjustment', 'ADJUSTMENT', 'physical_adjustment', 'PHYSICAL_ADJUSTMENT'] };
+      } else if (type === 'transfer') {
+        where.type = { in: ['transfer', 'TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] };
+      } else if (type === 'sale') {
+        where.type = { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED'] };
+      } else if (type === 'return') {
+        where.type = { in: ['return', 'RETURN'] };
+      } else {
+        where.type = {
+          mode: 'insensitive',
+          equals: type,
+        };
+      }
+    }
+    if (warehouseId) {
+      where.warehouseId = warehouseId;
+    }
+    if (productId) {
+      where.productId = productId;
+    }
+
     const [data, total] = await Promise.all([
-      this.prisma.inventoryLog.findMany({
+      this.prisma.physicalInventoryLedger.findMany({
         where,
+        include: {
+          product: { select: { id: true, name: true, sku: true, images: true } },
+          warehouse: { select: { id: true, name: true } },
+        },
         skip: (page - 1) * perPage,
         take: perPage,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.inventoryLog.count({ where }),
+      this.prisma.physicalInventoryLedger.count({ where }),
     ]);
-
-    const productIds = [
-      ...new Set(data.map((l) => l.productId).filter(Boolean)),
-    ];
-    const variantIds = [
-      ...new Set(data.map((l) => l.variantId).filter(Boolean)),
-    ];
-    const comboIds = [...new Set(data.map((l) => l.comboId).filter(Boolean))];
-
-    const [products, variants, combos] = await Promise.all([
-      productIds.length
-        ? this.prisma.product.findMany({
-            where: { id: { in: productIds as string[] } },
-            select: { id: true, name: true },
-          })
-        : Promise.resolve([] as { id: string; name: string }[]),
-      variantIds.length
-        ? this.prisma.productVariant.findMany({
-            where: { id: { in: variantIds as string[] } },
-            select: {
-              id: true,
-              sku: true,
-              attributeValues: {
-                include: { attributeValue: { select: { value: true } } },
-              },
-            },
-          })
-        : Promise.resolve(
-            [] as {
-              id: string;
-              sku: string;
-              attributeValues: { attributeValue: { value: string } }[];
-            }[],
-          ),
-      comboIds.length
-        ? this.prisma.combo.findMany({
-            where: { id: { in: comboIds as string[] } },
-            select: { id: true, name: true },
-          })
-        : Promise.resolve([] as { id: string; name: string }[]),
-    ]);
-
-    const productMap = new Map(products.map((p) => [p.id, p]));
-    const variantMap = new Map(variants.map((v) => [v.id, v]));
-    const comboMap = new Map(combos.map((c) => [c.id, c]));
 
     const mapped = data.map((l) => {
-      const variant = l.variantId ? variantMap.get(l.variantId) : undefined;
+      const prodImages = l.product?.images;
+      const firstImage = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null;
       return {
-        ...l,
-        productName: l.productId
-          ? (productMap.get(l.productId)?.name ?? null)
-          : null,
-        variantName: variant
-          ? variant.attributeValues
-              .map((av) => av.attributeValue.value)
-              .join(' / ') || variant.sku
-          : null,
-        comboName: l.comboId ? (comboMap.get(l.comboId)?.name ?? null) : null,
+        id: l.id,
+        productId: l.productId,
+        warehouseId: l.warehouseId,
+        quantity: l.quantity,
+        direction: l.direction,
+        stockBefore: l.stockBefore,
+        stockAfter: l.stockAfter,
+        type: l.type.toLowerCase(),
+        reason: l.reason,
+        note: l.reason,
+        performedBy: l.performedBy || 'System',
+        performedAt: l.createdAt,
+        productName: l.product?.name || 'Unknown Product',
+        sku: l.product?.sku || '—',
+        warehouseName: l.warehouse?.name || 'Unknown Warehouse',
+        unitCost: l.unitCost ? Number(l.unitCost) : null,
+        image: typeof firstImage === 'string' ? firstImage : null,
       };
     });
 
@@ -363,6 +380,8 @@ export class InventoryService {
         variantId,
         quantity: Math.abs(q),
         reference: reason ? `adjust-${reason}` : 'manual-adjustment',
+        performedBy,
+        ledgerType: ManagedStockMovementType.ADJUSTMENT,
       });
       return {
         id: variant.id,
@@ -436,6 +455,7 @@ export class InventoryService {
               reference: `adjust-${reason}`,
               performedBy,
               tx,
+              ledgerType: ManagedStockMovementType.ADJUSTMENT,
             });
 
             return tx.product.findUnique({
@@ -695,28 +715,51 @@ export class InventoryService {
       this.prisma.product.count({ where }),
     ]);
 
-    const dataWithAvailableStock = data.map((p) => ({
-      ...p,
-      availableStock:
-        p.availabilityMode === 'MANAGED_STOCK'
-          ? p.managedStockQuantity
-          : p.availabilityMode === 'INVENTORY_CONTROLLED'
-            ? 0
-            : p.availabilityMode === 'ALWAYS_IN_STOCK'
-              ? null
-              : 0,
-      variants: p.variants.map((v) => ({
-        ...v,
+    const productIds = data.map((p) => p.id);
+    const physicalSums = await this.prisma.physicalInventory.groupBy({
+      by: ['productId'],
+      _sum: {
+        quantity: true,
+      },
+      where: {
+        productId: { in: productIds },
+      },
+    });
+
+    const sumMap = new Map(
+      physicalSums.map((s) => [s.productId, s._sum.quantity ?? 0]),
+    );
+
+    const dataWithAvailableStock = data.map((p) => {
+      const physicalStockSum = sumMap.get(p.id) ?? 0;
+      const managedStockSum = p.type === 'variable'
+        ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
+        : p.managedStockQuantity;
+
+      return {
+        ...p,
+        managedStockQuantity: managedStockSum,
         availableStock:
           p.availabilityMode === 'MANAGED_STOCK'
-            ? v.managedStockQuantity
+            ? managedStockSum
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
-              ? 0
+              ? physicalStockSum
               : p.availabilityMode === 'ALWAYS_IN_STOCK'
                 ? null
                 : 0,
-      })),
-    }));
+        variants: p.variants.map((v) => ({
+          ...v,
+          availableStock:
+            p.availabilityMode === 'MANAGED_STOCK'
+              ? v.managedStockQuantity
+              : p.availabilityMode === 'INVENTORY_CONTROLLED'
+                ? physicalStockSum // simple product fallback
+                : p.availabilityMode === 'ALWAYS_IN_STOCK'
+                  ? null
+                  : 0,
+        })),
+      };
+    });
 
     return {
       data: dataWithAvailableStock,
@@ -854,15 +897,41 @@ export class InventoryService {
       );
     }
 
-    await this.prisma.inventoryLog.create({
-      data: {
+    await this.prisma.$transaction(async (tx) => {
+      // Deduct from source
+      await this.stockService.deductPhysical({
         productId: dto.productId,
         variantId: dto.variantId,
         quantity: dto.quantity,
-        type: 'transfer',
-        reason: `Transferred ${dto.quantity} units from ${dto.sourceLocation} to ${dto.destinationLocation}${dto.notes ? ': ' + dto.notes : ''}`,
+        warehouseId: dto.sourceLocation,
+        reference: `Transfer to ${destWarehouse.name}`,
         performedBy,
-      },
+        ledgerType: 'TRANSFER_OUT',
+        tx,
+      });
+
+      // Add to destination
+      await this.stockService.addPhysical({
+        productId: dto.productId,
+        variantId: dto.variantId,
+        quantity: dto.quantity,
+        warehouseId: dto.destinationLocation,
+        reference: `Transfer from ${sourceWarehouse.name}`,
+        performedBy,
+        ledgerType: 'TRANSFER_IN',
+        tx,
+      });
+
+      await tx.inventoryLog.create({
+        data: {
+          productId: dto.productId,
+          variantId: dto.variantId,
+          quantity: dto.quantity,
+          type: 'transfer',
+          reason: `Transferred ${dto.quantity} units from ${dto.sourceLocation} to ${dto.destinationLocation}${dto.notes ? ': ' + dto.notes : ''}`,
+          performedBy,
+        },
+      });
     });
 
     return {

@@ -27,11 +27,15 @@ export class InventoryController {
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
     @Query('type') type?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('productId') productId?: string,
   ) {
     return this.inventoryService.logs(
       page ? parseInt(page) : 1,
       perPage ? parseInt(perPage) : 20,
       type,
+      warehouseId,
+      productId,
     );
   }
 

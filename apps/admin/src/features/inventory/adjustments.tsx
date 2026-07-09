@@ -30,6 +30,7 @@ interface AdjustmentLog {
   performedBy: string
   performedAt: string
   productName: string
+  warehouseName?: string
 }
 
 interface PaginationMeta {
@@ -64,7 +65,7 @@ export function Adjustments() {
   const [adjustmentQuantity, setAdjustmentQuantity] = useState(0)
   const [adjustmentReason, setAdjustmentReason] = useState('')
   const [adjustmentDirection, setAdjustmentDirection] = useState<'IN' | 'OUT'>('IN')
-  const [adjustmentMode, setAdjustmentMode] = useState<'MANAGED' | 'PHYSICAL'>('MANAGED')
+  const [adjustmentMode, setAdjustmentMode] = useState<'MANAGED' | 'PHYSICAL'>('PHYSICAL')
   const [adjustmentWarehouse, setAdjustmentWarehouse] = useState('')
 
   const { data: warehouses } = useQuery<any[]>({
@@ -87,16 +88,9 @@ export function Adjustments() {
 
   const createMut = useMutation({
     mutationFn: (data: { productId: string; quantity: number; reason: string; warehouseId?: string; mode?: string }) => {
-      if (data.mode === 'PHYSICAL') {
-        return apiClient.post('/inventory/physical/adjust', {
-          productId: data.productId,
-          warehouseId: data.warehouseId,
-          quantity: data.quantity,
-          reason: data.reason,
-        })
-      }
-      return apiClient.post('/inventory/adjust', {
+      return apiClient.post('/inventory/physical/adjust', {
         productId: data.productId,
+        warehouseId: data.warehouseId,
         quantity: data.quantity,
         reason: data.reason,
       })
@@ -117,7 +111,7 @@ export function Adjustments() {
     setAdjustmentQuantity(0)
     setAdjustmentReason('')
     setAdjustmentDirection('IN')
-    setAdjustmentMode('MANAGED')
+    setAdjustmentMode('PHYSICAL')
     setAdjustmentWarehouse('')
   }
 
@@ -132,23 +126,14 @@ export function Adjustments() {
     if (!adjustmentReason.trim()) { toast.error('Reason is required'); return }
     const quantity = adjustmentDirection === 'OUT' ? -Math.abs(adjustmentQuantity) : Math.abs(adjustmentQuantity)
 
-    if (adjustmentMode === 'PHYSICAL') {
-      if (!adjustmentWarehouse) { toast.error('Select a warehouse'); return }
-      createMut.mutate({
-        productId: selectedProduct.id,
-        warehouseId: adjustmentWarehouse,
-        quantity,
-        reason: adjustmentReason.trim(),
-        mode: 'PHYSICAL',
-      })
-    } else {
-      createMut.mutate({
-        productId: selectedProduct.id,
-        quantity,
-        reason: adjustmentReason.trim(),
-        mode: 'MANAGED',
-      })
-    }
+    if (!adjustmentWarehouse) { toast.error('Select a warehouse'); return }
+    createMut.mutate({
+      productId: selectedProduct.id,
+      warehouseId: adjustmentWarehouse,
+      quantity,
+      reason: adjustmentReason.trim(),
+      mode: 'PHYSICAL',
+    })
   }
 
   return (
@@ -202,6 +187,7 @@ export function Adjustments() {
               <TableRow>
                 <TableHead>Adjustment ID</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Warehouse</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Quantity</TableHead>
                 <TableHead>Stock Before</TableHead>
@@ -214,19 +200,19 @@ export function Adjustments() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className='text-center py-8'>
+                  <TableCell colSpan={10} className='text-center py-8'>
                     <Loader2 className='animate-spin h-6 w-6 mx-auto' />
                   </TableCell>
                 </TableRow>
               ) : isError ? (
                 <TableRow>
-                  <TableCell colSpan={9} className='text-center py-8 text-destructive'>
+                  <TableCell colSpan={10} className='text-center py-8 text-destructive'>
                     Failed to load adjustments. Try again.
                   </TableCell>
                 </TableRow>
               ) : logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className='text-center py-12 text-muted-foreground'>
+                  <TableCell colSpan={10} className='text-center py-12 text-muted-foreground'>
                     No adjustments found.
                   </TableCell>
                 </TableRow>
@@ -235,6 +221,7 @@ export function Adjustments() {
                   <TableRow key={log.id}>
                     <TableCell className="font-medium">{log.id.slice(0, 8).toUpperCase()}</TableCell>
                     <TableCell>{log.productName}</TableCell>
+                    <TableCell>{log.warehouseName}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">{log.type}</Badge>
                     </TableCell>
@@ -288,19 +275,6 @@ export function Adjustments() {
           </DialogHeader>
           <div className='grid gap-4 py-4'>
             <div className='space-y-2'>
-              <Label>Mode</Label>
-              <Select value={adjustmentMode} onValueChange={(v: 'MANAGED' | 'PHYSICAL') => setAdjustmentMode(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='MANAGED'>Managed Stock (virtual)</SelectItem>
-                  <SelectItem value='PHYSICAL'>Physical Stock (warehouse)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className='space-y-2'>
               <Label>Search Product</Label>
               <Command className='border rounded-md shadow-sm' shouldFilter={false}>
                 <CommandInput
@@ -332,21 +306,19 @@ export function Adjustments() {
               )}
             </div>
 
-            {adjustmentMode === 'PHYSICAL' && (
-              <div className='space-y-2'>
-                <Label>Warehouse</Label>
-                <Select value={adjustmentWarehouse} onValueChange={setAdjustmentWarehouse}>
-                  <SelectTrigger>
-                    <SelectValue placeholder='Select warehouse' />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(warehouses || []).map((w: any) => (
-                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className='space-y-2'>
+              <Label>Warehouse</Label>
+              <Select value={adjustmentWarehouse} onValueChange={setAdjustmentWarehouse}>
+                <SelectTrigger>
+                  <SelectValue placeholder='Select warehouse' />
+                </SelectTrigger>
+                <SelectContent>
+                  {(warehouses || []).map((w: any) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className='space-y-2'>
               <Label>Direction</Label>

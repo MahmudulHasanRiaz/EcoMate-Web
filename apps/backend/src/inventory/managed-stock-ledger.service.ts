@@ -75,8 +75,35 @@ export class ManagedStockLedgerService {
       this.prisma.managedStockLedger.count({ where }),
     ]);
 
+    const productIds = [
+      ...new Set(data.map((l) => l.productId).filter(Boolean)),
+    ] as string[];
+
+    const products = productIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, name: true, sku: true, images: true },
+        })
+      : [];
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const mapped = data.map((l) => {
+      const prod = l.productId ? productMap.get(l.productId) : null;
+      const prodImages = prod?.images;
+      const firstImage = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null;
+      return {
+        ...l,
+        reference: l.referenceId,
+        user: l.performedById,
+        productName: prod?.name || '—',
+        sku: prod?.sku || '—',
+        image: typeof firstImage === 'string' ? firstImage : null,
+      };
+    });
+
     return {
-      data,
+      data: mapped,
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
     };
   }

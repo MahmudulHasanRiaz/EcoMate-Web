@@ -271,7 +271,19 @@ function OrderDetailPage() {
                   <TableBody>
                     {(editing ? orderItems : order.items)?.map((item: any, index: number) => (
                       <TableRow key={item.id || index}>
-                        <TableCell><div className='flex items-center gap-3'>{item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}<span className='text-sm font-medium'>{item.product?.name}</span></div></TableCell>
+                        <TableCell><div className='flex items-center gap-3'>{item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center'><Package className='h-5 w-5 text-muted-foreground' /></div>}
+                          <div>
+                            <span className='text-sm font-medium block'>{item.product?.name}</span>
+                            {item.variant && item.variant.attributeValues?.length > 0 && (
+                              <span className='text-xs text-muted-foreground mt-0.5 block'>
+                                {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
+                              </span>
+                            )}
+                            {item.variant?.sku && (
+                              <span className='text-[10px] text-muted-foreground/60 font-mono block'>SKU: {item.variant.sku}</span>
+                            )}
+                          </div>
+                        </div></TableCell>
                         <TableCell className='text-right text-sm'>
                           {editing ? (
                             <Input type='number' value={item.price} onChange={e => {
