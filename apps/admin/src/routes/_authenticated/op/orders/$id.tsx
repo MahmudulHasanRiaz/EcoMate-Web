@@ -24,8 +24,8 @@ import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Loader2, ArrowLeft, ArrowRight, Package, Pencil, Percent, DollarSign, Save, Clock, User, ChevronDown, ChevronUp, Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send, AlertTriangle } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
-
-const statusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
+import { OrderStatusMachine } from '@/features/orders/order-status-machine'
+import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -253,20 +253,19 @@ function OrderDetailPage() {
               <Button variant='default' size='sm' onClick={() => setShowDispatchDialog(true)}><Send className='h-4 w-4 mr-1' /> Send to Courier</Button>
             )}
             <div className='flex items-center gap-2 border rounded-md px-3 py-1.5'>
-              <div className='flex items-center gap-1.5'>
-                <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
-                {order.courierService && order.courierStatus && <Badge variant='outline' className='text-xs flex items-center gap-1'><Truck className='h-3 w-3' /> {order.courierStatus}</Badge>}
-                {order.trackingUrl && <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}><ExternalLink className='h-3 w-3' /></Button>}
-              </div>
-              {allowedStatuses.length > 0 && (
-                <select className='text-sm border-0 bg-transparent focus:outline-none' value='' onChange={e => { if (e.target.value) setShowStatusDialog(e.target.value) }}>
-                  <option value=''>Change...</option>
-                  {allowedStatuses.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              )}
+              <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge>
+              {order.courierService && order.courierStatus && <Badge variant='outline' className='text-xs flex items-center gap-1'><Truck className='h-3 w-3' /> {order.courierStatus}</Badge>}
+              {order.trackingUrl && <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}><ExternalLink className='h-3 w-3' /></Button>}
             </div>
           </div>
         </div>
+
+        <OrderStatusMachine
+          currentStatusName={order.status.name}
+          statusList={statusList}
+          allowedNextIds={order.status.nextStatuses}
+          onStatusClick={(statusId) => setShowStatusDialog(statusId)}
+        />
 
         <div className='grid grid-cols-3 gap-6'>
           <div className='col-span-2 space-y-6'>
