@@ -17,6 +17,9 @@ export class IpBlockMiddleware implements NestMiddleware {
       '';
     if (!ip) return next();
 
+    const loopbacks = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
+    if (loopbacks.includes(ip)) return next();
+
     const blocked = await this.isBlocked(ip);
     if (blocked) {
       this.logger.warn(`Full-blocked request from IP: ${ip}`);
