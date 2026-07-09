@@ -65,6 +65,18 @@ All documentation files in `docs/` must be consistent with `docs/1-BUSINESS/BUSI
 ### INV-014: Architecture Decisions must be documented as ADRs
 Every significant architecture choice requires a written ADR in `docs/2-ARCHITECTURE/ADR/`.
 
+### INV-015: StockService centralizes ALL stock operations
+StockService owns both Managed Stock AND Physical Inventory mutations. No service may directly mutate `PhysicalInventory.quantity` or `PhysicalInventory.reservedQuantity`.
+
+### INV-016: Physical Inventory must support reservation
+`PhysicalInventory` must have `reservedQuantity` field. Physical stock reservation follows the same pattern as Managed Stock: reserve at Create/Confirm (per availabilityMode), release on cancel, deduct at HANDED_OVER.
+
+### INV-017: ALWAYS_OUT_OF_STOCK blocks order creation
+Products with `availabilityMode: ALWAYS_OUT_OF_STOCK` MUST be rejected at ALL order creation paths (admin, storefront, POS).
+
+### INV-018: Cost deduction is mode-aware
+CostingLot deduction at HANDED_OVER must respect the active mode: Managed Stock costing when Inventory Management is disabled, Physical Inventory costing when enabled.
+
 ---
 
 ## Current Violations
@@ -85,5 +97,10 @@ Every significant architecture choice requires a written ADR in `docs/2-ARCHITEC
 | INV-010 | OrdersService bypasses StockService for managed stock mutations | `orders.service.ts:1639-1890` | CRITICAL |
 | INV-010 | InventoryService bypasses StockService for managed stock mutations | `inventory.service.ts:249-460` | HIGH |
 | INV-011 | OrdersService, InventoryService, ProductsService all write to ProductVariant.managedStockQuantity concurrently | `orders.service.ts`, `inventory.service.ts`, `products.service.ts` | CRITICAL |
+| INV-015 | PhysicalInventory.reservedQuantity does not exist — no physical reservation system | Prisma schema / `PhysicalInventory` model | HIGH |
+| INV-015 | StockService lacks reservePhysical/deductPhysical/releasePhysical/addPhysical methods | `stock.service.ts` | HIGH |
+| INV-016 | PhysicalInventory cannot track reserved stock — reservedQuantity field missing | Prisma schema | HIGH |
+| INV-017 | No ALWAYS_OUT_OF_STOCK guard at order creation | `orders.service.ts` create/addItem/updateOrder | HIGH |
+| INV-018 | DeductCostingLots runs for all availability modes regardless of Inventory Management setting | `stock.service.ts:301-303` | MEDIUM |
 
 All violations tracked in `docs/2-ARCHITECTURE/VERIFICATION_REPORT.md` and `docs/4-TECHNICAL/TERMINOLOGY_ALIGNMENT.md`.

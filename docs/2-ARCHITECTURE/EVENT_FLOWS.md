@@ -1,8 +1,17 @@
 # Event Flows — Cross-Module Event Propagation
 
-> **Status:** Verified against implementation  
-> **Purpose:** Documents how events propagate across domains. These are the canonical event chains for understanding cross-domain impact.  
-> **Cross-reference:** State machines documented in `docs/2-ARCHITECTURE/STATE_MACHINES.md`
+> **Status:** Target architecture (not current implementation)  
+> **Purpose:** Documents how events SHOULD propagate across domains per the dual-mode stock architecture.  
+> **Cross-reference:** State machines in `docs/2-ARCHITECTURE/STATE_MACHINES.md`, invariants in `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md`
+
+---
+
+**Important:** Event flows depend on whether **Inventory Management** feature is enabled:
+
+- **Mode A (Disabled):** Managed Stock is primary. Current implementation (see ⚠️ notes for known violations).
+- **Mode B (Enabled):** Physical Inventory is primary. Managed Stock is optional per-product (`syncManagedStock`).
+
+Current implementation follows Mode A with several bugs. Mode B requires new code.
 
 ---
 
@@ -11,10 +20,13 @@
 ```
 Order Created
   │
-  ├─▶ StockService.reserve per item
-  │     │
-  │     └─▶ reservedStock++ (all availability modes — even non-managed)
-  │     └─▶ InventoryLog (legacy)
+  ├─▶ [Mode A] StockService.reserve() → reservedStock++
+  │       └─▶ InventoryLog (legacy)
+  │
+  ├─▶ [Mode B, INVENTORY_CONTROLLED] StockService.reservePhysical()
+  │       └─▶ PhysicalInventory.reservedQuantity += orderQty
+  │
+  ├─▶ [Mode B, MANAGED_STOCK] No physical reserve yet (reserved at Confirm)
   │
   ├─▶ PaymentStatus set: PAYMENT_PENDING (FULL_PAYMENT/PARTIAL_PAYMENT)
   │                      or UNPAID (CASH_ON_DELIVERY)
@@ -29,11 +41,14 @@ Order Created
 ```
 Order Confirmed (status → Confirmed)
   │
-  ├─▶ deductStockForOrder (DIRECT Prisma write — bypasses StockService)
-  │     │
-  │     ├─▶ managedStockQuantity-- (only for MANAGED_STOCK + manageStock)
-  │     ├─▶ ManagedStockLedger (OUT, ORDER_DEDUCTION)
-  │     └─▶ reservedStock NOT decremented (stays elevated — known issue)
+  ├─▶ [Mode A] StockService.deduct() → managedStockQuantity--
+  │     └─▶ ManagedStockLedger (OUT, ORDER_DEDUCTION)
+  │
+  ├─▶ [Mode B] StockService.checkPhysicalAvailability() — if insufficient, REJECT
+  │     └─▶ StockService.reservePhysical() → PhysicalInventory.reservedQuantity +=
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.deduct() → managedStockQuantity--
+  │     └─▶ ManagedStockLedger (OUT, ORDER_DEDUCTION)
   │
   ├─▶ takeCostSnapshot
   │     └─▶ costSnapshot = standardCost per item, costType = 'estimated'
@@ -41,6 +56,9 @@ Order Confirmed (status → Confirmed)
   ├─▶ Order status updated to Confirmed
   │
   └─▶ No analytics event emitted
+
+⚠️ Current implementation: deductStockForOrder() uses DIRECT Prisma writes
+   (bypasses StockService). Mode B physical check + reserve not implemented.
 ```
 
 ## 3. Dispatch HANDED_OVER
@@ -48,12 +66,17 @@ Order Confirmed (status → Confirmed)
 ```
 Dispatch HANDED_OVER
   │
-  ├─▶ stockService.operate('deduct')
-  │     │
-  │     ├─▶ managedStockQuantity-- (via applyStockChange for MANAGED_STOCK)
-  │     ├─▶ reservedStock-- (via applyStockChange — always runs)
-  │     ├─▶ InventoryLog (legacy — NOT ManagedStockLedger)
-  │     └─▶ DeductCostingLots (runs for all modes — not just MANAGED_STOCK)
+  ├─▶ [Mode A] StockService.operate('deduct')
+  │     ├─▶ managedStockQuantity-- (via applyStockChange)
+  │     ├─▶ reservedStock-- (via applyStockChange)
+  │     └─▶ InventoryLog (legacy)
+  │
+  ├─▶ [Mode B] StockService.deductPhysical()
+  │     ├─▶ PhysicalInventory.quantity -= orderQty
+  │     ├─▶ PhysicalInventory.reservedQuantity -= orderQty
+  │     └─▶ CostingLot deducted (FIFO actual cost)
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.deduct() → managedStockQuantity--
   │
   ├─▶ handedOverAt set on Dispatch record
   │
@@ -61,8 +84,9 @@ Dispatch HANDED_OVER
   │
   └─▶ Courier tracking activated
 
-⚠️ Known Issue: Dual deduction with Order Confirmed. managedStockQuantity
+⚠️ Current Mode A: Dual deduction with Order Confirmed. managedStockQuantity
    decremented at Confirmed AND at HANDED_OVER for MANAGED_STOCK products.
+   DeductCostingLots runs for ALL modes (not just MANAGED_STOCK).
 ```
 
 ## 4. Order Cancelled (Pre-Courier)
@@ -70,18 +94,22 @@ Dispatch HANDED_OVER
 ```
 Order Cancelled (pre-courier — from Pending/Confirmed/Packed/Packing Hold)
   │
-  ├─▶ StockService.release per item
-  │     └─▶ reservedStock--
+  ├─▶ [Mode A] StockService.release() → reservedStock--
+  │     └─▶ StockService.restoreStock() → managedStockQuantity++
   │
-  ├─▶ restoreStockForCancelledOrder (DIRECT Prisma write — bypasses StockService)
-  │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK, idempotent)
-  │     └─▶ ManagedStockLedger (IN, CANCEL_RELEASE)
+  ├─▶ [Mode B] StockService.releasePhysical()
+  │     └─▶ PhysicalInventory.reservedQuantity -= orderQty
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.release() + restoreStock()
   │
   ├─▶ fireRefundEvent (tracking pixel)
   │
   ├─▶ order.status_changed event emitted (for admin notifications)
   │
   └─▶ Payment: refund flow begins if already paid
+
+⚠️ Current implementation: restoreStockForCancelledOrder() uses DIRECT Prisma writes.
+   Mode B physical release not implemented.
 ```
 
 ## 5. Order Returned
@@ -89,13 +117,19 @@ Order Cancelled (pre-courier — from Pending/Confirmed/Packed/Packing Hold)
 ```
 Order Returned (status → Returned)
   │
-  ├─▶ handleReturnedSideEffects (DIRECT Prisma write — bypasses StockService)
-  │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK, idempotent)
+  ├─▶ [Mode A] StockService.add() → managedStockQuantity++
   │     └─▶ ManagedStockLedger (IN, RETURN)
+  │
+  ├─▶ [Mode B] StockService.addPhysical()
+  │     └─▶ PhysicalInventory.quantity += returnQty
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.add() → managedStockQuantity++
   │
   ├─▶ Order status updated to Returned
   │
   └─▶ No analytics event emitted
+
+⚠️ Current implementation: handleReturnedSideEffects() uses DIRECT Prisma writes.
 ```
 
 ## 6. Purchase Received (GRN)
@@ -103,9 +137,14 @@ Order Returned (status → Returned)
 ```
 Purchase Received (GRN Created)
   │
-  ├─▶ StockService.add per item
+  ├─▶ [Mode A] StockService.add()
   │     ├─▶ managedStockQuantity++ (only for MANAGED_STOCK)
   │     └─▶ InventoryLog (legacy)
+  │
+  ├─▶ [Mode B] StockService.addPhysical()
+  │     └─▶ PhysicalInventory.quantity += receivedQty
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.add() → managedStockQuantity++
   │
   ├─▶ Physical Inventory → quantity increased
   │     └─▶ CostingLot created (actual cost recorded)
@@ -118,21 +157,7 @@ Purchase Received (GRN Created)
 
 ## 7. Payment Verified
 
-```
-Payment Verified (admin approves proof)
-  │
-  ├─▶ Payment.status → PAID
-  │
-  ├─▶ Order.paymentStatus recalculated
-  │     ├─▶ Sum PAID >= total → PAID
-  │     ├─▶ 0 < Sum < total → PARTIAL_PAID
-  │     └─▶ Sum = 0 → PAYMENT_PENDING
-  │
-  ├─▶ Order.status → Confirmed (if was Payment Verifying)
-  │     └─▶ Triggers Order Confirmed event chain (#2 above)
-  │
-  └─▶ No analytics event emitted
-```
+(No stock impact — payment only)
 
 ## 8. Refund Completed
 
@@ -143,12 +168,18 @@ Refund Completed (refund status → completed)
   │     ├─▶ Full refund → REFUNDED
   │     └─▶ Partial refund → PARTIAL_REFUNDED
   │
-  ├─▶ restockOrderItems (InventoryService — only for MANAGED_STOCK/INVENTORY_CONTROLLED)
-  │     ├─▶ managedStockQuantity++ (direct Prisma write)
-  │     ├─▶ ManagedStockLedger (CANCEL_RELEASE or RETURN, IN)
-  │     └─▶ InventoryLog (legacy — dual write)
+  ├─▶ [Mode A] StockService.add() → managedStockQuantity++
+  │     └─▶ ManagedStockLedger (CANCEL_RELEASE or RETURN, IN)
+  │
+  ├─▶ [Mode B] StockService.addPhysical()
+  │     └─▶ PhysicalInventory.quantity +=
+  │
+  ├─▶ [Mode B + syncManagedStock=ON] StockService.add() → managedStockQuantity++
   │
   └─▶ No analytics event emitted
+
+⚠️ Current implementation: restockOrderItems() writes directly to ManagedStockLedger
+   AND InventoryLog (dual legacy write).
 ```
 
 ## 9. License Activated

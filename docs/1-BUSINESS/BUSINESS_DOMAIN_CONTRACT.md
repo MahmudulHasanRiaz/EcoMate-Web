@@ -17,6 +17,8 @@
 - **Every data mutation has exactly one authoritative service.** No Prisma model may be written by more than one service.
 - **Only StockService may mutate managedStockQuantity or reservedStock.** Violations create dual-tracking drift.
 - **Ledger records are append-only.** Once written, stock ledger entries are never modified or deleted.
+- **Dual-mode Stock Architecture.** Inventory Management can be enabled or disabled per deployment. When disabled, Managed Stock is the primary system. When enabled, Physical Inventory is primary and Managed Stock is secondary (per-product sync).
+- **Only StockService may mutate stock state.** Whether Inventory Management is enabled or disabled, all stock mutations (Managed Stock + Physical Inventory) route through StockService.
 
 ## Source of Truth Priority
 
@@ -39,7 +41,7 @@
 ### 1. Product
 **Prisma:** `Product`  
 **Definition:** A sellable item in the catalog. Has variants (SKU-level), attributes, categories, brands. Product owns Managed Stock — `managedStockQuantity` is the sum of variant stock, tracked via ManagedStockLedger.  
-**Key constraints:** Has `availabilityMode` (enum: `ALWAYS_IN_STOCK`, `ALWAYS_OUT_OF_STOCK`, `MANAGED_STOCK`, `INVENTORY_CONTROLLED`).  
+**Key constraints:** Has `availabilityMode` (enum: `ALWAYS_IN_STOCK`, `ALWAYS_OUT_OF_STOCK`, `MANAGED_STOCK`, `INVENTORY_CONTROLLED`). Has per-product setting `syncManagedStock` (when Inventory Management is enabled, controls whether Managed Stock is tracked alongside Physical Inventory).  
 **Domain:** Products
 
 ### 2. ProductVariant
@@ -61,7 +63,8 @@
 **Domain:** Inventory
 
 ### 5. Physical Inventory
-**Definition:** Countable physical items in a warehouse location. Distinct from Managed Stock. Handled via inventory adjustments, counts, transfers between bin locations. Uses Inventory Ledger (future) for tracking.  
+**Prisma:** `PhysicalInventory`  
+**Definition:** Countable physical items in a warehouse location. Distinct from Managed Stock. Has `quantity` (on-hand) and `reservedQuantity` (held by confirmed/pending orders). Handled via inventory adjustments, counts, transfers between bin locations. Uses Inventory Ledger (future) for tracking.  
 **Domain:** Inventory
 
 ### 6. Warehouse
@@ -81,7 +84,7 @@
 
 ### 9. Order
 **Prisma:** `Order`  
-**Definition:** Customer purchase transaction. Lifecycle: draft → confirmed → processing → packed → dispatched → delivered → completed. Can be cancelled/returned at various stages.  
+**Definition:** Customer purchase transaction. Lifecycle: Pending → Payment Verifying → Confirmed → Packing Hold → Packed → Shipping → Delivered. Can be Cancelled (pre-dispatch) or Returned (post-dispatch). Order status is distinct from Dispatch status (Shipping is the parallel order status during dispatch).  
 **Domain:** Orders
 
 ### 10. OrderItem
@@ -101,7 +104,7 @@
 
 ### 13. Dispatch
 **Prisma:** `Dispatch`  
-**Definition:** Outbound shipment of packed items to customer. After dispatch, managed stock is deducted. Courier assignment belongs here.  
+**Definition:** Outbound shipment of packed items to customer. State machine: PENDING → DISPATCHED → HANDED_OVER → PICKED_UP → IN_TRANSIT → ASSIGNED_TO_RIDER → DELIVERED. Can enter RETURN_PENDING → Returned from DELIVERED. Dispatch HANDED_OVER triggers Physical Inventory deduction via StockService.  
 **Domain:** Dispatch & Packing
 
 ### 14. PackingLock
@@ -192,6 +195,14 @@
 **Definition:** In-store sales terminal application. Creates orders in the backend via POS-specific API. Respects all order lifecycle rules.  
 **Domain:** POS
 
+### 32. Inventory Management Feature
+**Definition:** Licensed feature toggle. When **enabled** → Physical Inventory is the primary stock system, Managed Stock is secondary (per-product `syncManagedStock`). When **disabled** → Managed Stock is the sole stock system. Controlled via license + system settings.
+**Domain:** System
+
+### 33. ManagedStockSync (Per-Product Setting)
+**Definition:** When Inventory Management is enabled, each product has a `syncManagedStock` boolean. When ON → Managed Stock mutations (deduct/restore) happen in parallel with Physical Inventory. When OFF → Only Physical Inventory is tracked; Managed Stock is static.
+**Domain:** Products
+
 ---
 
 ## Business Glossary
@@ -205,16 +216,16 @@ Every term has exactly one definition. This is the only authoritative terminolog
 | **Managed Stock** | Lightweight quantity tracking on Product/Variant. Represented by `managedStockQuantity`. NOT physical inventory. | Products | `managedStockQuantity` field |
 | **Physical Inventory** | Countable physical items in a warehouse location. Distinct from Managed Stock. | Inventory | — |
 | **Inventory Controlled** | `availabilityMode` value where Product availability is determined by physical inventory levels, not managed stock count. | Products | `availabilityMode` enum |
-| **Available** | `managedStockQuantity` minus `reservedStock`. Quantity that can be sold. | Products | computed |
-| **Reserved** | Stock held by pending but unconfirmed orders. Represented by `reservedStock` field. Released on cancellation, deducted on confirmation. | Products | `reservedStock` |
+| **Available** | For Managed Stock: `managedStockQuantity` minus `reservedStock`. For Physical Inventory: `quantity` minus `reservedQuantity`. Quantity that can be sold/allocated. | Products / Inventory | computed |
+| **Reserved** | Stock held by pending or confirmed orders. Managed Stock: `reservedStock` on ProductVariant. Physical Inventory: `reservedQuantity` on PhysicalInventory. Released on cancellation, deducted on HANDED_OVER. | Products / Inventory | `reservedStock` / `reservedQuantity` |
 | **Allocated** | Stock physically picked and packed for dispatch. Follows Reservation. Tracked via PackingLock. | Inventory | `PackingLock` |
-| **On Hand** | For Managed Stock: `managedStockQuantity`. For Physical Inventory: current physical count. | Products / Inventory | computed |
+| **On Hand** | For Managed Stock: `managedStockQuantity`. For Physical Inventory: PhysicalInventory.`quantity`. Fully independent values. | Products / Inventory | computed |
 | **Warehouse** | Physical or logical storage location where physical inventory is stored. | Inventory | `Warehouse` |
 | **Bin** | Specific position within a warehouse (e.g., "Aisle-1, Rack-3, Shelf-B"). | Inventory | `BinLocation` |
 | **Lot** | Batch/costing lot for FIFO tracking of received inventory. Used for Actual COGS. | Inventory | `CostingLot` |
 | **Batch** | Synonym for Lot. | Inventory | `CostingLot` |
 | **Adjustment** | Manual correction to physical inventory count. Creates ledger entry. | Inventory | — |
-| **Reservation** | Holding managed stock for an order via StockService.reserve(). Creates ManagedStockLedger entry. | Products | — |
+| **Reservation** | Holding stock (Managed + Physical) for an order. Managed: via StockService.reserve() → reservedStock++. Physical: via StockService.reservePhysical() → reservedQuantity++. Timing depends on availabilityMode (CONFIRM for MANAGED_STOCK, CREATE for INVENTORY_CONTROLLED). | Products / Inventory | — |
 | **Allocation** | Physical assignment of inventory items to a specific dispatch. Uses PackingLock. | Inventory | `PackingLock` |
 | **Transfer** | Moving physical inventory between warehouses or bins. Creates Inventory Ledger entries. | Inventory | — |
 | **Dispatch** | Outbound shipment of packed items to customer. Courier assignment and tracking belong here. | Dispatch & Packing | `Dispatch` |
@@ -234,17 +245,50 @@ Every term has exactly one definition. This is the only authoritative terminolog
 
 ## Cross-Cutting Rules
 
+### Stock Service Centralization Rule
+All stock mutations — Managed Stock AND Physical Inventory — MUST route through `StockService`. StockService is the single gateway for: `reserve`, `reservePhysical`, `deduct`, `deductPhysical`, `release`, `releasePhysical`, `add`, `addPhysical`. No module may directly mutate `managedStockQuantity`, `reservedStock`, `PhysicalInventory.quantity`, or `PhysicalInventory.reservedQuantity`.
+
 ### Managed Stock Operation Rule
 All managed stock mutations (`reserve`, `deduct`, `release`, `add`) MUST go through `StockService`. No direct Prisma writes to `managedStockQuantity` or `reservedStock`. Violations create dual-tracking drift between actual state and ManagedStockLedger.
 
+### Physical Inventory Operation Rule
+All physical inventory mutations (`reservePhysical`, `deductPhysical`, `releasePhysical`, `addPhysical`) MUST go through `StockService`. PhysicalInventory fields (`quantity`, `reservedQuantity`) are never directly mutated by any other service.
+
 ### Order Stock Deduction Rule
-When an order is confirmed, `StockService.deduct()` SHOULD be called. **Current implementation violates this** — OrdersService.deductStockForOrder() uses direct Prisma writes (see `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` violation table). When cancelled/returned, StockService.release() or StockService.add() should be used, but OrdersService currently bypasses StockService for restore/return paths.
+- **Inventory Management DISABLED:** Order Confirm triggers `StockService.deduct()` for Managed Stock. HANDED_OVER has no stock impact.
+- **Inventory Management ENABLED:** Order Confirm triggers Physical Inventory check + reserve via `StockService`. Dispatch HANDED_OVER triggers `StockService.deductPhysical()`. Managed Stock is optionally synced per-product (`syncManagedStock`).
+- **Current implementation violates this** — see `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` violation table.
+
+### Stock Reservation Timing Rule
+Physical Inventory reservation timing depends on product `availabilityMode`:
+- `MANAGED_STOCK` → reserve at Order **Confirm** (storefront shows managed stock; physical stock checked at confirm)
+- `INVENTORY_CONTROLLED` → reserve at Order **Create** (storefront shows physical stock; already know it exists)
+- `ALWAYS_IN_STOCK` → reserve at Order **Confirm**
+- `ALWAYS_OUT_OF_STOCK` → Order creation **blocked** entirely (no reservation needed)
+
+### Out-of-Stock Guard Rule
+If `availabilityMode` is `ALWAYS_OUT_OF_STOCK`, ALL order creation paths MUST reject the order. No exceptions. This applies to admin, storefront, and POS.
+
+### Physical Inventory Deduction Timing Rule
+Physical Inventory `quantity` is decremented ONLY at Dispatch HANDED_OVER (not at Order Confirm). Between Confirm and HANDED_OVER, stock is held in `reservedQuantity`.
+
+### Costing Rule (HANDED_OVER)
+- **Inventory Management DISABLED:** Cost deducted from Managed Stock costing (standard cost / average cost).
+- **Inventory Management ENABLED:** Cost deducted from Physical Inventory CostingLot (FIFO actual cost).
+
+### Per-Product Managed Stock Sync Rule
+When Inventory Management is ENABLED, each Product has a `syncManagedStock` toggle:
+- `ON`: StockService updates BOTH Managed Stock (managedStockQuantity) and Physical Inventory in parallel on all operations.
+- `OFF`: StockService updates ONLY Physical Inventory. Managed Stock is static and used only for storefront display (availabilityMode = MANAGED_STOCK).
+
+### Inventory Control Rule
+When a Product has `availabilityMode: INVENTORY_CONTROLLED`, its storefront availability is determined by physical inventory levels (PhysicalInventory.quantity - PhysicalInventory.reservedQuantity > 0). If Inventory Management is DISABLED, this mode falls back to MANAGED_STOCK behavior.
 
 ### License Enforcement Rule
 Every licensed feature must have `@RequiresFeature()` on its controller. The feature must be registered in FEATURE_REGISTRY.md. The 68-feature system from `final-feature-plan.md` must be verified against actual `@RequiresFeature()` usage.
 
 ### Purchase-to-Stock Rule
-Purchase owns GRN. Receiving goods triggers StockService.add() for managed stock and physical inventory receipt. Inventory never creates purchase orders.
+Purchase owns GRN. Receiving goods triggers StockService.add() (+ addPhysical() if Inventory Management enabled) for managed stock and physical inventory receipt. Inventory never creates purchase orders.
 
-### Inventory Control Rule
-When a Product has `availabilityMode: INVENTORY_CONTROLLED`, its availability is determined by physical inventory levels (not managedStockQuantity). Implementation of this mode is pending.
+### Always-Open Rule
+No rule in this document may be considered "final." All rules are subject to revision as business requirements evolve. Update this document when business intent changes.

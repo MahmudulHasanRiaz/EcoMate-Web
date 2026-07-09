@@ -274,57 +274,103 @@ PARTIAL, RETURN_PENDING, RETURNED, CANCELLED
 
 ## 5. Stock Event Matrix per Availability Mode
 
-### MANAGED_STOCK
+The stock behavior depends on **two factors**: (A) availabilityMode of the product, and (B) whether Inventory Management feature is ENABLED or DISABLED.
 
-| Trigger | Action | Affects | Ledger | Guard |
-|---------|--------|---------|--------|-------|
-| Order created | `reserve()` | `reservedStock++` | InventoryLog | None needed |
-| Order confirmed | `deductStockForOrder()` (direct) | `managedStockQuantity--` | ManagedStockLedger (ORDER_DEDUCTION) | Must be MANAGED_STOCK + manageStock |
-| Order cancelled | `release()` + `restoreStockForCancelledOrder()` | `reservedStock--` + `managedStockQuantity++` | ManagedStockLedger (CANCEL_RELEASE) | Must be MANAGED_STOCK (idempotent) |
-| Order returned | `handleReturnedSideEffects()` | `managedStockQuantity++` | ManagedStockLedger (RETURN) | Must be MANAGED_STOCK (idempotent) |
-| Dispatch HANDED_OVER | `operate('deduct')` | `managedStockQuantity--` + `reservedStock--` | InventoryLog (legacy) | None |
-| Dispatch RETURNED | `operate('add')` | `managedStockQuantity++` | InventoryLog (legacy) | None |
-| GRN received | `add()` | `managedStockQuantity++` | InventoryLog (legacy) | None |
-| Manual adjust | `adjust()` | `managedStockQuantity±` | ManagedStockLedger (MANUAL_ADD/REMOVE) | Rejects non-MANAGED_STOCK |
+### Mode A: Inventory Management DISABLED
 
-**⚠️ Key Issue:** `reservedStock` is NEVER cleared on confirm. It stays elevated for confirmed orders. It's only decremented on cancellation (release) or at dispatch HANDED_OVER (operate('deduct') decrements both fields). This means `available = managedStockQuantity - reservedStock` is inaccurate between confirm and dispatch.
+Managed Stock is the sole system. No Physical Inventory tracking.
 
-### INVENTORY_CONTROLLED
+#### MANAGED_STOCK
 
-| Trigger | Action | Affects | Notes |
-|---------|--------|---------|-------|
-| Order created | `reserve()` | `reservedStock++` | No special handling yet |
-| Order confirmed | SKIPPED | — | Correct — no managed stock to deduct |
-| Order cancelled | `release()` | `reservedStock--` | Runs |
-| Manual adjust | THROWS | — | "Use Purchase Orders" |
-| Restock | Only InventoryLog | — | No managed stock mutation |
-| Valuation | EXCLUDED | — | Correct |
-| License downgrade | Auto-reverts to MANAGED_STOCK | — | Safety net |
+| Trigger | Action | managedStockQuantity | reservedStock | Ledger |
+|---------|--------|---------------------|---------------|--------|
+| Order created | `reserve()` | — | ++ | InventoryLog |
+| Order confirmed | `deductStockForOrder()` | -- | — | ManagedStockLedger (ORDER_DEDUCTION) |
+| Order cancelled | `release()` + `restoreStockForCancelledOrder()` | ++ | -- | ManagedStockLedger (CANCEL_RELEASE) |
+| Order returned | `handleReturnedSideEffects()` | ++ | — | ManagedStockLedger (RETURN) |
+| Dispatch HANDED_OVER | `operate('deduct')` | -- | -- | InventoryLog (legacy) |
+| GRN received | `add()` | ++ | — | InventoryLog (legacy) |
+| Manual adjust | `adjust()` | ± | — | ManagedStockLedger (MANUAL) |
 
-**Verdict:** INVENTORY_CONTROLLED is a **stub** — most operations fall through to MANAGED_STOCK paths (reserve, release). Full implementation is future.
+#### INVENTORY_CONTROLLED
+Falls back to MANAGED_STOCK behavior when Inventory Management is disabled.
 
-### ALWAYS_IN_STOCK
+#### ALWAYS_IN_STOCK
 
-| Trigger | Action | Issues |
-|---------|--------|--------|
-| Order created | `reserve()` → `reservedStock++` | **Unnecessary** — no stock to reserve |
-| Order confirmed | SKIPPED | Correct |
-| Order cancelled | `release()` → `reservedStock--` | Unnecessary but harmless |
-| Dispatch HANDED_OVER | `operate('deduct')` → `reservedStock--` + costing lots | **MINOR** — reserved touched unnecessarily |
-| Manual adjust | THROWS | Correct |
+| Trigger | Action | managedStockQuantity | reservedStock |
+|---------|--------|---------------------|---------------|
+| Order created | `reserve()` | — | ++ (unnecessary but harmless) |
+| Order confirmed | SKIPPED | — | — |
+| Order cancelled | `release()` | — | -- |
+| Dispatch HANDED_OVER | `operate('deduct')` | — | -- |
 
-### ALWAYS_OUT_OF_STOCK
+#### ALWAYS_OUT_OF_STOCK
 
-| Trigger | Action | Issues |
-|---------|--------|--------|
-| Order created | `reserve()` → `reservedStock++` | 🔴 **BUG** — orders can be placed for discontinued products |
-| Order confirmed | SKIPPED | Correct |
-| Order cancelled | `release()` → `reservedStock--` | Runs |
-| Manual adjust | THROWS | Correct |
-
-**🔴 BUG-1: No order placement guard for ALWAYS_OUT_OF_STOCK.** Products marked as discontinued can be ordered through all order creation paths. There is no availabilityMode check in `orders.service.ts create()`, `addItem()`, or `updateOrder()`.
+| Trigger | Action | managedStockQuantity | reservedStock |
+|---------|--------|---------------------|---------------|
+| Order created | BLOCKED (new rule) | — | — |
+| Order confirmed | SKIPPED | — | — |
+| Dispatch HANDED_OVER | SKIPPED | — | — |
 
 ---
+
+### Mode B: Inventory Management ENABLED
+
+Physical Inventory is the primary system. Managed Stock is secondary (per-product `syncManagedStock` toggle).
+
+**Note on Physical Inventory fields:** `qty` = PhysicalInventory.quantity, `resQty` = PhysicalInventory.reservedQuantity. These do NOT exist yet — implementation required.
+
+#### MANAGED_STOCK
+
+| Trigger | Physical Inventory | Managed Stock (if syncManagedStock=ON) |
+|---------|-------------------|----------------------------------------|
+| Order created | — | `reservedStock++` via StockService.reserve() |
+| Order confirmed | CHECK (qty - resQty >= orderQty). **RESERVE**: resQty += orderQty | Optionally: `managedStockQuantity--` via StockService.deduct() |
+| Dispatch HANDED_OVER | **DEDUCT**: qty -= orderQty, resQty -= orderQty | Optionally: `managedStockQuantity--` via StockService.deductPhysical() |
+| Order cancelled (pre-HANDED_OVER) | **RELEASE**: resQty -= orderQty | Optionally: restore managedStockQuantity++ |
+| Order returned | **ADD**: qty += returnQty | Optionally: restore managedStockQuantity++ |
+| GRN received | **ADD**: qty += receivedQty | Optionally: `managedStockQuantity++` |
+
+#### INVENTORY_CONTROLLED
+
+| Trigger | Physical Inventory | Managed Stock |
+|---------|-------------------|---------------|
+| Order created | **RESERVE**: resQty += orderQty | `reservedStock++` via StockService.reserve() |
+| Order confirmed | CHECK (reserve already done at create). Reserve stays | — |
+| Dispatch HANDED_OVER | **DEDUCT**: qty -= orderQty, resQty -= orderQty | — |
+| Order cancelled (pre-HANDED_OVER) | **RELEASE**: resQty -= orderQty | `reservedStock--` via StockService.release() |
+| Order returned | **ADD**: qty += returnQty | — |
+
+#### ALWAYS_IN_STOCK
+
+| Trigger | Physical Inventory | Managed Stock |
+|---------|-------------------|---------------|
+| Order created | — | `reservedStock++` (unnecessary but harmless) |
+| Order confirmed | CHECK (should always pass since ALWAYS_IN_STOCK). Reserve | Optionally deduct |
+| Dispatch HANDED_OVER | DEDUCT | Optionally deduct |
+| Order cancelled | RELEASE | release() → reservedStock-- |
+
+#### ALWAYS_OUT_OF_STOCK
+
+| Trigger | Action |
+|---------|--------|
+| Order created | **BLOCKED** — no stock, no reservation |
+| All others | SKIPPED |
+
+**🔴 BUG-1:** Currently no guard exists. Order creation succeeds for ALWAYS_OUT_OF_STOCK products.
+
+---
+
+### Key Changes vs Current Implementation
+
+| Aspect | Current (Wrong) | Target (Correct) |
+|--------|-----------------|-------------------|
+| Confirm deduct | `managedStockQuantity--` (always) | Physical Inventory CHECK + RESERVE. Managed Stock: optional per-product |
+| HANDED_OVER deduct | `managedStockQuantity--` via operate('deduct') | Physical Inventory DEDUCT. Managed Stock: optional deduct (idempotent guard) |
+| reservedStock at Confirm | NOT decremented (stays elevated) | Same — reserved stays elevated until HANDED_OVER or cancel (correct by design) |
+| ALWAYS_OUT_OF_STOCK guard | NONE | BLOCK all order creation |
+| InventoryLog at HANDED_OVER | Written (legacy) | Migrate to ManagedStockLedger or new Physical Ledger |
+| Per-product syncManagedStock | N/A | New field on Product model |
 
 ## 6. Dual Stock Architecture Validation
 
@@ -338,16 +384,33 @@ PARTIAL, RETURN_PENDING, RETURNED, CANCELLED
 3. **ProductsService** — direct Prisma writes in `create()`, `update()` (mode changes)
 
 ### C. Which ledger belongs to Physical Inventory?
-**Does not exist.** There is no dedicated Physical Inventory Ledger in the schema. `InventoryLog` (legacy flat log) is the closest approximation, used for transfer logging and historical tracking. `Warehouse`/`BinLocation` models exist but have no movement tracking.
+**Does not exist.** There is no dedicated Physical Inventory Ledger in the schema. `InventoryLog` (legacy flat log) is the closest approximation, used for transfer logging and historical tracking. `Warehouse`/`BinLocation` models exist but have no movement tracking. `PhysicalInventory` model has `quantity` but no `reservedQuantity` field yet.
 
 ### D. Which service owns Physical Inventory mutations?
-**InventoryService** — via `adjust()` (adjustment), `restockOrderItems()` (return restock), `transfer()` (warehouse transfer). But these still write to Product models (`managedStockQuantity`), not to Inventory-specific models.
+**Should be StockService** (centralized gateway for all stock operations). Currently handled ad-hoc by InventoryService. StockService needs new methods: `reservePhysical()`, `deductPhysical()`, `releasePhysical()`, `addPhysical()`.
 
-### E. Can Inventory module directly modify Managed Stock?
+### E. Which module can directly modify Managed Stock?
 **YES** — `inventory.service.ts` writes to `ProductVariant.managedStockQuantity` and `Product.managedStockQuantity` (lines 251, 281, 334, 410, 507, 530, 571, 590). This violates INV-001.
 
-### F. Can Product module directly modify Physical Inventory?
+### F. Which module can directly modify Physical Inventory?
 **No** — ProductsService does not write to `Warehouse`, `BinLocation`, or `InventoryLog`. It writes to `ManagedStockLedger` directly (bypassing ManagedStockLedgerService) but this is for Managed Stock, not Physical Inventory.
+
+### G. What Physical Inventory fields need to be added?
+- `PhysicalInventory.reservedQuantity` (integer, default 0) — tracks stock held by pending/confirmed orders
+- `Product.syncManagedStock` (boolean, default false) — per-product toggle to sync Managed Stock with Physical Inventory
+
+### H. What new StockService methods are needed?
+| Method | Managed Stock Impact | Physical Inventory Impact |
+|--------|---------------------|--------------------------|
+| `reserve()` | reservedStock++ | — |
+| `reservePhysical()` | — | resQty += orderQty |
+| `deduct()` | managedStockQuantity-- (if syncManagedStock) | — |
+| `deductPhysical()` | managedStockQuantity-- (if syncManagedStock) | qty -=, resQty -= |
+| `release()` | reservedStock-- | — |
+| `releasePhysical()` | managedStockQuantity++ (if syncManagedStock) | resQty -= |
+| `add()` | managedStockQuantity++ (if syncManagedStock) | — |
+| `addPhysical()` | managedStockQuantity++ (if syncManagedStock) | qty += |
+| `checkPhysicalAvailability()` | — | Returns qty - resQty |
 
 ### Violations Summary
 
@@ -361,6 +424,10 @@ PARTIAL, RETURN_PENDING, RETURNED, CANCELLED
 | 6 | Orders | BUG-1: No ALWAYS_OUT_OF_STOCK guard | orders.service.ts:642-652 | HIGH |
 | 7 | Stock | BUG-3: deductCostingLots runs for non-MANAGED_STOCK | stock.service.ts:301-303 | MEDIUM |
 | 8 | Stock | BUG-4: Potential double deduction | orders:966 + dispatch:184 | CRITICAL |
+| 9 | All | INV-015: No Physical Inventory reserve system | PhysicalInventory model lacks reservedQuantity | HIGH |
+| 10 | All | INV-016: StockService does not centralize Physical Inventory | StockService lacks reservePhysical/deductPhysical/etc. | HIGH |
+| 11 | Products | INV-017: No per-product syncManagedStock toggle | Product model lacks field | MEDIUM |
+| 12 | Orders | INV-018: DeductCostingLots not mode-aware | stock.service.ts:301-303 | MEDIUM |
 
 ---
 
@@ -382,6 +449,28 @@ PARTIAL, RETURN_PENDING, RETURNED, CANCELLED
 - OrdersService writes exclusively to ManagedStockLedger (correct per architecture)
 - StockService.operate() writes exclusively to InventoryLog (legacy, should migrate)
 - InventoryService writes to BOTH InventoryLog AND ManagedStockLedGER same operation
+
+### Conflict 4: No Physical Inventory Reservation System (HIGH)
+- PhysicalInventory model lacks `reservedQuantity` field
+- Physical stock cannot be reserved when orders are created/confirmed
+- Without reservation, HANDED_OVER may find insufficient physical stock
+- Fix: Add `PhysicalInventory.reservedQuantity` + StockService.reservePhysical()/releasePhysical()
+
+### Conflict 5: StockService Not Centralized for Physical Inventory (HIGH)
+- StockService currently only handles Managed Stock mutations
+- Physical Inventory operations are scattered across InventoryService
+- New architecture requires StockService to own ALL stock operations (Managed + Physical)
+- Fix: Add StockService.reservePhysical(), deductPhysical(), releasePhysical(), addPhysical(), checkPhysicalAvailability()
+
+### Conflict 6: Per-Product syncManagedStock Missing (MEDIUM)
+- Product model has no `syncManagedStock` toggle
+- Without it, system cannot distinguish products that sync Managed Stock vs Physical-only
+- Fix: Add `Product.syncManagedStock` boolean (default false)
+
+### Conflict 7: DeductCostingLots Mode-Unaware (MEDIUM)
+- `deductCostingLots()` runs for ALL products at HANDED_OVER, regardless of availabilityMode
+- Should only run for MANAGED_STOCK when Inventory Management is disabled, or for Physical Inventory costing when enabled
+- Fix: Gate costing by Inventory Management mode + availabilityMode
 - ProductsService writes directly to ManagedStockLedger (bypassing service layer)
 
 ### Conflict 4: DB State Drift Risk

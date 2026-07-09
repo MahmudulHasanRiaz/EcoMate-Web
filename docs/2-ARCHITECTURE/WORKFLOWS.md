@@ -51,8 +51,11 @@ Pending → Payment Pending → Payment Verifying → Confirmed → Packed → S
 **Orders can be cancelled before they are handed over to the courier.** After courier handover (Shipping status), cancellation is not allowed — only the Return workflow applies. Verified against implementation: `Cancelled` is allowed from Pending, Payment Pending, Payment Verifying, Hold, Confirmed, Packed, Packing Hold. NOT allowed from Shipping, Delivered, Partial.
 
 ### Stock Impact per Transition
-| Transition | reserve | release | deductStockForOrder | restoreStock | reservedStock | managedStockQuantity | Ledger |
-|-----------|---------|---------|-------------------|-------------|--------------|-------------------|--------|
+
+#### Mode A: Inventory Management DISABLED (Current)
+
+| Transition | reserve | release | deduct | restore | reservedStock | managedStockQuantity | Ledger |
+|-----------|---------|---------|-------|---------|--------------|-------------------|--------|
 | Create (→Pending) | ✅ | — | — | — | ++ | — | InventoryLog |
 | →Confirmed | — | — | ✅ (direct) | — | unchanged | -- | ManagedStockLedger (ORDER_DEDUCTION) |
 | →Cancelled (pre-courier) | — | ✅ | — | ✅ (direct) | -- | ++ | ManagedStockLedger (CANCEL_RELEASE) |
@@ -62,24 +65,45 @@ Pending → Payment Pending → Payment Verifying → Confirmed → Packed → S
 | Dispatch HANDED_OVER | — | — | ✅ (operate) | — | -- | -- | InventoryLog (legacy) |
 | Dispatch RETURNED | — | — | — | ✅ (operate) | — | ++ | InventoryLog (legacy) |
 
+#### Mode B: Inventory Management ENABLED (Target)
+
+| Transition | Physical Inventory | Managed Stock (if syncManagedStock=ON) |
+|-----------|-------------------|----------------------------------------|
+| Create (INVENTORY_CONTROLLED) | RESERVE: reservedQty += | reservedStock++ |
+| Create (MANAGED_STOCK) | — | reservedStock++ |
+| →Confirmed (MANAGED_STOCK) | CHECK availability, RESERVE: reservedQty += | deduct: managedStockQuantity-- |
+| →Confirmed (INVENTORY_CONTROLLED) | CHECK (already reserved) | — |
+| →Cancelled | RELEASE: reservedQty -= | release + restore |
+| →Returned | ADD: qty += returnQty | restore |
+| HANDED_OVER | DEDUCT: qty -=, reservedQty -= | deduct (if not already) |
+| GRN | ADD: qty += receivedQty | add |
+
 ### Services Involved
 - OrdersService — order state machine
-- StockService — reserve, release, add (NOT deduct — deduct is done by OrdersService directly)
+- StockService — reserve, release, add, AND (target) deduct, reservePhysical, deductPhysical
 - PackingService — packing lock and status transition to Packed/Packing Hold
 - DispatchService — courier handoff and stock deduction at HANDED_OVER
 - PaymentService — payment capture, verification, and refund
 
 ### Issues
-1. **Dual deduction** — `managedStockQuantity` decremented at Confirmed (via `deductStockForOrder`) AND at dispatch HANDED_OVER (via `stockService.operate('deduct')`). Potential double-deduct for MANAGED_STOCK products.
-2. **reservedStock never cleared on confirm** — Stays elevated until dispatch HANDED_OVER or cancellation.
+1. **Dual deduction** — `managedStockQuantity` decremented at Confirmed AND at HANDED_OVER. Target: Mode B removes deduct from Confirm, moves to HANDED_OVER.
+2. **reservedStock never cleared on confirm** — Stays elevated until HANDED_OVER or cancel. **This is correct by design** per target architecture (reserved = held, not deducted).
 3. **Packing bypasses validation** — Writes `statusId` directly without checking allowed transitions.
 4. **Courier webhook bypasses validation** — Writes Order status directly for DELIVERED/PARTIAL/RETURN_PENDING.
+5. **No Physical Inventory reservation** — PhysicalInventory.reservedQuantity does not exist. Need schema migration.
+6. **StockService not centralized for Physical Inventory** — StockService needs new methods for physical operations.
+7. **No ALWAYS_OUT_OF_STOCK guard** — Orders can be created for discontinued products.
 
-### Ledger Impact
-- Order creation (reserve): InventoryLog (legacy — intended to migrate to ManagedStockLedger)
+### Ledger Impact (Current)
+- Order creation (reserve): InventoryLog (legacy)
 - Order confirmed (deductStockForOrder): ManagedStockLedger (OUT, ORDER_DEDUCTION)
 - Order cancelled: ManagedStockLedger (IN, CANCEL_RELEASE)
 - Order returned: ManagedStockLedger (IN, RETURN)
+
+### Ledger Impact (Target — Mode B)
+- Order confirm: ManagedStockLedger (if syncManagedStock) + Physical Inventory ledger (future)
+- HANDED_OVER: CostingLot deducted (FIFO) + Physical Inventory qty reduced
+- No legacy InventoryLog writes
 
 ### Analytics Impact
 - Order created → track creation event
