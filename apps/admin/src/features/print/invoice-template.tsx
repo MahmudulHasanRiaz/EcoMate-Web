@@ -89,7 +89,12 @@ export function InvoiceTemplate({ order }: { order: any }) {
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>৳{fmt(subtotal)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Delivery Charge</span><span>৳{fmt(order.shippingCharge)}</span></div>
           {nm(order.discount) > 0 && (
-            <div className="flex justify-between text-green-600"><span className="text-muted-foreground">Discount ({order.discountType === 'percentage' ? `${order.discount}%` : 'flat'})</span><span>-৳{fmt(order.discount)}</span></div>
+            <div className="flex justify-between text-green-600">
+              <span className="text-muted-foreground">
+                Discount ({order.discountType === 'percentage' ? `${nm(order.discount)}%` : 'flat'})
+              </span>
+              <span>-৳{fmt(order.discountType === 'percentage' ? subtotal * (nm(order.discount) / 100) : nm(order.discount))}</span>
+            </div>
           )}
           <div className="flex justify-between font-bold text-base border-t border-double pt-2 mt-1">
             <span>Total</span><span className="text-lg">৳{fmt(order.total)}</span>

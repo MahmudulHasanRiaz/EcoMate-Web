@@ -166,7 +166,7 @@ export class PosOrdersService {
           subtotal,
           shippingCharge: 0,
           discount,
-          discountType: dto.discountType || 'flat',
+          discountType: 'flat',
           total,
           source: 'POS',
           salesChannel: dto.salesChannel || 'WALK_IN',

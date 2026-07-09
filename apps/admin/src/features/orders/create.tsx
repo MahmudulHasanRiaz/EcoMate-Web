@@ -19,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Search, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -76,11 +76,12 @@ export function CreateOrder() {
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<any[]>([])
   const [productSearching, setProductSearching] = useState(false)
-  const [barcodeInput, setBarcodeInput] = useState('')
-  const [categories, setCategories] = useState<any[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
+  const [categories, setCategories] = useState<any[]>([])
   const [cartItems, setCartItems] = useState<any[]>([])
   const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
+  const productInputRef = useRef<HTMLInputElement>(null)
 
   const [shippingCharge, setShippingCharge] = useState('0')
   const [discount, setDiscount] = useState('0')
@@ -158,17 +159,17 @@ export function CreateOrder() {
   }, [customerPhone])
 
   useEffect(() => {
-    if (!productSearch || productSearch.length < 2) { setProductResults([]); setShowProductDropdown(false); return }
+    if (!productSearch || productSearch.length < 1) { setProductResults([]); setShowProductDropdown(false); return }
     setProductSearching(true)
     clearTimeout(productSearchRef.current)
     productSearchRef.current = setTimeout(() => {
-      const params: any = { search: productSearch, perPage: 10 }
+      const params: any = { search: productSearch, perPage: 12 }
       if (selectedCategoryId) params.categoryId = selectedCategoryId
       apiClient.get('/products', { params })
         .then(r => { setProductResults(r.data?.data || r.data || []); setShowProductDropdown(true) })
         .catch(() => {})
         .finally(() => setProductSearching(false))
-    }, 400)
+    }, 300)
     return () => clearTimeout(productSearchRef.current)
   }, [productSearch, selectedCategoryId])
 
@@ -182,29 +183,30 @@ export function CreateOrder() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleBarcodeSearch = () => {
-    if (!barcodeInput.trim()) return
-    apiClient.get('/products', { params: { search: barcodeInput.trim(), perPage: 5 } })
+  const handleBarcodeSearch = (sku: string) => {
+    const q = sku.trim()
+    if (!q) return
+    apiClient.get('/products', { params: { search: q, perPage: 5 } })
       .then(r => {
         const results = r.data?.data || r.data || []
-        const exact = results.find((p: any) => p.sku?.toLowerCase() === barcodeInput.trim().toLowerCase())
-        if (exact) {
-          if (exact.type === 'variable' || (exact.variants?.length > 0)) {
-            setSelectedProductForVariants(exact)
+        const exact = results.find((p: any) =>
+          p.sku?.toLowerCase() === q.toLowerCase() ||
+          p.variants?.some((v: any) => v.sku?.toLowerCase() === q.toLowerCase())
+        )
+        const target = exact || (results.length > 0 ? results[0] : null)
+        if (target) {
+          const matchedVariant = target.variants?.find((v: any) => v.sku?.toLowerCase() === q.toLowerCase())
+          if (matchedVariant) {
+            addToCart(target, matchedVariant)
+            toast.success(`${target.name} (${matchedVariant.name || matchedVariant.sku}) added`)
+          } else if (target.type === 'variable' || target.variants?.length > 0) {
+            setSelectedProductForVariants(target)
           } else {
-            addToCart(exact)
-            toast.success(`${exact.name} added to cart`)
+            addToCart(target)
+            toast.success(`${target.name} added to cart`)
           }
-          setBarcodeInput('')
-        } else if (results.length > 0) {
-          const p = results[0]
-          if (p.type === 'variable' || (p.variants?.length > 0)) {
-            setSelectedProductForVariants(p)
-          } else {
-            addToCart(p)
-            toast.success(`${p.name} added to cart`)
-          }
-          setBarcodeInput('')
+          setProductSearch('')
+          setShowProductDropdown(false)
         } else {
           toast.error('Product not found with this SKU/barcode')
         }
@@ -468,26 +470,122 @@ export function CreateOrder() {
                 </CardTitle>
               </CardHeader>
               <CardContent className='space-y-3'>
-                <div className='flex gap-2'>
-                  <div className='relative flex-1' ref={productDropdownRef}>
-                    <Search className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                    <Input
-                      placeholder='Search products by name or SKU...'
+                {/* ── Unified Smart Search Bar ── */}
+                <div className='relative' ref={productDropdownRef}>
+                  {/* Active category filter chip */}
+                  {selectedCategoryId && (
+                    <div className='mb-1.5 flex items-center gap-1'>
+                      <span className='text-xs text-muted-foreground'>Filtered by:</span>
+                      <button
+                        type='button'
+                        onClick={() => setSelectedCategoryId('')}
+                        className='inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5 font-medium hover:bg-primary/20 transition-colors'
+                      >
+                        {categories.find((c: any) => c.id === selectedCategoryId)?.name || 'Category'}
+                        <X className='h-3 w-3' />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className='relative flex items-center'>
+                    <Barcode className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
+                    <input
+                      ref={productInputRef}
+                      type='text'
                       value={productSearch}
-                      onChange={e => { setProductSearch(e.target.value); if (!e.target.value) setShowProductDropdown(false) }}
-                      onFocus={() => { if (productResults.length > 0) setShowProductDropdown(true) }}
-                      className='pl-9 h-9 text-sm'
+                      onChange={e => {
+                        setProductSearch(e.target.value)
+                        if (!e.target.value) { setShowProductDropdown(false); setShowCategoryPicker(false) }
+                      }}
+                      onFocus={() => {
+                        if (productResults.length > 0) setShowProductDropdown(true)
+                        else if (!productSearch) setShowCategoryPicker(true)
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && productSearch.trim()) {
+                          // Try exact SKU match first; if none, do barcode search
+                          const localExact = productResults.find((p: any) =>
+                            p.sku?.toLowerCase() === productSearch.trim().toLowerCase() ||
+                            p.variants?.some((v: any) => v.sku?.toLowerCase() === productSearch.trim().toLowerCase())
+                          )
+                          if (localExact) {
+                            const matchedVariant = localExact.variants?.find((v: any) => v.sku?.toLowerCase() === productSearch.trim().toLowerCase())
+                            if (matchedVariant) { addToCart(localExact, matchedVariant); toast.success(`${localExact.name} (${matchedVariant.name || matchedVariant.sku}) added`); setProductSearch(''); setShowProductDropdown(false) }
+                            else if (localExact.type === 'variable' || localExact.variants?.length > 0) { setSelectedProductForVariants(localExact); setProductSearch(''); setShowProductDropdown(false) }
+                            else { addToCart(localExact); toast.success(`${localExact.name} added`); setProductSearch(''); setShowProductDropdown(false) }
+                          } else {
+                            handleBarcodeSearch(productSearch.trim())
+                          }
+                        }
+                        if (e.key === 'Escape') { setShowProductDropdown(false); setShowCategoryPicker(false) }
+                      }}
+                      placeholder='Search by name or SKU / scan barcode → Enter to add'
+                      className='w-full h-10 pl-9 pr-9 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                      autoComplete='off'
                     />
-                    {productSearching && <Loader2 className='absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
-                    {showProductDropdown && productResults.length > 0 && (
-                      <div className='absolute z-10 mt-1 w-full bg-background border rounded-md shadow-lg max-h-60 overflow-y-auto'>
+                    {productSearching
+                      ? <Loader2 className='absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
+                      : productSearch && <button type='button' onClick={() => { setProductSearch(''); setShowProductDropdown(false) }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground'><X className='h-4 w-4' /></button>
+                    }
+                  </div>
+
+                  {/* Category picker panel — shown on empty focus */}
+                  {showCategoryPicker && !productSearch && categories.length > 0 && (
+                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg p-2'>
+                      <p className='text-xs text-muted-foreground mb-2 px-1'>Browse by category</p>
+                      <div className='flex flex-wrap gap-1.5'>
+                        {categories.map((c: any) => (
+                          <button
+                            key={c.id}
+                            type='button'
+                            onClick={() => { setSelectedCategoryId(c.id); setShowCategoryPicker(false); productInputRef.current?.focus() }}
+                            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              selectedCategoryId === c.id
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'hover:bg-muted'
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Search results dropdown */}
+                  {showProductDropdown && productResults.length > 0 && (
+                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg overflow-hidden'>
+                      {/* Category filter chips inside dropdown */}
+                      {categories.length > 0 && (
+                        <div className='flex items-center gap-1.5 px-2 py-1.5 border-b bg-muted/30 overflow-x-auto'>
+                          <span className='text-[10px] text-muted-foreground shrink-0'>Category:</span>
+                          <button
+                            type='button'
+                            onClick={() => setSelectedCategoryId('')}
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              !selectedCategoryId ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
+                            }`}
+                          >All</button>
+                          {categories.slice(0, 8).map((c: any) => (
+                            <button
+                              key={c.id}
+                              type='button'
+                              onClick={() => setSelectedCategoryId(prev => prev === c.id ? '' : c.id)}
+                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                                selectedCategoryId === c.id ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
+                              }`}
+                            >{c.name}</button>
+                          ))}
+                        </div>
+                      )}
+                      <div className='max-h-56 overflow-y-auto'>
                         {productResults.map((p: any) => (
                           <button
                             key={p.id}
                             type='button'
                             className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 border-b last:border-0'
                             onClick={() => {
-                              if (p.type === 'variable' || (p.variants?.length > 0)) {
+                              if (p.type === 'variable' || p.variants?.length > 0) {
                                 setSelectedProductForVariants(p)
                               } else {
                                 addToCart(p)
@@ -510,37 +608,8 @@ export function CreateOrder() {
                           </button>
                         ))}
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className='flex gap-2'>
-                  <div className='relative flex-1'>
-                    <Barcode className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                    <Input
-                      placeholder='Scan SKU Barcode'
-                      value={barcodeInput}
-                      onChange={e => setBarcodeInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleBarcodeSearch() }}
-                      className='pl-9 h-9 text-sm'
-                    />
-                  </div>
-                  <Button variant='outline' size='sm' className='h-9' onClick={handleBarcodeSearch}>
-                    <Barcode className='h-4 w-4 mr-1' /> Search
-                  </Button>
-                </div>
-
-                <div className='flex items-center gap-2'>
-                  <Label className='text-xs text-muted-foreground shrink-0'>Category:</Label>
-                  <div className='flex-1'>
-                    <SearchableSelect
-                      options={categories.map((c: any) => ({ id: c.id, label: c.name }))}
-                      value={selectedCategoryId}
-                      onChange={setSelectedCategoryId}
-                      placeholder='All Categories'
-                      searchPlaceholder='Search category...'
-                    />
-                  </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

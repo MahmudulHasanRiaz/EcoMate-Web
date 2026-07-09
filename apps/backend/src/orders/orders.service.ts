@@ -757,14 +757,16 @@ export class OrdersService {
     const discountTypeChanged =
       dto.discountType !== undefined && dto.discountType !== order.discountType;
     if (discountChanged || discountTypeChanged) {
+      const logNewVal = dto.discount !== undefined ? Number(dto.discount) : Number(order.discount);
+      const logType = dto.discountType || order.discountType;
       timeline.push({
         type: 'discount',
         visibility: 'public',
         timestamp: now,
         oldValue: Number(order.discount),
-        newValue: Number(dto.discount),
-        discountType: dto.discountType || order.discountType,
-        note: `Discount changed to ৳${Number(dto.discount)} (${dto.discountType || order.discountType})`,
+        newValue: logNewVal,
+        discountType: logType,
+        note: `Discount changed to ৳${logNewVal} (${logType})`,
       });
     }
 

@@ -3,9 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy, ExternalLink, RotateCw, Link2, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ordersApi } from '@/features/orders/api'
 import { buildThankYouUrl } from '@/lib/utils'
 import type { OrderResponse } from '@/features/orders/api'
@@ -51,82 +51,75 @@ export function CustomerViewCard({ order }: CustomerViewCardProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className='pb-2'>
-        <CardTitle className='text-base flex items-center gap-2'>
-          <Link2 className='h-4 w-4' />
-          Customer View
-        </CardTitle>
-      </CardHeader>
-      <CardContent className='space-y-3'>
-        <p className='text-xs text-muted-foreground'>
-          Share this link with the customer so they can resume payment, view order details, or cancel the order.
-        </p>
-
-        <div className='flex gap-2'>
-          <Input
-            value={url}
-            readOnly
-            onFocus={(e) => e.currentTarget.select()}
-            className='text-xs font-mono h-8'
-          />
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            onClick={handleCopy}
-            className='shrink-0'
-            title='Copy link'
-          >
-            {copied ? <Check className='h-3.5 w-3.5' /> : <Copy className='h-3.5 w-3.5' />}
-          </Button>
-        </div>
-
-        <div className='flex gap-2'>
-          <Button type='button' variant='outline' size='sm' onClick={handleOpen} className='flex-1'>
-            <ExternalLink className='h-3.5 w-3.5 mr-1' /> Open in new tab
-          </Button>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            onClick={() => setConfirmRotate(true)}
-            className='flex-1'
-          >
-            <RotateCw className='h-3.5 w-3.5 mr-1' /> Rotate Token
-          </Button>
-        </div>
+    <TooltipProvider>
+      <Card>
+        <CardHeader className='pb-2'>
+          <CardTitle className='text-sm font-semibold flex items-center justify-between'>
+            <span className='flex items-center gap-1.5'>
+              <Link2 className='h-3.5 w-3.5' />
+              Customer View Link
+            </span>
+            <div className='flex items-center gap-1'>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button type='button' variant='ghost' size='icon' className='h-7 w-7' onClick={handleCopy}>
+                    {copied ? <Check className='h-3.5 w-3.5 text-green-500' /> : <Copy className='h-3.5 w-3.5' />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy link</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button type='button' variant='ghost' size='icon' className='h-7 w-7' onClick={handleOpen}>
+                    <ExternalLink className='h-3.5 w-3.5' />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Open in new tab</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button type='button' variant='ghost' size='icon' className='h-7 w-7' onClick={() => setConfirmRotate(true)}>
+                    <RotateCw className='h-3.5 w-3.5' />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Rotate token (invalidates old link)</TooltipContent>
+              </Tooltip>
+            </div>
+          </CardTitle>
+        </CardHeader>
 
         {!viewToken && (
-          <div className='flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md p-2'>
-            <AlertCircle className='h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5' />
-            <p className='text-xs text-amber-800'>
-              This order does not have a view token. Click <strong>Rotate Token</strong> to generate one.
-            </p>
-          </div>
+          <CardContent className='pt-0'>
+            <div className='flex items-start gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-2'>
+              <AlertCircle className='h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5' />
+              <p className='text-xs text-amber-800 dark:text-amber-400'>
+                No view token. Click <RotateCw className='h-3 w-3 inline' /> to generate one.
+              </p>
+            </div>
+          </CardContent>
         )}
-      </CardContent>
 
-      <Dialog open={confirmRotate} onOpenChange={(open) => !rotateMut.isPending && setConfirmRotate(open)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rotate customer view link?</DialogTitle>
-            <DialogDescription>
-              The current link will stop working immediately. Any saved link (browser history, chat, email) will
-              show an "Order not found" error. The new link above will be the only way to access this order.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setConfirmRotate(false)} disabled={rotateMut.isPending}>
-              Cancel
-            </Button>
-            <Button onClick={() => rotateMut.mutate()} disabled={rotateMut.isPending}>
-              {rotateMut.isPending ? 'Rotating…' : 'Yes, rotate'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        <Dialog open={confirmRotate} onOpenChange={(open) => !rotateMut.isPending && setConfirmRotate(open)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rotate customer view link?</DialogTitle>
+              <DialogDescription>
+                The current link will stop working immediately. Any saved link (browser history, chat, email) will
+                show an "Order not found" error. The new link will be the only way to access this order.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant='outline' onClick={() => setConfirmRotate(false)} disabled={rotateMut.isPending}>
+                Cancel
+              </Button>
+              <Button onClick={() => rotateMut.mutate()} disabled={rotateMut.isPending}>
+                {rotateMut.isPending ? 'Rotating…' : 'Yes, rotate'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Card>
+    </TooltipProvider>
   )
 }
 
