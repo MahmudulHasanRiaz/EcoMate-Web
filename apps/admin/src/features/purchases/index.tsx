@@ -578,8 +578,9 @@ export function Purchases() {
   const receiveMut = useMutation({
     mutationFn: ({ id, items, notes }: { id: string; items: any[]; notes?: string }) =>
       purchasesApi.createGrn(id, { items, notes }),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-grns', variables.id] })
       setReceiveDialog(null)
       toast.success('Items received via GRN')
     },

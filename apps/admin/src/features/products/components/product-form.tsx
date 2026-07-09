@@ -257,17 +257,22 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); onOpenChange(false); toast.success('Product updated'); },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+      onOpenChange(false)
+      toast.success('Product updated')
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 
   const genVariantMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.generateVariants(id, data),
     onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      const freshId = currentRow?.id || res?.data?.id;
-      if (freshId) queryClient.invalidateQueries({ queryKey: ['product', freshId] });
-      toast.success('Variants generated');
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      const freshId = currentRow?.id || res?.data?.id
+      if (freshId) queryClient.invalidateQueries({ queryKey: ['product', freshId] })
+      toast.success('Variants generated')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
@@ -275,7 +280,11 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const updateVariantMut = useMutation({
     mutationFn: ({ id, variantId, data }: { id: string; variantId: string; data: any }) =>
       productsApi.updateVariant(id, variantId, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Variant updated'); },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+      toast.success('Variant updated')
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
 

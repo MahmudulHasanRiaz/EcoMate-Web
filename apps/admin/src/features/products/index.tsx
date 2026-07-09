@@ -133,7 +133,10 @@ export function Products() {
   const toggleActiveMut = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       productsApi.update(id, { isActive }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+    },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
   })
 
