@@ -5,6 +5,19 @@
 > **Applies To:** All apps (admin, backend, storefront, pos)  
 > **Supersedes:** Any conflicting definitions in historical plans under `docs/7-SUPERSEDED/`
 
+## Core Principles
+
+- **Availability ≠ Physical Inventory.** Product availability (managed stock) and physical warehouse inventory are separate concerns. Managed by different domains (Product vs Inventory).
+- **Product Catalog is independent from Inventory.** Products exist without inventory tracking. Inventory requires products.
+- **Managed Stock is a lightweight availability system.** A simple count on Product/Variant for sellable quantity. It is NOT warehouse inventory.
+- **Inventory is the enterprise physical stock system.** Tracks physical items in specific warehouse locations with bins, lots, and valuation.
+- **Business Requirements override Implementation.** What the business needs is higher authority than what code currently does.
+- **Architecture Decisions must be documented as ADRs.** Every significant architectural choice has a written record.
+- **Every feature has exactly one business owner.** No two domains may claim the same responsibility.
+- **Every data mutation has exactly one authoritative service.** No Prisma model may be written by more than one service.
+- **Only StockService may mutate managedStockQuantity or reservedStock.** Violations create dual-tracking drift.
+- **Ledger records are append-only.** Once written, stock ledger entries are never modified or deleted.
+
 ## Source of Truth Priority
 
 1. **Business Requirements** — This document (highest authority)
@@ -25,171 +38,213 @@
 
 ### 1. Product
 **Prisma:** `Product`  
-**Definition:** A sellable item in the catalog. Has variants (SKU-level), attributes, categories, brands.  
-**Managed Stock:** `managedStockQuantity` on Product represents sum of all variant stock. Direct editing on Product is DISABLED — use StockService.  
+**Definition:** A sellable item in the catalog. Has variants (SKU-level), attributes, categories, brands. Product owns Managed Stock — `managedStockQuantity` is the sum of variant stock, tracked via ManagedStockLedger.  
 **Key constraints:** Has `availabilityMode` (enum: `ALWAYS_IN_STOCK`, `ALWAYS_OUT_OF_STOCK`, `MANAGED_STOCK`, `INVENTORY_CONTROLLED`).  
 **Domain:** Products
 
 ### 2. ProductVariant
 **Prisma:** `ProductVariant`  
 **Definition:** SKU-level variation of a Product (size, color, etc.). Carries `managedStockQuantity` and `reservedStock`.  
-**Stock tracking:** Every stock operation goes through StockService which updates variant stock + writes ManagedStockLedger.  
+**Stock tracking:** Every stock operation goes through StockService which updates variant stock and writes ManagedStockLedger.  
 **Domain:** Products
 
-### 3. InventoryLog
+### 3. ManagedStockLedger
+**Prisma:** `ManagedStockLedger`  
+**Definition:** Full double-entry stock ledger for Managed Stock. Every entry has `direction` (IN/OUT), `stockBefore`, `stockAfter`, `referenceType`, `referenceId`.  
+**Authority:** Single source of truth for all Managed Stock movement history.  
+**Domain:** Products
+
+### 4. InventoryLog
 **Prisma:** `InventoryLog`  
 **Definition:** Simple timestamped record of a stock change. No direction field, no before/after snapshots.  
 **Status:** Legacy system — superseded by ManagedStockLedger for new writes. Existing records retained for history.  
 **Domain:** Inventory
 
-### 4. ManagedStockLedger
-**Prisma:** `ManagedStockLedger`  
-**Definition:** Full double-entry stock ledger. Every entry has `direction` (IN/OUT), `stockBefore`, `stockAfter`, `referenceType`, `referenceId`.  
-**Authority:** Single source of truth for all stock movement history going forward.  
+### 5. Physical Inventory
+**Definition:** Countable physical items in a warehouse location. Distinct from Managed Stock. Handled via inventory adjustments, counts, transfers between bin locations. Uses Inventory Ledger (future) for tracking.  
 **Domain:** Inventory
 
-### 6. StockService
-**Location:** `apps/backend/src/stock/stock.service.ts`  
-**Definition:** Single gateway for all stock mutations. Provides: `reserve()`, `deduct()`, `release()`, `add()`, `operate()`.  
-**Rule:** All stock operations across the system MUST route through StockService. Direct Prisma writes to `managedStockQuantity` or `reservedStock` are forbidden.  
-**Domain:** Stock
-
-### 7. Physical Inventory
-**Definition:** Countable physical items in a warehouse location. Distinct from Managed Product Stock. Handled via inventory adjustments, counts, transfers between bin locations.  
-**Domain:** Inventory
-
-### 8. Warehouse
+### 6. Warehouse
 **Prisma:** `Warehouse`  
-**Definition:** Physical or virtual location where inventory is stored. Contains `BinLocation` records.  
+**Definition:** Physical or virtual location where physical inventory is stored. Contains `BinLocation` records.  
 **Domain:** Inventory
 
-### 9. BinLocation
+### 7. BinLocation
 **Prisma:** `BinLocation`  
 **Definition:** A specific storage position within a warehouse (e.g., "Aisle-1, Rack-3, Shelf-B").  
 **Domain:** Inventory
 
-### 10. Order
+### 8. CostingLot
+**Prisma:** `CostingLot`  
+**Definition:** FIFO costing lot for tracking actual cost of received inventory. Used for Actual COGS calculation.  
+**Domain:** Inventory
+
+### 9. Order
 **Prisma:** `Order`  
 **Definition:** Customer purchase transaction. Lifecycle: draft → confirmed → processing → packed → dispatched → delivered → completed. Can be cancelled/returned at various stages.  
 **Domain:** Orders
 
-### 11. OrderItem
+### 10. OrderItem
 **Prisma:** `OrderItem`  
 **Definition:** Line item on an order. Links to ProductVariant. Contains `costSnapshot` (cost at time of order, with `costType: estimated|actual`).  
 **Domain:** Orders
 
-### 12. Purchase
+### 11. Purchase
 **Prisma:** `Purchase`  
-**Definition:** Stock procurement from a supplier. Creates GoodsReceiptNote on receipt, which triggers StockService.add().  
+**Definition:** Stock procurement from a supplier. Purchase owns GRN — on receipt, GoodsReceiptNote is created which triggers StockService.add() for managed stock and physical inventory receipt.  
 **Domain:** Purchases
 
-### 13. GoodsReceiptNote (GRN)
+### 12. GoodsReceiptNote (GRN)
 **Prisma:** `GoodsReceiptNote`  
-**Definition:** Document confirming receipt of purchased goods. Triggers stock addition via StockService.  
+**Definition:** Document confirming receipt of purchased goods. Triggers managed stock addition via StockService and updates physical inventory.  
 **Domain:** Purchases
 
-### 14. Dispatch
+### 13. Dispatch
 **Prisma:** `Dispatch`  
-**Definition:** Outbound shipment of packed items to customer. After dispatch, stock is marked as deducted.  
+**Definition:** Outbound shipment of packed items to customer. After dispatch, managed stock is deducted. Courier assignment belongs here.  
 **Domain:** Dispatch & Packing
 
-### 15. PackingLock
+### 14. PackingLock
 **Prisma:** `PackingLock`  
 **Definition:** Temporary hold on inventory items being packed for an order. Prevents double-allocation during packing process.  
 **Domain:** Dispatch & Packing
 
-### 16. Campaign
+### 15. Campaign
 **Prisma:** `Campaign`  
 **Definition:** Marketing campaign for promotions, discounts, or targeted offers.  
 **Domain:** Sales & Marketing
 
-### 17. Referral
+### 16. Referral
 **Prisma:** `Referral`  
 **Definition:** Customer referral tracking for referral-based marketing.  
 **Domain:** Sales & Marketing
 
-### 18. Coupon
+### 17. Coupon
 **Prisma:** `Coupon`  
 **Definition:** Discount code applicable to orders. Has usage limits, expiry, and scope.  
 **Domain:** Sales & Marketing
 
-### 19. Employee
+### 18. Employee
 **Prisma:** `Employee`  
 **Definition:** Staff member with system access. Linked to a User account. Has roles and permissions.  
 **Domain:** Finance & HR
 
-### 20. Payroll
+### 19. Payroll
 **Prisma:** `Payroll`  
 **Definition:** Employee salary and payment records.  
 **Domain:** Finance & HR
 
-### 21. Accounting
+### 20. Accounting
 **Prisma:** `Accounting` (or related models)  
 **Definition:** Financial transaction records for double-entry bookkeeping.  
 **Domain:** Finance & HR
 
-### 22. Account (Chart of Accounts)
+### 21. Account (Chart of Accounts)
 **Prisma:** `Account`  
 **Definition:** Named financial account in the chart of accounts (e.g., "Cash", "Inventory Asset", "Accounts Receivable").  
 **Domain:** Finance & HR
 
-### 23. License
+### 22. License
 **Definition:** Per-client license managed via KeyMate/Keygen integration. Each deployment has a unique license key that gates feature availability. 7-day local cache.  
 **Domain:** System
 
-### 24. Feature Flag
+### 23. Feature Flag
 **Definition:** Runtime toggle for a licensed feature. Checked via `@RequiresFeature()` decorator on controllers. Guarded by `FeatureGuard`.  
 **Prisma Model:** FeatureFlag  
 **Domain:** System
 
-### 25. User
+### 24. User
 **Prisma:** `User` (Better Auth schema)  
 **Definition:** System user. Authenticated via either legacy JWT or Better Auth (dual mode). Linked to optional Employee record.  
 **Domain:** Auth
 
-### 26. Analytics (Page View)
+### 25. Analytics (Page View)
 **Prisma:** `PageView`  
 **Definition:** Tracked page view event in the storefront. Used for reporting and dashboard widgets.  
 **Domain:** Analytics
 
-### 27. Category
+### 26. Category
 **Prisma:** `Category`  
 **Definition:** Hierarchical product categorization. Products can belong to multiple categories.  
 **Domain:** Products
 
-### 28. Brand
+### 27. Brand
 **Prisma:** `Brand`  
 **Definition:** Product brand/manufacturer.  
 **Domain:** Products
 
-### 29. Attribute
+### 28. Attribute
 **Prisma:** `Attribute` / `AttributeValue`  
 **Definition:** Product variant dimension (e.g., "Size", "Color"). Attributes combine via cartesian product to generate variant SKUs.  
 **Domain:** Products
 
-### 30. Combo
+### 29. Combo
 **Prisma:** `ComboProduct` or similar  
 **Definition:** Bundled product offering — multiple products sold as a single unit.  
 **Domain:** Products
 
-### 31. Media Gallery
+### 30. Media Gallery
 **Definition:** Centralized image/video management for products, categories, and brand assets. Supports bulk selection.  
 **Domain:** Products
 
-### 32. POS (Point of Sale)
+### 31. POS (Point of Sale)
 **Location:** `apps/pos/`  
-**Definition:** In-store sales terminal application. Creates orders in the backend via POS-specific API.  
+**Definition:** In-store sales terminal application. Creates orders in the backend via POS-specific API. Respects all order lifecycle rules.  
 **Domain:** POS
+
+---
+
+## Business Glossary
+
+Every term has exactly one definition. This is the only authoritative terminology source.
+
+| Term | Definition | Domain | Prisma Model |
+|------|-----------|--------|-------------|
+| **Product** | A sellable item in the catalog. Has SKU-level variants. | Products | `Product` |
+| **Variant** | SKU-level variation of a Product (size, color, etc.). Carries managed stock and reservation. | Products | `ProductVariant` |
+| **Managed Stock** | Lightweight quantity tracking on Product/Variant. Represented by `managedStockQuantity`. NOT physical inventory. | Products | `managedStockQuantity` field |
+| **Physical Inventory** | Countable physical items in a warehouse location. Distinct from Managed Stock. | Inventory | — |
+| **Inventory Controlled** | `availabilityMode` value where Product availability is determined by physical inventory levels, not managed stock count. | Products | `availabilityMode` enum |
+| **Available** | `managedStockQuantity` minus `reservedStock`. Quantity that can be sold. | Products | computed |
+| **Reserved** | Stock held by pending but unconfirmed orders. Represented by `reservedStock` field. Released on cancellation, deducted on confirmation. | Products | `reservedStock` |
+| **Allocated** | Stock physically picked and packed for dispatch. Follows Reservation. Tracked via PackingLock. | Inventory | `PackingLock` |
+| **On Hand** | For Managed Stock: `managedStockQuantity`. For Physical Inventory: current physical count. | Products / Inventory | computed |
+| **Warehouse** | Physical or logical storage location where physical inventory is stored. | Inventory | `Warehouse` |
+| **Bin** | Specific position within a warehouse (e.g., "Aisle-1, Rack-3, Shelf-B"). | Inventory | `BinLocation` |
+| **Lot** | Batch/costing lot for FIFO tracking of received inventory. Used for Actual COGS. | Inventory | `CostingLot` |
+| **Batch** | Synonym for Lot. | Inventory | `CostingLot` |
+| **Adjustment** | Manual correction to physical inventory count. Creates ledger entry. | Inventory | — |
+| **Reservation** | Holding managed stock for an order via StockService.reserve(). Creates ManagedStockLedger entry. | Products | — |
+| **Allocation** | Physical assignment of inventory items to a specific dispatch. Uses PackingLock. | Inventory | `PackingLock` |
+| **Transfer** | Moving physical inventory between warehouses or bins. Creates Inventory Ledger entries. | Inventory | — |
+| **Dispatch** | Outbound shipment of packed items to customer. Courier assignment and tracking belong here. | Dispatch & Packing | `Dispatch` |
+| **Return** | Customer returning previously purchased items. May trigger managed stock addition and/or physical inventory receipt. | Orders | — |
+| **Refund** | Money returned to customer for a return or cancellation. Financial transaction. | Finance & HR | — |
+| **Estimated Cost** | Cost of goods at time of order entry. Captured as `costSnapshot` with `costType: 'estimated'`. | Products | `costSnapshot` |
+| **Actual Cost** | True cost of goods determined by FIFO lot tracking. Captured as `costSnapshot` with `costType: 'actual'`. | Inventory | `CostingLot` |
+| **Estimated COGS** | Cost of Goods Sold based on estimated cost snapshot. | Finance & HR | computed |
+| **Actual COGS** | Cost of Goods Sold based on actual cost from FIFO costing lots. | Finance & HR | computed |
+| **Managed Stock Ledger** | Double-entry audit log for all Managed Stock changes. Direction, before/after snapshots. | Products | `ManagedStockLedger` |
+| **Inventory Ledger** | (Future) Double-entry log for physical inventory movements. Separate from ManagedStockLedger. | Inventory | (future) |
+| **GRN** | Goods Receipt Note. Document confirming receipt of purchased goods. | Purchases | `GoodsReceiptNote` |
+| **Courier** | Third-party shipping provider for dispatching orders. | Dispatch & Packing | — |
+| **Payment Gateway** | Third-party payment processor (bKash, Nagad, SSLCommerz, etc.). | Finance & HR | — |
 
 ---
 
 ## Cross-Cutting Rules
 
-### Stock Operation Rule
-All stock mutations (`reserve`, `deduct`, `release`, `add`) MUST go through `StockService`. No direct Prisma writes to `managedStockQuantity` or `reservedStock`. Violations create dual-tracking drift between InventoryLog and ManagedStockLedger.
+### Managed Stock Operation Rule
+All managed stock mutations (`reserve`, `deduct`, `release`, `add`) MUST go through `StockService`. No direct Prisma writes to `managedStockQuantity` or `reservedStock`. Violations create dual-tracking drift between actual state and ManagedStockLedger.
 
 ### Order Stock Deduction Rule
 When an order is confirmed, `StockService.deduct()` is called. When cancelled/returned, `StockService.release()` or `StockService.add()` is called. OrdersService must NOT bypass StockService.
 
 ### License Enforcement Rule
 Every licensed feature must have `@RequiresFeature()` on its controller. The feature must be registered in FEATURE_REGISTRY.md. The 68-feature system from `final-feature-plan.md` must be verified against actual `@RequiresFeature()` usage.
+
+### Purchase-to-Stock Rule
+Purchase owns GRN. Receiving goods triggers StockService.add() for managed stock and physical inventory receipt. Inventory never creates purchase orders.
+
+### Inventory Control Rule
+When a Product has `availabilityMode: INVENTORY_CONTROLLED`, its availability is determined by physical inventory levels (not managedStockQuantity). Implementation of this mode is pending.

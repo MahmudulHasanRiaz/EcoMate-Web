@@ -6,6 +6,22 @@ Storefront MUST:
 
 ---
 
+# ARCHITECTURE INVARIANTS (OVERRIDES ALL OTHER RULES)
+
+ALL developers and AI agents MUST read and obey `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md`.
+
+These are NOT optional. If code violates an invariant, fix the code — not the invariant.
+
+Key invariants summarized:
+- INV-001: Only StockService may mutate managedStockQuantity or reservedStock
+- INV-003: Ledger records are append-only
+- INV-012: Business Requirements override Implementation
+- INV-014: Architecture Decisions must be documented as ADRs
+
+See full file at `docs/1-BUSINESS/ARCHITECTURE_INVARIANTS.md` for all 14 invariants with violation tracking.
+
+---
+
 # TESTING RULES
 
 MANDATORY TEST TYPES:
