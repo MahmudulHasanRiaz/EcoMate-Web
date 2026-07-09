@@ -1,4 +1,5 @@
 # Full Backend Audit: Error Handling, Query Optimization, WebSocket & Fastify
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 **Date:** 2026-07-02
 **Scope:** `apps/backend` — 57 controller modules, 64 services, Prisma schema, infrastructure

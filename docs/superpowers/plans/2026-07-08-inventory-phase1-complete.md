@@ -1,4 +1,5 @@
 # Inventory Phase 1 — Complete Remaining Work
+> **Superseded by:** `docs/3-DOMAINS/01-inventory.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

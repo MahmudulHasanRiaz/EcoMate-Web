@@ -1,4 +1,5 @@
 # Packing Workspace Design
+> **Superseded by:** `docs/3-DOMAINS/10-dispatch-packing.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 Dedicated packing workspace for warehouse packing staff (`packing_assistant` role)। Optimized for speed: large product images, minimal clicks, keyboard-friendly, card-based layout।

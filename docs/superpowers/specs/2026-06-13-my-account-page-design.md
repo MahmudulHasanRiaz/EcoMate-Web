@@ -1,4 +1,5 @@
 # My Account Page — Design Spec
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 Build a complete customer "My Account" area with Profile, Orders, Addresses, Wishlist, and Settings sections. Add `autoVariantSelect` setting to control product detail page variant pre-selection. Ensure zero SQL injection risk.

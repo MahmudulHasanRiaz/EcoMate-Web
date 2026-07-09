@@ -1,4 +1,5 @@
 # EcoMate Platform Transformation Design
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 **Date:** 2026-06-24
 **Status:** Draft

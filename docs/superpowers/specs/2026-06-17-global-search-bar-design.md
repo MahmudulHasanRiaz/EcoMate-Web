@@ -1,4 +1,5 @@
 # Global Search Bar Design
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 Upgrade the admin app's header search from a navigation-only Cmd+K palette to a hybrid global search bar. Users see a sleek search bar in the header; focusing it opens a powerful overlay that searches Orders (by ID, phone), Products (by name, SKU), and Customers (by name, phone, email) via Postgres Full-Text Search — all while keeping the existing Cmd+K navigation and quick actions.

@@ -1,4 +1,5 @@
 # Catalog Image Ratio Control — Design Spec
+> **Superseded by:** `docs/3-DOMAINS/02-products.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 **Date:** 2026-06-04
 **Status:** Approved

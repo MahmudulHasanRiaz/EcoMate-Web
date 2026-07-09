@@ -1,4 +1,5 @@
 # Analytics Module — Design Spec
+> **Superseded by:** `docs/3-DOMAINS/12-analytics.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 

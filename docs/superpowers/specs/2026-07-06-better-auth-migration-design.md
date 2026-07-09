@@ -1,4 +1,5 @@
 # Better Auth Migration Design
+> **Superseded by:** `docs/3-DOMAINS/09-auth.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 **Date:** 2026-07-06
 **Status:** Reviewed

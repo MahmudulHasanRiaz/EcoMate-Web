@@ -1,4 +1,5 @@
 # Phase 6: Finance & HR — Implementation Plan (TDD)
+> **Superseded by:** `docs/3-DOMAINS/08-finance-hr.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > **TDD Rule:** Write failing test → implement → make pass → commit. Every file must have a corresponding test.

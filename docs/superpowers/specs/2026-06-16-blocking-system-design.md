@@ -1,4 +1,5 @@
 # Blocking & Security System Design
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 Complete IP and phone number blocking system with whitelist, auto-detection, and configurable restriction rules for the EcoMate e-commerce platform.

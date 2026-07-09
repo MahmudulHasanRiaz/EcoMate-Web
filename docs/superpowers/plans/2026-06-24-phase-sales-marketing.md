@@ -1,4 +1,5 @@
 # Phase 5: Sales & Marketing — Implementation Plan
+> **Superseded by:** `docs/3-DOMAINS/07-sales-marketing.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 

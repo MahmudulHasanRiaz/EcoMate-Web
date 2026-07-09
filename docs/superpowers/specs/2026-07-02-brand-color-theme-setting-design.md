@@ -1,4 +1,5 @@
 # Brand Color Theme Setting
+> **Superseded by:** `docs/3-DOMAINS/02-products.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## প্রয়োজন
 

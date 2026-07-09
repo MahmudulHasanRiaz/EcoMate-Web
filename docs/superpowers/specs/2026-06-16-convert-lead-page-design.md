@@ -1,4 +1,5 @@
 # Convert Lead Page — Design Spec
+> **Superseded by:** `docs/3-DOMAINS/03-orders.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Goal
 

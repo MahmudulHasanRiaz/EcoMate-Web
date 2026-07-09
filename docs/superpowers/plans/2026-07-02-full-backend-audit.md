@@ -1,4 +1,5 @@
 # Full Backend Audit Implementation Plan
+> **Superseded by:** `docs/2-ARCHITECTURE/ARCHITECTURE.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Each task = one phase = multiple sub-agents in parallel. Steps use checkbox (`- [ ]`) syntax for tracking.
 

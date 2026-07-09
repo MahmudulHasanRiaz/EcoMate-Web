@@ -1,4 +1,5 @@
 # POS Plugin Module Design
+> **Superseded by:** `docs/3-DOMAINS/11-pos.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 Dedicated Point of Sale (POS) application for showroom/branch operations. Supports multiple showrooms, cashier sessions, barcode scanning, category-driven product grid, hold cart, quick customer creation, split payments, discounts, and receipt printing.

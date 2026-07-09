@@ -1,4 +1,5 @@
 # Unified User, Customer & Employee Management — Design Spec
+> **Superseded by:** `docs/3-DOMAINS/09-auth.md` — migrated to domain-specific documentation during Phase 2 architecture cleanup
 
 ## Overview
 
