@@ -12,6 +12,7 @@ import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module'
 @Module({
   controllers: [OrdersController, OrderStatusController],
   providers: [OrdersService, OrdersEventService],
+  exports: [OrdersService],
   imports: [
     TrackingModule,
     CustomersModule,
