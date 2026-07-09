@@ -1007,25 +1007,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
         />
       )}
 
-      {confirmDialog.open && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setConfirmDialog({ open: false, stock: 0 })}>
-          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <h3 className='font-semibold text-lg'>Disable Stock Tracking?</h3>
-            <p className='text-sm text-muted-foreground'>
-              This product has <strong>{confirmDialog.stock} units</strong> in stock. Disabling stock tracking will remove all stock and switch to status-based (In Stock / Out of Stock).
-            </p>
-            <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={() => setConfirmDialog({ open: false, stock: 0 })}>
-                Cancel
-              </Button>
-              <Button variant='destructive' onClick={() => { setManageStock(false); setManageStockJustToggled(false); setConfirmDialog({ open: false, stock: 0 }) }}>
-                Remove Stock & Disable
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {regenerateConfirm && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setRegenerateConfirm(false)}>
           <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
