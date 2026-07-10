@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { encrypt, decrypt } from '../common/utils/encryption';
+import { EncryptionService } from '../common/utils/encryption';
 
 interface ActivateDto {
   licenseKey: string;
@@ -12,15 +12,18 @@ interface ActivateDto {
 
 @Injectable()
 export class LicenseActivationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private encryption: EncryptionService,
+  ) {}
 
   async find() {
     return this.prisma.licenseActivation.findFirst();
   }
 
   async activate(dto: ActivateDto) {
-    const encryptedKey = encrypt(dto.licenseKey);
-    const encryptedApiKey = dto.apiKey ? encrypt(dto.apiKey) : null;
+    const encryptedKey = this.encryption.encrypt(dto.licenseKey);
+    const encryptedApiKey = dto.apiKey ? this.encryption.encrypt(dto.apiKey) : null;
 
     const existing = await this.find();
     if (existing) {
@@ -72,10 +75,10 @@ export class LicenseActivationService {
     const activation = await this.find();
     if (!activation || activation.status !== 'active') return null;
     return {
-      licenseKey: decrypt(activation.licenseKey),
+      licenseKey: this.encryption.decrypt(activation.licenseKey),
       keymateUrl: activation.keymateUrl,
       domain: activation.domain,
-      apiKey: activation.apiKey ? decrypt(activation.apiKey) : undefined,
+      apiKey: activation.apiKey ? this.encryption.decrypt(activation.apiKey) : undefined,
       licenseInfo: activation.licenseInfo,
     };
   }

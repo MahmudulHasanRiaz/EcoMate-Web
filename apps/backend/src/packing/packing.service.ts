@@ -3,8 +3,6 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
@@ -15,7 +13,6 @@ export class PackingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
   ) {}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { getPosProducts } from '../api/client'
 import { useCartStore } from '../stores/cart-store'
-import { Search, Plus, Layers } from 'lucide-react'
+import { Search, Plus, Layers, RefreshCw, WifiOff } from 'lucide-react'
 import { VariantModal } from './variant-modal'
 
 interface Props {
@@ -14,12 +14,14 @@ interface Props {
 export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSubmit }: Props) {
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [variantModalOpen, setVariantModalOpen] = useState(false)
   const addItem = useCartStore((s) => s.addItem)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const params: any = { perPage: 100 }
       if (categoryId) params.categoryId = categoryId
@@ -27,8 +29,9 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       if (barcodeInput) params.barcode = barcodeInput
       const res = await getPosProducts(params)
       setProducts(res.data.data || [])
-    } catch {
-      setProducts([])
+    } catch (err: any) {
+      // If we have cached products, keep showing them — don't clear on error
+      setError(err?.message || 'Failed to load products')
     } finally {
       setLoading(false)
     }
@@ -121,6 +124,28 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
   }
 
   if (products.length === 0) {
+    // No cached data — show error state with retry, or empty state
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-rose-400 mb-4 border border-rose-200/60">
+            <WifiOff size={28} className="opacity-60" />
+          </div>
+          <h3 className="text-base font-bold text-slate-700">Unable to load products</h3>
+          <p className="mt-1 text-sm text-slate-400 max-w-xs">
+            You appear to be offline or the server is unreachable. Previously cached products will still be available.
+          </p>
+          <button
+            onClick={fetchProducts}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-95 transition-all"
+          >
+            <RefreshCw size={16} />
+            Retry
+          </button>
+        </div>
+      )
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400 mb-4 border border-slate-200/60">
@@ -136,6 +161,17 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
 
   return (
     <>
+      {error && (
+        <div className="mx-4 mt-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <WifiOff size={16} className="shrink-0 text-amber-500" />
+          <span className="text-amber-800">
+            Showing cached products. The server is unreachable.{' '}
+            <button onClick={fetchProducts} className="ml-1 font-semibold underline hover:text-amber-900">
+              Retry
+            </button>
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {products.map((p: any) => {
           const images = Array.isArray(p.images) ? p.images : []

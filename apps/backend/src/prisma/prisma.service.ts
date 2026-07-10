@@ -181,7 +181,7 @@ export class PrismaService
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({ connectionString, max: 6 });
     const adapter = new PrismaPg(pool);
 
     super({
@@ -601,7 +601,10 @@ export class PrismaService
    */
   private async ensureSchemaColumns(): Promise<void> {
     // Step A: Auto-heal from schema.prisma — catches ALL models/columns/indexes dynamically
-    await this.autoHealSchema();
+    // Only auto-heal in non-production — Prisma Migrate owns schema in production
+    if (process.env.NODE_ENV !== 'production') {
+      await this.autoHealSchema();
+    }
 
     // Foreign key constraints — each in its own DO block
     const fkFixes: string[] = [

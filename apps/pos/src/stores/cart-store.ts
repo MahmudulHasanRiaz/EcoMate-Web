@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 interface CartItem {
   productId?: string;
@@ -36,71 +37,78 @@ interface CartState {
   total: () => number;
 }
 
-export const useCartStore = create<CartState>((set, get) => ({
-  items: [],
-  orderDiscount: 0,
-  orderDiscountType: 'flat',
-  customerId: null,
-  guestName: '',
-  guestPhone: '',
-  salesChannel: 'WALK_IN',
-  deliveryMethod: 'Counter Sale',
-  notes: '',
+export const useCartStore = create<CartState>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      orderDiscount: 0,
+      orderDiscountType: 'flat',
+      customerId: null,
+      guestName: '',
+      guestPhone: '',
+      salesChannel: 'WALK_IN',
+      deliveryMethod: 'Counter Sale',
+      notes: '',
 
-  addItem: (item) =>
-    set((state) => {
-      const existing = state.items.findIndex(
-        (i) => i.productId === item.productId && i.variantId === item.variantId,
-      );
-      if (existing >= 0) {
-        const items = [...state.items];
-        items[existing] = { ...items[existing], quantity: items[existing].quantity + item.quantity };
-        return { items };
-      }
-      return { items: [...state.items, item] };
+      addItem: (item) =>
+        set((state) => {
+          const existing = state.items.findIndex(
+            (i) => i.productId === item.productId && i.variantId === item.variantId,
+          );
+          if (existing >= 0) {
+            const items = [...state.items];
+            items[existing] = { ...items[existing], quantity: items[existing].quantity + item.quantity };
+            return { items };
+          }
+          return { items: [...state.items, item] };
+        }),
+
+      updateQuantity: (index, qty) =>
+        set((state) => {
+          if (qty <= 0) return { items: state.items.filter((_, i) => i !== index) };
+          const items = [...state.items];
+          items[index] = { ...items[index], quantity: qty };
+          return { items };
+        }),
+
+      removeItem: (index) =>
+        set((state) => ({ items: state.items.filter((_, i) => i !== index) })),
+
+      setOrderDiscount: (discount, type) => set({ orderDiscount: discount, orderDiscountType: type }),
+      setCustomer: (customerId, name, phone) => set({ customerId, guestName: name, guestPhone: phone }),
+      setSalesChannel: (channel) => set({ salesChannel: channel }),
+      setDeliveryMethod: (method) => set({ deliveryMethod: method }),
+      setNotes: (notes) => set({ notes }),
+      clearCart: () => set({
+        items: [], orderDiscount: 0, orderDiscountType: 'flat',
+        customerId: null, guestName: '', guestPhone: '',
+        salesChannel: 'WALK_IN', deliveryMethod: 'Counter Sale', notes: '',
+      }),
+
+      subtotal: () => get().items.reduce((s, i) => s + i.price * i.quantity, 0),
+
+      totalDiscount: () => {
+        const state = get();
+        const subtotal = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
+        const itemDiscount = state.items.reduce((s, i) => {
+          if (!i.discount) return s;
+          const lineTotal = i.price * i.quantity;
+          return s + (i.discountType === 'percentage' ? (lineTotal * i.discount) / 100 : i.discount);
+        }, 0);
+        const afterItems = subtotal - itemDiscount;
+        const orderD = state.orderDiscount
+          ? (state.orderDiscountType === 'percentage' ? (afterItems * state.orderDiscount) / 100 : state.orderDiscount)
+          : 0;
+        return itemDiscount + orderD;
+      },
+
+      total: () => {
+        const state = get();
+        return state.subtotal() - state.totalDiscount();
+      },
     }),
-
-  updateQuantity: (index, qty) =>
-    set((state) => {
-      if (qty <= 0) return { items: state.items.filter((_, i) => i !== index) };
-      const items = [...state.items];
-      items[index] = { ...items[index], quantity: qty };
-      return { items };
-    }),
-
-  removeItem: (index) =>
-    set((state) => ({ items: state.items.filter((_, i) => i !== index) })),
-
-  setOrderDiscount: (discount, type) => set({ orderDiscount: discount, orderDiscountType: type }),
-  setCustomer: (customerId, name, phone) => set({ customerId, guestName: name, guestPhone: phone }),
-  setSalesChannel: (channel) => set({ salesChannel: channel }),
-  setDeliveryMethod: (method) => set({ deliveryMethod: method }),
-  setNotes: (notes) => set({ notes }),
-  clearCart: () => set({
-    items: [], orderDiscount: 0, orderDiscountType: 'flat',
-    customerId: null, guestName: '', guestPhone: '',
-    salesChannel: 'WALK_IN', deliveryMethod: 'Counter Sale', notes: '',
-  }),
-
-  subtotal: () => get().items.reduce((s, i) => s + i.price * i.quantity, 0),
-
-  totalDiscount: () => {
-    const state = get();
-    const subtotal = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
-    const itemDiscount = state.items.reduce((s, i) => {
-      if (!i.discount) return s;
-      const lineTotal = i.price * i.quantity;
-      return s + (i.discountType === 'percentage' ? (lineTotal * i.discount) / 100 : i.discount);
-    }, 0);
-    const afterItems = subtotal - itemDiscount;
-    const orderD = state.orderDiscount
-      ? (state.orderDiscountType === 'percentage' ? (afterItems * state.orderDiscount) / 100 : state.orderDiscount)
-      : 0;
-    return itemDiscount + orderD;
-  },
-
-  total: () => {
-    const state = get();
-    return state.subtotal() - state.totalDiscount();
-  },
-}));
+    {
+      name: 'pos-cart',
+    },
+  ),
+);

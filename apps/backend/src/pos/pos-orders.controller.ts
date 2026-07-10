@@ -25,12 +25,13 @@ export class PosOrdersController {
     @Body() dto: CreatePosOrderDto,
     @Req() req: any,
     @Headers('x-pos-session-id') sessionId?: string,
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
     if (!sessionId)
       throw new BadRequestException(
         'POS session required (x-pos-session-id header)',
       );
-    return this.svc.create(dto, sessionId, req.user.id);
+    return this.svc.create(dto, sessionId, req.user.id, idempotencyKey);
   }
 
   @Get('customers')

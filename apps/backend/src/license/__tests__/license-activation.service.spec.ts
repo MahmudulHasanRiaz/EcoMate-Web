@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LicenseActivationService } from '../license-activation.service';
+import { EncryptionService } from '../../common/utils/encryption';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -27,6 +28,13 @@ describe('LicenseActivationService', () => {
       providers: [
         LicenseActivationService,
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: EncryptionService,
+          useValue: {
+            encrypt: (val: string) => `enc:${val}`,
+            decrypt: (val: string) => val.replace('enc:', ''),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {

@@ -6,7 +6,7 @@ function createBaPrisma(): PrismaClient {
   const url =
     process.env.DATABASE_URL ||
     'postgresql://postgres@localhost:5432/ecomate_web';
-  const pool = new Pool({ connectionString: url });
+  const pool = new Pool({ connectionString: url, max: 4 });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }

@@ -172,6 +172,10 @@ export class AccountingService {
   }
 
   async trialBalance(periodId: string) {
+    // Raw SQL needed: multi-table LEFT JOIN with conditional aggregation (SUM + CASE inside
+    // COALESCE) filtered by periodId. Prisma's query builder cannot express SUM with
+    // conditional CASE WHEN across joined relations; this avoids fetching all lines and
+    // aggregating in application memory, which would be O(n) per account.
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit ELSE 0 END), 0) as total_debit,
@@ -204,6 +208,9 @@ export class AccountingService {
   }
 
   async profitAndLoss(periodId: string) {
+    // Raw SQL needed: same multi-table LEFT JOIN pattern as trialBalance, also filtering
+    // account types (income/expense only). Prisma cannot express the CASE-wrapped
+    // debit-credit difference per line across a polymorphic period filter.
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit - jel.credit ELSE 0 END), 0) as balance
@@ -243,6 +250,9 @@ export class AccountingService {
   }
 
   async balanceSheet(periodId: string) {
+    // Raw SQL needed: same multi-table LEFT JOIN / conditional aggregation pattern, filtering
+    // to balance-sheet account types (asset/liability/equity). Prisma cannot express
+    // COALESCE(SUM(CASE ...)) across joined relations in a single query.
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT a.type, a.id as account_id, a.code as account_code, a.name as account_name,
               COALESCE(SUM(CASE WHEN je.id IS NOT NULL AND je."periodId" = $1 THEN jel.debit - jel.credit ELSE 0 END), 0) as balance

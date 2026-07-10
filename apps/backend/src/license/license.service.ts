@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,6 +38,7 @@ export class LicenseService implements OnModuleInit {
     private featureFlags: FeatureFlagsService,
     private config: ConfigService,
     private licenseActivation: LicenseActivationService,
+    private logger: Logger,
   ) {}
 
   async onModuleInit() {
@@ -48,7 +49,7 @@ export class LicenseService implements OnModuleInit {
           process.env.NODE_ENV === 'production'
             ? '[License] NO ACTIVE LICENSE — gating all routes'
             : '[License] No active activation found — setup required via UI';
-        console.warn(msg);
+        this.logger.warn(msg);
         return;
       }
 
@@ -56,7 +57,7 @@ export class LicenseService implements OnModuleInit {
       try {
         creds = await this.licenseActivation.getDecryptedCredentials();
       } catch (err: any) {
-        console.warn(
+        this.logger.warn(
           '[License] Failed to decrypt stored credentials — encryption key may have changed',
         );
         await this.licenseActivation.deactivate('decryption_failed');
@@ -73,13 +74,13 @@ export class LicenseService implements OnModuleInit {
       );
       const lic = this.featureFlags.getLicense();
       if (lic?.valid) {
-        console.log(
+        this.logger.log(
           `[License] Validated — plan: ${lic.plan?.name || 'custom'}`,
         );
         await this.licenseActivation.updateLicenseInfo(lic);
       } else {
         const code = lic?.code || 'unknown';
-        console.warn(`[License] ${friendlyError(code)}`);
+        this.logger.warn(`[License] ${friendlyError(code)}`);
         await this.licenseActivation.deactivate(code);
       }
     } catch (err: any) {
@@ -88,13 +89,13 @@ export class LicenseService implements OnModuleInit {
         err?.message?.toLowerCase().includes('econnrefused') ||
         err?.message?.toLowerCase().includes('network')
       ) {
-        console.warn(
+        this.logger.warn(
           '[License] KeyMate server unreachable — will retry on next request',
         );
       } else if (err?.message?.toLowerCase().includes('decrypt')) {
-        console.warn('[License] Failed to decrypt stored credentials');
+        this.logger.warn('[License] Failed to decrypt stored credentials');
       } else {
-        console.warn(
+        this.logger.warn(
           '[License] Failed to validate license:',
           err?.message || err,
         );
@@ -208,7 +209,7 @@ export class LicenseService implements OnModuleInit {
       data: { availabilityMode: 'MANAGED_STOCK' },
     });
     if (result.count > 0) {
-      console.log(
+      this.logger.log(
         `[License] Downgrade: reverted ${result.count} products from INVENTORY_CONTROLLED to MANAGED_STOCK`,
       );
     }

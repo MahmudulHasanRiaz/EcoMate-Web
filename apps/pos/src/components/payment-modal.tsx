@@ -96,6 +96,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const handlePay = async () => {
     if (!isValid) return
     setLoading(true)
+    const idempotencyKey = crypto.randomUUID()
     try {
       await createPosOrder({
         items: items.map((i) => ({
@@ -116,7 +117,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
         salesChannel,
         deliveryMethod,
         notes: notes || undefined,
-      })
+      }, idempotencyKey)
       toast.success('Order completed!')
       clearCart()
       onSuccess()

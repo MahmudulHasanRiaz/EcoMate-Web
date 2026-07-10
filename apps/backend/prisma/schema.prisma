@@ -125,7 +125,6 @@ model UserProfile {
   referrals     Referral[]
   posSessions   PosSession[]
   packingLocks  PackingLock[]
-  heldCarts     HeldCart[]
 
   @@map("User")
   @@index([role])
@@ -551,7 +550,6 @@ model PosSession {
   closedAt        DateTime?
   notes           String?
   orders          Order[]
-  heldCarts       HeldCart[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -560,25 +558,6 @@ model PosSession {
   @@index([status])
 }
 
-model HeldCart {
-  id           String   @id @default(uuid())
-  sessionId    String
-  cashierId    String
-  items        Json
-  customerId   String?
-  guestName    String?
-  guestPhone   String?
-  discount     Decimal  @default(0) @db.Decimal(10, 2)
-  discountType String   @default("flat")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  session   PosSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  cashier   UserProfile       @relation(fields: [cashierId], references: [id])
-
-  @@index([sessionId])
-  @@index([cashierId])
-}
 
 model PackingLock {
   id        String   @id @default(uuid())
@@ -635,6 +614,7 @@ model Order {
   source                   OrderSource?       @default(ECOMMERCE)
   salesChannel             SalesChannel?
   posSessionId             String?
+  idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
   paymentStatus            PaymentStatus      @default(PAYMENT_PENDING)
   paymentProof             Json?              @default("{}")

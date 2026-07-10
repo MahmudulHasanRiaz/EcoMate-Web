@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { LicenseEngine } from '@ecomate/license-engine';
 import { ConfigService } from '@nestjs/config';
+import { EncryptionService } from '../common/utils/encryption';
 import { LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import { LicenseActivationService } from './license-activation.service';
@@ -21,6 +22,7 @@ function createLicenseEngine(config: ConfigService): LicenseEngine {
     LicenseService,
     LicenseActivationService,
     LicenseGuard,
+    EncryptionService,
     FeatureFlagsService,
     {
       provide: LicenseEngine,

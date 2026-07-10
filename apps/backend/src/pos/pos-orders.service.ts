@@ -129,13 +129,25 @@ export class PosOrdersService {
     });
   }
 
-  async create(dto: CreatePosOrderDto, sessionId: string, cashierId: string) {
+  async create(dto: CreatePosOrderDto, sessionId: string, cashierId: string, idempotencyKey?: string) {
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },
       include: { showroom: true },
     });
     if (!session || session.status !== 'open') {
       throw new BadRequestException('No active POS session');
+    }
+
+    // Idempotency check: if key provided and already processed, return existing order
+    if (idempotencyKey) {
+      const existing = await this.prisma.order.findUnique({
+        where: { idempotencyKey },
+        include: { items: true, payments: true, customer: true },
+      });
+      if (existing) {
+        this.logger.warn(`Idempotent request — returning existing order ${existing.displayId} (key: ${idempotencyKey})`);
+        return existing;
+      }
     }
 
     const displayId = await this.generateDisplayId();
@@ -163,6 +175,7 @@ export class PosOrdersService {
       const order = await tx.order.create({
         data: {
           displayId,
+          idempotencyKey,
           statusId: status.id,
           subtotal,
           shippingCharge: 0,

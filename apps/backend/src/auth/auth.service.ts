@@ -135,32 +135,28 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(dto: LoginDto) {
-    console.log(
-      `[LOGIN ATTEMPT] Email: "${dto.email}", Password length: ${dto.password?.length}`,
-    );
     const user = await this.prisma.userProfile.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
-      console.log(`[LOGIN FAILED] User not found for email: "${dto.email}"`);
+      this.logger.warn('Failed login attempt: user not found');
       throw new UnauthorizedException('Invalid email or password');
     }
 
     if (user.status !== 'active') {
-      console.log(`[LOGIN FAILED] User not active. Status: ${user.status}`);
+      this.logger.warn('Failed login attempt: account not active');
       throw new UnauthorizedException('Account is not active');
     }
 
     if (user.lockoutUntil && user.lockoutUntil > new Date()) {
-      console.log(`[LOGIN FAILED] User locked out until: ${user.lockoutUntil}`);
+      this.logger.warn('Failed login attempt: account locked');
       throw new UnauthorizedException(
         'Account is temporarily locked due to too many failed login attempts. Please try again later.',
       );
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
-    console.log(`[LOGIN ATTEMPT] Password valid? ${isPasswordValid}`);
 
     if (!isPasswordValid) {
       // Increment failed attempts in one atomic operation
@@ -264,12 +260,12 @@ export class AuthService implements OnModuleInit {
     }
 
     if (user.status !== 'active') {
-      console.log(`[REFRESH FAILED] User not active. Status: ${user.status}`);
+      this.logger.warn('Failed token refresh: account not active');
       throw new UnauthorizedException('Account is not active');
     }
 
     if (user.lockoutUntil && user.lockoutUntil > new Date()) {
-      console.log(`[REFRESH FAILED] User locked out until: ${user.lockoutUntil}`);
+      this.logger.warn('Failed token refresh: account locked');
       throw new UnauthorizedException(
         'Account is temporarily locked due to too many failed login attempts. Please try again later.',
       );
@@ -547,7 +543,7 @@ export class AuthService implements OnModuleInit {
         });
       } catch (err) {
         this.logger.warn(
-          `Failed to sync reset password to BA for ${payload.email}`,
+          `Failed to sync reset password to BA for user ${updatedUser.id}`,
           err,
         );
       }
