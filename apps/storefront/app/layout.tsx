@@ -43,13 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description: config.seo.description || `${config.store.name} — premium products and services`,
       keywords: config.seo.keywords || undefined,
       icons: {
-        icon: [
-          ...(faviconUrl
-            ? [{ url: faviconUrl, type: 'image/svg+xml' as const, rel: 'icon' as const }]
-            : []),
-          { url: '/favicon.svg', type: 'image/svg+xml' as const, rel: 'icon' as const },
-          { url: '/favicon.ico', sizes: 'any', rel: 'icon' as const },
-        ],
+        icon: faviconUrl
+          ? { url: faviconUrl, type: 'image/svg+xml', rel: 'icon' }
+          : { url: '/favicon.svg', type: 'image/svg+xml', rel: 'icon' },
       },
       openGraph: {
         title: config.seo.title || config.store.name,

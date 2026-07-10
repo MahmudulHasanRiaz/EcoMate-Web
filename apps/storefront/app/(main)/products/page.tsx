@@ -2,6 +2,9 @@ import { fetchProductsServer, getCategoriesServer } from "@/lib/api/products-ser
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import ArchivePageClient from "./ArchivePageClient";
 
+// Force dynamic rendering so storefront config (hideOosFromArchive) is always fresh
+export const dynamic = 'force-dynamic';
+
 type ProductsSearchParams = {
   search?: string;
   categoryId?: string;
