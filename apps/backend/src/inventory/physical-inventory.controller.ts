@@ -23,6 +23,7 @@ export class PhysicalInventoryController {
   async adjust(@Body() dto: AdjustPhysicalDto) {
     await this.stockService.addPhysical({
       productId: dto.productId,
+      variantId: dto.variantId,
       warehouseId: dto.warehouseId,
       quantity: dto.quantity,
       reference: dto.reason,

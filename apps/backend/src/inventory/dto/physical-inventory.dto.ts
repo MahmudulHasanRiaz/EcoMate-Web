@@ -5,6 +5,10 @@ export class AdjustPhysicalDto {
   @IsString()
   productId: string;
 
+  @IsOptional()
+  @IsString()
+  variantId?: string;
+
   @IsString()
   warehouseId: string;
 
