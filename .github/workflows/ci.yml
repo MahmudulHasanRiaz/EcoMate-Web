@@ -225,13 +225,31 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push ${{ matrix.service.name }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.service.context }}
-          file: ${{ matrix.service.dockerfile }}
-          push: true
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        shell: bash
+        run: |
+          max_attempts=3
+          attempt=0
+          until [ $attempt -ge $max_attempts ]; do
+            attempt=$((attempt + 1))
+            echo "Build attempt $attempt/$max_attempts for ${{ matrix.service.name }}"
+            if docker buildx build \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              --file ${{ matrix.service.dockerfile }} \
+              --tag ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:latest \
+              --tag ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:${{ github.sha }} \
+              --push \
+              ${{ matrix.service.context }}; then
+              echo "Build succeeded on attempt $attempt"
+              exit 0
+            fi
+            last_exit_code=$?
+            echo "Build failed (exit $last_exit_code) on attempt $attempt"
+            if [ $attempt -lt $max_attempts ]; then
+              sleep_delay=$((attempt * 10))
+              echo "Retrying in ${sleep_delay}s..."
+              sleep $sleep_delay
+            fi
+          done
+          echo "All $max_attempts attempts failed"
+          exit $last_exit_code
