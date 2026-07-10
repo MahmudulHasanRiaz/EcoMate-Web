@@ -3,7 +3,9 @@
 import { Suspense, useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = typeof window !== "undefined" && !window.location.hostname.includes("localhost")
+  ? "/api"
+  : process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 function PageViewTrackerInner() {
   const pathname = usePathname();
