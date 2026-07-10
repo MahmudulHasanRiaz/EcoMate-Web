@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Loader2, Package } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Loader2, Package, X, Check, ChevronRight } from 'lucide-react'
 
 interface Props {
   open: boolean
@@ -44,7 +45,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
         variants: p.variants?.filter((v: any) => v.isActive !== false) || [],
       }))
     }),
-    enabled: productSearch.length > 0,
+    enabled: productSearch.length > 0 && !selectedProduct,
   })
 
   const { data: warehouses } = useQuery<any[]>({
@@ -83,6 +84,12 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     ? selectedProduct?.variants?.find(v => v.id === selectedVariantId)
     : null
 
+  function clearProduct() {
+    setSelectedProduct(null)
+    setSelectedVariantId('')
+    setProductSearch('')
+  }
+
   function handleSubmit() {
     if (!selectedProduct) { toast.error('Select a product'); return }
     if (isVariable && !selectedVariantId) { toast.error('Select a variant'); return }
@@ -90,11 +97,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     if (!quantity || quantity === 0) { toast.error('Quantity must be non-zero'); return }
     if (!reason.trim()) { toast.error('Reason is required'); return }
 
-    const cost = quantity > 0 ? parseFloat(unitCost) : undefined
-    if (quantity > 0 && (isNaN(cost!) || cost! <= 0)) {
-      toast.error('Unit Cost must be greater than 0 when adding stock')
-      return
-    }
+    const cost = quantity > 0 && unitCost ? parseFloat(unitCost) : undefined
 
     adjustMut.mutate({
       productId: selectedProduct.id,
@@ -108,75 +111,110 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) reset(); onOpenChange(v) }}>
-      <DialogContent className='sm:max-w-[500px]'>
+      <DialogContent className='sm:max-w-[600px]'>
         <DialogHeader>
           <DialogTitle>Adjust Physical Stock</DialogTitle>
           <DialogDescription>Add or remove physical inventory at a warehouse.</DialogDescription>
         </DialogHeader>
-        <div className='grid gap-4 py-4'>
+
+        <div className='grid gap-5 py-2'>
+          {/* ── Product Selection ── */}
           <div className='space-y-2'>
-            <Label>Product</Label>
-            <Command className='border rounded-md shadow-sm' shouldFilter={false}>
-              <CommandInput placeholder='Search products...' value={productSearch} onValueChange={setProductSearch} />
-              {productSearch.length > 0 && (
-                <CommandList className='max-h-48 overflow-y-auto'>
-                  <CommandEmpty>No products found.</CommandEmpty>
-                  <CommandGroup>
-                    {(products || []).map((p: any) => (
-                      <CommandItem key={p.id} onSelect={() => { setSelectedProduct(p); setProductSearch(p.name); setSelectedVariantId('') }}>
-                        <div className='flex items-center gap-3 w-full'>
-                          <div className='w-10 h-10 rounded border bg-muted overflow-hidden flex items-center justify-center flex-shrink-0'>
-                            {p.images?.[0] || p.image ? (
-                              <SafeImage src={appUrl(p.images?.[0] || p.image)} alt='' className='w-full h-full object-cover' />
-                            ) : (
-                              <Package className='h-5 w-5 text-muted-foreground' />
-                            )}
-                          </div>
-                          <div className='flex-1 min-w-0'>
-                            <div className='flex items-center gap-2'>
-                              <span className='truncate text-sm font-medium'>{p.name}</span>
-                              {p.type === 'variable' && (
-                                <span className='text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0'>Variable</span>
+            <Label className='text-sm font-semibold'>Product</Label>
+            {selectedProduct ? (
+              <div className='flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-lg p-3'>
+                <div className='w-12 h-12 rounded-lg border bg-white overflow-hidden flex items-center justify-center flex-shrink-0'>
+                  {selectedProduct.image || (selectedProduct as any).images?.[0] ? (
+                    <SafeImage src={appUrl(selectedProduct.image || (selectedProduct as any).images?.[0])} alt='' className='w-full h-full object-cover' />
+                  ) : (
+                    <Package className='h-6 w-6 text-muted-foreground' />
+                  )}
+                </div>
+                <div className='flex-1 min-w-0'>
+                  <div className='flex items-center gap-2'>
+                    <span className='font-medium truncate'>{selectedProduct.name}</span>
+                    {selectedProduct.type === 'variable' && (
+                      <Badge variant='secondary' className='text-[10px] px-1.5 py-0'>Variable</Badge>
+                    )}
+                  </div>
+                  <span className='text-xs text-muted-foreground'>SKU: {selectedProduct.sku}</span>
+                </div>
+                <Button variant='ghost' size='icon' className='h-8 w-8 shrink-0' onClick={clearProduct}>
+                  <X className='h-4 w-4' />
+                </Button>
+              </div>
+            ) : (
+              <Command className='border rounded-lg shadow-sm' shouldFilter={false}>
+                <CommandInput placeholder='Search by product name or SKU...' value={productSearch} onValueChange={setProductSearch} />
+                {productSearch.length > 0 && (
+                  <CommandList className='max-h-56 overflow-y-auto'>
+                    <CommandEmpty>No products found.</CommandEmpty>
+                    <CommandGroup>
+                      {(products || []).map((p: any) => (
+                        <CommandItem key={p.id} onSelect={() => { setSelectedProduct(p); setProductSearch(''); setSelectedVariantId('') }}>
+                          <div className='flex items-center gap-3 w-full'>
+                            <div className='w-10 h-10 rounded border bg-muted overflow-hidden flex items-center justify-center flex-shrink-0'>
+                              {p.images?.[0] || p.image ? (
+                                <SafeImage src={appUrl(p.images?.[0] || p.image)} alt='' className='w-full h-full object-cover' />
+                              ) : (
+                                <Package className='h-5 w-5 text-muted-foreground' />
                               )}
                             </div>
-                            <span className='text-xs text-muted-foreground'>{p.sku}</span>
+                            <div className='flex-1 min-w-0'>
+                              <div className='flex items-center gap-2'>
+                                <span className='truncate text-sm font-medium'>{p.name}</span>
+                                {p.type === 'variable' && (
+                                  <Badge variant='outline' className='text-[10px] px-1.5 py-0 text-blue-600 border-blue-200 bg-blue-50'>Variable</Badge>
+                                )}
+                              </div>
+                              <span className='text-xs text-muted-foreground'>{p.sku}</span>
+                            </div>
                           </div>
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              )}
-            </Command>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                )}
+              </Command>
+            )}
           </div>
 
-          {/* Variant selection for variable products */}
-          {isVariable && (
+          {/* ── Variant Selection ── */}
+          {isVariable && selectedProduct && (
             <div className='space-y-2'>
-              <Label>Variant</Label>
-              <div className='border rounded-md max-h-40 overflow-y-auto divide-y'>
-                {selectedProduct!.variants!.map((v) => {
+              <Label className='text-sm font-semibold'>Variant {selectedVariantId && <span className='text-muted-foreground font-normal'>— selected</span>}</Label>
+              <div className='grid grid-cols-1 gap-2 max-h-48 overflow-y-auto'>
+                {selectedProduct.variants!.map((v) => {
                   const attrLabel = v.attributeValues?.map((av: any) => av.attributeValue.value).join(' / ') || v.sku
+                  const isSelected = selectedVariantId === v.id
                   return (
                     <button
                       key={v.id}
                       type='button'
                       onClick={() => setSelectedVariantId(v.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                        selectedVariantId === v.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted/50'
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
+                        isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30'
                       }`}
                     >
-                      <div className='w-8 h-8 rounded border bg-muted overflow-hidden flex items-center justify-center flex-shrink-0'>
+                      <div className='w-10 h-10 rounded-md border bg-white overflow-hidden flex items-center justify-center flex-shrink-0'>
                         {v.image ? (
                           <SafeImage src={appUrl(v.image)} alt='' className='w-full h-full object-cover' />
                         ) : (
-                          <Package className='h-4 w-4 text-muted-foreground' />
+                          <Package className='h-5 w-5 text-muted-foreground' />
                         )}
                       </div>
                       <div className='flex-1 min-w-0'>
-                        <span className='truncate block'>{attrLabel}</span>
+                        <span className='font-medium block truncate'>{attrLabel}</span>
                         <span className='text-xs text-muted-foreground'>SKU: {v.sku}</span>
                       </div>
+                      {isSelected && (
+                        <div className='w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0'>
+                          <Check className='h-3.5 w-3.5 text-white' strokeWidth={3} />
+                        </div>
+                      )}
+                      {!isSelected && <ChevronRight className='h-4 w-4 text-muted-foreground flex-shrink-0' />}
                     </button>
                   )
                 })}
@@ -184,59 +222,47 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
             </div>
           )}
 
-          <div className='space-y-2'>
-            <Label>Warehouse</Label>
-            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
-              <SelectTrigger>
-                <SelectValue placeholder='Select warehouse' />
-              </SelectTrigger>
-              <SelectContent>
-                {(warehouses || []).map((w: any) => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* ── Warehouse + Quantity row ── */}
+          <div className='grid grid-cols-2 gap-4'>
+            <div className='space-y-2'>
+              <Label className='text-sm font-semibold'>Warehouse</Label>
+              <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+                <SelectTrigger>
+                  <SelectValue placeholder='Select' />
+                </SelectTrigger>
+                <SelectContent>
+                  {(warehouses || []).map((w: any) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className='space-y-2'>
+              <Label className='text-sm font-semibold'>Quantity</Label>
+              <Input type='number' placeholder='+10 or -5' value={quantity || ''} onChange={e => setQuantity(parseInt(e.target.value) || 0)} />
+              <p className='text-xs text-muted-foreground'>Positive = add, negative = remove</p>
+            </div>
           </div>
 
-          <div className='space-y-2'>
-            <Label>Quantity (positive=add, negative=remove)</Label>
-            <Input type='number' placeholder='e.g. 10 or -5' value={quantity || ''} onChange={e => setQuantity(parseInt(e.target.value) || 0)} />
-          </div>
-
+          {/* ── Unit Cost ── */}
           {quantity > 0 && (
             <div className='space-y-2'>
-              <Label>Unit Cost / Purchase Price (৳)</Label>
-              <Input type='number' step='0.01' min='0.01' placeholder='e.g. 120.00' value={unitCost} onChange={e => setUnitCost(e.target.value)} />
+              <Label className='text-sm font-semibold'>
+                Unit Cost (৳) <span className='text-muted-foreground font-normal text-xs'>(optional)</span>
+              </Label>
+              <Input type='number' step='0.01' min='0' placeholder='e.g. 120.00 (leave empty if unknown)' value={unitCost} onChange={e => setUnitCost(e.target.value)} />
             </div>
           )}
 
-          {selectedProduct && (
-            <div className='bg-muted/30 rounded-md p-3 space-y-1 text-sm'>
-              <div className='flex justify-between'>
-                <span className='text-muted-foreground'>Product:</span>
-                <span className='font-medium text-right max-w-[60%] truncate'>{selectedProduct.name}</span>
-              </div>
-              <div className='flex justify-between'>
-                <span className='text-muted-foreground'>Type:</span>
-                <span>{isVariable ? 'Variable' : 'Simple'}</span>
-              </div>
-              {selectedVariant && (
-                <div className='flex justify-between'>
-                  <span className='text-muted-foreground'>Variant:</span>
-                  <span className='text-right max-w-[60%] truncate'>
-                    {selectedVariant.attributeValues?.map((av: any) => av.attributeValue.value).join(' / ')}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
+          {/* ── Reason ── */}
           <div className='space-y-2'>
-            <Label>Reason</Label>
-            <Input placeholder='e.g. Cycle count correction' value={reason} onChange={e => setReason(e.target.value)} />
+            <Label className='text-sm font-semibold'>Reason</Label>
+            <Input placeholder='e.g. Cycle count correction, purchase received' value={reason} onChange={e => setReason(e.target.value)} />
           </div>
         </div>
-        <DialogFooter>
+
+        <DialogFooter className='gap-2'>
           <Button variant='outline' onClick={() => { reset(); onOpenChange(false) }}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={adjustMut.isPending}>
             {adjustMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
