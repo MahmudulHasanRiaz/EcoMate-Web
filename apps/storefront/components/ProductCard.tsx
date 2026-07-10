@@ -46,13 +46,31 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
 
   const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
 
-  // For variable products: OOS only if ALL variants are inactive/OOS (ignore parent stock).
-  // For simple products: OOS if stock <= 0.
-  const isOos = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK'
-    ? true
-    : isVar
-      ? !(product.variants?.some(v => v.isActive && v.stock > 0))
-      : (product.stock != null && product.stock <= 0);
+  // OOS logic based on availabilityMode:
+  //   ALWAYS_OUT_OF_STOCK  → always OOS
+  //   ALWAYS_IN_STOCK      → never OOS
+  //   MANAGED_STOCK        → use stock field (simple) or variants (variable)
+  //   INVENTORY_CONTROLLED → stock managed via PhysicalInventory (not managedStockQuantity).
+  //                          Fall back to stock field if set, else assume available.
+  //   undefined/unknown    → fall back to old behavior: check stock field
+  const isOos = (() => {
+    switch (product.availabilityMode) {
+      case 'ALWAYS_OUT_OF_STOCK':
+        return true;
+      case 'ALWAYS_IN_STOCK':
+        return false;
+      case 'INVENTORY_CONTROLLED':
+        // PhysicalInventory-controlled: stock field may be 0 even if items exist.
+        // Only OOS if stock field explicitly says 0/negative (admin set it).
+        return product.stock != null && product.stock <= 0;
+      case 'MANAGED_STOCK':
+      default:
+        if (isVar) {
+          return !(product.variants?.some(v => v.isActive && v.stock > 0));
+        }
+        return product.stock != null && product.stock <= 0;
+    }
+  })();
 
   const cartItem = items.find((item) => item.id === product.id);
   const inCart = !!cartItem && !isVar;
