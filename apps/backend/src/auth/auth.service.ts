@@ -213,17 +213,30 @@ export class AuthService {
   }
 
   async refresh(userId: string, refreshToken: string) {
-    const tokenRecord = await this.prisma.refreshToken.findUnique({
+    let tokenRecord = await this.prisma.refreshToken.findUnique({
       where: { token: refreshToken },
     });
 
     if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-      if (tokenRecord) {
-        await this.prisma.refreshToken.deleteMany({
-          where: { id: tokenRecord.id },
+      // Token was already rotated (e.g., by another tab). Try to find the
+      // user's latest valid token to avoid logging out other sessions.
+      if (!tokenRecord) {
+        const latestToken = await this.prisma.refreshToken.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
         });
+        if (latestToken && latestToken.expiresAt > new Date()) {
+          tokenRecord = latestToken;
+        }
       }
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+        if (tokenRecord) {
+          await this.prisma.refreshToken.deleteMany({
+            where: { id: tokenRecord.id },
+          });
+        }
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
     }
 
     await this.prisma.refreshToken.deleteMany({
@@ -241,30 +254,15 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  async logout(userId: string, refreshToken?: string) {
+  async logout(userId: string, refreshToken?: string, logoutAllDevices?: boolean) {
     if (refreshToken) {
       await this.prisma.refreshToken.deleteMany({
         where: { token: refreshToken, userId },
       });
-    } else {
+    } else if (logoutAllDevices) {
       await this.prisma.refreshToken.deleteMany({
         where: { userId },
       });
-    }
-
-    // Revoke BA sessions for this user
-    try {
-      const user = await this.prisma.userProfile.findUnique({
-        where: { id: userId },
-        select: { betterAuthUserId: true },
-      });
-      if (user?.betterAuthUserId) {
-        await baPrisma.betterAuthSession.deleteMany({
-          where: { userId: user.betterAuthUserId },
-        });
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to revoke BA sessions for user ${userId}`, err);
     }
 
     return { message: 'Logged out successfully' };
@@ -613,7 +611,7 @@ export class AuthService {
   }) {
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessExpiresIn = (process.env['JWT_EXPIRES_IN'] ||
-      '15m') as StringValue;
+      '60m') as StringValue;
     const refreshExpiresIn = (process.env['JWT_REFRESH_EXPIRES_IN'] ||
       '7d') as StringValue;
 
