@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
-import { imgUrl } from '@/lib/utils'
+import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -127,7 +127,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
                         <div className='flex items-center gap-3 w-full'>
                           <div className='w-10 h-10 rounded border bg-muted overflow-hidden flex items-center justify-center flex-shrink-0'>
                             {p.images?.[0] || p.image ? (
-                              <SafeImage src={imgUrl(p.images?.[0] || p.image)} alt='' className='w-full h-full object-cover' />
+                              <SafeImage src={appUrl(p.images?.[0] || p.image)} alt='' className='w-full h-full object-cover' />
                             ) : (
                               <Package className='h-5 w-5 text-muted-foreground' />
                             )}
@@ -168,7 +168,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
                     >
                       <div className='w-8 h-8 rounded border bg-muted overflow-hidden flex items-center justify-center flex-shrink-0'>
                         {v.image ? (
-                          <SafeImage src={imgUrl(v.image)} alt='' className='w-full h-full object-cover' />
+                          <SafeImage src={appUrl(v.image)} alt='' className='w-full h-full object-cover' />
                         ) : (
                           <Package className='h-4 w-4 text-muted-foreground' />
                         )}
