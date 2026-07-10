@@ -97,7 +97,11 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     if (!quantity || quantity === 0) { toast.error('Quantity must be non-zero'); return }
     if (!reason.trim()) { toast.error('Reason is required'); return }
 
-    const cost = quantity > 0 && unitCost ? parseFloat(unitCost) : undefined
+    const cost = quantity > 0 ? parseFloat(unitCost) : undefined
+    if (quantity > 0 && (isNaN(cost!) || cost! <= 0)) {
+      toast.error('Unit cost is required when adding stock')
+      return
+    }
 
     adjustMut.mutate({
       productId: selectedProduct.id,
@@ -249,9 +253,9 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
           {quantity > 0 && (
             <div className='space-y-2'>
               <Label className='text-sm font-semibold'>
-                Unit Cost (৳) <span className='text-muted-foreground font-normal text-xs'>(optional)</span>
+                Unit Cost (৳) <span className='text-red-500 font-normal text-xs'>*required</span>
               </Label>
-              <Input type='number' step='0.01' min='0' placeholder='e.g. 120.00 (leave empty if unknown)' value={unitCost} onChange={e => setUnitCost(e.target.value)} />
+              <Input type='number' step='0.01' min='0.01' placeholder='e.g. 120.00' value={unitCost} onChange={e => setUnitCost(e.target.value)} />
             </div>
           )}
 
