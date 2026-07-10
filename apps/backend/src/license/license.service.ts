@@ -33,12 +33,13 @@ function friendlyError(code?: string, fallback?: string): string {
 
 @Injectable()
 export class LicenseService implements OnModuleInit {
+  private readonly logger = new Logger(LicenseService.name);
+
   constructor(
     private prisma: PrismaService,
     private featureFlags: FeatureFlagsService,
     private config: ConfigService,
     private licenseActivation: LicenseActivationService,
-    private logger: Logger,
   ) {}
 
   async onModuleInit() {
