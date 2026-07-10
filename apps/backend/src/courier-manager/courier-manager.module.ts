@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CourierManagerController } from './courier-manager.controller';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierWebhookController } from './courier-webhook.controller';
@@ -8,6 +8,6 @@ import { OrdersModule } from '../orders/orders.module';
 @Module({
   controllers: [CourierManagerController, CourierWebhookController],
   providers: [CourierManagerService, CourierWebhookService],
-  imports: [OrdersModule],
+  imports: [forwardRef(() => OrdersModule)],
 })
 export class CourierManagerModule {}
