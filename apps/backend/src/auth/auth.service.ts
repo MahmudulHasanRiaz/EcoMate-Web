@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomInt, randomUUID, createHash } from 'crypto';
@@ -21,7 +22,7 @@ import ms from 'ms';
 import type { StringValue } from 'ms';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
@@ -29,6 +30,25 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
   ) {}
+
+  async onModuleInit() {
+    await this.cleanupExpiredTokens();
+    // Run cleanup every hour
+    setInterval(() => {
+      this.cleanupExpiredTokens().catch((err) =>
+        this.logger.error('Failed to clean up expired refresh tokens', err),
+      );
+    }, 60 * 60 * 1000);
+  }
+
+  private async cleanupExpiredTokens() {
+    const { count } = await this.prisma.refreshToken.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    if (count > 0) {
+      this.logger.log(`Cleaned up ${count} expired refresh token(s)`);
+    }
+  }
 
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.userProfile.findFirst({
@@ -46,35 +66,24 @@ export class AuthService {
     const normalizedPhone = normalizePhone(dto.phoneNumber);
     if (!normalizedPhone) throw new BadRequestException('Invalid phone number');
 
-    const hashedPassword = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.userProfile.create({
+    const [hashedPassword, baHashedPassword] = await Promise.all([
+      bcrypt.hash(dto.password, 12),
+      hashPassword(dto.password),
+    ]);
+
+    // Create BA user+account first, then UserProfile (saga pattern).
+    // If downstream creation fails, roll back by deleting the BA user.
+    const baUser = await baPrisma.betterAuthUser.create({
       data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        username: dto.username,
+        id: randomUUID(),
+        name: `${dto.firstName} ${dto.lastName}`,
         email: dto.email,
-        phoneNumber: normalizedPhone,
-        password: hashedPassword,
+        emailVerified: false,
         role: 'customer',
       },
     });
 
-    await this.prisma.userSettings.create({
-      data: { userId: user.id },
-    });
-
-    // Create BA user+account for the new user
     try {
-      const baHashedPassword = await hashPassword(dto.password);
-      const baUser = await baPrisma.betterAuthUser.create({
-        data: {
-          id: randomUUID(),
-          name: `${dto.firstName} ${dto.lastName}`,
-          email: dto.email,
-          emailVerified: false,
-          role: 'customer',
-        },
-      });
       await baPrisma.betterAuthAccount.create({
         data: {
           id: randomUUID(),
@@ -84,22 +93,45 @@ export class AuthService {
           password: baHashedPassword,
         },
       });
-      await this.prisma.userProfile.update({
-        where: { id: user.id },
-        data: { betterAuthUserId: baUser.id },
+
+      const user = await this.prisma.userProfile.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          username: dto.username,
+          email: dto.email,
+          phoneNumber: normalizedPhone,
+          password: hashedPassword,
+          role: 'customer',
+          betterAuthUserId: baUser.id,
+        },
       });
+
+      await this.prisma.userSettings.create({
+        data: { userId: user.id },
+      });
+
+      this.sendVerificationEmail(user.id).catch((err) =>
+        this.logger.error(
+          'Failed to send verification email after registration',
+          err,
+        ),
+      );
+
+      return this.generateTokens(user);
     } catch (err) {
-      this.logger.warn(`Failed to create BA user for ${dto.email}`, err);
+      // Saga rollback: BA user was created but downstream creation failed.
+      // Delete the BA user (account cascades) to keep the system consistent.
+      await baPrisma.betterAuthUser
+        .delete({ where: { id: baUser.id } })
+        .catch((rollbackErr) =>
+          this.logger.error(
+            `Failed to rollback BA user ${baUser.id} after registration failure`,
+            rollbackErr,
+          ),
+        );
+      throw err;
     }
-
-    this.sendVerificationEmail(user.id).catch((err) =>
-      this.logger.error(
-        'Failed to send verification email after registration',
-        err,
-      ),
-    );
-
-    return this.generateTokens(user);
   }
 
   async login(dto: LoginDto) {
@@ -213,35 +245,15 @@ export class AuthService {
   }
 
   async refresh(userId: string, refreshToken: string) {
-    let tokenRecord = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-    });
+    // Atomically delete-and-check to prevent race conditions where two
+    // concurrent refresh calls both pass findUnique before either delete.
+    const deleted = await this.prisma.refreshToken
+      .delete({ where: { token: refreshToken } })
+      .catch(() => null);
 
-    if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-      // Token was already rotated (e.g., by another tab). Try to find the
-      // user's latest valid token to avoid logging out other sessions.
-      if (!tokenRecord) {
-        const latestToken = await this.prisma.refreshToken.findFirst({
-          where: { userId },
-          orderBy: { createdAt: 'desc' },
-        });
-        if (latestToken && latestToken.expiresAt > new Date()) {
-          tokenRecord = latestToken;
-        }
-      }
-      if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-        if (tokenRecord) {
-          await this.prisma.refreshToken.deleteMany({
-            where: { id: tokenRecord.id },
-          });
-        }
-        throw new UnauthorizedException('Invalid or expired refresh token');
-      }
+    if (!deleted || deleted.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
-
-    await this.prisma.refreshToken.deleteMany({
-      where: { id: tokenRecord.id },
-    });
 
     const user = await this.prisma.userProfile.findUnique({
       where: { id: userId },
@@ -249,6 +261,18 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('User not found');
+    }
+
+    if (user.status !== 'active') {
+      console.log(`[REFRESH FAILED] User not active. Status: ${user.status}`);
+      throw new UnauthorizedException('Account is not active');
+    }
+
+    if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+      console.log(`[REFRESH FAILED] User locked out until: ${user.lockoutUntil}`);
+      throw new UnauthorizedException(
+        'Account is temporarily locked due to too many failed login attempts. Please try again later.',
+      );
     }
 
     return this.generateTokens(user);

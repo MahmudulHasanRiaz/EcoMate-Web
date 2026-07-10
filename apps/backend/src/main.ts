@@ -12,6 +12,7 @@ import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { auth } from './better-auth/auth.config';
+import { baPrisma } from './better-auth/prisma';
 
 async function bootstrap() {
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
@@ -179,31 +180,18 @@ async function bootstrap() {
           'Content-Type,Authorization',
         );
       }
-      // BA → UserProfile sync: after successful BA handler response
+      // BA -> UserProfile sync: reuse baPrisma singleton instead of creating new connections
       if (response.status === 200 && rawBody && request.method === 'POST') {
         const urlPath = url.pathname;
         try {
-          const { PrismaClient } = await import('@prisma/client');
-          const { Pool } = await import('pg');
-          const { PrismaPg } = await import('@prisma/adapter-pg');
-          const pool = new Pool({
-            connectionString:
-              process.env['DATABASE_URL'] ||
-              'postgresql://postgres@localhost:5432/ecomate_web',
-          });
-          const adapter = new PrismaPg(pool);
-          const prisma = new PrismaClient({ adapter });
-          const baPrisma2 = new PrismaClient({ adapter });
-
           const parsedBody = JSON.parse(rawBody);
 
           if (urlPath.endsWith('/change-password') && parsedBody.newPassword) {
-            // Get user from BA session to find which user made this request
             const { fromNodeHeaders } = await import('better-auth/node');
             const bHeaders = fromNodeHeaders(request.headers);
             const session = await auth.api.getSession({ headers: bHeaders });
             if (session?.user?.id) {
-              const profile = await prisma.userProfile.findFirst({
+              const profile = await baPrisma.userProfile.findFirst({
                 where: { betterAuthUserId: session.user.id },
                 select: { id: true, betterAuthUserId: true },
               });
@@ -213,7 +201,7 @@ async function bootstrap() {
                   parsedBody.newPassword,
                   12,
                 );
-                await prisma.userProfile.update({
+                await baPrisma.userProfile.update({
                   where: { id: profile.id },
                   data: { password: hashedPassword },
                 });
@@ -226,23 +214,21 @@ async function bootstrap() {
             const bHeaders = fromNodeHeaders(request.headers);
             const session = await auth.api.getSession({ headers: bHeaders });
             if (session?.user?.id) {
-              const profile = await prisma.userProfile.findFirst({
+              const profile = await baPrisma.userProfile.findFirst({
                 where: { betterAuthUserId: session.user.id },
                 select: { id: true, betterAuthUserId: true },
               });
               if (profile?.betterAuthUserId) {
-                await prisma.userProfile.update({
+                await baPrisma.userProfile.update({
                   where: { id: profile.id },
-                  data: { email: parsedBody.newEmail },
+                  data: {
+                    email: parsedBody.newEmail,
+                    emailVerified: session.user.emailVerified,
+                  },
                 });
               }
             }
           }
-
-          await Promise.all([
-            prisma.$disconnect(),
-            baPrisma2.$disconnect(),
-          ]).catch(() => {});
         } catch (syncErr) {
           console.error(
             '[BA-sync] Failed to sync BA change to UserProfile:',

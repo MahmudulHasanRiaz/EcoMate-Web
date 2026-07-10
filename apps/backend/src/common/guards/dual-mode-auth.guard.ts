@@ -38,6 +38,12 @@ export class DualModeAuthGuard {
           where: { id: payload.sub },
         });
         if (user) {
+          if (user.status !== 'active') {
+            throw new UnauthorizedException('Account is not active');
+          }
+          if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+            throw new UnauthorizedException('Account is temporarily locked');
+          }
           request.user = { ...user, userId: user.id };
           return true;
         }

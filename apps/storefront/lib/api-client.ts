@@ -52,6 +52,7 @@ apiClient.interceptors.response.use(
         );
         if (data.accessToken && typeof window !== "undefined") {
           localStorage.setItem("token", data.accessToken);
+          window.dispatchEvent(new CustomEvent("auth:token-refreshed", { detail: data.user }));
         }
         req.headers = {
           ...req.headers,
