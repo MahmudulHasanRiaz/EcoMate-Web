@@ -268,14 +268,15 @@ export class ProductsService {
         ...(where.AND || []),
         {
           OR: [
-            // MANAGED_STOCK: check stock quantity
+            // MANAGED_STOCK non-variable: check stock quantity
             { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
-            // Variable: any variant with stock
+            // MANAGED_STOCK variable: any variant with stock
             { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
             // ALWAYS_IN_STOCK: always available
             { availabilityMode: 'ALWAYS_IN_STOCK' },
-            // INVENTORY_CONTROLLED: stock tracked via PhysicalInventory, include if manageStock or has explicit stock
-            { availabilityMode: 'INVENTORY_CONTROLLED' },
+            // INVENTORY_CONTROLLED: check physical inventory records
+            { availabilityMode: 'INVENTORY_CONTROLLED', physicalInventories: { some: { quantity: { gt: 0 } } } },
+            // ALWAYS_OUT_OF_STOCK: excluded (don't add this condition)
           ],
         },
       ];
@@ -417,7 +418,7 @@ export class ProductsService {
             { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
             { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
             { availabilityMode: 'ALWAYS_IN_STOCK' },
-            { availabilityMode: 'INVENTORY_CONTROLLED' },
+            { availabilityMode: 'INVENTORY_CONTROLLED', physicalInventories: { some: { quantity: { gt: 0 } } } },
           ],
         },
       ];
