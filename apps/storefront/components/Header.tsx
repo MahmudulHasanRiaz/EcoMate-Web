@@ -13,7 +13,7 @@ import { HeaderSearch } from "./HeaderSearch";
 
 export default function Header({}: {}) {
   const pathname = usePathname();
-  const { cartCount, setIsCartOpen } = useCart();
+  const { cartCount } = useCart();
   const { user } = useAuth();
   const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -81,8 +81,8 @@ export default function Header({}: {}) {
                 <Search size={18} strokeWidth={2} />
               </button>
 
-              <button 
-                onClick={() => setIsCartOpen(true)}
+              <Link
+                href="/cart"
                 className="flex flex-col items-center group relative text-gray-600 gap-0.5 p-1 md:p-0"
               >
                 <div className="relative">
@@ -92,7 +92,7 @@ export default function Header({}: {}) {
                   </span>
                 </div>
                 <span className="hidden md:block text-[11px] font-medium group-hover:text-brand-blue">Cart</span>
-              </button>
+              </Link>
             </div>
           </div>
         </div>
