@@ -738,6 +738,75 @@ export class PrismaService
       }
     }
 
+    // Inventory schema drift recovery — create missing tables/columns/indexes
+    // These are safe to run on every startup (idempotent)
+    const inventoryFixes: string[] = [
+      // PhysicalInventory: add binLocationId column
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PhysicalInventory' AND column_name = 'binLocationId') THEN
+          ALTER TABLE "PhysicalInventory" ADD COLUMN "binLocationId" TEXT;
+        END IF;
+      END $$`,
+      // PhysicalInventoryLedger: add referenceType, referenceId
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PhysicalInventoryLedger' AND column_name = 'referenceType') THEN
+          ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceType" "ReferenceEntity";
+        END IF;
+      END $$`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PhysicalInventoryLedger' AND column_name = 'referenceId') THEN
+          ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceId" TEXT;
+        END IF;
+      END $$`,
+      // GoodsReceiptNote: add warehouseId
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'GoodsReceiptNote' AND column_name = 'warehouseId') THEN
+          ALTER TABLE "GoodsReceiptNote" ADD COLUMN "warehouseId" TEXT NOT NULL DEFAULT '';
+        END IF;
+      END $$`,
+      // PhysicalReservation table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PhysicalReservation') THEN
+          CREATE TABLE "PhysicalReservation" (
+            "id" TEXT NOT NULL, "orderId" TEXT NOT NULL, "orderItemId" TEXT NOT NULL,
+            "productId" TEXT NOT NULL, "variantId" TEXT, "warehouseId" TEXT NOT NULL,
+            "quantity" INTEGER NOT NULL, "status" TEXT NOT NULL DEFAULT 'ALLOCATING',
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "PhysicalReservation_pkey" PRIMARY KEY ("id")
+          );
+        END IF;
+      END $$`,
+      // PhysicalReservationAllocation table
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PhysicalReservationAllocation') THEN
+          CREATE TABLE "PhysicalReservationAllocation" (
+            "id" TEXT NOT NULL, "reservationId" TEXT NOT NULL,
+            "physicalInventoryId" TEXT NOT NULL, "binLocationId" TEXT, "quantity" INTEGER NOT NULL,
+            CONSTRAINT "PhysicalReservationAllocation_pkey" PRIMARY KEY ("id")
+          );
+        END IF;
+      END $$`,
+      // Indexes
+      `CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservation_orderItemId_key" ON "PhysicalReservation"("orderItemId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalReservation_orderId_idx" ON "PhysicalReservation"("orderId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalReservation_status_idx" ON "PhysicalReservation"("status")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_physicalInventoryId_key" ON "PhysicalReservationAllocation"("reservationId", "physicalInventoryId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_idx" ON "PhysicalReservationAllocation"("reservationId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId")`,
+      `CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId")`,
+    ];
+
+    for (const sql of inventoryFixes) {
+      try {
+        await this.runRaw(sql);
+      } catch (err: any) {
+        this.logger.warn(`Inventory schema drift fix skipped: ${err.message}`);
+      }
+    }
+
     this.logger.log('Schema drift check: all required columns verified ✓');
   }
 
