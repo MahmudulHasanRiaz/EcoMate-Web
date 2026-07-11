@@ -622,6 +622,7 @@ model Order {
   viewToken                String?            @unique
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean            @default(false)
+  trashedAt                DateTime?
 
   customer     CustomerProfile?                @relation(fields: [customerId], references: [id])
   assignee     UserProfile?                @relation("OrderAssignee", fields: [assignedToId], references: [id])
@@ -647,6 +648,7 @@ model Order {
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])
+  @@index([trashedAt])
 }
 
 model OrderItem {

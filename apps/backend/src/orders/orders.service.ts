@@ -128,10 +128,12 @@ export class OrdersService {
     dateTo?: string;
     sort?: string;
     order?: string;
+    includeTrashed?: boolean;
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: any = {};
+    if (!query.includeTrashed) where.trashedAt = null;
     if (query.search) {
       const normalizedPhone = normalizePhone(query.search);
       where.OR = [
@@ -228,7 +230,7 @@ export class OrdersService {
   ) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
-    const where: any = { customerId: userId };
+    const where: any = { customerId: userId, trashedAt: null };
     if (query.status) {
       where.status = { name: { equals: query.status, mode: 'insensitive' } };
     }
@@ -280,7 +282,7 @@ export class OrdersService {
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
     return this.transformOrder(order);
   }
 
@@ -323,7 +325,7 @@ export class OrdersService {
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
       },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
     if (!opts.userId && (!opts.token || order.viewToken !== opts.token)) {
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
       if (!order.createdAt || new Date(order.createdAt) < fiveMinAgo) {
@@ -730,7 +732,7 @@ export class OrdersService {
         items: { include: { product: { select: { id: true, name: true } } } },
       },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
 
     const timeline = [...this.parseTimeline(order.timeline)];
     const now = new Date().toISOString();
@@ -945,7 +947,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
 
     const timeline = [
       ...this.parseTimeline(order.timeline),
@@ -978,7 +980,7 @@ export class OrdersService {
       where: { id },
       include: { status: true },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
 
     const newStatus = await this.prisma.orderStatus.findUnique({
       where: { id: dto.statusId },
@@ -1108,7 +1110,7 @@ export class OrdersService {
       where: { id: orderId },
       include: { status: true },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
     if (
       order.status?.name !== 'Payment Pending' &&
       order.status?.name !== 'Payment Verifying'
@@ -1141,7 +1143,7 @@ export class OrdersService {
       where: { id: orderId },
       include: { status: true },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
     if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
       throw new BadRequestException(
         'Order is not awaiting payment verification',
@@ -1172,7 +1174,7 @@ export class OrdersService {
       where: { id: orderId },
       include: { items: true },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
 
     if (dto.productId) {
       const product = await this.prisma.product.findUnique({
@@ -1241,7 +1243,7 @@ export class OrdersService {
       where: { id: orderId },
       include: { items: true },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
 
     const removedItem = order.items.find((i) => i.id === itemId);
     if (!removedItem) throw new NotFoundException('Order item not found');
@@ -1442,6 +1444,7 @@ export class OrdersService {
     }
     const order = await this.prisma.order.findFirst({
       where: {
+        trashedAt: null,
         OR: [
           { viewToken: queryStr },
           { displayId: { equals: queryStr, mode: 'insensitive' } },
@@ -1479,6 +1482,7 @@ export class OrdersService {
 
     const orders = await this.prisma.order.findMany({
       where: {
+        trashedAt: null,
         OR: [{ guestPhone: normalized }, { customer: { phone: normalized } }],
       },
       include: {
@@ -1508,7 +1512,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
     const viewToken = randomUUID();
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -1524,7 +1528,7 @@ export class OrdersService {
       where: { id: orderId },
       include: { status: true },
     });
-    if (!order || order.viewToken !== token) {
+    if (!order || order.trashedAt || order.viewToken !== token) {
       throw new NotFoundException('Order not found');
     }
     const cancelled = await this.prisma.orderStatus.findFirst({
@@ -1608,6 +1612,93 @@ export class OrdersService {
     return updated;
   }
 
+  async trash(orderId: string, performedBy?: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.trashedAt) throw new BadRequestException('Order is already trashed');
+
+    const timeline = [
+      ...this.parseTimeline(order.timeline),
+      {
+        type: 'trash',
+        status: order.status.name,
+        timestamp: new Date().toISOString(),
+        note: 'Order moved to trash',
+        performedBy: performedBy || 'system',
+      },
+    ];
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          trashedAt: new Date(),
+          timeline: timeline as any,
+        },
+      });
+
+      // Release stock for trashed orders (like cancelled)
+      const items = await tx.orderItem.findMany({
+        where: { orderId },
+      });
+      for (const item of items) {
+        await this.stockService.release({
+          productId: item.productId || undefined,
+          variantId: item.variantId || undefined,
+          comboId: item.comboId || undefined,
+          comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+          quantity: item.quantity,
+          reference: order.displayId,
+          tx,
+        });
+      }
+
+      await this.releaseStockForCancelledOrder(orderId, tx);
+    });
+
+    this.events.emit({
+      type: 'order.trashed',
+      data: { id: order.id, displayId: order.displayId },
+    });
+
+    return { success: true, message: 'Order moved to trash' };
+  }
+
+  async restore(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (!order.trashedAt) throw new BadRequestException('Order is not trashed');
+
+    const timeline = [
+      ...this.parseTimeline(order.timeline),
+      {
+        type: 'restore',
+        timestamp: new Date().toISOString(),
+        note: 'Order restored from trash',
+      },
+    ];
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        trashedAt: null,
+        timeline: timeline as any,
+      },
+    });
+
+    this.events.emit({
+      type: 'order.restored',
+      data: { id: order.id, displayId: order.displayId },
+    });
+
+    return { success: true, message: 'Order restored from trash' };
+  }
+
   async backfillViewTokens() {
     const orders = await this.prisma.order.findMany({
       where: { viewToken: null },
@@ -1637,7 +1728,7 @@ export class OrdersService {
           items: { include: { product: true, variant: true } },
         },
       });
-      if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+      if (!order || order.trashedAt) throw new NotFoundException(`Order ${orderId} not found`);
 
       const currentStatus = order.status.name;
       const allowed = ORDER_TRANSITIONS[currentStatus];

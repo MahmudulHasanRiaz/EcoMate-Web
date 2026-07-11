@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ShoppingCart, Menu, Search, ClipboardList, User, Heart, MoreVertical, ChevronDown } from "lucide-react";
+import { ShoppingCart, Menu, ClipboardList, User, Heart, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
@@ -15,9 +15,14 @@ export default function Header({}: {}) {
   const pathname = usePathname();
   const { cartCount } = useCart();
   const { user } = useAuth();
-  const router = useRouter();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { config } = useStorefrontConfig();
+
+  useEffect(() => {
+    const handler = () => setIsMobileSearchOpen(true);
+    window.addEventListener('open-mobile-search', handler);
+    return () => window.removeEventListener('open-mobile-search', handler);
+  }, []);
 
   if (pathname && pathname.startsWith('/checkout')) return null;
 
@@ -29,23 +34,26 @@ export default function Header({}: {}) {
       <div className="h-[3px] w-full bg-gradient-to-r from-brand-blue/40 via-brand-blue to-brand-blue/40" />
 
       {/* Main Header Row */}
-      <div className="max-w-screen-xl mx-auto px-3 py-2 md:px-4 md:py-3">
-        <div className="flex items-center justify-between gap-2 md:gap-8 min-h-[36px] md:min-h-[44px]">
-          
-          {/* Logo Section */}
-          <div className="flex items-center gap-3">
-            <button 
+      <div className="max-w-screen-xl mx-auto px-3 py-1 md:px-4 md:py-3">
+        <div className="flex items-center justify-between gap-2 md:gap-8 min-h-[32px] md:min-h-[44px]">
+
+          {/* Mobile: Hamburger (left) */}
+          <div className="flex md:hidden items-center">
+            <button
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('open-mobile-menu'));
               }}
               aria-label="Open menu"
-              className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-full transition-colors md:hidden"
+              className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
             >
               <Menu size={20} strokeWidth={2} />
             </button>
+          </div>
 
-            <Link href="/">
-              <motion.div 
+          {/* Logo - Centered on mobile, left on desktop */}
+          <div className="flex items-center md:flex-1">
+            <Link href="/" className="mx-auto md:mx-0">
+              <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="flex flex-shrink-0 items-center cursor-pointer"
@@ -53,6 +61,19 @@ export default function Header({}: {}) {
                 <StoreBrand />
               </motion.div>
             </Link>
+          </div>
+
+          {/* Desktop: menu button hidden, logo to left */}
+          <div className="hidden md:flex items-center gap-3 flex-1">
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-mobile-menu'));
+              }}
+              aria-label="Open menu"
+              className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <Menu size={20} strokeWidth={2} />
+            </button>
           </div>
 
           {/* Search Bar - Desktop Centered */}
@@ -71,16 +92,8 @@ export default function Header({}: {}) {
             {config.licenseFeatures?.includes('storefront_wishlist') && (
               <HeaderAction icon={<Heart size={20} />} label="Wishlist" hideOnMobile href="/wishlist" />
             )}
-            
-            <div className="flex items-center gap-1 md:gap-2">
-              <button 
-                className="p-2 md:hidden text-gray-600 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors"
-                onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
-                aria-label="Toggle search"
-              >
-                <Search size={18} strokeWidth={2} />
-              </button>
 
+            <div className="flex items-center gap-1 md:gap-2">
               <Link
                 href="/cart"
                 className="flex flex-col items-center group relative text-gray-600 gap-0.5 p-1 md:p-0"

@@ -30,7 +30,7 @@ export class CourierWebhookService {
     if (!consignmentId) return { error: 'Missing consignment_id' };
 
     const order = await this.prisma.order.findFirst({
-      where: { courierConsignmentId: consignmentId },
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
     });
     if (!order) return { error: 'Order not found' };
 
@@ -72,7 +72,7 @@ export class CourierWebhookService {
     if (!consignmentId) return { error: 'Missing consignment_id' };
 
     const order = await this.prisma.order.findFirst({
-      where: { courierConsignmentId: consignmentId },
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
     });
     if (!order) return { error: 'Order not found' };
 
@@ -113,11 +113,11 @@ export class CourierWebhookService {
     } | null = null;
     if (trackingNumber)
       order = await this.prisma.order.findFirst({
-        where: { courierTrackingCode: trackingNumber, courierService: 'redx' },
+        where: { courierTrackingCode: trackingNumber, courierService: 'redx', trashedAt: null },
       });
     if (!order && invoiceNumber)
       order = await this.prisma.order.findFirst({
-        where: { displayId: invoiceNumber, courierService: 'redx' },
+        where: { displayId: invoiceNumber, courierService: 'redx', trashedAt: null },
       });
     if (!order) return { error: 'Order not found or not a RedX order' };
 
@@ -167,11 +167,11 @@ export class CourierWebhookService {
     } | null = null;
     if (consignmentId)
       order = await this.prisma.order.findFirst({
-        where: { courierConsignmentId: consignmentId },
+        where: { courierConsignmentId: consignmentId, trashedAt: null },
       });
     if (!order && orderNumber)
       order = await this.prisma.order.findFirst({
-        where: { displayId: orderNumber },
+        where: { displayId: orderNumber, trashedAt: null },
       });
     if (!order) return { error: 'Order not found' };
 
@@ -238,8 +238,8 @@ export class CourierWebhookService {
     courier: string,
     status: string,
   ) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
     });
     if (!order) return;
     const timeline = [

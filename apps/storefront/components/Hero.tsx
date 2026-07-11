@@ -18,13 +18,13 @@ export default function Hero({
   secondaryBannerAlt?: string;
 }) {
   return (
-    <section className="w-full bg-[#fcfcfc] py-2 md:py-6">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+    <section className="w-full bg-[#fcfcfc] md:py-6">
+      <div className="md:max-w-7xl md:mx-auto md:px-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 md:gap-4">
 
           {/* Main Banner */}
-          <div className="md:col-span-8 overflow-hidden rounded-[12px] md:rounded-[20px] shadow-sm bg-white relative group">
-            <div className="relative w-full aspect-[5/2]">
+          <div className="md:col-span-8 overflow-hidden md:rounded-[20px] shadow-sm bg-white relative group">
+            <div className="relative w-full aspect-[5/2] md:aspect-[5/2]">
               {slides.length > 0 ? (
                 <HeroSlideshow slides={slides} />
               ) : (

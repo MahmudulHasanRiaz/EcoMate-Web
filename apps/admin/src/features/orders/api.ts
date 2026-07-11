@@ -36,6 +36,7 @@ export interface OrderResponse {
   }[];
   selectedShippingOptionId?: string | null;
   shippingChargeOverridden?: boolean;
+  trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
@@ -67,6 +68,8 @@ export const ordersApi = {
   bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
   rotateViewToken: (orderId: string) => apiClient.post<{ id: string; viewToken: string; displayId: string }>(`/orders/${orderId}/rotate-view-token`),
   backfillViewTokens: () => apiClient.post<{ updated: number; total: number }>('/orders/backfill-view-tokens'),
+  trash: (id: string) => apiClient.post(`/orders/${id}/trash`),
+  restore: (id: string) => apiClient.post(`/orders/${id}/restore`),
 }
 
 export { appUrl as mediaUrl } from '@/lib/utils'

@@ -96,7 +96,7 @@ export class CourierManagerService {
 
   async dispatch(courier: string, orderIds: string[]) {
     const orders = await this.prisma.order.findMany({
-      where: { id: { in: orderIds } },
+      where: { id: { in: orderIds }, trashedAt: null },
       include: {
         customer: {
           select: {

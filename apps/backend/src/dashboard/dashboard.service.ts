@@ -46,7 +46,7 @@ export class DashboardService {
         totalProducts,
         recentOrders,
       ] = await Promise.all([
-        this.prisma.order.count({ where: { ...dateFilter } }),
+        this.prisma.order.count({ where: { ...dateFilter, trashedAt: null } }),
         this.prisma.payment.aggregate({
           _sum: { amount: true },
           where: { ...dateFilter },
@@ -54,7 +54,7 @@ export class DashboardService {
         this.prisma.userProfile.count({ where: { role: 'customer' } }),
         this.prisma.product.count({ where: { isActive: true } }),
         this.prisma.order.findMany({
-          where: { ...dateFilter },
+          where: { ...dateFilter, trashedAt: null },
           take: 20,
           orderBy: { createdAt: 'desc' },
           include: { status: true, _count: { select: { items: true } } },
@@ -97,7 +97,7 @@ export class DashboardService {
 
       const [ordersLast30Days, revenueLast30Days, pageViewCount] =
         await Promise.all([
-          this.prisma.order.count({ where: { ...effectiveDateFilter } }),
+          this.prisma.order.count({ where: { ...effectiveDateFilter, trashedAt: null } }),
           this.prisma.payment.aggregate({
             _sum: { amount: true },
             where: { ...effectiveDateFilter, status: 'PAID' },
@@ -135,6 +135,7 @@ export class DashboardService {
       const orders = await this.prisma.order.findMany({
         where: {
           ...this.dateFilter(startDate, endDate),
+          trashedAt: null,
           status: { name: { in: ['Pending', 'Payment Pending'] } },
         },
         orderBy: { createdAt: 'desc' },
@@ -236,7 +237,7 @@ export class DashboardService {
                 COALESCE(NULLIF(p.images::json->>0, ''), '') AS image,
                 SUM(oi.quantity)::int AS quantity
          FROM "OrderItem" oi
-         INNER JOIN "Order" o ON o.id = oi."orderId"
+         INNER JOIN "Order" o ON o.id = oi."orderId" AND o."trashedAt" IS NULL
          INNER JOIN "Product" p ON p.id = oi."productId"
          WHERE oi."productId" IS NOT NULL
            AND ($1::timestamptz IS NULL OR o."createdAt" >= $1)
@@ -265,7 +266,7 @@ export class DashboardService {
         by: ['statusId'],
         _count: true,
         _sum: { total: true },
-        where: { ...this.dateFilter(startDate, endDate) },
+        where: { ...this.dateFilter(startDate, endDate), trashedAt: null },
       });
       const statuses = await this.prisma.orderStatus.findMany();
       const statusMap = new Map(statuses.map((s) => [s.id, s.name]));
@@ -361,7 +362,7 @@ export class DashboardService {
   async getPendingDispatch() {
     try {
       return this.prisma.order.findMany({
-        where: { status: { name: 'Confirmed' } },
+        where: { status: { name: 'Confirmed' }, trashedAt: null },
         take: 10,
         orderBy: { createdAt: 'asc' },
       });
@@ -404,9 +405,9 @@ export class DashboardService {
       const dateFilter = { createdAt: { gte: todayStart, lte: todayEnd } };
       const [orders, delivered, pendingPayments, pendingRefunds] =
         await Promise.all([
-          this.prisma.order.count({ where: { ...dateFilter } }),
+          this.prisma.order.count({ where: { ...dateFilter, trashedAt: null } }),
           this.prisma.order.count({
-            where: { ...dateFilter, status: { name: 'Delivered' } },
+            where: { ...dateFilter, status: { name: 'Delivered' }, trashedAt: null },
           }),
           this.prisma.payment.count({
             where: { createdAt: { gte: todayStart }, status: 'PENDING' },
@@ -428,6 +429,7 @@ export class DashboardService {
   async getActivityLog() {
     try {
       const activities = await this.prisma.order.findMany({
+        where: { trashedAt: null },
         take: 20,
         orderBy: { updatedAt: 'desc' },
         select: {
