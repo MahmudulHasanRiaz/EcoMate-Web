@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { purchasesApi, type PurchaseResponse, type PurchaseItem, type GrnResponse } from './api'
 import { suppliersApi } from '@/features/suppliers/api'
@@ -18,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt, ChevronDown } from 'lucide-react'
 
 const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string; className: string }> = {
@@ -260,11 +262,18 @@ function ReceiveGrnDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
   purchase: PurchaseResponse | null
-  onReceive: (items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[], notes?: string) => void
+  onReceive: (items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[], notes?: string, warehouseId?: string) => void
   products?: any[]
 }) {
   const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string }>>({})
   const [notes, setNotes] = useState('')
+  const [selectedWarehouse, setSelectedWarehouse] = useState('')
+
+  const { data: warehouses } = useQuery<any[]>({
+    queryKey: ['warehouses'],
+    queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
+    enabled: open,
+  })
 
   const productMap = useMemo(() => {
     return new Map(products.map(p => [p.id, p]))
@@ -273,6 +282,10 @@ function ReceiveGrnDialog({
   if (!purchase) return null
 
   const handleReceive = () => {
+    if (!selectedWarehouse) {
+      toast.error('Select a destination warehouse')
+      return
+    }
     const items = Object.entries(received)
       .filter(([, v]) => v.receivedQty && Number(v.receivedQty) > 0)
       .map(([itemId, v]) => {
@@ -289,7 +302,7 @@ function ReceiveGrnDialog({
       toast.error('Enter at least one item quantity')
       return
     }
-    onReceive(items, notes || undefined)
+    onReceive(items, notes || undefined, selectedWarehouse)
   }
 
   const initItem = (itemId: string) => {
@@ -308,6 +321,19 @@ function ReceiveGrnDialog({
           <DialogTitle>Receive Items — {purchase.referenceNo}</DialogTitle>
         </DialogHeader>
         <div className='space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-2'>
+          <div className='space-y-2'>
+            <Label>Destination Warehouse *</Label>
+            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+              <SelectTrigger>
+                <SelectValue placeholder='Select warehouse to receive into' />
+              </SelectTrigger>
+              <SelectContent>
+                {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <p className='text-xs text-muted-foreground'>
             প্রতিটি আইটেমের জন্য কতটা রিসিভ করছেন তা দিন। Accepted = ভালো কন্ডিশনে পাওয়া, Rejected = খারাপ/ড্যামেজড।
           </p>
@@ -576,8 +602,8 @@ export function Purchases() {
   })
 
   const receiveMut = useMutation({
-    mutationFn: ({ id, items, notes }: { id: string; items: any[]; notes?: string }) =>
-      purchasesApi.createGrn(id, { items, notes }),
+    mutationFn: ({ id, items, notes, warehouseId }: { id: string; items: any[]; notes?: string; warehouseId: string }) =>
+      purchasesApi.createGrn(id, { warehouseId, items, notes }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
       queryClient.invalidateQueries({ queryKey: ['purchase-grns', variables.id] })
@@ -948,9 +974,9 @@ export function Purchases() {
         onOpenChange={v => { if (!v) setReceiveDialog(null) }}
         purchase={receiveDialog}
         products={allProducts}
-        onReceive={(items, notes) => {
-          if (receiveDialog) {
-            receiveMut.mutate({ id: receiveDialog.id, items, notes })
+        onReceive={(items, notes, warehouseId) => {
+          if (receiveDialog && warehouseId) {
+            receiveMut.mutate({ id: receiveDialog.id, items, notes, warehouseId })
           }
         }}
       />

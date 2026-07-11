@@ -68,9 +68,24 @@ export function Transfers() {
 
   const logs = logsRes?.data ?? []
   const warehouseList = Array.isArray(warehouses) ? warehouses.filter(w => w.isActive) : []
+  const warehouseNameById = (id: string) => warehouseList.find((w: any) => w.id === id)?.name || id
 
   const [formSource, setFormSource] = useState('')
   const [formDest, setFormDest] = useState('')
+  const [formSourceBin, setFormSourceBin] = useState('')
+  const [formDestBin, setFormDestBin] = useState('')
+
+  const { data: sourceBins } = useQuery<any[]>({
+    queryKey: ['warehouse-bins', formSource],
+    queryFn: () => apiClient.get(`/warehouses/${formSource}/bin-locations`).then(r => r.data || []),
+    enabled: !!formSource,
+  })
+
+  const { data: destBins } = useQuery<any[]>({
+    queryKey: ['warehouse-bins', formDest],
+    queryFn: () => apiClient.get(`/warehouses/${formDest}/bin-locations`).then(r => r.data || []),
+    enabled: !!formDest,
+  })
 
   const [productSearch, setProductSearch] = useState('')
   const [productSearchOpen, setProductSearchOpen] = useState(false)
@@ -89,7 +104,7 @@ export function Transfers() {
   const [notes, setNotes] = useState('')
 
   const createTransferMut = useMutation({
-    mutationFn: (data: { productId: string; sourceLocation: string; destinationLocation: string; quantity: number; notes?: string }) =>
+    mutationFn: (data: { productId: string; sourceLocation: string; destinationLocation: string; quantity: number; notes?: string; sourceBinId?: string; destinationBinId?: string }) =>
       apiClient.post('/inventory/transfer', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
@@ -106,6 +121,8 @@ export function Transfers() {
   const resetForm = () => {
     setFormSource('')
     setFormDest('')
+    setFormSourceBin('')
+    setFormDestBin('')
     setSelectedProduct(null)
     setProductSearch('')
     setQuantity('')
@@ -124,6 +141,8 @@ export function Transfers() {
       destinationLocation: formDest,
       quantity: parseInt(quantity),
       notes: notes || undefined,
+      sourceBinId: formSourceBin || undefined,
+      destinationBinId: formDestBin || undefined,
     })
   }
 
@@ -246,29 +265,51 @@ export function Transfers() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Source Warehouse</Label>
-                <Select value={formSource} onValueChange={setFormSource}>
+                <Select value={formSource} onValueChange={(v) => { setFormSource(v); setFormSourceBin('') }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select source" />
                   </SelectTrigger>
                   <SelectContent>
                     {warehouseList.map(w => (
-                      <SelectItem key={w.id} value={w.name}>{w.name}</SelectItem>
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {formSource && sourceBins && sourceBins.length > 0 && (
+                  <Select value={formSourceBin} onValueChange={setFormSourceBin}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Source bin (auto if empty)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Auto (LRU oldest bin)</SelectItem>
+                      {sourceBins.map((b: any) => (
+                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Destination Warehouse</Label>
-                <Select value={formDest} onValueChange={setFormDest}>
+                <Select value={formDest} onValueChange={(v) => { setFormDest(v); setFormDestBin('') }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select destination" />
                   </SelectTrigger>
                   <SelectContent>
                     {warehouseList.map(w => (
-                      <SelectItem key={w.id} value={w.name}>{w.name}</SelectItem>
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {formDest && destBins && destBins.length > 0 && (
+                  <Select value={formDestBin} onValueChange={setFormDestBin}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Dest bin (unassigned if empty)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Unassigned</SelectItem>
+                      {destBins.map((b: any) => (
+                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
 
@@ -339,13 +380,13 @@ export function Transfers() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">{formSource || 'Source'} (Source)</div>
+                        <div className="text-xs text-muted-foreground">{formSource ? warehouseNameById(formSource) : 'Source'} (Source)</div>
                         <div className="flex items-center gap-2 text-sm font-medium">
                           <ArrowRight className="h-3 w-3 text-red-500" /> <span className="text-red-600">-{quantity || '0'} Units</span>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">{formDest || 'Destination'} (Destination)</div>
+                        <div className="text-xs text-muted-foreground">{formDest ? warehouseNameById(formDest) : 'Destination'} (Destination)</div>
                         <div className="flex items-center gap-2 text-sm font-medium">
                           <ArrowRight className="h-3 w-3 text-green-500" /> <span className="text-green-600">+{quantity || '0'} Units</span>
                         </div>

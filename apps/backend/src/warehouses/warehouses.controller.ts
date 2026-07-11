@@ -24,6 +24,15 @@ export class WarehousesController {
     return this.svc.findAll(type);
   }
 
+  @Get('bin-locations')
+  findAllBinLocations(
+    @Query('warehouseId') warehouseId?: string,
+    @Query('search') search?: string,
+    @Query('isActive') isActive?: string,
+  ) {
+    return this.svc.findAllBins(warehouseId, search, isActive);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);

@@ -29,6 +29,12 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
     enabled: !!productDetails?.id,
   })
 
+  const { data: physicalData, isLoading: physicalLoading } = useQuery({
+    queryKey: ['inventory-physical', productDetails?.id],
+    queryFn: () => apiClient.get('/inventory/physical', { params: { productId: productDetails.id } }).then(r => r.data),
+    enabled: !!productDetails?.id,
+  })
+
   if (!productDetails) return null
 
   return (
@@ -140,18 +146,39 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <TableHeader>
                       <TableRow>
                         <TableHead>Warehouse</TableHead>
-                        <TableHead>Lot/Batch</TableHead>
-                        <TableHead>Expiry</TableHead>
+                        <TableHead>Bin</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Reserved</TableHead>
+                        <TableHead className="text-right">Available</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell className="font-medium">Main Warehouse</TableCell>
-                        <TableCell><Badge variant="outline">L-2023-11</Badge></TableCell>
-                        <TableCell className="text-sm text-muted-foreground">—</TableCell>
-                        <TableCell className="text-right">{productDetails.onHand}</TableCell>
-                      </TableRow>
+                      {physicalLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6">
+                            <Loader2 className="animate-spin h-4 w-4 mx-auto" />
+                          </TableCell>
+                        </TableRow>
+                      ) : Array.isArray(physicalData) && physicalData.length > 0 ? (
+                        physicalData.map((pi: any) => {
+                          const avail = pi.quantity - pi.reservedQuantity
+                          return (
+                            <TableRow key={pi.id}>
+                              <TableCell className="font-medium">{pi.warehouse?.name || '—'}</TableCell>
+                              <TableCell className="text-sm font-mono">{pi.binLocation?.code || '—'}</TableCell>
+                              <TableCell className="text-right font-medium">{pi.quantity}</TableCell>
+                              <TableCell className="text-right text-orange-600">{pi.reservedQuantity}</TableCell>
+                              <TableCell className={`text-right font-medium ${avail < 0 ? 'text-red-600' : ''}`}>{avail}</TableCell>
+                            </TableRow>
+                          )
+                        })
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6 text-muted-foreground text-sm">
+                            No physical inventory records found for this product.
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>

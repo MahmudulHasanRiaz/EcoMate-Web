@@ -162,83 +162,98 @@ export class DispatchService {
   }
 
   async updateStatus(id: string, status: string, performedBy?: string) {
-    const dispatch = await this.findOne(id);
-
-    const allowed = DISPATCH_TRANSITIONS[dispatch.status] || [];
+    // Validate transition BEFORE transaction
+    const current = await this.prisma.dispatch.findUnique({ where: { id }, select: { status: true } });
+    if (!current) throw new NotFoundException('Dispatch not found');
+    const allowed = DISPATCH_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
       throw new BadRequestException(
-        `Cannot transition from "${dispatch.status}" to "${status}". Allowed: ${allowed.join(', ') || 'none'}`,
+        `Cannot transition from "${current.status}" to "${status}". Allowed: ${allowed.join(', ') || 'none'}`,
       );
     }
 
     const data: any = { status: status as any };
-
     switch (status) {
-      case 'HANDED_OVER':
-        data.handedOverAt = new Date();
-        break;
-      case 'PICKED_UP':
-        data.pickedUpAt = new Date();
-        break;
-      case 'DELIVERED':
-        data.deliveredAt = new Date();
-        break;
-      case 'RETURNED':
-        data.deliveredAt = null;
-        break;
+      case 'HANDED_OVER': data.handedOverAt = new Date(); break;
+      case 'PICKED_UP': data.pickedUpAt = new Date(); break;
+      case 'DELIVERED': data.deliveredAt = new Date(); break;
+      case 'RETURNED': data.deliveredAt = null; break;
     }
 
-    const updated = await this.prisma.dispatch.update({
-      where: { id },
-      data,
-    });
+    // ALL-OR-NOTHING: status claim + stock side effects in single transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Atomic conditional update: only one request wins
+      const updateResult = await tx.$queryRawUnsafe<{id: string}[]>(
+        `UPDATE "Dispatch" SET status = $1::"DispatchStatus", "handedOverAt" = $2::timestamp WHERE id = $3::uuid AND status = $4::"DispatchStatus" RETURNING id`,
+        status, data.handedOverAt || null, id, current.status
+      );
+      const updated = updateResult[0];
 
-    // Stock operations based on status transition
-    const productMapping = dispatch.productMapping as any[] | null;
+      if (!updated) {
+        return { claimed: false, dispatch: await this.findOne(id) };
+      }
 
-    if (
-      status === 'HANDED_OVER' ||
-      status === 'RETURNED' ||
-      status === 'DAMAGED'
-    ) {
-      const items =
-        productMapping && productMapping.length > 0
+      // Stock operations — only if we won the claim
+      const dispatch = await this.findOne(id);
+      const productMapping = dispatch.productMapping as any[] | null;
+
+      if (status === 'HANDED_OVER' || status === 'RETURNED' || status === 'DAMAGED') {
+        const items = productMapping && productMapping.length > 0
           ? productMapping
           : await this.getOrderItemsForStock(dispatch.orderId);
 
-      const operation =
-        status === 'HANDED_OVER'
-          ? 'deduct'
-          : status === 'RETURNED'
-            ? 'add'
-            : 'scrap';
+        const operation = status === 'HANDED_OVER' ? 'deduct' : status === 'RETURNED' ? 'add' : 'scrap';
+        const reference = `Dispatch ${operation.toUpperCase()}: ${dispatch.consignmentId}`;
 
-      const reference = `Dispatch ${operation.toUpperCase()}: ${dispatch.consignmentId}`;
+        for (const item of items) {
+          const qty = item.quantity || 1;
+          const variantId = item.productVariantId || item.variantId;
+          const productId = item.productId;
 
-      for (const item of items) {
-        const qty = item.quantity || 1;
-        const variantId = item.productVariantId || item.variantId;
-        const productId = item.productId;
+          // Managed stock — only for non-IC on deduct, or all non-IC on add/scrap
+          if (productId) {
+            const product = await tx.product.findUnique({
+              where: { id: productId },
+              select: { availabilityMode: true, syncManagedStock: true },
+            });
+            const isManaged = product?.availabilityMode === 'MANAGED_STOCK' || product?.availabilityMode === 'ALWAYS_IN_STOCK';
 
-        if (variantId) {
-          await this.stockService.operate(operation, {
-            variantId,
-            quantity: qty,
-            reference,
-            performedBy: performedBy || 'system',
-          });
-        } else if (productId) {
-          await this.stockService.operate(operation, {
-            productId,
-            quantity: qty,
-            reference,
-            performedBy: performedBy || 'system',
-          });
+            const shouldManagedDeduct = operation === 'deduct'
+              ? (isManaged && product?.syncManagedStock)
+              : isManaged;
+
+            if (shouldManagedDeduct) {
+              if (variantId) {
+                await this.stockService.operate(operation, { variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              } else if (productId) {
+                await this.stockService.operate(operation, { productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              }
+            }
+          }
+
+          // Physical reservation fulfillment at HANDED_OVER
+          if (status === 'HANDED_OVER' && productId) {
+            const imEnabled = await this.stockService.isInventoryManagementEnabled();
+            if (imEnabled) {
+              const prod = await tx.product.findUnique({ where: { id: productId }, select: { warehouseId: true } });
+              if (prod?.warehouseId) {
+                const orderItems = await tx.orderItem.findMany({ where: { orderId: dispatch.orderId, productId }, select: { id: true } });
+                for (const oi of orderItems) {
+                  await this.stockService.fulfillPhysicalReservation({
+                    orderId: dispatch.orderId, orderItemId: oi.id, quantity: qty,
+                    reference, performedBy: performedBy || 'system', tx,
+                  });
+                }
+              }
+            }
+          }
         }
       }
-    }
 
-    return updated;
+      return { claimed: true, dispatch };
+    });
+
+    return result.dispatch;
   }
 
   private async getOrderItemsForStock(

@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, Min, Max } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdjustPhysicalDto {
@@ -24,4 +24,10 @@ export class AdjustPhysicalDto {
   @IsOptional()
   @IsString()
   binLocationId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitCost?: number;
 }

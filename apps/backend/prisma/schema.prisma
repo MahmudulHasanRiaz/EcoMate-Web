@@ -420,6 +420,7 @@ model Product {
   warehouseId            String?
   defaultBinLocationId   String?
   warehouse              Warehouse?             @relation(fields: [warehouseId], references: [id])
+  defaultBinLocation     BinLocation?           @relation("ProductDefaultBin", fields: [defaultBinLocationId], references: [id])
   category               Category?              @relation("ProductCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   productCategories      ProductCategory[]
   productTags            ProductTag[]
@@ -433,6 +434,7 @@ model Product {
   purchaseItems          PurchaseItem[]
   physicalInventories   PhysicalInventory[]
   physicalLedgers       PhysicalInventoryLedger[]
+  physicalReservations  PhysicalReservation[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -466,6 +468,7 @@ model ProductVariant {
   warehouseId     String?
   binLocationId   String?
   warehouse       Warehouse?                     @relation(fields: [warehouseId], references: [id])
+  binLocation     BinLocation?                   @relation("VariantBin", fields: [binLocationId], references: [id])
 
   @@index([productId])
 }
@@ -1050,26 +1053,31 @@ model InventoryLog {
 }
 
 model PhysicalInventory {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   productId       String
   warehouseId     String
-  quantity        Int      @default(0)
-  reservedQuantity Int     @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  binLocationId   String?
+  quantity        Int       @default(0)
+  reservedQuantity Int      @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse  Warehouse   @relation(fields: [warehouseId], references: [id])
+  binLocation BinLocation? @relation(fields: [binLocationId], references: [id])
+  reservationAllocations PhysicalReservationAllocation[]
 
-  @@unique([productId, warehouseId])
+  @@unique([productId, warehouseId, binLocationId])
   @@index([productId])
   @@index([warehouseId])
+  @@index([binLocationId])
 }
 
 model PhysicalInventoryLedger {
   id              String             @id @default(uuid())
   productId       String
   warehouseId     String
+  binLocationId   String?
   quantity        Int
   direction       MovementDirection
   stockBefore     Int
@@ -1078,12 +1086,55 @@ model PhysicalInventoryLedger {
   reason          String?
   performedBy     String?
   unitCost        Decimal?           @db.Decimal(12, 2)
+  referenceType   ReferenceEntity?
+  referenceId     String?
   createdAt       DateTime           @default(now())
 
   product         Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouse       Warehouse          @relation(fields: [warehouseId], references: [id])
+  binLocation     BinLocation?       @relation(fields: [binLocationId], references: [id])
 
   @@index([productId, warehouseId, createdAt])
+  @@index([binLocationId])
+  @@index([referenceType, referenceId])
+}
+
+model PhysicalReservation {
+  id                String   @id @default(uuid())
+  orderId           String
+  orderItemId       String
+  productId         String
+  variantId         String?
+  warehouseId       String
+  quantity          Int
+  status            String   @default("ALLOCATING") // ALLOCATING, ACTIVE, CONSUMED, RELEASED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product           Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse         Warehouse        @relation(fields: [warehouseId], references: [id])
+  allocations       PhysicalReservationAllocation[]
+
+  @@unique([orderItemId])
+  @@index([orderId])
+  @@index([status])
+}
+
+model PhysicalReservationAllocation {
+  id                  String   @id @default(uuid())
+  reservationId       String
+  physicalInventoryId String
+  binLocationId       String?
+  quantity            Int
+
+  reservation       PhysicalReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  physicalInventory PhysicalInventory   @relation(fields: [physicalInventoryId], references: [id])
+  binLocation       BinLocation?        @relation(fields: [binLocationId], references: [id])
+
+  @@unique([reservationId, physicalInventoryId])
+  @@index([reservationId])
+  @@index([physicalInventoryId])
+  @@index([binLocationId])
 }
 
 enum ManagedStockMovementType {
@@ -1732,6 +1783,8 @@ model Warehouse {
   posSessions  PosSession[]
   physicalInventories PhysicalInventory[]
   physicalLedgers     PhysicalInventoryLedger[]
+  physicalReservations PhysicalReservation[]
+  goodsReceiptNotes   GoodsReceiptNote[]
 
   @@index([isActive])
 }
@@ -1746,7 +1799,12 @@ model BinLocation {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
 
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  warehouse          Warehouse              @relation(fields: [warehouseId], references: [id])
+  products           Product[]              @relation("ProductDefaultBin")
+  variants           ProductVariant[]       @relation("VariantBin")
+  physicalInventories PhysicalInventory[]
+  physicalLedgers    PhysicalInventoryLedger[]
+  reservationAllocations PhysicalReservationAllocation[]
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
@@ -1775,16 +1833,18 @@ model CostingLot {
 }
 
 model GoodsReceiptNote {
-  id         String   @id @default(uuid())
-  grnNumber  String   @unique
-  purchaseId String
-  receivedBy String?
-  receivedAt DateTime @default(now())
-  status     String   @default("draft")
-  notes      String?  @db.Text
-  createdAt  DateTime @default(now())
+  id          String   @id @default(uuid())
+  grnNumber   String   @unique
+  purchaseId  String
+  warehouseId String
+  receivedBy  String?
+  receivedAt  DateTime @default(now())
+  status      String   @default("draft")
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
 
   purchase    Purchase               @relation(fields: [purchaseId], references: [id])
+  warehouse   Warehouse              @relation(fields: [warehouseId], references: [id])
   items       GoodsReceiptNoteItem[]
   costingLots CostingLot[]
 }

@@ -49,6 +49,7 @@ export const sidebarData: SidebarData = {
             { title: 'Reports', url: '/op/inventory/reports' },
             { title: 'Movement History', url: '/op/inventory/history' },
             { title: 'Warehouses', url: '/op/inventory/warehouses', feature: 'admin_warehouses' },
+            { title: 'Bin Locations', url: '/op/inventory/bin-locations', feature: 'admin_warehouses' },
           ],
         },
         {

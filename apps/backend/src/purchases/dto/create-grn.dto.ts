@@ -29,6 +29,9 @@ class GrnItemDto {
 }
 
 export class CreateGrnDto {
+  @IsString()
+  warehouseId: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => GrnItemDto)

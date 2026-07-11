@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Loader2, Calendar, User, Search, RefreshCw, FileText, Check, ChevronsUpDown, X } from 'lucide-react'
+import { Loader2, Calendar, User, Search, RefreshCw, FileText, Check, ChevronsUpDown, X, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Product {

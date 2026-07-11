@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Building2, Package, MapPin, ArrowLeftRight, Settings, ExternalLink, Loader2, X, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Building2, Package, MapPin, ArrowLeftRight, ExternalLink, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -116,12 +116,13 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
   const queryClient = useQueryClient()
   const [binDialogOpen, setBinDialogOpen] = useState(false)
   const [editBin, setEditBin] = useState<BinLocation | null>(null)
+  const [deleteBinConfirm, setDeleteBinConfirm] = useState<BinLocation | null>(null)
 
   if (!warehouse) return null
 
-  const { data: activityData, isLoading: activityLoading } = useQuery({
+  const { data: activityRes, isLoading: activityLoading } = useQuery({
     queryKey: ['warehouse-activity', warehouse.id],
-    queryFn: () => apiClient.get('/inventory/logs', { params: { warehouseId: warehouse.id } }).then(r => r.data),
+    queryFn: () => apiClient.get('/inventory/logs', { params: { warehouseId: warehouse.id, perPage: 20 } }).then(r => r.data),
     enabled: open,
   })
 
@@ -131,11 +132,19 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
     enabled: open,
   })
 
+  const { data: warehouseStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['warehouse-stats', warehouse.id],
+    queryFn: () => apiClient.get('/inventory/physical', { params: { warehouseId: warehouse.id } }).then(r => r.data),
+    enabled: open,
+  })
+
   const deleteBinMut = useMutation({
-    mutationFn: (binId: string) => apiClient.delete(`/warehouses/${warehouse.id}/bin-locations/${binId}`),
+    mutationFn: (bin: BinLocation) => apiClient.delete(`/warehouses/${bin.warehouseId}/bin-locations/${bin.id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['warehouse-bins', warehouse.id] })
       queryClient.invalidateQueries({ queryKey: ['warehouses'] })
+      queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
+      setDeleteBinConfirm(null)
       toast.success('Bin deleted')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Delete failed'),
@@ -147,6 +156,13 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
   }
 
   const bins = binLocations || []
+  const activityData = activityRes?.data || []
+  const stats = Array.isArray(warehouseStats) ? warehouseStats : []
+  const totalItems = stats.length
+  const totalValue = stats.reduce((sum: number, pi: any) => {
+    const price = pi.product?.basePrice || 0
+    return sum + (pi.quantity * Number(price))
+  }, 0)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -167,9 +183,6 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                 )}
               </p>
             </div>
-            <Button variant="outline" size="icon" title="Warehouse Settings">
-              <Settings className="h-4 w-4" />
-            </Button>
           </div>
         </SheetHeader>
 
@@ -189,22 +202,18 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Total Items</div>
-                <div className="text-xl font-bold mt-1">—</div>
+                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalItems}</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
-                <div className="text-xs font-medium text-muted-foreground">Total Value</div>
-                <div className="text-xl font-bold mt-1">—</div>
+                <div className="text-xs font-medium text-muted-foreground">Inventory Value</div>
+                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `৳${totalValue.toLocaleString()}`}</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Bin Locations</div>
-                <div className="text-xl font-bold mt-1">{warehouse._count?.binLocations || 0}</div>
-              </div>
-              <div className="rounded-lg border bg-card p-3">
-                <div className="text-xs font-medium text-muted-foreground">Pending Receipts</div>
-                <div className="text-xl font-bold mt-1 text-blue-600">—</div>
+                <div className="text-xl font-bold mt-1">{warehouse._count?.binLocations || bins.length}</div>
               </div>
             </div>
 
@@ -257,7 +266,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" title="Delete"
-                                  onClick={() => { if (confirm('Delete this bin?')) deleteBinMut.mutate(bin.id) }}>
+                                  onClick={() => setDeleteBinConfirm(bin)}>
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </div>
@@ -294,13 +303,19 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activityData?.length ? (
-                          activityData.map((log: any, i: number) => (
-                            <TableRow key={log.id || i}>
-                              <TableCell className="text-xs">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.date || '-'}</TableCell>
-                              <TableCell><Badge variant="outline" className="text-[10px]">{log.action || log.type || '-'}</Badge></TableCell>
-                              <TableCell className="text-xs text-blue-600 cursor-pointer">{log.reference || log.ref || '-'} <ExternalLink className="h-3 w-3 inline" /></TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{log.user || log.createdBy || '-'}</TableCell>
+                        {activityData.length > 0 ? (
+                          activityData.map((log: any) => (
+                            <TableRow key={log.id}>
+                              <TableCell className="text-xs">
+                                {log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-[10px]">{log.type || '—'}</Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                                {log.reason || log.performedBy || '—'}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{log.performedBy || '—'}</TableCell>
                             </TableRow>
                           ))
                         ) : (
@@ -324,19 +339,19 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Address</span>
-                      <span>{warehouse.address || '-'}</span>
+                      <span>{warehouse.address || '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">City</span>
-                      <span>{warehouse.city || '-'}</span>
+                      <span>{warehouse.city || '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Phone</span>
-                      <span>{warehouse.phone || '-'}</span>
+                      <span>{warehouse.phone || '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Email</span>
-                      <span>{warehouse.email || '-'}</span>
+                      <span>{warehouse.email || '—'}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -353,6 +368,30 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
         editBin={editBin}
         onSaved={refreshBins}
       />
+
+      {/* Bin Delete Confirmation Dialog */}
+      <Dialog open={!!deleteBinConfirm} onOpenChange={v => { if (!v) setDeleteBinConfirm(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Bin Location</DialogTitle>
+          </DialogHeader>
+          <p className='text-sm text-muted-foreground'>
+            Are you sure you want to delete bin <strong>{deleteBinConfirm?.code}</strong>?
+            This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setDeleteBinConfirm(null)}>Cancel</Button>
+            <Button
+              variant='destructive'
+              onClick={() => deleteBinConfirm && deleteBinMut.mutate(deleteBinConfirm)}
+              disabled={deleteBinMut.isPending}
+            >
+              {deleteBinMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   )
 }

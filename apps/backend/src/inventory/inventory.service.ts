@@ -128,6 +128,26 @@ export class InventoryService {
     return { products: allLowStock, count: allLowStock.length };
   }
 
+  async physicalReplenishment() {
+    // Products where physical available stock is at or below low stock threshold
+    const sql = `
+      SELECT
+        p.id, p.name, p.sku, p."lowStockQty",
+        SUM(pi.quantity) as physical_qty,
+        SUM(pi."reservedQuantity") as reserved_qty,
+        SUM(pi.quantity) - SUM(pi."reservedQuantity") as available,
+        COALESCE(p."lowStockQty", 5) as threshold
+      FROM "Product" p
+      JOIN "PhysicalInventory" pi ON pi."productId" = p.id
+      WHERE p."isActive" = true
+      GROUP BY p.id, p.name, p.sku, p."lowStockQty"
+      HAVING SUM(pi.quantity) - SUM(pi."reservedQuantity") <= COALESCE(p."lowStockQty", 5)
+      ORDER BY p.name ASC
+    `;
+    const products = await this.prisma.$queryRawUnsafe<any[]>(sql);
+    return { products, count: products.length };
+  }
+
   async logs(page = 1, perPage = 20, type?: string, warehouseId?: string, productId?: string) {
     const where: any = {};
     if (type) {
@@ -839,6 +859,93 @@ export class InventoryService {
   }
 
   async valuation(query: ValuationQueryDto) {
+    // Physical Inventory Valuation (FIFO CostingLot-based)
+    // Returns per-product: physical_qty, lot_remaining_qty, fifo_value, reconciliation_status
+    const whereConditions: string[] = ['p."isActive" = true'];
+    const params: any[] = [];
+
+    if (query.categoryId) {
+      params.push(query.categoryId);
+      whereConditions.push(`p."categoryId" = $${params.length}`);
+    }
+    if (query.search) {
+      params.push(`%${query.search}%`);
+      whereConditions.push(`(p.name ILIKE $${params.length} OR p.sku ILIKE $${params.length})`);
+    }
+
+    const whereClause = whereConditions.length > 0
+      ? `WHERE ${whereConditions.join(' AND ')}`
+      : '';
+
+    const sql = `
+      WITH pi_agg AS (
+        SELECT "productId", SUM(quantity) as total_qty, SUM("reservedQuantity") as total_reserved
+        FROM "PhysicalInventory"
+        GROUP BY "productId"
+      ),
+      cl_agg AS (
+        SELECT "productId", SUM("remainingQty" * "unitCost") as fifo_value, SUM("remainingQty") as lot_qty
+        FROM "CostingLot"
+        WHERE "remainingQty" > 0
+        GROUP BY "productId"
+      )
+      SELECT
+        p.id, p.name, p.sku, p."standardCost",
+        COALESCE(pi_agg.total_qty, 0) as physical_qty,
+        COALESCE(pi_agg.total_reserved, 0) as physical_reserved,
+        COALESCE(cl_agg.fifo_value, 0) as fifo_value,
+        COALESCE(cl_agg.lot_qty, 0) as lot_qty,
+        CASE
+          WHEN COALESCE(pi_agg.total_qty, 0) != COALESCE(cl_agg.lot_qty, 0)
+          THEN 'RECONCILIATION_NEEDED'
+          ELSE 'OK'
+        END as reconciliation_status
+      FROM "Product" p
+      LEFT JOIN pi_agg ON pi_agg."productId" = p.id
+      LEFT JOIN cl_agg ON cl_agg."productId" = p.id
+      ${whereClause}
+      AND COALESCE(pi_agg.total_qty, 0) > 0
+      ORDER BY p.name ASC
+    `;
+
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
+
+    let totalValue = 0;
+    let totalPhysicalQty = 0;
+    let totalLotQty = 0;
+    const items: any[] = [];
+
+    for (const row of rows) {
+      const fifoValue = Number(row.fifo_value);
+      totalValue += fifoValue;
+      totalPhysicalQty += Number(row.physical_qty);
+      totalLotQty += Number(row.lot_qty);
+      items.push({
+        id: row.id,
+        type: 'product',
+        name: row.name,
+        sku: row.sku,
+        physicalQty: Number(row.physical_qty),
+        physicalReserved: Number(row.physical_reserved),
+        lotRemainingQty: Number(row.lot_qty),
+        unitCost: Number(row.standardCost) || 0,
+        fifoValue,
+        reconciliationStatus: row.reconciliation_status,
+      });
+    }
+
+    return {
+      items,
+      totalValue,
+      totalPhysicalQty,
+      totalLotQty,
+      count: items.length,
+      type: 'physical_inventory_valuation',
+    };
+  }
+
+  async managedStockValue(query: ValuationQueryDto) {
+    // Managed Stock Value (lightweight, standardCost-based)
     const where: any = { isActive: true, availabilityMode: 'MANAGED_STOCK' };
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.search) {
@@ -855,14 +962,12 @@ export class InventoryService {
         name: true,
         sku: true,
         managedStockQuantity: true,
-        basePrice: true,
-        salePrice: true,
+        standardCost: true,
         variants: {
           select: {
             id: true,
             sku: true,
             managedStockQuantity: true,
-            price: true,
           },
         },
       },
@@ -873,23 +978,22 @@ export class InventoryService {
     const items: any[] = [];
 
     for (const product of products) {
+      const cost = Number(product.standardCost) || 0;
       if (product.variants.length > 0) {
         for (const v of product.variants) {
-          const price = Number(v.price || product.basePrice);
-          totalValue += price * v.managedStockQuantity;
+          totalValue += cost * v.managedStockQuantity;
           totalStock += v.managedStockQuantity;
           items.push({
             id: v.id,
             type: 'variant',
             sku: v.sku,
             stock: v.managedStockQuantity,
-            unitPrice: price,
-            totalValue: price * v.managedStockQuantity,
+            unitCost: cost,
+            totalValue: cost * v.managedStockQuantity,
           });
         }
       } else {
-        const price = Number(product.salePrice || product.basePrice);
-        totalValue += price * product.managedStockQuantity;
+        totalValue += cost * product.managedStockQuantity;
         totalStock += product.managedStockQuantity;
         items.push({
           id: product.id,
@@ -897,13 +1001,13 @@ export class InventoryService {
           name: product.name,
           sku: product.sku,
           stock: product.managedStockQuantity,
-          unitPrice: price,
-          totalValue: price * product.managedStockQuantity,
+          unitCost: cost,
+          totalValue: cost * product.managedStockQuantity,
         });
       }
     }
 
-    return { items, totalValue, totalStock, count: items.length };
+    return { items, totalValue, totalStock, count: items.length, type: 'managed_stock_value' };
   }
 
   async getLedger(query: LedgerQueryDto) {
@@ -940,24 +1044,74 @@ export class InventoryService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // Deduct from source
-      await this.stockService.deductPhysical({
-        productId: dto.productId,
-        variantId: dto.variantId,
-        quantity: dto.quantity,
-        warehouseId: dto.sourceLocation,
-        reference: `Transfer to ${destWarehouse.name}`,
-        performedBy,
-        ledgerType: 'TRANSFER_OUT',
-        tx,
-      });
+      if (dto.sourceBinId) {
+        // Explicit source bin: deduct from that specific bin
+        await this.stockService.deductPhysical({
+          productId: dto.productId,
+          variantId: dto.variantId,
+          quantity: dto.quantity,
+          warehouseId: dto.sourceLocation,
+          binLocationId: dto.sourceBinId,
+          reference: `Transfer to ${destWarehouse.name}`,
+          performedBy,
+          ledgerType: 'TRANSFER_OUT',
+          tx,
+        });
+      } else {
+        // Multi-bin: deduct across eligible PI rows oldest-first
+        const eligible = await tx.physicalInventory.findMany({
+          where: {
+            productId: dto.productId,
+            warehouseId: dto.sourceLocation,
+          },
+          orderBy: { updatedAt: 'asc' },
+        });
 
-      // Add to destination
+        let remaining = dto.quantity;
+        for (const pi of eligible) {
+          if (remaining <= 0) break;
+          const available = pi.quantity - pi.reservedQuantity;
+          if (available <= 0) continue;
+
+          const deductQty = Math.min(remaining, available);
+          await tx.physicalInventory.update({
+            where: { id: pi.id },
+            data: { quantity: { decrement: deductQty } },
+          });
+
+          // Write ledger entry for this bin
+          await tx.physicalInventoryLedger.create({
+            data: {
+              productId: dto.productId,
+              warehouseId: dto.sourceLocation,
+              binLocationId: pi.binLocationId,
+              quantity: deductQty,
+              direction: 'OUT',
+              stockBefore: pi.quantity,
+              stockAfter: pi.quantity - deductQty,
+              type: 'TRANSFER_OUT',
+              reason: `Transfer to ${destWarehouse.name}`,
+              performedBy,
+            },
+          });
+
+          remaining -= deductQty;
+        }
+
+        if (remaining > 0) {
+          throw new BadRequestException(
+            `Insufficient stock for transfer. Requested: ${dto.quantity}, available: ${dto.quantity - remaining}`,
+          );
+        }
+      }
+
+      // Add to destination (with bin)
       await this.stockService.addPhysical({
         productId: dto.productId,
         variantId: dto.variantId,
         quantity: dto.quantity,
         warehouseId: dto.destinationLocation,
+        binLocationId: dto.destinationBinId,
         reference: `Transfer from ${sourceWarehouse.name}`,
         performedBy,
         ledgerType: 'TRANSFER_IN',

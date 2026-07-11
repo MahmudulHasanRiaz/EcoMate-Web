@@ -89,6 +89,22 @@ export class WarehousesService {
 
   /* ── Bin Locations ── */
 
+  async findAllBins(warehouseId?: string, search?: string, isActive?: string) {
+    const where: any = {};
+    if (warehouseId) where.warehouseId = warehouseId;
+    if (search) {
+      where.code = { contains: search, mode: 'insensitive' };
+    }
+    if (isActive !== undefined) {
+      where.isActive = isActive === 'true';
+    }
+    return this.prisma.binLocation.findMany({
+      where,
+      include: { warehouse: { select: { id: true, name: true } } },
+      orderBy: { code: 'asc' },
+    });
+  }
+
   async listBinLocations(warehouseId: string) {
     return this.prisma.binLocation.findMany({
       where: { warehouseId },

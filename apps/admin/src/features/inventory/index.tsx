@@ -80,12 +80,19 @@ export function Inventory() {
   })
 
   const [selectedWarehouse, setSelectedWarehouse] = useState('all_wh')
+  const [selectedBin, setSelectedBin] = useState('all_bins')
   const [selectedStatus, setSelectedStatus] = useState('all_status')
   const [globalAdjustOpen, setGlobalAdjustOpen] = useState(false)
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
+  })
+
+  const { data: binLocations } = useQuery<any[]>({
+    queryKey: ['warehouse-bins', selectedWarehouse],
+    queryFn: () => apiClient.get(`/warehouses/${selectedWarehouse}/bin-locations`).then(r => r.data || []),
+    enabled: selectedWarehouse !== 'all_wh' && viewMode === 'PHYSICAL',
   })
 
   const { data: physicalData, isLoading: isPhysicalLoading, isError: isPhysicalError } = useQuery<any[]>({
@@ -102,6 +109,13 @@ export function Inventory() {
     // Warehouse Filter
     if (selectedWarehouse !== 'all_wh') {
       data = data.filter((p: any) => p.warehouseId === selectedWarehouse)
+    }
+
+    // Bin Filter
+    if (selectedBin !== 'all_bins') {
+      data = data.filter((p: any) => p.binLocationId === selectedBin)
+    } else if (selectedBin === 'unassigned') {
+      data = data.filter((p: any) => !p.binLocationId)
     }
 
     // Status Filter
@@ -173,6 +187,7 @@ export function Inventory() {
           sku: pi.product?.sku || '—',
           availabilityMode: 'INVENTORY_CONTROLLED',
           warehouse: pi.warehouse?.name || 'Unknown Warehouse',
+          bin: pi.binLocation?.code || '—',
           lot: '—',
           expiry: '—',
           available: avail,
@@ -218,7 +233,11 @@ export function Inventory() {
         <div className='flex items-center justify-between'>
           <div>
             <h2 className='text-2xl font-bold tracking-tight'>Stock</h2>
-            <p className='text-muted-foreground text-sm'>Primary operational view of all physical stock.</p>
+            <p className='text-muted-foreground text-sm'>
+              {viewMode === 'PHYSICAL'
+                ? 'Physical inventory — actual warehouse stock with bin locations.'
+                : 'Managed stock — virtual sales availability count.'}
+            </p>
           </div>
           <div className='flex items-center gap-3'>
             <div className='flex items-center gap-1.5 bg-muted/40 p-1 border rounded-lg shrink-0'>
@@ -251,12 +270,24 @@ export function Inventory() {
           </div>
           <Input placeholder="Search name or SKU..." className="h-9 w-[200px] bg-background" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           {viewMode === 'PHYSICAL' && (
-            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+            <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBin('all_bins') }}>
               <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all_wh">All Warehouses</SelectItem>
                 {(warehouses || []).map((w: any) => (
                   <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {viewMode === 'PHYSICAL' && selectedWarehouse !== 'all_wh' && binLocations && binLocations.length > 0 && (
+            <Select value={selectedBin} onValueChange={setSelectedBin}>
+              <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Bin Location" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all_bins">All Bins</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {binLocations.map((b: any) => (
+                  <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -279,6 +310,7 @@ export function Inventory() {
                 <TableRow>
                   <TableHead>Product</TableHead>
                   <TableHead>Location</TableHead>
+                  {viewMode === 'PHYSICAL' && <TableHead>Bin</TableHead>}
                   <TooltipProvider>
                     <TableHead className='text-right'>
                       <Tooltip>
@@ -312,13 +344,13 @@ export function Inventory() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12">
+                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 9 : 8} className="text-center py-12">
                       <Loader2 className="animate-spin h-6 w-6 mx-auto text-muted-foreground" />
                     </TableCell>
                   </TableRow>
                 ) : stockLevels.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 9 : 8} className="text-center py-12 text-muted-foreground">
                       {search ? 'No products match your search.' : 'No stock levels found.'}
                     </TableCell>
                   </TableRow>
@@ -369,6 +401,11 @@ export function Inventory() {
                             <Badge variant='outline' className='text-[10px] font-mono'>{availabilityModeLabel(p.availabilityMode)}</Badge>
                           </div>
                         </TableCell>
+                        {viewMode === 'PHYSICAL' && (
+                          <TableCell>
+                            <span className="text-sm font-mono">{p.bin || '—'}</span>
+                          </TableCell>
+                        )}
                         <TableCell className={`text-right font-medium ${p.available === null ? 'text-muted-foreground' : p.available < 0 ? 'text-red-600' : p.available < 10 ? 'text-amber-600' : ''}`}>
                           {p.available === null ? '∞' : p.available}
                         </TableCell>
