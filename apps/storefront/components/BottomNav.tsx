@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, LayoutGrid, ShoppingBag, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingBag, User, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -35,14 +35,22 @@ export default function BottomNav() {
             <LayoutGrid size={20} className="stroke-[2.5]" />
             <span className="text-[9px] font-medium mt-0.5">Menu</span>
           </button>
-          <Link 
+          <Link
             href="/products"
             className={`flex flex-col items-center justify-center w-12 h-full transition-colors ${pathname === '/products' ? 'text-brand-blue' : 'text-gray-400 hover:text-gray-800'}`}
           >
             <ShoppingBag size={20} className="stroke-[2.5]" />
             <span className="text-[9px] font-medium mt-0.5">Shop</span>
           </Link>
-          <Link 
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-mobile-search'))}
+            aria-label="Search"
+            className="flex flex-col items-center justify-center w-12 h-full text-gray-400 hover:text-gray-800 transition-colors"
+          >
+            <Search size={20} className="stroke-[2.5]" />
+            <span className="text-[9px] font-medium mt-0.5">Search</span>
+          </button>
+          <Link
             href="/account"
             className={`flex flex-col items-center justify-center w-12 h-full transition-colors ${pathname?.startsWith('/account') ? 'text-brand-blue' : 'text-gray-400 hover:text-gray-800'}`}
           >
