@@ -107,11 +107,11 @@ import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsLicenseIndexRouteImport } from './routes/_authenticated/mon/settings/license/index'
+import { Route as AuthenticatedMonSettingsInventoryIndexRouteImport } from './routes/_authenticated/mon/settings/inventory/index'
 import { Route as AuthenticatedMonSettingsHomepageIndexRouteImport } from './routes/_authenticated/mon/settings/homepage/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
-import { Route as AuthenticatedMonSettingsInventoryIndexRouteImport } from './routes/_authenticated/mon/settings/inventory/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/_authenticated/mon/settings/auth/index'
 import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
@@ -688,6 +688,12 @@ const AuthenticatedMonSettingsLicenseIndexRoute =
     path: '/license/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsInventoryIndexRoute =
+  AuthenticatedMonSettingsInventoryIndexRouteImport.update({
+    id: '/inventory/',
+    path: '/inventory/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsHomepageIndexRoute =
   AuthenticatedMonSettingsHomepageIndexRouteImport.update({
     id: '/homepage/',
@@ -960,6 +966,7 @@ export interface FileRoutesByTo {
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/mon/settings/inventory': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/mon/settings/license': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -1185,6 +1192,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways/'
     | '/mon/settings/general/'
     | '/mon/settings/homepage/'
+    | '/mon/settings/inventory/'
     | '/mon/settings/license/'
     | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
@@ -1295,6 +1303,7 @@ export interface FileRouteTypes {
     | '/mon/settings/gateways'
     | '/mon/settings/general'
     | '/mon/settings/homepage'
+    | '/mon/settings/inventory'
     | '/mon/settings/license'
     | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
@@ -2128,18 +2137,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsLicenseIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/mon/settings/homepage/': {
-      id: '/_authenticated/mon/settings/homepage/'
-      path: '/homepage'
-      fullPath: '/mon/settings/homepage/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsHomepageIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
     '/_authenticated/mon/settings/inventory/': {
       id: '/_authenticated/mon/settings/inventory/'
       path: '/inventory'
       fullPath: '/mon/settings/inventory/'
       preLoaderRoute: typeof AuthenticatedMonSettingsInventoryIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/homepage/': {
+      id: '/_authenticated/mon/settings/homepage/'
+      path: '/homepage'
+      fullPath: '/mon/settings/homepage/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsHomepageIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/general/': {
@@ -2222,6 +2231,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsHomepageIndexRoute: typeof AuthenticatedMonSettingsHomepageIndexRoute
+  AuthenticatedMonSettingsInventoryIndexRoute: typeof AuthenticatedMonSettingsInventoryIndexRoute
   AuthenticatedMonSettingsLicenseIndexRoute: typeof AuthenticatedMonSettingsLicenseIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -2247,6 +2257,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsGeneralIndexRoute,
     AuthenticatedMonSettingsHomepageIndexRoute:
       AuthenticatedMonSettingsHomepageIndexRoute,
+    AuthenticatedMonSettingsInventoryIndexRoute:
+      AuthenticatedMonSettingsInventoryIndexRoute,
     AuthenticatedMonSettingsLicenseIndexRoute:
       AuthenticatedMonSettingsLicenseIndexRoute,
     AuthenticatedMonSettingsMenuIndexRoute:
