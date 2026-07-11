@@ -55,6 +55,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     enabled: isEdit && !!currentRow?.id,
   })
 
+  const { data: sysSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => apiClient.get('/system-settings').then(r => r.data as Record<string, string>),
+    staleTime: 60_000,
+  })
+
+  const inventoryEnabled = sysSettings?.inventory_enabled === 'true'
+
   const categoryOptions = React.useMemo(() => {
     const flat = Array.isArray(cats) ? cats : []
     const map = new Map<string, any>()
@@ -700,7 +708,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     <option value='MANAGED_STOCK'>Managed Stock</option>
                     <option value='ALWAYS_IN_STOCK'>Always In Stock</option>
                     <option value='ALWAYS_OUT_OF_STOCK'>Always Out Of Stock</option>
-                    <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>
+                    {inventoryEnabled && <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>}
                   </select>
                 </div>
                 {availabilityMode === 'MANAGED_STOCK' && type !== 'variable' && (

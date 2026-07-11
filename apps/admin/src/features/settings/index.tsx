@@ -43,6 +43,7 @@ export function Settings() {
       groupLabel: 'Integrations',
       items: [
         { title: 'Payment Gateways', href: '/mon/settings/gateways', icon: <CreditCard size={18} /> },
+        { title: 'Inventory', href: '/mon/settings/inventory', icon: <Package size={18} /> },
         { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },
         { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
         { title: 'Tracking & Analytics', href: '/mon/settings/tracking', icon: <Radio size={18} /> },

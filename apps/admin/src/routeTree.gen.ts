@@ -111,6 +111,7 @@ import { Route as AuthenticatedMonSettingsHomepageIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
+import { Route as AuthenticatedMonSettingsInventoryIndexRouteImport } from './routes/_authenticated/mon/settings/inventory/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/_authenticated/mon/settings/auth/index'
 import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
@@ -848,6 +849,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -1070,6 +1072,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
+  '/_authenticated/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/_authenticated/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
@@ -1403,6 +1406,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/homepage/'
+    | '/_authenticated/mon/settings/inventory/'
     | '/_authenticated/mon/settings/license/'
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
@@ -2129,6 +2133,13 @@ declare module '@tanstack/react-router' {
       path: '/homepage'
       fullPath: '/mon/settings/homepage/'
       preLoaderRoute: typeof AuthenticatedMonSettingsHomepageIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/inventory/': {
+      id: '/_authenticated/mon/settings/inventory/'
+      path: '/inventory'
+      fullPath: '/mon/settings/inventory/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsInventoryIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/general/': {
