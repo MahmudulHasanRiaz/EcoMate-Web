@@ -6,6 +6,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { CreateBinLocationDto } from './dto/create-bin-location.dto';
+import { UpdateBinLocationDto } from './dto/update-bin-location.dto';
 
 @Injectable()
 export class WarehousesService {
@@ -31,6 +33,9 @@ export class WarehousesService {
   async findOne(id: string) {
     const warehouse = await this.prisma.warehouse.findUnique({
       where: { id },
+      include: {
+        binLocations: { orderBy: { code: 'asc' } },
+      },
     });
     if (!warehouse) {
       throw new NotFoundException('Warehouse not found');
@@ -80,5 +85,53 @@ export class WarehousesService {
     return this.prisma.warehouse.delete({
       where: { id },
     });
+  }
+
+  /* ── Bin Locations ── */
+
+  async listBinLocations(warehouseId: string) {
+    return this.prisma.binLocation.findMany({
+      where: { warehouseId },
+      orderBy: { code: 'asc' },
+    });
+  }
+
+  async createBinLocation(warehouseId: string, dto: CreateBinLocationDto) {
+    const existing = await this.prisma.binLocation.findUnique({
+      where: { warehouseId_code: { warehouseId, code: dto.code } },
+    });
+    if (existing) {
+      throw new ConflictException('Bin code already exists in this warehouse');
+    }
+    return this.prisma.binLocation.create({
+      data: { ...dto, warehouseId },
+    });
+  }
+
+  async updateBinLocation(binId: string, dto: UpdateBinLocationDto) {
+    const bin = await this.prisma.binLocation.findUnique({
+      where: { id: binId },
+    });
+    if (!bin) throw new NotFoundException('Bin location not found');
+    if (dto.code && dto.code !== bin.code) {
+      const dup = await this.prisma.binLocation.findUnique({
+        where: {
+          warehouseId_code: { warehouseId: bin.warehouseId, code: dto.code },
+        },
+      });
+      if (dup) throw new ConflictException('Bin code already in use');
+    }
+    return this.prisma.binLocation.update({
+      where: { id: binId },
+      data: dto,
+    });
+  }
+
+  async deleteBinLocation(binId: string) {
+    const bin = await this.prisma.binLocation.findUnique({
+      where: { id: binId },
+    });
+    if (!bin) throw new NotFoundException('Bin location not found');
+    return this.prisma.binLocation.delete({ where: { id: binId } });
   }
 }

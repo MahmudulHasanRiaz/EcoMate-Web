@@ -12,6 +12,8 @@ import { WarehousesService } from './warehouses.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { CreateBinLocationDto } from './dto/create-bin-location.dto';
+import { UpdateBinLocationDto } from './dto/update-bin-location.dto';
 
 @Controller('warehouses')
 export class WarehousesController {
@@ -43,5 +45,36 @@ export class WarehousesController {
   @Roles('superadmin', 'admin')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
+  }
+
+  /* ── Bin Locations ── */
+
+  @Get(':id/bin-locations')
+  listBinLocations(@Param('id') warehouseId: string) {
+    return this.svc.listBinLocations(warehouseId);
+  }
+
+  @Post(':id/bin-locations')
+  @Roles('superadmin', 'admin', 'manager')
+  createBinLocation(
+    @Param('id') warehouseId: string,
+    @Body() dto: CreateBinLocationDto,
+  ) {
+    return this.svc.createBinLocation(warehouseId, dto);
+  }
+
+  @Put(':id/bin-locations/:binId')
+  @Roles('superadmin', 'admin', 'manager')
+  updateBinLocation(
+    @Param('binId') binId: string,
+    @Body() dto: UpdateBinLocationDto,
+  ) {
+    return this.svc.updateBinLocation(binId, dto);
+  }
+
+  @Delete(':id/bin-locations/:binId')
+  @Roles('superadmin', 'admin', 'manager')
+  deleteBinLocation(@Param('binId') binId: string) {
+    return this.svc.deleteBinLocation(binId);
   }
 }
