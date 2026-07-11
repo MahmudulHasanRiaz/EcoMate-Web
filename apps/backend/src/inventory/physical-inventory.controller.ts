@@ -14,13 +14,19 @@ export class PhysicalInventoryController {
   async list(
     @Query('productId') productId?: string,
     @Query('warehouseId') warehouseId?: string,
+    @Query('binLocationId') binLocationId?: string,
   ) {
-    return this.stockService.listPhysical(productId, warehouseId);
+    return this.stockService.listPhysical(productId, warehouseId, binLocationId);
   }
 
   @Roles('superadmin', 'admin', 'manager')
   @Post('adjust')
   async adjust(@Body() dto: AdjustPhysicalDto) {
+    // Validate: positive adjustment requires unitCost
+    if (dto.quantity > 0 && (!dto.unitCost || dto.unitCost <= 0)) {
+      throw new NotFoundException('Unit cost is required when adding stock');
+    }
+
     await this.stockService.addPhysical({
       productId: dto.productId,
       variantId: dto.variantId,
@@ -29,7 +35,28 @@ export class PhysicalInventoryController {
       reference: dto.reason,
       ledgerType: 'PHYSICAL_ADJUSTMENT',
       binLocationId: dto.binLocationId,
+      unitCost: dto.unitCost,
     });
+
+    // Create CostingLot for positive adjustment
+    if (dto.quantity > 0 && dto.unitCost) {
+      await this.stockService.createCostingLotForAdjustment({
+        productId: dto.productId,
+        variantId: dto.variantId,
+        quantity: dto.quantity,
+        unitCost: dto.unitCost,
+        reference: dto.reason,
+      });
+    }
+
+    // Consume FIFO CostingLots for negative adjustment
+    if (dto.quantity < 0) {
+      await this.stockService.deductCostingLotsForAdjustment({
+        productId: dto.productId,
+        quantity: Math.abs(dto.quantity),
+      });
+    }
+
     return { ok: true };
   }
 

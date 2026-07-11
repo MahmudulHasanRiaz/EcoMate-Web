@@ -67,7 +67,7 @@ export const purchasesApi = {
   delete: (id: string) => apiClient.delete(`/purchases/${id}`),
   receiveItems: (id: string, items: { itemId: string; receivedQty: number }[]) => apiClient.post(`/purchases/${id}/receive`, { items }),
   updateStatus: (id: string, status: string) => apiClient.put(`/purchases/${id}/status`, { status }),
-  createGrn: (id: string, data: { items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[]; notes?: string }) =>
+  createGrn: (id: string, data: { warehouseId: string; items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[]; notes?: string }) =>
     apiClient.post<GrnResponse>(`/purchases/${id}/grn`, data),
   getGrns: (id: string) => apiClient.get<GrnResponse[]>(`/purchases/${id}/grns`),
   getGrn: (grnId: string) => apiClient.get<GrnResponse>(`/purchases/grn/${grnId}`),

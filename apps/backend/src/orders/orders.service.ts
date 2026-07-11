@@ -404,6 +404,24 @@ export class OrdersService {
       }
     }
 
+    // ALWAYS_OUT_OF_STOCK guard: block order creation for these products
+    const itemProductIds = dto.items.filter(i => i.productId).map(i => i.productId!);
+    if (itemProductIds.length > 0) {
+      const blockedProducts = await this.prisma.product.findMany({
+        where: {
+          id: { in: itemProductIds },
+          availabilityMode: 'ALWAYS_OUT_OF_STOCK',
+        },
+        select: { id: true, name: true },
+      });
+      if (blockedProducts.length > 0) {
+        const names = blockedProducts.map(p => p.name).join(', ');
+        throw new BadRequestException(
+          `Cannot order "${names}" — this product is currently unavailable.`,
+        );
+      }
+    }
+
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
       const productIds = Array.from(
@@ -674,15 +692,40 @@ export class OrdersService {
       }
 
       for (const item of dto.items) {
-        await this.stockService.reserve({
-          productId: item.productId,
-          variantId: item.variantId,
-          comboId: item.comboId,
-          comboSelection: item.comboSelection,
-          quantity: item.quantity,
-          reference: displayId,
-          tx,
-        });
+        const product = item.productId
+          ? await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { availabilityMode: true, warehouseId: true },
+            })
+          : null;
+
+        const isIC = product?.availabilityMode === 'INVENTORY_CONTROLLED';
+
+        if (isIC && product?.warehouseId && item.productId) {
+          // IC: physical reservation at Create — allocation-based
+          // Use a deterministic line identity: orderId + productId + variantId
+          const lineId = `${created.id}:${item.productId}:${item.variantId || 'default'}`;
+          await this.stockService.reservePhysicalAllocated({
+            orderId: created.id,
+            orderItemId: lineId,
+            productId: item.productId,
+            variantId: item.variantId,
+            warehouseId: product.warehouseId,
+            quantity: item.quantity,
+            tx,
+          });
+        } else {
+          // MANAGED_STOCK / ALWAYS_IN_STOCK: managed reservation
+          await this.stockService.reserve({
+            productId: item.productId,
+            variantId: item.variantId,
+            comboId: item.comboId,
+            comboSelection: item.comboSelection,
+            quantity: item.quantity,
+            reference: displayId,
+            tx,
+          });
+        }
       }
 
       return created;
@@ -1791,6 +1834,46 @@ export class OrdersService {
   ) {
     await this.takeCostSnapshot(orderId, tx);
     await this.verifyStockForOrder(orderId, tx);
+
+    // For MANAGED_STOCK products with warehouse: physical check + reserve at Confirm
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true, availabilityMode: true, warehouseId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) return;
+
+    for (const item of order.items) {
+      const product = item.product;
+      if (!product) continue;
+      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
+      if (!product.warehouseId) continue;
+
+      // Check physical availability and reserve
+      const physAvail = await this.stockService.checkPhysicalAvailability(
+        item.productId!, product.warehouseId,
+      );
+      if (physAvail.available && physAvail.availableStock >= item.quantity) {
+        await this.stockService.reservePhysical({
+          productId: item.productId!,
+          quantity: item.quantity,
+          warehouseId: product.warehouseId,
+          reference: `Order ${orderId}`,
+          tx,
+          referenceType: 'ORDER',
+          referenceId: orderId,
+        });
+      }
+    }
   }
 
   private async handleCancelledSideEffects(
@@ -1798,7 +1881,29 @@ export class OrdersService {
     orderId: string,
     performedBy?: string,
   ) {
-    await this.releaseStockForCancelledOrder(orderId, tx);
+    // Managed stock release (idempotent via ledger check)
+    const alreadyManagedReleased =
+      await this.managedStockLedger.hasExistingRestock(orderId);
+    if (!alreadyManagedReleased) {
+      await this.releaseStockForCancelledOrder(orderId, tx);
+    }
+
+    // Physical reservation release — allocation-based (idempotent via status)
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: { select: { id: true } },
+      },
+    });
+    if (order) {
+      for (const item of order.items) {
+        await this.stockService.releasePhysicalAllocated({
+          orderId,
+          orderItemId: item.id,
+          tx,
+        });
+      }
+    }
   }
 
   private async handleReturnedSideEffects(
@@ -1936,18 +2041,46 @@ export class OrdersService {
           `Product "${product.name}" is out of stock and cannot be ordered`,
         );
       }
-      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
-      if (!product.manageStock) continue;
 
-      // Verify stock is still sufficient — already reserved at Create
-      const avail = await this.stockService.getAvailableStock(
-        item.productId!,
-        item.variantId ?? undefined,
-      );
-      if (avail.available < item.quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for "${product.name}". Available: ${avail.available}, needed: ${item.quantity}.`,
+      if (product.availabilityMode === 'MANAGED_STOCK') {
+        if (!product.manageStock) continue;
+        // Verify managed stock is still sufficient
+        const avail = await this.stockService.getAvailableStock(
+          item.productId!,
+          item.variantId ?? undefined,
         );
+        if (avail.available < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for "${product.name}". Available: ${avail.available}, needed: ${item.quantity}.`,
+          );
+        }
+        // Physical reserve at Confirm for MANAGED+IM products with warehouse
+        if (product.warehouseId) {
+          const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
+          if (!alreadyReserved) {
+            await this.stockService.reservePhysicalAllocated({
+              orderId,
+              orderItemId: item.id,
+              productId: item.productId!,
+              variantId: item.variantId ?? undefined,
+              warehouseId: product.warehouseId,
+              quantity: item.quantity,
+              tx,
+            });
+          }
+        }
+      }
+
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
+        // IC: verify physical availability (reserved at Create, just check)
+        const physAvail = await this.stockService.checkPhysicalAvailability(
+          item.productId!, product.warehouseId,
+        );
+        if (!physAvail.available || physAvail.availableStock < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient physical stock for "${product.name}". Available: ${physAvail.availableStock}, needed: ${item.quantity}.`,
+          );
+        }
       }
     }
   }

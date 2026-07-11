@@ -346,6 +346,7 @@ export class PurchasesService {
         data: {
           grnNumber,
           purchaseId,
+          warehouseId: dto.warehouseId,
           receivedBy: userId,
           status: 'received',
           notes: dto.notes,
@@ -406,10 +407,12 @@ export class PurchasesService {
       for (const d of dto.items) {
         if (d.acceptedQty <= 0) continue;
 
-        await this.stockService.add({
+        // Physical inventory receipt (IM enabled)
+        await this.stockService.addPhysical({
           productId: d.productId,
           variantId: d.variantId,
           quantity: d.acceptedQty,
+          warehouseId: dto.warehouseId,
           reference: `GRN-${grnNumber}`,
           performedBy: userId,
           tx,

@@ -100,6 +100,12 @@ export function StockOverview() {
     refetchInterval: 60000,
   })
 
+  const { data: physReplenishment, isLoading: physReplLoading } = useQuery({
+    queryKey: ['inventory', 'replenishment'],
+    queryFn: () => apiClient.get('/inventory/replenishment').then(r => r.data),
+    refetchInterval: 60000,
+  })
+
   const { data: logsData, isLoading: logsLoading } = useQuery<LogsResponse>({
     queryKey: ['inventory', 'logs'],
     queryFn: () => apiClient.get('/inventory/logs', { params: { perPage: 5 } }).then(r => r.data),
@@ -126,7 +132,7 @@ export function StockOverview() {
       <Main className='flex flex-col gap-6'>
         <div>
           <h1 className='text-2xl font-bold tracking-tight'>Inventory Overview</h1>
-          <p className='text-muted-foreground'>High-level snapshot of your physical stock operations.</p>
+          <p className='text-muted-foreground'>High-level snapshot of managed stock and physical inventory operations.</p>
         </div>
 
         {loading ? (
@@ -196,9 +202,9 @@ export function StockOverview() {
           <Card className="flex flex-col">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-amber-600">
-                <AlertTriangle className="h-5 w-5" /> Requires Attention
+                <AlertTriangle className="h-5 w-5" /> Managed Stock — Requires Attention
               </CardTitle>
-              <CardDescription>Items that need reordering immediately.</CardDescription>
+              <CardDescription>Virtual stock items below threshold (managed stock).</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
               {lowStockLoading ? (
@@ -304,6 +310,33 @@ export function StockOverview() {
             </div>
           </Card>
         </div>
+
+        {physReplenishment && physReplenishment.products && physReplenishment.products.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-600">
+                <AlertTriangle className="h-5 w-5" /> Physical Inventory — Replenishment Needed
+              </CardTitle>
+              <CardDescription>Products where physical available stock is at or below threshold.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {physReplenishment.products.slice(0, 10).map((item: any) => (
+                  <div key={item.id} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.sku}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-blue-600">{Number(item.available)} available</p>
+                      <p className="text-xs text-muted-foreground">Threshold: {Number(item.threshold)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </Main>
     </>
   )

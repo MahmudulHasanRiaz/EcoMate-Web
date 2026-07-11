@@ -85,6 +85,7 @@ import { Route as AuthenticatedOpInventoryReportsRouteImport } from './routes/_a
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedOpInventoryHistoryRouteImport } from './routes/_authenticated/op/inventory/history'
 import { Route as AuthenticatedOpInventoryDetailRouteImport } from './routes/_authenticated/op/inventory/detail'
+import { Route as AuthenticatedOpInventoryBinLocationsRouteImport } from './routes/_authenticated/op/inventory/bin-locations'
 import { Route as AuthenticatedOpInventoryAdjustmentsRouteImport } from './routes/_authenticated/op/inventory/adjustments'
 import { Route as AuthenticatedOpEmployeesPresetsRouteImport } from './routes/_authenticated/op/employees/presets'
 import { Route as AuthenticatedOpEmployeesDesignationsRouteImport } from './routes/_authenticated/op/employees/designations'
@@ -557,6 +558,12 @@ const AuthenticatedOpInventoryDetailRoute =
     path: '/op/inventory/detail',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpInventoryBinLocationsRoute =
+  AuthenticatedOpInventoryBinLocationsRouteImport.update({
+    id: '/op/inventory/bin-locations',
+    path: '/op/inventory/bin-locations',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryAdjustmentsRoute =
   AuthenticatedOpInventoryAdjustmentsRouteImport.update({
     id: '/op/inventory/adjustments',
@@ -792,6 +799,7 @@ export interface FileRoutesByFullPath {
   '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
+  '/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
@@ -903,6 +911,7 @@ export interface FileRoutesByTo {
   '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
+  '/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
@@ -1016,6 +1025,7 @@ export interface FileRoutesById {
   '/_authenticated/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/_authenticated/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/_authenticated/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
+  '/_authenticated/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/_authenticated/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
   '/_authenticated/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
@@ -1129,6 +1139,7 @@ export interface FileRouteTypes {
     | '/op/employees/designations'
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
+    | '/op/inventory/bin-locations'
     | '/op/inventory/detail'
     | '/op/inventory/history'
     | '/op/inventory/overview'
@@ -1240,6 +1251,7 @@ export interface FileRouteTypes {
     | '/op/employees/designations'
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
+    | '/op/inventory/bin-locations'
     | '/op/inventory/detail'
     | '/op/inventory/history'
     | '/op/inventory/overview'
@@ -1352,6 +1364,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/employees/designations'
     | '/_authenticated/op/employees/presets'
     | '/_authenticated/op/inventory/adjustments'
+    | '/_authenticated/op/inventory/bin-locations'
     | '/_authenticated/op/inventory/detail'
     | '/_authenticated/op/inventory/history'
     | '/_authenticated/op/inventory/overview'
@@ -1983,6 +1996,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryDetailRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/bin-locations': {
+      id: '/_authenticated/op/inventory/bin-locations'
+      path: '/op/inventory/bin-locations'
+      fullPath: '/op/inventory/bin-locations'
+      preLoaderRoute: typeof AuthenticatedOpInventoryBinLocationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/inventory/adjustments': {
       id: '/_authenticated/op/inventory/adjustments'
       path: '/op/inventory/adjustments'
@@ -2336,6 +2356,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpEmployeesDesignationsRoute: typeof AuthenticatedOpEmployeesDesignationsRoute
   AuthenticatedOpEmployeesPresetsRoute: typeof AuthenticatedOpEmployeesPresetsRoute
   AuthenticatedOpInventoryAdjustmentsRoute: typeof AuthenticatedOpInventoryAdjustmentsRoute
+  AuthenticatedOpInventoryBinLocationsRoute: typeof AuthenticatedOpInventoryBinLocationsRoute
   AuthenticatedOpInventoryDetailRoute: typeof AuthenticatedOpInventoryDetailRoute
   AuthenticatedOpInventoryHistoryRoute: typeof AuthenticatedOpInventoryHistoryRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
@@ -2421,6 +2442,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpEmployeesPresetsRoute: AuthenticatedOpEmployeesPresetsRoute,
   AuthenticatedOpInventoryAdjustmentsRoute:
     AuthenticatedOpInventoryAdjustmentsRoute,
+  AuthenticatedOpInventoryBinLocationsRoute:
+    AuthenticatedOpInventoryBinLocationsRoute,
   AuthenticatedOpInventoryDetailRoute: AuthenticatedOpInventoryDetailRoute,
   AuthenticatedOpInventoryHistoryRoute: AuthenticatedOpInventoryHistoryRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,

@@ -22,6 +22,12 @@ export class InventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @Get('replenishment')
+  async physicalReplenishment() {
+    return this.inventoryService.physicalReplenishment();
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
   @Get('logs')
   async logs(
     @Query('page') page?: string,
@@ -90,6 +96,12 @@ export class InventoryController {
   @Get('valuation')
   async valuation(@Query() query: ValuationQueryDto) {
     return this.inventoryService.valuation(query);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('valuation/managed')
+  async managedStockValue(@Query() query: ValuationQueryDto) {
+    return this.inventoryService.managedStockValue(query);
   }
 
   @Roles('superadmin', 'admin', 'manager')

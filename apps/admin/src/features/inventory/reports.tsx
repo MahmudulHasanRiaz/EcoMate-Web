@@ -10,8 +10,9 @@ import { GlobalSearchBar } from '@/components/global-search-bar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2 } from 'lucide-react'
+import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2, DollarSign } from 'lucide-react'
 
 interface LogEntry {
   id: string
@@ -69,6 +70,11 @@ export function Reports() {
           params: { page: 1, perPage: 100 },
         })
         .then((r) => r.data),
+  })
+
+  const { data: physValuation } = useQuery({
+    queryKey: ['inventory-valuation-physical'],
+    queryFn: () => apiClient.get('/inventory/valuation').then(r => r.data),
   })
 
   const {
@@ -144,14 +150,15 @@ export function Reports() {
       <Main className='flex flex-col gap-6'>
         <div>
           <h1 className='text-2xl font-bold tracking-tight'>Inventory Reports</h1>
-          <p className='text-muted-foreground'>Analyze stock movements, valuation, and issues.</p>
+          <p className='text-muted-foreground'>Analyze managed stock movements and physical inventory valuation.</p>
         </div>
         <Tabs defaultValue='negative' className='w-full space-y-4'>
-          <TabsList className='grid grid-cols-4 w-[600px]'>
+          <TabsList className='grid grid-cols-5 w-[700px]'>
             <TabsTrigger value='negative'><AlertCircle className='h-4 w-4 mr-2' /> Negative Stock</TabsTrigger>
             <TabsTrigger value='aging'><TrendingDown className='h-4 w-4 mr-2' /> Aging</TabsTrigger>
             <TabsTrigger value='fast'><TrendingUp className='h-4 w-4 mr-2' /> Fast Moving</TabsTrigger>
             <TabsTrigger value='dead'><ArchiveX className='h-4 w-4 mr-2' /> Dead Stock</TabsTrigger>
+            <TabsTrigger value='valuation'><DollarSign className='h-4 w-4 mr-2' /> Valuation</TabsTrigger>
           </TabsList>
 
           <TabsContent value='negative' className='space-y-4'>
@@ -512,6 +519,60 @@ export function Reports() {
                       </div>
                     )}
                   </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value='valuation' className='space-y-4'>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle>Physical Inventory Valuation</CardTitle>
+                  <CardDescription>FIFO valuation based on CostingLot remaining quantities.</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {physValuation?.items?.length ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-primary/5 rounded-lg">
+                      <span className="text-sm font-medium">Total Inventory Value</span>
+                      <span className="text-lg font-bold text-primary">৳{physValuation.totalValue?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead className="text-right">Physical Qty</TableHead>
+                          <TableHead className="text-right">Lot Remaining</TableHead>
+                          <TableHead className="text-right">FIFO Value</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {physValuation.items.map((item: any) => (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              <div className="font-medium text-sm">{item.name}</div>
+                              <div className="text-xs text-muted-foreground">{item.sku}</div>
+                            </TableCell>
+                            <TableCell className="text-right">{item.physicalQty}</TableCell>
+                            <TableCell className="text-right">{item.lotRemainingQty}</TableCell>
+                            <TableCell className="text-right font-bold">৳{item.fifoValue?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell>
+                              {item.reconciliationStatus === 'OK' ? (
+                                <Badge variant='default' className='bg-green-500 text-xs'>OK</Badge>
+                              ) : (
+                                <Badge variant='outline' className='border-amber-500 text-amber-600 text-xs'>Reconcile</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No physical inventory valuation data</p>
                 )}
               </CardContent>
             </Card>

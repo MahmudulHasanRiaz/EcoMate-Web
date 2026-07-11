@@ -31,4 +31,12 @@ export class StockTransferDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceBinId?: string;
+
+  @IsOptional()
+  @IsString()
+  destinationBinId?: string;
 }

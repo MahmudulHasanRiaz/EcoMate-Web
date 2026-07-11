@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, ReferenceEntity } from '@prisma/client';
 
 export interface StockOperationParams {
   productId?: string;
@@ -20,6 +20,8 @@ export interface StockOperationParams {
   warehouseId?: string;
   ledgerType?: string;
   binLocationId?: string;
+  referenceType?: ReferenceEntity;
+  referenceId?: string;
 }
 
 interface StockTarget {
@@ -35,6 +37,13 @@ export class StockService {
   private readonly logger = new Logger(StockService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  async isInventoryManagementEnabled(): Promise<boolean> {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'inventory_enabled' },
+    });
+    return setting?.value === 'true';
+  }
 
   private client(tx?: Prisma.TransactionClient) {
     if (tx) return tx;
@@ -234,11 +243,6 @@ export class StockService {
   ) {
     for (const t of targets) {
       if (t.variantId) continue;
-      const product = await tx.product.findUnique({
-        where: { id: t.productId },
-        select: { availabilityMode: true },
-      });
-      if (product && product.availabilityMode !== 'MANAGED_STOCK') continue;
       let remaining = t.qty;
       while (remaining > 0) {
         const lot = await tx.costingLot.findFirst({
@@ -292,15 +296,22 @@ export class StockService {
     performedBy: string | undefined,
     unitCost: number | undefined,
     tx: Prisma.TransactionClient,
+    binLocationId?: string,
+    referenceType?: ReferenceEntity,
+    referenceId?: string,
   ) {
     for (const t of targets) {
-      const pi = await tx.physicalInventory.findUnique({
-        where: {
-          productId_warehouseId: {
-            productId: t.productId,
-            warehouseId,
-          },
-        },
+      const whereClause: any = {
+        productId: t.productId,
+        warehouseId,
+      };
+      if (binLocationId) {
+        whereClause.binLocationId = binLocationId;
+      } else {
+        whereClause.binLocationId = null;
+      }
+      const pi = await tx.physicalInventory.findFirst({
+        where: whereClause,
         select: { quantity: true },
       });
       const currentQuantity = pi?.quantity ?? 0;
@@ -312,6 +323,7 @@ export class StockService {
         data: {
           productId: t.productId,
           warehouseId,
+          binLocationId: binLocationId || null,
           quantity: t.qty,
           direction,
           stockBefore,
@@ -320,6 +332,8 @@ export class StockService {
           reason: reference,
           performedBy,
           unitCost: unitCost != null ? new Prisma.Decimal(unitCost) : null,
+          referenceType: referenceType || null,
+          referenceId: referenceId || null,
         },
       });
     }
@@ -375,41 +389,46 @@ export class StockService {
   }
 
   private async applyPhysicalChange(
-    targets: { productId: string; warehouseId: string; qty: number }[],
+    targets: { productId: string; warehouseId: string; qty: number; binLocationId?: string }[],
     op: 'increment' | 'decrement',
     field: 'quantity' | 'reservedQuantity',
     tx: Prisma.TransactionClient,
   ) {
     for (const t of targets) {
-      const existing = await tx.physicalInventory.findUnique({
-        where: {
-          productId_warehouseId: {
-            productId: t.productId,
-            warehouseId: t.warehouseId,
-          },
-        },
-      });
+      const whereClause: any = {
+        productId: t.productId,
+        warehouseId: t.warehouseId,
+      };
+      if (t.binLocationId) {
+        whereClause.binLocationId = t.binLocationId;
+      } else {
+        whereClause.binLocationId = null;
+      }
+
+      const existing = await tx.physicalInventory.findFirst({ where: whereClause });
       if (!existing && op === 'decrement') {
         throw new BadRequestException(
-          `No physical inventory record for product ${t.productId} in warehouse ${t.warehouseId}`,
+          `No physical inventory record for product ${t.productId} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}`,
         );
       }
-      await tx.physicalInventory.upsert({
-        where: {
-          productId_warehouseId: {
+
+      if (existing) {
+        await tx.physicalInventory.update({
+          where: { id: existing.id },
+          data: { [field]: { [op]: t.qty } },
+        });
+      } else {
+        await tx.physicalInventory.create({
+          data: {
             productId: t.productId,
             warehouseId: t.warehouseId,
+            binLocationId: t.binLocationId || null,
+            quantity: field === 'quantity' ? (op === 'increment' ? t.qty : 0) : 0,
+            reservedQuantity:
+              field === 'reservedQuantity' ? (op === 'increment' ? t.qty : 0) : 0,
           },
-        },
-        create: {
-          productId: t.productId,
-          warehouseId: t.warehouseId,
-          quantity: field === 'quantity' ? (op === 'increment' ? t.qty : 0) : 0,
-          reservedQuantity:
-            field === 'reservedQuantity' ? (op === 'increment' ? t.qty : 0) : 0,
-        },
-        update: { [field]: { [op]: t.qty } },
-      });
+        });
+      }
     }
   }
 
@@ -458,6 +477,7 @@ export class StockService {
         productId: t.productId,
         warehouseId: params.warehouseId!,
         qty: t.qty,
+        binLocationId: params.binLocationId,
       }));
 
       if (effectiveOperation === 'reserve') {
@@ -496,6 +516,9 @@ export class StockService {
           params.performedBy,
           params.unitCost,
           tx,
+          params.binLocationId,
+          params.referenceType,
+          params.referenceId,
         );
       } else if (effectiveOperation === 'add') {
         await this.applyPhysicalChange(
@@ -513,6 +536,9 @@ export class StockService {
           params.performedBy,
           params.unitCost,
           tx,
+          params.binLocationId,
+          params.referenceType,
+          params.referenceId,
         );
         // Update bin location on variant if provided
         if (params.binLocationId) {
@@ -532,7 +558,23 @@ export class StockService {
     if (params.tx) {
       return exec(params.tx);
     }
-    return this.prisma.$transaction(exec);
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.prisma.$transaction(exec, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < MAX_RETRIES
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async operate(
@@ -714,10 +756,11 @@ export class StockService {
   }
 
   async checkPhysicalAvailability(productId: string, warehouseId: string) {
-    const inv = await this.prisma.physicalInventory.findUnique({
-      where: { productId_warehouseId: { productId, warehouseId } },
+    const records = await this.prisma.physicalInventory.findMany({
+      where: { productId, warehouseId },
+      select: { quantity: true, reservedQuantity: true },
     });
-    if (!inv) {
+    if (records.length === 0) {
       return {
         available: false,
         currentStock: 0,
@@ -725,11 +768,13 @@ export class StockService {
         availableStock: 0,
       };
     }
-    const availableStock = inv.quantity - inv.reservedQuantity;
+    const totalQty = records.reduce((sum, r) => sum + r.quantity, 0);
+    const totalReserved = records.reduce((sum, r) => sum + r.reservedQuantity, 0);
+    const availableStock = totalQty - totalReserved;
     return {
-      available: true,
-      currentStock: inv.quantity,
-      reserved: inv.reservedQuantity,
+      available: totalQty > 0,
+      currentStock: totalQty,
+      reserved: totalReserved,
       availableStock,
     };
   }
@@ -750,13 +795,355 @@ export class StockService {
     return this.operatePhysical('add', params);
   }
 
-  async listPhysical(productId?: string, warehouseId?: string) {
+  /**
+   * Claim + allocate physical reservation for an order item.
+   * Strategy: parent upsert (atomic) + Serializable transaction with check-before-create.
+   * No P2002 possible: parent uses upsert, allocations check existing before create.
+   * Retry on serialization conflict.
+   */
+  async reservePhysicalAllocated(params: {
+    orderId: string;
+    orderItemId: string;
+    productId: string;
+    variantId?: string;
+    warehouseId: string;
+    quantity: number;
+    tx?: Prisma.TransactionClient;
+  }) {
+    // Phase 1: Atomic parent claim via upsert (no P2002 possible)
+    const parent = await this.prisma.physicalReservation.upsert({
+      where: { orderItemId: params.orderItemId },
+      create: {
+        orderId: params.orderId,
+        orderItemId: params.orderItemId,
+        productId: params.productId,
+        variantId: params.variantId,
+        warehouseId: params.warehouseId,
+        quantity: params.quantity,
+        status: 'ALLOCATING',
+      },
+      update: {},
+    });
+
+    // Phase 2: Check if already fully allocated (idempotent return)
+    const existingAllocations = await this.prisma.physicalReservationAllocation.findMany({
+      where: { reservationId: parent.id },
+    });
+    if (existingAllocations.length > 0) {
+      // Parent already has allocations — mark ACTIVE if still ALLOCATING
+      if (parent.status === 'ALLOCATING') {
+        await this.prisma.physicalReservation.update({
+          where: { id: parent.id },
+          data: { status: 'ACTIVE' },
+        });
+      }
+      return existingAllocations;
+    }
+
+    // Phase 2b: Stuck ALLOCATING recovery
+    // If parent is ALLOCATING for > 5 minutes with no allocations, it's abandoned.
+    // Release it so this request can re-allocate.
+    if (parent.status === 'ALLOCATING') {
+      const elapsed = Date.now() - parent.createdAt.getTime();
+      const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+      if (elapsed > STUCK_THRESHOLD_MS) {
+        this.logger.warn(`Recovering stuck ALLOCATING reservation ${parent.id} (age: ${Math.round(elapsed / 1000)}s)`);
+        // Reset parent to ALLOCATING so allocation can proceed
+        await this.prisma.physicalReservation.update({
+          where: { id: parent.id },
+          data: { status: 'ALLOCATING', quantity: params.quantity },
+        });
+        // Fall through to Phase 3 allocation
+      }
+    }
+
+    // Phase 3: Allocate bins — Serializable transaction with retry
+    // Avoids P2002 entirely: checks existing allocations before each create
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          // Re-check allocations inside transaction (concurrent request may have created some)
+          const allocs = await tx.physicalReservationAllocation.findMany({
+            where: { reservationId: parent.id },
+          });
+          if (allocs.length > 0) {
+            // Another request completed allocation — idempotent return
+            await tx.physicalReservation.update({
+              where: { id: parent.id },
+              data: { status: 'ACTIVE' },
+            });
+            return allocs;
+          }
+
+          const eligible = await tx.physicalInventory.findMany({
+            where: {
+              productId: params.productId,
+              warehouseId: params.warehouseId,
+            },
+            orderBy: { updatedAt: 'asc' },
+          });
+
+          let remaining = params.quantity;
+          const newAllocations: any[] = [];
+
+          for (const pi of eligible) {
+            if (remaining <= 0) break;
+            const available = pi.quantity - pi.reservedQuantity;
+            if (available <= 0) continue;
+
+            const allocQty = Math.min(remaining, available);
+
+            // Check if this PI row already has an allocation (from concurrent request)
+            const existingForPI = allocs.find((a) => a.physicalInventoryId === pi.id);
+            if (existingForPI) {
+              remaining -= existingForPI.quantity;
+              continue;
+            }
+
+            const allocation = await tx.physicalReservationAllocation.create({
+              data: {
+                reservationId: parent.id,
+                physicalInventoryId: pi.id,
+                binLocationId: pi.binLocationId,
+                quantity: allocQty,
+              },
+            });
+            newAllocations.push(allocation);
+
+            await tx.physicalInventory.update({
+              where: { id: pi.id },
+              data: { reservedQuantity: { increment: allocQty } },
+            });
+
+            remaining -= allocQty;
+          }
+
+          if (remaining > 0) {
+            throw new BadRequestException(
+              `Insufficient physical stock for product ${params.productId}. Requested: ${params.quantity}, allocated: ${params.quantity - remaining}`,
+            );
+          }
+
+          await tx.physicalReservation.update({
+            where: { id: parent.id },
+            data: { status: 'ACTIVE' },
+          });
+
+          return [...allocs, ...newAllocations];
+        }, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error: any) {
+        // Serialization conflict → retry
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && attempt < MAX_RETRIES) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Release physical reservations for an order item. Idempotent.
+   */
+  async releasePhysicalAllocated(params: {
+    orderId: string;
+    orderItemId: string;
+    tx?: Prisma.TransactionClient;
+  }) {
+    const client = params.tx || this.prisma;
+
+    const parent = await client.physicalReservation.findUnique({
+      where: { orderItemId: params.orderItemId },
+      include: { allocations: true },
+    });
+    if (!parent || parent.status === 'RELEASED' || parent.status === 'CONSUMED') return;
+
+    for (const alloc of parent.allocations) {
+      await client.physicalInventory.update({
+        where: { id: alloc.physicalInventoryId },
+        data: { reservedQuantity: { decrement: alloc.quantity } },
+      });
+    }
+
+    await client.physicalReservation.update({
+      where: { id: parent.id },
+      data: { status: 'RELEASED' },
+    });
+  }
+
+  /**
+   * Fulfill physical reservation at HANDED_OVER: deduct quantity, consume FIFO, mark CONSUMED.
+   * Idempotent: CONSUMED parent is skipped.
+   */
+  async fulfillPhysicalReservation(params: {
+    orderId: string;
+    orderItemId: string;
+    quantity: number;
+    reference: string;
+    performedBy?: string;
+    tx?: Prisma.TransactionClient;
+  }) {
+    const client = params.tx || this.prisma;
+
+    const parent = await client.physicalReservation.findUnique({
+      where: { orderItemId: params.orderItemId },
+      include: { allocations: true },
+    });
+    if (!parent || parent.status === 'CONSUMED') return;
+
+    // Atomic claim: ACTIVE → CONSUMED (conditional update within existing transaction)
+    const [claimed] = await client.$transaction([
+      client.physicalReservation.updateMany({
+        where: { id: parent.id, status: 'ACTIVE' },
+        data: { status: 'CONSUMED' },
+      }),
+    ]);
+    if (claimed.count === 0) return; // Already consumed
+
+    let remaining = params.quantity;
+
+    for (const alloc of parent.allocations) {
+      if (remaining <= 0) break;
+
+      const deductQty = Math.min(remaining, alloc.quantity);
+
+      // Decrement quantity on PI row
+      await client.physicalInventory.update({
+        where: { id: alloc.physicalInventoryId },
+        data: {
+          quantity: { decrement: deductQty },
+          reservedQuantity: { decrement: deductQty },
+        },
+      });
+
+      // Consume FIFO CostingLots
+      let lotRemaining = deductQty;
+      while (lotRemaining > 0) {
+        const lot = await client.costingLot.findFirst({
+          where: { productId: parent.productId, remainingQty: { gt: 0 } },
+          orderBy: { receivedAt: 'asc' },
+        });
+        if (!lot) {
+          this.logger.warn(`No costing lot for product ${parent.productId}, remaining ${lotRemaining}`);
+          break;
+        }
+        const lotDeduct = Math.min(lotRemaining, lot.remainingQty);
+        await client.costingLot.update({
+          where: { id: lot.id },
+          data: { remainingQty: { decrement: lotDeduct } },
+        });
+        lotRemaining -= lotDeduct;
+      }
+
+      // Write ledger entry
+      const pi = await client.physicalInventory.findUnique({
+        where: { id: alloc.physicalInventoryId },
+        select: { quantity: true },
+      });
+      await client.physicalInventoryLedger.create({
+        data: {
+          productId: parent.productId,
+          warehouseId: parent.warehouseId,
+          binLocationId: alloc.binLocationId,
+          quantity: deductQty,
+          direction: 'OUT',
+          stockBefore: (pi?.quantity ?? 0) + deductQty,
+          stockAfter: pi?.quantity ?? 0,
+          type: 'DEDUCTION',
+          reason: params.reference,
+          performedBy: params.performedBy,
+          referenceType: 'ORDER',
+          referenceId: params.orderId,
+        },
+      });
+
+      remaining -= deductQty;
+    }
+  }
+
+  async hasExistingPhysicalReservation(orderId: string, orderItemId?: string): Promise<boolean> {
+    const where: any = { orderId, status: { in: ['ACTIVE', 'CONSUMED'] } };
+    if (orderItemId) where.orderItemId = orderItemId;
+    const existing = await this.prisma.physicalReservation.findFirst({ where });
+    return !!existing;
+  }
+
+  async hasExistingPhysicalRelease(referenceId: string): Promise<boolean> {
+    const existing = await this.prisma.physicalInventoryLedger.findFirst({
+      where: {
+        referenceType: 'ORDER',
+        referenceId,
+        type: { in: ['RELEASE', 'CANCEL_RELEASE'] },
+      },
+    });
+    return !!existing;
+  }
+
+  async createCostingLotForAdjustment(params: {
+    productId: string;
+    variantId?: string;
+    quantity: number;
+    unitCost: number;
+    reference: string;
+  }) {
+    const lotNumber = `ADJ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await this.prisma.costingLot.create({
+      data: {
+        productId: params.productId,
+        variantId: params.variantId,
+        lotNumber,
+        unitCost: new Prisma.Decimal(params.unitCost),
+        totalCost: new Prisma.Decimal(params.unitCost * params.quantity),
+        quantity: params.quantity,
+        remainingQty: params.quantity,
+        receivedAt: new Date(),
+      },
+    });
+  }
+
+  async deductCostingLotsForAdjustment(params: {
+    productId: string;
+    quantity: number;
+  }) {
+    let remaining = params.quantity;
+    while (remaining > 0) {
+      const lot = await this.prisma.costingLot.findFirst({
+        where: { productId: params.productId, remainingQty: { gt: 0 } },
+        orderBy: { receivedAt: 'asc' },
+      });
+      if (!lot) {
+        this.logger.warn(
+          `No costing lot for product ${params.productId}, remaining ${remaining} (adjustment deduction)`,
+        );
+        break;
+      }
+      const deduct = Math.min(remaining, lot.remainingQty);
+      await this.prisma.costingLot.update({
+        where: { id: lot.id },
+        data: { remainingQty: { decrement: deduct } },
+      });
+      remaining -= deduct;
+    }
+  }
+
+  async listPhysical(productId?: string, warehouseId?: string, binLocationId?: string) {
     const where: any = {};
     if (productId) where.productId = productId;
     if (warehouseId) where.warehouseId = warehouseId;
+    if (binLocationId) {
+      where.binLocationId = binLocationId;
+    } else if (binLocationId === '') {
+      where.binLocationId = null;
+    }
     return this.prisma.physicalInventory.findMany({
       where,
-      include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
+      include: {
+        product: { select: { id: true, name: true, sku: true, images: true, lowStockQty: true } },
+        warehouse: true,
+        binLocation: true,
+      },
       orderBy: { updatedAt: 'desc' },
     });
   }
