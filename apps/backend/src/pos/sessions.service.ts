@@ -72,7 +72,7 @@ export class SessionsService {
 
   async getOrders(id: string) {
     return this.prisma.order.findMany({
-      where: { posSessionId: id },
+      where: { posSessionId: id, trashedAt: null },
       include: { items: true, payments: true, customer: true },
       orderBy: { createdAt: 'desc' },
     });

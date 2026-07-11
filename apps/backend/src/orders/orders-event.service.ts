@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Subject, Observable } from 'rxjs';
 
 export interface OrderEvent {
-  type: 'order.created' | 'order.status_changed';
+  type: 'order.created' | 'order.status_changed' | 'order.trashed' | 'order.restored';
   data: any;
 }
 

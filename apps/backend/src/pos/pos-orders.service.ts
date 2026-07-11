@@ -140,8 +140,8 @@ export class PosOrdersService {
 
     // Idempotency check: if key provided and already processed, return existing order
     if (idempotencyKey) {
-      const existing = await this.prisma.order.findUnique({
-        where: { idempotencyKey },
+      const existing = await this.prisma.order.findFirst({
+        where: { idempotencyKey, trashedAt: null },
         include: { items: true, payments: true, customer: true },
       });
       if (existing) {
@@ -250,8 +250,8 @@ export class PosOrdersService {
         });
       }
 
-      return tx.order.findUnique({
-        where: { id: order.id },
+      return tx.order.findFirst({
+        where: { id: order.id, trashedAt: null },
         include: { items: true, payments: true, customer: true },
       });
     });

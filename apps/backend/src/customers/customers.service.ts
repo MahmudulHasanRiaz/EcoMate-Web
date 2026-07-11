@@ -93,12 +93,12 @@ export class CustomersService {
 
     const [aggregation, recentOrders] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { customerId: user.id },
+        where: { customerId: user.id, trashedAt: null },
         _count: true,
         _sum: { total: true },
       }),
       this.prisma.order.findMany({
-        where: { customerId: user.id },
+        where: { customerId: user.id, trashedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: {
@@ -244,12 +244,12 @@ export class CustomersService {
 
     const [aggregation, recentOrders] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { customerId: user.id },
+        where: { customerId: user.id, trashedAt: null },
         _count: true,
         _sum: { total: true },
       }),
       this.prisma.order.findMany({
-        where: { customerId: user.id },
+        where: { customerId: user.id, trashedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {

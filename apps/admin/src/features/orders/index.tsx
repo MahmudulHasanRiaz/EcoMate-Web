@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
@@ -325,6 +325,16 @@ export function Orders() {
       setDispatchCourier('')
     },
     onError: (e: unknown) => { toast.error((e as Error).message || 'Dispatch failed') },
+  })
+
+  const trashOrderMut = useMutation({
+    mutationFn: (id: string) => ordersApi.trash(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setSelected([])
+      toast.success('Order moved to trash')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to trash order'),
   })
 
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
@@ -652,6 +662,13 @@ export function Orders() {
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')}><Printer className='h-4 w-4 mr-2' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')}><Receipt className='h-4 w-4 mr-2' />Print Invoice</DropdownMenuItem>
                               {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl || undefined, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className='text-destructive focus:text-destructive'
+                                onClick={(e) => { e.stopPropagation(); trashOrderMut.mutate(o.id) }}
+                              >
+                                <Trash2 className='h-4 w-4 mr-2' />Move to Trash
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

@@ -30,6 +30,7 @@ export class PackingService {
       throw new NotFoundException('Required statuses not found');
 
     const where: any = {
+      trashedAt: null,
       statusId: { in: [confirmedStatus.id, holdStatus.id] },
     };
     if (search) {
@@ -113,8 +114,8 @@ export class PackingService {
   }
 
   async openOrder(orderId: string, packerId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
       include: { packingLock: true, status: { select: { name: true } } },
     });
     if (!order) throw new NotFoundException('Order not found');
@@ -167,8 +168,8 @@ export class PackingService {
       ? `${packer.firstName} ${packer.lastName}`
       : 'System Packer';
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
       select: { timeline: true },
     });
     const existingTimeline = Array.isArray(order?.timeline)
@@ -184,8 +185,8 @@ export class PackingService {
     const updatedTimeline = [...existingTimeline, newEntry];
 
     // Optimistic lock: verify order status hasn't changed since queue fetch
-    const currentOrder = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const currentOrder = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
       select: { statusId: true },
     });
     if (!currentOrder) throw new NotFoundException('Order not found');
@@ -244,8 +245,8 @@ export class PackingService {
       ? `${packer.firstName} ${packer.lastName}`
       : 'System Packer';
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
       select: { timeline: true },
     });
     const existingTimeline = Array.isArray(order?.timeline)
@@ -332,6 +333,7 @@ export class PackingService {
       this.prisma.order.count({
         where: {
           ...where,
+          trashedAt: null,
           statusId: packedStatus.id,
           updatedAt: { gte: today },
         },
@@ -339,11 +341,12 @@ export class PackingService {
       this.prisma.order.count({
         where: {
           ...where,
+          trashedAt: null,
           statusId: holdStatus.id,
           updatedAt: { gte: today },
         },
       }),
-      this.prisma.order.count({ where: { statusId: confirmedStatus.id } }),
+      this.prisma.order.count({ where: { statusId: confirmedStatus.id, trashedAt: null } }),
     ]);
 
     return { packed: packedCount, held: holdCount, pending: pendingCount };
@@ -365,6 +368,7 @@ export class PackingService {
     const orders = await this.prisma.order.findMany({
       where: {
         ...where,
+        trashedAt: null,
         statusId: { in: [packedStatus.id, holdStatus.id] },
       },
       include: {
@@ -390,6 +394,7 @@ export class PackingService {
   async checkOrderStatus(code: string) {
     const order = await this.prisma.order.findFirst({
       where: {
+        trashedAt: null,
         OR: [
           { id: code },
           { displayId: { equals: code, mode: 'insensitive' } },

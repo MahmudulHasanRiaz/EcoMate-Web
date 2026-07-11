@@ -30,7 +30,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
-  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone
+  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw
 } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
@@ -163,6 +163,26 @@ function OrderDetailPage() {
     onError: (e: unknown) => toast.error((e as Error).message || 'Dispatch failed'),
   })
 
+  const trashMut = useMutation({
+    mutationFn: (orderId: string) => ordersApi.trash(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      toast.success('Order moved to trash')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || e?.message || 'Failed'),
+  })
+
+  const restoreMut = useMutation({
+    mutationFn: (orderId: string) => ordersApi.restore(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      toast.success('Order restored from trash')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || e?.message || 'Failed'),
+  })
+
   // ── Handlers ──────────────────────────────────────────────────────
   function handleSaveItems() {
     updateMut.mutate({
@@ -230,9 +250,24 @@ function OrderDetailPage() {
           {/* ── Page Header ──────────────────────────────────────── */}
           <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
             <div>
-              <h2 className='text-xl font-bold tracking-tight'>{order.displayId}</h2>
+              <h2 className='text-xl font-bold tracking-tight'>
+                {order.displayId}
+                {order.trashedAt && (
+                  <Badge variant='destructive' className='ml-2 align-middle text-xs'>
+                    <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed
+                  </Badge>
+                )}
+              </h2>
               <p className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p>
             </div>
+
+            {order.trashedAt && (
+              <div className='col-span-full rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2 text-sm text-destructive'>
+                <AlertTriangle className='h-4 w-4 inline mr-1.5 -mt-0.5' />
+                This order is in trash. It was moved to trash on {new Date(order.trashedAt).toLocaleString()}.
+                It is excluded from all reports, stats, and listings.
+              </div>
+            )}
 
             <div className='flex items-center gap-2 flex-wrap'>
               {/* Status Badge + Courier Status */}
@@ -329,6 +364,28 @@ function OrderDetailPage() {
                   <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}>
                     <Printer className='h-4 w-4 mr-2' /> Print Invoice
                   </DropdownMenuItem>
+                  {!order.trashedAt ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className='text-destructive focus:text-destructive'
+                        disabled={trashMut.isPending}
+                        onClick={() => trashMut.mutate(order.id)}
+                      >
+                        <Trash2 className='h-4 w-4 mr-2' /> Move to Trash
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={restoreMut.isPending}
+                        onClick={() => restoreMut.mutate(order.id)}
+                      >
+                        <RefreshCcw className='h-4 w-4 mr-2' /> Restore from Trash
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

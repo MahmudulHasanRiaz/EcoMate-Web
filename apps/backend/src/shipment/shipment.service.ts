@@ -79,8 +79,8 @@ export class ShipmentService {
   }
 
   async createOrUpdate(orderId: string, dto: CreateOrUpdateShipmentDto) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
     });
     if (!order) throw new NotFoundException('Order not found');
 

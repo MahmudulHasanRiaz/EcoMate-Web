@@ -52,6 +52,7 @@ export class OrdersController {
     @Query('dateTo') dateTo?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('includeTrashed') includeTrashed?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -65,6 +66,7 @@ export class OrdersController {
       dateTo,
       sort,
       order,
+      includeTrashed: includeTrashed === 'true',
     });
   }
 
@@ -235,6 +237,23 @@ export class OrdersController {
   async bulkAssign(@Body() dto: BulkAssignDto) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/trash')
+  trashOrder(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string; email: string },
+  ) {
+    return this.svc.trash(id, user.email || user.userId);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/restore')
+  restoreOrder(@Param('id') id: string) {
+    return this.svc.restore(id);
+  }
+
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Get('staff/list')
