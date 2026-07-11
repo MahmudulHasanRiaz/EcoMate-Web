@@ -60,24 +60,22 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
         );
       })}
 
-      {/* Slider Controls */}
+      {/* Slider Controls - Desktop only */}
       {slides.length > 1 && (
-        <div className="absolute inset-x-0 inset-y-0 flex items-center justify-between px-2 md:px-4 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
+        <div className="hidden md:flex absolute inset-x-0 inset-y-0 items-center justify-between px-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
           <button
             onClick={prevSlide}
             aria-label="Previous slide"
-            className="w-7 h-7 md:w-10 md:h-10 rounded-full bg-white/80 text-gray-800 flex items-center justify-center hover:bg-white transition-colors shadow-sm pointer-events-auto"
+            className="w-10 h-10 rounded-full bg-white/80 text-gray-800 flex items-center justify-center hover:bg-white transition-colors shadow-sm pointer-events-auto"
           >
-            <ChevronLeft size={18} className="md:hidden" />
-            <ChevronLeft size={20} className="hidden md:block" />
+            <ChevronLeft size={20} />
           </button>
           <button
             onClick={nextSlide}
             aria-label="Next slide"
-            className="w-7 h-7 md:w-10 md:h-10 rounded-full bg-white/80 text-gray-800 flex items-center justify-center hover:bg-white transition-colors shadow-sm pointer-events-auto"
+            className="w-10 h-10 rounded-full bg-white/80 text-gray-800 flex items-center justify-center hover:bg-white transition-colors shadow-sm pointer-events-auto"
           >
-            <ChevronRight size={18} className="md:hidden" />
-            <ChevronRight size={20} className="hidden md:block" />
+            <ChevronRight size={20} />
           </button>
         </div>
       )}
