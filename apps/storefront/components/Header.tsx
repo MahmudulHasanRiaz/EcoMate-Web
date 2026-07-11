@@ -51,7 +51,7 @@ export default function Header({}: {}) {
           </div>
 
           {/* Logo - Centered on mobile, left on desktop */}
-          <div className="flex items-center md:flex-1">
+          <div className="flex items-center md:flex-none">
             <Link href="/" className="mx-auto md:mx-0">
               <motion.div
                 whileHover={{ scale: 1.05 }}
@@ -61,19 +61,6 @@ export default function Header({}: {}) {
                 <StoreBrand />
               </motion.div>
             </Link>
-          </div>
-
-          {/* Desktop: menu button hidden, logo to left */}
-          <div className="hidden md:flex items-center gap-3 flex-1">
-            <button
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('open-mobile-menu'));
-              }}
-              aria-label="Open menu"
-              className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <Menu size={20} strokeWidth={2} />
-            </button>
           </div>
 
           {/* Search Bar - Desktop Centered */}
