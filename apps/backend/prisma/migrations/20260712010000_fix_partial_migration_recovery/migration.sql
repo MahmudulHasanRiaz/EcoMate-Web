@@ -1,12 +1,13 @@
--- Idempotent migration: handles partial previous runs safely
+-- Recovery migration: complete any missing objects from the previous partial migration
+-- This is safe to run multiple times (idempotent)
 
--- AlterTable: Add binLocationId to PhysicalInventory (IF NOT EXISTS)
+-- Ensure PhysicalInventory has binLocationId column
 DO $$ BEGIN
   ALTER TABLE "PhysicalInventory" ADD COLUMN "binLocationId" TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 
--- AlterTable: Add referenceType, referenceId to PhysicalInventoryLedger
+-- Ensure PhysicalInventoryLedger has referenceType and referenceId
 DO $$ BEGIN
   ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceType" "ReferenceEntity";
 EXCEPTION WHEN duplicate_column THEN NULL;
@@ -17,13 +18,13 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 
--- AlterTable: Add warehouseId to GoodsReceiptNote
+-- Ensure GoodsReceiptNote has warehouseId
 DO $$ BEGIN
   ALTER TABLE "GoodsReceiptNote" ADD COLUMN "warehouseId" TEXT NOT NULL DEFAULT '';
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 
--- CreateTable: PhysicalReservation (IF NOT EXISTS)
+-- Ensure tables exist
 CREATE TABLE IF NOT EXISTS "PhysicalReservation" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
@@ -38,7 +39,6 @@ CREATE TABLE IF NOT EXISTS "PhysicalReservation" (
     CONSTRAINT "PhysicalReservation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable: PhysicalReservationAllocation (IF NOT EXISTS)
 CREATE TABLE IF NOT EXISTS "PhysicalReservationAllocation" (
     "id" TEXT NOT NULL,
     "reservationId" TEXT NOT NULL,
@@ -48,25 +48,19 @@ CREATE TABLE IF NOT EXISTS "PhysicalReservationAllocation" (
     CONSTRAINT "PhysicalReservationAllocation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex: PhysicalReservation (IF NOT EXISTS)
+-- Ensure all indexes exist
 CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservation_orderItemId_key" ON "PhysicalReservation"("orderItemId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservation_orderId_idx" ON "PhysicalReservation"("orderId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservation_status_idx" ON "PhysicalReservation"("status");
-
--- CreateIndex: PhysicalReservationAllocation (IF NOT EXISTS)
 CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_physicalInventoryId_key" ON "PhysicalReservationAllocation"("reservationId", "physicalInventoryId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_idx" ON "PhysicalReservationAllocation"("reservationId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_binLocationId_idx" ON "PhysicalReservationAllocation"("binLocationId");
-
--- CreateIndex: PhysicalInventory binLocationId (IF NOT EXISTS)
 CREATE INDEX IF NOT EXISTS "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId");
-
--- CreateIndex: PhysicalInventoryLedger (IF NOT EXISTS)
 CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId");
 CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId");
 
--- AddForeignKey with IF NOT EXISTS pattern
+-- Ensure all foreign keys exist
 DO $$ BEGIN
   ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL;
