@@ -45,7 +45,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env['NODE_ENV'] === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth/',
     });
     return { accessToken: result.accessToken, user: result.user };
@@ -66,7 +66,7 @@ export class AuthController {
         httpOnly: true,
         secure: process.env['NODE_ENV'] === 'production',
         sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/api/auth/',
       });
       return { accessToken: result.accessToken, user: result.user };
@@ -94,7 +94,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env['NODE_ENV'] === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth/',
     });
     return { accessToken: result.accessToken, user: result.user };
