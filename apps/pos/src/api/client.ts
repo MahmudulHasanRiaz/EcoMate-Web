@@ -3,8 +3,19 @@ import { useSessionStore } from '../stores/session-store';
 
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
+
+// Shared promise to deduplicate concurrent refresh calls within the same tab
+let refreshPromise: Promise<{ accessToken: string }> | null = null
+
+// Retry delays for refresh: 2s + 4s + 8s + 16s = 30s total coverage.
+// Covers typical backend deployment/restart windows (5-30s) and transient issues.
+// The first attempt is immediate (delay 0), so the full sequence covers
+// 0s + 2s + 4s + 8s + 16s = 30s from the initial 401.
+const REFRESH_RETRY_DELAYS = [0, 2000, 4000, 8000, 16000]
+const MAX_REFRESH_RETRIES = REFRESH_RETRY_DELAYS.length
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pos_access_token');
@@ -20,12 +31,64 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      localStorage.removeItem('pos_access_token');
-      localStorage.removeItem('pos_session_id');
-      window.location.href = '/pos/';
+  async (error) => {
+    const originalRequest = error.config
+
+    // Not a 401/403 → let error propagate
+    if (error.response?.status !== 401 && error.response?.status !== 403) {
+      return Promise.reject(error);
     }
+
+    // Already retried → give up
+    if (originalRequest._retry) {
+      // Clear tokens only on final failure, not intermediate
+      localStorage.removeItem('pos_access_token');
+      window.location.href = '/pos/';
+      return Promise.reject(error);
+    }
+    originalRequest._retry = true
+
+    // If a refresh is already in flight, wait for it and retry
+    if (refreshPromise) {
+      try {
+        const { accessToken } = await refreshPromise
+        localStorage.setItem('pos_access_token', accessToken)
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        return api(originalRequest)
+      } catch {
+        return Promise.reject(error)
+      }
+    }
+
+    // Exponential backoff: retry refresh up to MAX_REFRESH_RETRIES times
+    for (let attempt = 0; attempt < MAX_REFRESH_RETRIES; attempt++) {
+      const delay = REFRESH_RETRY_DELAYS[attempt]
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+
+      try {
+        refreshPromise = axios
+          .post<{ accessToken: string }>(
+            `${api.defaults.baseURL}/auth/refresh`,
+            {},
+            { withCredentials: true },
+          )
+          .then((res) => res.data)
+
+        const data = await refreshPromise
+        localStorage.setItem('pos_access_token', data.accessToken)
+        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
+        return api(originalRequest)
+      } catch {
+        // Refresh attempt failed — continue to next retry
+        refreshPromise = null
+      }
+    }
+
+    // All retries exhausted
+    localStorage.removeItem('pos_access_token');
+    window.location.href = '/pos/';
     return Promise.reject(error);
   },
 );

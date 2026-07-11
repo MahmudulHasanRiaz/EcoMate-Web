@@ -49,6 +49,32 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     })
   }, [accessToken, navigate])
 
+  // Proactive token keepalive: call /auth/me every 5 minutes.
+  // When the access token expires during active use, this triggers the 401
+  // interceptor → exponential backoff refresh → token rotates before the
+  // user hits a real request (like Save on a form they've been editing).
+  // The catch is silent: transient failures are handled by the interceptor
+  // with exponential backoff, and we don't want to disrupt the user here.
+  useEffect(() => {
+    if (!accessToken) return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiClient.get('/auth/me')
+        const u = res.data?.user || res.data
+        if (u) {
+          const { setUser } = useAuthStore.getState().auth
+          setUser({ id: u.id, email: u.email, role: u.role })
+        }
+      } catch {
+        // Silent — the interceptor handles 401 with exponential backoff.
+        // A momentary failure here won't redirect or clear auth.
+      }
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [accessToken])
+
   // Enforce redirection for packing_assistant role on path changes
   useEffect(() => {
     if (user?.role === 'packing_assistant') {
