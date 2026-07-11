@@ -1,19 +1,30 @@
--- AlterTable: Add binLocationId to PhysicalInventory
-ALTER TABLE "PhysicalInventory" ADD COLUMN "binLocationId" TEXT;
+-- Idempotent migration: handles partial previous runs safely
+
+-- AlterTable: Add binLocationId to PhysicalInventory (IF NOT EXISTS)
+DO $$ BEGIN
+  ALTER TABLE "PhysicalInventory" ADD COLUMN "binLocationId" TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 -- AlterTable: Add referenceType, referenceId to PhysicalInventoryLedger
-ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceType" "ReferenceEntity";
-ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceId" TEXT;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceType" "ReferenceEntity";
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN "referenceId" TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 -- AlterTable: Add warehouseId to GoodsReceiptNote
-ALTER TABLE "GoodsReceiptNote" ADD COLUMN "warehouseId" TEXT NOT NULL DEFAULT '';
+DO $$ BEGIN
+  ALTER TABLE "GoodsReceiptNote" ADD COLUMN "warehouseId" TEXT NOT NULL DEFAULT '';
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
--- AlterTable: Add defaultBinLocationId relation fields (already exist as columns, add FK)
--- Product.defaultBinLocationId and ProductVariant.binLocationId already exist as columns
--- Just need the FK constraints
-
--- CreateTable: PhysicalReservation
-CREATE TABLE "PhysicalReservation" (
+-- CreateTable: PhysicalReservation (IF NOT EXISTS)
+CREATE TABLE IF NOT EXISTS "PhysicalReservation" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "orderItemId" TEXT NOT NULL,
@@ -24,65 +35,84 @@ CREATE TABLE "PhysicalReservation" (
     "status" TEXT NOT NULL DEFAULT 'ALLOCATING',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "PhysicalReservation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable: PhysicalReservationAllocation
-CREATE TABLE "PhysicalReservationAllocation" (
+-- CreateTable: PhysicalReservationAllocation (IF NOT EXISTS)
+CREATE TABLE IF NOT EXISTS "PhysicalReservationAllocation" (
     "id" TEXT NOT NULL,
     "reservationId" TEXT NOT NULL,
     "physicalInventoryId" TEXT NOT NULL,
     "binLocationId" TEXT,
     "quantity" INTEGER NOT NULL,
-
     CONSTRAINT "PhysicalReservationAllocation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex: PhysicalReservation
-CREATE UNIQUE INDEX "PhysicalReservation_orderItemId_key" ON "PhysicalReservation"("orderItemId");
-CREATE INDEX "PhysicalReservation_orderId_idx" ON "PhysicalReservation"("orderId");
-CREATE INDEX "PhysicalReservation_status_idx" ON "PhysicalReservation"("status");
+-- CreateIndex: PhysicalReservation (IF NOT EXISTS)
+CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservation_orderItemId_key" ON "PhysicalReservation"("orderItemId");
+CREATE INDEX IF NOT EXISTS "PhysicalReservation_orderId_idx" ON "PhysicalReservation"("orderId");
+CREATE INDEX IF NOT EXISTS "PhysicalReservation_status_idx" ON "PhysicalReservation"("status");
 
--- CreateIndex: PhysicalReservationAllocation
-CREATE UNIQUE INDEX "PhysicalReservationAllocation_reservationId_physicalInventoryId_key" ON "PhysicalReservationAllocation"("reservationId", "physicalInventoryId");
-CREATE INDEX "PhysicalReservationAllocation_reservationId_idx" ON "PhysicalReservationAllocation"("reservationId");
-CREATE INDEX "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId");
-CREATE INDEX "PhysicalReservationAllocation_binLocationId_idx" ON "PhysicalReservationAllocation"("binLocationId");
+-- CreateIndex: PhysicalReservationAllocation (IF NOT EXISTS)
+CREATE UNIQUE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_physicalInventoryId_key" ON "PhysicalReservationAllocation"("reservationId", "physicalInventoryId");
+CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_idx" ON "PhysicalReservationAllocation"("reservationId");
+CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId");
+CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_binLocationId_idx" ON "PhysicalReservationAllocation"("binLocationId");
 
--- CreateIndex: PhysicalInventory binLocationId
-CREATE INDEX "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId");
+-- CreateIndex: PhysicalInventory binLocationId (IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId");
 
--- CreateIndex: PhysicalInventoryLedger
-CREATE INDEX "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId");
-CREATE INDEX "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId");
+-- CreateIndex: PhysicalInventoryLedger (IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId");
+CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId");
 
--- AddForeignKey: PhysicalInventory binLocation
-ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey with IF NOT EXISTS pattern
+DO $$ BEGIN
+  ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalInventoryLedger binLocation
-ALTER TABLE "PhysicalInventoryLedger" ADD CONSTRAINT "PhysicalInventoryLedger_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalInventoryLedger" ADD CONSTRAINT "PhysicalInventoryLedger_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: GoodsReceiptNote warehouse
-ALTER TABLE "GoodsReceiptNote" ADD CONSTRAINT "GoodsReceiptNote_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "GoodsReceiptNote" ADD CONSTRAINT "GoodsReceiptNote_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: Product defaultBinLocation
-ALTER TABLE "Product" ADD CONSTRAINT "Product_defaultBinLocationId_fkey" FOREIGN KEY ("defaultBinLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "Product" ADD CONSTRAINT "Product_defaultBinLocationId_fkey" FOREIGN KEY ("defaultBinLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: ProductVariant binLocation
-ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalReservation product
-ALTER TABLE "PhysicalReservation" ADD CONSTRAINT "PhysicalReservation_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalReservation" ADD CONSTRAINT "PhysicalReservation_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalReservation warehouse
-ALTER TABLE "PhysicalReservation" ADD CONSTRAINT "PhysicalReservation_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalReservation" ADD CONSTRAINT "PhysicalReservation_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalReservationAllocation reservation
-ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "PhysicalReservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "PhysicalReservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalReservationAllocation physicalInventory
-ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_physicalInventoryId_fkey" FOREIGN KEY ("physicalInventoryId") REFERENCES "PhysicalInventory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_physicalInventoryId_fkey" FOREIGN KEY ("physicalInventoryId") REFERENCES "PhysicalInventory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey: PhysicalReservationAllocation binLocation
-ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
