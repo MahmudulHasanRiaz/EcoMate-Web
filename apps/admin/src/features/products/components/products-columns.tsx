@@ -2,7 +2,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Pencil, Trash2, Package } from 'lucide-react'
+import { Pencil, Trash2, Copy, Package } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
@@ -14,6 +14,7 @@ export function productsColumns(
   onEdit: (row: ProductResponse) => void,
   onDelete: (row: ProductResponse) => void,
   onToggleActive?: (row: ProductResponse, active: boolean) => void,
+  onDuplicate?: (row: ProductResponse) => void,
 ): ColumnDef<ProductResponse>[] {
   return [
     {
@@ -137,6 +138,11 @@ export function productsColumns(
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onEdit(row.original)}>
             <Pencil className='h-3.5 w-3.5' />
           </Button>
+          {onDuplicate && (
+            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDuplicate(row.original)} title='Duplicate product'>
+              <Copy className='h-3.5 w-3.5' />
+            </Button>
+          )}
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDelete(row.original)}>
             <Trash2 className='h-3.5 w-3.5 text-destructive' />
           </Button>

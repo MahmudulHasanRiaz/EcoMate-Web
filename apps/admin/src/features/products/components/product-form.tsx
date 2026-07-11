@@ -158,7 +158,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
     prevRowId.current = currentRow?.id
 
-    if (isEdit && currentRow) {
+    if (currentRow) {
+      const isClone = !isEdit
       setName(currentRow.name || '')
       setSlug(currentRow.slug || '')
       setType(currentRow.type || 'simple')
@@ -169,7 +170,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSku(currentRow.sku || '')
       setStock(String(currentRow.managedStockQuantity ?? 0))
       setLowStockQty(currentRow.lowStockQty != null ? String(currentRow.lowStockQty) : '')
-      setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || [])
+      setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || (currentRow.categoryId ? [currentRow.categoryId] : []))
       setBrandId(currentRow.brandId || '')
       setIsActive(currentRow.isActive ?? true)
       setIsFeatured(currentRow.isFeatured ?? false)
@@ -181,6 +182,14 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSeoTitle((currentRow.seoMeta as any)?.title || '')
       setSeoDesc((currentRow.seoMeta as any)?.description || '')
       setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
+      if (isClone) {
+        setLocalVariants(currentRow.variants?.map((v: any) => ({
+          ...v,
+          id: undefined,
+          productId: undefined,
+          sku: v.sku ? `${v.sku}-copy-${Date.now()}` : '',
+        })) || [])
+      }
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
