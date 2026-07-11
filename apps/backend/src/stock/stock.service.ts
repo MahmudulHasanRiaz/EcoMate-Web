@@ -19,6 +19,7 @@ export interface StockOperationParams {
   tx?: Prisma.TransactionClient;
   warehouseId?: string;
   ledgerType?: string;
+  binLocationId?: string;
 }
 
 interface StockTarget {
@@ -513,6 +514,17 @@ export class StockService {
           params.unitCost,
           tx,
         );
+        // Update bin location on variant if provided
+        if (params.binLocationId) {
+          for (const t of targets) {
+            if (t.variantId) {
+              await tx.productVariant.update({
+                where: { id: t.variantId },
+                data: { binLocationId: params.binLocationId },
+              });
+            }
+          }
+        }
       }
       return targets;
     };

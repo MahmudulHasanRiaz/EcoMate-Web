@@ -32,6 +32,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
   const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string; sku: string; type: string; image?: string; variants?: ProductVariant[] } | null>(null)
   const [selectedVariantId, setSelectedVariantId] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
+  const [selectedBinLocation, setSelectedBinLocation] = useState('')
   const [quantity, setQuantity] = useState(0)
   const [reason, setReason] = useState('')
   const [unitCost, setUnitCost] = useState('')
@@ -53,8 +54,14 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
   })
 
+  const { data: binLocations } = useQuery<any[]>({
+    queryKey: ['warehouse-bins', selectedWarehouse],
+    queryFn: () => apiClient.get(`/warehouses/${selectedWarehouse}/bin-locations`).then(r => r.data || []),
+    enabled: !!selectedWarehouse,
+  })
+
   const adjustMut = useMutation({
-    mutationFn: (data: { productId: string; variantId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
+    mutationFn: (data: { productId: string; variantId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number; binLocationId?: string }) =>
       apiClient.post('/inventory/physical/adjust', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
@@ -73,6 +80,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
     setSelectedProduct(null)
     setSelectedVariantId('')
     setSelectedWarehouse('')
+    setSelectedBinLocation('')
     setQuantity(0)
     setReason('')
     setUnitCost('')
@@ -110,6 +118,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
       quantity,
       reason: reason.trim(),
       unitCost: cost,
+      binLocationId: selectedBinLocation || undefined,
     })
   }
 
@@ -230,7 +239,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
           <div className='grid grid-cols-2 gap-4'>
             <div className='space-y-2'>
               <Label className='text-sm font-semibold'>Warehouse</Label>
-              <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+              <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBinLocation('') }}>
                 <SelectTrigger>
                   <SelectValue placeholder='Select' />
                 </SelectTrigger>
@@ -248,6 +257,27 @@ export function PhysicalAdjustDialog({ open, onOpenChange }: Props) {
               <p className='text-xs text-muted-foreground'>Positive = add, negative = remove</p>
             </div>
           </div>
+
+          {/* ── Bin Location ── */}
+          {selectedWarehouse && quantity > 0 && (
+            <div className='space-y-2'>
+              <Label className='text-sm font-semibold'>
+                Bin Location <span className='text-muted-foreground font-normal text-xs'>(optional)</span>
+              </Label>
+              <Select value={selectedBinLocation} onValueChange={setSelectedBinLocation}>
+                <SelectTrigger>
+                  <SelectValue placeholder='Auto-assign or select bin' />
+                </SelectTrigger>
+                <SelectContent>
+                  {(binLocations || []).map((b: any) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.code}{b.zone ? ` (${b.zone})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* ── Unit Cost ── */}
           {quantity > 0 && (

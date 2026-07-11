@@ -28,6 +28,7 @@ export class PhysicalInventoryController {
       quantity: dto.quantity,
       reference: dto.reason,
       ledgerType: 'PHYSICAL_ADJUSTMENT',
+      binLocationId: dto.binLocationId,
     });
     return { ok: true };
   }

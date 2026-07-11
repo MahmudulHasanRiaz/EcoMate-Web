@@ -20,4 +20,8 @@ export class AdjustPhysicalDto {
 
   @IsString()
   reason: string;
+
+  @IsOptional()
+  @IsString()
+  binLocationId?: string;
 }
