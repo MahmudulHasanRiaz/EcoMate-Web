@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemSettingsApi } from '@/features/settings/storage-api'
 import { useLicenseStore } from '@/stores/license-store'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +9,7 @@ import { Loader2, AlertTriangle, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function InventorySettings() {
+  const queryClient = useQueryClient()
   const hasInventory = useLicenseStore(s => s.hasFeature('admin_inventory'))
 
   const { data: settingsData, isLoading } = useQuery({
@@ -25,6 +25,7 @@ export function InventorySettings() {
     setPending(true)
     try {
       await systemSettingsApi.set('inventory_enabled', String(checked))
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] })
       toast.success(checked ? 'Inventory management enabled' : 'Inventory management disabled')
     } catch {
       toast.error('Failed to update setting')
