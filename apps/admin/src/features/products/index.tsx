@@ -32,6 +32,7 @@ export function Products() {
   const [filterCategoryId, setFilterCategoryId] = useState<string[]>([])
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [adjustmentProductId, setAdjustmentProductId] = useState<string | undefined>()
+  const [duplicateSourceRow, setDuplicateSourceRow] = useState<ProductResponse | undefined>()
 
   const { data: allCats } = useQuery({
     queryKey: ['categories'],
@@ -142,6 +143,22 @@ export function Products() {
 
   const isBulkPending = bulkDeleteMut.isPending || bulkUpdateMut.isPending
 
+  const handleDuplicate = async (row: ProductResponse) => {
+    try {
+      const res = await productsApi.get(row.id)
+      const source = res.data
+      setDuplicateSourceRow({
+        ...source,
+        name: `Copy of ${source.name}`,
+        slug: `${source.slug}-copy-${Date.now()}`,
+      })
+      setFormMode('add')
+      setFormOpen(true)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to fetch product for duplication')
+    }
+  }
+
   return (
     <>
       <Header fixed>
@@ -241,12 +258,18 @@ export function Products() {
           onEdit={(row) => { setEditRow(row); setFormMode('edit'); setFormOpen(true); }}
           onDelete={(row) => setDeleteTarget(row)}
           onToggleActive={(row, active) => toggleActiveMut.mutate({ id: row.id, isActive: active })}
+          onDuplicate={handleDuplicate}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
         />
       </Main>
 
-      <ProductForm open={formOpen} onOpenChange={setFormOpen} currentRow={editRow} mode={formMode} />
+      <ProductForm
+        open={formOpen}
+        onOpenChange={(v) => { setFormOpen(v); if (!v) { setDuplicateSourceRow(undefined); } }}
+        currentRow={formMode === 'edit' ? editRow : duplicateSourceRow || undefined}
+        mode={formMode}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

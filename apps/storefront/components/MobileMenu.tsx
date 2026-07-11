@@ -178,22 +178,37 @@ function MobileNavItem({ item, onClose, level = 0 }: { item: any; onClose: () =>
 
   return (
     <div className="border-b border-gray-100/50 last:border-0">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={`w-full flex items-center text-left justify-between px-4 py-[13px] transition-all active:bg-gray-100 ${
-          isExpanded 
-            ? 'bg-gray-50/80 text-brand-blue font-medium' 
-            : 'text-gray-700 hover:text-brand-blue hover:bg-brand-blue/[0.02]'
+      <div
+        className={`flex items-center justify-between transition-all ${
+          isExpanded
+            ? 'bg-gray-50/80 text-brand-blue font-medium'
+            : 'text-gray-700'
         }`}
         style={{ paddingLeft: `${16 + level * 16}px` }}
       >
-        <span className="text-[13px]">{item.label || item.name}</span>
-        <ChevronDown
-          size={14}
-          className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-brand-blue' : ''}`}
-          strokeWidth={2}
-        />
-      </button>
+        <Link
+          href={href}
+          onClick={onClose}
+          className={`flex-1 py-[13px] pr-2 transition-all active:bg-gray-100 ${
+            isExpanded ? 'text-brand-blue font-medium' : 'hover:text-brand-blue'
+          }`}
+        >
+          <span className="text-[13px]">{item.label || item.name}</span>
+        </Link>
+        <button
+          onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+          className={`px-3 py-[13px] transition-all active:bg-gray-100 ${
+            isExpanded ? 'text-brand-blue' : 'text-gray-400 hover:text-brand-blue'
+          }`}
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+        >
+          <ChevronDown
+            size={14}
+            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            strokeWidth={2}
+          />
+        </button>
+      </div>
       <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div

@@ -11,10 +11,11 @@ type Props = {
   onPaginationChange: (p: PaginationState) => void; isLoading?: boolean;
   onEdit: (row: ProductResponse) => void; onDelete: (row: ProductResponse) => void;
   onToggleActive?: (row: ProductResponse, active: boolean) => void;
+  onDuplicate?: (row: ProductResponse) => void;
   selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
 }
 
-export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, selectedIds, onSelectionChange }: Props) {
+export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, selectedIds, onSelectionChange }: Props) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(() => {
@@ -29,7 +30,7 @@ export function ProductsTable({ data, pageCount, totalCount, pagination, onPagin
     setRowSelection(sel);
   }, [selectedIds]);
 
-  const columns = productsColumns(onEdit, onDelete, onToggleActive)
+  const columns = productsColumns(onEdit, onDelete, onToggleActive, onDuplicate)
 
   const table = useReactTable({
     data, columns, pageCount, state: { sorting, pagination, columnVisibility, rowSelection },
