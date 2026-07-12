@@ -296,25 +296,15 @@ export class StockService {
     performedBy: string | undefined,
     unitCost: number | undefined,
     tx: Prisma.TransactionClient,
-    binLocationId?: string,
-    referenceType?: ReferenceEntity,
-    referenceId?: string,
+    _binLocationId?: string,
+    _referenceType?: ReferenceEntity,
+    _referenceId?: string,
   ) {
     for (const t of targets) {
-      const whereClause: any = {
-        productId: t.productId,
-        warehouseId,
-      };
-      if (binLocationId) {
-        whereClause.binLocationId = binLocationId;
-      } else {
-        whereClause.binLocationId = null;
-      }
-      const pi = await tx.physicalInventory.findFirst({
-        where: whereClause,
+      const currentQuantity = await tx.physicalInventory.findFirst({
+        where: { productId: t.productId, warehouseId, binLocationId: null },
         select: { quantity: true },
-      });
-      const currentQuantity = pi?.quantity ?? 0;
+      }).then(r => r?.quantity ?? 0);
       const stockAfter = currentQuantity;
       const stockBefore =
         direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
@@ -323,7 +313,6 @@ export class StockService {
         data: {
           productId: t.productId,
           warehouseId,
-          binLocationId: binLocationId || null,
           quantity: t.qty,
           direction,
           stockBefore,
@@ -332,8 +321,6 @@ export class StockService {
           reason: reference,
           performedBy,
           unitCost: unitCost != null ? new Prisma.Decimal(unitCost) : null,
-          referenceType: referenceType || null,
-          referenceId: referenceId || null,
         },
       });
     }
