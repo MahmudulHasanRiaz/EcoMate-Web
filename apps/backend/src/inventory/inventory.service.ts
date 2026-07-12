@@ -1084,7 +1084,6 @@ export class InventoryService {
             data: {
               productId: dto.productId,
               warehouseId: dto.sourceLocation,
-              binLocationId: pi.binLocationId,
               quantity: deductQty,
               direction: 'OUT',
               stockBefore: pi.quantity,

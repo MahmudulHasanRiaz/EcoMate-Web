@@ -1033,7 +1033,6 @@ export class StockService {
         data: {
           productId: parent.productId,
           warehouseId: parent.warehouseId,
-          binLocationId: alloc.binLocationId,
           quantity: deductQty,
           direction: 'OUT',
           stockBefore: (pi?.quantity ?? 0) + deductQty,
@@ -1041,8 +1040,6 @@ export class StockService {
           type: 'DEDUCTION',
           reason: params.reference,
           performedBy: params.performedBy,
-          referenceType: 'ORDER',
-          referenceId: params.orderId,
         },
       });
 
@@ -1058,11 +1055,11 @@ export class StockService {
   }
 
   async hasExistingPhysicalRelease(referenceId: string): Promise<boolean> {
-    const existing = await this.prisma.physicalInventoryLedger.findFirst({
+    // Check via PhysicalReservation instead of ledger (ledger fields removed)
+    const existing = await this.prisma.physicalReservation.findFirst({
       where: {
-        referenceType: 'ORDER',
-        referenceId,
-        type: { in: ['RELEASE', 'CANCEL_RELEASE'] },
+        orderId: referenceId,
+        status: { in: ['RELEASED', 'CONSUMED'] },
       },
     });
     return !!existing;
