@@ -821,8 +821,8 @@ export class PrismaService
       }
     }
 
-    // Foreign keys
-    const fkFixes: [string, string][] = [
+    // Foreign keys — inventory
+    const inventoryFkFixes: [string, string][] = [
       ['PhysicalInventory', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalInventory_binLocationId_fkey') THEN ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
       ['GoodsReceiptNote', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'GoodsReceiptNote_warehouseId_fkey') THEN ALTER TABLE "GoodsReceiptNote" ADD CONSTRAINT "GoodsReceiptNote_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE; END IF; END $$`],
       ['Product', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Product_defaultBinLocationId_fkey') THEN ALTER TABLE "Product" ADD CONSTRAINT "Product_defaultBinLocationId_fkey" FOREIGN KEY ("defaultBinLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
@@ -834,7 +834,7 @@ export class PrismaService
       ['PhysicalReservationAllocation', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalReservationAllocation_binLocationId_fkey') THEN ALTER TABLE "PhysicalReservationAllocation" ADD CONSTRAINT "PhysicalReservationAllocation_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
     ];
 
-    for (const [table, sql] of fkFixes) {
+    for (const [table, sql] of inventoryFkFixes) {
       try {
         const colExists = await verifyCol(table, 'id');
         if (!colExists) {
