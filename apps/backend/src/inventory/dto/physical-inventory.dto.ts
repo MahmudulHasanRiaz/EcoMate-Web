@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsNumber, Min, Max, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdjustPhysicalDto {
@@ -30,4 +30,42 @@ export class AdjustPhysicalDto {
   @Min(0)
   @Type(() => Number)
   unitCost?: number;
+}
+
+export class BulkAdjustPhysicalItemDto {
+  @IsString()
+  productId: string;
+
+  @IsOptional()
+  @IsString()
+  variantId?: string;
+
+  @IsString()
+  warehouseId: string;
+
+  @IsInt()
+  @Min(-999999)
+  @Max(999999)
+  @Type(() => Number)
+  quantity: number;
+
+  @IsString()
+  reason: string;
+
+  @IsOptional()
+  @IsString()
+  binLocationId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitCost?: number;
+}
+
+export class BulkAdjustPhysicalDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkAdjustPhysicalItemDto)
+  items: BulkAdjustPhysicalItemDto[];
 }

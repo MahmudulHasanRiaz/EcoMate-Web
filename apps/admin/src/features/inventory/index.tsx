@@ -62,7 +62,7 @@ export function Inventory() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
-  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>('PHYSICAL')
+  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>('MANAGED')
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
 
   const toggleRow = (id: string, e: React.MouseEvent) => {
