@@ -23,6 +23,11 @@ export class FeatureGuard implements CanActivate {
     ]);
     if (!featureMeta) return true;
 
+    const license = this.featureFlags.getLicense();
+    if (!license && this.featureFlags.getActiveFeatures().length === 0) {
+      return true; // Dev mode: no license configured, allow all
+    }
+
     if (!this.featureFlags.canUse(featureMeta.feature)) {
       throw new ForbiddenException(`Feature "${featureMeta.feature}" is not included in your plan`);
     }

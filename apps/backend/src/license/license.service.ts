@@ -218,12 +218,15 @@ export class LicenseService implements OnModuleInit {
 
   getStatus() {
     const lic = this.featureFlags.getLicense();
-    const active = lic?.valid ?? false;
-    const features = lic?.features ?? [];
+    const features = this.featureFlags.getActiveFeatures();
+    const isDevMode = !lic && features.length === 0;
+    const active = isDevMode || (lic?.valid ?? false);
+    const effectiveFeatures = isDevMode ? ['*'] : (lic?.features ?? []);
     let state = 'unknown';
-    if (!lic) state = 'uninitialized';
+    if (!lic && !isDevMode) state = 'uninitialized';
+    else if (isDevMode) state = 'active';
     else if (active) state = 'active';
-    else if (lic.code === 'unreachable' || lic.code === 'offline_cache')
+    else if (lic?.code === 'unreachable' || lic?.code === 'offline_cache')
       state = 'offline';
     else if (lic.code === 'expired') state = 'expired';
     else if (lic.code) state = lic.code;
@@ -238,7 +241,7 @@ export class LicenseService implements OnModuleInit {
     return {
       active,
       state,
-      features,
+      features: effectiveFeatures,
       dashboardUrl: dashboardUrlFinal,
       message: active
         ? `License active — ${lic?.plan?.name || 'custom'} plan`

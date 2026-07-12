@@ -65,10 +65,19 @@ function formatDate(dateStr: string): string {
 }
 
 function sanitizeHTML(html: string): string {
-  return DOMPurify.sanitize(html.replace(/\n/g, '<br>').replace(/##/g, ''), {
-    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-    ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
-  });
+  return DOMPurify.sanitize(
+    html
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\n/g, '<br>')
+      .replace(/##/g, ''),
+    {
+      ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+      ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
+    }
+  );
 }
 
 function ReviewForm({ productId, onSubmitted }: { productId: string; onSubmitted: () => void }) {

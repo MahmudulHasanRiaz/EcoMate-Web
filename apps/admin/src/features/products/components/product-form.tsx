@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' }
@@ -143,6 +143,19 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
   const [localVariants, setLocalVariants] = useState<any[]>([])
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
+  const [showReviewGuard, setShowReviewGuard] = useState(false)
+  const [reviewGuardItems, setReviewGuardItems] = useState<string[]>([])
+  const [variantImgMgr, setVariantImgMgr] = useState<{ variantId: string; images: string[] } | null>(null)
+  const [variantImgGalleryOpen, setVariantImgGalleryOpen] = useState(false)
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false)
+  const [bulkPrice, setBulkPrice] = useState('')
+  const [bulkSalePrice, setBulkSalePrice] = useState('')
+  const [bulkStandardCost, setBulkStandardCost] = useState('')
+  const [bulkStock, setBulkStock] = useState('')
+  const [bulkOverridePrice, setBulkOverridePrice] = useState(false)
+  const [bulkOverrideSalePrice, setBulkOverrideSalePrice] = useState(false)
+  const [bulkOverrideStandardCost, setBulkOverrideStandardCost] = useState(false)
+  const [bulkOverrideStock, setBulkOverrideStock] = useState(false)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -176,7 +189,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setIsFeatured(currentRow.isFeatured ?? false)
       setAvailabilityMode(currentRow.availabilityMode || (currentRow.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'))
       setStandardCost(currentRow.standardCost != null ? String(currentRow.standardCost) : '')
-      setImages(Array.isArray(currentRow.images) ? currentRow.images : [])
+      setImages(dedupUrls(Array.isArray(currentRow.images) ? currentRow.images : []))
       setTags(Array.isArray(currentRow.tags) ? currentRow.tags.join(', ') : '')
       setSizeChartId((currentRow as any).sizeChartId || '')
       setSeoTitle((currentRow.seoMeta as any)?.title || '')
@@ -256,6 +269,15 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setAdjustmentModalOpen(false)
   }
 
+  const handleBackendError = (e: any) => {
+    const msg = e.response?.data?.message || 'Error'
+    const code = e.response?.data?.code
+    if (code === 'ConflictException' || (typeof msg === 'string' && msg.toLowerCase().includes('slug'))) {
+      setTab('general')
+    }
+    toast.error(typeof msg === 'string' ? msg : 'An error occurred')
+  }
+
   const createMut = useMutation({
     mutationFn: productsApi.create,
     onSuccess: (res: any) => {
@@ -272,7 +294,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         toast.success('Product created');
       }
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
   })
 
   const updateMut = useMutation({
@@ -283,7 +305,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       onOpenChange(false)
       toast.success('Product updated')
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
   })
 
   const genVariantMut = useMutation({
@@ -435,6 +457,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           attributeIds: selectedAttrs,
           attributeValueIds: allValueIds.length > 0 ? allValueIds : undefined,
           defaultPrice: basePrice ? parseFloat(basePrice) : undefined,
+          defaultSalePrice: salePrice ? parseFloat(salePrice) : undefined,
+          defaultStandardCost: standardCost ? parseFloat(standardCost) : undefined,
           defaultManagedStockQuantity: parseInt(defaultVariantStock) || 0,
         },
       })
@@ -458,9 +482,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           _tempId: `_new_${idx}`,
           sku: fullSku,
           price: parseFloat(basePrice) || 0,
-          salePrice: null,
+          salePrice: salePrice ? parseFloat(salePrice) : null,
           managedStockQuantity: parseInt(defaultVariantStock) || 0,
-          standardCost: null,
+          standardCost: standardCost ? parseFloat(standardCost) : null,
           images: [],
           attributeValueIds: combo.map((av: any) => av.id),
           attributeValues: combo.map((av: any) => ({
@@ -473,7 +497,131 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
   }
 
+  const dedupUrls = (urls: string[]) => [...new Set(urls)]
+
   const removeImage = (url: string) => setImages(prev => prev.filter(i => i !== url))
+
+  const handleImageDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const idToUrl = (id: string) => images.find(u => `img-${u}` === id)
+    const oldUrl = idToUrl(active.id as string)
+    const newUrl = idToUrl(over.id as string)
+    if (!oldUrl || !newUrl) return
+    const oldIndex = images.indexOf(oldUrl)
+    const newIndex = images.indexOf(newUrl)
+    if (oldIndex === -1 || newIndex === -1) return
+    setImages(arrayMove(images, oldIndex, newIndex))
+  }
+
+  const setPrimaryImage = (url: string) => {
+    setImages(prev => {
+      const filtered = prev.filter(i => i !== url)
+      return [url, ...filtered]
+    })
+  }
+
+  const imageDndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const imageIds = images.map(url => `img-${url}`)
+
+  const openVariantImgMgr = (variant: any) => {
+    const vid = variant.id || variant._tempId
+    const imgs = variant.images?.length ? dedupUrls([...variant.images]) : (variant.image ? [variant.image] : [])
+    setVariantImgMgr({ variantId: vid, images: imgs })
+  }
+
+  const saveVariantImgMgr = () => {
+    if (!variantImgMgr) return
+    const { variantId, images: mgrImages } = variantImgMgr
+    if (isLocalMode) {
+      setLocalVariants(prev => prev.map(lv =>
+        (lv.id || lv._tempId) === variantId
+          ? { ...lv, images: mgrImages, image: mgrImages[0] || null }
+          : lv
+      ))
+      setVariantImgMgr(null)
+    } else {
+      updateVariantMut.mutate({
+        id: currentRow?.id || createdProductId!,
+        variantId,
+        data: { images: mgrImages },
+      }, {
+        onSuccess: () => setVariantImgMgr(null),
+      })
+    }
+  }
+
+  const reorderVariantImg = (variantId: string, oldIndex: number, newIndex: number) => {
+    if (!variantImgMgr || variantImgMgr.variantId !== variantId) return
+    const reordered = arrayMove(variantImgMgr.images, oldIndex, newIndex)
+    setVariantImgMgr({ ...variantImgMgr, images: reordered })
+  }
+
+  const setPrimaryVariantImg = (variantId: string, url: string) => {
+    if (!variantImgMgr || variantImgMgr.variantId !== variantId) return
+    const filtered = variantImgMgr.images.filter(i => i !== url)
+    setVariantImgMgr({ ...variantImgMgr, images: [url, ...filtered] })
+  }
+
+  const removeVariantImg = (variantId: string, url: string) => {
+    if (!variantImgMgr || variantImgMgr.variantId !== variantId) return
+    setVariantImgMgr({ ...variantImgMgr, images: variantImgMgr.images.filter(i => i !== url) })
+  }
+
+  const handleBulkUpdate = () => {
+    const patch: Record<string, any> = {}
+    if (bulkOverridePrice && bulkPrice) patch.price = parseFloat(bulkPrice)
+    if (bulkOverrideSalePrice) patch.salePrice = bulkSalePrice ? parseFloat(bulkSalePrice) : null
+    if (bulkOverrideStandardCost) patch.standardCost = bulkStandardCost ? parseFloat(bulkStandardCost) : null
+    if (bulkOverrideStock && bulkStock) patch.managedStockQuantity = parseInt(bulkStock) || 0
+    if (Object.keys(patch).length === 0) { toast.error('Select at least one field to update'); return }
+
+    if (isLocalMode) {
+      setLocalVariants(prev => prev.map(lv => ({ ...lv, ...patch })))
+      toast.success(`Updated ${variantList.length} variants`)
+    } else {
+      const rowId = currentRow?.id || createdProductId
+      if (!rowId) return
+      let done = 0
+      const total = variantList.length
+      for (const v of variantList) {
+        updateVariantMut.mutate(
+          { id: rowId, variantId: v.id, data: patch },
+          { onSuccess: () => { done++; if (done === total) toast.success(`Updated ${total} variants`) } },
+        )
+      }
+    }
+    setBulkUpdateOpen(false)
+    setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost(''); setBulkStock('')
+    setBulkOverridePrice(false); setBulkOverrideSalePrice(false); setBulkOverrideStandardCost(false); setBulkOverrideStock(false)
+  }
+
+  const validateForSave = (): string[] => {
+    const errors: string[] = []
+    if (!name.trim()) errors.push('Product name is required')
+    if (!basePrice || parseFloat(basePrice) <= 0) errors.push('Regular price is required')
+    return errors
+  }
+
+  const handleSaveClick = (skipReviewGuard = false) => {
+    const errors = validateForSave()
+    if (errors.length > 0) {
+      setTab('general')
+      toast.error(errors[0])
+      return
+    }
+    if (!isEdit && !skipReviewGuard) {
+      const items: string[] = []
+      if (images.length === 0) items.push('No product images configured')
+      if (type === 'variable' && variantList.length === 0) items.push('Variable product has no variants')
+      if (items.length > 0) {
+        setReviewGuardItems(items)
+        setShowReviewGuard(true)
+        return
+      }
+    }
+    handleSave()
+  }
 
   const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
   const variantList = isLocalMode ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
@@ -806,36 +954,41 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='flex items-center justify-between'>
                   <div>
                     <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider'>Product Images</h3>
-                    <p className='text-xs text-muted-foreground mt-1'>First image is used as the Featured image</p>
+                    <p className='text-xs text-muted-foreground mt-1'>Drag to reorder · first image is the Primary/thumbnail</p>
                   </div>
                   <Button variant='outline' size='sm' onClick={() => setGalleryOpen(true)}>
                     <ImageIcon className='h-4 w-4 mr-1' /> Browse Library
                   </Button>
                 </div>
-                <div className='grid grid-cols-6 gap-3'>
-                  {images.map((url, i) => (
-                    <div key={i} className='relative group border rounded-lg overflow-hidden bg-muted/30 aspect-square'>
-                      <SafeImage src={imgUrl(url)} alt='' className='w-full h-full object-cover' />
-                      <button onClick={() => removeImage(url)} className='absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity'>
-                        <X className='h-3 w-3' />
-                      </button>
-                      {i === 0 && <Badge className='absolute bottom-1 left-1 text-xs'>Featured</Badge>}
+                <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={handleImageDragEnd}>
+                  <SortableContext items={imageIds} strategy={rectSortingStrategy}>
+                    <div className='grid grid-cols-6 gap-3'>
+                      {images.map((url) => (
+                        <SortableImageCard
+                          key={`img-${url}`}
+                          url={url}
+                          isPrimary={images.indexOf(url) === 0}
+                          onSetPrimary={setPrimaryImage}
+                          onRemove={removeImage}
+                        />
+                      ))}
+                      {images.length === 0 && (
+                        <div className='col-span-6 flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-lg'>
+                          <Package className='h-10 w-10 mb-3' />
+                          <p className='text-sm'>No images selected</p>
+                          <Button variant='outline' size='sm' className='mt-3' onClick={() => setGalleryOpen(true)}>Browse Library</Button>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  {images.length === 0 && (
-                    <div className='col-span-6 flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-lg'>
-                      <Package className='h-10 w-10 mb-3' />
-                      <p className='text-sm'>No images selected</p>
-                      <Button variant='outline' size='sm' className='mt-3' onClick={() => setGalleryOpen(true)}>Browse Library</Button>
-                    </div>
-                  )}
-                </div>
+                  </SortableContext>
+                </DndContext>
               </div>
               <MediaPicker
                 open={galleryOpen}
                 onOpenChange={setGalleryOpen}
                 selected={images}
-                onSelect={(urls) => setImages(urls)}
+                multiple={true}
+                onSelect={(urls) => setImages(dedupUrls(urls))}
               />
             </TabsContent>
 
@@ -973,7 +1126,12 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     <div className='border rounded-lg overflow-hidden'>
                       <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
                         <h3 className='font-medium'>Variants ({variantList.length})</h3>
-                        <span className='text-xs text-muted-foreground'>Drag to reorder · Click values to edit inline</span>
+                        <div className='flex items-center gap-2'>
+                          <Button variant='outline' size='sm' onClick={() => setBulkUpdateOpen(true)} disabled={variantList.length === 0}>
+                            Bulk Update
+                          </Button>
+                          <span className='text-xs text-muted-foreground'>Drag to reorder · Click values to edit inline</span>
+                        </div>
                       </div>
                       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleVariantDragEnd}>
                         <SortableContext items={variantIds} strategy={verticalListSortingStrategy}>
@@ -991,10 +1149,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                                           lv._tempId === v._tempId ? { ...lv, ...data } : lv
                                         ))
                                       }}
-                                      onImagePick={() => {
-                                        setActiveVariantId(v._tempId)
-                                        setVariantPickerOpen(true)
-                                      }}
+                                      onImagePick={() => openVariantImgMgr(v)}
                                       currencySymbol='৳'
                                     />
                                   ) : (
@@ -1002,7 +1157,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                                       variant={v}
                                       productId={currentRow?.id || createdProductId!}
                                       onUpdate={(data) => updateVariantMut.mutate({ id: currentRow?.id || createdProductId!, variantId: v.id, data })}
-                                      onImagePick={() => { setActiveVariantId(v.id); setVariantPickerOpen(true) }}
+                                      onImagePick={() => openVariantImgMgr(v)}
                                       currencySymbol='৳'
                                       onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
                                     />
@@ -1135,7 +1290,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
         <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
           <Button variant='outline' onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
-          <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}>
+          <Button onClick={handleSaveClick} disabled={createMut.isPending || updateMut.isPending}>
             {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {isEdit ? 'Update Product' : 'Create Product'}
           </Button>
@@ -1147,6 +1302,103 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           onOpenChange={setAdjustmentModalOpen}
           initialProductId={currentRow.id}
           initialVariantId={activeVariantId || undefined}
+        />
+      )}
+
+      {showReviewGuard && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setShowReviewGuard(false)}>
+          <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <h3 className='font-semibold text-lg'>Review before creating</h3>
+            <p className='text-sm text-muted-foreground'>
+              The following configuration areas may need attention:
+            </p>
+            <div className='space-y-2'>
+              {reviewGuardItems.map((item, i) => (
+                <div key={i} className='flex items-center gap-2 text-sm border rounded-lg p-3'>
+                  <span className='text-amber-500 font-bold'>⚠</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+            <div className='flex justify-end gap-3 pt-2'>
+              <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
+              <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
+                {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+                Create Anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {variantImgMgr && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setVariantImgMgr(null)}>
+          <div className='bg-background rounded-lg shadow-lg max-w-lg w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <div className='flex items-center justify-between'>
+              <h3 className='font-semibold text-lg'>Variant Images</h3>
+              <Button variant='outline' size='sm' onClick={() => { setVariantImgGalleryOpen(true) }}>
+                <ImageIcon className='h-4 w-4 mr-1' /> Add Images
+              </Button>
+            </div>
+            {variantImgMgr.images.length === 0 ? (
+              <div className='flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg'>
+                <Package className='h-8 w-8 mb-2' />
+                <p className='text-sm'>No images for this variant</p>
+                <Button variant='outline' size='sm' className='mt-2' onClick={() => setVariantImgGalleryOpen(true)}>Browse Library</Button>
+              </div>
+            ) : (
+              <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
+                const { active, over } = event
+                if (!over || active.id === over.id) return
+                const imgs = variantImgMgr.images
+                const idToUrl = (id: string) => imgs.find(u => `vimg-${variantImgMgr.variantId}-${u}` === id)
+                const oldUrl = idToUrl(active.id as string)
+                const newUrl = idToUrl(over.id as string)
+                if (!oldUrl || !newUrl) return
+                const oldIdx = imgs.indexOf(oldUrl)
+                const newIdx = imgs.indexOf(newUrl)
+                if (oldIdx === -1 || newIdx === -1) return
+                reorderVariantImg(variantImgMgr.variantId, oldIdx, newIdx)
+              }}>
+                <SortableContext items={variantImgMgr.images.map(u => `vimg-${variantImgMgr.variantId}-${u}`)} strategy={rectSortingStrategy}>
+                  <div className='grid grid-cols-4 gap-3'>
+                    {variantImgMgr.images.map((url) => {
+                      const idx = variantImgMgr.images.indexOf(url)
+                      return (
+                        <SortableImageCard
+                          key={`vimg-${variantImgMgr.variantId}-${url}`}
+                          url={url}
+                          isPrimary={idx === 0}
+                          onSetPrimary={(u) => setPrimaryVariantImg(variantImgMgr.variantId, u)}
+                          onRemove={(u) => removeVariantImg(variantImgMgr.variantId, u)}
+                        />
+                      )
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+            <div className='flex justify-end gap-3 pt-2 border-t'>
+              <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
+              <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
+                {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+                Save Images
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {variantImgGalleryOpen && variantImgMgr && (
+        <MediaPicker
+          open={variantImgGalleryOpen}
+          onOpenChange={setVariantImgGalleryOpen}
+          selected={variantImgMgr.images}
+          multiple={true}
+          onSelect={(urls) => {
+            setVariantImgMgr(prev => prev ? { ...prev, images: dedupUrls(urls) } : null)
+            setVariantImgGalleryOpen(false)
+          }}
         />
       )}
 
@@ -1164,6 +1416,43 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               <Button variant='destructive' onClick={handleGenerateVariants}>
                 Delete & Regenerate
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkUpdateOpen && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
+          <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <h3 className='font-semibold text-lg'>Bulk Update All Variants</h3>
+            <p className='text-sm text-muted-foreground'>
+              Check the fields you want to update. Only checked fields will be applied to all {variantList.length} variant(s).
+            </p>
+            <div className='space-y-3'>
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input type='checkbox' checked={bulkOverridePrice} onChange={e => setBulkOverridePrice(e.target.checked)} className='rounded' />
+                <span className='text-sm w-24'>Price</span>
+                <Input type='number' step='0.01' value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder='0.00' disabled={!bulkOverridePrice} className='flex-1' />
+              </label>
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input type='checkbox' checked={bulkOverrideSalePrice} onChange={e => setBulkOverrideSalePrice(e.target.checked)} className='rounded' />
+                <span className='text-sm w-24'>Sale Price</span>
+                <Input type='number' step='0.01' value={bulkSalePrice} onChange={e => setBulkSalePrice(e.target.value)} placeholder='0.00' disabled={!bulkOverrideSalePrice} className='flex-1' />
+              </label>
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input type='checkbox' checked={bulkOverrideStandardCost} onChange={e => setBulkOverrideStandardCost(e.target.checked)} className='rounded' />
+                <span className='text-sm w-24'>Std Cost</span>
+                <Input type='number' step='0.01' value={bulkStandardCost} onChange={e => setBulkStandardCost(e.target.value)} placeholder='0.00' disabled={!bulkOverrideStandardCost} className='flex-1' />
+              </label>
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input type='checkbox' checked={bulkOverrideStock} onChange={e => setBulkOverrideStock(e.target.checked)} className='rounded' />
+                <span className='text-sm w-24'>Stock Qty</span>
+                <Input type='number' value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder='0' disabled={!bulkOverrideStock} className='flex-1' />
+              </label>
+            </div>
+            <div className='flex justify-end gap-3 pt-2'>
+              <Button variant='outline' onClick={() => setBulkUpdateOpen(false)}>Cancel</Button>
+              <Button onClick={handleBulkUpdate}>Apply to All</Button>
             </div>
           </div>
         </div>
@@ -1194,6 +1483,48 @@ function SortableVariantRow(props: { id: string; children: React.ReactNode }) {
       <div className='flex-1 min-w-0'>
         {props.children}
       </div>
+    </div>
+  )
+}
+
+function SortableImageCard({ url, isPrimary, onSetPrimary, onRemove }: { url: string; isPrimary: boolean; onSetPrimary: (url: string) => void; onRemove: (url: string) => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `img-${url}` })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className='relative group border rounded-lg overflow-hidden bg-muted/30 aspect-square'>
+      <SafeImage src={imgUrl(url)} alt='' className='w-full h-full object-cover' />
+      <button
+        type='button'
+        className='absolute top-1 left-1 cursor-grab active:cursor-grabbing p-1 bg-black/40 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity touch-none'
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className='h-3.5 w-3.5' />
+      </button>
+      <button
+        type='button'
+        onClick={() => onRemove(url)}
+        className='absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity'
+      >
+        <X className='h-3 w-3' />
+      </button>
+      {isPrimary ? (
+        <Badge className='absolute bottom-1 left-1 text-xs gap-1'>
+          <Star className='h-3 w-3 fill-current' /> Primary
+        </Badge>
+      ) : (
+        <button
+          type='button'
+          onClick={() => onSetPrimary(url)}
+          className='absolute bottom-1 left-1 bg-foreground/70 text-background text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1'
+        >
+          <Star className='h-2.5 w-2.5' /> Primary
+        </button>
+      )}
     </div>
   )
 }
@@ -1264,21 +1595,33 @@ function VariantRow({
 
   return (
     <div className='p-3 flex items-center gap-3 text-sm hover:bg-muted/10 transition-colors'>
-      <div className='flex -space-x-2 hover:space-x-0.5 transition-all cursor-pointer shrink-0' onClick={onImagePick}>
+      <div className='shrink-0 cursor-pointer' onClick={() => {
+        const e = new CustomEvent('openVariantImgMgr', { detail: variant })
+        window.dispatchEvent(e)
+      }}>
         {variantImages.length === 0 ? (
           <div className='h-12 w-12 rounded border bg-muted overflow-hidden flex items-center justify-center'>
             <ImageIcon className='h-4 w-4 text-muted-foreground' />
           </div>
         ) : (
-          variantImages.slice(0, 3).map((img: string, i: number) => (
-            <div key={i} className='h-12 w-12 rounded border bg-muted overflow-hidden shadow-sm' style={{ zIndex: 3 - i }}>
-              <SafeImage src={imgUrl(img)} alt='' className='h-full w-full object-cover' />
+          <div className='relative'>
+            <div className='flex -space-x-2 hover:space-x-0.5 transition-all'>
+              {variantImages.slice(0, 3).map((img: string, i: number) => (
+                <div key={i} className='h-12 w-12 rounded border bg-muted overflow-hidden shadow-sm' style={{ zIndex: 3 - i }}>
+                  <SafeImage src={imgUrl(img)} alt='' className='h-full w-full object-cover' />
+                </div>
+              ))}
+              {variantImages.length > 3 && (
+                <div className='h-12 w-12 rounded border bg-muted/50 overflow-hidden flex items-center justify-center text-xs text-muted-foreground shadow-sm' style={{ zIndex: 0 }}>
+                  +{variantImages.length - 3}
+                </div>
+              )}
             </div>
-          ))
-        )}
-        {variantImages.length > 3 && (
-          <div className='h-12 w-12 rounded border bg-muted/50 overflow-hidden flex items-center justify-center text-xs text-muted-foreground shadow-sm' style={{ zIndex: 0 }}>
-            +{variantImages.length - 3}
+            {variantImages.length > 0 && (
+              <span className='absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[9px] px-1 py-0.5 rounded-full leading-none border border-background'>
+                {variantImages.length}
+              </span>
+            )}
           </div>
         )}
       </div>
