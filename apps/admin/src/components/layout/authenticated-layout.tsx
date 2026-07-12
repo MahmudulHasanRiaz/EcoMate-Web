@@ -44,8 +44,13 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         }
       }
     }).catch(() => {
-      reset()
-      navigate({ to: '/sign-in', replace: true })
+      // Check if access token still exists — if yes, the interceptor is likely
+      // retrying refresh. Don't reset immediately; let the interceptor handle it.
+      const stillHasToken = !!(useAuthStore.getState().auth.accessToken)
+      if (!stillHasToken) {
+        reset()
+        navigate({ to: '/sign-in', replace: true })
+      }
     })
   }, [accessToken, navigate])
 
