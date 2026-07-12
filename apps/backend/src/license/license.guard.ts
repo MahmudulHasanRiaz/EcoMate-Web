@@ -54,6 +54,10 @@ export class LicenseGuard implements CanActivate {
     try {
       const activation = await this.licenseActivation.find();
       if (!activation) {
+        const lic = this.featureFlags.getLicense();
+        if (!lic && this.featureFlags.getActiveFeatures().length === 0) {
+          return true; // Dev mode: no license configured, allow all
+        }
         throw new ForbiddenException(
           process.env.NODE_ENV === 'production'
             ? 'This EcoMate installation requires a valid license. Please contact your service provider.'
