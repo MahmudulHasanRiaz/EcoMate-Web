@@ -38,6 +38,19 @@ export class StockService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private async readPhysicalQuantity(
+    productId: string,
+    warehouseId: string,
+    binLocationId: string | undefined,
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    const row = await tx.physicalInventory.findFirst({
+      where: { productId, warehouseId, binLocationId: binLocationId ?? null },
+      select: { quantity: true },
+    });
+    return row?.quantity ?? 0;
+  }
+
   async isInventoryManagementEnabled(): Promise<boolean> {
     const setting = await this.prisma.systemSetting.findUnique({
       where: { key: 'inventory_enabled' },
@@ -299,15 +312,12 @@ export class StockService {
     binLocationId?: string,
     _referenceType?: ReferenceEntity,
     _referenceId?: string,
+    explicitBefore?: number,
+    explicitAfter?: number,
   ) {
     for (const t of targets) {
-      const currentQuantity = await tx.physicalInventory.findFirst({
-        where: { productId: t.productId, warehouseId, binLocationId: binLocationId ?? null },
-        select: { quantity: true },
-      }).then(r => r?.quantity ?? 0);
-      const stockAfter = currentQuantity;
-      const stockBefore =
-        direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
+      const stockBefore = explicitBefore ?? 0;
+      const stockAfter = explicitAfter ?? (direction === 'IN' ? stockBefore + t.qty : stockBefore - t.qty);
 
       await tx.physicalInventoryLedger.create({
         data: {
@@ -482,6 +492,10 @@ export class StockService {
           tx,
         );
       } else if (effectiveOperation === 'deduct') {
+        // Read physical quantity BEFORE mutation for accurate ledger before/after
+        const deductBefores = await Promise.all(
+          targets.map((t) => this.readPhysicalQuantity(t.productId, params.warehouseId!, params.binLocationId, tx))
+        );
         await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
@@ -494,39 +508,55 @@ export class StockService {
           'reservedQuantity',
           tx,
         );
-        await this.logPhysicalInventoryLedger(
-          targets,
-          params.warehouseId!,
-          'OUT',
-          params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
-          params.reference,
-          params.performedBy,
-          params.unitCost,
-          tx,
-          params.binLocationId,
-          params.referenceType,
-          params.referenceId,
-        );
+        for (let i = 0; i < targets.length; i++) {
+          const before = deductBefores[i];
+          const after = Math.max(0, before - targets[i].qty);
+          await this.logPhysicalInventoryLedger(
+            [targets[i]],
+            params.warehouseId!,
+            'OUT',
+            params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
+            params.reference,
+            params.performedBy,
+            params.unitCost,
+            tx,
+            params.binLocationId,
+            params.referenceType,
+            params.referenceId,
+            before,
+            after,
+          );
+        }
       } else if (effectiveOperation === 'add') {
+        // Read physical quantity BEFORE mutation for accurate ledger before/after
+        const addBefores = await Promise.all(
+          targets.map((t) => this.readPhysicalQuantity(t.productId, params.warehouseId!, params.binLocationId, tx))
+        );
         await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'quantity',
           tx,
         );
-        await this.logPhysicalInventoryLedger(
-          targets,
-          params.warehouseId!,
-          'IN',
-          params.ledgerType || 'ADD',
-          params.reference,
-          params.performedBy,
-          params.unitCost,
-          tx,
-          params.binLocationId,
-          params.referenceType,
-          params.referenceId,
-        );
+        for (let i = 0; i < targets.length; i++) {
+          const before = addBefores[i];
+          const after = before + targets[i].qty;
+          await this.logPhysicalInventoryLedger(
+            [targets[i]],
+            params.warehouseId!,
+            'IN',
+            params.ledgerType || 'ADD',
+            params.reference,
+            params.performedBy,
+            params.unitCost,
+            tx,
+            params.binLocationId,
+            params.referenceType,
+            params.referenceId,
+            before,
+            after,
+          );
+        }
         // Update bin location on variant if provided
         if (params.binLocationId) {
           for (const t of targets) {
