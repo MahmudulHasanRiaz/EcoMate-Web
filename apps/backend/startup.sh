@@ -5,9 +5,6 @@ echo "[Startup] Running pre-migration schema fix..."
 # Use prisma db execute for DDL — works in Alpine without psql
 # Each statement in its own file for atomic execution
 cat > /tmp/schema_fix.sql << 'SQLEOF'
-ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN IF NOT EXISTS "binLocationId" TEXT;
-ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN IF NOT EXISTS "referenceType" "ReferenceEntity";
-ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN IF NOT EXISTS "referenceId" TEXT;
 ALTER TABLE "PhysicalInventory" ADD COLUMN IF NOT EXISTS "binLocationId" TEXT;
 ALTER TABLE "GoodsReceiptNote" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT DEFAULT '';
 SQLEOF

@@ -744,9 +744,6 @@ export class PrismaService
     const inventoryFixes: string[] = [
       // PhysicalInventory: add binLocationId column
       `ALTER TABLE "PhysicalInventory" ADD COLUMN IF NOT EXISTS "binLocationId" TEXT`,
-      // PhysicalInventoryLedger: add referenceType, referenceId
-      `ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN IF NOT EXISTS "referenceType" "ReferenceEntity"`,
-      `ALTER TABLE "PhysicalInventoryLedger" ADD COLUMN IF NOT EXISTS "referenceId" TEXT`,
       // GoodsReceiptNote: add warehouseId
       `ALTER TABLE "GoodsReceiptNote" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT DEFAULT ''`,
     ];
@@ -807,7 +804,6 @@ export class PrismaService
       ['PhysicalReservationAllocation', 'physicalInventoryId', `CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId")`],
       ['PhysicalInventory', 'binLocationId', `CREATE INDEX IF NOT EXISTS "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId")`],
       ['PhysicalInventoryLedger', 'binLocationId', `CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId")`],
-      ['PhysicalInventoryLedger', 'referenceType', `CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId")`],
     ];
 
     for (const [table, col, idxSql] of indexFixes) {
@@ -828,7 +824,6 @@ export class PrismaService
     // Foreign keys
     const fkFixes: [string, string][] = [
       ['PhysicalInventory', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalInventory_binLocationId_fkey') THEN ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
-      ['PhysicalInventoryLedger', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalInventoryLedger_binLocationId_fkey') THEN ALTER TABLE "PhysicalInventoryLedger" ADD CONSTRAINT "PhysicalInventoryLedger_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
       ['GoodsReceiptNote', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'GoodsReceiptNote_warehouseId_fkey') THEN ALTER TABLE "GoodsReceiptNote" ADD CONSTRAINT "GoodsReceiptNote_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE; END IF; END $$`],
       ['Product', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Product_defaultBinLocationId_fkey') THEN ALTER TABLE "Product" ADD CONSTRAINT "Product_defaultBinLocationId_fkey" FOREIGN KEY ("defaultBinLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
       ['ProductVariant', `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProductVariant_binLocationId_fkey') THEN ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$`],
