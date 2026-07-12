@@ -56,7 +56,7 @@ interface ApiResponse {
 export function MovementHistory() {
   const [ledgerMode, setLedgerMode] = useState<'PHYSICAL' | 'MANAGED'>('PHYSICAL')
   const [page, setPage] = useState(1)
-  const [typeFilter, setTypeFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('adjustment')
   const [warehouseFilter, setWarehouseFilter] = useState('all')
 
   // Product Search State
@@ -81,7 +81,7 @@ export function MovementHistory() {
   })
 
   // Fetch logs based on mode
-  const { data: logsRes, isLoading, isError, refetch } = useQuery<ApiResponse>({
+  const { data: logsRes, isLoading, isError, error, refetch } = useQuery<ApiResponse>({
     queryKey: ['inventory-history-logs', ledgerMode, page, typeFilter, warehouseFilter, selectedProduct?.id],
     queryFn: () => {
       const endpoint = ledgerMode === 'PHYSICAL' ? '/inventory/logs' : '/inventory/ledger'
@@ -145,7 +145,7 @@ export function MovementHistory() {
               className="h-7 text-xs px-3 rounded-md font-medium"
               onClick={() => {
                 setLedgerMode('PHYSICAL')
-                setTypeFilter('all')
+                setTypeFilter('adjustment')
               }}
             >
               Physical Stock Ledger

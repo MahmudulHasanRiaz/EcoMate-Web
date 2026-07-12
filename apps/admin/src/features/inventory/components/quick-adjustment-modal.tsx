@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -21,8 +21,13 @@ interface QuickAdjustmentModalProps {
 export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, availabilityMode, onSuccess }: QuickAdjustmentModalProps) {
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
-  const [warehouseId, setWarehouseId] = useState('main')
+  const [warehouseId, setWarehouseId] = useState('')
   const [unitCost, setUnitCost] = useState('')
+
+  const { data: warehouses } = useQuery<any[]>({
+    queryKey: ['warehouses'],
+    queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
+  })
 
   const adjustMut = useMutation({
     mutationFn: (data: { productId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
@@ -58,7 +63,7 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { setQuantity(''); setReason(''); setUnitCost(''); } onOpenChange(v) }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setQuantity(''); setReason(''); setUnitCost(''); setWarehouseId(''); } onOpenChange(v) }}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Quick Adjust: {productName || 'Stock'}</DialogTitle>
@@ -78,8 +83,9 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
                 <SelectValue placeholder="Select warehouse" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="main">Main Warehouse</SelectItem>
-                <SelectItem value="retail">Retail Store</SelectItem>
+                {(warehouses || []).map((w: any) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

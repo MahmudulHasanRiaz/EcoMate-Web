@@ -2,7 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException } 
 import { StockService } from '../stock/stock.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { AdjustPhysicalDto } from './dto/physical-inventory.dto';
+import { AdjustPhysicalDto, BulkAdjustPhysicalDto, BulkAdjustPhysicalItemDto } from './dto/physical-inventory.dto';
 
 @Controller('inventory/physical')
 @RequiresFeature('admin_inventory')
@@ -58,6 +58,59 @@ export class PhysicalInventoryController {
     }
 
     return { ok: true };
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post('bulk-adjust')
+  async bulkAdjust(@Body() dto: BulkAdjustPhysicalDto) {
+    const results: { item: BulkAdjustPhysicalItemDto; success: boolean; error?: string }[] = [];
+
+    for (const item of dto.items) {
+      try {
+        if (item.quantity > 0 && (!item.unitCost || item.unitCost <= 0)) {
+          results.push({ item, success: false, error: 'Unit cost is required when adding stock' });
+          continue;
+        }
+
+        await this.stockService.addPhysical({
+          productId: item.productId,
+          variantId: item.variantId,
+          warehouseId: item.warehouseId,
+          quantity: item.quantity,
+          reference: item.reason,
+          ledgerType: 'PHYSICAL_ADJUSTMENT',
+          binLocationId: item.binLocationId,
+          unitCost: item.unitCost,
+        });
+
+        if (item.quantity > 0 && item.unitCost) {
+          await this.stockService.createCostingLotForAdjustment({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            unitCost: item.unitCost,
+            reference: item.reason,
+          });
+        }
+
+        if (item.quantity < 0) {
+          await this.stockService.deductCostingLotsForAdjustment({
+            productId: item.productId,
+            quantity: Math.abs(item.quantity),
+          });
+        }
+
+        results.push({ item, success: true });
+      } catch (err: any) {
+        results.push({ item, success: false, error: err.message });
+      }
+    }
+
+    return {
+      results,
+      totalAdjusted: results.filter((r) => r.success).length,
+      totalFailed: results.filter((r) => !r.success).length,
+    };
   }
 
   @Roles('superadmin', 'admin', 'manager')

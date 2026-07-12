@@ -296,13 +296,13 @@ export class StockService {
     performedBy: string | undefined,
     unitCost: number | undefined,
     tx: Prisma.TransactionClient,
-    _binLocationId?: string,
+    binLocationId?: string,
     _referenceType?: ReferenceEntity,
     _referenceId?: string,
   ) {
     for (const t of targets) {
       const currentQuantity = await tx.physicalInventory.findFirst({
-        where: { productId: t.productId, warehouseId, binLocationId: null },
+        where: { productId: t.productId, warehouseId, binLocationId: binLocationId ?? null },
         select: { quantity: true },
       }).then(r => r?.quantity ?? 0);
       const stockAfter = currentQuantity;
