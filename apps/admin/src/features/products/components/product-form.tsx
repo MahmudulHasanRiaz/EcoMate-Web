@@ -1422,7 +1422,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       )}
 
       {bulkUpdateOpen && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
+        <div className='fixed inset-0 z-[60] flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
           <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
             <h3 className='font-semibold text-lg'>Bulk Update All Variants</h3>
             <p className='text-sm text-muted-foreground'>
