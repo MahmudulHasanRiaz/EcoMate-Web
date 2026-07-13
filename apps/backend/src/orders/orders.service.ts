@@ -149,6 +149,8 @@ export class OrdersService {
           await this.stockService.addPhysical({
             productId,
             variantId: variantId || undefined,
+            comboId: options?.comboId,
+            comboSelection: options?.comboSelection,
             quantity,
             reference,
             warehouseId: wh,
@@ -1939,6 +1941,59 @@ export class OrdersService {
 
     for (const item of order.items) {
       const product = item.product;
+      const wh = product?.warehouseId || undefined;
+
+      if (item.comboId) {
+        const combo = await tx.combo.findUnique({
+          where: { id: item.comboId },
+          include: { items: true },
+        });
+        if (!combo) continue;
+
+        for (const ci of combo.items) {
+          const ciProduct = await tx.product.findUnique({
+            where: { id: ci.productId },
+            select: {
+              id: true,
+              availabilityMode: true,
+              manageStock: true,
+              type: true,
+              warehouseId: true,
+            },
+          });
+          if (!ciProduct) continue;
+
+          const effectiveVariantId =
+            ci.variantId ||
+            (item.comboSelection as Record<string, string> | null)?.[ci.productId] ||
+            null;
+          const compQty = ci.quantity * item.quantity;
+          const ciWh = wh || ciProduct.warehouseId || undefined;
+
+          await this.resolveAndApplyStock(
+            'add',
+            ci.productId,
+            effectiveVariantId ?? undefined,
+            compQty,
+            `return-${orderId}`,
+            tx,
+            { warehouseId: ciWh, performedBy, ledgerType: 'RETURN' },
+          );
+
+          if (ciProduct.availabilityMode === 'INVENTORY_CONTROLLED' && ciWh) {
+            await this.costingLotService.restoreForReturn({
+              returnReferenceId: orderId,
+              productId: ci.productId,
+              variantId: effectiveVariantId,
+              warehouseId: ciWh,
+              returnQty: compQty,
+              tx,
+            });
+          }
+        }
+        continue;
+      }
+
       if (!product) continue;
 
       await this.resolveAndApplyStock(
@@ -1948,19 +2003,15 @@ export class OrdersService {
         item.quantity,
         `return-${orderId}`,
         tx,
-        {
-          warehouseId: product.warehouseId || undefined,
-          performedBy,
-          ledgerType: 'RETURN',
-        },
+        { warehouseId: wh, performedBy, ledgerType: 'RETURN' },
       );
 
-      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && wh) {
         await this.costingLotService.restoreForReturn({
           returnReferenceId: orderId,
           productId: product.id,
           variantId: item.variantId ?? null,
-          warehouseId: product.warehouseId,
+          warehouseId: wh,
           returnQty: item.quantity,
           tx,
         });

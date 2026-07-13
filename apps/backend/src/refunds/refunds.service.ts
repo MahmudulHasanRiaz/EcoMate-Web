@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { InventoryService } from '../inventory/inventory.service';
+
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 
@@ -19,7 +19,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export class RefundsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly inventoryService: InventoryService,
   ) {}
 
   async findAll(query: {
@@ -201,14 +200,6 @@ export class RefundsService {
               totalRefunded >= orderTotal ? 'REFUNDED' : 'PARTIAL_REFUNDED',
           },
         });
-
-        await this.inventoryService.restockOrderItems(
-          updated.order.id,
-          performedBy || processedBy,
-          'refund_restock',
-          false,
-          tx,
-        );
       }
 
       return updated;
