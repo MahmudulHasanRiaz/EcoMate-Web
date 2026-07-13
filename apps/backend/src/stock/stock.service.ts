@@ -398,18 +398,39 @@ export class StockService {
     tx: Prisma.TransactionClient,
   ) {
     for (const t of targets) {
-      const whereClause: any = {
-        productId: t.productId,
-        variantId: t.variantId || null,
-        warehouseId: t.warehouseId,
-      };
-      if (t.binLocationId) {
-        whereClause.binLocationId = t.binLocationId;
+      let existing: any = null;
+      if (op === 'decrement' && !t.binLocationId) {
+        existing = await tx.physicalInventory.findFirst({
+          where: {
+            productId: t.productId,
+            variantId: t.variantId || null,
+            warehouseId: t.warehouseId,
+            quantity: { gt: 0 },
+          },
+        });
+        if (!existing) {
+          existing = await tx.physicalInventory.findFirst({
+            where: {
+              productId: t.productId,
+              variantId: t.variantId || null,
+              warehouseId: t.warehouseId,
+              binLocationId: null,
+            },
+          });
+        }
       } else {
-        whereClause.binLocationId = null;
+        const whereClause: any = {
+          productId: t.productId,
+          variantId: t.variantId || null,
+          warehouseId: t.warehouseId,
+        };
+        if (t.binLocationId) {
+          whereClause.binLocationId = t.binLocationId;
+        } else {
+          whereClause.binLocationId = null;
+        }
+        existing = await tx.physicalInventory.findFirst({ where: whereClause });
       }
-
-      const existing = await tx.physicalInventory.findFirst({ where: whereClause });
       if (!existing && op === 'decrement') {
         throw new BadRequestException(
           `No physical inventory record for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}`,
@@ -507,12 +528,14 @@ export class StockService {
           'quantity',
           tx,
         );
-        await this.applyPhysicalChange(
-          physicalTargets,
-          'decrement',
-          'reservedQuantity',
-          tx,
-        );
+        if (!isNegative) {
+          await this.applyPhysicalChange(
+            physicalTargets,
+            'decrement',
+            'reservedQuantity',
+            tx,
+          );
+        }
         await this.logPhysicalInventoryLedger(
           targets,
           params.warehouseId!,

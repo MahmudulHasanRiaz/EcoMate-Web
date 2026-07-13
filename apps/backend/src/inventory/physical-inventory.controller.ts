@@ -80,49 +80,37 @@ export class PhysicalInventoryController {
       }
     }
 
-    const results: { item: BulkAdjustPhysicalItemDto; success: boolean; error?: string }[] = [];
-
     for (const item of dto.items) {
-      try {
-        await this.stockService.addPhysical({
+      await this.stockService.addPhysical({
+        productId: item.productId,
+        variantId: item.variantId,
+        warehouseId: dto.warehouseId,
+        quantity: item.quantity,
+        reference: dto.reason,
+        ledgerType: 'PHYSICAL_ADJUSTMENT',
+        binLocationId: item.binLocationId,
+        unitCost: item.unitCost,
+      });
+
+      if (item.quantity > 0 && item.unitCost) {
+        await this.stockService.createCostingLotForAdjustment({
           productId: item.productId,
           variantId: item.variantId,
-          warehouseId: dto.warehouseId,
           quantity: item.quantity,
-          reference: dto.reason,
-          ledgerType: 'PHYSICAL_ADJUSTMENT',
-          binLocationId: item.binLocationId,
           unitCost: item.unitCost,
+          reference: dto.reason,
         });
+      }
 
-        if (item.quantity > 0 && item.unitCost) {
-          await this.stockService.createCostingLotForAdjustment({
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            unitCost: item.unitCost,
-            reference: dto.reason,
-          });
-        }
-
-        if (item.quantity < 0) {
-          await this.stockService.deductCostingLotsForAdjustment({
-            productId: item.productId,
-            quantity: Math.abs(item.quantity),
-          });
-        }
-
-        results.push({ item, success: true });
-      } catch (err: any) {
-        results.push({ item, success: false, error: err.message });
+      if (item.quantity < 0) {
+        await this.stockService.deductCostingLotsForAdjustment({
+          productId: item.productId,
+          quantity: Math.abs(item.quantity),
+        });
       }
     }
 
-    return {
-      results,
-      totalAdjusted: results.filter((r) => r.success).length,
-      totalFailed: results.filter((r) => !r.success).length,
-    };
+    return { ok: true };
   }
 
   @Roles('superadmin', 'admin', 'manager')
