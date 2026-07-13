@@ -13,6 +13,7 @@ import {
 } from './dto/product.dto';
 import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
+import { StockRouterService } from '../stock/stock-router.service';
 
 function slugify(text: string): string {
   return text
@@ -27,6 +28,7 @@ export class ProductsService {
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
     private readonly cache: CacheService,
+    private readonly stockRouter: StockRouterService,
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
@@ -543,7 +545,7 @@ export class ProductsService {
       dto.type === 'variable'
         ? 'MANAGED_STOCK'
         : dto.availabilityMode ||
-          (dto.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED');
+          (dto.manageStock ? 'MANAGED_STOCK' : await this.stockRouter.isInventoryManagementEnabled() ? 'INVENTORY_CONTROLLED' : 'MANAGED_STOCK');
 
     const product = await this.prisma.product.create({
       data: {
@@ -750,7 +752,9 @@ export class ProductsService {
       (dto.manageStock !== undefined
         ? dto.manageStock
           ? 'MANAGED_STOCK'
-          : 'INVENTORY_CONTROLLED'
+          : await this.stockRouter.isInventoryManagementEnabled()
+            ? 'INVENTORY_CONTROLLED'
+            : 'MANAGED_STOCK'
         : undefined);
 
     if (newMode && newMode !== p.availabilityMode) {

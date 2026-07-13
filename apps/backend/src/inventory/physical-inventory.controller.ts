@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
 import { Roles } from '../common/decorators/roles.decorator';
+import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { AdjustPhysicalDto, BulkAdjustPhysicalDto, BulkAdjustPhysicalItemDto } from './dto/physical-inventory.dto';
 
@@ -10,6 +11,7 @@ export class PhysicalInventoryController {
   constructor(private readonly stockService: StockService) {}
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Get()
   async list(
     @Query('productId') productId?: string,
@@ -20,6 +22,7 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Post('adjust')
   async adjust(@Body() dto: AdjustPhysicalDto) {
     // Validate: positive adjustment requires unitCost
@@ -61,6 +64,7 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Post('bulk-adjust')
   async bulkAdjust(@Body() dto: BulkAdjustPhysicalDto) {
     const hasPositive = dto.items.some(i => i.quantity > 0);
@@ -114,6 +118,7 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Get('reservations')
   async reservations(
     @Query('warehouseId') warehouseId?: string,
@@ -123,6 +128,7 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Delete('reservations/:id')
   async releaseReservation(@Param('id') id: string) {
     const record = await this.stockService.getPhysicalRecord(id);

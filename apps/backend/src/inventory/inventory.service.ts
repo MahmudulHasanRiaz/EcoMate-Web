@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
 import {
   Prisma,
@@ -20,6 +21,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stockService: StockService,
+    private readonly stockRouter: StockRouterService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
   ) {}
 
@@ -773,7 +775,8 @@ export class InventoryService {
     ]);
 
     const productIds = data.map((p) => p.id);
-    const physicalSums = await this.prisma.physicalInventory.groupBy({
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    const physicalSums = imEnabled ? await this.prisma.physicalInventory.groupBy({
       by: ['productId'],
       _sum: {
         quantity: true,
@@ -782,7 +785,7 @@ export class InventoryService {
       where: {
         productId: { in: productIds },
       },
-    });
+    }) : [];
 
     const sumMap = new Map(
       physicalSums.map((s) => [s.productId, s._sum.quantity ?? 0]),

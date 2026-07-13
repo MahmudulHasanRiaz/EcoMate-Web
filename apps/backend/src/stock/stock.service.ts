@@ -42,13 +42,6 @@ export class StockService {
     private readonly cache: CacheService,
   ) {}
 
-  async isInventoryManagementEnabled(): Promise<boolean> {
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'inventory_enabled' },
-    });
-    return setting?.value === 'true';
-  }
-
   private client(tx?: Prisma.TransactionClient) {
     if (tx) return tx;
     return this.prisma;

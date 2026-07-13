@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import {
   AdjustInventoryDto,
   BulkAdjustInventoryDto,
@@ -22,6 +23,7 @@ export class InventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Get('replenishment')
   async physicalReplenishment() {
     return this.inventoryService.physicalReplenishment();
@@ -111,6 +113,7 @@ export class InventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
   @Post('transfer')
   async transfer(
     @Body() body: StockTransferDto,
