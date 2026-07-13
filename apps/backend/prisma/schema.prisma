@@ -469,6 +469,8 @@ model ProductVariant {
   binLocationId   String?
   warehouse       Warehouse?                     @relation(fields: [warehouseId], references: [id])
   binLocation     BinLocation?                   @relation("VariantBin", fields: [binLocationId], references: [id])
+  physicalInventories   PhysicalInventory[]
+  physicalLedgers       PhysicalInventoryLedger[]
 
   @@index([productId])
 }
@@ -1055,6 +1057,7 @@ model InventoryLog {
 model PhysicalInventory {
   id              String    @id @default(uuid())
   productId       String
+  variantId       String?
   warehouseId     String
   binLocationId   String?
   quantity        Int       @default(0)
@@ -1063,12 +1066,14 @@ model PhysicalInventory {
   updatedAt       DateTime  @updatedAt
 
   product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse  Warehouse   @relation(fields: [warehouseId], references: [id])
   binLocation BinLocation? @relation(fields: [binLocationId], references: [id])
   reservationAllocations PhysicalReservationAllocation[]
 
-  @@unique([productId, warehouseId, binLocationId])
+  @@unique([productId, variantId, warehouseId, binLocationId])
   @@index([productId])
+  @@index([variantId])
   @@index([warehouseId])
   @@index([binLocationId])
 }
@@ -1076,6 +1081,7 @@ model PhysicalInventory {
 model PhysicalInventoryLedger {
   id              String             @id @default(uuid())
   productId       String
+  variantId       String?
   warehouseId     String
   quantity        Int
   direction       MovementDirection
@@ -1088,9 +1094,11 @@ model PhysicalInventoryLedger {
   createdAt       DateTime           @default(now())
 
   product         Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant         ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse       Warehouse          @relation(fields: [warehouseId], references: [id])
 
   @@index([productId, warehouseId, createdAt])
+  @@index([variantId])
 }
 
 model PhysicalReservation {

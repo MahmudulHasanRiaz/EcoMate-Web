@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ReferenceEntity } from '@prisma/client';
+import { CacheService } from '../cache/cache.service';
 
 export interface StockOperationParams {
   productId?: string;
@@ -36,20 +37,10 @@ type StockOp = 'increment' | 'decrement';
 export class StockService {
   private readonly logger = new Logger(StockService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
-
-  private async readPhysicalQuantity(
-    productId: string,
-    warehouseId: string,
-    binLocationId: string | undefined,
-    tx: Prisma.TransactionClient,
-  ): Promise<number> {
-    const row = await tx.physicalInventory.findFirst({
-      where: { productId, warehouseId, binLocationId: binLocationId ?? null },
-      select: { quantity: true },
-    });
-    return row?.quantity ?? 0;
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async isInventoryManagementEnabled(): Promise<boolean> {
     const setting = await this.prisma.systemSetting.findUnique({
@@ -312,16 +303,31 @@ export class StockService {
     binLocationId?: string,
     _referenceType?: ReferenceEntity,
     _referenceId?: string,
-    explicitBefore?: number,
-    explicitAfter?: number,
   ) {
     for (const t of targets) {
-      const stockBefore = explicitBefore ?? 0;
-      const stockAfter = explicitAfter ?? (direction === 'IN' ? stockBefore + t.qty : stockBefore - t.qty);
+      const whereClause: any = {
+        productId: t.productId,
+        variantId: t.variantId || null,
+        warehouseId,
+      };
+      if (binLocationId) {
+        whereClause.binLocationId = binLocationId;
+      } else {
+        whereClause.binLocationId = null;
+      }
+
+      const currentQuantity = await tx.physicalInventory.findFirst({
+        where: whereClause,
+        select: { quantity: true },
+      }).then(r => r?.quantity ?? 0);
+      const stockAfter = currentQuantity;
+      const stockBefore =
+        direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
 
       await tx.physicalInventoryLedger.create({
         data: {
           productId: t.productId,
+          variantId: t.variantId || null,
           warehouseId,
           quantity: t.qty,
           direction,
@@ -386,7 +392,7 @@ export class StockService {
   }
 
   private async applyPhysicalChange(
-    targets: { productId: string; warehouseId: string; qty: number; binLocationId?: string }[],
+    targets: { productId: string; variantId?: string | null; warehouseId: string; qty: number; binLocationId?: string }[],
     op: 'increment' | 'decrement',
     field: 'quantity' | 'reservedQuantity',
     tx: Prisma.TransactionClient,
@@ -394,6 +400,7 @@ export class StockService {
     for (const t of targets) {
       const whereClause: any = {
         productId: t.productId,
+        variantId: t.variantId || null,
         warehouseId: t.warehouseId,
       };
       if (t.binLocationId) {
@@ -405,7 +412,7 @@ export class StockService {
       const existing = await tx.physicalInventory.findFirst({ where: whereClause });
       if (!existing && op === 'decrement') {
         throw new BadRequestException(
-          `No physical inventory record for product ${t.productId} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}`,
+          `No physical inventory record for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}`,
         );
       }
 
@@ -418,6 +425,7 @@ export class StockService {
         await tx.physicalInventory.create({
           data: {
             productId: t.productId,
+            variantId: t.variantId || null,
             warehouseId: t.warehouseId,
             binLocationId: t.binLocationId || null,
             quantity: field === 'quantity' ? (op === 'increment' ? t.qty : 0) : 0,
@@ -472,6 +480,7 @@ export class StockService {
 
       const physicalTargets = targets.map((t) => ({
         productId: t.productId,
+        variantId: t.variantId,
         warehouseId: params.warehouseId!,
         qty: t.qty,
         binLocationId: params.binLocationId,
@@ -492,10 +501,6 @@ export class StockService {
           tx,
         );
       } else if (effectiveOperation === 'deduct') {
-        // Read physical quantity BEFORE mutation for accurate ledger before/after
-        const deductBefores = await Promise.all(
-          targets.map((t) => this.readPhysicalQuantity(t.productId, params.warehouseId!, params.binLocationId, tx))
-        );
         await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
@@ -508,55 +513,39 @@ export class StockService {
           'reservedQuantity',
           tx,
         );
-        for (let i = 0; i < targets.length; i++) {
-          const before = deductBefores[i];
-          const after = Math.max(0, before - targets[i].qty);
-          await this.logPhysicalInventoryLedger(
-            [targets[i]],
-            params.warehouseId!,
-            'OUT',
-            params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
-            params.reference,
-            params.performedBy,
-            params.unitCost,
-            tx,
-            params.binLocationId,
-            params.referenceType,
-            params.referenceId,
-            before,
-            after,
-          );
-        }
-      } else if (effectiveOperation === 'add') {
-        // Read physical quantity BEFORE mutation for accurate ledger before/after
-        const addBefores = await Promise.all(
-          targets.map((t) => this.readPhysicalQuantity(t.productId, params.warehouseId!, params.binLocationId, tx))
+        await this.logPhysicalInventoryLedger(
+          targets,
+          params.warehouseId!,
+          'OUT',
+          params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
+          params.reference,
+          params.performedBy,
+          params.unitCost,
+          tx,
+          params.binLocationId,
+          params.referenceType,
+          params.referenceId,
         );
+      } else if (effectiveOperation === 'add') {
         await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'quantity',
           tx,
         );
-        for (let i = 0; i < targets.length; i++) {
-          const before = addBefores[i];
-          const after = before + targets[i].qty;
-          await this.logPhysicalInventoryLedger(
-            [targets[i]],
-            params.warehouseId!,
-            'IN',
-            params.ledgerType || 'ADD',
-            params.reference,
-            params.performedBy,
-            params.unitCost,
-            tx,
-            params.binLocationId,
-            params.referenceType,
-            params.referenceId,
-            before,
-            after,
-          );
-        }
+        await this.logPhysicalInventoryLedger(
+          targets,
+          params.warehouseId!,
+          'IN',
+          params.ledgerType || 'ADD',
+          params.reference,
+          params.performedBy,
+          params.unitCost,
+          tx,
+          params.binLocationId,
+          params.referenceType,
+          params.referenceId,
+        );
         // Update bin location on variant if provided
         if (params.binLocationId) {
           for (const t of targets) {
@@ -573,14 +562,18 @@ export class StockService {
     };
 
     if (params.tx) {
-      return exec(params.tx);
+      const res = await exec(params.tx);
+      await this.cache.invalidateByPrefix('product:');
+      return res;
     }
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        return await this.prisma.$transaction(exec, {
+        const res = await this.prisma.$transaction(exec, {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         });
+        await this.cache.invalidateByPrefix('product:');
+        return res;
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -722,9 +715,13 @@ export class StockService {
     };
 
     if (params.tx) {
-      return exec(params.tx);
+      const res = await exec(params.tx);
+      await this.cache.invalidateByPrefix('product:');
+      return res;
     }
-    return this.prisma.$transaction(exec);
+    const res = await this.prisma.$transaction(exec);
+    await this.cache.invalidateByPrefix('product:');
+    return res;
   }
 
   reserve(params: StockOperationParams) {
@@ -772,9 +769,13 @@ export class StockService {
     };
   }
 
-  async checkPhysicalAvailability(productId: string, warehouseId: string) {
+  async checkPhysicalAvailability(productId: string, warehouseId: string, variantId?: string) {
+    const where: any = { productId, warehouseId };
+    if (variantId) {
+      where.variantId = variantId;
+    }
     const records = await this.prisma.physicalInventory.findMany({
-      where: { productId, warehouseId },
+      where,
       select: { quantity: true, reservedQuantity: true },
     });
     if (records.length === 0) {
@@ -1142,6 +1143,147 @@ export class StockService {
     }
   }
 
+  async bulkAdjustPhysical(params: {
+    warehouseId: string;
+    reason: string;
+    items: {
+      productId: string;
+      variantId?: string;
+      quantity: number;
+      binLocationId?: string;
+      unitCost?: number;
+    }[];
+  }) {
+    const exec = async (tx: Prisma.TransactionClient) => {
+      for (const item of params.items) {
+        const targets = await this.resolveTargets(
+          {
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            reference: params.reason,
+          },
+          tx,
+        );
+
+        let finalTargets = targets;
+        let finalOp: 'add' | 'deduct' = item.quantity < 0 ? 'deduct' : 'add';
+
+        if (item.quantity < 0) {
+          finalTargets = targets.map((t) => ({ ...t, qty: Math.abs(t.qty) }));
+        }
+
+        for (const t of finalTargets) {
+          const product = await tx.product.findUnique({
+            where: { id: t.productId },
+            select: { availabilityMode: true },
+          });
+          if (product) {
+            if (product.availabilityMode === 'ALWAYS_IN_STOCK') {
+              throw new BadRequestException(
+                `Product is always in stock — no physical adjustments allowed`,
+              );
+            }
+            if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+              throw new BadRequestException(
+                `Product is always out of stock — no physical adjustments allowed`,
+              );
+            }
+          }
+        }
+
+        const physicalTargets = finalTargets.map((t) => ({
+          productId: t.productId,
+          variantId: t.variantId,
+          warehouseId: params.warehouseId,
+          qty: t.qty,
+          binLocationId: item.binLocationId,
+        }));
+
+        if (finalOp === 'deduct') {
+          await this.applyPhysicalChange(
+            physicalTargets,
+            'decrement',
+            'quantity',
+            tx,
+          );
+          await this.logPhysicalInventoryLedger(
+            finalTargets,
+            params.warehouseId,
+            'OUT',
+            'PHYSICAL_ADJUSTMENT',
+            params.reason,
+            undefined,
+            item.unitCost,
+            tx,
+            item.binLocationId,
+          );
+          await this.deductCostingLotsForAdjustment({
+            productId: item.productId,
+            quantity: Math.abs(item.quantity),
+          });
+        } else if (finalOp === 'add') {
+          await this.applyPhysicalChange(
+            physicalTargets,
+            'increment',
+            'quantity',
+            tx,
+          );
+          await this.logPhysicalInventoryLedger(
+            finalTargets,
+            params.warehouseId,
+            'IN',
+            'PHYSICAL_ADJUSTMENT',
+            params.reason,
+            undefined,
+            item.unitCost,
+            tx,
+            item.binLocationId,
+          );
+          if (item.unitCost) {
+            await this.createCostingLotForAdjustment({
+              productId: item.productId,
+              variantId: item.variantId,
+              quantity: item.quantity,
+              unitCost: item.unitCost,
+              reference: params.reason,
+            });
+          }
+          if (item.binLocationId) {
+            for (const t of finalTargets) {
+              if (t.variantId) {
+                await tx.productVariant.update({
+                  where: { id: t.variantId },
+                  data: { binLocationId: item.binLocationId },
+                });
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const res = await this.prisma.$transaction(exec, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+        await this.cache.invalidateByPrefix('product:');
+        return res;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < MAX_RETRIES
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
   async listPhysical(productId?: string, warehouseId?: string, binLocationId?: string) {
     const where: any = {};
     if (productId) where.productId = productId;
@@ -1155,6 +1297,17 @@ export class StockService {
       where,
       include: {
         product: { select: { id: true, name: true, sku: true, images: true, lowStockQty: true } },
+        variant: {
+          include: {
+            attributeValues: {
+              include: {
+                attributeValue: {
+                  select: { id: true, value: true, attribute: { select: { name: true } } },
+                },
+              },
+            },
+          },
+        },
         warehouse: true,
         binLocation: true,
       },

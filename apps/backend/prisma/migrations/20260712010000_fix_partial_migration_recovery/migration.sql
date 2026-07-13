@@ -83,7 +83,6 @@ CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_reservationId_idx" ON 
 CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_physicalInventoryId_idx" ON "PhysicalReservationAllocation"("physicalInventoryId");
 CREATE INDEX IF NOT EXISTS "PhysicalReservationAllocation_binLocationId_idx" ON "PhysicalReservationAllocation"("binLocationId");
 CREATE INDEX IF NOT EXISTS "PhysicalInventory_binLocationId_idx" ON "PhysicalInventory"("binLocationId");
-CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_binLocationId_idx" ON "PhysicalInventoryLedger"("binLocationId");
 CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_idx" ON "PhysicalInventoryLedger"("referenceType", "referenceId");
 
 -- ============================================================
@@ -92,12 +91,6 @@ CREATE INDEX IF NOT EXISTS "PhysicalInventoryLedger_referenceType_referenceId_id
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalInventory_binLocationId_fkey') THEN
     ALTER TABLE "PhysicalInventory" ADD CONSTRAINT "PhysicalInventory_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PhysicalInventoryLedger_binLocationId_fkey') THEN
-    ALTER TABLE "PhysicalInventoryLedger" ADD CONSTRAINT "PhysicalInventoryLedger_binLocationId_fkey" FOREIGN KEY ("binLocationId") REFERENCES "BinLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 END $$;
 

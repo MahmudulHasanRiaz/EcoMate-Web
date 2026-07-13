@@ -306,6 +306,7 @@ export class ProductsService {
       }),
       this.prisma.product.count({ where }),
     ]);
+    await this.enrichProductsWithAvailableStock(data);
     const hasMore = page * perPage < total;
     const last = data[data.length - 1];
     const nextCursor = query.sort
@@ -456,6 +457,7 @@ export class ProductsService {
       }),
       this.prisma.product.count({ where: filters }),
     ]);
+    await this.enrichProductsWithAvailableStock(data);
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
     const nextCursor =
@@ -496,8 +498,9 @@ export class ProductsService {
       },
     });
     if (!product) throw new NotFoundException('Product not found');
-    await this.cache.set(cacheKey, product);
-    return product;
+    const enriched = (await this.enrichProductsWithAvailableStock([product]))[0];
+    await this.cache.set(cacheKey, enriched);
+    return enriched;
   }
 
   async findOne(id: string) {
@@ -522,7 +525,8 @@ export class ProductsService {
       },
     });
     if (!p) throw new NotFoundException('Product not found');
-    return p;
+    const enriched = (await this.enrichProductsWithAvailableStock([p]))[0];
+    return enriched;
   }
 
   async create(dto: CreateProductDto) {
@@ -998,5 +1002,75 @@ export class ProductsService {
       ),
     );
     return this.findOne(productId);
+  }
+
+  private async enrichProductsWithAvailableStock(products: any[]) {
+    if (products.length === 0) return products;
+
+    const productIds = products.map((p) => p.id);
+    const physicalSums = await this.prisma.physicalInventory.groupBy({
+      by: ['productId', 'variantId'],
+      _sum: {
+        quantity: true,
+        reservedQuantity: true,
+      },
+      where: {
+        productId: { in: productIds },
+      },
+    });
+
+    const productSumMap = new Map<string, number>();
+    const productReservedMap = new Map<string, number>();
+    const variantSumMap = new Map<string, number>();
+    const variantReservedMap = new Map<string, number>();
+
+    for (const s of physicalSums) {
+      const pId = s.productId;
+      const vId = s.variantId;
+      const qty = s._sum.quantity ?? 0;
+      const reserved = s._sum.reservedQuantity ?? 0;
+
+      productSumMap.set(pId, (productSumMap.get(pId) ?? 0) + qty);
+      productReservedMap.set(pId, (productReservedMap.get(pId) ?? 0) + reserved);
+
+      if (vId) {
+        variantSumMap.set(vId, qty);
+        variantReservedMap.set(vId, reserved);
+      }
+    }
+
+    for (const p of products) {
+      const physicalStockSum = productSumMap.get(p.id) ?? 0;
+      const physicalReservedSum = productReservedMap.get(p.id) ?? 0;
+      const managedStockSum = p.type === 'variable' && p.variants
+        ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
+        : p.managedStockQuantity;
+
+      p.availableStock =
+        p.availabilityMode === 'MANAGED_STOCK'
+          ? managedStockSum - (p.reservedStock ?? 0)
+          : p.availabilityMode === 'INVENTORY_CONTROLLED'
+            ? physicalStockSum - physicalReservedSum
+            : p.availabilityMode === 'ALWAYS_IN_STOCK'
+              ? null
+              : 0;
+
+      if (p.variants) {
+        for (const v of p.variants) {
+          const vPhysicalStock = variantSumMap.get(v.id) ?? 0;
+          const vPhysicalReserved = variantReservedMap.get(v.id) ?? 0;
+          v.availableStock =
+            p.availabilityMode === 'MANAGED_STOCK'
+              ? v.managedStockQuantity - (v.reservedStock ?? 0)
+              : p.availabilityMode === 'INVENTORY_CONTROLLED'
+                ? vPhysicalStock - vPhysicalReserved
+                : p.availabilityMode === 'ALWAYS_IN_STOCK'
+                  ? null
+                  : 0;
+        }
+      }
+    }
+
+    return products;
   }
 }
