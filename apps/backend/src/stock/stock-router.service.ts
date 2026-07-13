@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type StockAction = 'reserve' | 'release' | 'deduct' | 'add' | 'scrap' | 'fulfill' | 'allocate' | 'check' | 'skip';
@@ -37,7 +37,7 @@ export class StockRouterService {
 
     if (!imEnabled) {
       if (mode === 'INVENTORY_CONTROLLED') {
-        return { ...SKIP, ms: 'skip', pi: 'skip', msConditionalOnSync: false };
+        return SKIP;
       }
       return MS_ONLY;
     }
