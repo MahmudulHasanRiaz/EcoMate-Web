@@ -851,133 +851,112 @@ export class StockService {
     quantity: number;
     tx?: Prisma.TransactionClient;
   }) {
-    // Phase 1: Atomic parent claim via upsert (no P2002 possible)
-    const parent = await this.prisma.physicalReservation.upsert({
-      where: { orderItemId: params.orderItemId },
-      create: {
-        orderId: params.orderId,
-        orderItemId: params.orderItemId,
-        productId: params.productId,
-        variantId: params.variantId,
-        warehouseId: params.warehouseId,
-        quantity: params.quantity,
-        status: 'ALLOCATING',
-      },
-      update: {},
-    });
+    const exec = async (tx: Prisma.TransactionClient) => {
+      const parent = await tx.physicalReservation.upsert({
+        where: { orderItemId: params.orderItemId },
+        create: {
+          orderId: params.orderId,
+          orderItemId: params.orderItemId,
+          productId: params.productId,
+          variantId: params.variantId,
+          warehouseId: params.warehouseId,
+          quantity: params.quantity,
+          status: 'ALLOCATING',
+        },
+        update: {},
+      });
 
-    // Phase 2: Check if already fully allocated (idempotent return)
-    const existingAllocations = await this.prisma.physicalReservationAllocation.findMany({
-      where: { reservationId: parent.id },
-    });
-    if (existingAllocations.length > 0) {
-      // Parent already has allocations — mark ACTIVE if still ALLOCATING
-      if (parent.status === 'ALLOCATING') {
-        await this.prisma.physicalReservation.update({
-          where: { id: parent.id },
-          data: { status: 'ACTIVE' },
-        });
-      }
-      return existingAllocations;
-    }
-
-    // Phase 2b: Stuck ALLOCATING recovery
-    // If parent is ALLOCATING for > 5 minutes with no allocations, it's abandoned.
-    // Release it so this request can re-allocate.
-    if (parent.status === 'ALLOCATING') {
-      const elapsed = Date.now() - parent.createdAt.getTime();
-      const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-      if (elapsed > STUCK_THRESHOLD_MS) {
-        this.logger.warn(`Recovering stuck ALLOCATING reservation ${parent.id} (age: ${Math.round(elapsed / 1000)}s)`);
-        // Reset parent to ALLOCATING so allocation can proceed
-        await this.prisma.physicalReservation.update({
-          where: { id: parent.id },
-          data: { status: 'ALLOCATING', quantity: params.quantity },
-        });
-        // Fall through to Phase 3 allocation
-      }
-    }
-
-    // Phase 3: Allocate bins — Serializable transaction with retry
-    // Avoids P2002 entirely: checks existing allocations before each create
-    const MAX_RETRIES = 3;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await this.prisma.$transaction(async (tx) => {
-          // Re-check allocations inside transaction (concurrent request may have created some)
-          const allocs = await tx.physicalReservationAllocation.findMany({
-            where: { reservationId: parent.id },
-          });
-          if (allocs.length > 0) {
-            // Another request completed allocation — idempotent return
-            await tx.physicalReservation.update({
-              where: { id: parent.id },
-              data: { status: 'ACTIVE' },
-            });
-            return allocs;
-          }
-
-          const eligible = await tx.physicalInventory.findMany({
-            where: {
-              productId: params.productId,
-              warehouseId: params.warehouseId,
-            },
-            orderBy: { updatedAt: 'asc' },
-          });
-
-          let remaining = params.quantity;
-          const newAllocations: any[] = [];
-
-          for (const pi of eligible) {
-            if (remaining <= 0) break;
-            const available = pi.quantity - pi.reservedQuantity;
-            if (available <= 0) continue;
-
-            const allocQty = Math.min(remaining, available);
-
-            // Check if this PI row already has an allocation (from concurrent request)
-            const existingForPI = allocs.find((a) => a.physicalInventoryId === pi.id);
-            if (existingForPI) {
-              remaining -= existingForPI.quantity;
-              continue;
-            }
-
-            const allocation = await tx.physicalReservationAllocation.create({
-              data: {
-                reservationId: parent.id,
-                physicalInventoryId: pi.id,
-                binLocationId: pi.binLocationId,
-                quantity: allocQty,
-              },
-            });
-            newAllocations.push(allocation);
-
-            await tx.physicalInventory.update({
-              where: { id: pi.id },
-              data: { reservedQuantity: { increment: allocQty } },
-            });
-
-            remaining -= allocQty;
-          }
-
-          if (remaining > 0) {
-            throw new BadRequestException(
-              `Insufficient physical stock for product ${params.productId}. Requested: ${params.quantity}, allocated: ${params.quantity - remaining}`,
-            );
-          }
-
+      const existingAllocations = await tx.physicalReservationAllocation.findMany({
+        where: { reservationId: parent.id },
+      });
+      if (existingAllocations.length > 0) {
+        if (parent.status === 'ALLOCATING') {
           await tx.physicalReservation.update({
             where: { id: parent.id },
             data: { status: 'ACTIVE' },
           });
+        }
+        return existingAllocations;
+      }
 
-          return [...allocs, ...newAllocations];
-        }, {
+      if (parent.status === 'ALLOCATING') {
+        const elapsed = Date.now() - parent.createdAt.getTime();
+        const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
+        if (elapsed > STUCK_THRESHOLD_MS) {
+          this.logger.warn(`Recovering stuck ALLOCATING reservation ${parent.id} (age: ${Math.round(elapsed / 1000)}s)`);
+          await tx.physicalReservation.update({
+            where: { id: parent.id },
+            data: { status: 'ALLOCATING', quantity: params.quantity },
+          });
+        }
+      }
+
+      const eligible = await tx.physicalInventory.findMany({
+        where: {
+          productId: params.productId,
+          warehouseId: params.warehouseId,
+        },
+        orderBy: { updatedAt: 'asc' },
+      });
+
+      let remaining = params.quantity;
+      const newAllocations: any[] = [];
+
+      for (const pi of eligible) {
+        if (remaining <= 0) break;
+        const available = pi.quantity - pi.reservedQuantity;
+        if (available <= 0) continue;
+
+        const allocQty = Math.min(remaining, available);
+
+        const allocation = await tx.physicalReservationAllocation.create({
+          data: {
+            reservationId: parent.id,
+            physicalInventoryId: pi.id,
+            binLocationId: pi.binLocationId,
+            quantity: allocQty,
+          },
+        });
+        newAllocations.push(allocation);
+
+        await tx.physicalInventory.update({
+          where: { id: pi.id },
+          data: { reservedQuantity: { increment: allocQty } },
+        });
+
+        remaining -= allocQty;
+      }
+
+      if (remaining > 0) {
+        throw new BadRequestException(
+          `Insufficient physical stock for product ${params.productId}. Requested: ${params.quantity}, allocated: ${params.quantity - remaining}`,
+        );
+      }
+
+      await tx.physicalReservation.update({
+        where: { id: parent.id },
+        data: { status: 'ACTIVE' },
+      });
+
+      return newAllocations;
+    };
+
+    if (params.tx) {
+      return exec(params.tx);
+    }
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.prisma.$transaction(exec, {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         });
-      } catch (error: any) {
-        // Serialization conflict → retry
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && attempt < MAX_RETRIES) {
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < MAX_RETRIES
+        ) {
           continue;
         }
         throw error;
@@ -1034,14 +1013,12 @@ export class StockService {
     });
     if (!parent || parent.status === 'CONSUMED') return;
 
-    // Atomic claim: ACTIVE → CONSUMED (conditional update within existing transaction)
-    const [claimed] = await client.$transaction([
-      client.physicalReservation.updateMany({
-        where: { id: parent.id, status: 'ACTIVE' },
-        data: { status: 'CONSUMED' },
-      }),
-    ]);
-    if (claimed.count === 0) return; // Already consumed
+    // Atomic claim: ACTIVE → CONSUMED
+    const result = await client.physicalReservation.updateMany({
+      where: { id: parent.id, status: 'ACTIVE' },
+      data: { status: 'CONSUMED' },
+    });
+    if (result.count === 0) return; // Already consumed
 
     let remaining = params.quantity;
 
