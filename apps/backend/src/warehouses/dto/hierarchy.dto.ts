@@ -20,8 +20,9 @@ export class UpdateZoneDto {
 }
 
 export class CreateRackDto {
+  @IsOptional()
   @IsString()
-  zoneId: string;
+  zoneId?: string;
 
   @IsString()
   name: string;
@@ -46,8 +47,9 @@ export class UpdateRackDto {
 }
 
 export class CreateShelfDto {
+  @IsOptional()
   @IsString()
-  rackId: string;
+  rackId?: string;
 
   @IsString()
   name: string;

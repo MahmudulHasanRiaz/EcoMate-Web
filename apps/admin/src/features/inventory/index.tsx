@@ -62,7 +62,7 @@ export function Inventory() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
-  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>('MANAGED')
+  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>('PHYSICAL')
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
 
   const toggleRow = (id: string, e: React.MouseEvent) => {
@@ -76,7 +76,7 @@ export function Inventory() {
       apiClient.get('/inventory/stock-overview', {
         params: { search: search || undefined, page, perPage },
       }).then((r) => r.data),
-    enabled: viewMode === 'MANAGED',
+    enabled: true,
   })
 
   const [selectedWarehouse, setSelectedWarehouse] = useState('all_wh')
@@ -118,20 +118,6 @@ export function Inventory() {
       data = data.filter((p: any) => !p.binLocationId)
     }
 
-    // Status Filter
-    if (selectedStatus === 'low') {
-      data = data.filter((p: any) => {
-        const avail = p.quantity - p.reservedQuantity
-        const threshold = p.product?.lowStockQty ?? 5
-        return avail <= threshold
-      })
-    } else if (selectedStatus === 'negative') {
-      data = data.filter((p: any) => {
-        const avail = p.quantity - p.reservedQuantity
-        return avail < 0
-      })
-    }
-
     // Search Filter
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -161,7 +147,7 @@ export function Inventory() {
     }
 
     return Array.from(productMap.values())
-  }, [physicalData, search, selectedWarehouse, selectedStatus, selectedBin])
+  }, [physicalData, search, selectedWarehouse, selectedBin])
 
   const availabilityModeLabel = (mode: string) => {
     switch (mode) {
@@ -212,41 +198,120 @@ export function Inventory() {
 
       return items
     } else {
-      if (!filteredPhysicalData) return []
-      return filteredPhysicalData.map((pi: any) => {
-        const variants = pi._variants || []
-        const totalQty = pi._totalQty ?? pi.quantity ?? 0
-        const totalReserved = pi._totalReserved ?? pi.reservedQuantity ?? 0
+      if (!stockData?.data) return []
+
+      // Build physical data map by productId (aggregated totals + per-variant detail)
+      const physMap = new Map<string, any>()
+      const physData = filteredPhysicalData || []
+      for (const pi of physData) {
+        const pid = pi.product?.id
+        if (!pid) continue
+        if (!physMap.has(pid)) {
+          physMap.set(pid, {
+            _variants: [],
+            _totalQty: 0,
+            _totalReserved: 0,
+            _warehouseName: pi.warehouse?.name || 'Unknown Warehouse',
+            _binCode: pi.binLocation?.code || null,
+            _updatedAt: pi.updatedAt,
+          })
+        }
+        const agg = physMap.get(pid)
+        agg._variants.push(pi)
+        agg._totalQty += pi.quantity || 0
+        agg._totalReserved += pi.reservedQuantity || 0
+        if (pi.warehouse?.name && agg._warehouseName === 'Unknown Warehouse') agg._warehouseName = pi.warehouse.name
+        if (pi.binLocation?.code) agg._binCode = pi.binLocation.code
+        if (pi.updatedAt > agg._updatedAt) agg._updatedAt = pi.updatedAt
+      }
+
+      let items = stockData.data.map((p: StockOverviewItem) => {
+        const phys = physMap.get(p.id)
+        const variants = phys?._variants || []
+        const totalQty = phys?._totalQty ?? 0
+        const totalReserved = phys?._totalReserved ?? 0
         const avail = totalQty - totalReserved
-        const prodImages = pi.product?.images
+        const prodImages = p.images
         const firstImg = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null
-        const isVariable = variants.length > 1 || (variants.length === 1 && variants[0].variantId)
+        const isVariable = p.type === 'variable'
+        const hasPhysicalStock = !!phys
+
+        // Build variant display list — merge PI records with virtual entries for variants without physical stock
+        let displayVariants = variants
+        if (isVariable) {
+          displayVariants = [...variants]
+          const piVariantIds = new Set(
+            variants.filter((v: any) => v.variantId).map((v: any) => v.variantId)
+          )
+          const stockVariants = (p as any).variants || []
+          for (const sv of stockVariants) {
+            if (!piVariantIds.has(sv.id)) {
+              displayVariants.push({
+                id: `virtual-${sv.id}`,
+                variantId: sv.id,
+                variant: {
+                  id: sv.id,
+                  sku: sv.sku,
+                  image: sv.image,
+                  attributeValues: sv.attributeValues || [],
+                },
+                quantity: 0,
+                reservedQuantity: 0,
+                warehouse: null,
+                binLocation: null,
+                updatedAt: null,
+                _virtual: true,
+              })
+            }
+          }
+        }
+
         return {
-          id: pi.id,
-          productId: pi.product?.id,
-          name: pi.product?.name || 'Unknown',
-          sku: pi.product?.sku || '—',
-          availabilityMode: 'INVENTORY_CONTROLLED',
-          warehouse: variants.length > 1 ? `${variants.length} warehouse records` : (pi.warehouse?.name || 'Unknown Warehouse'),
-          bin: pi.binLocation?.code || '—',
+          id: p.id,
+          productId: p.id,
+          name: p.name,
+          sku: p.sku || '—',
+          availabilityMode: p.availabilityMode,
+          warehouse: hasPhysicalStock
+            ? (displayVariants.length > 1 ? `${displayVariants.length} records` : (phys._warehouseName))
+            : '—',
+          bin: phys?._binCode || '—',
           lot: '—',
           expiry: '—',
-          available: avail,
+          available: hasPhysicalStock ? avail : 0,
           reserved: totalReserved,
           allocated: 0,
           onHand: totalQty,
-          cost: pi.product?.basePrice || 0,
-          updated: pi.updatedAt ? new Date(pi.updatedAt).toLocaleDateString() : '—',
+          cost: p.basePrice || 0,
+          lowStockQty: p.lowStockQty,
+          updated: hasPhysicalStock ? (phys._updatedAt ? new Date(phys._updatedAt).toLocaleDateString() : '—') : '—',
           image: typeof firstImg === 'string' ? firstImg : null,
-          status: avail < 0 ? 'negative' : (avail === 0 ? 'low' : 'optimal'),
-          raw: { ...pi.product, type: isVariable ? 'variable' : 'simple' },
-          _physicalVariants: variants,
+          status: !hasPhysicalStock ? 'optimal' : (avail < 0 ? 'negative' : (avail <= (p.lowStockQty ?? 5) ? 'low' : 'optimal')),
+          raw: p,
+          _physicalVariants: displayVariants,
+          _hasPhysicalStock: hasPhysicalStock,
         }
       })
-    }
-  }, [viewMode, stockData, filteredPhysicalData, inventoryStatus])
 
-  const totalPages = viewMode === 'MANAGED' ? (stockData?.meta?.totalPages || 1) : 1
+      // Apply physical stock filter
+      if (inventoryStatus === 'in_stock') {
+        items = items.filter((i: any) => i._hasPhysicalStock)
+      } else if (inventoryStatus === 'out_of_stock' || inventoryStatus === 'low') {
+        items = items.filter((i: any) => !i._hasPhysicalStock)
+      }
+
+      // Apply stock status filter (low/negative)
+      if (selectedStatus === 'low') {
+        items = items.filter((i: any) => i._hasPhysicalStock && i.available > 0 && i.available <= (i.lowStockQty ?? 5))
+      } else if (selectedStatus === 'negative') {
+        items = items.filter((i: any) => i.available < 0)
+      }
+
+      return items
+    }
+  }, [viewMode, stockData, filteredPhysicalData, inventoryStatus, selectedStatus])
+
+  const totalPages = stockData?.meta?.totalPages || 1
   const isLoading = viewMode === 'MANAGED' ? isStockLoading : isPhysicalLoading
   const isError = viewMode === 'MANAGED' ? isStockError : isPhysicalError
 
@@ -309,17 +374,15 @@ export function Inventory() {
             <Filter className="h-4 w-4" /> Filters:
           </div>
           <Input placeholder="Search name or SKU..." className="h-9 w-[200px] bg-background" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-          {viewMode === 'MANAGED' && (
-            <Select value={inventoryStatus} onValueChange={(v) => setInventoryStatus(v as any)}>
-              <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Inventory" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Products</SelectItem>
-                <SelectItem value="in_stock">Has Stock</SelectItem>
-                <SelectItem value="low">Low / Out of Stock</SelectItem>
-                <SelectItem value="out_of_stock">Out of Stock</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
+          <Select value={inventoryStatus} onValueChange={(v) => setInventoryStatus(v as any)}>
+            <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Inventory" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Products</SelectItem>
+              <SelectItem value="in_stock">Has Stock</SelectItem>
+              <SelectItem value="low">Low / Out of Stock</SelectItem>
+              <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+            </SelectContent>
+          </Select>
           {viewMode === 'PHYSICAL' && (
             <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBin('all_bins') }}>
               <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
@@ -628,7 +691,7 @@ export function Inventory() {
           </CardContent>
         </Card>
 
-        {viewMode === 'MANAGED' && stockData?.meta && totalPages > 1 && (
+        {stockData?.meta && totalPages > 1 && (
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
               {`${(stockData.meta.page - 1) * stockData.meta.perPage + 1}-${Math.min(stockData.meta.page * stockData.meta.perPage, stockData.meta.total)} of ${stockData.meta.total}`}

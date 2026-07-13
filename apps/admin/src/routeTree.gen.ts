@@ -84,6 +84,7 @@ import { Route as AuthenticatedOpInventoryTransfersRouteImport } from './routes/
 import { Route as AuthenticatedOpInventoryReportsRouteImport } from './routes/_authenticated/op/inventory/reports'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
 import { Route as AuthenticatedOpInventoryHistoryRouteImport } from './routes/_authenticated/op/inventory/history'
+import { Route as AuthenticatedOpInventoryHierarchyRouteImport } from './routes/_authenticated/op/inventory/hierarchy'
 import { Route as AuthenticatedOpInventoryDetailRouteImport } from './routes/_authenticated/op/inventory/detail'
 import { Route as AuthenticatedOpInventoryBinLocationsRouteImport } from './routes/_authenticated/op/inventory/bin-locations'
 import { Route as AuthenticatedOpInventoryAdjustmentsRouteImport } from './routes/_authenticated/op/inventory/adjustments'
@@ -552,6 +553,12 @@ const AuthenticatedOpInventoryHistoryRoute =
     path: '/op/inventory/history',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpInventoryHierarchyRoute =
+  AuthenticatedOpInventoryHierarchyRouteImport.update({
+    id: '/op/inventory/hierarchy',
+    path: '/op/inventory/hierarchy',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryDetailRoute =
   AuthenticatedOpInventoryDetailRouteImport.update({
     id: '/op/inventory/detail',
@@ -801,6 +808,7 @@ export interface FileRoutesByFullPath {
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
@@ -913,6 +921,7 @@ export interface FileRoutesByTo {
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
@@ -1027,6 +1036,7 @@ export interface FileRoutesById {
   '/_authenticated/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
   '/_authenticated/op/inventory/bin-locations': typeof AuthenticatedOpInventoryBinLocationsRoute
   '/_authenticated/op/inventory/detail': typeof AuthenticatedOpInventoryDetailRoute
+  '/_authenticated/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/_authenticated/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
   '/_authenticated/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
@@ -1141,6 +1151,7 @@ export interface FileRouteTypes {
     | '/op/inventory/adjustments'
     | '/op/inventory/bin-locations'
     | '/op/inventory/detail'
+    | '/op/inventory/hierarchy'
     | '/op/inventory/history'
     | '/op/inventory/overview'
     | '/op/inventory/reports'
@@ -1253,6 +1264,7 @@ export interface FileRouteTypes {
     | '/op/inventory/adjustments'
     | '/op/inventory/bin-locations'
     | '/op/inventory/detail'
+    | '/op/inventory/hierarchy'
     | '/op/inventory/history'
     | '/op/inventory/overview'
     | '/op/inventory/reports'
@@ -1366,6 +1378,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/inventory/adjustments'
     | '/_authenticated/op/inventory/bin-locations'
     | '/_authenticated/op/inventory/detail'
+    | '/_authenticated/op/inventory/hierarchy'
     | '/_authenticated/op/inventory/history'
     | '/_authenticated/op/inventory/overview'
     | '/_authenticated/op/inventory/reports'
@@ -1989,6 +2002,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryHistoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/hierarchy': {
+      id: '/_authenticated/op/inventory/hierarchy'
+      path: '/op/inventory/hierarchy'
+      fullPath: '/op/inventory/hierarchy'
+      preLoaderRoute: typeof AuthenticatedOpInventoryHierarchyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/inventory/detail': {
       id: '/_authenticated/op/inventory/detail'
       path: '/op/inventory/detail'
@@ -2358,6 +2378,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpInventoryAdjustmentsRoute: typeof AuthenticatedOpInventoryAdjustmentsRoute
   AuthenticatedOpInventoryBinLocationsRoute: typeof AuthenticatedOpInventoryBinLocationsRoute
   AuthenticatedOpInventoryDetailRoute: typeof AuthenticatedOpInventoryDetailRoute
+  AuthenticatedOpInventoryHierarchyRoute: typeof AuthenticatedOpInventoryHierarchyRoute
   AuthenticatedOpInventoryHistoryRoute: typeof AuthenticatedOpInventoryHistoryRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
   AuthenticatedOpInventoryReportsRoute: typeof AuthenticatedOpInventoryReportsRoute
@@ -2445,6 +2466,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpInventoryBinLocationsRoute:
     AuthenticatedOpInventoryBinLocationsRoute,
   AuthenticatedOpInventoryDetailRoute: AuthenticatedOpInventoryDetailRoute,
+  AuthenticatedOpInventoryHierarchyRoute:
+    AuthenticatedOpInventoryHierarchyRoute,
   AuthenticatedOpInventoryHistoryRoute: AuthenticatedOpInventoryHistoryRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
   AuthenticatedOpInventoryReportsRoute: AuthenticatedOpInventoryReportsRoute,

@@ -251,14 +251,14 @@ export class WarehousesService {
   }
 
   async createRack(dto: CreateRackDto) {
-    const zone = await this.prisma.zone.findUnique({ where: { id: dto.zoneId } });
+    const zone = await this.prisma.zone.findUnique({ where: { id: dto.zoneId! } });
     if (!zone) throw new NotFoundException('Zone not found');
     const existing = await this.prisma.rack.findUnique({
-      where: { zoneId_name: { zoneId: dto.zoneId, name: dto.name } },
+      where: { zoneId_name: { zoneId: dto.zoneId!, name: dto.name } },
     });
     if (existing) throw new ConflictException('Rack name already exists in this zone');
     return this.prisma.rack.create({
-      data: { zoneId: dto.zoneId, name: dto.name, isActive: dto.isActive ?? true },
+      data: { zoneId: dto.zoneId!, name: dto.name, isActive: dto.isActive ?? true },
     });
   }
 
@@ -301,14 +301,14 @@ export class WarehousesService {
   }
 
   async createShelf(dto: CreateShelfDto) {
-    const rack = await this.prisma.rack.findUnique({ where: { id: dto.rackId } });
+    const rack = await this.prisma.rack.findUnique({ where: { id: dto.rackId! } });
     if (!rack) throw new NotFoundException('Rack not found');
     const existing = await this.prisma.shelf.findUnique({
-      where: { rackId_name: { rackId: dto.rackId, name: dto.name } },
+      where: { rackId_name: { rackId: dto.rackId!, name: dto.name } },
     });
     if (existing) throw new ConflictException('Shelf name already exists in this rack');
     return this.prisma.shelf.create({
-      data: { rackId: dto.rackId, name: dto.name, isActive: dto.isActive ?? true },
+      data: { rackId: dto.rackId!, name: dto.name, isActive: dto.isActive ?? true },
     });
   }
 

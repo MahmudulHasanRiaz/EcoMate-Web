@@ -919,8 +919,8 @@ export class InventoryService {
     }
 
     const whereClause = whereConditions.length > 0
-      ? `WHERE ${whereConditions.join(' AND ')}`
-      : '';
+      ? `WHERE ${whereConditions.join(' AND ')} AND`
+      : 'WHERE';
 
     const sql = `
       WITH pi_agg AS (
@@ -948,8 +948,7 @@ export class InventoryService {
       FROM "Product" p
       LEFT JOIN pi_agg ON pi_agg."productId" = p.id
       LEFT JOIN cl_agg ON cl_agg."productId" = p.id
-      ${whereClause}
-      AND COALESCE(pi_agg.total_qty, 0) > 0
+      ${whereClause} COALESCE(pi_agg.total_qty, 0) > 0
       ORDER BY p.name ASC
     `;
 
