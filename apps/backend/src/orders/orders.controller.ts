@@ -93,7 +93,7 @@ export class OrdersController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post()
   create(@Body() dto: CreateOrderDto, @Req() req: any) {
     return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '');

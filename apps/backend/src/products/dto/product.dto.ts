@@ -62,6 +62,8 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() manageStock?: boolean;
+  @IsOptional() @IsBoolean() syncManagedStock?: boolean;
+  @IsOptional() @IsUUID() warehouseId?: string;
   @IsOptional() @IsUUID() sizeChartId?: string;
   @IsOptional()
   @IsArray()
@@ -104,6 +106,8 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() isFeatured?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() manageStock?: boolean;
+  @IsOptional() @IsBoolean() syncManagedStock?: boolean;
+  @IsOptional() @IsUUID() warehouseId?: string | null;
   @IsOptional() @IsUUID() sizeChartId?: string | null;
 }
 

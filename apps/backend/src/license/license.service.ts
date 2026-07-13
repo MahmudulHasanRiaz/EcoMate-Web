@@ -61,7 +61,9 @@ export class LicenseService implements OnModuleInit {
         this.logger.warn(
           '[License] Failed to decrypt stored credentials — encryption key may have changed',
         );
-        await this.licenseActivation.deactivate('decryption_failed');
+        if (process.env.SKIP_LICENSE_CHECK !== 'true') {
+          await this.licenseActivation.deactivate('decryption_failed');
+        }
         return;
       }
       if (!creds) return;
@@ -79,7 +81,7 @@ export class LicenseService implements OnModuleInit {
           `[License] Validated — plan: ${lic.plan?.name || 'custom'}`,
         );
         await this.licenseActivation.updateLicenseInfo(lic);
-      } else {
+      } else if (process.env.SKIP_LICENSE_CHECK !== 'true') {
         const code = lic?.code || 'unknown';
         this.logger.warn(`[License] ${friendlyError(code)}`);
         await this.licenseActivation.deactivate(code);

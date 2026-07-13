@@ -217,15 +217,18 @@ export class PosOrdersService {
 
       for (const item of dto.items) {
         if (imEnabled) {
-          await this.stock.deductPhysical({
+          // POS has no reservation flow — use addPhysical with negative qty
+          // to decrement quantity only (skips reservedQuantity decrement)
+          await this.stock.addPhysical({
             productId: item.productId,
             variantId: item.variantId,
             comboId: item.comboId,
             comboSelection: item.comboSelection,
-            quantity: item.quantity,
+            quantity: -item.quantity,
             reference: displayId,
             performedBy: cashierId,
             warehouseId: session.showroom.id,
+            ledgerType: 'POS_SALE',
             tx,
           });
         } else {
@@ -236,6 +239,17 @@ export class PosOrdersService {
           const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', false);
 
           if (decision.ms === 'deduct') {
+            // POS skips reserve step; reserve then deduct so reservedStock ends at 0
+            await this.stock.reserve({
+              productId: item.productId,
+              variantId: item.variantId,
+              comboId: item.comboId,
+              comboSelection: item.comboSelection,
+              quantity: item.quantity,
+              reference: displayId,
+              performedBy: cashierId,
+              tx,
+            });
             await this.stock.deduct({
               productId: item.productId,
               variantId: item.variantId,

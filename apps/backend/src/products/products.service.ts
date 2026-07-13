@@ -574,6 +574,8 @@ export class ProductsService {
         isActive: dto.isActive ?? true,
         availabilityMode: avMode as any,
         manageStock: avMode === 'MANAGED_STOCK',
+        syncManagedStock: dto.syncManagedStock,
+        warehouseId: dto.warehouseId,
         variants: dto.variants
           ? {
               create: dto.variants.map((v) => ({

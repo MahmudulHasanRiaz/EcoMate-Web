@@ -185,13 +185,15 @@ export class DispatchService {
     // ALL-OR-NOTHING: status claim + stock side effects in single transaction
     const result = await this.prisma.$transaction(async (tx) => {
       // Atomic conditional update: only one request wins
-      const updateResult = await tx.$queryRawUnsafe<{id: string}[]>(
-        `UPDATE "Dispatch" SET status = $1::"DispatchStatus", "handedOverAt" = $2::timestamp WHERE id = $3::uuid AND status = $4::"DispatchStatus" RETURNING id`,
-        status, data.handedOverAt || null, id, current.status
-      );
-      const updated = updateResult[0];
+      const updateResult = await tx.dispatch.updateMany({
+        where: { id, status: current.status as any },
+        data: {
+          status: status as any,
+          handedOverAt: data.handedOverAt || null,
+        },
+      });
 
-      if (!updated) {
+      if (updateResult.count === 0) {
         return { claimed: false, dispatch: await this.findOne(id) };
       }
 
@@ -224,10 +226,17 @@ export class DispatchService {
           });
 
           const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', imEnabled);
+          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', imEnabled, product?.syncManagedStock ?? undefined);
 
           if (decision.ms === 'deduct') {
-            if (!decision.msConditionalOnSync || product?.syncManagedStock) {
+            if (decision.msConditionalOnSync && !product?.syncManagedStock) {
+              // sync=false: release reservedStock only, don't deduct managedStockQuantity
+              if (variantId) {
+                await this.stockService.release({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              } else {
+                await this.stockService.release({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              }
+            } else {
               if (variantId) {
                 await this.stockService.deduct({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
               } else {

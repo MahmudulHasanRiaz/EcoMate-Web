@@ -24,6 +24,7 @@ export class StockRouterService {
     availabilityMode: string | null | undefined,
     opType: string,
     imEnabled: boolean,
+    syncManagedStock?: boolean,
   ): StockEngineDecision {
     const mode = availabilityMode as string | undefined;
 
@@ -55,9 +56,13 @@ export class StockRouterService {
 
     // IM ON + MANAGED_STOCK
     if (mode === 'MANAGED_STOCK') {
+      if (syncManagedStock) {
+        if (opType === 'reserve') return { ms: 'reserve', pi: 'allocate', msConditionalOnSync: false };
+        if (opType === 'release') return { ms: 'release', pi: 'release', msConditionalOnSync: false };
+      }
       if (opType === 'reserve') return MS_ONLY;
       if (opType === 'release') return { ms: 'release', pi: 'release', msConditionalOnSync: false };
-      if (opType === 'deduct') return MS_COND;
+      if (opType === 'deduct') return { ms: 'deduct', pi: 'fulfill', msConditionalOnSync: true };
       if (opType === 'add') return MS_COND;
       if (opType === 'scrap') return MS_ONLY;
       if (opType === 'allocate') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };

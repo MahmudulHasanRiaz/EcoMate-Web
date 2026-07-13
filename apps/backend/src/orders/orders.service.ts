@@ -82,27 +82,32 @@ export class OrdersService {
       orderId?: string;
       orderItemId?: string;
       performedBy?: string;
+      ledgerType?: string;
     },
   ) {
     if (!productId) return;
     const product = await tx.product.findUnique({
       where: { id: productId },
-      select: { availabilityMode: true, warehouseId: true },
+      select: { availabilityMode: true, warehouseId: true, syncManagedStock: true },
     });
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-    const decision = this.stockRouter.resolve(product?.availabilityMode, opType, imEnabled);
+    const decision = this.stockRouter.resolve(product?.availabilityMode, opType, imEnabled, product?.syncManagedStock ?? undefined);
     const wh = options?.warehouseId || product?.warehouseId;
 
     if (decision.ms !== 'skip') {
-      await this.stockService.operate(decision.ms as any, {
-        productId,
-        variantId: variantId || undefined,
-        comboId: options?.comboId,
-        comboSelection: options?.comboSelection,
-        quantity,
-        reference,
-        tx,
-      });
+      const shouldApplyMs = !decision.msConditionalOnSync || product?.syncManagedStock;
+      if (shouldApplyMs) {
+        await this.stockService.operate(decision.ms as any, {
+          productId,
+          variantId: variantId || undefined,
+          comboId: options?.comboId,
+          comboSelection: options?.comboSelection,
+          quantity,
+          reference,
+          tx,
+          ledgerType: options?.ledgerType,
+        });
+      }
     }
 
     if (decision.pi !== 'skip' && wh) {
@@ -146,6 +151,7 @@ export class OrdersService {
             reference,
             warehouseId: wh,
             tx,
+            ledgerType: options?.ledgerType,
           });
         }
       }
@@ -779,7 +785,7 @@ export class OrdersService {
 
       for (const item of dto.items) {
         const createdItem = created.items.find(
-          (ci) => ci.productId === item.productId && (ci.variantId === item.variantId),
+          (ci) => ci.productId === item.productId && ((ci.variantId ?? undefined) === item.variantId),
         );
         await this.resolveAndApplyStock(
           'reserve',
@@ -991,7 +997,7 @@ export class OrdersService {
         // Reserve stock for new items via router
         for (const item of dto.items) {
           const newItem = newItems.find(
-            (ni) => ni.productId === item.productId && (ni.variantId === item.variantId),
+            (ni) => ni.productId === item.productId && ((ni.variantId ?? undefined) === item.variantId),
           );
           await this.resolveAndApplyStock(
             'reserve',
@@ -1169,6 +1175,10 @@ export class OrdersService {
             },
           });
         }
+      }
+
+      if (newStatus.name === 'Returned') {
+        await this.handleReturnedSideEffects(tx, id, performedBy);
       }
 
       return u;
@@ -1934,6 +1944,7 @@ export class OrdersService {
         {
           warehouseId: product.warehouseId || undefined,
           performedBy,
+          ledgerType: 'RETURN',
         },
       );
     }
@@ -1996,6 +2007,7 @@ export class OrdersService {
                 type: true,
                 warehouseId: true,
                 name: true,
+                syncManagedStock: true,
               },
             },
             variant: { select: { id: true } },
@@ -2028,9 +2040,28 @@ export class OrdersService {
           );
         }
         // Physical reserve at Confirm for MANAGED+IM products with warehouse
-        if (product.warehouseId) {
+        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+        const decision = this.stockRouter.resolve(
+          product.availabilityMode, 'allocate',
+          imEnabled, product.syncManagedStock ?? undefined,
+        );
+        if (product.warehouseId && decision.pi !== 'skip') {
           const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
           if (!alreadyReserved) {
+            const existingPi = await tx.physicalInventory.findFirst({
+              where: { productId: item.productId!, warehouseId: product.warehouseId },
+            });
+            if (!existingPi) {
+              throw new BadRequestException(
+                `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
+              );
+            }
+            const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+            if (availablePhysical < item.quantity) {
+              throw new BadRequestException(
+                `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
+              );
+            }
             await this.stockService.reservePhysicalAllocated({
               orderId,
               orderItemId: item.id,

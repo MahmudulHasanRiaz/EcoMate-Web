@@ -77,14 +77,14 @@ export class StockService {
     if (productIds.length > 0) {
       const ph = productIds.map((_, i) => `$${i + 1}`).join(', ');
       await tx.$queryRawUnsafe(
-        `SELECT id FROM "Product" WHERE id IN (${ph}) FOR UPDATE`,
+        `SELECT id FROM "Product" WHERE id::text IN (${ph}) FOR UPDATE`,
         ...productIds,
       );
     }
     if (variantIds.length > 0) {
       const vh = variantIds.map((_, i) => `$${i + 1}`).join(', ');
       await tx.$queryRawUnsafe(
-        `SELECT id FROM "ProductVariant" WHERE id IN (${vh}) FOR UPDATE`,
+        `SELECT id FROM "ProductVariant" WHERE id::text IN (${vh}) FOR UPDATE`,
         ...variantIds,
       );
     }
@@ -419,8 +419,6 @@ export class StockService {
         };
         if (t.binLocationId) {
           whereClause.binLocationId = t.binLocationId;
-        } else {
-          whereClause.binLocationId = null;
         }
         existing = await tx.physicalInventory.findFirst({ where: whereClause });
       }
