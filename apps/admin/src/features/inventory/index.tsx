@@ -11,14 +11,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
-import { QuickAdjustmentModal } from './components/quick-adjustment-modal'
-import { PhysicalAdjustDialog } from './components/physical-adjust-dialog'
+import { AdjustStockModal } from './components/adjust-stock-modal'
 import { Link } from '@tanstack/react-router'
 
 interface StockOverviewItem {
@@ -83,7 +82,7 @@ export function Inventory() {
   const [selectedWarehouse, setSelectedWarehouse] = useState('all_wh')
   const [selectedBin, setSelectedBin] = useState('all_bins')
   const [selectedStatus, setSelectedStatus] = useState('all_status')
-  const [globalAdjustOpen, setGlobalAdjustOpen] = useState(false)
+  const [inventoryStatus, setInventoryStatus] = useState<'all' | 'in_stock' | 'low' | 'out_of_stock'>('all')
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
@@ -134,13 +133,35 @@ export function Inventory() {
     }
 
     // Search Filter
-    if (!search.trim()) return data
-    const q = search.toLowerCase()
-    return data.filter((p: any) =>
-      p.product?.name?.toLowerCase().includes(q) ||
-      p.product?.sku?.toLowerCase().includes(q)
-    )
-  }, [physicalData, search, selectedWarehouse, selectedStatus])
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      data = data.filter((p: any) =>
+        p.product?.name?.toLowerCase().includes(q) ||
+        p.product?.sku?.toLowerCase().includes(q)
+      )
+    }
+
+    // Group by product for expand/collapse support
+    const productMap = new Map<string, any>()
+    for (const pi of data) {
+      const pid = pi.product?.id
+      if (!pid) continue
+      if (!productMap.has(pid)) {
+        productMap.set(pid, {
+          ...pi,
+          _variants: [],
+          _totalQty: 0,
+          _totalReserved: 0,
+        })
+      }
+      const agg = productMap.get(pid)
+      agg._variants.push(pi)
+      agg._totalQty += pi.quantity || 0
+      agg._totalReserved += pi.reservedQuantity || 0
+    }
+
+    return Array.from(productMap.values())
+  }, [physicalData, search, selectedWarehouse, selectedStatus, selectedBin])
 
   const availabilityModeLabel = (mode: string) => {
     switch (mode) {
@@ -155,55 +176,75 @@ export function Inventory() {
   const stockLevels = useMemo(() => {
     if (viewMode === 'MANAGED') {
       if (!stockData?.data) return []
-      return stockData.data.map((p: StockOverviewItem) => ({
-        id: p.id,
-        productId: p.id,
-        name: p.name,
-        sku: p.sku,
-        availabilityMode: p.availabilityMode,
-        warehouse: p.availabilityMode === 'INVENTORY_CONTROLLED' ? '—' : 'Main Warehouse',
-        lot: '—',
-        expiry: '—',
-        available: p.availableStock,
-        reserved: 0,
-        allocated: 0,
-        onHand: p.availableStock,
-        cost: p.basePrice || 0,
-        lowStockQty: p.lowStockQty,
-        updated: '—',
-        image: Array.isArray(p.images) && p.images.length ? p.images[0] : null,
-        status: p.availableStock != null && p.availableStock < 0 ? 'negative' : (p.availableStock != null && p.lowStockQty != null && p.availableStock <= p.lowStockQty ? 'low' : 'optimal'),
-        raw: p,
-      }))
+      let items = stockData.data.map((p: StockOverviewItem) => {
+        const physicalStock = (p as any)._physicalStock ?? 0
+        return {
+          id: p.id,
+          productId: p.id,
+          name: p.name,
+          sku: p.sku,
+          availabilityMode: p.availabilityMode,
+          warehouse: p.availabilityMode === 'INVENTORY_CONTROLLED' ? '—' : 'Main Warehouse',
+          lot: '—',
+          expiry: '—',
+          available: p.availableStock,
+          reserved: 0,
+          allocated: 0,
+          onHand: p.availableStock,
+          cost: p.basePrice || 0,
+          lowStockQty: p.lowStockQty,
+          updated: '—',
+          image: Array.isArray(p.images) && p.images.length ? p.images[0] : null,
+          status: p.availableStock != null && p.availableStock < 0 ? 'negative' : (p.availableStock != null && p.lowStockQty != null && p.availableStock <= p.lowStockQty ? 'low' : 'optimal'),
+          raw: p,
+          _hasPhysicalStock: physicalStock > 0,
+        }
+      })
+
+      // Apply inventory status filter
+      if (inventoryStatus === 'in_stock') {
+        items = items.filter((i) => i._hasPhysicalStock || (i.available != null && i.available > 0))
+      } else if (inventoryStatus === 'low') {
+        items = items.filter((i) => i.status === 'low' || i.status === 'negative')
+      } else if (inventoryStatus === 'out_of_stock') {
+        items = items.filter((i) => i.available != null && i.available <= 0)
+      }
+
+      return items
     } else {
       if (!filteredPhysicalData) return []
       return filteredPhysicalData.map((pi: any) => {
-        const avail = pi.quantity - pi.reservedQuantity
+        const variants = pi._variants || []
+        const totalQty = pi._totalQty ?? pi.quantity ?? 0
+        const totalReserved = pi._totalReserved ?? pi.reservedQuantity ?? 0
+        const avail = totalQty - totalReserved
         const prodImages = pi.product?.images
         const firstImg = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null
+        const isVariable = variants.length > 1 || (variants.length === 1 && variants[0].variantId)
         return {
           id: pi.id,
           productId: pi.product?.id,
           name: pi.product?.name || 'Unknown',
           sku: pi.product?.sku || '—',
           availabilityMode: 'INVENTORY_CONTROLLED',
-          warehouse: pi.warehouse?.name || 'Unknown Warehouse',
+          warehouse: variants.length > 1 ? `${variants.length} warehouse records` : (pi.warehouse?.name || 'Unknown Warehouse'),
           bin: pi.binLocation?.code || '—',
           lot: '—',
           expiry: '—',
           available: avail,
-          reserved: pi.reservedQuantity,
+          reserved: totalReserved,
           allocated: 0,
-          onHand: pi.quantity,
+          onHand: totalQty,
           cost: pi.product?.basePrice || 0,
           updated: pi.updatedAt ? new Date(pi.updatedAt).toLocaleDateString() : '—',
           image: typeof firstImg === 'string' ? firstImg : null,
           status: avail < 0 ? 'negative' : (avail === 0 ? 'low' : 'optimal'),
-          raw: pi.product,
+          raw: { ...pi.product, type: isVariable ? 'variable' : 'simple' },
+          _physicalVariants: variants,
         }
       })
     }
-  }, [viewMode, stockData, filteredPhysicalData])
+  }, [viewMode, stockData, filteredPhysicalData, inventoryStatus])
 
   const totalPages = viewMode === 'MANAGED' ? (stockData?.meta?.totalPages || 1) : 1
   const isLoading = viewMode === 'MANAGED' ? isStockLoading : isPhysicalLoading
@@ -260,9 +301,6 @@ export function Inventory() {
                 Physical Inventory
               </Button>
             </div>
-            {viewMode === 'PHYSICAL' && (
-              <Button onClick={() => setGlobalAdjustOpen(true)}><Edit3 className='h-4 w-4 mr-1' /> Quick Adjust</Button>
-            )}
           </div>
         </div>
 
@@ -271,6 +309,17 @@ export function Inventory() {
             <Filter className="h-4 w-4" /> Filters:
           </div>
           <Input placeholder="Search name or SKU..." className="h-9 w-[200px] bg-background" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+          {viewMode === 'MANAGED' && (
+            <Select value={inventoryStatus} onValueChange={(v) => setInventoryStatus(v as any)}>
+              <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Inventory" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Products</SelectItem>
+                <SelectItem value="in_stock">Has Stock</SelectItem>
+                <SelectItem value="low">Low / Out of Stock</SelectItem>
+                <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           {viewMode === 'PHYSICAL' && (
             <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBin('all_bins') }}>
               <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
@@ -302,7 +351,6 @@ export function Inventory() {
               <SelectItem value="negative">Negative Stock</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="date" className="h-9 w-[150px] bg-background" title="Expiry before" />
         </div>
 
         <Card>
@@ -362,7 +410,7 @@ export function Inventory() {
                       <TableRow className={`cursor-pointer hover:bg-muted/50 transition-colors ${p.status === 'negative' ? 'bg-red-50/50 dark:bg-red-950/20' : ''}`} onClick={() => handleRowClick(p)}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {viewMode === 'MANAGED' && p.raw?.type === 'variable' ? (
+                            {(viewMode === 'MANAGED' || viewMode === 'PHYSICAL') && p.raw?.type === 'variable' ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -376,7 +424,7 @@ export function Inventory() {
                                 )}
                               </Button>
                             ) : (
-                              viewMode === 'MANAGED' && <div className="w-7 shrink-0" />
+                              <div className="w-7 shrink-0" />
                             )}
                             <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
                               {p.image ? (
@@ -418,28 +466,37 @@ export function Inventory() {
                         </TableCell>
                         <TableCell className='text-sm text-muted-foreground'>{p.updated}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => handleRowClick(p)}>Quick Drawer</DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link to="/op/inventory/detail" search={{ productId: p.productId }}>
-                                  Full Detail Page
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleQuickAdjust(p.productId)}><Edit3 className="mr-2 h-4 w-4" /> Quick Adjust</DropdownMenuItem>
-                              <DropdownMenuItem asChild><Link to="/op/inventory/transfers"><ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer</Link></DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => handleQuickAdjust(p.productId)}
+                            >
+                              <Edit3 className="h-3 w-3 mr-1" /> Adjust
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleRowClick(p)}>Quick Drawer</DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link to="/op/inventory/detail" search={{ productId: p.productId }}>
+                                    Full Detail Page
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild><Link to="/op/inventory/transfers"><ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer</Link></DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
-                      {viewMode === 'MANAGED' && p.raw?.type === 'variable' && expandedRows[p.id] && 
+                      {p.raw?.type === 'variable' && expandedRows[p.id] && viewMode === 'MANAGED' && 
                         (p.raw.variants || []).map((v: any) => {
                           const attrs = v.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'
                           const variantImg = v.image || p.image
@@ -480,19 +537,84 @@ export function Inventory() {
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">—</TableCell>
                               <TableCell onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Variant Actions</DropdownMenuLabel>
-                                    <DropdownMenuItem onClick={() => handleRowClick({ raw: { ...p.raw, sku: v.sku, name: `${p.name} (${attrs})`, availableStock: avail } })}>Quick Drawer</DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => handleQuickAdjust(p.productId, v.id)}><Edit3 className="mr-2 h-4 w-4" /> Quick Adjust</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={() => handleQuickAdjust(p.productId, v.id)}
+                                  >
+                                    <Edit3 className="h-3 w-3 mr-1" /> Adjust
+                                  </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" className="h-8 w-8 p-0">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Variant Actions</DropdownMenuLabel>
+                                      <DropdownMenuItem onClick={() => handleRowClick({ raw: { ...p.raw, sku: v.sku, name: `${p.name} (${attrs})`, availableStock: avail } })}>Quick Drawer</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      }
+                      {p.raw?.type === 'variable' && expandedRows[p.id] && viewMode === 'PHYSICAL' && p._physicalVariants &&
+                        p._physicalVariants.map((pv: any) => {
+                          const attrs = pv.variant?.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'
+                          const variantImg = pv.variant?.image || p.image
+                          const pvAvail = (pv.quantity || 0) - (pv.reservedQuantity || 0)
+                          return (
+                            <TableRow key={pv.id} className="bg-muted/5 hover:bg-muted/10 transition-colors border-l-2 border-l-primary/40">
+                              <TableCell className="pl-10">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-8 w-8 shrink-0 rounded border bg-muted flex items-center justify-center overflow-hidden">
+                                    {variantImg ? (
+                                      <img src={variantImg} alt={pv.variant?.sku || pv.sku} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <Package className="h-4 w-4 text-muted-foreground/30" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-sm">{attrs}</div>
+                                    <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                                      <span>SKU: {pv.variant?.sku || pv.sku || '—'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-xs font-medium">
+                                {pv.warehouse?.name || '—'}
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs font-mono">{pv.binLocation?.code || '—'}</span>
+                              </TableCell>
+                              <TableCell className={`text-right font-semibold text-sm ${pvAvail < 0 ? 'text-red-600' : pvAvail < 10 ? 'text-amber-600' : 'text-green-600'}`}>
+                                {pvAvail}
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground text-xs">{pv.reservedQuantity || 0}</TableCell>
+                              <TableCell className="text-right text-muted-foreground text-xs">0</TableCell>
+                              <TableCell className="text-right font-medium text-sm">
+                                {pv.quantity}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {pv.updatedAt ? new Date(pv.updatedAt).toLocaleDateString() : '—'}
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={() => handleQuickAdjust(p.productId, pv.variantId)}
+                                  >
+                                    <Edit3 className="h-3 w-3 mr-1" /> Adjust
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           )
@@ -530,7 +652,7 @@ export function Inventory() {
         onAdjust={() => handleQuickAdjust(selectedProduct?.id)}
       />
 
-      <QuickAdjustmentModal 
+      <AdjustStockModal 
         open={adjustOpen} 
         onOpenChange={setAdjustOpen} 
         productId={adjustProductId} 
@@ -541,11 +663,6 @@ export function Inventory() {
           queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
           queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
         }}
-      />
-
-      <PhysicalAdjustDialog 
-        open={globalAdjustOpen} 
-        onOpenChange={setGlobalAdjustOpen} 
       />
     </>
   )

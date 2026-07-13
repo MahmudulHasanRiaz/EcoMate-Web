@@ -37,8 +37,11 @@ export class WarehousesController {
     @Query('warehouseId') warehouseId?: string,
     @Query('search') search?: string,
     @Query('isActive') isActive?: string,
+    @Query('zoneId') zoneId?: string,
+    @Query('rackId') rackId?: string,
+    @Query('shelfId') shelfId?: string,
   ) {
-    return this.svc.findAllBins(warehouseId, search, isActive);
+    return this.svc.findAllBins(warehouseId, search, isActive, zoneId, rackId, shelfId);
   }
 
   @Get(':id')

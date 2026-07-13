@@ -182,6 +182,20 @@ export class InventoryService {
         where,
         include: {
           product: { select: { id: true, name: true, sku: true, images: true } },
+          variant: {
+            select: {
+              id: true,
+              sku: true,
+              price: true,
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    select: { id: true, value: true, attribute: { select: { name: true } } },
+                  },
+                },
+              },
+            },
+          },
           warehouse: { select: { id: true, name: true } },
         },
         skip: (page - 1) * perPage,
@@ -194,9 +208,16 @@ export class InventoryService {
     const mapped = data.map((l) => {
       const prodImages = l.product?.images;
       const firstImage = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null;
+      const variantLabel = l.variant
+        ? l.variant.attributeValues
+            ?.map((av: any) => av.attributeValue?.value)
+            .filter(Boolean)
+            .join(' / ') || null
+        : null;
       return {
         id: l.id,
         productId: l.productId,
+        variantId: l.variantId,
         warehouseId: l.warehouseId,
         quantity: l.quantity,
         direction: l.direction,
@@ -207,10 +228,10 @@ export class InventoryService {
         note: l.reason,
         performedBy: l.performedBy || 'System',
         performedAt: l.createdAt,
-        productName: l.product?.name || 'Unknown Product',
-        sku: l.product?.sku || '—',
-        warehouseName: l.warehouse?.name || 'Unknown Warehouse',
-        unitCost: l.unitCost ? Number(l.unitCost) : null,
+        productName: l.product?.name || '—',
+        variantName: variantLabel,
+        sku: l.variant?.sku || l.product?.sku || '—',
+        warehouseName: l.warehouse?.name || null,
         image: typeof firstImage === 'string' ? firstImage : null,
       };
     });
@@ -824,6 +845,7 @@ export class InventoryService {
       return {
         ...p,
         managedStockQuantity: managedStockSum,
+        _physicalStock: physicalStockSum,
         availableStock:
           p.availabilityMode === 'MANAGED_STOCK'
             ? managedStockSum - (p.reservedStock ?? 0)

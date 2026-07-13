@@ -78,26 +78,57 @@ export class ManagedStockLedgerService {
     const productIds = [
       ...new Set(data.map((l) => l.productId).filter(Boolean)),
     ] as string[];
+    const variantIds = [
+      ...new Set(data.map((l) => l.variantId).filter(Boolean)),
+    ] as string[];
 
-    const products = productIds.length
-      ? await this.prisma.product.findMany({
-          where: { id: { in: productIds } },
-          select: { id: true, name: true, sku: true, images: true },
-        })
-      : [];
+    const [products, variants] = await Promise.all([
+      productIds.length
+        ? this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true, sku: true, images: true },
+          })
+        : [],
+      variantIds.length
+        ? this.prisma.productVariant.findMany({
+            where: { id: { in: variantIds } },
+            select: {
+              id: true,
+              sku: true,
+              productId: true,
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    select: { id: true, value: true, attribute: { select: { name: true } } },
+                  },
+                },
+              },
+            },
+          })
+        : [],
+    ]);
 
-    const productMap = new Map(products.map((p) => [p.id, p]));
+    const productMap = new Map(products.map((p): [string, typeof p] => [p.id, p]));
+    const variantMap = new Map(variants.map((v): [string, typeof v] => [v.id, v]));
 
     const mapped = data.map((l) => {
       const prod = l.productId ? productMap.get(l.productId) : null;
+      const variant = l.variantId ? variantMap.get(l.variantId) : null;
       const prodImages = prod?.images;
       const firstImage = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null;
+      const variantLabel = variant
+        ? variant.attributeValues
+            ?.map((av: any) => av.attributeValue?.value)
+            .filter(Boolean)
+            .join(' / ') || null
+        : null;
       return {
         ...l,
         reference: l.referenceId,
         user: l.performedById,
         productName: prod?.name || '—',
-        sku: prod?.sku || '—',
+        variantName: variantLabel,
+        sku: variant?.sku || prod?.sku || '—',
         image: typeof firstImage === 'string' ? firstImage : null,
       };
     });

@@ -97,7 +97,7 @@ export class WarehousesService {
 
   /* ── Bin Locations ── */
 
-  async findAllBins(warehouseId?: string, search?: string, isActive?: string) {
+  async findAllBins(warehouseId?: string, search?: string, isActive?: string, zoneId?: string, rackId?: string, shelfId?: string) {
     const where: any = {};
     if (warehouseId) where.warehouseId = warehouseId;
     if (search) {
@@ -106,6 +106,9 @@ export class WarehousesService {
     if (isActive !== undefined) {
       where.isActive = isActive === 'true';
     }
+    if (zoneId) where.zoneId = zoneId;
+    if (rackId) where.rackId = rackId;
+    if (shelfId) where.shelfId = shelfId;
     return this.prisma.binLocation.findMany({
       where,
       include: { warehouse: { select: { id: true, name: true } } },

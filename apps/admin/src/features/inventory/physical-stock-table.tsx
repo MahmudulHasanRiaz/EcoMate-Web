@@ -17,11 +17,13 @@ import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 interface PhysicalStock {
   id: string
   productId: string
+  variantId: string | null
   warehouseId: string
   quantity: number
   reservedQuantity: number
   updatedAt: string
   product: { id: string; name: string; sku: string; images: any }
+  variant?: { id: string; sku: string; attributeValues?: Array<{ attributeValue: { value: string } }> } | null
   warehouse: { id: string; name: string; code: string }
 }
 
@@ -96,7 +98,6 @@ export function PhysicalStockTable() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
                   <TableHead>Warehouse</TableHead>
                   <TableHead className='text-right'>On Hand</TableHead>
                   <TableHead className='text-right'>Reserved</TableHead>
@@ -108,13 +109,13 @@ export function PhysicalStockTable() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className='text-center py-8'>
+                    <TableCell colSpan={7} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto' />
                     </TableCell>
                   </TableRow>
                 ) : filteredStock.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className='text-center py-12 text-muted-foreground'>
+                    <TableCell colSpan={7} className='text-center py-12 text-muted-foreground'>
                       <Warehouse className='h-8 w-8 mx-auto mb-2 opacity-40' />
                       No physical stock records found.
                     </TableCell>
@@ -122,8 +123,26 @@ export function PhysicalStockTable() {
                 ) : (
                   filteredStock.map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell className='font-medium'>{s.product.name}</TableCell>
-                      <TableCell className='text-sm text-muted-foreground'>{s.product.sku}</TableCell>
+                      <TableCell className='font-medium'>
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 shrink-0 rounded border bg-muted flex items-center justify-center overflow-hidden">
+                            {s.product.images && Array.isArray(s.product.images) && s.product.images.length ? (
+                              <img src={s.product.images[0]} alt={s.product.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <Package className="h-4 w-4 text-muted-foreground/50" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-medium text-sm">
+                              {s.product.name}
+                              {s.variant?.attributeValues?.length
+                                ? ` — ${s.variant.attributeValues.map((av: any) => av.attributeValue?.value).join(' / ')}`
+                                : ''}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{s.variant?.sku || s.product.sku}</div>
+                          </div>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Badge variant='outline'>{s.warehouse.name}</Badge>
                       </TableCell>
@@ -138,17 +157,17 @@ export function PhysicalStockTable() {
                         {new Date(s.updatedAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell className='text-right'>
-                        <Button variant='ghost' size='sm' onClick={() => setSelectedProductDetails({
+                        <Button variant='outline' size='sm' onClick={() => setSelectedProductDetails({
                           id: s.product.id,
                           name: s.product.name,
-                          sku: s.product.sku,
+                          sku: s.variant?.sku || s.product.sku,
                           onHand: s.quantity,
                           available: s.quantity - s.reservedQuantity,
                           reserved: s.reservedQuantity,
                           allocated: 0,
                           status: (s.quantity - s.reservedQuantity) < 0 ? 'negative' : ((s.quantity - s.reservedQuantity) === 0 ? 'low' : 'optimal'),
                         })}>
-                          <Eye className='h-4 w-4' />
+                          View
                         </Button>
                       </TableCell>
                     </TableRow>

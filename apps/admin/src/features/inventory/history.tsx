@@ -26,6 +26,8 @@ interface Product {
 interface LogEntry {
   id: string
   productId: string
+  variantId?: string | null
+  variantName?: string | null
   productName: string
   sku: string
   warehouseName?: string
@@ -368,7 +370,7 @@ export function MovementHistory() {
                             )}
                           </div>
                           <div>
-                            <div className="font-medium text-sm">{log.productName}</div>
+                            <div className="font-medium text-sm">{log.productName}{log.variantName ? ` — ${log.variantName}` : ''}</div>
                             <div className="text-xs text-muted-foreground">{log.sku}</div>
                           </div>
                         </div>
