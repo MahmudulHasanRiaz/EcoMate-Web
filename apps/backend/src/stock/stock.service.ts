@@ -421,6 +421,8 @@ export class StockService {
         };
         if (t.binLocationId) {
           whereClause.binLocationId = t.binLocationId;
+        } else {
+          whereClause.binLocationId = null;
         }
         existing = await tx.physicalInventory.findFirst({ where: whereClause });
       }
@@ -1049,6 +1051,7 @@ export class StockService {
       await client.physicalInventoryLedger.create({
         data: {
           productId: parent.productId,
+          variantId: parent.variantId ?? null,
           warehouseId: parent.warehouseId,
           quantity: deductQty,
           direction: 'OUT',

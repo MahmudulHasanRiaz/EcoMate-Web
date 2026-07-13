@@ -134,7 +134,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
       quantity: qty,
       reason,
       unitCost: cost,
-      binLocationId: binLocationId || undefined,
+      binLocationId: binLocationId && binLocationId !== '__none__' ? binLocationId : undefined,
     })
   }
 
@@ -181,34 +181,37 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
                 <div className="grid gap-2">
                   <Label>Location (optional)</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    <Select value={zoneId} onValueChange={setZoneId}>
+                    <Select value={zoneId} onValueChange={(v) => { setZoneId(v); if (v !== '__none__') { setRackId(''); setShelfId(''); setBinLocationId(''); } }}>
                       <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Zone" />
+                        <SelectValue placeholder="Zone (optional)" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="__none__" className="text-xs text-muted-foreground">None</SelectItem>
                         {(zones || []).map((z: any) => (
                           <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {zoneId && racks && racks.length > 0 && (
-                      <Select value={rackId} onValueChange={setRackId}>
+                    {zoneId && zoneId !== '__none__' && racks && racks.length > 0 && (
+                      <Select value={rackId} onValueChange={(v) => { setRackId(v); if (v !== '__none__') { setShelfId(''); setBinLocationId(''); } }}>
                         <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Rack" />
+                          <SelectValue placeholder="Rack (optional)" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-muted-foreground">None</SelectItem>
                           {(racks || []).map((r: any) => (
                             <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     )}
-                    {rackId && shelves && shelves.length > 0 && (
-                      <Select value={shelfId} onValueChange={setShelfId}>
+                    {rackId && rackId !== '__none__' && shelves && shelves.length > 0 && (
+                      <Select value={shelfId} onValueChange={(v) => { setShelfId(v); if (v !== '__none__') { setBinLocationId(''); } }}>
                         <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Shelf" />
+                          <SelectValue placeholder="Shelf (optional)" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-muted-foreground">None</SelectItem>
                           {(shelves || []).map((s: any) => (
                             <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                           ))}

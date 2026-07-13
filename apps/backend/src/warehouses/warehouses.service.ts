@@ -191,8 +191,26 @@ export class WarehousesService {
   async deleteBinLocation(binId: string) {
     const bin = await this.prisma.binLocation.findUnique({
       where: { id: binId },
+      include: {
+        physicalInventories: { select: { id: true }, take: 1 },
+        reservationAllocations: { select: { id: true }, take: 1 },
+        products: { select: { id: true }, take: 1 },
+        variants: { select: { id: true }, take: 1 },
+      },
     });
     if (!bin) throw new NotFoundException('Bin location not found');
+    if (bin.physicalInventories.length > 0) {
+      throw new ConflictException('Cannot delete bin location with physical inventory records');
+    }
+    if (bin.reservationAllocations.length > 0) {
+      throw new ConflictException('Cannot delete bin location with active reservation allocations');
+    }
+    if (bin.products.length > 0) {
+      throw new ConflictException('Cannot delete bin location set as default bin for products');
+    }
+    if (bin.variants.length > 0) {
+      throw new ConflictException('Cannot delete bin location set as bin for variants');
+    }
     return this.prisma.binLocation.delete({ where: { id: binId } });
   }
 
@@ -231,9 +249,15 @@ export class WarehousesService {
   async deleteZone(zoneId: string) {
     const zone = await this.prisma.zone.findUnique({
       where: { id: zoneId },
-      include: { bins: { select: { id: true } } },
+      include: {
+        racks: { select: { id: true } },
+        bins: { select: { id: true } },
+      },
     });
     if (!zone) throw new NotFoundException('Zone not found');
+    if (zone.racks.length > 0) {
+      throw new ConflictException('Cannot delete zone with existing racks');
+    }
     if (zone.bins.length > 0) {
       throw new ConflictException('Cannot delete zone with assigned bins');
     }
@@ -281,9 +305,15 @@ export class WarehousesService {
   async deleteRack(rackId: string) {
     const rack = await this.prisma.rack.findUnique({
       where: { id: rackId },
-      include: { bins: { select: { id: true } } },
+      include: {
+        shelves: { select: { id: true } },
+        bins: { select: { id: true } },
+      },
     });
     if (!rack) throw new NotFoundException('Rack not found');
+    if (rack.shelves.length > 0) {
+      throw new ConflictException('Cannot delete rack with existing shelves');
+    }
     if (rack.bins.length > 0) {
       throw new ConflictException('Cannot delete rack with assigned bins');
     }

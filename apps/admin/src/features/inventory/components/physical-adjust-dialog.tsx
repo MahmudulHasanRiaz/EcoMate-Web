@@ -234,10 +234,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
           toast.error(`Unit cost is required and must be greater than 0 for adding stock of ${item.name}`)
           return
         }
-        if (!item.binLocationId) {
-          toast.error(`Bin Location is required for adding stock of ${item.name}`)
-          return
-        }
+        // Bin Location is optional — NULL binLocationId creates warehouse-level stock
       }
     }
 
@@ -249,7 +246,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
         productId: item.productId,
         variantId: item.variantId || undefined,
         quantity: item.quantity,
-        binLocationId: item.binLocationId || undefined,
+        binLocationId: item.binLocationId && item.binLocationId !== '__none__' ? item.binLocationId : undefined,
         unitCost: item.quantity > 0 ? parseFloat(item.unitCost) : undefined,
       })),
     })
@@ -388,9 +385,10 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                                 onValueChange={(v) => updateItem(item.id, { binLocationId: v })}
                               >
                                 <SelectTrigger className="h-8 py-0 px-2 text-xs">
-                                  <SelectValue placeholder='Auto-assign' />
+                                  <SelectValue placeholder='No bin (warehouse-level)' />
                                 </SelectTrigger>
                                 <SelectContent>
+                                  <SelectItem value="__none__" className="text-xs text-muted-foreground">No bin (warehouse-level)</SelectItem>
                                   {(binLocations || []).map((b: any) => (
                                     <SelectItem key={b.id} value={b.id} className="text-xs">
                                       {b.code}{b.zone ? ` (${b.zone})` : ''}
