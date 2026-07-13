@@ -50,6 +50,8 @@ interface Product {
   id: string
   name: string
   sku: string
+  type: string
+  variants?: { id: string; name: string; sku: string }[]
 }
 
 export function Transfers() {
@@ -90,6 +92,7 @@ export function Transfers() {
   const [productSearch, setProductSearch] = useState('')
   const [productSearchOpen, setProductSearchOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [selectedVariantId, setSelectedVariantId] = useState<string>('')
 
   const { data: productResults, isFetching: searchingProducts } = useQuery({
     queryKey: ['product-search', productSearch],
@@ -104,7 +107,7 @@ export function Transfers() {
   const [notes, setNotes] = useState('')
 
   const createTransferMut = useMutation({
-    mutationFn: (data: { productId: string; sourceLocation: string; destinationLocation: string; quantity: number; notes?: string; sourceBinId?: string; destinationBinId?: string }) =>
+    mutationFn: (data: { productId: string; variantId?: string; sourceLocation: string; destinationLocation: string; quantity: number; notes?: string; sourceBinId?: string; destinationBinId?: string; idempotencyKey: string }) =>
       apiClient.post('/inventory/transfer', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
@@ -124,6 +127,7 @@ export function Transfers() {
     setFormSourceBin('')
     setFormDestBin('')
     setSelectedProduct(null)
+    setSelectedVariantId('')
     setProductSearch('')
     setQuantity('')
     setNotes('')
@@ -135,14 +139,17 @@ export function Transfers() {
     if (!formDest) { toast.error('Select destination warehouse'); return }
     if (formSource === formDest) { toast.error('Source and destination must differ'); return }
     if (!quantity || parseInt(quantity) < 1) { toast.error('Enter a valid quantity'); return }
+    const idempotencyKey = `TRF-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     createTransferMut.mutate({
       productId: selectedProduct.id,
+      variantId: selectedVariantId || undefined,
       sourceLocation: formSource,
       destinationLocation: formDest,
       quantity: parseInt(quantity),
       notes: notes || undefined,
       sourceBinId: formSourceBin || undefined,
       destinationBinId: formDestBin || undefined,
+      idempotencyKey,
     })
   }
 
@@ -348,6 +355,23 @@ export function Transfers() {
                 </PopoverContent>
               </Popover>
             </div>
+
+            {selectedProduct && selectedProduct.variants && selectedProduct.variants.length > 0 && (
+              <div className="space-y-2">
+                <Label>Variant (optional)</Label>
+                <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All variants (product-level)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All variants (product-level)</SelectItem>
+                    {selectedProduct.variants.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.name} ({v.sku})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Quantity</Label>

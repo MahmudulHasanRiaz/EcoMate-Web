@@ -6,13 +6,13 @@ export class CreateBinLocationDto {
 
   @IsOptional()
   @IsString()
-  zone?: string;
+  zoneId?: string;
 
   @IsOptional()
   @IsString()
-  rack?: string;
+  rackId?: string;
 
   @IsOptional()
   @IsString()
-  shelf?: string;
+  shelfId?: string;
 }

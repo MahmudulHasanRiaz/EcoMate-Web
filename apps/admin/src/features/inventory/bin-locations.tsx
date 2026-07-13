@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
@@ -21,11 +21,14 @@ interface BinLocation {
   id: string
   warehouseId: string
   code: string
-  zone: string | null
-  rack: string | null
-  shelf: string | null
+  zoneId: string | null
+  rackId: string | null
+  shelfId: string | null
   isActive: boolean
   warehouse: { id: string; name: string }
+  zone?: { id: string; name: string } | null
+  rack?: { id: string; name: string } | null
+  shelf?: { id: string; name: string } | null
   createdAt: string
 }
 
@@ -35,15 +38,32 @@ interface WarehouseItem {
   isActive: boolean
 }
 
+interface Zone {
+  id: string
+  name: string
+  racks: Rack[]
+}
+
+interface Rack {
+  id: string
+  name: string
+  shelves: Shelf[]
+}
+
+interface Shelf {
+  id: string
+  name: string
+}
+
 interface BinForm {
   code: string
-  zone: string
-  rack: string
-  shelf: string
+  zoneId: string
+  rackId: string
+  shelfId: string
   warehouseId: string
 }
 
-const emptyForm: BinForm = { code: '', zone: '', rack: '', shelf: '', warehouseId: '' }
+const emptyForm: BinForm = { code: '', zoneId: '', rackId: '', shelfId: '', warehouseId: '' }
 
 export function BinLocations() {
   const queryClient = useQueryClient()
@@ -71,13 +91,47 @@ export function BinLocations() {
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
   })
 
+  // Fetch zones for selected warehouse
+  const { data: zones } = useQuery<Zone[]>({
+    queryKey: ['zones', form.warehouseId],
+    queryFn: () => apiClient.get(`/warehouses/${form.warehouseId}/zones`).then(r => r.data || []),
+    enabled: !!form.warehouseId,
+  })
+
+  // Derive racks from selected zone
+  const selectedZone = zones?.find(z => z.id === form.zoneId)
+  const racks = selectedZone?.racks ?? []
+
+  // Derive shelves from selected rack
+  const selectedRack = racks.find(r => r.id === form.rackId)
+  const shelves = selectedRack?.shelves ?? []
+
+  // Reset dependent fields when parent changes
+  useEffect(() => {
+    if (form.warehouseId) {
+      setForm(f => ({ ...f, zoneId: '', rackId: '', shelfId: '' }))
+    }
+  }, [form.warehouseId])
+
+  useEffect(() => {
+    if (form.zoneId) {
+      setForm(f => ({ ...f, rackId: '', shelfId: '' }))
+    }
+  }, [form.zoneId])
+
+  useEffect(() => {
+    if (form.rackId) {
+      setForm(f => ({ ...f, shelfId: '' }))
+    }
+  }, [form.rackId])
+
   const createMut = useMutation({
-    mutationFn: (data: { code: string; warehouseId: string; zone?: string; rack?: string; shelf?: string }) =>
+    mutationFn: (data: { code: string; warehouseId: string; zoneId?: string; rackId?: string; shelfId?: string }) =>
       apiClient.post(`/warehouses/${data.warehouseId}/bin-locations`, {
         code: data.code,
-        zone: data.zone || undefined,
-        rack: data.rack || undefined,
-        shelf: data.shelf || undefined,
+        zoneId: data.zoneId || undefined,
+        rackId: data.rackId || undefined,
+        shelfId: data.shelfId || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
@@ -90,7 +144,7 @@ export function BinLocations() {
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, warehouseId, data }: { id: string; warehouseId: string; data: { code: string; zone?: string; rack?: string; shelf?: string } }) =>
+    mutationFn: ({ id, warehouseId, data }: { id: string; warehouseId: string; data: { code: string; zoneId?: string; rackId?: string; shelfId?: string } }) =>
       apiClient.put(`/warehouses/${warehouseId}/bin-locations/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
@@ -107,7 +161,6 @@ export function BinLocations() {
       apiClient.delete(`/warehouses/${warehouseId}/bin-locations/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
-      queryClient.invalidateQueries({ queryKey: ['warehouses'] })
       setDeleteConfirm(null)
       toast.success('Bin location deleted')
     },
@@ -124,38 +177,33 @@ export function BinLocations() {
     setEditing(bin)
     setForm({
       code: bin.code,
-      zone: bin.zone || '',
-      rack: bin.rack || '',
-      shelf: bin.shelf || '',
+      zoneId: bin.zoneId || '',
+      rackId: bin.rackId || '',
+      shelfId: bin.shelfId || '',
       warehouseId: bin.warehouseId,
     })
     setOpen(true)
   }
 
-  const handleSave = () => {
+  const handleSubmit = () => {
     if (!form.code.trim()) { toast.error('Bin code is required'); return }
-    if (!form.warehouseId) { toast.error('Select a warehouse'); return }
-
-    const payload = {
-      code: form.code.trim(),
-      zone: form.zone.trim() || undefined,
-      rack: form.rack.trim() || undefined,
-      shelf: form.shelf.trim() || undefined,
-    }
-
+    if (!form.warehouseId) { toast.error('Warehouse is required'); return }
     if (editing) {
-      updateMut.mutate({ id: editing.id, warehouseId: editing.warehouseId, data: payload })
+      updateMut.mutate({ id: editing.id, warehouseId: editing.warehouseId, data: form })
     } else {
-      createMut.mutate({ ...payload, warehouseId: form.warehouseId })
+      createMut.mutate(form)
     }
   }
 
-  const list = Array.isArray(bins) ? bins : []
-  const warehouseList = Array.isArray(warehouses) ? warehouses.filter(w => w.isActive) : []
+  const warehouseNameById = (id: string) => warehouses?.find(w => w.id === id)?.name || id
 
-  const totalBins = list.length
-  const activeBins = list.filter(b => b.isActive).length
-  const warehousesWithBins = new Set(list.map(b => b.warehouseId)).size
+  const formatHierarchy = (bin: BinLocation) => {
+    const parts: string[] = []
+    if (bin.zone?.name) parts.push(bin.zone.name)
+    if (bin.rack?.name) parts.push(bin.rack.name)
+    if (bin.shelf?.name) parts.push(bin.shelf.name)
+    return parts.length > 0 ? parts.join(' / ') : '-'
+  }
 
   return (
     <>
@@ -164,154 +212,84 @@ export function BinLocations() {
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
-      <Main className='flex flex-1 flex-col gap-4'>
-        <div className='flex items-end justify-between'>
+      <Main className='flex flex-col gap-6'>
+        <div className='flex items-center justify-between'>
           <div>
-            <h2 className='text-2xl font-bold tracking-tight'>Bin Locations</h2>
-            <p className='text-muted-foreground text-sm'>
-              Manage storage positions within warehouses
-            </p>
+            <h1 className='text-2xl font-bold tracking-tight'>Bin Locations</h1>
+            <p className='text-muted-foreground'>Manage warehouse storage hierarchy (Zone → Rack → Shelf → Bin).</p>
           </div>
           <Button onClick={openCreate}>
-            <Plus className='h-4 w-4 mr-1' /> Add Bin
+            <Plus className='mr-2 h-4 w-4' /> Add Bin
           </Button>
         </div>
 
-        <div className='grid grid-cols-3 gap-4'>
-          <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10'>
-            <CardContent className='p-4'>
-              <div className='text-xs font-medium text-muted-foreground'>Total Bins</div>
-              <div className='text-2xl font-bold mt-1'>{totalBins}</div>
-            </CardContent>
-          </Card>
-          <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10'>
-            <CardContent className='p-4'>
-              <div className='text-xs font-medium text-muted-foreground'>Active Bins</div>
-              <div className='text-2xl font-bold mt-1 text-green-600'>{activeBins}</div>
-            </CardContent>
-          </Card>
-          <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10'>
-            <CardContent className='p-4'>
-              <div className='text-xs font-medium text-muted-foreground'>Warehouses with Bins</div>
-              <div className='text-2xl font-bold mt-1 text-blue-600'>{warehousesWithBins}</div>
-            </CardContent>
-          </Card>
+        <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-lg border">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search bins..." className="pl-9 bg-background" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+            <SelectTrigger className="w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Warehouses</SelectItem>
+              {warehouses?.filter(w => w.isActive).map(w => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[140px] bg-background"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10'>
-          <CardContent className='p-3'>
-            <div className='flex items-center gap-3'>
-              <div className='relative w-[220px]'>
-                <Search className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder='Search by bin code...'
-                  className='h-9 text-sm pl-9 pr-7 bg-background/70 focus:bg-background border-none shadow-sm'
-                />
-                {search && (
-                  <button onClick={() => setSearch('')} className='absolute right-2 top-1/2 -translate-y-1/2 hover:text-foreground transition-colors'>
-                    <X className='h-3.5 w-3.5 text-muted-foreground' />
-                  </button>
-                )}
-              </div>
-              <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-                <SelectTrigger className='h-9 w-[180px] bg-background border-none shadow-sm'>
-                  <SelectValue placeholder='All Warehouses' />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all'>All Warehouses</SelectItem>
-                  {warehouseList.map(w => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className='h-9 w-[140px] bg-background border-none shadow-sm'>
-                  <SelectValue placeholder='All Status' />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all'>All Status</SelectItem>
-                  <SelectItem value='active'>Active</SelectItem>
-                  <SelectItem value='inactive'>Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
-          <CardContent className='p-0'>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Zone</TableHead>
-                  <TableHead>Rack</TableHead>
-                  <TableHead>Shelf</TableHead>
+                  <TableHead>Bin Code</TableHead>
                   <TableHead>Warehouse</TableHead>
+                  <TableHead>Zone / Rack / Shelf</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className='w-20'></TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isError ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className='text-center py-8 text-destructive'>
-                      <p className='text-sm'>{error instanceof Error ? error.message : 'Failed to load bin locations.'}</p>
-                    </TableCell>
-                  </TableRow>
-                ) : isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className='text-center py-8'>
-                      <Loader2 className='animate-spin h-6 w-6 mx-auto' />
-                    </TableCell>
-                  </TableRow>
-                ) : list.length > 0 ? (
-                  list.map(bin => (
+                {isLoading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8"><Loader2 className="animate-spin h-5 w-5 mx-auto" /></TableCell></TableRow>
+                ) : !bins?.length ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No bin locations found.</TableCell></TableRow>
+                ) : (
+                  bins.map(bin => (
                     <TableRow key={bin.id}>
-                      <TableCell>
-                        <div className='flex items-center gap-2'>
-                          <MapPin className='h-4 w-4 text-muted-foreground' />
-                          <span className='font-medium font-mono text-sm'>{bin.code}</span>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-muted-foreground" />
+                          {bin.code}
                         </div>
                       </TableCell>
-                      <TableCell className='text-sm'>{bin.zone || '—'}</TableCell>
-                      <TableCell className='text-sm'>{bin.rack || '—'}</TableCell>
-                      <TableCell className='text-sm'>{bin.shelf || '—'}</TableCell>
+                      <TableCell>{warehouseNameById(bin.warehouseId)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatHierarchy(bin)}</TableCell>
                       <TableCell>
-                        <div className='flex items-center gap-1.5'>
-                          <Warehouse className='h-3.5 w-3.5 text-muted-foreground' />
-                          <span className='text-sm'>{bin.warehouse?.name || '—'}</span>
-                        </div>
+                        <Badge variant={bin.isActive ? 'default' : 'secondary'}>{bin.isActive ? 'Active' : 'Inactive'}</Badge>
                       </TableCell>
                       <TableCell>
-                        {bin.isActive ? (
-                          <Badge variant='default' className='bg-green-500 text-xs'>Active</Badge>
-                        ) : (
-                          <Badge variant='secondary' className='text-xs'>Inactive</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className='flex gap-1 justify-end'>
-                          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(bin)}>
-                            <Pencil className='h-3.5 w-3.5' />
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(bin)}>
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => setDeleteConfirm(bin)}>
-                            <Trash2 className='h-3.5 w-3.5 text-destructive' />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteConfirm(bin)}>
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className='text-center py-12 text-muted-foreground'>
-                      {search || warehouseFilter !== 'all' || statusFilter !== 'all'
-                        ? 'No bins match your filters.'
-                        : 'No bin locations found. Create your first bin.'}
-                    </TableCell>
-                  </TableRow>
                 )}
               </TableBody>
             </Table>
@@ -320,96 +298,93 @@ export function BinLocations() {
       </Main>
 
       {/* Create / Edit Dialog */}
-      <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); setEditing(null) } }}>
-        <DialogContent className='max-w-md'>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); setForm(emptyForm) } }}>
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{editing ? 'Edit Bin Location' : 'New Bin Location'}</DialogTitle>
+            <DialogTitle>{editing ? 'Edit Bin Location' : 'Add Bin Location'}</DialogTitle>
           </DialogHeader>
-          <div className='grid gap-4 py-2'>
-            {!editing && (
-              <div className='grid gap-2'>
-                <Label>Warehouse *</Label>
-                <Select value={form.warehouseId} onValueChange={v => setForm(f => ({ ...f, warehouseId: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder='Select warehouse' />
-                  </SelectTrigger>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Warehouse *</Label>
+              <Select value={form.warehouseId} onValueChange={(v) => setForm(f => ({ ...f, warehouseId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                <SelectContent>
+                  {warehouses?.filter(w => w.isActive).map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Bin Code *</Label>
+              <Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. A-01-01" />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Zone</Label>
+                <Select value={form.zoneId} onValueChange={(v) => setForm(f => ({ ...f, zoneId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Zone" /></SelectTrigger>
                   <SelectContent>
-                    {warehouseList.map(w => (
-                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                    <SelectItem value="">None</SelectItem>
+                    {zones?.map(z => (
+                      <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-            )}
-            {editing && (
-              <div className='grid gap-2'>
-                <Label>Warehouse</Label>
-                <Input value={editing.warehouse?.name || ''} disabled className='bg-muted' />
-              </div>
-            )}
-            <div className='grid gap-2'>
-              <Label>Bin Code *</Label>
-              <Input
-                value={form.code}
-                onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
-                placeholder='e.g. A1-01'
-              />
-            </div>
-            <div className='grid gap-2'>
-              <Label>Zone</Label>
-              <Input
-                value={form.zone}
-                onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
-                placeholder='e.g. Dry Goods'
-              />
-            </div>
-            <div className='grid grid-cols-2 gap-4'>
-              <div className='grid gap-2'>
+              <div className="space-y-2">
                 <Label>Rack</Label>
-                <Input
-                  value={form.rack}
-                  onChange={e => setForm(f => ({ ...f, rack: e.target.value }))}
-                  placeholder='e.g. R-01'
-                />
+                <Select value={form.rackId} onValueChange={(v) => setForm(f => ({ ...f, rackId: v }))} disabled={!form.zoneId}>
+                  <SelectTrigger><SelectValue placeholder="Rack" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {racks.map(r => (
+                      <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className='grid gap-2'>
+              <div className="space-y-2">
                 <Label>Shelf</Label>
-                <Input
-                  value={form.shelf}
-                  onChange={e => setForm(f => ({ ...f, shelf: e.target.value }))}
-                  placeholder='e.g. S-01'
-                />
+                <Select value={form.shelfId} onValueChange={(v) => setForm(f => ({ ...f, shelfId: v }))} disabled={!form.rackId}>
+                  <SelectTrigger><SelectValue placeholder="Shelf" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {shelves.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => { setOpen(false); setEditing(null) }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}>
-              {(createMut.isPending || updateMut.isPending) && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); setForm(emptyForm) }}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending}>
+              {(createMut.isPending || updateMut.isPending) && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
               {editing ? 'Update' : 'Create'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteConfirm} onOpenChange={v => { if (!v) setDeleteConfirm(null) }}>
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteConfirm} onOpenChange={(v) => { if (!v) setDeleteConfirm(null) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Bin Location</DialogTitle>
           </DialogHeader>
-          <p className='text-sm text-muted-foreground'>
-            Are you sure you want to delete bin <strong>{deleteConfirm?.code}</strong>?
-            This action cannot be undone.
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete bin <strong>{deleteConfirm?.code}</strong>? This action cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
             <Button
-              variant='destructive'
+              variant="destructive"
               onClick={() => deleteConfirm && deleteMut.mutate({ id: deleteConfirm.id, warehouseId: deleteConfirm.warehouseId })}
               disabled={deleteMut.isPending}
             >
-              {deleteMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+              {deleteMut.isPending && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
               Delete
             </Button>
           </DialogFooter>

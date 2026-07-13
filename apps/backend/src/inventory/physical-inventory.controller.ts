@@ -46,6 +46,7 @@ export class PhysicalInventoryController {
       await this.stockService.createCostingLotForAdjustment({
         productId: dto.productId,
         variantId: dto.variantId,
+        warehouseId: dto.warehouseId,
         quantity: dto.quantity,
         unitCost: dto.unitCost,
         reference: dto.reason,
@@ -56,6 +57,8 @@ export class PhysicalInventoryController {
     if (dto.quantity < 0) {
       await this.stockService.deductCostingLotsForAdjustment({
         productId: dto.productId,
+        variantId: dto.variantId,
+        warehouseId: dto.warehouseId,
         quantity: Math.abs(dto.quantity),
       });
     }
@@ -100,6 +103,7 @@ export class PhysicalInventoryController {
         await this.stockService.createCostingLotForAdjustment({
           productId: item.productId,
           variantId: item.variantId,
+          warehouseId: dto.warehouseId,
           quantity: item.quantity,
           unitCost: item.unitCost,
           reference: dto.reason,
@@ -109,6 +113,8 @@ export class PhysicalInventoryController {
       if (item.quantity < 0) {
         await this.stockService.deductCostingLotsForAdjustment({
           productId: item.productId,
+          variantId: item.variantId,
+          warehouseId: dto.warehouseId,
           quantity: Math.abs(item.quantity),
         });
       }

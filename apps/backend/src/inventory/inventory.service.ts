@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { CostingLotService } from '../stock/costing-lot.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
 import {
   Prisma,
@@ -22,6 +23,7 @@ export class InventoryService {
     private readonly prisma: PrismaService,
     private readonly stockService: StockService,
     private readonly stockRouter: StockRouterService,
+    private readonly costingLotService: CostingLotService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
   ) {}
 
@@ -642,6 +644,15 @@ export class InventoryService {
                 reference: `restock-${orderId}`,
                 tx: tx || undefined,
               });
+              // Restore cost for return
+              await this.costingLotService.restoreForReturn({
+                returnReferenceId: orderId,
+                productId: ci.productId,
+                variantId: effectiveVariantId,
+                warehouseId: invProduct.warehouseId,
+                returnQty: qty,
+                tx: tx || undefined,
+              });
             }
           }
         }
@@ -696,6 +707,15 @@ export class InventoryService {
               quantity: item.quantity,
               warehouseId: invProduct.warehouseId,
               reference: `restock-${orderId}`,
+              tx: tx || undefined,
+            });
+            // Restore cost for return
+            await this.costingLotService.restoreForReturn({
+              returnReferenceId: orderId,
+              productId: item.productId,
+              variantId: item.variantId ?? null,
+              warehouseId: invProduct.warehouseId,
+              returnQty: item.quantity,
               tx: tx || undefined,
             });
           }
@@ -1046,25 +1066,43 @@ export class InventoryService {
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    // Idempotency check
+    const existing = await this.prisma.stockTransfer.findUnique({
+      where: { idempotencyKey: dto.idempotencyKey },
+    });
+    if (existing) return existing;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Create StockTransfer header
+      const transfer = await tx.stockTransfer.create({
+        data: {
+          idempotencyKey: dto.idempotencyKey,
+          sourceWarehouseId: dto.sourceLocation,
+          destWarehouseId: dto.destinationLocation,
+          status: 'IN_PROGRESS',
+          notes: dto.notes,
+          performedBy,
+        },
+      });
+
+      // Deduct physical stock from source
       if (dto.sourceBinId) {
-        // Explicit source bin: deduct from that specific bin
         await this.stockService.deductPhysical({
           productId: dto.productId,
           variantId: dto.variantId,
           quantity: dto.quantity,
           warehouseId: dto.sourceLocation,
           binLocationId: dto.sourceBinId,
-          reference: `Transfer to ${destWarehouse.name}`,
+          reference: `Transfer ${transfer.id} to ${destWarehouse.name}`,
           performedBy,
           ledgerType: 'TRANSFER_OUT',
           tx,
         });
       } else {
-        // Multi-bin: deduct across eligible PI rows oldest-first
         const eligible = await tx.physicalInventory.findMany({
           where: {
             productId: dto.productId,
+            ...(dto.variantId && { variantId: dto.variantId }),
             warehouseId: dto.sourceLocation,
           },
           orderBy: { updatedAt: 'asc' },
@@ -1082,17 +1120,17 @@ export class InventoryService {
             data: { quantity: { decrement: deductQty } },
           });
 
-          // Write ledger entry for this bin
           await tx.physicalInventoryLedger.create({
             data: {
               productId: dto.productId,
+              variantId: dto.variantId,
               warehouseId: dto.sourceLocation,
               quantity: deductQty,
               direction: 'OUT',
               stockBefore: pi.quantity,
               stockAfter: pi.quantity - deductQty,
               type: 'TRANSFER_OUT',
-              reason: `Transfer to ${destWarehouse.name}`,
+              reason: `Transfer ${transfer.id} to ${destWarehouse.name}`,
               performedBy,
             },
           });
@@ -1107,14 +1145,58 @@ export class InventoryService {
         }
       }
 
-      // Add to destination (with bin)
+      // Consume FIFO costing lots from source warehouse with exact lineage
+      const consumedLots = await this.costingLotService.consumeFIFO({
+        productId: dto.productId,
+        variantId: dto.variantId ?? null,
+        warehouseId: dto.sourceLocation,
+        quantity: dto.quantity,
+        type: 'TRANSFER_OUT',
+        referenceType: 'STOCK_TRANSFER',
+        referenceId: transfer.id,
+        tx,
+      });
+
+      // Create destination CostingLots with exact cost from source
+      for (const consumed of consumedLots) {
+        const sourceLot = await tx.costingLot.findUnique({
+          where: { id: consumed.lotId },
+        });
+        const destLotNumber = `TRF-${transfer.id.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        await tx.costingLot.create({
+          data: {
+            productId: dto.productId,
+            variantId: dto.variantId,
+            warehouseId: dto.destinationLocation,
+            lotNumber: destLotNumber,
+            unitCost: consumed.unitCost,
+            totalCost: consumed.unitCost.mul(consumed.quantity),
+            quantity: consumed.quantity,
+            remainingQty: consumed.quantity,
+            receivedAt: new Date(),
+            transferId: transfer.id,
+            sourceConsumptionId: (
+              await tx.costingLotConsumption.findFirst({
+                where: {
+                  costingLotId: consumed.lotId,
+                  type: 'TRANSFER_OUT',
+                  referenceType: 'STOCK_TRANSFER',
+                  referenceId: transfer.id,
+                },
+              })
+            )?.id,
+          },
+        });
+      }
+
+      // Add physical stock to destination
       await this.stockService.addPhysical({
         productId: dto.productId,
         variantId: dto.variantId,
         quantity: dto.quantity,
         warehouseId: dto.destinationLocation,
         binLocationId: dto.destinationBinId,
-        reference: `Transfer from ${sourceWarehouse.name}`,
+        reference: `Transfer ${transfer.id} from ${sourceWarehouse.name}`,
         performedBy,
         ledgerType: 'TRANSFER_IN',
         tx,
@@ -1126,18 +1208,25 @@ export class InventoryService {
           variantId: dto.variantId,
           quantity: dto.quantity,
           type: 'transfer',
-          reason: `Transferred ${dto.quantity} units from ${dto.sourceLocation} to ${dto.destinationLocation}${dto.notes ? ': ' + dto.notes : ''}`,
+          reason: `Transferred ${dto.quantity} units from ${sourceWarehouse.name} to ${destWarehouse.name}${dto.notes ? ': ' + dto.notes : ''}`,
           performedBy,
         },
       });
-    });
 
-    return {
-      productId: product.id,
-      productName: product.name,
-      quantity: dto.quantity,
-      source: dto.sourceLocation,
-      destination: dto.destinationLocation,
-    };
+      // Mark transfer complete
+      await tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+
+      return {
+        id: transfer.id,
+        productId: product.id,
+        productName: product.name,
+        quantity: dto.quantity,
+        source: dto.sourceLocation,
+        destination: dto.destinationLocation,
+      };
+    });
   }
 }

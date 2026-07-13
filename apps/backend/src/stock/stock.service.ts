@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ReferenceEntity } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
+import { CostingLotService } from './costing-lot.service';
 
 export interface StockOperationParams {
   productId?: string;
@@ -40,6 +41,7 @@ export class StockService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly costingLotService: CostingLotService,
   ) {}
 
   private client(tx?: Prisma.TransactionClient) {
@@ -1027,24 +1029,17 @@ export class StockService {
         },
       });
 
-      // Consume FIFO CostingLots
-      let lotRemaining = deductQty;
-      while (lotRemaining > 0) {
-        const lot = await client.costingLot.findFirst({
-          where: { productId: parent.productId, remainingQty: { gt: 0 } },
-          orderBy: { receivedAt: 'asc' },
-        });
-        if (!lot) {
-          this.logger.warn(`No costing lot for product ${parent.productId}, remaining ${lotRemaining}`);
-          break;
-        }
-        const lotDeduct = Math.min(lotRemaining, lot.remainingQty);
-        await client.costingLot.update({
-          where: { id: lot.id },
-          data: { remainingQty: { decrement: lotDeduct } },
-        });
-        lotRemaining -= lotDeduct;
-      }
+      // Consume FIFO CostingLots via CostingLotService (warehouse-scoped, variant-filtered)
+      await this.costingLotService.consumeFIFOAggregated({
+        productId: parent.productId,
+        variantId: parent.variantId,
+        warehouseId: parent.warehouseId,
+        quantity: deductQty,
+        type: 'FULFILLMENT',
+        referenceType: 'ORDER_ITEM',
+        referenceId: params.orderItemId,
+        tx: client,
+      });
 
       // Write ledger entry
       const pi = await client.physicalInventory.findUnique({
@@ -1090,6 +1085,7 @@ export class StockService {
   async createCostingLotForAdjustment(params: {
     productId: string;
     variantId?: string;
+    warehouseId: string;
     quantity: number;
     unitCost: number;
     reference: string;
@@ -1099,6 +1095,7 @@ export class StockService {
       data: {
         productId: params.productId,
         variantId: params.variantId,
+        warehouseId: params.warehouseId,
         lotNumber,
         unitCost: new Prisma.Decimal(params.unitCost),
         totalCost: new Prisma.Decimal(params.unitCost * params.quantity),
@@ -1111,27 +1108,19 @@ export class StockService {
 
   async deductCostingLotsForAdjustment(params: {
     productId: string;
+    variantId?: string;
+    warehouseId: string;
     quantity: number;
   }) {
-    let remaining = params.quantity;
-    while (remaining > 0) {
-      const lot = await this.prisma.costingLot.findFirst({
-        where: { productId: params.productId, remainingQty: { gt: 0 } },
-        orderBy: { receivedAt: 'asc' },
-      });
-      if (!lot) {
-        this.logger.warn(
-          `No costing lot for product ${params.productId}, remaining ${remaining} (adjustment deduction)`,
-        );
-        break;
-      }
-      const deduct = Math.min(remaining, lot.remainingQty);
-      await this.prisma.costingLot.update({
-        where: { id: lot.id },
-        data: { remainingQty: { decrement: deduct } },
-      });
-      remaining -= deduct;
-    }
+    await this.costingLotService.consumeFIFO({
+      productId: params.productId,
+      variantId: params.variantId ?? null,
+      warehouseId: params.warehouseId,
+      quantity: params.quantity,
+      type: 'ADJUSTMENT',
+      referenceType: 'ADJUSTMENT',
+      referenceId: `ADJ-${Date.now()}`,
+    });
   }
 
   async bulkAdjustPhysical(params: {
@@ -1211,6 +1200,8 @@ export class StockService {
           );
           await this.deductCostingLotsForAdjustment({
             productId: item.productId,
+            variantId: item.variantId,
+            warehouseId: params.warehouseId,
             quantity: Math.abs(item.quantity),
           });
         } else if (finalOp === 'add') {
@@ -1235,6 +1226,7 @@ export class StockService {
             await this.createCostingLotForAdjustment({
               productId: item.productId,
               variantId: item.variantId,
+              warehouseId: params.warehouseId,
               quantity: item.quantity,
               unitCost: item.unitCost,
               reference: params.reason,

@@ -39,4 +39,7 @@ export class StockTransferDto {
   @IsOptional()
   @IsString()
   destinationBinId?: string;
+
+  @IsString()
+  idempotencyKey: string;
 }

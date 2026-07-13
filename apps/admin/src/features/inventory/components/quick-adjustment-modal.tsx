@@ -14,12 +14,13 @@ interface QuickAdjustmentModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   productId?: string
+  variantId?: string
   productName?: string
   availabilityMode?: string
   onSuccess?: () => void
 }
 
-export function QuickAdjustmentModal({ open, onOpenChange, productId, productName, availabilityMode, onSuccess }: QuickAdjustmentModalProps) {
+export function QuickAdjustmentModal({ open, onOpenChange, productId, variantId, productName, availabilityMode, onSuccess }: QuickAdjustmentModalProps) {
   const { data: imEnabled = true } = useInventoryManagement()
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
@@ -32,7 +33,7 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
   })
 
   const adjustMut = useMutation({
-    mutationFn: (data: { productId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
+    mutationFn: (data: { productId?: string; variantId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number }) =>
       apiClient.post('/inventory/physical/adjust', data),
     onSuccess: () => {
       toast.success('Stock adjusted successfully')
@@ -61,7 +62,7 @@ export function QuickAdjustmentModal({ open, onOpenChange, productId, productNam
       toast.error('Please select or enter a reason')
       return
     }
-    adjustMut.mutate({ productId, warehouseId, quantity: qty, reason, unitCost: cost })
+    adjustMut.mutate({ productId, variantId, warehouseId, quantity: qty, reason, unitCost: cost })
   }
 
   return (

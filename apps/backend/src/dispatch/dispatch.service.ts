@@ -253,7 +253,7 @@ export class DispatchService {
             if (prod?.warehouseId) {
               const orderItems = await tx.orderItem.findMany({
                 where: { orderId: dispatch.orderId, productId },
-                select: { id: true },
+                select: { id: true, variantId: true },
               });
               for (const oi of orderItems) {
                 await this.stockService.fulfillPhysicalReservation({
@@ -264,6 +264,28 @@ export class DispatchService {
                   performedBy: performedBy || 'system',
                   tx,
                 });
+                // Upgrade costType from 'estimated' to 'actual' using FIFO consumption records
+                const consumptions = await tx.costingLotConsumption.findMany({
+                  where: {
+                    type: 'FULFILLMENT',
+                    referenceType: 'ORDER_ITEM',
+                    referenceId: oi.id,
+                  },
+                });
+                if (consumptions.length > 0) {
+                  const totalCost = consumptions.reduce(
+                    (sum, c) => sum + Number(c.unitCost) * c.quantity, 0,
+                  );
+                  const totalQty = consumptions.reduce((sum, c) => sum + c.quantity, 0);
+                  const actualCost = totalQty > 0 ? totalCost / totalQty : 0;
+                  await tx.orderItem.update({
+                    where: { id: oi.id },
+                    data: {
+                      costSnapshot: actualCost,
+                      costType: 'actual',
+                    },
+                  });
+                }
               }
             }
           }

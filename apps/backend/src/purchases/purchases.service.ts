@@ -395,6 +395,7 @@ export class PurchasesService {
             grnId: grn.id,
             productId: d.productId,
             variantId: d.variantId,
+            warehouseId: grn.warehouseId,
             lotNumber,
             unitCost,
             totalCost: unitCost.mul(d.acceptedQty),

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Filter, Download, ExternalLink, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { MOVEMENT_TYPE_LABELS, getMovementTypeBadgeVariant } from '../utils/movement-type-labels'
 
 interface LedgerEntry {
   id: string
@@ -24,6 +25,8 @@ interface LedgerEntry {
   performedBy: string | null
   performedAt: string
   createdAt: string
+  productName?: string
+  variantName?: string
 }
 
 interface LedgerResponse {
@@ -34,18 +37,6 @@ interface LedgerResponse {
     perPage: number
     totalPages: number
   }
-}
-
-const typeLabels: Record<string, string> = {
-  MANUAL_ADD: 'Manual Add',
-  MANUAL_REMOVE: 'Manual Remove',
-  SALE: 'Sale',
-  PURCHASE: 'Purchase',
-  RETURN: 'Return',
-  TRANSFER_IN: 'Transfer In',
-  TRANSFER_OUT: 'Transfer Out',
-  INITIAL: 'Initial Balance',
-  CORRECTION: 'Correction',
 }
 
 interface MovementLedgerProps {
@@ -161,8 +152,8 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                     <div className="text-xs text-muted-foreground">-</div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={entry.direction === 'IN' ? 'default' : 'destructive'} className="text-xs">
-                      {typeLabels[entry.type] || entry.type}
+                    <Badge variant={getMovementTypeBadgeVariant(entry.type)} className="text-xs">
+                      {MOVEMENT_TYPE_LABELS[entry.type] || entry.type}
                     </Badge>
                     {entry.note && <div className="text-[10px] text-muted-foreground mt-1">{entry.note}</div>}
                   </TableCell>

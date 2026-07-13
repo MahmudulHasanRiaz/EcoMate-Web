@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DollarSign, AlertTriangle, Package, TrendingDown, FileEdit } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { MOVEMENT_TYPE_LABELS } from './utils/movement-type-labels'
 
 type LowStockItem = {
   id: string
@@ -57,13 +58,6 @@ type InventoryLog = {
 type LogsResponse = {
   data: InventoryLog[]
   meta: { total: number; page: number; perPage: number; totalPages: number }
-}
-
-const LOG_TYPE_LABELS: Record<string, string> = {
-  manual_adjustment: 'Adjustment',
-  refund_restock: 'Refund',
-  cancellation_restock: 'Cancellation',
-  transfer: 'Transfer',
 }
 
 function formatTimeAgo(dateStr: string): string {
@@ -291,7 +285,7 @@ export function StockOverview() {
                         <p className="text-sm font-medium leading-none flex items-center gap-2">
                           {log.productName ?? 'Unknown product'}
                           <Badge variant="secondary" className="text-[10px]">
-                            {LOG_TYPE_LABELS[log.type] ?? log.type}
+                            {MOVEMENT_TYPE_LABELS[log.type] ?? log.type}
                           </Badge>
                         </p>
                         <p className="text-xs text-muted-foreground">
