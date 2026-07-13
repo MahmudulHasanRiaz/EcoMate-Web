@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException } from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -63,21 +63,33 @@ export class PhysicalInventoryController {
   @Roles('superadmin', 'admin', 'manager')
   @Post('bulk-adjust')
   async bulkAdjust(@Body() dto: BulkAdjustPhysicalDto) {
+    const hasPositive = dto.items.some(i => i.quantity > 0);
+    const hasNegative = dto.items.some(i => i.quantity < 0);
+    if (hasPositive && hasNegative) {
+      throw new BadRequestException('Cannot mix positive and negative adjustments in the same request');
+    }
+
+    for (const item of dto.items) {
+      if (item.quantity > 0) {
+        if (!item.unitCost || item.unitCost <= 0) {
+          throw new BadRequestException(`Unit cost is required when adding stock`);
+        }
+        if (!item.binLocationId) {
+          throw new BadRequestException(`Bin location is required when adding stock`);
+        }
+      }
+    }
+
     const results: { item: BulkAdjustPhysicalItemDto; success: boolean; error?: string }[] = [];
 
     for (const item of dto.items) {
       try {
-        if (item.quantity > 0 && (!item.unitCost || item.unitCost <= 0)) {
-          results.push({ item, success: false, error: 'Unit cost is required when adding stock' });
-          continue;
-        }
-
         await this.stockService.addPhysical({
           productId: item.productId,
           variantId: item.variantId,
-          warehouseId: item.warehouseId,
+          warehouseId: dto.warehouseId,
           quantity: item.quantity,
-          reference: item.reason,
+          reference: dto.reason,
           ledgerType: 'PHYSICAL_ADJUSTMENT',
           binLocationId: item.binLocationId,
           unitCost: item.unitCost,
@@ -89,7 +101,7 @@ export class PhysicalInventoryController {
             variantId: item.variantId,
             quantity: item.quantity,
             unitCost: item.unitCost,
-            reference: item.reason,
+            reference: dto.reason,
           });
         }
 

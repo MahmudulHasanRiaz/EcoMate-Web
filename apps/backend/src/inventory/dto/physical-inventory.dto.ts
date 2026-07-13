@@ -40,17 +40,11 @@ export class BulkAdjustPhysicalItemDto {
   @IsString()
   variantId?: string;
 
-  @IsString()
-  warehouseId: string;
-
   @IsInt()
   @Min(-999999)
   @Max(999999)
   @Type(() => Number)
   quantity: number;
-
-  @IsString()
-  reason: string;
 
   @IsOptional()
   @IsString()
@@ -64,6 +58,12 @@ export class BulkAdjustPhysicalItemDto {
 }
 
 export class BulkAdjustPhysicalDto {
+  @IsString()
+  warehouseId: string;
+
+  @IsString()
+  reason: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => BulkAdjustPhysicalItemDto)

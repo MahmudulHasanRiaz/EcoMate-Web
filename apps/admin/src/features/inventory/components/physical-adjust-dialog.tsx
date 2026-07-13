@@ -214,6 +214,14 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     if (items.length === 0) { toast.error('Add at least one product to adjust'); return }
     if (!reason.trim()) { toast.error('Reason is required'); return }
 
+    const hasPositive = items.some(i => i.quantity > 0);
+    const hasNegative = items.some(i => i.quantity < 0);
+
+    if (hasPositive && hasNegative) {
+      toast.error('Cannot mix stock additions and deductions in the same request. Please submit positive and negative adjustments separately.');
+      return;
+    }
+
     // Validate items
     for (const item of items) {
       if (!item.quantity || item.quantity === 0) {
@@ -224,6 +232,10 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
         const cost = parseFloat(item.unitCost)
         if (isNaN(cost) || cost <= 0) {
           toast.error(`Unit cost is required and must be greater than 0 for adding stock of ${item.name}`)
+          return
+        }
+        if (!item.binLocationId) {
+          toast.error(`Bin Location is required for adding stock of ${item.name}`)
           return
         }
       }
