@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DataTablePagination } from '@/components/data-table'
 import { type ProductResponse } from '../api'
 import { productsColumns } from './products-columns'
+import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 
 type Props = {
   data: ProductResponse[]; pageCount: number; totalCount: number; pagination: PaginationState;
@@ -16,6 +17,7 @@ type Props = {
 }
 
 export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, selectedIds, onSelectionChange }: Props) {
+  const { data: imEnabled = true } = useInventoryManagement()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(() => {
@@ -30,7 +32,7 @@ export function ProductsTable({ data, pageCount, totalCount, pagination, onPagin
     setRowSelection(sel);
   }, [selectedIds]);
 
-  const columns = productsColumns(onEdit, onDelete, onToggleActive, onDuplicate)
+  const columns = productsColumns(onEdit, onDelete, onToggleActive, onDuplicate, imEnabled)
 
   const table = useReactTable({
     data, columns, pageCount, state: { sorting, pagination, columnVisibility, rowSelection },

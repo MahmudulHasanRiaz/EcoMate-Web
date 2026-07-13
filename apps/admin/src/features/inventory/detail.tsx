@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { useInventoryManagement } from './hooks/use-inventory-management'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -29,6 +30,7 @@ interface StockItem {
 
 export function InventoryDetail() {
   const { productId } = Route.useSearch()
+  const { data: imEnabled = true } = useInventoryManagement()
 
   const { data: stockData, isLoading } = useQuery({
     queryKey: ['inventory-stock-detail', productId],
@@ -151,40 +153,51 @@ export function InventoryDetail() {
               <div className="text-2xl font-bold">{product.availableStock === null ? '∞' : product.availableStock}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Reserved</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">0</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Allocated</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">0</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-primary/5 border-primary/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-primary">Total On Hand</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">{product.availableStock === null ? '∞' : product.availableStock}</div>
-            </CardContent>
-          </Card>
+          {imEnabled && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Reserved</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">0</div>
+              </CardContent>
+            </Card>
+          )}
+          {imEnabled && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Allocated</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">0</div>
+              </CardContent>
+            </Card>
+          )}
+          {imEnabled && (
+            <Card className="bg-primary/5 border-primary/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-primary">Total On Hand</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-primary">{product.availableStock === null ? '∞' : product.availableStock}</div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        <Tabs defaultValue="locations" className="w-full">
+        <Tabs defaultValue={imEnabled ? "locations" : "ledger"} className="w-full">
           <TabsList className="w-full justify-start border-b rounded-none bg-transparent h-auto p-0 mb-6">
-            <TabsTrigger value="locations" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Locations & Lots</TabsTrigger>
+            {imEnabled && (
+              <TabsTrigger value="locations" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Locations & Lots</TabsTrigger>
+            )}
             <TabsTrigger value="ledger" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Movement Ledger</TabsTrigger>
-            <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Reservations & Allocations</TabsTrigger>
+            {imEnabled && (
+              <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Reservations & Allocations</TabsTrigger>
+            )}
             <TabsTrigger value="cost" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Cost & Valuation</TabsTrigger>
           </TabsList>
           
+          {imEnabled && (
           <TabsContent value="locations" className="space-y-4">
             <Card>
               <CardHeader>
@@ -217,6 +230,7 @@ export function InventoryDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           <TabsContent value="ledger">
             <Card>
@@ -230,6 +244,7 @@ export function InventoryDetail() {
             </Card>
           </TabsContent>
 
+          {imEnabled && (
           <TabsContent value="pending">
              <Card>
               <CardHeader>
@@ -243,6 +258,7 @@ export function InventoryDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           <TabsContent value="cost">
              <Card>

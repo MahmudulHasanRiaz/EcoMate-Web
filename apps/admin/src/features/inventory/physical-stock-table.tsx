@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Loader2, Warehouse, Eye, Plus } from 'lucide-react'
+import { Search, Loader2, Warehouse, Eye, Plus, Package } from 'lucide-react'
+import { useInventoryManagement } from './hooks/use-inventory-management'
 import { PhysicalAdjustDialog } from './components/physical-adjust-dialog'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 
@@ -25,6 +26,7 @@ interface PhysicalStock {
 }
 
 export function PhysicalStockTable() {
+  const { data: imEnabled = true } = useInventoryManagement()
   const [selectedWarehouse, setSelectedWarehouse] = useState('all')
   const [search, setSearch] = useState('')
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -77,84 +79,94 @@ export function PhysicalStockTable() {
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
-      <Main className='flex flex-col gap-6'>
-        <div className='flex items-center justify-between'>
-          <div>
-            <h1 className='text-2xl font-bold tracking-tight'>Physical Stock</h1>
-            <p className='text-muted-foreground'>Warehouse-level inventory managed by physical counting.</p>
+      {imEnabled ? (
+        <Main className='flex flex-col gap-6'>
+          <div className='flex items-center justify-between'>
+            <div>
+              <h1 className='text-2xl font-bold tracking-tight'>Physical Stock</h1>
+              <p className='text-muted-foreground'>Warehouse-level inventory managed by physical counting.</p>
+            </div>
+            <Button onClick={() => setAdjustOpen(true)}>
+              <Plus className='mr-2 h-4 w-4' /> Adjust Stock
+            </Button>
           </div>
-          <Button onClick={() => setAdjustOpen(true)}>
-            <Plus className='mr-2 h-4 w-4' /> Adjust Stock
-          </Button>
-        </div>
 
-        <div className='rounded-md border bg-card'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Warehouse</TableHead>
-                <TableHead className='text-right'>On Hand</TableHead>
-                <TableHead className='text-right'>Reserved</TableHead>
-                <TableHead className='text-right'>Available</TableHead>
-                <TableHead className='text-right'>Last Updated</TableHead>
-                <TableHead className='text-right'>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
+          <div className='rounded-md border bg-card'>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className='text-center py-8'>
-                    <Loader2 className='animate-spin h-6 w-6 mx-auto' />
-                  </TableCell>
+                  <TableHead>Product</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Warehouse</TableHead>
+                  <TableHead className='text-right'>On Hand</TableHead>
+                  <TableHead className='text-right'>Reserved</TableHead>
+                  <TableHead className='text-right'>Available</TableHead>
+                  <TableHead className='text-right'>Last Updated</TableHead>
+                  <TableHead className='text-right'>Actions</TableHead>
                 </TableRow>
-              ) : filteredStock.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className='text-center py-12 text-muted-foreground'>
-                    <Warehouse className='h-8 w-8 mx-auto mb-2 opacity-40' />
-                    No physical stock records found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredStock.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className='font-medium'>{s.product.name}</TableCell>
-                    <TableCell className='text-sm text-muted-foreground'>{s.product.sku}</TableCell>
-                    <TableCell>
-                      <Badge variant='outline'>{s.warehouse.name}</Badge>
-                    </TableCell>
-                    <TableCell className='text-right'>{s.quantity}</TableCell>
-                    <TableCell className='text-right'>{s.reservedQuantity}</TableCell>
-                    <TableCell className='text-right'>
-                      <span className={availableQuantity(s) <= 0 ? 'text-destructive font-medium' : 'text-green-600 font-medium'}>
-                        {availableQuantity(s)}
-                      </span>
-                    </TableCell>
-                    <TableCell className='text-right text-sm text-muted-foreground'>
-                      {new Date(s.updatedAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <Button variant='ghost' size='sm' onClick={() => setSelectedProductDetails({
-                        id: s.product.id,
-                        name: s.product.name,
-                        sku: s.product.sku,
-                        onHand: s.quantity,
-                        available: s.quantity - s.reservedQuantity,
-                        reserved: s.reservedQuantity,
-                        allocated: 0,
-                        status: (s.quantity - s.reservedQuantity) < 0 ? 'negative' : ((s.quantity - s.reservedQuantity) === 0 ? 'low' : 'optimal'),
-                      })}>
-                        <Eye className='h-4 w-4' />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className='text-center py-8'>
+                      <Loader2 className='animate-spin h-6 w-6 mx-auto' />
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </Main>
+                ) : filteredStock.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className='text-center py-12 text-muted-foreground'>
+                      <Warehouse className='h-8 w-8 mx-auto mb-2 opacity-40' />
+                      No physical stock records found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredStock.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className='font-medium'>{s.product.name}</TableCell>
+                      <TableCell className='text-sm text-muted-foreground'>{s.product.sku}</TableCell>
+                      <TableCell>
+                        <Badge variant='outline'>{s.warehouse.name}</Badge>
+                      </TableCell>
+                      <TableCell className='text-right'>{s.quantity}</TableCell>
+                      <TableCell className='text-right'>{s.reservedQuantity}</TableCell>
+                      <TableCell className='text-right'>
+                        <span className={availableQuantity(s) <= 0 ? 'text-destructive font-medium' : 'text-green-600 font-medium'}>
+                          {availableQuantity(s)}
+                        </span>
+                      </TableCell>
+                      <TableCell className='text-right text-sm text-muted-foreground'>
+                        {new Date(s.updatedAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className='text-right'>
+                        <Button variant='ghost' size='sm' onClick={() => setSelectedProductDetails({
+                          id: s.product.id,
+                          name: s.product.name,
+                          sku: s.product.sku,
+                          onHand: s.quantity,
+                          available: s.quantity - s.reservedQuantity,
+                          reserved: s.reservedQuantity,
+                          allocated: 0,
+                          status: (s.quantity - s.reservedQuantity) < 0 ? 'negative' : ((s.quantity - s.reservedQuantity) === 0 ? 'low' : 'optimal'),
+                        })}>
+                          <Eye className='h-4 w-4' />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Main>
+      ) : (
+        <Main className='flex flex-col gap-6'>
+          <div className='flex flex-col items-center justify-center py-20 text-center'>
+            <Package className='h-16 w-16 mx-auto mb-4 opacity-20' />
+            <h2 className='text-xl font-semibold text-muted-foreground'>Physical Inventory Management Disabled</h2>
+            <p className='text-sm text-muted-foreground mt-2'>Enable it in system settings to view and manage physical stock.</p>
+          </div>
+        </Main>
+      )}
 
       <PhysicalAdjustDialog open={adjustOpen} onOpenChange={setAdjustOpen} />
       {selectedProductDetails && (

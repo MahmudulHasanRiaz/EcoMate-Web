@@ -7,10 +7,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
+import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { formatCurrency } from '../utils'
 import type { WidgetProps } from '../types'
 
 export function SystemAlerts(_props: WidgetProps) {
+  const { data: imEnabled = true } = useInventoryManagement()
   const { data: paymentsRes, isLoading: paymentsLoading } = useQuery({
     queryKey: ['dashboard-pending-payments-alerts'],
     queryFn: () => dashboardApi.getPendingPayments(),

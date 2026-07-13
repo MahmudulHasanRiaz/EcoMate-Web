@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
@@ -27,6 +28,7 @@ export class DispatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stockService: StockService,
+    private readonly stockRouter: StockRouterService,
   ) {}
 
   async findAll(query: DispatchQueryDto) {
@@ -198,52 +200,61 @@ export class DispatchService {
       const productMapping = dispatch.productMapping as any[] | null;
 
       if (status === 'HANDED_OVER' || status === 'RETURNED' || status === 'DAMAGED') {
+        if (status === 'RETURNED' || status === 'DAMAGED') {
+          return { claimed: true, dispatch };
+        }
+
+        // HANDED_OVER: use router
         const items = productMapping && productMapping.length > 0
           ? productMapping
           : await this.getOrderItemsForStock(dispatch.orderId);
 
-        const operation = status === 'HANDED_OVER' ? 'deduct' : status === 'RETURNED' ? 'add' : 'scrap';
-        const reference = `Dispatch ${operation.toUpperCase()}: ${dispatch.consignmentId}`;
+        const reference = `Dispatch DEDUCT: ${dispatch.consignmentId}`;
 
         for (const item of items) {
           const qty = item.quantity || 1;
           const variantId = item.productVariantId || item.variantId;
           const productId = item.productId;
 
-          // Managed stock — only for non-IC on deduct, or all non-IC on add/scrap
-          if (productId) {
-            const product = await tx.product.findUnique({
-              where: { id: productId },
-              select: { availabilityMode: true, syncManagedStock: true },
-            });
-            const isManaged = product?.availabilityMode === 'MANAGED_STOCK' || product?.availabilityMode === 'ALWAYS_IN_STOCK';
+          if (!productId) continue;
 
-            const shouldManagedDeduct = operation === 'deduct'
-              ? (isManaged && product?.syncManagedStock)
-              : isManaged;
+          const product = await tx.product.findUnique({
+            where: { id: productId },
+            select: { availabilityMode: true, syncManagedStock: true },
+          });
 
-            if (shouldManagedDeduct) {
+          const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', imEnabled);
+
+          if (decision.ms === 'deduct') {
+            if (!decision.msConditionalOnSync || product?.syncManagedStock) {
               if (variantId) {
-                await this.stockService.operate(operation, { variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
-              } else if (productId) {
-                await this.stockService.operate(operation, { productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+                await this.stockService.deduct({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              } else {
+                await this.stockService.deduct({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
               }
             }
           }
 
-          // Physical reservation fulfillment at HANDED_OVER
-          if (status === 'HANDED_OVER' && productId) {
-            const imEnabled = await this.stockService.isInventoryManagementEnabled();
-            if (imEnabled) {
-              const prod = await tx.product.findUnique({ where: { id: productId }, select: { warehouseId: true } });
-              if (prod?.warehouseId) {
-                const orderItems = await tx.orderItem.findMany({ where: { orderId: dispatch.orderId, productId }, select: { id: true } });
-                for (const oi of orderItems) {
-                  await this.stockService.fulfillPhysicalReservation({
-                    orderId: dispatch.orderId, orderItemId: oi.id, quantity: qty,
-                    reference, performedBy: performedBy || 'system', tx,
-                  });
-                }
+          if (decision.pi === 'fulfill') {
+            const prod = await tx.product.findUnique({
+              where: { id: productId },
+              select: { warehouseId: true },
+            });
+            if (prod?.warehouseId) {
+              const orderItems = await tx.orderItem.findMany({
+                where: { orderId: dispatch.orderId, productId },
+                select: { id: true },
+              });
+              for (const oi of orderItems) {
+                await this.stockService.fulfillPhysicalReservation({
+                  orderId: dispatch.orderId,
+                  orderItemId: oi.id,
+                  quantity: qty,
+                  reference,
+                  performedBy: performedBy || 'system',
+                  tx,
+                });
               }
             }
           }

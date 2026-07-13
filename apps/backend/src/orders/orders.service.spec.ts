@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { CouponsService } from '../coupons/coupons.service';
@@ -129,6 +130,14 @@ describe('OrdersService', () => {
               update: jest.fn(),
             },
             product: {
+              findUnique: jest.fn().mockResolvedValue({
+                id: 'prod-1',
+                basePrice: 1000,
+                salePrice: null,
+                isActive: true,
+                availabilityMode: 'MANAGED_STOCK',
+                warehouseId: 'wh-1',
+              }),
               findMany: jest.fn().mockResolvedValue([
                 {
                   id: 'prod-1',
@@ -199,9 +208,20 @@ describe('OrdersService', () => {
             deduct: jest.fn().mockResolvedValue(undefined),
             add: jest.fn().mockResolvedValue(undefined),
             scrap: jest.fn().mockResolvedValue(undefined),
+            operate: jest.fn().mockResolvedValue(undefined),
             getAvailableStock: jest
               .fn()
               .mockResolvedValue({ stock: 10, reserved: 0, available: 10 }),
+          },
+        },
+        {
+          provide: StockRouterService,
+          useValue: {
+            isInventoryManagementEnabled: jest.fn().mockResolvedValue(true),
+            resolve: jest.fn().mockReturnValue({
+              ms: 'reserve',
+              pi: 'skip',
+            }),
           },
         },
         {

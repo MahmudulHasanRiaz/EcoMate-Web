@@ -11,6 +11,7 @@ import { TrackingService } from '../tracking/tracking.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 import { CouponsService } from '../coupons/coupons.service';
 import {
   CreateOrderDto,
@@ -60,11 +61,96 @@ export class OrdersService {
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
+    private readonly stockRouter: StockRouterService,
     private readonly blockedEntries: BlockedEntriesService,
     private readonly security: SecurityService,
     private readonly couponsService: CouponsService,
     private readonly managedStockLedger: ManagedStockLedgerService,
   ) {}
+
+  private async resolveAndApplyStock(
+    opType: 'reserve' | 'release' | 'deduct' | 'add',
+    productId: string | null | undefined,
+    variantId: string | null | undefined,
+    quantity: number,
+    reference: string,
+    tx: Prisma.TransactionClient,
+    options?: {
+      comboId?: string;
+      comboSelection?: any;
+      warehouseId?: string;
+      orderId?: string;
+      orderItemId?: string;
+      performedBy?: string;
+    },
+  ) {
+    if (!productId) return;
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+      select: { availabilityMode: true, warehouseId: true },
+    });
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    const decision = this.stockRouter.resolve(product?.availabilityMode, opType, imEnabled);
+    const wh = options?.warehouseId || product?.warehouseId;
+
+    if (decision.ms !== 'skip') {
+      await this.stockService.operate(decision.ms as any, {
+        productId,
+        variantId: variantId || undefined,
+        comboId: options?.comboId,
+        comboSelection: options?.comboSelection,
+        quantity,
+        reference,
+        tx,
+      });
+    }
+
+    if (decision.pi !== 'skip' && wh) {
+      if (decision.pi === 'allocate') {
+        if (options?.orderId && options?.orderItemId) {
+          await this.stockService.reservePhysicalAllocated({
+            orderId: options.orderId,
+            orderItemId: options.orderItemId,
+            productId,
+            variantId: variantId || undefined,
+            warehouseId: wh,
+            quantity,
+            tx,
+          });
+        }
+      } else if (decision.pi === 'release') {
+        if (options?.orderItemId) {
+          await this.stockService.releasePhysicalAllocated({
+            orderId: options?.orderId || '',
+            orderItemId: options.orderItemId,
+            tx,
+          });
+        }
+      } else if (decision.pi === 'fulfill') {
+        if (options?.orderItemId) {
+          await this.stockService.fulfillPhysicalReservation({
+            orderId: options?.orderId || '',
+            orderItemId: options.orderItemId,
+            quantity,
+            reference,
+            performedBy: options?.performedBy,
+            tx,
+          });
+        }
+      } else if (decision.pi === 'add') {
+        if (wh) {
+          await this.stockService.addPhysical({
+            productId,
+            variantId: variantId || undefined,
+            quantity,
+            reference,
+            warehouseId: wh,
+            tx,
+          });
+        }
+      }
+    }
+  }
 
   private parseTimeline(timeline: unknown): any[] {
     return Array.isArray(timeline) ? timeline : [];
@@ -692,40 +778,23 @@ export class OrdersService {
       }
 
       for (const item of dto.items) {
-        const product = item.productId
-          ? await tx.product.findUnique({
-              where: { id: item.productId },
-              select: { availabilityMode: true, warehouseId: true },
-            })
-          : null;
-
-        const isIC = product?.availabilityMode === 'INVENTORY_CONTROLLED';
-
-        if (isIC && product?.warehouseId && item.productId) {
-          // IC: physical reservation at Create — allocation-based
-          // Use a deterministic line identity: orderId + productId + variantId
-          const lineId = `${created.id}:${item.productId}:${item.variantId || 'default'}`;
-          await this.stockService.reservePhysicalAllocated({
-            orderId: created.id,
-            orderItemId: lineId,
-            productId: item.productId,
-            variantId: item.variantId,
-            warehouseId: product.warehouseId,
-            quantity: item.quantity,
-            tx,
-          });
-        } else {
-          // MANAGED_STOCK / ALWAYS_IN_STOCK: managed reservation
-          await this.stockService.reserve({
-            productId: item.productId,
-            variantId: item.variantId,
+        const createdItem = created.items.find(
+          (ci) => ci.productId === item.productId && (ci.variantId === item.variantId),
+        );
+        await this.resolveAndApplyStock(
+          'reserve',
+          item.productId,
+          item.variantId,
+          item.quantity,
+          displayId,
+          tx,
+          {
             comboId: item.comboId,
             comboSelection: item.comboSelection,
-            quantity: item.quantity,
-            reference: displayId,
-            tx,
-          });
-        }
+            orderId: created.id,
+            orderItemId: createdItem?.id,
+          },
+        );
       }
 
       return created;
@@ -863,18 +932,22 @@ export class OrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.items && dto.items.length > 0) {
-        // Release old items
+        // Release old items via router
         for (const item of order.items) {
-          await this.stockService.release({
-            productId: item.productId || undefined,
-            variantId: item.variantId || undefined,
-            comboId: item.comboId || undefined,
-            comboSelection:
-              (item.comboSelection as Record<string, string>) || undefined,
-            quantity: item.quantity,
-            reference: order.displayId,
+          await this.resolveAndApplyStock(
+            'release',
+            item.productId,
+            item.variantId,
+            item.quantity,
+            order.displayId,
             tx,
-          });
+            {
+              comboId: item.comboId || undefined,
+              comboSelection: (item.comboSelection as Record<string, string>) || undefined,
+              orderId: id,
+              orderItemId: item.id,
+            },
+          );
         }
 
         await tx.orderItem.deleteMany({ where: { orderId: id } });
@@ -888,6 +961,10 @@ export class OrdersService {
             quantity: i.quantity,
             price: i.price,
           })),
+        });
+
+        const newItems = await tx.orderItem.findMany({
+          where: { orderId: id },
         });
 
         // Reserve stock for new items
@@ -910,16 +987,26 @@ export class OrdersService {
             );
           }
         }
+
+        // Reserve stock for new items via router
         for (const item of dto.items) {
-          await this.stockService.reserve({
-            productId: item.productId,
-            variantId: item.variantId,
-            comboId: item.comboId,
-            comboSelection: item.comboSelection,
-            quantity: item.quantity,
-            reference: order.displayId,
+          const newItem = newItems.find(
+            (ni) => ni.productId === item.productId && (ni.variantId === item.variantId),
+          );
+          await this.resolveAndApplyStock(
+            'reserve',
+            item.productId,
+            item.variantId,
+            item.quantity,
+            order.displayId,
             tx,
-          });
+            {
+              comboId: item.comboId,
+              comboSelection: item.comboSelection,
+              orderId: id,
+              orderItemId: newItem?.id,
+            },
+          );
         }
       }
 
@@ -1065,23 +1152,7 @@ export class OrdersService {
       }
 
       if (newStatus.name === 'Cancelled') {
-        const cancelItems = await tx.orderItem.findMany({
-          where: { orderId: id },
-        });
-        for (const item of cancelItems) {
-          await this.stockService.release({
-            productId: item.productId || undefined,
-            variantId: item.variantId || undefined,
-            comboId: item.comboId || undefined,
-            comboSelection:
-              (item.comboSelection as Record<string, string>) || undefined,
-            quantity: item.quantity,
-            reference: order.displayId,
-            tx,
-          });
-        }
-
-        await this.releaseStockForCancelledOrder(id, tx);
+        await this.handleCancelledSideEffects(tx, id, performedBy);
       }
 
       if (newStatus.name === 'Delivered') {
@@ -1231,53 +1302,62 @@ export class OrdersService {
       }
     }
 
-    await this.stockService.reserve({
-      productId: dto.productId,
-      variantId: dto.variantId,
-      quantity: dto.quantity,
-      reference: order.displayId,
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const orderItem = await tx.orderItem.create({
+        data: {
+          orderId,
+          productId: dto.productId,
+          variantId: dto.variantId,
+          quantity: dto.quantity,
+          price: dto.price,
+        },
+      });
 
-    await this.prisma.orderItem.create({
-      data: {
-        orderId,
-        productId: dto.productId,
-        variantId: dto.variantId,
-        quantity: dto.quantity,
-        price: dto.price,
-      },
-    });
+      await this.resolveAndApplyStock(
+        'reserve',
+        dto.productId,
+        dto.variantId,
+        dto.quantity,
+        order.displayId,
+        tx,
+        {
+          orderId,
+          orderItemId: orderItem.id,
+        },
+      );
 
-    this.events.emit({
-      type: 'order.status_changed',
-      data: { id: orderId, displayId: order.displayId, note: 'Item added' },
-    });
+      this.events.emit({
+        type: 'order.status_changed',
+        data: { id: orderId, displayId: order.displayId, note: 'Item added' },
+      });
 
-    const items = [
-      ...order.items.map((i) => ({
-        price: Number(i.price),
-        quantity: i.quantity,
-      })),
-      { price: dto.price, quantity: dto.quantity },
-    ];
-    const { subtotal, total } = this.recalculate(
-      items,
-      Number(order.shippingCharge),
-      Number(order.discount),
-      order.discountType || 'flat',
-    );
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { subtotal, total },
-      include: {
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, images: true, slug: true },
+      const items = [
+        ...order.items.map((i) => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+        })),
+        { price: dto.price, quantity: dto.quantity },
+      ];
+      const { subtotal, total } = this.recalculate(
+        items,
+        Number(order.shippingCharge),
+        Number(order.discount),
+        order.discountType || 'flat',
+      );
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { subtotal, total },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, images: true, slug: true },
+              },
             },
           },
         },
-      },
+      });
     });
   }
 
@@ -1291,44 +1371,47 @@ export class OrdersService {
     const removedItem = order.items.find((i) => i.id === itemId);
     if (!removedItem) throw new NotFoundException('Order item not found');
 
-    await this.stockService.release({
-      productId: removedItem.productId || undefined,
-      variantId: removedItem.variantId || undefined,
-      comboId: removedItem.comboId || undefined,
-      comboSelection:
-        (removedItem.comboSelection as Record<string, string>) || undefined,
-      quantity: removedItem.quantity,
-      reference: order.displayId,
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await this.resolveAndApplyStock(
+        'release',
+        removedItem.productId,
+        removedItem.variantId,
+        removedItem.quantity,
+        order.displayId,
+        tx,
+        {
+          comboId: removedItem.comboId || undefined,
+          comboSelection: (removedItem.comboSelection as Record<string, string>) || undefined,
+          orderId,
+          orderItemId: removedItem.id,
+        },
+      );
 
-    await this.prisma.orderItem.delete({ where: { id: itemId } });
+      await tx.orderItem.delete({ where: { id: itemId } });
 
-    this.events.emit({
-      type: 'order.status_changed',
-      data: { id: orderId, displayId: order.displayId, note: 'Item removed' },
-    });
+      const remaining = order.items
+        .filter((i) => i.id !== itemId)
+        .map((i) => ({ price: Number(i.price), quantity: i.quantity }));
+      const { subtotal, total } = this.recalculate(
+        remaining,
+        Number(order.shippingCharge),
+        Number(order.discount),
+        order.discountType || 'flat',
+      );
 
-    const remaining = order.items
-      .filter((i) => i.id !== itemId)
-      .map((i) => ({ price: Number(i.price), quantity: i.quantity }));
-    const { subtotal, total } = this.recalculate(
-      remaining,
-      Number(order.shippingCharge),
-      Number(order.discount),
-      order.discountType || 'flat',
-    );
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { subtotal, total },
-      include: {
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, images: true, slug: true },
+      return tx.order.update({
+        where: { id: orderId },
+        data: { subtotal, total },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, images: true, slug: true },
+              },
             },
           },
         },
-      },
+      });
     });
   }
 
@@ -1393,36 +1476,8 @@ export class OrdersService {
         });
 
         if (targetStatus.name === 'Cancelled') {
-          const allItems = await tx.orderItem.findMany({
-            where: { orderId: { in: validIds } },
-          });
-          for (const item of allItems) {
-            try {
-              await this.stockService.release({
-                productId: item.productId || undefined,
-                variantId: item.variantId || undefined,
-                comboId: item.comboId || undefined,
-                comboSelection:
-                  (item.comboSelection as Record<string, string>) || undefined,
-                quantity: item.quantity,
-                reference:
-                  orders.find((o) => o.id === item.orderId)?.displayId || '',
-                tx,
-              });
-            } catch (err) {
-              this.logger.error(
-                `Failed to release stock for item ${item.id} in order ${item.orderId}:`,
-                err,
-              );
-              failedDetails.push({
-                id: item.orderId,
-                reason: `Stock release failed: ${err.message}`,
-              });
-            }
-          }
-
           for (const cancelOrderId of validIds) {
-            await this.releaseStockForCancelledOrder(cancelOrderId, tx);
+            await this.handleCancelledSideEffects(tx, cancelOrderId, userId);
           }
         }
 
@@ -1601,23 +1656,7 @@ export class OrdersService {
         include: { status: true },
       });
 
-      const cancelItems = await tx.orderItem.findMany({
-        where: { orderId },
-      });
-      for (const item of cancelItems) {
-        await this.stockService.release({
-          productId: item.productId || undefined,
-          variantId: item.variantId || undefined,
-          comboId: item.comboId || undefined,
-          comboSelection:
-            (item.comboSelection as Record<string, string>) || undefined,
-          quantity: item.quantity,
-          reference: order.displayId,
-          tx,
-        });
-      }
-
-      await this.releaseStockForCancelledOrder(orderId, tx);
+      await this.handleCancelledSideEffects(tx, orderId, 'customer');
 
       return u;
     });
@@ -1683,23 +1722,7 @@ export class OrdersService {
         },
       });
 
-      // Release stock for trashed orders (like cancelled)
-      const items = await tx.orderItem.findMany({
-        where: { orderId },
-      });
-      for (const item of items) {
-        await this.stockService.release({
-          productId: item.productId || undefined,
-          variantId: item.variantId || undefined,
-          comboId: item.comboId || undefined,
-          comboSelection: (item.comboSelection as Record<string, string>) || undefined,
-          quantity: item.quantity,
-          reference: order.displayId,
-          tx,
-        });
-      }
-
-      await this.releaseStockForCancelledOrder(orderId, tx);
+      await this.handleCancelledSideEffects(tx, orderId, performedBy);
     });
 
     this.events.emit({
@@ -1834,46 +1857,6 @@ export class OrdersService {
   ) {
     await this.takeCostSnapshot(orderId, tx);
     await this.verifyStockForOrder(orderId, tx);
-
-    // For MANAGED_STOCK products with warehouse: physical check + reserve at Confirm
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: {
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true, availabilityMode: true, warehouseId: true,
-              },
-            },
-          },
-        },
-      },
-    });
-    if (!order) return;
-
-    for (const item of order.items) {
-      const product = item.product;
-      if (!product) continue;
-      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
-      if (!product.warehouseId) continue;
-
-      // Check physical availability and reserve
-      const physAvail = await this.stockService.checkPhysicalAvailability(
-        item.productId!, product.warehouseId,
-      );
-      if (physAvail.available && physAvail.availableStock >= item.quantity) {
-        await this.stockService.reservePhysical({
-          productId: item.productId!,
-          quantity: item.quantity,
-          warehouseId: product.warehouseId,
-          reference: `Order ${orderId}`,
-          tx,
-          referenceType: 'ORDER',
-          referenceId: orderId,
-        });
-      }
-    }
   }
 
   private async handleCancelledSideEffects(
@@ -1941,28 +1924,18 @@ export class OrdersService {
       const product = item.product;
       if (!product) continue;
 
-      // Restore managed stock for MANAGED_STOCK products
-      if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
-        await this.stockService.add({
-          productId: item.productId ?? undefined,
-          variantId: item.variantId ?? undefined,
-          quantity: item.quantity,
-          reference: `return-${orderId}`,
-          tx,
-        });
-      }
-
-      // Restore physical inventory for INVENTORY_CONTROLLED products
-      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
-        await this.stockService.addPhysical({
-          productId: item.productId ?? undefined,
-          variantId: item.variantId ?? undefined,
-          quantity: item.quantity,
-          reference: `return-${orderId}`,
-          warehouseId: product.warehouseId,
-          tx,
-        });
-      }
+      await this.resolveAndApplyStock(
+        'add',
+        item.productId ?? undefined,
+        item.variantId ?? undefined,
+        item.quantity,
+        `return-${orderId}`,
+        tx,
+        {
+          warehouseId: product.warehouseId || undefined,
+          performedBy,
+        },
+      );
     }
   }
 

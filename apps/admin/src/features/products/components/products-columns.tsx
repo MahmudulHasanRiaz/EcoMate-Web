@@ -15,6 +15,7 @@ export function productsColumns(
   onDelete: (row: ProductResponse) => void,
   onToggleActive?: (row: ProductResponse, active: boolean) => void,
   onDuplicate?: (row: ProductResponse) => void,
+  imEnabled?: boolean,
 ): ColumnDef<ProductResponse>[] {
   return [
     {
@@ -103,6 +104,9 @@ export function productsColumns(
       header: 'Stock',
       accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.managedStockQuantity, 0) : row.managedStockQuantity,
       cell: ({ row, getValue }) => {
+        if (imEnabled && row.original.availabilityMode === 'INVENTORY_CONTROLLED') {
+          return <Badge variant="secondary" className="text-xs">PI Controlled</Badge>
+        }
         const s = getValue<number>()
         const stockStatus = row.original.seoMeta?.stockStatus as string | undefined
         const showNumeric = row.original.type === 'variable' || row.original.manageStock

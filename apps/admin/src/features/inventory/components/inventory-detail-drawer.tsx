@@ -14,6 +14,7 @@ import { ArrowLeftRight, Edit3, FileText, Package, Filter, Building2, Tag, Shiel
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Link } from '@tanstack/react-router'
+import { useInventoryManagement } from '../hooks/use-inventory-management'
 
 interface InventoryDetailDrawerProps {
   open: boolean
@@ -23,6 +24,8 @@ interface InventoryDetailDrawerProps {
 }
 
 export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAdjust }: InventoryDetailDrawerProps) {
+  const { data: imEnabled = true } = useInventoryManagement()
+
   const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
     queryKey: ['inventory-ledger', productDetails?.id],
     queryFn: () => apiClient.get('/inventory/ledger', { params: { productId: productDetails.id, perPage: 10 } }).then(r => r.data),
@@ -85,9 +88,13 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
             <Tabs defaultValue="summary" className="w-full">
               <TabsList className="w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0 h-auto">
                 <TabsTrigger value="summary" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Summary & Cost</TabsTrigger>
-                <TabsTrigger value="locations" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Locations / Lots</TabsTrigger>
+                {imEnabled && (
+                  <TabsTrigger value="locations" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Locations / Lots</TabsTrigger>
+                )}
                 <TabsTrigger value="ledger" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Ledger & Audit</TabsTrigger>
-                <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Pending (Res / Alloc)</TabsTrigger>
+                {imEnabled && (
+                  <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Pending (Res / Alloc)</TabsTrigger>
+                )}
               </TabsList>
               
               {/* Summary & Cost */}
@@ -140,6 +147,7 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
               </TabsContent>
 
               {/* Locations / Lots */}
+              {imEnabled && (
               <TabsContent value="locations" className="space-y-4 pt-4">
                 <div className="rounded-md border bg-card">
                   <Table>
@@ -183,6 +191,7 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                   </Table>
                 </div>
               </TabsContent>
+              )}
 
               {/* Ledger & Audit */}
               <TabsContent value="ledger" className="space-y-4 pt-4">
@@ -263,11 +272,13 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
               </TabsContent>
 
               {/* Pending Operations */}
+              {imEnabled && (
               <TabsContent value="pending" className="space-y-4 pt-4">
                 <div className="rounded-md border bg-card p-8 text-center">
                   <p className="text-sm text-muted-foreground">No pending reservations or allocations for this item.</p>
                 </div>
               </TabsContent>
+              )}
 
             </Tabs>
           </div>

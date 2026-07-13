@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { useInventoryManagement } from './hooks/use-inventory-management'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -54,7 +55,14 @@ interface ApiResponse {
 }
 
 export function MovementHistory() {
+  const { data: imEnabled = true } = useInventoryManagement()
   const [ledgerMode, setLedgerMode] = useState<'PHYSICAL' | 'MANAGED'>('PHYSICAL')
+
+  useEffect(() => {
+    if (!imEnabled) {
+      setLedgerMode('MANAGED')
+    }
+  }, [imEnabled])
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState('adjustment')
   const [warehouseFilter, setWarehouseFilter] = useState('all')
@@ -139,17 +147,19 @@ export function MovementHistory() {
           </div>
 
           <div className="flex items-center gap-1.5 bg-muted/40 p-1 border rounded-lg shrink-0 w-fit">
-            <Button
-              variant={ledgerMode === 'PHYSICAL' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 text-xs px-3 rounded-md font-medium"
-              onClick={() => {
-                setLedgerMode('PHYSICAL')
-                setTypeFilter('adjustment')
-              }}
-            >
-              Physical Stock Ledger
-            </Button>
+            {imEnabled && (
+              <Button
+                variant={ledgerMode === 'PHYSICAL' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 text-xs px-3 rounded-md font-medium"
+                onClick={() => {
+                  setLedgerMode('PHYSICAL')
+                  setTypeFilter('adjustment')
+                }}
+              >
+                Physical Stock Ledger
+              </Button>
+            )}
             <Button
               variant={ledgerMode === 'MANAGED' ? 'secondary' : 'ghost'}
               size="sm"

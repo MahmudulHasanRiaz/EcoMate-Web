@@ -521,6 +521,15 @@ export class SystemSettingsController {
     }
   }
 
+  @Public()
+  @Get('inventory-enabled')
+  async getInventoryEnabled() {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'inventory_enabled' },
+    });
+    return { enabled: setting?.value === 'true' };
+  }
+
   @Get('storage')
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_settings')

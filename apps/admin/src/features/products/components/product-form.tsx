@@ -12,6 +12,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
+import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
@@ -55,13 +56,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     enabled: isEdit && !!currentRow?.id,
   })
 
-  const { data: sysSettings } = useQuery({
-    queryKey: ['system-settings'],
-    queryFn: () => apiClient.get('/system-settings').then(r => r.data as Record<string, string>),
-    staleTime: 60_000,
-  })
-
-  const inventoryEnabled = sysSettings?.inventory_enabled === 'true'
+  const { data: imEnabled = true } = useInventoryManagement()
 
   const categoryOptions = React.useMemo(() => {
     const flat = Array.isArray(cats) ? cats : []
@@ -865,7 +860,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     <option value='MANAGED_STOCK'>Managed Stock</option>
                     <option value='ALWAYS_IN_STOCK'>Always In Stock</option>
                     <option value='ALWAYS_OUT_OF_STOCK'>Always Out Of Stock</option>
-                    {inventoryEnabled && <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>}
+                    {imEnabled && <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>}
                   </select>
                 </div>
                 {availabilityMode === 'MANAGED_STOCK' && type !== 'variable' && (

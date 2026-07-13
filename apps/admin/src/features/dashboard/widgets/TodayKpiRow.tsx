@@ -5,10 +5,12 @@ import { Link } from '@tanstack/react-router'
 import { ShoppingCart, Truck, Wallet, RotateCcw, Coins, AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { dashboardApi } from '../api'
+import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { formatCurrency, formatNumber } from '../utils'
 import type { WidgetProps } from '../types'
 
 export function TodayKpiRow({ dateRange }: WidgetProps) {
+  const { data: imEnabled = true } = useInventoryManagement()
   const { data: todayKpiRes, isLoading: todayKpiLoading } = useQuery({
     queryKey: ['dashboard-today-kpi'],
     queryFn: () => dashboardApi.getTodayKpi(),

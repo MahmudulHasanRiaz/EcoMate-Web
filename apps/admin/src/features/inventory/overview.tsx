@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { useInventoryManagement } from './hooks/use-inventory-management'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -99,6 +100,8 @@ export function StockOverview() {
     queryFn: () => apiClient.get('/inventory/valuation').then(r => r.data),
     refetchInterval: 60000,
   })
+
+  const { data: imEnabled = true } = useInventoryManagement()
 
   const { data: physReplenishment, isLoading: physReplLoading } = useQuery({
     queryKey: ['inventory', 'replenishment'],
@@ -311,7 +314,7 @@ export function StockOverview() {
           </Card>
         </div>
 
-        {physReplenishment && physReplenishment.products && physReplenishment.products.length > 0 && (
+        {imEnabled && physReplenishment && physReplenishment.products && physReplenishment.products.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-600">

@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
+import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import type { WidgetProps } from '../types'
 
 export function LowStockAlert(_props: WidgetProps) {
+  const { data: imEnabled = true } = useInventoryManagement()
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-low-stock'],
     queryFn: () => dashboardApi.getLowStockProducts(),

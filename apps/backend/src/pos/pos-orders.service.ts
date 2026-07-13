@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
 
@@ -17,6 +18,7 @@ export class PosOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: StockService,
+    private readonly stockRouter: StockRouterService,
     @Inject(ConfigService) private config: ConfigService,
   ) {}
 
@@ -211,17 +213,41 @@ export class PosOrdersService {
         });
       }
 
+      const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
       for (const item of dto.items) {
-        await this.stock.deduct({
-          productId: item.productId,
-          variantId: item.variantId,
-          comboId: item.comboId,
-          comboSelection: item.comboSelection,
-          quantity: item.quantity,
-          reference: displayId,
-          performedBy: cashierId,
-          tx,
-        });
+        if (imEnabled) {
+          await this.stock.deductPhysical({
+            productId: item.productId,
+            variantId: item.variantId,
+            comboId: item.comboId,
+            comboSelection: item.comboSelection,
+            quantity: item.quantity,
+            reference: displayId,
+            performedBy: cashierId,
+            warehouseId: session.showroom.id,
+            tx,
+          });
+        } else {
+          const product = item.productId ? await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { availabilityMode: true },
+          }) : null;
+          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', false);
+
+          if (decision.ms === 'deduct') {
+            await this.stock.deduct({
+              productId: item.productId,
+              variantId: item.variantId,
+              comboId: item.comboId,
+              comboSelection: item.comboSelection,
+              quantity: item.quantity,
+              reference: displayId,
+              performedBy: cashierId,
+              tx,
+            });
+          }
+        }
       }
 
       if (dto.payments?.length) {
