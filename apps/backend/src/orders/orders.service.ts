@@ -12,6 +12,7 @@ import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { CostingLotService } from '../stock/costing-lot.service';
 import { CouponsService } from '../coupons/coupons.service';
 import {
   CreateOrderDto,
@@ -66,6 +67,7 @@ export class OrdersService {
     private readonly security: SecurityService,
     private readonly couponsService: CouponsService,
     private readonly managedStockLedger: ManagedStockLedgerService,
+    private readonly costingLotService: CostingLotService,
   ) {}
 
   private async resolveAndApplyStock(
@@ -1908,6 +1910,11 @@ export class OrdersService {
       await this.managedStockLedger.hasExistingRestock(orderId);
     if (alreadyRestocked) return;
 
+    const alreadyCostRestored = await tx.costingLotRestoration.findFirst({
+      where: { returnReferenceId: orderId },
+    });
+    if (alreadyCostRestored) return;
+
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
@@ -1947,6 +1954,17 @@ export class OrdersService {
           ledgerType: 'RETURN',
         },
       );
+
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
+        await this.costingLotService.restoreForReturn({
+          returnReferenceId: orderId,
+          productId: product.id,
+          variantId: item.variantId ?? null,
+          warehouseId: product.warehouseId,
+          returnQty: item.quantity,
+          tx,
+        });
+      }
     }
   }
 

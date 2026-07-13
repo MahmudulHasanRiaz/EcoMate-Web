@@ -651,7 +651,11 @@ export class InventoryService {
           }
 
           if (isInventoryControlled && effectiveVariantId) {
-            // Get product's warehouseId and call addPhysical
+            const costAlreadyRestored = !force && await client.costingLotRestoration.findFirst({
+              where: { returnReferenceId: orderId },
+            });
+            if (costAlreadyRestored) continue;
+
             const invProduct = await client.product.findUnique({
               where: { id: ci.productId },
               select: { warehouseId: true }
@@ -665,7 +669,6 @@ export class InventoryService {
                 reference: `restock-${orderId}`,
                 tx: tx || undefined,
               });
-              // Restore cost for return
               await this.costingLotService.restoreForReturn({
                 returnReferenceId: orderId,
                 productId: ci.productId,
@@ -717,6 +720,11 @@ export class InventoryService {
         }
 
         if (isInventoryControlled && item.productId) {
+          const costAlreadyRestored = !force && await client.costingLotRestoration.findFirst({
+            where: { returnReferenceId: orderId },
+          });
+          if (costAlreadyRestored) continue;
+
           const invProduct = await client.product.findUnique({
             where: { id: item.productId },
             select: { warehouseId: true }
@@ -730,7 +738,6 @@ export class InventoryService {
               reference: `restock-${orderId}`,
               tx: tx || undefined,
             });
-            // Restore cost for return
             await this.costingLotService.restoreForReturn({
               returnReferenceId: orderId,
               productId: item.productId,

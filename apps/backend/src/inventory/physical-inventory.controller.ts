@@ -81,9 +81,6 @@ export class PhysicalInventoryController {
         if (!item.unitCost || item.unitCost <= 0) {
           throw new BadRequestException(`Unit cost is required when adding stock`);
         }
-        if (!item.binLocationId) {
-          throw new BadRequestException(`Bin location is required when adding stock`);
-        }
       }
     }
 

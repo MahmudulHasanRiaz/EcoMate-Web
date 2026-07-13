@@ -11,6 +11,7 @@ import { BlockedEntriesService } from '../blocked-entries/blocked-entries.servic
 import { SecurityService } from '../security/security.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
+import { CostingLotService } from '../stock/costing-lot.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -172,6 +173,9 @@ describe('OrdersService', () => {
             inventoryLog: {
               create: jest.fn(),
             },
+            costingLotRestoration: {
+              findFirst: jest.fn().mockResolvedValue(null),
+            },
             userProfile: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -252,6 +256,12 @@ describe('OrdersService', () => {
           useValue: {
             record: jest.fn().mockResolvedValue({}),
             hasExistingRestock: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: CostingLotService,
+          useValue: {
+            restoreForReturn: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
