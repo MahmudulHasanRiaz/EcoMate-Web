@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from 'react';
-import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -29,16 +28,33 @@ export default function CategoryList() {
     }
   };
 
+  // Cache layout dimensions — recalculate only on resize
+  const dimsRef = useRef({ scrollWidth: 0, clientWidth: 0 });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    dimsRef.current = { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+    const ro = new ResizeObserver(() => {
+      if (scrollRef.current) {
+        dimsRef.current = { scrollWidth: scrollRef.current.scrollWidth, clientWidth: scrollRef.current.clientWidth };
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [categories]);
+
   useEffect(() => {
     if (isPaused || categories.length === 0) return;
     const interval = setInterval(() => {
-      if (scrollRef.current) {
-        const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-        if (scrollLeft + clientWidth >= scrollWidth - 10) {
-          scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-        } else {
-          scrollRef.current.scrollBy({ left: 200, behavior: 'smooth' });
-        }
+      const el = scrollRef.current;
+      if (!el) return;
+      const { scrollWidth, clientWidth } = dimsRef.current;
+      const scrollLeft = el.scrollLeft;
+      if (scrollLeft + clientWidth >= scrollWidth - 10) {
+        el.scrollTo({ left: 0, behavior: 'smooth' });
+      } else {
+        el.scrollBy({ left: 200, behavior: 'smooth' });
       }
     }, 3000);
     return () => clearInterval(interval);

@@ -11,6 +11,7 @@ function PageViewTrackerInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sidRef = useRef<string>("");
+  const sentUrlRef = useRef<string>("");
 
   useEffect(() => {
     if (!sidRef.current) {
@@ -23,12 +24,17 @@ function PageViewTrackerInner() {
     }
 
     const url = window.location.href;
+    // Only fire once per distinct URL — prevents double-fire from router transitions
+    if (sentUrlRef.current === url) return;
+    sentUrlRef.current = url;
+
     const referrer = document.referrer || "";
 
+    const payload = JSON.stringify({ url, referrer, sessionId: sidRef.current });
     const send = () => {
-      const payload = JSON.stringify({ url, referrer, sessionId: sidRef.current });
+      // sendBeacon uses text/plain by default — backend must accept it or we set Blob type
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(`${API_URL}/tracking/page-view`, payload);
+        navigator.sendBeacon(`${API_URL}/tracking/page-view`, new Blob([payload], { type: "application/json" }));
       } else {
         fetch(`${API_URL}/tracking/page-view`, {
           method: "POST", body: payload, keepalive: true,

@@ -62,7 +62,6 @@ export default function Hero({
                   src={resolvedSecondary}
                   alt={secondaryBannerAlt || 'Featured banner'}
                   fill
-                  priority
                   sizes="(max-width: 768px) 0vw, 33vw"
                   className="object-cover"
                 />

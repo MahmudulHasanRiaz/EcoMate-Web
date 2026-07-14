@@ -23,6 +23,14 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
     setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
   };
 
+  // Preload next slide via native Image constructor — only render active slide
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const next = (currentSlide + 1) % slides.length;
+    const img = new window.Image();
+    img.src = slides[next].image;
+  }, [currentSlide, slides]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       nextSlide();
@@ -36,7 +44,7 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
       {slides.map((slide, index) => {
         const isActive = index === currentSlide;
         const href = (slide as { link?: string }).link;
-        const inner = (
+        const inner = isActive ? (
           <Image
             src={slide.image || PLACEHOLDER_IMAGE}
             alt={slide.alt || `Promotional banner ${index + 1}`}
@@ -45,6 +53,8 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
             priority={index === 0}
             className="object-cover"
           />
+        ) : (
+          <div className="w-full h-full bg-gray-100" />
         );
         return (
           <div

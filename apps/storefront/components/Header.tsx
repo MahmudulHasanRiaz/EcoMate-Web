@@ -307,25 +307,46 @@ function NavSlider({ children }: { children: React.ReactNode }) {
     if (!container || !track) return;
 
     let animationFrameId: number;
+    let cachedMaxScroll = track.scrollWidth - container.clientWidth;
+    let isPageVisible = !document.hidden;
+
+    const onVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (document.hidden) {
+        cancelAnimationFrame(animationFrameId);
+      } else {
+        // Recalc layout on return — dimensions may have changed
+        cachedMaxScroll = (track?.scrollWidth ?? 0) - (container?.clientWidth ?? 0);
+        animationFrameId = requestAnimationFrame(step);
+      }
+    };
+
+    const onResize = () => {
+      cachedMaxScroll = (track?.scrollWidth ?? 0) - (container?.clientWidth ?? 0);
+    };
+
+    const ro = new ResizeObserver(onResize);
+    ro.observe(container);
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const step = () => {
-      if (!isHoveredRef.current && !isPointerDown.current) {
-        const maxScroll = track.scrollWidth - container.clientWidth;
-        if (maxScroll > 0) {
+      if (isPageVisible && !isHoveredRef.current && !isPointerDown.current) {
+        if (cachedMaxScroll > 0) {
           currentX.current -= speed.current; // Move left
-          
-          if (-currentX.current >= maxScroll) {
+
+          if (-currentX.current >= cachedMaxScroll) {
             speed.current = -0.5; // Reverse to right
-            currentX.current = -maxScroll;
+            currentX.current = -cachedMaxScroll;
           } else if (currentX.current <= 0 && -currentX.current <= 0) {
             speed.current = 0.5; // Reverse to left
             currentX.current = 0;
           }
-          
+
           track.style.transform = `translateX(${currentX.current}px)`;
         } else {
-           currentX.current = 0;
-           track.style.transform = `translateX(0px)`;
+          currentX.current = 0;
+          track.style.transform = `translateX(0px)`;
         }
       }
       animationFrameId = requestAnimationFrame(step);
@@ -333,7 +354,11 @@ function NavSlider({ children }: { children: React.ReactNode }) {
 
     animationFrameId = requestAnimationFrame(step);
 
-    return () => cancelAnimationFrame(animationFrameId);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      ro.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
