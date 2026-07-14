@@ -67,10 +67,12 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
         const itemsClone = cloneItems(section.items || []);
 
         const existingCatIds = new Set<string>();
+        const existingLabels = new Set<string>();
         const menuNodesByCatId = new Map<string, any>();
 
         const walkMenu = (items: any[]) => {
           for (const item of items) {
+            if (item.label) existingLabels.add(item.label.toLowerCase());
             if (item.type === 'category' && item.categoryId) {
               existingCatIds.add(item.categoryId);
               menuNodesByCatId.set(item.categoryId, item);
@@ -81,7 +83,7 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
         walkMenu(itemsClone);
 
         const excludedIds = new Set(section.excludedCategories || []);
-        const categoriesToInject = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id));
+        const categoriesToInject = shownCategories.filter(c => !excludedIds.has(c.id) && !existingCatIds.has(c.id) && !existingLabels.has(c.name.toLowerCase()));
 
         const injectedNodesByCatId = new Map<string, any>();
         categoriesToInject.forEach(c => {

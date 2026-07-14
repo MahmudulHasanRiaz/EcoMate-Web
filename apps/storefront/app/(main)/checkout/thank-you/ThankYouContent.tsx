@@ -10,7 +10,6 @@ import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { trackEvent } from '@/lib/tracking';
 import { ResumePaymentButton } from '@/components/ThankYou/ResumePaymentButton';
 import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
-import { CancelOrderButton } from '@/components/ThankYou/CancelOrderButton';
 import { submitPayment } from '@/lib/api/payments';
 import { getGateways } from '@/lib/api/delivery-areas';
 import { PaymentLogo } from '@/components/PaymentLogo';
@@ -187,7 +186,6 @@ export default function ThankYouContent({
   const statusName = String(order.status?.name || '');
   const paymentOptionType = String(order.paymentOptionType || '');
   const isPendingStatus = statusName.toLowerCase() === 'pending';
-  const isCancellable = paymentStatus === 'pending' && isPendingStatus;
   const verifiedPayments = (order.payments || []).filter((p: any) => p.status === 'PAID');
   const totalPaid = verifiedPayments.reduce((s: number, p: any) => s + nn(p.amount), 0);
   const orderTotal = nn(order.total);
@@ -217,32 +215,33 @@ export default function ThankYouContent({
     }
   };
 
-  const headerBg = paymentStatus === 'paid' ? 'bg-green-100' : paymentStatus === 'cancelled' ? 'bg-red-100' : 'bg-amber-100';
+  const headerBg = paymentStatus === 'cancelled' ? 'bg-red-100' : 'bg-green-100';
   const headerIconColor =
-    paymentStatus === 'paid' ? 'text-green-500' : paymentStatus === 'cancelled' ? 'text-red-500' : 'text-amber-500';
-  const HeaderIcon = paymentStatus === 'paid' ? ShieldCheck : paymentStatus === 'cancelled' ? Ban : Clock;
+    paymentStatus === 'cancelled' ? 'text-red-500' : 'text-green-500';
+  const HeaderIcon = paymentStatus === 'cancelled' ? Ban : ShieldCheck;
 
+  const thanksConfig = config.thankYou || {};
   const headerTitle =
     paymentStatus === 'paid'
-      ? 'Order Placed Successfully!'
+      ? (thanksConfig.title || 'Order Placed Successfully!')
       : paymentStatus === 'partial'
         ? 'Partially Paid'
         : paymentStatus === 'failed'
           ? 'Payment Failed'
           : paymentStatus === 'cancelled'
             ? 'Order Cancelled'
-            : 'Order Placed — Payment Pending';
+            : (thanksConfig.title || 'Order Submitted');
 
   const headerMessage =
     paymentStatus === 'paid'
-      ? 'Thank you for shopping with us. Your order has been received and is being processed.'
+      ? (thanksConfig.description || 'Your order has been received. Our team will contact you soon to confirm and process your delivery.')
       : paymentStatus === 'partial'
         ? `You have paid ${config.currency.symbol}${fmt(totalPaid)} so far. Please pay the remaining ${config.currency.symbol}${fmt(remaining)} to confirm your order.`
         : paymentStatus === 'failed'
           ? 'Your last payment attempt did not complete. Please try again to confirm your order.'
           : paymentStatus === 'cancelled'
             ? 'This order has been cancelled. You can place a new order anytime.'
-            : 'Your order has been saved. Please complete the payment to confirm your order. Our team will contact you shortly if you need assistance.';
+            : (thanksConfig.description || 'Your order has been received. Please wait — our team will contact you shortly to confirm and process your delivery.');
 
   const headerBadgeText =
     paymentStatus === 'paid'
@@ -260,7 +259,7 @@ export default function ThankYouContent({
       ? 'text-green-600'
       : paymentStatus === 'cancelled' || paymentStatus === 'failed'
         ? 'text-red-500'
-        : 'text-amber-500';
+        : 'text-green-600';
 
   return (
     <div className="bg-[#f2f4f8] min-h-screen pb-32 font-sans">
@@ -484,16 +483,6 @@ export default function ThankYouContent({
                   </p>
                 </div>
               )}
-            </motion.div>
-          )}
-
-          {isCancellable && orderId && token && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
-              <CancelOrderButton orderId={orderId} token={token} />
             </motion.div>
           )}
 

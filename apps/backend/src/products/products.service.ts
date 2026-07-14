@@ -285,19 +285,24 @@ export class ProductsService {
         },
       ];
     }
-    let orderBy: any = { [query.sort || 'createdAt']: query.order || 'desc' };
+    let orderBy: any;
     if (query.sort === 'basePrice' || query.sort === 'price') {
       const dir = query.order === 'asc' ? 'asc' : 'desc';
       orderBy = [
         { salePrice: { sort: dir, nulls: 'last' } },
         { basePrice: dir },
+        { id: dir },
       ];
     } else if (query.sort === 'popularity') {
-      orderBy = {
-        orderItems: {
-          _count: query.order || 'desc',
-        },
-      };
+      orderBy = [
+        { orderItems: { _count: query.order || 'desc' } },
+        { id: 'desc' },
+      ];
+    } else {
+      orderBy = [
+        { [query.sort || 'createdAt']: query.order || 'desc' },
+        { id: 'desc' },
+      ];
     }
 
     const [data, total] = await Promise.all([

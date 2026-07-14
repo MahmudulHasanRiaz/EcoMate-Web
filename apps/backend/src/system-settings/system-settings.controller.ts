@@ -511,6 +511,11 @@ export class SystemSettingsController {
           defaultVariantSelected: map['default_variant_selected'] !== 'false',
           showReviews: map['show_reviews'] !== 'false',
         },
+        thankYou: {
+          title: map['thanks_page_title'] || '',
+          subtitle: map['thanks_page_subtitle'] || '',
+          description: map['thanks_page_description'] || '',
+        },
       };
       const heroImageUrls = [
         ...heroSlides.map(s => s.image).filter(Boolean),

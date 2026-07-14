@@ -132,19 +132,22 @@ export function MenuSettings() {
 
     const mergeMissingCategories = (items: MenuItem[], missingCats: Category[]): MenuItem[] => {
       const existingMap = new Map<string, MenuItem>()
+      const existingLabels = new Set<string>()
       const walk = (arr: MenuItem[]) => {
         for (const item of arr) {
+          if (item.label) existingLabels.add(item.label.toLowerCase())
           if (item.type === 'category' && item.categoryId) existingMap.set(item.categoryId, item)
           walk(item.children)
         }
       }
       walk(items)
+      const missingCatsFiltered = missingCats.filter(c => !existingLabels.has(c.name.toLowerCase()))
 
       const newNodesMap = new Map<string, MenuItem>()
-      missingCats.forEach(c => newNodesMap.set(c.id, catItem(c)))
+      missingCatsFiltered.forEach(c => newNodesMap.set(c.id, catItem(c)))
 
       const rootNodes: MenuItem[] = []
-      missingCats.forEach(c => {
+      missingCatsFiltered.forEach(c => {
         const node = newNodesMap.get(c.id)!
         if (c.parentId) {
           if (existingMap.has(c.parentId)) existingMap.get(c.parentId)!.children.push(node)
@@ -162,8 +165,10 @@ export function MenuSettings() {
       for (const key of ['header', 'mobile'] as const) {
         const s = next[key]
         const existing = new Set<string>()
+        const existingLabels = new Set<string>()
         const collectExisting = (arr: MenuItem[]) => {
           for (const i of arr) {
+            if (i.label) existingLabels.add(i.label.toLowerCase())
             if (i.type === 'category' && i.categoryId) existing.add(i.categoryId)
             collectExisting(i.children)
           }
@@ -171,14 +176,14 @@ export function MenuSettings() {
         collectExisting(s.items)
 
         if (s.mode === 'include' && s.showAllCategories) {
-          const missing = categories.filter(c => !existing.has(c.id))
+          const missing = categories.filter(c => !existing.has(c.id) && !existingLabels.has(c.name.toLowerCase()))
           if (missing.length > 0) {
             next[key] = { ...s, items: mergeMissingCategories(s.items, missing) }
           }
         } else if (s.mode === 'exclude') {
           const missing = categories
             .filter(c => !s.excludedCategories.includes(c.id))
-            .filter(c => !existing.has(c.id))
+            .filter(c => !existing.has(c.id) && !existingLabels.has(c.name.toLowerCase()))
           if (missing.length > 0) {
             next[key] = { ...s, items: mergeMissingCategories(s.items, missing) }
           }

@@ -135,6 +135,11 @@ export interface StorefrontConfig {
     limit: number;
     enabled: boolean;
   }[];
+  thankYou: {
+    title: string;
+    subtitle: string;
+    description: string;
+  };
   features: {
     sizeChart: boolean;
     hideOosFromArchive: boolean;

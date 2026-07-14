@@ -128,11 +128,12 @@ export default async function RootLayout({
       } as React.CSSProperties : undefined}
     >
       <head>
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content={initialConfig?.branding?.colors?.primary || '#0089CD'} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
+        <link rel="apple-touch-icon" href={initialConfig?.branding?.storefrontFavicon || '/favicon.svg'} />
 
         {/* Preconnect to critical third-party origins */}
         <link rel="preconnect" href="https://static.cloudflareinsights.com" />

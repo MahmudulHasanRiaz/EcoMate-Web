@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -8,7 +9,10 @@ import { AdjustPhysicalDto, BulkAdjustPhysicalDto, BulkAdjustPhysicalItemDto } f
 @Controller('inventory/physical')
 @RequiresFeature('admin_inventory')
 export class PhysicalInventoryController {
-  constructor(private readonly stockService: StockService) {}
+  constructor(
+    private readonly stockService: StockService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Roles('superadmin', 'admin', 'manager')
   @UseGuards(InventoryEnabledGuard)
@@ -28,6 +32,19 @@ export class PhysicalInventoryController {
     // Validate: positive adjustment requires unitCost
     if (dto.quantity > 0 && (!dto.unitCost || dto.unitCost <= 0)) {
       throw new NotFoundException('Unit cost is required when adding stock');
+    }
+
+    // Reject product-level adjustment for variable parent products
+    if (!dto.variantId && dto.productId) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: dto.productId },
+        select: { type: true },
+      });
+      if (product?.type === 'variable') {
+        throw new BadRequestException(
+          'Variable products use variant-level stock management. Select a specific variant instead.',
+        );
+      }
     }
 
     await this.stockService.addPhysical({

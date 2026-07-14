@@ -9,6 +9,7 @@ import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { TagInput } from '@/components/ui/tag-input'
 import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
@@ -49,7 +50,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const { data: brands } = useQuery({ queryKey: ['brands'], queryFn: () => brandsApi.list(true).then((r: any) => Array.isArray(r.data) ? r.data : r.data?.data || []) })
   const { data: attrs } = useQuery({ queryKey: ['attributes'], queryFn: () => attributesApi.list().then(r => r.data) })
   const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })
-  const { data: allTags } = useQuery({ queryKey: ['tags'], queryFn: () => apiClient.get('/tags').then(r => r.data) })
   const { data: overrideData } = useQuery({
     queryKey: ['product-overrides', currentRow?.id],
     queryFn: () => productOverrideApi.list(currentRow!.id).then(r => (Array.isArray(r.data) ? r.data : r.data?.data || [])),
@@ -125,7 +125,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [seoDesc, setSeoDesc] = useState('')
   const [seoKeywords, setSeoKeywords] = useState('')
 
-  const [tagInput, setTagInput] = useState('')
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([])
   const [selectedValues, setSelectedValues] = useState<Record<string, string[]>>({})
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({})
@@ -730,72 +729,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Tags</Label>
-                    <div className='flex flex-wrap gap-1.5 min-h-[36px] p-1.5 border rounded-md'>
-                      {tags ? tags.split(',').map(t => t.trim()).filter(Boolean).map(t => (
-                        <Badge key={t} variant='secondary' className='gap-1 cursor-pointer' onClick={() => {
-                          const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
-                          setTags(arr.filter(x => x !== t).join(', '))
-                        }}>
-                          {t} <X className='h-3 w-3' />
-                        </Badge>
-                      )) : <span className='text-xs text-muted-foreground px-1'>Click below to add tags</span>}
-                    </div>
-                    <div className='flex flex-wrap gap-1.5'>
-                      {(Array.isArray(allTags) ? allTags : (allTags as any)?.data || []).map((tag: any) => {
-                        const tagName = tag.name
-                        const isSelected = tags.split(',').map(t => t.trim()).filter(Boolean).includes(tagName)
-                        return (
-                          <Badge
-                            key={tag.id}
-                            variant={isSelected ? 'default' : 'outline'}
-                            className='cursor-pointer text-xs'
-                            onClick={() => {
-                              const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
-                              if (isSelected) {
-                                setTags(arr.filter(x => x !== tagName).join(', '))
-                              } else {
-                                setTags([...arr, tagName].join(', '))
-                              }
-                            }}
-                          >
-                            {tagName} ({tag._count?.products ?? tag.productCount ?? 0})
-                          </Badge>
-                        )
-                      })}
-                    </div>
-                    <div className='flex items-center gap-2'>
-                      <Input
-                        value={tagInput}
-                        onChange={e => setTagInput(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && tagInput.trim()) {
-                            e.preventDefault()
-                            const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
-                            if (!arr.includes(tagInput.trim())) {
-                              setTags([...arr, tagInput.trim()].join(', '))
-                            }
-                            setTagInput('')
-                          }
-                        }}
-                        placeholder='Type tag name and press Enter...'
-                        className='h-7 text-xs'
-                      />
-                      <Button
-                        variant='ghost'
-                        size='sm'
-                        className='h-7 text-xs shrink-0'
-                        disabled={!tagInput.trim()}
-                        onClick={() => {
-                          const arr = tags.split(',').map(x => x.trim()).filter(Boolean)
-                          if (!arr.includes(tagInput.trim())) {
-                            setTags([...arr, tagInput.trim()].join(', '))
-                          }
-                          setTagInput('')
-                        }}
-                      >
-                        <Plus className='h-3 w-3 mr-1' /> Add
-                      </Button>
-                    </div>
+                    <TagInput
+                      value={tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []}
+                      onChange={(arr) => setTags(arr.join(', '))}
+                    />
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Size Chart</Label>

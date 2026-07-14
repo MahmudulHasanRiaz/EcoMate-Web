@@ -530,14 +530,16 @@ export function Inventory() {
                         <TableCell className='text-sm text-muted-foreground'>{p.updated}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={() => handleQuickAdjust(p.productId)}
-                            >
-                              <Edit3 className="h-3 w-3 mr-1" /> Adjust
-                            </Button>
+                            {p.raw?.type !== 'variable' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => handleQuickAdjust(p.productId)}
+                              >
+                                <Edit3 className="h-3 w-3 mr-1" /> Adjust
+                              </Button>
+                            )}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="h-8 w-8 p-0">

@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ValidationPipe,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -24,8 +25,8 @@ export class TagsController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_tags')
   @Get()
-  async findAll() {
-    return this.svc.findAll();
+  async findAll(@Query('search') search?: string) {
+    return this.svc.findAll(search);
   }
 
   @Public()

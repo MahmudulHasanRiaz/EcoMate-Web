@@ -106,6 +106,7 @@ export class OrdersService {
           comboSelection: options?.comboSelection,
           quantity,
           reference,
+          performedBy: options?.performedBy,
           tx,
           ledgerType: options?.ledgerType,
         });
@@ -153,6 +154,7 @@ export class OrdersService {
             comboSelection: options?.comboSelection,
             quantity,
             reference,
+            performedBy: options?.performedBy,
             warehouseId: wh,
             tx,
             ledgerType: options?.ledgerType,
@@ -789,7 +791,7 @@ export class OrdersService {
 
       for (const item of dto.items) {
         const createdItem = created.items.find(
-          (ci) => ci.productId === item.productId && ((ci.variantId ?? undefined) === item.variantId),
+          (ci) => ci.productId === item.productId && (ci.variantId ?? undefined) === (item.variantId ?? undefined),
         );
         await this.resolveAndApplyStock(
           'reserve',
@@ -1882,7 +1884,7 @@ export class OrdersService {
     const alreadyManagedReleased =
       await this.managedStockLedger.hasExistingRestock(orderId);
     if (!alreadyManagedReleased) {
-      await this.releaseStockForCancelledOrder(orderId, tx);
+      await this.releaseStockForCancelledOrder(orderId, tx, performedBy);
     }
 
     // Physical reservation release — allocation-based (idempotent via status)
@@ -2161,6 +2163,7 @@ export class OrdersService {
   private async releaseStockForCancelledOrder(
     orderId: string,
     tx: Prisma.TransactionClient,
+    performedBy?: string,
   ) {
     const alreadyRestocked =
       await this.managedStockLedger.hasExistingRestock(orderId);
@@ -2199,6 +2202,7 @@ export class OrdersService {
         variantId: item.variantId ?? undefined,
         quantity: item.quantity,
         reference: `cancel-${orderId}`,
+        performedBy,
         tx,
       });
     }

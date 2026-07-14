@@ -28,6 +28,17 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
   const [unitCost, setUnitCost] = useState('')
   const [binLocationId, setBinLocationId] = useState('')
 
+  // Fetch product details for variant context
+  const { data: productDetail } = useQuery({
+    queryKey: ['product-variant-info', productId],
+    queryFn: () => apiClient.get(`/products/${productId}`).then(r => r.data),
+    enabled: !!productId && !!variantId,
+  })
+  const currentVariant = variantId && productDetail?.variants?.find((v: any) => v.id === variantId)
+  const variantLabel = currentVariant
+    ? `${productName || ''} → ${currentVariant.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'} (SKU: ${currentVariant.sku || 'N/A'})`
+    : ''
+
   // Location hierarchy state
   const [zoneId, setZoneId] = useState('')
   const [rackId, setRackId] = useState('')
@@ -151,6 +162,11 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Adjust Stock: {productName || 'Stock'}</DialogTitle>
+          {variantLabel && (
+            <div className="mt-1.5 rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
+              {variantLabel}
+            </div>
+          )}
         </DialogHeader>
         {imEnabled ? (
           <>

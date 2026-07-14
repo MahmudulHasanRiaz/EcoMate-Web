@@ -10,8 +10,12 @@ import { PrismaService } from '../prisma/prisma.service';
 export class TagsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(search?: string) {
+    const where = search
+      ? { name: { contains: search, mode: 'insensitive' as const } }
+      : {};
     return this.prisma.tag.findMany({
+      where,
       orderBy: { name: 'asc' },
       include: { _count: { select: { products: true } } },
     });

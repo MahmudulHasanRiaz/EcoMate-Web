@@ -29,6 +29,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   shippingOptions: [],
   shippingZones: [],
   features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
+  thankYou: { title: '', subtitle: '', description: '' },
   licenseFeatures: [],
   homepageSections: [],
 };

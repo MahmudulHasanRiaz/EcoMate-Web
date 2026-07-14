@@ -216,8 +216,12 @@ export default function ArchivePageClient({
           minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
           maxPrice: filters.maxPrice ? parseFloat(filters.maxPrice) : undefined,
           sort:
-            sortBy === 'price-low' || sortBy === 'price-high' ? 'basePrice' : sortBy === 'newest' ? 'createdAt' : sortBy === 'popularity' ? 'popularity' : undefined,
-          order: sortBy === 'price-low' ? 'asc' : (sortBy === 'price-high' || sortBy === 'newest' || sortBy === 'popularity') ? 'desc' : undefined,
+            sortBy === 'price-low' || sortBy === 'price-high' ? 'basePrice'
+            : sortBy === 'newest' ? 'createdAt'
+            : sortBy === 'popularity' || sortBy === 'best-selling' ? 'popularity'
+            : sortBy === 'featured' ? 'isFeatured'
+            : undefined,
+          order: sortBy === 'price-low' ? 'asc' : (sortBy === 'price-high' || sortBy === 'newest' || sortBy === 'popularity' || sortBy === 'best-selling' || sortBy === 'featured') ? 'desc' : undefined,
           perPage: PAGE_SIZE,
           cursor: cursor ?? undefined,
           signal,
@@ -379,9 +383,11 @@ export default function ArchivePageClient({
               >
                  <option value="default">Default Sorting</option>
                  <option value="popularity">Popularity</option>
+                 <option value="best-selling">Best Selling</option>
                  <option value="price-low">Price: Low to High</option>
                  <option value="price-high">Price: High to Low</option>
                  <option value="newest">Newest Arrival</option>
+                 <option value="featured">Featured</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
             </div>

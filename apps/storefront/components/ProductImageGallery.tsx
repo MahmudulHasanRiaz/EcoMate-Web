@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import type { MediaMeta } from "@/lib/types";
@@ -31,9 +31,14 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
   const thumbRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<number>(0);
 
+  const lightboxImageRef = useRef<HTMLDivElement>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const lastTapRef = useRef<number>(0);
+  const pinchDistRef = useRef<number>(0);
+
   const hasMultiple = images.length > 1;
 
-  // Scroll main gallery to active index
   const scrollTo = useCallback((index: number) => {
     const desktopEl = desktopScrollRef.current;
     if (desktopEl && desktopEl.clientWidth > 0) {
@@ -46,13 +51,10 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
     setActiveIndex(index);
   }, []);
 
-  // Auto-slide logic
   const startAutoPlay = useCallback(() => {
     if (!hasMultiple) return;
-    
     if (progressRef.current) cancelAnimationFrame(progressRef.current);
     setProgress(0);
-    
     const startTime = Date.now();
     const tick = () => {
       const elapsed = Date.now() - startTime;
@@ -60,7 +62,7 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
       setProgress(pct);
       if (pct >= 100) {
         scrollTo((activeIndex + 1) % images.length);
-        return; // Do NOT recursively call startAutoPlay, useEffect handles it
+        return;
       }
       progressRef.current = requestAnimationFrame(tick);
     };
@@ -83,11 +85,9 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
     };
   }, [activeIndex, isAutoPlaying, hasMultiple, lightboxOpen, startAutoPlay, stopAutoPlay]);
 
-  // Scroll thumbnail into view (skip if gallery is off-screen to prevent page scroll jump)
   useEffect(() => {
     const thumbContainer = thumbRef.current;
     if (!thumbContainer) return;
-    // If user scrolled past gallery, don't scrollIntoView — it would jump the page
     const containerRect = thumbContainer.getBoundingClientRect();
     if (containerRect.bottom < 0) return;
     const activeThumb = thumbContainer.children[activeIndex] as HTMLElement;
@@ -95,6 +95,13 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
       activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
   }, [activeIndex]);
+
+  useEffect(() => {
+    if (!lightboxOpen) {
+      setIsZoomed(false);
+      setZoomScale(1);
+    }
+  }, [lightboxOpen]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -112,6 +119,73 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
     if (activeIndex > 0) scrollTo(activeIndex - 1);
   }, [activeIndex, scrollTo]);
 
+  const lightboxGoNext = useCallback(() => {
+    if (lightboxIndex < images.length - 1) {
+      setLightboxIndex(lightboxIndex + 1);
+      setIsZoomed(false);
+      setZoomScale(1);
+    }
+  }, [lightboxIndex, images.length]);
+
+  const lightboxGoPrev = useCallback(() => {
+    if (lightboxIndex > 0) {
+      setLightboxIndex(lightboxIndex - 1);
+      setIsZoomed(false);
+      setZoomScale(1);
+    }
+  }, [lightboxIndex]);
+
+  const toggleZoom = useCallback(() => {
+    if (isZoomed) {
+      setZoomScale(1);
+      setIsZoomed(false);
+    } else {
+      setZoomScale(2.5);
+      setIsZoomed(true);
+    }
+  }, [isZoomed]);
+
+  const getPinchDistance = (touches: React.TouchList): number => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const lightboxSwipeState = useRef({ startX: 0, startY: 0, isSwiping: false, translateX: 0 });
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape':
+          setLightboxOpen(false);
+          break;
+        case 'ArrowLeft':
+          lightboxGoPrev();
+          break;
+        case 'ArrowRight':
+          lightboxGoNext();
+          break;
+        case '+':
+        case '=':
+          e.preventDefault();
+          setZoomScale(s => Math.min(s + 0.5, 4));
+          setIsZoomed(true);
+          break;
+        case '-':
+          e.preventDefault();
+          setZoomScale(s => {
+            const next = Math.max(s - 0.5, 0.5);
+            if (next <= 1) setIsZoomed(false);
+            return next;
+          });
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, lightboxGoNext, lightboxGoPrev]);
+
   if (images.length === 0) {
     return (
       <div className="md:w-[45%]">
@@ -125,9 +199,7 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
   return (
     <>
       <div className="md:w-[45%]">
-        {/* ── Desktop: Main + Thumbnails side-by-side ── */}
         <div className="hidden md:flex gap-3">
-          {/* Thumbnails (vertical strip) */}
           {hasMultiple && (
             <div ref={thumbRef} className="flex flex-col gap-2 overflow-y-auto hide-scrollbar max-h-[520px] flex-shrink-0 w-[72px]">
               {images.map((img, i) => (
@@ -160,7 +232,6 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
             </div>
           )}
 
-          {/* Main image */}
           <div className="relative flex-1 min-w-0">
             <div
               ref={desktopScrollRef}
@@ -172,7 +243,7 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
                   key={i}
                   className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative cursor-pointer"
                   style={{ aspectRatio: '4/5' }}
-                  onClick={() => setLightboxOpen(true)}
+                  onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
                 >
                   <Image
                     src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'medium')}
@@ -187,14 +258,13 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
                 </div>
               ))}
             </div>
-            
+
             {badge && (
               <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full z-10 shadow-md">
                 {badge}
               </div>
             )}
 
-            {/* Counter badge */}
             {hasMultiple && (
               <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-full z-10 flex items-center gap-1">
                 <span className="font-semibold">{activeIndex + 1}</span>
@@ -203,7 +273,6 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
               </div>
             )}
 
-            {/* Nav arrows (desktop) */}
             {hasMultiple && (
               <>
                 {activeIndex > 0 && (
@@ -225,7 +294,6 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
               </>
             )}
 
-            {/* Auto-play toggle */}
             {hasMultiple && (
               <button
                 onClick={() => setIsAutoPlaying(p => !p)}
@@ -238,7 +306,6 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
           </div>
         </div>
 
-        {/* ── Mobile: Full-width carousel ── */}
         <div className="md:hidden relative">
           <div
             ref={mobileScrollRef}
@@ -250,7 +317,7 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
                 key={i}
                 className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative"
                 style={{ aspectRatio: '4/5' }}
-                onClick={() => setLightboxOpen(true)}
+                onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
               >
                 <Image
                   src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'small')}
@@ -265,14 +332,13 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
               </div>
             ))}
           </div>
-          
+
           {badge && (
             <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full z-10 shadow-md">
               {badge}
             </div>
           )}
 
-          {/* Mobile counter */}
           {hasMultiple && (
             <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-full z-10">
               <span className="font-semibold">{activeIndex + 1}</span>
@@ -281,7 +347,6 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
             </div>
           )}
 
-          {/* Mobile dots */}
           {hasMultiple && (
             <div className="flex items-center justify-center gap-1.5 mt-3">
               {images.map((_, i) => (
@@ -301,53 +366,111 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
         </div>
       </div>
 
-      {/* ── Lightbox ── */}
       {lightboxOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center" onClick={() => setLightboxOpen(false)}>
-          <button onClick={() => setLightboxOpen(false)}
-            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-20 transition-colors">
-            <X size={28} />
-          </button>
+        <div
+          className="fixed inset-0 z-[100] bg-black/95 select-none"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+            <div
+              ref={lightboxImageRef}
+              className="relative w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
+              onClick={e => e.stopPropagation()}
+              onTouchStart={(e) => {
+                if (e.touches.length === 2) {
+                  pinchDistRef.current = getPinchDistance(e.touches);
+                  return;
+                }
+                lightboxSwipeState.current.startX = e.touches[0].clientX;
+                lightboxSwipeState.current.startY = e.touches[0].clientY;
+                lightboxSwipeState.current.isSwiping = true;
+                lightboxSwipeState.current.translateX = 0;
+              }}
+              onTouchMove={(e) => {
+                if (e.touches.length === 2) {
+                  e.preventDefault();
+                  const dist = getPinchDistance(e.touches);
+                  const scale = pinchDistRef.current > 0 ? dist / pinchDistRef.current : 1;
+                  const newScale = Math.max(0.5, Math.min(zoomScale * scale, 4));
+                  setZoomScale(newScale);
+                  if (newScale > 1) setIsZoomed(true);
+                  pinchDistRef.current = dist;
+                  return;
+                }
+                if (!lightboxSwipeState.current.isSwiping || isZoomed) return;
+                const dx = e.touches[0].clientX - lightboxSwipeState.current.startX;
+                lightboxSwipeState.current.translateX = dx;
+                if (lightboxImageRef.current) {
+                  const img = lightboxImageRef.current.firstChild as HTMLElement;
+                  if (img) {
+                    img.style.transform = `translateX(${dx}px) scale(${zoomScale})`;
+                    img.style.transition = 'none';
+                  }
+                }
+              }}
+              onTouchEnd={(e) => {
+                if (pinchDistRef.current > 0) {
+                  pinchDistRef.current = 0;
+                  return;
+                }
+                const now = Date.now();
+                const dt = now - lastTapRef.current;
+                lastTapRef.current = now;
 
-          <div className="relative w-full h-full flex items-center justify-center overflow-hidden select-none"
-            onClick={e => e.stopPropagation()}
-            onTouchStart={(e) => { const t = e.target as HTMLElement; t.dataset.touchStartX = String(e.touches[0].clientX); }}
-            onTouchMove={(e) => { const t = e.target as HTMLElement; t.dataset.touchEndX = String(e.touches[0].clientX); }}
-            onTouchEnd={(e) => {
-              const t = e.currentTarget;
-              const start = parseFloat(t.dataset.touchStartX || '0');
-              const end = parseFloat(t.dataset.touchEndX || '0');
-              const diff = start - end;
-              if (Math.abs(diff) > 50) {
-                if (diff > 0 && lightboxIndex < images.length - 1) setLightboxIndex(lightboxIndex + 1);
-                else if (diff < 0 && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
-              }
-            }}
-          >
-            <Image
-              src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
-              alt={productName}
-              width={800} height={800}
-              className="max-w-[95vw] max-h-[90vh] object-contain"
-              draggable={false}
-              priority
-            />
+                if (dt < 300 && dt > 50 && !lightboxSwipeState.current.isSwiping) {
+                  toggleZoom();
+                  e.preventDefault();
+                  return;
+                }
+
+                const dx = lightboxSwipeState.current.translateX;
+                if (lightboxImageRef.current) {
+                  const img = lightboxImageRef.current.firstChild as HTMLElement;
+                  if (img) {
+                    img.style.transition = 'transform 0.3s ease';
+                    img.style.transform = `scale(${zoomScale})`;
+                  }
+                }
+                if (Math.abs(dx) > 60 && !isZoomed) {
+                  if (dx < 0) lightboxGoNext();
+                  else lightboxGoPrev();
+                }
+                lightboxSwipeState.current.isSwiping = false;
+                lightboxSwipeState.current.translateX = 0;
+              }}
+            >
+              <Image
+                src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
+                alt={productName}
+                width={800} height={800}
+                className="max-w-[95vw] max-h-[90vh] object-contain transition-transform duration-300 ease-out"
+                style={{ transform: `scale(${zoomScale})` }}
+                draggable={false}
+                priority
+              />
+            </div>
           </div>
 
-          {/* Lightbox counter */}
+          <button
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-12 h-12 flex items-center justify-center text-white bg-black/50 backdrop-blur-sm hover:bg-black/70 hover:text-white rounded-full z-30 transition-all border border-white/20 shadow-lg"
+            aria-label="Close"
+          >
+            <X size={24} strokeWidth={2} />
+          </button>
+
           {hasMultiple && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm text-white text-[12px] font-medium px-3 py-1.5 rounded-full">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm text-white text-[12px] font-medium px-3 py-1.5 rounded-full z-30">
               <span className="font-semibold">{lightboxIndex + 1}</span>
               <span className="text-white/50 mx-1">/</span>
               <span>{images.length}</span>
             </div>
           )}
 
-          {/* Lightbox dots */}
           {hasMultiple && images.length <= 10 && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
               {images.map((_, i) => (
-                <button key={i} onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); }}
+                <button key={i} onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setIsZoomed(false); setZoomScale(1); }}
                   className={`rounded-full transition-all ${
                     i === lightboxIndex ? 'bg-white w-2.5 h-2.5' : 'bg-white/40 hover:bg-white/70 w-2 h-2'
                   }`} />
@@ -355,17 +478,32 @@ export function ProductImageGallery({ images, productName, badge, mediaMeta }: P
             </div>
           )}
 
-          {/* Lightbox arrows */}
           {lightboxIndex > 0 && (
-            <button onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
-              <ChevronLeft size={20} strokeWidth={2.5} />
+            <button onClick={(e) => { e.stopPropagation(); lightboxGoPrev(); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-full border border-white/15">
+              <ChevronLeft size={22} strokeWidth={2.5} />
             </button>
           )}
           {lightboxIndex < images.length - 1 && (
-            <button onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white z-20 transition-colors bg-white/10 hover:bg-white/20 rounded-full">
-              <ChevronRight size={20} strokeWidth={2.5} />
+            <button onClick={(e) => { e.stopPropagation(); lightboxGoNext(); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-full border border-white/15">
+              <ChevronRight size={22} strokeWidth={2.5} />
+            </button>
+          )}
+
+          {isZoomed && (
+            <button onClick={(e) => { e.stopPropagation(); toggleZoom(); }}
+              className="absolute bottom-6 right-6 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/50 backdrop-blur-sm rounded-full border border-white/20"
+              aria-label="Zoom out">
+              <ZoomOut size={20} />
+            </button>
+          )}
+
+          {!isZoomed && (
+            <button onClick={(e) => { e.stopPropagation(); toggleZoom(); }}
+              className="absolute bottom-6 right-6 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/50 backdrop-blur-sm rounded-full border border-white/20"
+              aria-label="Zoom in">
+              <ZoomIn size={20} />
             </button>
           )}
         </div>

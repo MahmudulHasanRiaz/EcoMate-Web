@@ -642,7 +642,7 @@ export default function CheckoutPage() {
     const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
     const sendLead = () => {
       const data = leadDataRef.current;
-      if (!data) return;
+      if (!data || wasSubmitted.current) return;
       navigator.sendBeacon(beaconUrl, new Blob([JSON.stringify(data)], { type: 'application/json' }));
     };
     window.addEventListener('beforeunload', sendLead);

@@ -17,6 +17,7 @@ export type SectionId =
   | 'discovery-social'
   | 'commerce-checkout'
   | 'commerce-order'
+  | 'commerce-thank-you'
   | 'catalog-display'
   | 'smtp'
 
@@ -72,7 +73,7 @@ export const CATEGORIES: CategoryMeta[] = [
     id: 'commerce',
     label: 'Commerce',
     description: 'Checkout form fields and order contact',
-    sections: ['commerce-checkout', 'commerce-order', 'catalog-display'],
+    sections: ['commerce-checkout', 'commerce-order', 'commerce-thank-you', 'catalog-display'],
   },
 ]
 
@@ -188,6 +189,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     description: 'WhatsApp and phone for order-related customer contact.',
     icon: Phone,
     fields: ['order_whatsapp', 'order_call_number'],
+  },
+  'commerce-thank-you': {
+    id: 'commerce-thank-you',
+    categoryId: 'commerce',
+    title: 'Thank You Page',
+    description: 'Title, subtitle, and description shown after a successful order.',
+    icon: ShoppingCart,
+    fields: ['thanks_page_title', 'thanks_page_subtitle', 'thanks_page_description'],
   },
   'catalog-display': {
     id: 'catalog-display',
