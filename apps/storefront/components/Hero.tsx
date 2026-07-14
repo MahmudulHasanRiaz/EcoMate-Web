@@ -10,6 +10,7 @@ interface HeroSlide {
 }
 
 function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
+  if (!url) return '';
   return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
 }
 
@@ -54,18 +55,20 @@ export default function Hero({
           </div>
 
           {/* Secondary Banner */}
-          <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
-            <div className="relative w-full aspect-[5/4]">
-              <Image
-                src={resolvedSecondary}
-                alt={secondaryBannerAlt || 'Featured banner'}
-                fill
-                priority
-                sizes="(max-width: 768px) 0vw, 33vw"
-                className="object-cover"
-              />
+          {resolvedSecondary && (
+            <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
+              <div className="relative w-full aspect-[5/4]">
+                <Image
+                  src={resolvedSecondary}
+                  alt={secondaryBannerAlt || 'Featured banner'}
+                  fill
+                  priority
+                  sizes="(max-width: 768px) 0vw, 33vw"
+                  className="object-cover"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>
