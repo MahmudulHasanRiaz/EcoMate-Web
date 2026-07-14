@@ -170,8 +170,27 @@ export class OrdersService {
 
   private transformOrder(order: any) {
     if (!order) return order;
+    const sa = order.shippingAddress;
+    const normalizedAddress =
+      sa && typeof sa === 'object'
+        ? {
+            ...sa,
+            address: sa.address || sa.addressLine || '',
+            city: sa.city || sa.thana || '',
+            zone: sa.zone || sa.district || '',
+          }
+        : sa;
     return {
       ...order,
+      customer: order.customer
+        ? {
+            ...order.customer,
+            firstName: order.customer.name || '',
+            lastName: '',
+            phoneNumber: order.customer.phone || '',
+          }
+        : order.customer,
+      shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
       trackingUrl: buildTrackingUrl(
         order.courierService,
@@ -238,17 +257,12 @@ export class OrdersService {
         { displayId: { contains: query.search, mode: 'insensitive' } },
         {
           customer: {
-            firstName: { contains: query.search, mode: 'insensitive' },
+            name: { contains: query.search, mode: 'insensitive' },
           },
         },
         {
           customer: {
-            lastName: { contains: query.search, mode: 'insensitive' },
-          },
-        },
-        {
-          customer: {
-            phoneNumber: { contains: normalizedPhone || query.search },
+            phone: { contains: normalizedPhone || query.search },
           },
         },
         { guestName: { contains: query.search, mode: 'insensitive' } },

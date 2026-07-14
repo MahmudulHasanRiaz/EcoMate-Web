@@ -731,15 +731,15 @@ function OrderDetailPage() {
                     <>
                       <Separator />
                       <div className='text-xs text-muted-foreground space-y-0.5'>
-                        {order.shippingAddress.address && (
+                        {(order.shippingAddress.address || order.shippingAddress.addressLine) && (
                           <p className='flex items-start gap-1.5'>
                             <MapPin className='h-3 w-3 mt-0.5 shrink-0' />
-                            <span>{order.shippingAddress.address}</span>
+                            <span>{order.shippingAddress.address || order.shippingAddress.addressLine}</span>
                           </p>
                         )}
                         {(order.shippingAddress.city || order.shippingAddress.zone) && (
                           <p className='ml-5'>
-                            {[order.shippingAddress.zone?.name, order.shippingAddress.city?.name].filter(Boolean).join(', ')}
+                            {[order.shippingAddress.zone?.name || order.shippingAddress.zone, order.shippingAddress.city?.name || order.shippingAddress.city].filter(Boolean).join(', ')}
                           </p>
                         )}
                       </div>

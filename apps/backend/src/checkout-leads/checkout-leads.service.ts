@@ -454,9 +454,9 @@ export class CheckoutLeadsService {
 
     if (order.customer) {
       email = order.customer.email || '';
-      firstName = order.customer.firstName || '';
-      lastName = order.customer.lastName || '';
-      phone = order.customer.phoneNumber || '';
+      firstName = order.customer.name || '';
+      lastName = '';
+      phone = order.customer.phone || '';
     }
     if (!phone) phone = order.guestPhone || '';
     if (!firstName) firstName = order.guestName || '';

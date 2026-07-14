@@ -55,10 +55,10 @@ function parseAddress(addr: unknown): AddressParts {
   if (!addr || typeof addr !== 'object') return {}
   const a = addr as Record<string, unknown>
   return {
-    line1: (a.address || a.street || a.line1 || '') as string,
+    line1: (a.address || a.addressLine || a.street || a.line1 || '') as string,
     line2: (a.line2 || a.area || '') as string,
-    city: (a.city || '') as string,
-    zone: (a.state || a.region || a.district || '') as string,
+    city: (a.city || a.thana || '') as string,
+    zone: (a.zone || a.state || a.region || a.district || '') as string,
     postcode: (a.postcode || a.zip || a.postalCode || '') as string,
     country: (a.country || '') as string,
     phone: (a.phone || a.phoneNumber || '') as string,
