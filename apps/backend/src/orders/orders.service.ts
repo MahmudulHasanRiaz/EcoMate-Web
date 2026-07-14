@@ -2222,17 +2222,21 @@ export class OrdersService {
     for (const item of order.items) {
       const product = item.product;
       if (!product) continue;
-      if (product.availabilityMode !== 'MANAGED_STOCK') continue;
-      if (!product.manageStock) continue;
-
-      await this.stockService.release({
-        productId: item.productId ?? undefined,
-        variantId: item.variantId ?? undefined,
-        quantity: item.quantity,
-        reference: `cancel-${orderId}`,
-        performedBy,
+      // Use the full stock router so that physical reservations are also released
+      // for MANAGED_STOCK (IM ON: both managed + physical) and INVENTORY_CONTROLLED products.
+      await this.resolveAndApplyStock(
+        'release',
+        item.productId,
+        item.variantId,
+        item.quantity,
+        `cancel-${orderId}`,
         tx,
-      });
+        {
+          orderId,
+          orderItemId: item.id,
+          performedBy,
+        },
+      );
     }
   }
 

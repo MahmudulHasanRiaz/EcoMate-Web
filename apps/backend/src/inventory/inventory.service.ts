@@ -824,27 +824,39 @@ export class InventoryService {
 
     const productIds = data.map((p) => p.id);
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
+    // Group physical inventory by (productId, variantId) to get per-variant sums.
+    // variantId=null rows belong to simple (non-variant) products.
     const physicalSums = imEnabled ? await this.prisma.physicalInventory.groupBy({
-      by: ['productId'],
-      _sum: {
-        quantity: true,
-        reservedQuantity: true,
-      },
-      where: {
-        productId: { in: productIds },
-      },
+      by: ['productId', 'variantId'],
+      _sum: { quantity: true, reservedQuantity: true },
+      where: { productId: { in: productIds } },
     }) : [];
 
-    const sumMap = new Map(
-      physicalSums.map((s) => [s.productId, s._sum.quantity ?? 0]),
-    );
+    // Per-variant physical stock maps (keyed by ProductVariant.id)
+    const variantPhysicalSumMap = new Map<string, number>();
+    const variantReservedSumMap = new Map<string, number>();
+    // Product-level totals (sum of ALL rows for that product, incl. all variants)
+    const productPhysicalSumMap = new Map<string, number>();
+    const productReservedSumMap = new Map<string, number>();
 
-    const reservedSumMap = new Map(
-      physicalSums.map((s) => [s.productId, s._sum.reservedQuantity ?? 0]),
-    );
+    for (const s of physicalSums) {
+      const qty = s._sum.quantity ?? 0;
+      const res = s._sum.reservedQuantity ?? 0;
+      // Accumulate product-level totals unconditionally
+      productPhysicalSumMap.set(s.productId, (productPhysicalSumMap.get(s.productId) ?? 0) + qty);
+      productReservedSumMap.set(s.productId, (productReservedSumMap.get(s.productId) ?? 0) + res);
+      // Accumulate variant-level totals only when variantId is present
+      if (s.variantId) {
+        variantPhysicalSumMap.set(s.variantId, (variantPhysicalSumMap.get(s.variantId) ?? 0) + qty);
+        variantReservedSumMap.set(s.variantId, (variantReservedSumMap.get(s.variantId) ?? 0) + res);
+      }
+    }
 
     const dataWithAvailableStock = data.map((p) => {
-      const physicalStockSum = sumMap.get(p.id) ?? 0;
+      const physicalStockSum = productPhysicalSumMap.get(p.id) ?? 0;
+      const physicalReservedSum = productReservedSumMap.get(p.id) ?? 0;
+      // For MANAGED_STOCK: aggregate from variant managedStockQuantity fields
       const managedStockSum = p.type === 'variable'
         ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
         : p.managedStockQuantity;
@@ -857,21 +869,27 @@ export class InventoryService {
           p.availabilityMode === 'MANAGED_STOCK'
             ? managedStockSum - (p.reservedStock ?? 0)
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
-              ? physicalStockSum - (reservedSumMap.get(p.id) ?? 0)
+              ? physicalStockSum - physicalReservedSum
               : p.availabilityMode === 'ALWAYS_IN_STOCK'
                 ? null
                 : 0,
-        variants: p.variants.map((v) => ({
-          ...v,
-          availableStock:
-            p.availabilityMode === 'MANAGED_STOCK'
-              ? v.managedStockQuantity - (v.reservedStock ?? 0)
-              : p.availabilityMode === 'INVENTORY_CONTROLLED'
-                ? physicalStockSum - (reservedSumMap.get(p.id) ?? 0)
-                : p.availabilityMode === 'ALWAYS_IN_STOCK'
-                  ? null
-                  : 0,
-        })),
+        variants: p.variants.map((v) => {
+          // For INVENTORY_CONTROLLED variants: use exact variantId-scoped physical sum.
+          // For MANAGED_STOCK variants: use the variant's own managedStockQuantity.
+          const vPhysical = variantPhysicalSumMap.get(v.id) ?? 0;
+          const vReserved = variantReservedSumMap.get(v.id) ?? 0;
+          return {
+            ...v,
+            availableStock:
+              p.availabilityMode === 'MANAGED_STOCK'
+                ? v.managedStockQuantity - (v.reservedStock ?? 0)
+                : p.availabilityMode === 'INVENTORY_CONTROLLED'
+                  ? vPhysical - vReserved
+                  : p.availabilityMode === 'ALWAYS_IN_STOCK'
+                    ? null
+                    : 0,
+          };
+        }),
       };
     });
 

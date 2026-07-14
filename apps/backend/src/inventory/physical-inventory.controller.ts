@@ -85,6 +85,43 @@ export class PhysicalInventoryController {
       });
     }
 
+    // syncManagedStock: if the product is MANAGED_STOCK with syncManagedStock=ON,
+    // physical adjustment should also mirror the total physical quantity into managedStockQuantity.
+    // For INVENTORY_CONTROLLED products this is not needed — physical inventory IS the storefront source.
+    const productId = dto.productId || (dto.variantId
+      ? (await this.prisma.productVariant.findUnique({ where: { id: dto.variantId }, select: { productId: true } }))?.productId
+      : undefined);
+
+    if (productId) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: productId },
+        select: { availabilityMode: true, syncManagedStock: true },
+      });
+
+      if (product?.availabilityMode === 'MANAGED_STOCK' && product.syncManagedStock) {
+        // Recompute total physical quantity for this product+variant across all warehouses/bins
+        if (dto.variantId) {
+          const agg = await this.prisma.physicalInventory.aggregate({
+            where: { productId, variantId: dto.variantId },
+            _sum: { quantity: true },
+          });
+          await this.prisma.productVariant.update({
+            where: { id: dto.variantId },
+            data: { managedStockQuantity: agg._sum.quantity ?? 0 },
+          });
+        } else {
+          const agg = await this.prisma.physicalInventory.aggregate({
+            where: { productId, variantId: null },
+            _sum: { quantity: true },
+          });
+          await this.prisma.product.update({
+            where: { id: productId },
+            data: { managedStockQuantity: agg._sum.quantity ?? 0 },
+          });
+        }
+      }
+    }
+
     return { ok: true };
   }
 
@@ -155,6 +192,47 @@ export class PhysicalInventoryController {
           warehouseId: dto.warehouseId,
           quantity: Math.abs(item.quantity),
         });
+      }
+    }
+
+    // syncManagedStock: for each unique product+variant adjusted, if MANAGED_STOCK + syncManagedStock=ON,
+    // recompute managedStockQuantity from total physical inventory.
+    const seenKeys = new Set<string>();
+    for (const item of dto.items) {
+      const resolvedProductId = item.productId || (item.variantId
+        ? (await this.prisma.productVariant.findUnique({ where: { id: item.variantId }, select: { productId: true } }))?.productId
+        : undefined);
+      if (!resolvedProductId) continue;
+
+      const key = `${resolvedProductId}|${item.variantId || ''}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      const product = await this.prisma.product.findUnique({
+        where: { id: resolvedProductId },
+        select: { availabilityMode: true, syncManagedStock: true },
+      });
+
+      if (product?.availabilityMode === 'MANAGED_STOCK' && product.syncManagedStock) {
+        if (item.variantId) {
+          const agg = await this.prisma.physicalInventory.aggregate({
+            where: { productId: resolvedProductId, variantId: item.variantId },
+            _sum: { quantity: true },
+          });
+          await this.prisma.productVariant.update({
+            where: { id: item.variantId },
+            data: { managedStockQuantity: agg._sum.quantity ?? 0 },
+          });
+        } else {
+          const agg = await this.prisma.physicalInventory.aggregate({
+            where: { productId: resolvedProductId, variantId: null },
+            _sum: { quantity: true },
+          });
+          await this.prisma.product.update({
+            where: { id: resolvedProductId },
+            data: { managedStockQuantity: agg._sum.quantity ?? 0 },
+          });
+        }
       }
     }
 

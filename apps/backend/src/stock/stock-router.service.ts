@@ -55,17 +55,18 @@ export class StockRouterService {
     }
 
     // IM ON + MANAGED_STOCK
+    // Architecture:
+    //   - Order Create  → reserve managed stock only (MS_ONLY)
+    //   - Order Confirm → allocate physical inventory (pi:'allocate')
+    //   - Handed Over   → deduct BOTH managed stock AND physical inventory
+    //   - Cancel/Return → restore BOTH managed stock AND physical inventory
     if (mode === 'MANAGED_STOCK') {
-      if (syncManagedStock) {
-        if (opType === 'reserve') return { ms: 'reserve', pi: 'allocate', msConditionalOnSync: false };
-        if (opType === 'release') return { ms: 'release', pi: 'release', msConditionalOnSync: false };
-      }
-      if (opType === 'reserve') return MS_ONLY;
-      if (opType === 'release') return { ms: 'release', pi: 'release', msConditionalOnSync: false };
-      if (opType === 'deduct') return { ms: 'deduct', pi: 'fulfill', msConditionalOnSync: true };
-      if (opType === 'add') return MS_COND;
+      if (opType === 'reserve') return MS_ONLY;                                                     // managed reserved at order creation
+      if (opType === 'release') return { ms: 'release', pi: 'release', msConditionalOnSync: false }; // both released at cancel/edit
+      if (opType === 'deduct') return { ms: 'deduct', pi: 'fulfill', msConditionalOnSync: false };   // both deducted at dispatch (HANDED_OVER)
+      if (opType === 'add') return { ms: 'add', pi: 'add', msConditionalOnSync: false };             // both restored at return
       if (opType === 'scrap') return MS_ONLY;
-      if (opType === 'allocate') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };
+      if (opType === 'allocate') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };  // physical allocated at confirm
       if (opType === 'check') return { ms: 'skip', pi: 'check', msConditionalOnSync: false };
       return MS_ONLY;
     }

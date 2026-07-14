@@ -181,6 +181,13 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                   </p>
                 </div>
               )}
+              {availabilityMode === 'MANAGED_STOCK' && imEnabled && (
+                <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                  <p className='text-xs text-blue-700 dark:text-blue-300'>
+                    <strong>Managed Stock product:</strong> This adjustment updates physical warehouse stock used for order processing. To update storefront availability, set the managed stock quantity in the product settings.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="warehouse">Warehouse</Label>
                 <Select value={warehouseId} onValueChange={setWarehouseId}>
@@ -313,7 +320,16 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button type="submit" onClick={handleSave} disabled={adjustMut.isPending || (availabilityMode != null && availabilityMode !== 'MANAGED_STOCK')}>
+              <Button
+                type="submit"
+                onClick={handleSave}
+                disabled={
+                  adjustMut.isPending ||
+                  (availabilityMode != null &&
+                    availabilityMode !== 'MANAGED_STOCK' &&
+                    availabilityMode !== 'INVENTORY_CONTROLLED')
+                }
+              >
                 {adjustMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
                 Save Adjustment
               </Button>

@@ -229,19 +229,11 @@ export class DispatchService {
           const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', imEnabled, product?.syncManagedStock ?? undefined);
 
           if (decision.ms === 'deduct') {
-            if (decision.msConditionalOnSync && !product?.syncManagedStock) {
-              // sync=false: release reservedStock only, don't deduct managedStockQuantity
-              if (variantId) {
-                await this.stockService.release({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
-              } else {
-                await this.stockService.release({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
-              }
+            // Deduct managed stock (always, since msConditionalOnSync is false for MANAGED_STOCK+IM)
+            if (variantId) {
+              await this.stockService.deduct({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
             } else {
-              if (variantId) {
-                await this.stockService.deduct({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
-              } else {
-                await this.stockService.deduct({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
-              }
+              await this.stockService.deduct({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
             }
           }
 
