@@ -15,12 +15,13 @@ interface AdjustStockModalProps {
   onOpenChange: (open: boolean) => void
   productId?: string
   variantId?: string
+  variantName?: string
   productName?: string
   availabilityMode?: string
   onSuccess?: () => void
 }
 
-export function AdjustStockModal({ open, onOpenChange, productId, variantId, productName, availabilityMode, onSuccess }: AdjustStockModalProps) {
+export function AdjustStockModal({ open, onOpenChange, productId, variantId, variantName, productName, availabilityMode, onSuccess }: AdjustStockModalProps) {
   const { data: imEnabled = true } = useInventoryManagement()
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
@@ -32,12 +33,14 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
   const { data: productDetail } = useQuery({
     queryKey: ['product-variant-info', productId],
     queryFn: () => apiClient.get(`/products/${productId}`).then(r => r.data),
-    enabled: !!productId && !!variantId,
+    enabled: !!productId && !!variantId && !variantName,
   })
   const currentVariant = variantId && productDetail?.variants?.find((v: any) => v.id === variantId)
-  const variantLabel = currentVariant
-    ? `${productName || ''} → ${currentVariant.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'} (SKU: ${currentVariant.sku || 'N/A'})`
-    : ''
+  const variantLabel = variantName
+    ? `${productName || ''} → ${variantName}`
+    : currentVariant
+      ? `${productName || ''} → ${currentVariant.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'} (SKU: ${currentVariant.sku || 'N/A'})`
+      : ''
 
   // Location hierarchy state
   const [zoneId, setZoneId] = useState('')
@@ -161,7 +164,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, pro
     }}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Adjust Stock: {productName || 'Stock'}</DialogTitle>
+          <DialogTitle>Adjust Stock: {productName || 'Stock'} {variantName ? `(${variantName})` : ''}</DialogTitle>
           {variantLabel && (
             <div className="mt-1.5 rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
               {variantLabel}

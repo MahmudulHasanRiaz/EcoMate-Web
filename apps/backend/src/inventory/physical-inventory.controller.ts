@@ -5,6 +5,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { AdjustPhysicalDto, BulkAdjustPhysicalDto, BulkAdjustPhysicalItemDto } from './dto/physical-inventory.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('inventory/physical')
 @RequiresFeature('admin_inventory')
@@ -28,7 +29,10 @@ export class PhysicalInventoryController {
   @Roles('superadmin', 'admin', 'manager')
   @UseGuards(InventoryEnabledGuard)
   @Post('adjust')
-  async adjust(@Body() dto: AdjustPhysicalDto) {
+  async adjust(
+    @Body() dto: AdjustPhysicalDto,
+    @CurrentUser() user: { email: string },
+  ) {
     // Validate: positive adjustment requires unitCost
     if (dto.quantity > 0 && (!dto.unitCost || dto.unitCost <= 0)) {
       throw new NotFoundException('Unit cost is required when adding stock');
@@ -56,6 +60,7 @@ export class PhysicalInventoryController {
       ledgerType: 'PHYSICAL_ADJUSTMENT',
       binLocationId: dto.binLocationId,
       unitCost: dto.unitCost,
+      performedBy: user.email,
     });
 
     // Create CostingLot for positive adjustment
@@ -86,7 +91,10 @@ export class PhysicalInventoryController {
   @Roles('superadmin', 'admin', 'manager')
   @UseGuards(InventoryEnabledGuard)
   @Post('bulk-adjust')
-  async bulkAdjust(@Body() dto: BulkAdjustPhysicalDto) {
+  async bulkAdjust(
+    @Body() dto: BulkAdjustPhysicalDto,
+    @CurrentUser() user: { email: string },
+  ) {
     const hasPositive = dto.items.some(i => i.quantity > 0);
     const hasNegative = dto.items.some(i => i.quantity < 0);
     if (hasPositive && hasNegative) {
@@ -101,6 +109,21 @@ export class PhysicalInventoryController {
       }
     }
 
+    // Reject product-level adjustment for variable parent products
+    for (const item of dto.items) {
+      if (!item.variantId && item.productId) {
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          select: { type: true },
+        });
+        if (product?.type === 'variable') {
+          throw new BadRequestException(
+            'Variable products use variant-level stock management. Select a specific variant instead.',
+          );
+        }
+      }
+    }
+
     for (const item of dto.items) {
       await this.stockService.addPhysical({
         productId: item.productId,
@@ -111,6 +134,7 @@ export class PhysicalInventoryController {
         ledgerType: 'PHYSICAL_ADJUSTMENT',
         binLocationId: item.binLocationId,
         unitCost: item.unitCost,
+        performedBy: user.email,
       });
 
       if (item.quantity > 0 && item.unitCost) {

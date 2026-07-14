@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DollarSign, AlertTriangle, Package, TrendingDown, FileEdit } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { MOVEMENT_TYPE_LABELS } from './utils/movement-type-labels'
+import { UserBadge } from '@/components/user-badge'
 
 type LowStockItem = {
   id: string
@@ -288,9 +289,19 @@ export function StockOverview() {
                             {MOVEMENT_TYPE_LABELS[log.type] ?? log.type}
                           </Badge>
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {log.reason ?? ''}{log.performedBy ? ` by ${log.performedBy}` : ''}
-                        </p>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                          <span>{log.reason ?? ''}</span>
+                          {log.performedBy && (
+                            <>
+                              <span>by</span>
+                              {log.performedBy.toLowerCase() !== 'system' ? (
+                                <UserBadge email={log.performedBy} showEmail={false} size="sm" />
+                              ) : (
+                                <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                       <div className="text-right text-xs text-muted-foreground">
                         {formatTimeAgo(log.createdAt)}

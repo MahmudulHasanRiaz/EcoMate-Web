@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Building2, Package, MapPin, ArrowLeftRight, ExternalLink, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
+import { UserBadge } from '@/components/user-badge'
 import { Link } from '@tanstack/react-router'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -315,7 +316,13 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                               <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
                                 {log.reason || log.performedBy || '—'}
                               </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{log.performedBy || '—'}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (
+                                  <UserBadge email={log.performedBy} showEmail={false} size="sm" />
+                                ) : (
+                                  log.performedBy || '—'
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))
                         ) : (

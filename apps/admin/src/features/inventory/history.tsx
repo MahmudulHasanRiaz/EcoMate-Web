@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Loader2, Calendar, User, Search, RefreshCw, FileText, Check, ChevronsUpDown, X, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { UserBadge } from '@/components/user-badge'
 
 interface Product {
   id: string
@@ -406,7 +407,11 @@ export function MovementHistory() {
                         {log.stockAfter}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {log.performedBy || 'System'}
+                        {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (
+                          <UserBadge email={log.performedBy} showEmail={false} size="sm" />
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={log.reason || log.note}>
                         {log.reason || log.note || '—'}

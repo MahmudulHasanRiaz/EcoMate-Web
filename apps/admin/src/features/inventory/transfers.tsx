@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { UserBadge } from '@/components/user-badge'
 
 interface Warehouse {
   id: string
@@ -238,7 +239,13 @@ export function Transfers() {
                     <TableCell className="text-sm text-muted-foreground">
                       {new Date(log.performedAt).toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{log.performedBy}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (
+                        <UserBadge email={log.performedBy} showEmail={false} size="sm" />
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm">
                         <Eye className="h-4 w-4 mr-2" /> View

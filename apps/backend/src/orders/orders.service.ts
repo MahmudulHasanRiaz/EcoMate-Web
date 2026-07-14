@@ -2144,7 +2144,11 @@ export class OrdersService {
           const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
           if (!alreadyReserved) {
             const existingPi = await tx.physicalInventory.findFirst({
-              where: { productId: item.productId!, warehouseId: product.warehouseId },
+              where: {
+                productId: item.productId!,
+                variantId: item.variantId || null,
+                warehouseId: product.warehouseId,
+              },
             });
             if (!existingPi) {
               throw new BadRequestException(

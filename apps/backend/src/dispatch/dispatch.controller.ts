@@ -11,6 +11,7 @@ import {
 import { DispatchService } from './dispatch.service';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('dispatch')
 export class DispatchController {
@@ -53,9 +54,10 @@ export class DispatchController {
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: string,
+    @CurrentUser() user: { email: string },
     @Body('performedBy') performedBy?: string,
   ) {
-    return this.dispatchService.updateStatus(id, status, performedBy);
+    return this.dispatchService.updateStatus(id, status, performedBy || user.email);
   }
 
   @Delete(':id')

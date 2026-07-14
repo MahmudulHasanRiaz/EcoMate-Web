@@ -68,9 +68,11 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
             
             {/* Quick Actions */}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => { onOpenChange(false); onAdjust?.(); }} size="sm">
-                <Edit3 className="mr-2 h-4 w-4" /> Adjust
-              </Button>
+              {productDetails.type !== 'variable' && (
+                <Button onClick={() => { onOpenChange(false); onAdjust?.(); }} size="sm">
+                  <Edit3 className="mr-2 h-4 w-4" /> Adjust
+                </Button>
+              )}
               <Button variant="outline" size="sm" asChild onClick={() => onOpenChange(false)}>
                 <Link to="/op/inventory/transfers"><ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer</Link>
               </Button>

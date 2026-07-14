@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { UserBadge } from '@/components/user-badge'
 
 interface AdjustmentLog {
   id: string
@@ -143,7 +144,13 @@ export function Adjustments() {
                     <TableCell className="text-sm text-muted-foreground">
                       {new Date(log.performedAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{log.performedBy}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (
+                        <UserBadge email={log.performedBy} showEmail={false} size="sm" />
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

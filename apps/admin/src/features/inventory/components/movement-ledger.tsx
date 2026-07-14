@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Filter, Download, ExternalLink, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MOVEMENT_TYPE_LABELS, getMovementTypeBadgeVariant } from '../utils/movement-type-labels'
+import { UserBadge } from '@/components/user-badge'
 
 interface LedgerEntry {
   id: string
@@ -157,7 +158,13 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                     </Badge>
                     {entry.note && <div className="text-[10px] text-muted-foreground mt-1">{entry.note}</div>}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{entry.performedBy || 'System'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {entry.performedBy && entry.performedBy.toLowerCase() !== 'system' ? (
+                      <UserBadge email={entry.performedBy} showEmail={false} size="sm" />
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                    )}
+                  </TableCell>
                   <TableCell
                     className={`text-right font-bold ${entry.direction === 'IN' ? 'text-green-600' : 'text-red-600'}`}
                   >

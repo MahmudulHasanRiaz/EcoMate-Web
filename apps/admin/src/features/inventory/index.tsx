@@ -325,11 +325,13 @@ export function Inventory() {
   }
 
   const [adjustAvailabilityMode, setAdjustAvailabilityMode] = useState<string | undefined>()
-  const handleQuickAdjust = (productId?: string, variantId?: string) => {
+  const [adjustVariantName, setAdjustVariantName] = useState<string | undefined>()
+  const handleQuickAdjust = (productId?: string, variantId?: string, variantName?: string) => {
     if (!productId) return
     const item = stockLevels.find(p => p.productId === productId)
     setAdjustProductId(productId)
     setAdjustVariantId(variantId)
+    setAdjustVariantName(variantName)
     setAdjustAvailabilityMode(item?.availabilityMode)
     setAdjustOpen(true)
   }
@@ -607,7 +609,7 @@ export function Inventory() {
                                     variant="outline"
                                     size="sm"
                                     className="h-7 text-xs"
-                                    onClick={() => handleQuickAdjust(p.productId, v.id)}
+                                    onClick={() => handleQuickAdjust(p.productId, v.id, attrs)}
                                   >
                                     <Edit3 className="h-3 w-3 mr-1" /> Adjust
                                   </Button>
@@ -675,7 +677,7 @@ export function Inventory() {
                                     variant="outline"
                                     size="sm"
                                     className="h-7 text-xs"
-                                    onClick={() => handleQuickAdjust(p.productId, pv.variantId)}
+                                    onClick={() => handleQuickAdjust(p.productId, pv.variantId, attrs)}
                                   >
                                     <Edit3 className="h-3 w-3 mr-1" /> Adjust
                                   </Button>
@@ -722,6 +724,7 @@ export function Inventory() {
         onOpenChange={setAdjustOpen} 
         productId={adjustProductId} 
         variantId={adjustVariantId}
+        variantName={adjustVariantName}
         productName={stockLevels.find(p => p.productId === adjustProductId)?.name}
         availabilityMode={adjustAvailabilityMode}
         onSuccess={() => {

@@ -634,16 +634,6 @@ export class StockService {
           params.performedBy,
           tx,
         );
-        await this.logManagedStockLedger(
-          targets,
-          'IN',
-          'ADJUSTMENT',
-          'ORDER',
-          params.reference,
-          params.performedBy,
-          `Reserved for ${params.reference}`,
-          tx,
-        );
       } else if (operation === 'release') {
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
         await this.logInventory(
@@ -651,16 +641,6 @@ export class StockService {
           'release',
           `Released for ${params.reference}`,
           params.performedBy,
-          tx,
-        );
-        await this.logManagedStockLedger(
-          targets,
-          'OUT',
-          'CANCEL_RELEASE',
-          'ORDER',
-          params.reference,
-          params.performedBy,
-          `Released for ${params.reference}`,
           tx,
         );
       } else if (operation === 'deduct') {
@@ -898,11 +878,18 @@ export class StockService {
         }
       }
 
+      const whereClause: any = {
+        productId: params.productId,
+        warehouseId: params.warehouseId,
+      };
+      if (params.variantId) {
+        whereClause.variantId = params.variantId;
+      } else {
+        whereClause.variantId = null;
+      }
+
       const eligible = await tx.physicalInventory.findMany({
-        where: {
-          productId: params.productId,
-          warehouseId: params.warehouseId,
-        },
+        where: whereClause,
         orderBy: { updatedAt: 'asc' },
       });
 

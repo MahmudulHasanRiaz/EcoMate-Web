@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProductForm } from './product-form'
 import { apiClient } from '@/lib/api-client'
 import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
+import { UserBadge } from '@/components/user-badge'
 
 export function ProductDetail() {
   const { id } = useParams({ from: '/_authenticated/op/products/$id' })
@@ -258,7 +259,15 @@ export function ProductDetail() {
                         </div>
                         <div className='text-muted-foreground'>
                           {entry.stockBefore} → {entry.stockAfter}
-                          {entry.performedBy && <span className='ml-2 font-medium'>{entry.performedBy}</span>}
+                          {entry.performedBy && (
+                            <span className='ml-2 inline-flex items-center'>
+                              {entry.performedBy.toLowerCase() !== 'system' ? (
+                                <UserBadge email={entry.performedBy} showEmail={false} size="sm" />
+                              ) : (
+                                <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
