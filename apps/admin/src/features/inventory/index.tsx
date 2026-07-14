@@ -206,23 +206,33 @@ export function Inventory() {
       for (const pi of physData) {
         const pid = pi.product?.id
         if (!pid) continue
-        if (!physMap.has(pid)) {
-          physMap.set(pid, {
-            _variants: [],
-            _totalQty: 0,
-            _totalReserved: 0,
-            _warehouseName: pi.warehouse?.name || 'Unknown Warehouse',
-            _binCode: pi.binLocation?.code || null,
-            _updatedAt: pi.updatedAt,
-          })
+
+        let latestUpdatedAt = pi.updatedAt
+        let binCode = null
+        let warehouseName = 'Unknown Warehouse'
+
+        if (pi._variants && pi._variants.length > 0) {
+          for (const v of pi._variants) {
+            if (v.updatedAt && (!latestUpdatedAt || v.updatedAt > latestUpdatedAt)) {
+              latestUpdatedAt = v.updatedAt
+            }
+            if (v.binLocation?.code) {
+              binCode = v.binLocation.code
+            }
+            if (v.warehouse?.name) {
+              warehouseName = v.warehouse.name
+            }
+          }
         }
-        const agg = physMap.get(pid)
-        agg._variants.push(pi)
-        agg._totalQty += pi.quantity || 0
-        agg._totalReserved += pi.reservedQuantity || 0
-        if (pi.warehouse?.name && agg._warehouseName === 'Unknown Warehouse') agg._warehouseName = pi.warehouse.name
-        if (pi.binLocation?.code) agg._binCode = pi.binLocation.code
-        if (pi.updatedAt > agg._updatedAt) agg._updatedAt = pi.updatedAt
+
+        physMap.set(pid, {
+          _variants: pi._variants || [],
+          _totalQty: pi._totalQty || 0,
+          _totalReserved: pi._totalReserved || 0,
+          _warehouseName: warehouseName,
+          _binCode: binCode,
+          _updatedAt: latestUpdatedAt,
+        })
       }
 
       let items = stockData.data.map((p: StockOverviewItem) => {
