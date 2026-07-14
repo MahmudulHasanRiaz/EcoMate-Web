@@ -15,8 +15,9 @@ EcoMate Web/
 │   ├── feature-flags/  NestJS module — runtime feature gating via license entitlements
 │   ├── license-engine/ License validation client — KeyMate API + 7-day local cache
 │   └── shared-types/   Shared TypeScript definitions across workspaces
-├── docker-compose.yml  5 services (postgres, redis, backend, storefront, admin)
+├── docker-compose.yml  6 services (postgres, redis, backend, storefront, admin, pos)
 ├── portainer/          Portainer stack config + self-hosted Keygen CE license server
+├── scripts/            Utility scripts — dev wait-for-backend, DB backup, deploy helper
 ├── docs/               Feature specs, deployment guides, superpowers design docs
 └── .github/workflows/  CI (lint/test/build) + CD (Docker build/push + Portainer deploy)
 ```
@@ -52,13 +53,18 @@ Fastify-based API at port 4000. Key modules:
 
 - **Auth** — better-auth (email/password, social login), JWT refresh tokens, failed attempt lockout, RBAC
 - **Catalog** — Products, variants, categories, brands, inventory, purchasing, GRN, size charts, attributes, tags, combos
-- **Orders** — Checkout, payments, order lifecycle, shipping (Steadfast, Pathao, Redx, Carrybee), refunds, dispatch, packing, shipment tracking
-- **CRM** — Customers, leads, referrals, email campaigns, notification templates, reviews
+- **Stock** — Stock routing engine (`StockRouterService`), costing lot consumption (FIFO), `InventoryEnabledGuard` for MANAGED_STOCK products
+- **Inventory** — Stock adjustments, movement ledger, physical inventory counts with ledger tracking, warehouse-level partial unique indexes
+- **Warehouses** — Hierarchical structure: zones → racks → shelves (bin locations), hierarchy management DTOs
+- **Dispatch** — Dedicated dispatch module: controller, service, DTOs for fulfillment workflows
+- **Orders** — Checkout, payments, order lifecycle, shipping (Steadfast, Pathao, Redx, Carrybee), refunds, packing, shipment tracking
+- **CRM** — Customers, leads, referrals, email campaigns, notification templates, reviews; auto-creates CustomerProfile during registration & checkout
 - **POS** — Point of Sale endpoints, offline sync support
 - **Finance** — Chart of Accounts, double-entry journal entries, financial periods, expense management, opening balances
 - **HR** — Employee management, payroll, attendance
 - **CMS** — Pages, landing pages (template + custom HTML), media gallery
-- **Operations** — Warehouses, suppliers, costing lots, pixel tracking, delivery areas, coupons, tasks
+- **Tracking** — Server-side event tracking: Meta Conversions API (CAPI), TikTok Events API, GA4 Measurement Protocol, Google Ads offline conversions. BullMQ queue-backed with page view buffering
+- **Operations** — Warehouses, suppliers, delivery areas, coupons, tasks
 - **License** — License activation via KeyMate, encrypted credential storage (AES-256-GCM)
 - **Security** — IP/phone blocking system, throttling, Helmet CSP
 - **Platform** — Search, import/export, product feed (Google/Meta), queue management, cache, image processing, uploads, system settings
@@ -71,9 +77,12 @@ Served at `/admin/` base path. Features:
 - Product/order/customer CRUD with TanStack Table (sort, filter, pagination)
 - Landing page builder with TipTap editor
 - Media gallery with upload, crop, compress
+- Warehouse hierarchy management (zones, racks, shelves)
+- Physical stock adjustment dialogs with multi-item & variant support
+- Tag input component with search + create functionality
 - Employee/HR management + payroll
 - Accounting module (double-entry bookkeeping)
-- Settings: store config, shipping zones, tax rates, email templates
+- Settings: store config, shipping zones, tax rates, email templates, tracking pixels
 - RBAC-based access control
 - License activation page (first-run setup)
 
@@ -92,10 +101,15 @@ PWA with offline support via service worker + IndexedDB. Features:
 ### `apps/storefront` — Next.js 16 Public Site
 
 - Product browsing, search, filtering
-- Cart + checkout flow
+- Cart + checkout flow with shipping address normalization & CustomerProfile auto-creation
 - Landing pages (template + custom HTML modes)
 - ISR with 300s revalidation
-- Tracking pixel integration (Meta, TikTok)
+- Product description HTML sanitization (isomorphic-dompurify)
+- Dynamic PWA manifest generation (`manifest.ts`)
+- Testimonials carousel
+- Brand logo component
+- Commerce thank-you page customizable section
+- Tracking pixel integration (Meta, TikTok, GA4, Google Ads)
 - Dev-mode rewrites admin to local Vite dev server
 - Security headers, image optimization, standalone Docker output
 
@@ -212,15 +226,18 @@ Key variables for production (set in Portainer stack):
 | `CORS_ORIGIN` | Comma-separated allowed origins |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` (better-auth) |
 | `BETTER_AUTH_URL` | Public-facing API URL (e.g., https://api.example.com) |
-| `META_PIXEL_ID`, `TIKTOK_PIXEL_CODE` | Tracking pixels |
+| `META_PIXEL_ID`, `META_ACCESS_TOKEN` | Meta Pixel + Conversions API |
+| `TIKTOK_PIXEL_CODE`, `TIKTOK_ACCESS_TOKEN` | TikTok Pixel + Events API |
+| `GA_MEASUREMENT_ID`, `GA_API_SECRET` | GA4 Measurement Protocol |
+| `GA_ADS_CONVERSION_ID`, `GA_ADS_CONVERSION_LABEL` | Google Ads offline conversions |
 
 Full list: `apps/backend/.env.example` and root `.env.example`.
 
 ## Database
 
 - **ORM:** Prisma 7
-- **Schema:** `apps/backend/prisma/schema.prisma` (~1710 lines, 84 models)
-- **Migrations:** 35 migrations
+- **Schema:** `apps/backend/prisma/schema.prisma` (~1720 lines, 86+ models)
+- **Migrations:** 40+ migrations
 - **Hard rule:** Every `schema.prisma` change REQUIRES a migration file. `db push --accept-data-loss` is FORBIDDEN.
 - **Hard rule:** Production migrations must be fully idempotent — every statement guarded by `IF NOT EXISTS` / `IF EXISTS`. No `DROP COLUMN`, no `DROP TABLE`.
 
@@ -257,10 +274,15 @@ Backend Docker build applies `javascript-obfuscator` (control flow flattening, s
 | `docs/keygen-setup.md` | Self-hosted Keygen CE license server deployment |
 | `docs/landing-page-builder.md` | Landing/sales page builder technical spec |
 | `docs/portainer-deployment.md` | VPS + Portainer deployment guide |
-| `docs/superpowers/` | Feature plans and design specs (accounting, HR, catalog, etc.) |
+| `docs/Marketing Attribution.md` | Marketing attribution platform spec (Meta Ads integration, profit intelligence) |
+| `docs/1-BUSINESS/` | Business domain contract, architecture invariants, feature registry |
+| `docs/superpowers/` | Feature plans and design specs (accounting, HR, catalog, license activation UI, etc.) |
 | `AGENT.md` | AI agent behavior rules and project conventions |
 | `apps/backend/.env.example` | Backend environment variables |
 | `portainer/keygen/.env.example` | Keygen license server environment |
+| `scripts/backup-db.sh` | Database backup script |
+| `scripts/deploy.sh` | Deployment helper |
+| `scripts/wait-for-backend.js` | Dev-server readiness waiter |
 
 ## Project Conventions
 
