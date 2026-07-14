@@ -65,19 +65,22 @@ function formatDate(dateStr: string): string {
 }
 
 function sanitizeHTML(html: string): string {
-  return DOMPurify.sanitize(
-    html
+  // Detect if content is already HTML (from TipTap rich editor)
+  const isHTML = /<[a-z][\s\S]*>/i.test(html);
+  let processed = html.replace(/##/g, '');
+  if (!isHTML) {
+    // Plain text: convert literal escaped newlines and actual newlines to <br>
+    processed = processed
       .replace(/\\r\\n/g, '\n')
       .replace(/\\n/g, '\n')
       .replace(/\r\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
-      .replace(/\n/g, '<br>')
-      .replace(/##/g, ''),
-    {
-      ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-      ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
-    }
-  );
+      .replace(/\n/g, '<br>');
+  }
+  return DOMPurify.sanitize(processed, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+    ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
+  });
 }
 
 function ReviewForm({ productId, onSubmitted }: { productId: string; onSubmitted: () => void }) {
@@ -947,7 +950,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
               {descExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
             {descExpanded && (
-              <div className="text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn whitespace-pre-wrap" dangerouslySetInnerHTML={{
+              <div className="prose prose-sm max-w-none text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline" dangerouslySetInnerHTML={{
                 __html: sanitizeHTML(product.description)
               }} />
             )}

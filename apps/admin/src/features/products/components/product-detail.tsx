@@ -134,7 +134,14 @@ export function ProductDetail() {
             <Card>
               <CardHeader><CardTitle className='text-base'>Description</CardTitle></CardHeader>
               <CardContent>
-                <div className='text-sm whitespace-pre-wrap text-muted-foreground'>{product.description || 'No description.'}</div>
+                {product.description ? (
+                  <div
+                    className='text-sm text-muted-foreground [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_strong]:font-semibold [&_a]:text-primary [&_a]:underline'
+                    dangerouslySetInnerHTML={{ __html: product.description }}
+                  />
+                ) : (
+                  <p className='text-sm text-muted-foreground'>No description.</p>
+                )}
               </CardContent>
             </Card>
 
