@@ -56,6 +56,11 @@ export function Media() {
     return () => ro.disconnect()
   }, [])
 
+  const { data, isLoading } = useQuery({
+    queryKey: ['media', page, search, typeFilter, attachFilter],
+    queryFn: () => mediaApi.list({ page, perPage: 24, search: search || undefined, type: typeFilter || undefined, attached: attachFilter || undefined }).then(r => r.data),
+  })
+
   const columns = gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : 8
   const items = data?.data ?? []
   const rowCount = items.length ? Math.ceil(items.length / columns) : 0
@@ -71,11 +76,6 @@ export function Media() {
     queryKey: ['media', 'attachments', selected?.id],
     queryFn: () => selected ? mediaApi.getAttachments(selected.id).then(r => r.data) : null,
     enabled: !!selected,
-  })
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['media', page, search, typeFilter, attachFilter],
-    queryFn: () => mediaApi.list({ page, perPage: 24, search: search || undefined, type: typeFilter || undefined, attached: attachFilter || undefined }).then(r => r.data),
   })
 
   const deleteMut = useMutation({
@@ -439,8 +439,8 @@ export function Media() {
                   ))}
                 </div>
               )}
-              <div ref={gridContainerRef} className='flex-1 overflow-auto min-h-0'>
-                <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+              <div ref={gridContainerRef} className='flex-1 overflow-auto min-h-0 w-full'>
+                <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
                   {virtualizer.getVirtualItems().map((virtualRow) => {
                     const rowIdx = virtualRow.index
                     const start = rowIdx * columns
