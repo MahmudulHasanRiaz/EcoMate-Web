@@ -1,6 +1,6 @@
-import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import Link from 'next/link';
+import { BrandLogoImage } from './BrandLogoImage';
 
 interface Brand {
   id: string;
@@ -33,13 +33,7 @@ export default function BrandSection({ brands = [] }: { brands?: Brand[] }) {
             if (logoUrl.startsWith('//')) logoUrl = logoUrl.substring(1);
             return (
               <div key={brand.id} className="bg-white border border-gray-100 rounded-lg p-6 flex items-center justify-center h-[100px] shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-                <Image 
-                  src={logoUrl} 
-                  alt={brand.name} 
-                  width={120} height={60}
-                  className="max-h-full max-w-full object-contain grayscale hover:grayscale-0 transition-all duration-300"
-                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
-                />
+                <BrandLogoImage src={logoUrl} alt={brand.name} fallback={PLACEHOLDER_IMAGE} />
               </div>
             )
           })}

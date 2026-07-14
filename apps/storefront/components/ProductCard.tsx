@@ -29,7 +29,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const [imageFailed, setImageFailed] = React.useState(false);
   const retriesRef = React.useRef(0);
 
-  const derivativeUrl = product.mediaMeta?.[product.image]?.derivativeManifest?.medium || product.image;
+  const derivativeUrl = product.mediaMeta?.[product.image]?.derivativeManifest?.small || product.image;
 
   React.useEffect(() => {
     retriesRef.current = 0;

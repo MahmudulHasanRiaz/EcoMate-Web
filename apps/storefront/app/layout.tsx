@@ -137,20 +137,7 @@ export default async function RootLayout({
         {/* Preconnect to critical third-party origins */}
         <link rel="preconnect" href="https://static.cloudflareinsights.com" />
 
-        {/* Preload hero image for instant LCP — use derivative URL if available */}
-        {initialConfig?.hero?.slides?.[0]?.image && (() => {
-          const slideImg = initialConfig.hero.slides[0].image;
-          const mediaMeta = (initialConfig as any)?._mediaMeta;
-          const derivativeUrl = mediaMeta?.[slideImg]?.derivativeManifest?.large || slideImg;
-          return (
-            <link
-              rel="preload"
-              href={derivativeUrl}
-              as="image"
-              fetchPriority="high"
-            />
-          );
-        })()}
+        {/* Preload hero image — Next.js Image priority handles this via imageSrcSet/href preloads */}
 
         {/* DNS prefetch for faster connection setup */}
         <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />

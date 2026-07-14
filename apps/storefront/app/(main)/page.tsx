@@ -19,13 +19,6 @@ export default async function HomePage() {
     { id: '3', title: 'Popular Items', type: 'popular', limit: 4, enabled: true },
   ];
 
-  let brands: any[] = [];
-  try {
-    brands = await getBrandsServer();
-  } catch (error) {
-    console.error('Brands fetch failed:', error);
-  }
-
   const fetchSectionProducts = async (sec: any): Promise<{ title: string; products: Product[]; href: string } | null> => {
     if (!sec.enabled) return null;
     try {
@@ -69,9 +62,11 @@ export default async function HomePage() {
     }
   };
 
-  const renderedSectionsData = await Promise.all(
-    sections.map(sec => fetchSectionProducts(sec))
-  );
+  // Brands fetch runs in parallel with product section fetches (independent)
+  const [renderedSectionsData, brands] = await Promise.all([
+    Promise.all(sections.map(sec => fetchSectionProducts(sec))),
+    getBrandsServer().catch(() => [] as any[]),
+  ]);
   const activeSections = renderedSectionsData.filter(Boolean) as { title: string; products: Product[]; href: string }[];
 
   return (
