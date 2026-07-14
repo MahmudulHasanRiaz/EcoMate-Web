@@ -21,7 +21,14 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
     throw new StorefrontConfigError('Storefront config is empty or invalid');
   }
 
-  const categories = await getCategoriesServer();
+  // Categories and license can be fetched in parallel — both independent of each other
+  const [categories, licenseStatus] = await Promise.all([
+    getCategoriesServer(),
+    fetch(`${API_URL}/license/status`, { next: { revalidate: 300 } })
+      .then(r => r.json())
+      .catch(() => ({ active: true, features: [], message: '' })),
+  ]);
+
   const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
 
   const enrichMenuItemsWithSlug = (items: any[]) => {
@@ -121,15 +128,11 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
     }
   }
 
-  try {
-    const licenseRes = await fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300 },
-    });
-    const licenseStatus = await licenseRes.json();
-    config.licenseFeatures = licenseStatus.features || [];
-  } catch {
-    config.licenseFeatures = [];
-  }
+  config.licenseFeatures = licenseStatus.features || [];
+
+  // Expose license status on config for root layout (avoids duplicate fetch)
+  (config as any)._licenseActive = licenseStatus?.active ?? true;
+  (config as any)._licenseMessage = licenseStatus?.message || '';
 
   return config;
 });

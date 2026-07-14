@@ -83,17 +83,9 @@ export default async function RootLayout({
     }
   }
 
-  const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-  let licenseActive = true;
-  let licenseMessage = '';
-  try {
-    const licenseRes = await fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300 },
-    });
-    const licenseStatus = await licenseRes.json();
-    licenseActive = licenseStatus?.active ?? true;
-    licenseMessage = licenseStatus?.message || '';
-  } catch {}
+  // License status comes from getStorefrontConfigServer() — no duplicate fetch needed
+  const licenseActive = (initialConfig as any)?._licenseActive ?? true;
+  const licenseMessage = (initialConfig as any)?._licenseMessage ?? '';
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
 
@@ -143,21 +135,24 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
 
         {/* Preconnect to critical third-party origins */}
-        <link rel="preconnect" href="https://connect.facebook.net" />
         <link rel="preconnect" href="https://static.cloudflareinsights.com" />
 
-        {/* Preload hero image for instant LCP */}
-        {initialConfig?.hero?.slides?.[0]?.image && (
-          <link
-            rel="preload"
-            href={`/api/images/resize?path=${encodeURIComponent(initialConfig.hero.slides[0].image)}&w=800&q=75`}
-            as="image"
-            fetchPriority="high"
-          />
-        )}
+        {/* Preload hero image for instant LCP — use derivative URL if available */}
+        {initialConfig?.hero?.slides?.[0]?.image && (() => {
+          const slideImg = initialConfig.hero.slides[0].image;
+          const mediaMeta = (initialConfig as any)?._mediaMeta;
+          const derivativeUrl = mediaMeta?.[slideImg]?.derivativeManifest?.large || slideImg;
+          return (
+            <link
+              rel="preload"
+              href={derivativeUrl}
+              as="image"
+              fetchPriority="high"
+            />
+          );
+        })()}
 
         {/* DNS prefetch for faster connection setup */}
-        <link rel="dns-prefetch" href="//connect.facebook.net" />
         <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />
 
         <script

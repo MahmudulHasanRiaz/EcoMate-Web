@@ -1,6 +1,3 @@
-"use client";
-
-import { useState } from 'react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import Link from 'next/link';
@@ -13,8 +10,6 @@ interface Brand {
 }
 
 export default function BrandSection({ brands = [] }: { brands?: Brand[] }) {
-  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
-
   if (brands.length === 0) return null;
 
   return (
@@ -39,11 +34,11 @@ export default function BrandSection({ brands = [] }: { brands?: Brand[] }) {
             return (
               <div key={brand.id} className="bg-white border border-gray-100 rounded-lg p-6 flex items-center justify-center h-[100px] shadow-sm hover:shadow-md transition-shadow cursor-pointer">
                 <Image 
-                  src={imgErrors[brand.name] ? PLACEHOLDER_IMAGE : logoUrl} 
+                  src={logoUrl} 
                   alt={brand.name} 
                   width={120} height={60}
                   className="max-h-full max-w-full object-contain grayscale hover:grayscale-0 transition-all duration-300"
-                  onError={() => setImgErrors(prev => ({ ...prev, [brand.name]: true }))}
+                  onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                 />
               </div>
             )
