@@ -449,32 +449,6 @@ export class StockService {
           where: { id: existing.id },
           data: { [field]: { [op]: t.qty } },
         });
-      } else if (op === 'increment' && !t.binLocationId) {
-        const fallback = await tx.physicalInventory.findFirst({
-          where: {
-            productId: t.productId,
-            variantId: t.variantId || null,
-            warehouseId: t.warehouseId,
-          },
-          orderBy: { updatedAt: 'desc' },
-        });
-        if (fallback) {
-          await tx.physicalInventory.update({
-            where: { id: fallback.id },
-            data: { [field]: { [op]: t.qty } },
-          });
-        } else {
-          await tx.physicalInventory.create({
-            data: {
-              productId: t.productId,
-              variantId: t.variantId || null,
-              warehouseId: t.warehouseId,
-              binLocationId: null,
-              quantity: field === 'quantity' ? t.qty : 0,
-              reservedQuantity: field === 'reservedQuantity' ? t.qty : 0,
-            },
-          });
-        }
       } else {
         await tx.physicalInventory.create({
           data: {

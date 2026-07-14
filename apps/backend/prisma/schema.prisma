@@ -1088,6 +1088,11 @@ model PhysicalInventory {
   binLocation BinLocation? @relation(fields: [binLocationId], references: [id])
   reservationAllocations PhysicalReservationAllocation[]
 
+  // PostgreSQL 16 treats NULLs as distinct in unique constraints, so this
+  // composite unique does NOT prevent duplicates when binLocationId IS NULL.
+  // A partial unique index "PhysicalInventory_warehouse_level_key" defined
+  // in migration 20260714130000 covers warehouse-level rows where
+  // binLocationId IS NULL. Both protections are required.
   @@unique([productId, variantId, warehouseId, binLocationId])
   @@index([productId])
   @@index([variantId])
