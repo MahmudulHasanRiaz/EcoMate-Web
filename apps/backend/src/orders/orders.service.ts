@@ -493,12 +493,22 @@ export class OrdersService {
     if (dto.customerId) {
       const user = await this.prisma.userProfile.findUnique({
         where: { id: dto.customerId },
-        select: { status: true },
+        select: { status: true, phoneNumber: true, firstName: true, lastName: true },
       });
       if (user?.status === 'suspended') {
         throw new BadRequestException(
           'This account has been blocked. Please contact support.',
         );
+      }
+      // Ensure CustomerProfile exists (order FK now references CustomerProfile)
+      const phone = dto.guestPhone || user?.phoneNumber;
+      const name = dto.guestName || (user ? `${user.firstName} ${user.lastName}`.trim() : 'Customer');
+      if (phone) {
+        await this.prisma.customerProfile.upsert({
+          where: { id: dto.customerId },
+          create: { id: dto.customerId, phone, name },
+          update: { phone, name },
+        });
       }
     }
 

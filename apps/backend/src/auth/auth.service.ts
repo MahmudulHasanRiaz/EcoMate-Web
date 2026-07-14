@@ -111,6 +111,19 @@ export class AuthService implements OnModuleInit {
         data: { userId: user.id },
       });
 
+      // Create CustomerProfile (order FK references CustomerProfile)
+      await this.prisma.customerProfile.upsert({
+        where: { id: user.id },
+        create: {
+          id: user.id,
+          betterAuthUserId: baUser.id,
+          phone: normalizedPhone,
+          email: dto.email,
+          name: `${dto.firstName} ${dto.lastName}`.trim(),
+        },
+        update: {},
+      });
+
       this.sendVerificationEmail(user.id).catch((err) =>
         this.logger.error(
           'Failed to send verification email after registration',

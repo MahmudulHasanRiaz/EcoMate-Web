@@ -182,32 +182,66 @@ export class CustomersService {
     const firstName = nameParts[0] || 'Unknown';
     const lastName = nameParts.slice(1).join(' ') || '';
 
-    const existing = await this.prisma.userProfile.findFirst({
+    // First, check if a CustomerProfile exists for this phone
+    const existingProfile = await this.prisma.customerProfile.findUnique({
+      where: { phone: normalized },
+    });
+
+    if (existingProfile) {
+      // Ensure UserProfile exists too (update name if needed)
+      const existingUser = await this.prisma.userProfile.findFirst({
+        where: { phoneNumber: normalized, role: 'customer' },
+      });
+      if (existingUser) {
+        const updateData: any = {};
+        if (existingUser.firstName !== firstName || existingUser.lastName !== lastName) {
+          updateData.firstName = firstName;
+          updateData.lastName = lastName;
+        }
+        if (clientIp && existingUser.lastIp !== clientIp) {
+          updateData.lastIp = clientIp;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await this.prisma.userProfile.update({
+            where: { id: existingUser.id },
+            data: updateData,
+          });
+        }
+      }
+      return { id: existingProfile.id };
+    }
+
+    // Check UserProfile by phone (legacy)
+    const existingUser = await this.prisma.userProfile.findFirst({
       where: { phoneNumber: normalized, role: 'customer' },
     });
 
-    if (existing) {
+    if (existingUser) {
       const updateData: any = {};
-      if (existing.firstName !== firstName || existing.lastName !== lastName) {
+      if (existingUser.firstName !== firstName || existingUser.lastName !== lastName) {
         updateData.firstName = firstName;
         updateData.lastName = lastName;
       }
-      if (clientIp && existing.lastIp !== clientIp) {
+      if (clientIp && existingUser.lastIp !== clientIp) {
         updateData.lastIp = clientIp;
       }
       if (Object.keys(updateData).length > 0) {
         await this.prisma.userProfile.update({
-          where: { id: existing.id },
+          where: { id: existingUser.id },
           data: updateData,
         });
       }
-      return { id: existing.id };
+      // Create CustomerProfile with same id as UserProfile
+      await this.prisma.customerProfile.upsert({
+        where: { id: existingUser.id },
+        create: { id: existingUser.id, phone: normalized, name },
+        update: { name, phone: normalized },
+      });
+      return { id: existingUser.id };
     }
 
     const phoneKey = normalized.replace(/[^\d]/g, '');
     const domain = this.getEmailDomain();
-    // Use a pre-calculated dummy hash to avoid extremely slow CPU-blocking bcrypt hashing during checkout/import.
-    // Since this is a guest account with a random UUID password, it cannot be logged into anyway until a password reset.
     const hashedPassword =
       '$2a$12$5K1R68iJb0Z2kYf.p0jOeuZ/XmS9M0d.6oZc1p9e6p9z1a2b3c4d5';
 
@@ -226,6 +260,11 @@ export class CustomersService {
 
     await this.prisma.userSettings.create({
       data: { userId: user.id },
+    });
+
+    // Create CustomerProfile with same id
+    await this.prisma.customerProfile.create({
+      data: { id: user.id, phone: normalized, name },
     });
 
     return { id: user.id };
