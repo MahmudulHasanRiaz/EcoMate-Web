@@ -1,6 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 
-type MagicRule = { offset: number; bytes: number[] | string };
+type MagicRule = {
+  offset: number;
+  bytes: number[] | string;
+  any?: (number[] | string)[];
+};
+
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'heim', 'heis', 'hevs', 'hevm'] as const;
 
 const MAGIC_RULES: Record<string, MagicRule[]> = {
   'image/jpeg': [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }],
@@ -16,6 +22,14 @@ const MAGIC_RULES: Record<string, MagicRule[]> = {
     { offset: 4, bytes: 'ftyp' },
     { offset: 8, bytes: 'avif' },
   ],
+  'image/heic': [
+    { offset: 4, bytes: 'ftyp' },
+    { offset: 8, bytes: 'heic', any: [...HEIC_BRANDS] },
+  ],
+  'image/heif': [
+    { offset: 4, bytes: 'ftyp' },
+    { offset: 8, bytes: 'heic', any: [...HEIC_BRANDS] },
+  ],
   'image/bmp': [{ offset: 0, bytes: [0x42, 0x4d] }],
   'image/tiff': [
     { offset: 0, bytes: [0x49, 0x49, 0x2a, 0x00] },
@@ -28,16 +42,23 @@ const MAGIC_RULES: Record<string, MagicRule[]> = {
   'video/x-matroska': [{ offset: 0, bytes: [0x1a, 0x45, 0xdf, 0xa3] }],
 };
 
-function matchesMagic(buffer: Buffer, rule: MagicRule): boolean {
+function checkBytes(buffer: Buffer, offset: number, bytes: number[] | string): boolean {
   const raw =
-    rule.bytes instanceof Array
-      ? Buffer.from(rule.bytes)
-      : Buffer.from(rule.bytes, 'ascii');
-  if (buffer.length < rule.offset + raw.length) return false;
+    bytes instanceof Array
+      ? Buffer.from(bytes)
+      : Buffer.from(bytes, 'ascii');
+  if (buffer.length < offset + raw.length) return false;
   for (let i = 0; i < raw.length; i++) {
-    if (buffer[rule.offset + i] !== raw[i]) return false;
+    if (buffer[offset + i] !== raw[i]) return false;
   }
   return true;
+}
+
+function matchesMagic(buffer: Buffer, rule: MagicRule): boolean {
+  if (rule.any) {
+    return rule.any.some((b) => checkBytes(buffer, rule.offset, b));
+  }
+  return checkBytes(buffer, rule.offset, rule.bytes);
 }
 
 export function validateMagicBytes(buffer: Buffer, mimetype: string): void {

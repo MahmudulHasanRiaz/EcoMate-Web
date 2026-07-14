@@ -104,6 +104,7 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
   imgErrors: { [key: string]: boolean };
   setImgErrors: React.Dispatch<React.SetStateAction<{ [key: string]: boolean }>>;
 }) {
+  const catImg = category.mediaMeta?.[category.image]?.derivativeManifest?.thumbnail || category.image;
   return (
     <Link
       href={`/products?category=${category.slug}`}
@@ -112,7 +113,7 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
       <div className="relative w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-md group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
         <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         <Image
-          src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (category.image || PLACEHOLDER_IMAGE)}
+          src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (catImg || PLACEHOLDER_IMAGE)}
           alt=""
           fill
           sizes="100px"

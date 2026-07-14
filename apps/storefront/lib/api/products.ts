@@ -76,8 +76,11 @@ export function transformBackendProduct(raw: any): Product {
       : (rawOriginalPrice && rawOriginalPrice > displayPrice ? rawOriginalPrice : undefined);
   }
 
+  const mediaMeta = raw._mediaMeta || undefined;
+
   return {
     id: raw.id,
+    mediaMeta,
     name: raw.name,
     slug: raw.slug,
     price: displayPrice,
@@ -155,12 +158,21 @@ export async function getFeaturedProducts(): Promise<Product[]> {
   return (data.data || []).map(transformBackendProduct);
 }
 
+function transformCategory(raw: any): Category {
+  return {
+    ...raw,
+    mediaMeta: raw._mediaMeta || undefined,
+  };
+}
+
 export async function getCategories(): Promise<Category[]> {
   const { data } = await apiClient.get("/categories");
-  return Array.isArray(data) ? data : data.data || [];
+  const list = Array.isArray(data) ? data : data.data || [];
+  return list.map(transformCategory);
 }
 
 export async function getMenuCategories(): Promise<Category[]> {
   const { data } = await apiClient.get("/categories/menu");
-  return Array.isArray(data) ? data : data.data || [];
+  const list = Array.isArray(data) ? data : data.data || [];
+  return list.map(transformCategory);
 }

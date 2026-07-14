@@ -13,6 +13,7 @@ import { readFile, unlink } from 'fs/promises';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 import { validateMagicBytes } from '../common/utils/file-validation';
+import { MediaQueueService } from './media-queue/media-queue.service';
 
 const PRIVATE_CIDRS: Array<(ip: string) => boolean> = [
   (ip) => ip.startsWith('10.'),
@@ -41,6 +42,7 @@ export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly mediaQueue: MediaQueueService,
   ) {}
 
   async findAll(query: {
@@ -205,6 +207,8 @@ export class MediaService {
         `Media is attached to ${media._count.attachments} item(s). Detach first or pass ?force=true.`,
       );
     }
+
+    await this.mediaQueue.deleteDerivatives(id);
 
     const urlParts = media.url.split('/');
     const filename = urlParts[urlParts.length - 1];
@@ -474,8 +478,14 @@ export class MediaService {
         alt: opts.alt,
         sourceUrl: rawUrl,
         uploadedBy: opts.uploadedBy,
+        processingStatus: 'UPLOADED',
       },
     });
+    this.mediaQueue.schedule(created.id).catch((err) =>
+      this.logger.error(
+        `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
+      ),
+    );
     return {
       id: created.id,
       url: created.url,
@@ -552,8 +562,14 @@ export class MediaService {
         hash,
         alt: opts.alt,
         uploadedBy: opts.uploadedBy,
+        processingStatus: 'UPLOADED',
       },
     });
+    this.mediaQueue.schedule(created.id).catch((err) =>
+      this.logger.error(
+        `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
+      ),
+    );
     return {
       id: created.id,
       url: created.url,
@@ -934,5 +950,60 @@ export class MediaService {
       `Media migration: scanned=${scanned} migrated=${migrated} failed=${failed}`,
     );
     return { scanned, migrated, failed };
+  }
+
+  async backfill(opts?: { batchSize?: number; max?: number }): Promise<{ queued: number }> {
+    return this.mediaQueue.backfill(opts);
+  }
+
+  async recoverStuck(sinceMinutes?: number): Promise<{ recovered: number }> {
+    return this.mediaQueue.recoverStuck(sinceMinutes);
+  }
+
+  async reprocess(mediaId: string): Promise<void> {
+    const media = await this.prisma.media.findUnique({
+      where: { id: mediaId },
+      select: { id: true },
+    });
+    if (!media) throw new NotFoundException('Media not found');
+    await this.mediaQueue.deleteDerivatives(mediaId);
+    await this.prisma.media.update({
+      where: { id: mediaId },
+      data: {
+        processingStatus: 'UPLOADED',
+        processingError: null,
+        derivativeManifest: undefined,
+        blurUrl: null,
+        updatedAt: new Date(),
+      },
+    });
+    await this.mediaQueue.schedule(mediaId);
+    this.logger.log(`Queued reprocess for media ${mediaId}`);
+  }
+
+  async reprocessFailed(
+    batchSize = 50,
+  ): Promise<{ queued: number }> {
+    const failed = await this.prisma.media.findMany({
+      where: { processingStatus: 'FAILED' },
+      take: batchSize,
+      select: { id: true },
+    });
+    for (const media of failed) {
+      await this.mediaQueue.deleteDerivatives(media.id);
+      await this.prisma.media.update({
+        where: { id: media.id },
+        data: {
+          processingStatus: 'UPLOADED',
+          processingError: null,
+          derivativeManifest: undefined,
+          blurUrl: null,
+          updatedAt: new Date(),
+        },
+      });
+      await this.mediaQueue.schedule(media.id);
+    }
+    this.logger.log(`Queued reprocess for ${failed.length} failed media`);
+    return { queued: failed.length };
   }
 }

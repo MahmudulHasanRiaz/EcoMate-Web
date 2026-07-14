@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { toast } from 'sonner'
 import { Upload, Trash2, Copy, Check, Loader2, ImageIcon, Film, X, Search, Link2, ExternalLink, RefreshCw } from 'lucide-react'
 import { SafeImage } from '@/components/safe-image'
@@ -41,6 +42,30 @@ export function Media() {
   const dropRef = useRef<HTMLDivElement | null>(null)
   const masterRef = useRef<HTMLInputElement>(null)
   const fileInputId = useRef(`media-input-${Math.random().toString(36).slice(2)}`)
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const [gridWidth, setGridWidth] = useState(0)
+  const gridGapPx = 8
+
+  useEffect(() => {
+    const el = gridContainerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) setGridWidth(entry.contentRect.width)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const columns = gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : 8
+  const items = data?.data ?? []
+  const rowCount = items.length ? Math.ceil(items.length / columns) : 0
+
+  const virtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => gridContainerRef.current,
+    estimateSize: () => 80 + gridGapPx,
+    overscan: 2,
+  })
 
   const { data: attachDetails } = useQuery({
     queryKey: ['media', 'attachments', selected?.id],
@@ -358,7 +383,7 @@ export function Media() {
           {isLoading ? (
             <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8 text-muted-foreground' /></div>
           ) : data?.data?.length || pending.length ? (
-            <>
+            <div className='flex flex-col h-full'>
               {(data?.data?.length ?? 0) > 0 && (
                 <div className='flex items-center gap-2 px-1.5 pt-1 pb-0.5'>
                   <input
@@ -414,76 +439,94 @@ export function Media() {
                   ))}
                 </div>
               )}
-              <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
-                {(data?.data || []).map((m, index) => (
-                  <div
-                    key={m.id}
-                    className={`group relative aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
-                    onClick={(e) => {
-                      const idx = index
-                      if (e.shiftKey) {
-                        e.preventDefault()
-                        const anchor = lastClickedIndex ?? idx
-                        const start = Math.min(anchor, idx)
-                        const end = Math.max(anchor, idx)
-                        if (data?.data) {
-                          setSelectedIds(prev => {
-                            const next = new Set(prev)
-                            for (let i = start; i <= Math.min(end, data.data.length - 1); i++) {
-                              next.add(data.data[i].id)
-                            }
-                            return next
-                          })
-                        }
-                        setLastClickedIndex(idx)
-                        return
-                      }
-                      if (e.metaKey || e.ctrlKey) {
-                        e.preventDefault()
-                        setSelectedIds(prev => {
-                          const next = new Set(prev)
-                          if (next.has(m.id)) next.delete(m.id)
-                          else next.add(m.id)
-                          return next
-                        })
-                        setLastClickedIndex(idx)
-                        return
-                      }
-                      setLastClickedIndex(null)
-                      if (selected?.id === m.id) { setSelected(null); setDetailOpen(false) }
-                      else { setSelected(m); setDetailOpen(true) }
-                    }}
-                  >
-                    <div
-                      className='absolute top-1.5 left-1.5 z-10'
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <input
-                        type='checkbox'
-                        checked={selectedIds.has(m.id)}
-                        onChange={() => {
-                          setSelectedIds(prev => {
-                            const next = new Set(prev)
-                            if (next.has(m.id)) next.delete(m.id)
-                            else next.add(m.id)
-                            return next
-                          })
-                          setLastClickedIndex(index)
+              <div ref={gridContainerRef} className='flex-1 overflow-auto min-h-0'>
+                <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+                  {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const rowIdx = virtualRow.index
+                    const start = rowIdx * columns
+                    const rowItems = items.slice(start, start + columns)
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          height: `${virtualRow.size}px`,
+                          transform: `translateY(${virtualRow.start}px)`,
+                          display: 'flex',
+                          gap: `${gridGapPx}px`,
+                          padding: '2px',
                         }}
-                        className='h-4 w-4 rounded cursor-pointer accent-primary'
-                      />
-                    </div>
-                    {m.mimeType.startsWith('image/') ? (
-                      <SafeImage src={mediaUrl(m.url)} alt={m.alt || m.filename} className='w-full h-full object-cover' />
-                    ) : (
-                      <div className='w-full h-full flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
-                    )}
-                    <div className='absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors' />
-                    {(m._count?.attachments ?? 0) > 0 && (
-                      <Badge className='absolute bottom-1 left-1 text-xs bg-primary/80'>{m._count?.attachments}</Badge>
-                    )}
-                  </div>
-                ))}
+                      >
+                        {rowItems.map((m, colIdx) => {
+                          const index = start + colIdx
+                          return (
+                            <div
+                              key={m.id}
+                              className={`flex-1 aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
+                              onClick={(e) => {
+                                if (e.shiftKey) {
+                                  e.preventDefault()
+                                  const anchor = lastClickedIndex ?? index
+                                  const from = Math.min(anchor, index)
+                                  const to = Math.max(anchor, index)
+                                  setSelectedIds(prev => {
+                                    const next = new Set(prev)
+                                    for (let i = from; i <= Math.min(to, items.length - 1); i++) next.add(items[i].id)
+                                    return next
+                                  })
+                                  setLastClickedIndex(index)
+                                  return
+                                }
+                                if (e.metaKey || e.ctrlKey) {
+                                  e.preventDefault()
+                                  setSelectedIds(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(m.id)) next.delete(m.id)
+                                    else next.add(m.id)
+                                    return next
+                                  })
+                                  setLastClickedIndex(index)
+                                  return
+                                }
+                                setLastClickedIndex(null)
+                                if (selected?.id === m.id) { setSelected(null); setDetailOpen(false) }
+                                else { setSelected(m); setDetailOpen(true) }
+                              }}
+                            >
+                              <div className='absolute top-1.5 left-1.5 z-10' onClick={e => e.stopPropagation()}>
+                                <input
+                                  type='checkbox'
+                                  checked={selectedIds.has(m.id)}
+                                  onChange={() => {
+                                    setSelectedIds(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(m.id)) next.delete(m.id)
+                                      else next.add(m.id)
+                                      return next
+                                    })
+                                    setLastClickedIndex(index)
+                                  }}
+                                  className='h-4 w-4 rounded cursor-pointer accent-primary'
+                                />
+                              </div>
+                              {m.mimeType.startsWith('image/') ? (
+                                <SafeImage src={mediaUrl(m.url)} variant='thumbnail' derivativeManifest={m.derivativeManifest} blurUrl={m.blurUrl} alt={m.alt || m.filename} className='w-full h-full object-cover' />
+                              ) : (
+                                <div className='w-full h-full flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
+                              )}
+                              <div className='absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors' />
+                              {(m._count?.attachments ?? 0) > 0 && (
+                                <Badge className='absolute bottom-1 left-1 text-xs bg-primary/80'>{m._count?.attachments}</Badge>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               {(data?.meta?.totalPages ?? 0) > 1 && (
@@ -495,7 +538,7 @@ export function Media() {
                   </div>
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <div className='flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-lg'>
               <ImageIcon className='h-12 w-12 text-muted-foreground mb-3' />
@@ -524,7 +567,7 @@ export function Media() {
 
                 <div className='shrink-0'>
                   {selected.mimeType.startsWith('image/') ? (
-                    <SafeImage src={mediaUrl(selected.url)} alt={selected.alt || selected.filename} className='h-20 w-20 rounded-lg object-cover border' />
+                    <SafeImage src={mediaUrl(selected.url)} variant='small' derivativeManifest={selected.derivativeManifest} blurUrl={selected.blurUrl} alt={selected.alt || selected.filename} className='h-20 w-20 rounded-lg object-cover border' />
                   ) : (
                     <div className='h-20 w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
                   )}

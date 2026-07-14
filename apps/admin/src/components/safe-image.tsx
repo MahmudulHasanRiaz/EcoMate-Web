@@ -20,14 +20,22 @@ interface SafeImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>,
   src?: string | null
   thumbWidth?: number
   thumbHeight?: number
+  variant?: 'thumbnail' | 'small' | 'medium'
+  derivativeManifest?: Record<string, string> | null
+  blurUrl?: string | null
 }
 
-export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, ...props }: SafeImageProps) {
+export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, variant, derivativeManifest, blurUrl, ...props }: SafeImageProps) {
   const [failed, setFailed] = useState(false)
   const showPlaceholder = !src || failed
 
   const finalSrc = useMemo(() => {
     if (!src) return src
+
+    if (variant && derivativeManifest?.[variant]) {
+      return derivativeManifest[variant]
+    }
+
     if (!thumbWidth && !thumbHeight) return src
 
     if (src.startsWith('http')) return src
@@ -42,12 +50,12 @@ export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, ...pro
     if (thumbWidth) params.set('w', String(thumbWidth))
     if (thumbHeight) params.set('h', String(thumbHeight))
     return `${base}?${params.toString()}`
-  }, [src, thumbWidth, thumbHeight])
+  }, [src, thumbWidth, thumbHeight, variant, derivativeManifest])
 
   if (showPlaceholder) {
     return (
       <img
-        src={PLACEHOLDER_DATA_URI}
+        src={blurUrl || PLACEHOLDER_DATA_URI}
         alt={alt || ''}
         className={className}
         {...props}

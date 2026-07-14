@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import type { MediaMeta } from "@/lib/types";
 import HeroSlideshow from "./HeroSlideshow";
 
 interface HeroSlide {
@@ -8,15 +9,28 @@ interface HeroSlide {
   alt?: string;
 }
 
+function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
+  return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
+}
+
 export default function Hero({
   slides = [],
   secondaryBanner = '',
   secondaryBannerAlt = '',
+  mediaMeta,
 }: {
   slides: HeroSlide[];
   secondaryBanner?: string;
   secondaryBannerAlt?: string;
+  mediaMeta?: MediaMeta;
 }) {
+  const resolvedSlides = slides.map(s => ({
+    ...s,
+    image: resolveDerivative(s.image, mediaMeta, 'large'),
+  }));
+  const resolvedSecondary = resolveDerivative(secondaryBanner, mediaMeta, 'large');
+  const resolvedPlaceholder = PLACEHOLDER_IMAGE;
+
   return (
     <section className="w-full bg-[#fcfcfc] md:py-6">
       <div className="md:max-w-7xl md:mx-auto md:px-4">
@@ -26,10 +40,10 @@ export default function Hero({
           <div className="md:col-span-8 overflow-hidden md:rounded-[20px] shadow-sm bg-white relative group">
             <div className="relative w-full aspect-[5/2] md:aspect-[5/2]">
               {slides.length > 0 ? (
-                <HeroSlideshow slides={slides} />
+                <HeroSlideshow slides={resolvedSlides} />
               ) : (
                 <Image
-                  src={PLACEHOLDER_IMAGE}
+                  src={resolvedPlaceholder}
                   alt="Featured banner"
                   fill
                   priority
@@ -43,7 +57,7 @@ export default function Hero({
           <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
             <div className="relative w-full aspect-[5/4]">
               <Image
-                src={secondaryBanner || PLACEHOLDER_IMAGE}
+                src={resolvedSecondary}
                 alt={secondaryBannerAlt || 'Featured banner'}
                 fill
                 priority

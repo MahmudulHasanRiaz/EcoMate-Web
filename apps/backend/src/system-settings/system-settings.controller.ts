@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
+import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -167,6 +168,7 @@ export class SystemSettingsController {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly media: MediaService,
+    private readonly mediaResolver: MediaResolverService,
     private readonly cache: CacheService,
   ) {}
 
@@ -510,6 +512,18 @@ export class SystemSettingsController {
           showReviews: map['show_reviews'] !== 'false',
         },
       };
+      const heroImageUrls = [
+        ...heroSlides.map(s => s.image).filter(Boolean),
+        map['hero_secondary_banner'] || '',
+        map['storefront_favicon'] || '',
+        map['storefront_og_image'] || '',
+        map['store_logo'] || '',
+      ].filter(Boolean);
+
+      if (heroImageUrls.length > 0) {
+        (result as any)._mediaMeta = await this.mediaResolver.resolve(heroImageUrls);
+      }
+
       await this.cache.set('storefront:config', result);
       return result;
     } catch {

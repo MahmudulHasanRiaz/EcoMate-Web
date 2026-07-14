@@ -80,6 +80,7 @@ export default async function HomePage() {
         slides={config?.hero?.slides || []}
         secondaryBanner={config?.hero?.secondaryBanner}
         secondaryBannerAlt={config?.hero?.secondaryBannerAlt}
+        mediaMeta={config?._mediaMeta}
       />
       <CategoryList />
       

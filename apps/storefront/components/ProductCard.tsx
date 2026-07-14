@@ -29,11 +29,13 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const [imageFailed, setImageFailed] = React.useState(false);
   const retriesRef = React.useRef(0);
 
+  const derivativeUrl = product.mediaMeta?.[product.image]?.derivativeManifest?.medium || product.image;
+
   React.useEffect(() => {
     retriesRef.current = 0;
     setRetryKey(0);
     setImageFailed(false);
-  }, [product.image, product.id]);
+  }, [derivativeUrl, product.id]);
 
   const handleImageError = () => {
     if (retriesRef.current < MAX_RETRIES) {
@@ -44,7 +46,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
     }
   };
 
-  const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
+const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
 
   // OOS logic based on availabilityMode:
   //   ALWAYS_OUT_OF_STOCK  → always OOS
@@ -153,7 +155,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
           <Image
             key={retryKey}
             id={`img-${product.id}`}
-            src={product.image}
+            src={derivativeUrl}
             alt={product.name}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"

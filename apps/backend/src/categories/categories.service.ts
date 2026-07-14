@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { MediaService } from '../media/media.service';
+import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 
 @Injectable()
@@ -13,8 +14,18 @@ export class CategoriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
+    private readonly mediaResolver: MediaResolverService,
     private readonly cache: CacheService,
   ) {}
+
+  private async enrichWithDerivatives(categories: any[]) {
+    const urls = [...new Set(categories.map(c => c.image).filter(Boolean))];
+    if (urls.length === 0) return;
+    const derived = await this.mediaResolver.resolve(urls);
+    for (const c of categories) {
+      c._mediaMeta = c.image && derived[c.image] ? { [c.image]: derived[c.image] } : {};
+    }
+  }
 
   async findMenuCategories() {
     const cached = await this.cache.get<any[]>('categories:menu');
@@ -33,6 +44,7 @@ export class CategoriesService {
         roots.push(c);
       }
     }
+    await this.enrichWithDerivatives(roots);
     await this.cache.set('categories:menu', roots);
     return roots;
   }
@@ -54,6 +66,7 @@ export class CategoriesService {
         roots.push(c);
       }
     }
+    await this.enrichWithDerivatives(roots);
     await this.cache.set('categories:tree', roots);
     return roots;
   }
@@ -68,6 +81,7 @@ export class CategoriesService {
       },
       orderBy: { sortOrder: 'asc' },
     });
+    await this.enrichWithDerivatives(data);
     await this.cache.set('categories:all', data);
     return data;
   }
@@ -82,6 +96,7 @@ export class CategoriesService {
       },
     });
     if (!cat) throw new NotFoundException('Category not found');
+    await this.enrichWithDerivatives([cat]);
     return cat;
   }
 

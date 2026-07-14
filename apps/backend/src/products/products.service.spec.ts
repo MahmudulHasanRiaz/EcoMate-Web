@@ -3,7 +3,9 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
+import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
+import { StockRouterService } from '../stock/stock-router.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -123,6 +125,9 @@ describe('ProductsService', () => {
           slug: 'test-category',
         }),
       },
+      physicalInventory: {
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -147,6 +152,20 @@ describe('ProductsService', () => {
             get: jest.fn().mockReturnValue(null),
             set: jest.fn().mockResolvedValue(undefined),
             invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: StockRouterService,
+          useValue: {
+            getStock: jest.fn(),
+            adjustStock: jest.fn(),
+            isInventoryManagementEnabled: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: MediaResolverService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({}),
           },
         },
       ],

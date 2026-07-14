@@ -879,23 +879,29 @@ model ProductPaymentOption {
 }
 
 model Media {
-  id         String   @id @default(uuid())
-  filename   String
-  url        String
-  mimeType   String
-  size       Int
-  hash       String?
-  alt        String?
-  width      Int?
-  height     Int?
-  sourceUrl  String?
-  uploadedBy String?
-  createdAt  DateTime @default(now())
+  id                 String                @id @default(uuid())
+  filename           String
+  url                String
+  mimeType           String
+  size               Int
+  hash               String?
+  alt                String?
+  width              Int?
+  height             Int?
+  sourceUrl          String?
+  uploadedBy         String?
+  processingStatus   MediaProcessingStatus @default(UPLOADED)
+  processingError    String?
+  derivativeManifest Json?
+  blurUrl            String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @default(now())
 
   attachments MediaAttachment[]
 
   @@index([hash])
   @@index([url])
+  @@index([processingStatus])
 }
 
 model MediaAttachment {
@@ -909,6 +915,13 @@ model MediaAttachment {
 
   @@unique([mediaId, entityType, entityId])
   @@index([entityType, entityId])
+}
+
+enum MediaProcessingStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
 }
 
 enum CourierService {

@@ -7,9 +7,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { writeFile, unlink, mkdir } from 'fs/promises';
+import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
 import { existsSync } from 'fs';
@@ -171,6 +172,10 @@ export class StorageService {
       await mkdir(uploadDir, { recursive: true });
     }
     const filepath = join(uploadDir, name);
+    const parentDir = join(filepath, '..');
+    if (!existsSync(parentDir)) {
+      await mkdir(parentDir, { recursive: true });
+    }
     try {
       await writeFile(filepath, body);
     } catch (err) {
@@ -178,6 +183,25 @@ export class StorageService {
       throw err;
     }
     return `/uploads/${name}`;
+  }
+
+  async read(key: string): Promise<Buffer> {
+    const config = await this.getConfig();
+    if (config.provider === 'r2') {
+      const client = this.getS3Client(config);
+      const resp = await client.send(
+        new GetObjectCommand({ Bucket: config.r2Bucket!, Key: key }),
+      );
+      const body = await resp.Body?.transformToByteArray();
+      return Buffer.from(body ?? new Uint8Array(0));
+    }
+    const filepath = join(process.cwd(), 'uploads', key);
+    try {
+      return await readFile(filepath);
+    } catch (err) {
+      this.logger.error(`Failed to read ${filepath}: ${(err as Error).message}`);
+      throw err;
+    }
   }
 
   async upload(
@@ -197,6 +221,19 @@ export class StorageService {
         : await this.uploadToLocal(name, file.buffer);
 
     return { url, filename: name, size: file.size };
+  }
+
+  async store(
+    key: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<string> {
+    const config = await this.getConfig();
+    const url =
+      config.provider === 'r2'
+        ? await this.uploadToR2(key, buffer, mimeType, config)
+        : await this.uploadToLocal(key, buffer);
+    return url;
   }
 
   async uploadFromBuffer(

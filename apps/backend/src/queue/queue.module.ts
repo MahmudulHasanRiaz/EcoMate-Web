@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { EmailQueueModule } from './email-queue/email-queue.module';
 import { ImportQueueModule } from './import-queue/import-queue.module';
+import { MediaQueueModule } from '../media/media-queue/media-queue.module';
 
 @Global()
 @Module({
@@ -33,7 +34,8 @@ import { ImportQueueModule } from './import-queue/import-queue.module';
     }),
     EmailQueueModule,
     ImportQueueModule,
+    MediaQueueModule,
   ],
-  exports: [BullModule, EmailQueueModule, ImportQueueModule],
+  exports: [BullModule, EmailQueueModule, ImportQueueModule, MediaQueueModule],
 })
 export class QueueModule {}

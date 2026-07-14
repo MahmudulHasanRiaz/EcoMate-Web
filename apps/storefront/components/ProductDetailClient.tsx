@@ -639,7 +639,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       </div>
 
       <div className="mx-auto flex flex-col md:flex-row gap-0 md:gap-8 md:max-w-screen-xl">
-        <ProductImageGallery images={itemGallery} productName={product.name} key={selectedVariant?.id || product.id} />
+        <ProductImageGallery images={itemGallery} productName={product.name} mediaMeta={product.mediaMeta} key={selectedVariant?.id || product.id} />
 
         <div className="flex flex-col md:w-1/2 px-4 md:px-0 pt-4 md:pt-2">
           {videoUrl && videoPos === 1 && (

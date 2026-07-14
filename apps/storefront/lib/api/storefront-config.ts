@@ -1,5 +1,6 @@
 import apiClient from "../api-client";
 import type { CatalogImageRatio } from "../utils/image-ratio";
+import type { MediaMeta } from "../types";
 
 export interface StoreSystem {
   id: string;
@@ -22,6 +23,7 @@ export interface BrandColors {
 }
 
 export interface StorefrontConfig {
+  _mediaMeta?: MediaMeta;
   store: {
     name: string;
     tagline: string;

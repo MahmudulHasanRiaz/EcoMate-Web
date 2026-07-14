@@ -1,3 +1,10 @@
+export interface MediaDerivatives {
+  derivativeManifest: Record<string, string> | null;
+  blurUrl: string | null;
+}
+
+export type MediaMeta = Record<string, MediaDerivatives>;
+
 export interface VariantAttribute {
   id: string;
   value: string;
@@ -24,6 +31,7 @@ export interface Variant {
 
 export interface Product {
   id: string;
+  mediaMeta?: MediaMeta;
   name: string;
   slug?: string;
   price: number;
@@ -64,6 +72,7 @@ export interface Product {
 
 export interface Category {
   id: string;
+  mediaMeta?: MediaMeta;
   name: string;
   image: string;
   slug: string;

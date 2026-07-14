@@ -12,6 +12,7 @@ import {
   UpdateVariantDto,
 } from './dto/product.dto';
 import { MediaService } from '../media/media.service';
+import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 
@@ -29,6 +30,7 @@ export class ProductsService {
     private readonly media: MediaService,
     private readonly cache: CacheService,
     private readonly stockRouter: StockRouterService,
+    private readonly mediaResolver: MediaResolverService,
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
@@ -309,6 +311,7 @@ export class ProductsService {
       this.prisma.product.count({ where }),
     ]);
     await this.enrichProductsWithAvailableStock(data);
+    await this.enrichWithDerivatives(data);
     const hasMore = page * perPage < total;
     const last = data[data.length - 1];
     const nextCursor = query.sort
@@ -460,6 +463,7 @@ export class ProductsService {
       this.prisma.product.count({ where: filters }),
     ]);
     await this.enrichProductsWithAvailableStock(data);
+    await this.enrichWithDerivatives(data);
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
     const nextCursor =
@@ -501,6 +505,7 @@ export class ProductsService {
     });
     if (!product) throw new NotFoundException('Product not found');
     const enriched = (await this.enrichProductsWithAvailableStock([product]))[0];
+    await this.enrichWithDerivatives([enriched]);
     await this.cache.set(cacheKey, enriched);
     return enriched;
   }
@@ -528,6 +533,7 @@ export class ProductsService {
     });
     if (!p) throw new NotFoundException('Product not found');
     const enriched = (await this.enrichProductsWithAvailableStock([p]))[0];
+    await this.enrichWithDerivatives([enriched]);
     return enriched;
   }
 
@@ -1078,5 +1084,47 @@ export class ProductsService {
     }
 
     return products;
+  }
+
+  private async enrichWithDerivatives(products: any[]) {
+    const allUrls = new Set<string>();
+    for (const p of products) {
+      if (p.image) allUrls.add(p.image);
+      if (Array.isArray(p.images)) {
+        for (const url of p.images) {
+          if (url) allUrls.add(url);
+        }
+      }
+      if (Array.isArray(p.variants)) {
+        for (const v of p.variants) {
+          if (v.image) allUrls.add(v.image);
+          if (Array.isArray(v.images)) {
+            for (const url of v.images) {
+              if (url) allUrls.add(url);
+            }
+          }
+        }
+      }
+    }
+
+    if (allUrls.size === 0) return;
+
+    const derived = await this.mediaResolver.resolve([...allUrls]);
+    for (const p of products) {
+      const urls = new Set<string>();
+      if (p.image) urls.add(p.image);
+      if (Array.isArray(p.images)) p.images.forEach(u => u && urls.add(u));
+      if (Array.isArray(p.variants)) {
+        for (const v of p.variants) {
+          if (v.image) urls.add(v.image);
+          if (Array.isArray(v.images)) v.images.forEach(u => u && urls.add(u));
+        }
+      }
+      const meta: Record<string, any> = {};
+      for (const url of urls) {
+        if (derived[url]) meta[url] = derived[url];
+      }
+      p._mediaMeta = meta;
+    }
   }
 }

@@ -88,4 +88,28 @@ export class MediaController {
   migrate() {
     return this.svc.migrateOrphans();
   }
+
+  @Post(':id/reprocess')
+  @Roles('superadmin', 'admin')
+  reprocess(@Param('id') id: string) {
+    return this.svc.reprocess(id);
+  }
+
+  @Post('reprocess-failed')
+  @Roles('superadmin', 'admin')
+  reprocessFailed(@Body() dto: { batchSize?: number }) {
+    return this.svc.reprocessFailed(dto.batchSize);
+  }
+
+  @Post('backfill')
+  @Roles('superadmin', 'admin')
+  backfill(@Body() dto: { batchSize?: number; max?: number }) {
+    return this.svc.backfill(dto);
+  }
+
+  @Post('recover-stuck')
+  @Roles('superadmin', 'admin')
+  recoverStuck(@Body() dto: { sinceMinutes?: number }) {
+    return this.svc.recoverStuck(dto.sinceMinutes);
+  }
 }

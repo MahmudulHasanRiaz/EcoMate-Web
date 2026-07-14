@@ -5,6 +5,9 @@ const RESIZE_API = "/api/images/resize";
 export default function imageLoader({ src, width, quality }: ImageLoaderProps) {
   if (src.startsWith("data:") || src.startsWith("blob:")) return src;
 
+  // Derivative URLs are already sized — pass through directly
+  if (src.includes("/derivatives/")) return src;
+
   const params = new URLSearchParams({
     path: src,
     w: String(width),

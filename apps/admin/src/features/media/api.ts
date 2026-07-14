@@ -11,6 +11,9 @@ export interface MediaResponse {
   height?: number | null
   hash?: string | null
   sourceUrl?: string | null
+  processingStatus?: 'UPLOADED' | 'PROCESSING' | 'READY' | 'FAILED' | null
+  derivativeManifest?: Record<string, string> | null
+  blurUrl?: string | null
   createdAt: string
   attachments?: { entityType: string; entityId: string }[]
   _count?: { attachments: number }
@@ -59,6 +62,14 @@ export const mediaApi = {
     apiClient.post<{ scanned: number; migrated: number; failed: number }>(
       '/media/migrate-orphans',
     ),
+  reprocess: (id: string) =>
+    apiClient.post<void>(`/media/${id}/reprocess`),
+  reprocessFailed: (batchSize?: number) =>
+    apiClient.post<{ queued: number }>('/media/reprocess-failed', { batchSize }),
+  backfill: (batchSize?: number) =>
+    apiClient.post<{ queued: number }>('/media/backfill', { batchSize }),
+  recoverStuck: (sinceMinutes?: number) =>
+    apiClient.post<{ recovered: number }>('/media/recover-stuck', { sinceMinutes }),
 }
 
 export const uploadApi = {

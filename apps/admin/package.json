@@ -46,6 +46,7 @@
     "@tanstack/react-query": "^5.99.0",
     "@tanstack/react-router": "^1.168.22",
     "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.14.6",
     "@tiptap/extension-image": "^3.26.1",
     "@tiptap/extension-link": "^3.26.1",
     "@tiptap/extension-placeholder": "^3.26.1",

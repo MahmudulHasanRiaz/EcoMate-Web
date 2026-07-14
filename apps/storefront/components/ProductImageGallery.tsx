@@ -4,16 +4,22 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import type { MediaMeta } from "@/lib/types";
 
 interface Props {
   images: string[];
   productName: string;
   badge?: string;
+  mediaMeta?: MediaMeta;
+}
+
+function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
+  return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
 }
 
 const AUTO_SLIDE_MS = 4000;
 
-export function ProductImageGallery({ images, productName, badge }: Props) {
+export function ProductImageGallery({ images, productName, badge, mediaMeta }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -135,7 +141,7 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
                   }`}
                 >
                   <Image
-                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
+                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'thumbnail')}
                     alt=""
                     width={72} height={72}
                     className="w-full h-full object-cover"
@@ -169,7 +175,7 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
                   onClick={() => setLightboxOpen(true)}
                 >
                   <Image
-                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
+                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'medium')}
                     alt={`${productName} ${i + 1}`}
                     fill
                     sizes="(max-width: 768px) 100vw, 45vw"
@@ -247,7 +253,7 @@ export function ProductImageGallery({ images, productName, badge }: Props) {
                 onClick={() => setLightboxOpen(true)}
               >
                 <Image
-                  src={imgErrors[i] ? PLACEHOLDER_IMAGE : (img || PLACEHOLDER_IMAGE)}
+                  src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'small')}
                   alt={`${productName} image ${i + 1}`}
                   fill
                   priority={i === 0}
