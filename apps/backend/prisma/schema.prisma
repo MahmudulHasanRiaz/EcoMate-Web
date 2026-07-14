@@ -1088,18 +1088,15 @@ model PhysicalInventory {
   binLocation BinLocation? @relation(fields: [binLocationId], references: [id])
   reservationAllocations PhysicalReservationAllocation[]
 
-  // PostgreSQL 16 treats NULLs as distinct in unique constraints. This
-  // @@unique only protects Domain 4 (all 4 columns non-null).
-  // Domains 1-3 have one or more NULL columns and need partial unique indexes:
-  //   Domain 1: simple product + warehouse-level (variantId NULL, binLocationId NULL)
-  //   Domain 2: variant + warehouse-level (variantId NOT NULL, binLocationId NULL)
-  //   Domain 3: simple product + bin-level (variantId NULL, binLocationId NOT NULL)
-  //   Domain 4: variant + bin-level (variantId NOT NULL, binLocationId NOT NULL)
-  //
-  // Two partial unique indexes in migration 20260714130000 cover all 4:
-  //   "PhysicalInventory_warehouse_level_key" — warehouse-level (Domains 1 + 2)
-  //   "PhysicalInventory_bin_level_key" — bin-level (Domains 3 + 4)
-  @@unique([productId, variantId, warehouseId, binLocationId])
+  // PostgreSQL 16 treats NULLs as distinct in unique constraints, so the
+  // original @@unique([productId, variantId, warehouseId, binLocationId])
+  // only protected Domain 4 (all 4 columns non-null). It was replaced by two
+  // partial unique indexes in migration 20260714130000 that cover all 4:
+  //   "PhysicalInventory_warehouse_level_key" — Domains 1 + 2 (warehouse-level)
+  //     WHERE binLocationId IS NULL ON (productId, COALESCE(variantId, ''), warehouseId)
+  //   "PhysicalInventory_bin_level_key" — Domains 3 + 4 (bin-level)
+  //     WHERE binLocationId IS NOT NULL ON (productId, COALESCE(variantId, ''), warehouseId, binLocationId)
+  // Both use COALESCE to handle variantId NULL (simple products).
   @@index([productId])
   @@index([variantId])
   @@index([warehouseId])

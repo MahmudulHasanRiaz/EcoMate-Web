@@ -12,7 +12,13 @@
 --     4. Variant + bin-level                (variantId NOT NULL, binLocationId NOT NULL)
 --
 --   Solution: two partial unique indexes using COALESCE to close the NULL-distinct gap.
---   The existing @@unique is kept for Domain-4 protection and Prisma schema consistency.
+--   The old @@unique is dropped last — after both new indexes exist — so
+--   protection is never removed before replacement is in place.
+--
+--   Verified: this Prisma version (7.8.0) does NOT wrap migration SQL in a
+--   transaction (confirmed by execution test on disposable PostgreSQL database).
+--   The CREATE-before-DROP ordering ensures no unprotected window even if
+--   the migration fails partway through.
 -- ===========================================================================
 -- Step 1: Audit all 4 identity domains for existing duplicates
 --         Raises exception with full details if any found.
@@ -67,10 +73,11 @@ END;
 $$;
 
 -- ===========================================================================
--- Step 2: Create partial unique index for warehouse-level rows
+-- Step 2: Create partial unique index for warehouse-level rows FIRST
 --         Protects Domains 1 (simple + warehouse) and 2 (variant + warehouse).
 --         COALESCE handles variantId NULL for simple products — empty string
 --         never collides with real UUID FK values.
+--         Created before old index is dropped to avoid unprotected window.
 -- ===========================================================================
 
 CREATE UNIQUE INDEX "PhysicalInventory_warehouse_level_key"
@@ -78,7 +85,7 @@ CREATE UNIQUE INDEX "PhysicalInventory_warehouse_level_key"
   WHERE "binLocationId" IS NULL;
 
 COMMENT ON INDEX "PhysicalInventory_warehouse_level_key" IS
-  'Partial unique index covering warehouse-level rows (Domains 1+2). Prevents duplicate product+variant+warehouse rows where binLocationId IS NULL. Complements bin-level partial index and @@unique for full 4-domain coverage.';
+  'Partial unique index covering warehouse-level rows (Domains 1+2). Prevents duplicate product+variant+warehouse rows where binLocationId IS NULL. Complements bin-level partial index for full 4-domain coverage.';
 
 -- ===========================================================================
 -- Step 3: Create partial unique index for bin-level rows
@@ -92,4 +99,14 @@ CREATE UNIQUE INDEX "PhysicalInventory_bin_level_key"
   WHERE "binLocationId" IS NOT NULL;
 
 COMMENT ON INDEX "PhysicalInventory_bin_level_key" IS
-  'Partial unique index covering bin-level rows (Domains 3+4). Prevents duplicate product+variant+warehouse+bin rows where binLocationId IS NOT NULL. Complements warehouse-level partial index and @@unique for full 4-domain coverage.';
+  'Partial unique index covering bin-level rows (Domains 3+4). Prevents duplicate product+variant+warehouse+bin rows where binLocationId IS NOT NULL. Complements warehouse-level partial index.';
+
+-- ===========================================================================
+-- Step 4: Drop the old Prisma @@unique — now safe because the two partial
+--         indexes above are already in place and protecting all 4 domains.
+--         Actual database name confirmed from PostgreSQL pg_indexes:
+--         "PhysicalInventory_productId_variantId_warehouseId_binLocati_key"
+--         (truncated to 63 chars from the generated Prisma name).
+-- ===========================================================================
+
+DROP INDEX IF EXISTS "PhysicalInventory_productId_variantId_warehouseId_binLocati_key";
