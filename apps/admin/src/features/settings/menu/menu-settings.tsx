@@ -77,9 +77,13 @@ function columnItem(): FooterColumn {
 
 function flattenCats(list: any[]): Category[] {
   const out: Category[] = []
+  const seen = new Set<string>()
   function walk(arr: any[], parentId?: string | null) {
     for (const c of arr) {
-      out.push({ id: c.id, name: c.name, slug: c.slug, parentId: c.parentId || parentId })
+      if (!seen.has(c.id)) {
+        seen.add(c.id)
+        out.push({ id: c.id, name: c.name, slug: c.slug, parentId: c.parentId || parentId })
+      }
       if (c.children?.length) walk(c.children, c.id)
     }
   }

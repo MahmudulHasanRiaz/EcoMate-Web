@@ -31,21 +31,55 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
 
   const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
 
+  const deduplicateItems = (items: any[]): any[] => {
+    const seen = new Set<string>();
+    const uniqueItems: any[] = [];
+    for (const item of items) {
+      const key = item.categoryId || item.id || item.url || item.label;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        uniqueItems.push(item);
+      }
+    }
+    return uniqueItems;
+  };
+
   const enrichMenuItemsWithSlug = (items: any[]) => {
     for (const item of items) {
       if (item.type === 'category' && item.categoryId && !item.slug) {
         const cat = categoryMap.get(item.categoryId);
         if (cat?.slug) item.slug = cat.slug;
       }
-      if (item.children?.length) enrichMenuItemsWithSlug(item.children);
+      if (item.children?.length) {
+        const seen = new Set<string>();
+        const uniqueChildren: any[] = [];
+        for (const child of item.children) {
+          const key = child.categoryId || child.id || child.url || child.label;
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            uniqueChildren.push(child);
+          }
+        }
+        item.children = uniqueChildren;
+        enrichMenuItemsWithSlug(item.children);
+      }
     }
   };
 
   if (config?.menu) {
-    enrichMenuItemsWithSlug(config.menu.header?.items || []);
-    enrichMenuItemsWithSlug(config.menu.mobile?.items || []);
+    if (config.menu.header?.items) {
+      config.menu.header.items = deduplicateItems(config.menu.header.items);
+      enrichMenuItemsWithSlug(config.menu.header.items);
+    }
+    if (config.menu.mobile?.items) {
+      config.menu.mobile.items = deduplicateItems(config.menu.mobile.items);
+      enrichMenuItemsWithSlug(config.menu.mobile.items);
+    }
     for (const col of config.menu.footer?.columns || []) {
-      enrichMenuItemsWithSlug(col.items || []);
+      if (col.items) {
+        col.items = deduplicateItems(col.items);
+        enrichMenuItemsWithSlug(col.items);
+      }
     }
 
     const headerShowAll = config.menu.header?.showAllCategories;

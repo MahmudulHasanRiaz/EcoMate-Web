@@ -305,16 +305,76 @@ export class ProductsService {
       ];
     }
 
-    const [data, total] = await Promise.all([
-      this.prisma.product.findMany({
+    let data: any[];
+    let total: number;
+
+    if (query.sort === 'basePrice' || query.sort === 'price') {
+      const allMatching = await this.prisma.product.findMany({
         where,
-        skip: (page - 1) * perPage,
-        take: perPage,
-        orderBy,
+        select: {
+          id: true,
+          basePrice: true,
+          salePrice: true,
+          type: true,
+          variants: {
+            select: {
+              price: true,
+              salePrice: true,
+            },
+          },
+        },
+      });
+
+      total = allMatching.length;
+      const dir = query.order === 'asc' ? 'asc' : 'desc';
+
+      const getEffectivePrice = (p: any): number => {
+        if (p.type === 'variable' && p.variants?.length > 0) {
+          const prices = p.variants
+            .map((v: any) => Number(v.salePrice ?? v.price))
+            .filter((price: number) => !isNaN(price) && price > 0);
+          if (prices.length > 0) {
+            return Math.min(...prices);
+          }
+        }
+        return Number(p.salePrice ?? p.basePrice) || 0;
+      };
+
+      const sorted = allMatching.sort((a, b) => {
+        const priceA = getEffectivePrice(a);
+        const priceB = getEffectivePrice(b);
+        if (priceA !== priceB) {
+          return dir === 'asc' ? priceA - priceB : priceB - priceA;
+        }
+        return a.id.localeCompare(b.id);
+      });
+
+      const paginatedIds = sorted
+        .slice((page - 1) * perPage, page * perPage)
+        .map((p) => p.id);
+
+      const rawData = await this.prisma.product.findMany({
+        where: { id: { in: paginatedIds } },
         include: this.listInclude,
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+      });
+
+      // Maintain exact sorted order of IDs
+      data = paginatedIds
+        .map((id) => rawData.find((item) => item.id === id)!)
+        .filter(Boolean);
+    } else {
+      [data, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          skip: (page - 1) * perPage,
+          take: perPage,
+          orderBy,
+          include: this.listInclude,
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+    }
+
     await this.enrichProductsWithAvailableStock(data);
     await this.enrichWithDerivatives(data);
     const hasMore = page * perPage < total;
