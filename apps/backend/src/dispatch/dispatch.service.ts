@@ -166,6 +166,7 @@ export class DispatchService {
   async updateStatus(id: string, status: string, performedBy?: string) {
     // Validate transition BEFORE transaction
     const current = await this.prisma.dispatch.findUnique({ where: { id }, select: { status: true } });
+    console.log('COMBO-DBG updateStatus start:', { id, status, currentStatus: current?.status });
     if (!current) throw new NotFoundException('Dispatch not found');
     const allowed = DISPATCH_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
@@ -192,6 +193,7 @@ export class DispatchService {
           handedOverAt: data.handedOverAt || null,
         },
       });
+      console.log('COMBO-DBG updateResult count:', updateResult.count);
 
       if (updateResult.count === 0) {
         return { claimed: false, dispatch: await this.findOne(id) };
@@ -207,140 +209,198 @@ export class DispatchService {
         }
 
         // HANDED_OVER: deduct stock.
-        // Rule: MANAGED_STOCK + IM ON → deduct BOTH managed stock AND physical inventory.
-        //       MANAGED_STOCK + IM OFF → deduct managed stock only.
-        //       INVENTORY_CONTROLLED + IM ON → fulfill physical reservation only.
-        //       If IM ON and no physical inventory record exists → BLOCK with clear error.
-        const items = productMapping && productMapping.length > 0
-          ? productMapping
-          : await this.getOrderItemsForStock(dispatch.orderId);
-
+        // Reads the ACTIVE OrderStockCycle to find the correct reservation to fulfill.
+        // Combo children are processed via OrderItemComboComponent snapshots (independent stock targets).
         const reference = `Dispatch DEDUCT: ${dispatch.consignmentId}`;
         const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
-        // Load all order items to get tracking flags (managedStockDeducted, id)
-        const orderItems = await tx.orderItem.findMany({
-          where: { orderId: dispatch.orderId },
-          select: { id: true, productId: true, variantId: true, managedStockDeducted: true },
+        console.log('COMBO-DBG dispatch record in updateStatus:', JSON.stringify(dispatch));
+        // Find the active cycle for this order
+        const activeCycle = await tx.orderStockCycle.findFirst({
+          where: { orderId: dispatch.orderId, status: 'ACTIVE' },
         });
-        const orderItemMap = new Map(
-          orderItems.map((oi) => [`${oi.productId}:${oi.variantId ?? ''}`, oi]),
-        );
 
-        for (const item of items) {
-          const qty = item.quantity || 1;
-          const variantId = item.productVariantId || item.variantId || null;
-          const productId = item.productId;
-          if (!productId) continue;
+        const fullOrderItems = await tx.orderItem.findMany({
+          where: { orderId: dispatch.orderId },
+          include: {
+            product: {
+              select: { id: true, availabilityMode: true, manageStock: true, syncManagedStock: true, warehouseId: true, name: true },
+            },
+          },
+        });
 
-          const product = await tx.product.findUnique({
-            where: { id: productId },
-            select: { availabilityMode: true, syncManagedStock: true, warehouseId: true, name: true },
-          });
-          if (!product) continue;
+        for (const oi of fullOrderItems) {
+          if (!oi.productId && !oi.comboId) continue;
+
+          // ── Combo Item: process each child snapshot independently ─────────────
+          if (oi.comboId) {
+            const snapshots = await tx.orderItemComboComponent.findMany({
+              where: { orderItemId: oi.id },
+              include: { product: true },
+            });
+
+            for (const snap of snapshots) {
+              const compProduct = snap.product;
+              const decision = this.stockRouter.resolve(
+                compProduct.availabilityMode, 'deduct', imEnabled, compProduct.syncManagedStock ?? undefined,
+              );
+
+
+              // A. Managed Stock deduct (per-component flag)
+              if (decision.ms === 'deduct' && !snap.managedStockDeducted) {
+                if (snap.variantId) {
+                  await this.stockService.deduct({
+                    variantId: snap.variantId, quantity: snap.totalQuantity, reference,
+                    performedBy: performedBy || 'system', tx,
+                    skipCostingLotDeduct: decision.pi === 'fulfill',
+                  });
+                } else {
+                  await this.stockService.deduct({
+                    productId: snap.productId, quantity: snap.totalQuantity, reference,
+                    performedBy: performedBy || 'system', tx,
+                    skipCostingLotDeduct: decision.pi === 'fulfill',
+                  });
+                }
+                await tx.orderItemComboComponent.update({
+                  where: { id: snap.id },
+                  data: { managedStockDeducted: true },
+                });
+              }
+
+              // B. Physical reservation fulfill
+              if (decision.pi === 'fulfill' && activeCycle) {
+                const compRes = await tx.comboComponentPhysicalReservation.findUnique({
+                  where: {
+                    componentId_cycleId: { componentId: snap.id, cycleId: activeCycle.id },
+                  },
+                  select: { id: true, status: true },
+                });
+                console.log('COMBO-DBG dispatch-service compRes:', compRes);
+
+                if (compRes?.status === 'CONSUMED') continue;
+                if (compRes?.status === 'ACTIVE') {
+                  await this.stockService.fulfillPhysicalReservation({
+                    orderId: dispatch.orderId,
+                    cycleId: activeCycle.id,
+                    comboComponentId: snap.id,
+                    quantity: snap.totalQuantity,
+                    reference,
+                    performedBy: performedBy || 'system',
+                    tx,
+                  });
+                } else if (!compRes) {
+                  const hasPhysicalInventory = await tx.physicalInventory.findFirst({
+                    where: { productId: snap.productId, variantId: snap.variantId || null },
+                    select: { id: true },
+                  });
+                  if (!hasPhysicalInventory) {
+                    throw new BadRequestException(
+                      `"${compProduct.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই।`,
+                    );
+                  }
+                  throw new BadRequestException(
+                    `"${compProduct.name}" এর Combo Component Physical Reservation পাওয়া যায়নি। ` +
+                    `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
+                  );
+                }
+              }
+            }
+            continue;
+          }
+
+          // ── Standalone Item ──────────────────────────────────────────────────
+          const product = oi.product;
+          if (!product || !oi.productId) continue;
 
           const decision = this.stockRouter.resolve(
             product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
           );
 
-          const orderItemKey = `${productId}:${variantId ?? ''}`;
-          const orderItem = orderItemMap.get(orderItemKey);
-
-          // ── MANAGED_STOCK: deduct managed stock ──────────────────────────────
-          if (decision.ms === 'deduct' && !orderItem?.managedStockDeducted) {
-            if (variantId) {
+          // A. Managed Stock deduct
+          if (decision.ms === 'deduct' && !oi.managedStockDeducted) {
+            if (oi.variantId) {
               await this.stockService.deduct({
-                variantId, quantity: qty, reference,
+                variantId: oi.variantId, quantity: oi.quantity, reference,
                 performedBy: performedBy || 'system', tx,
+                skipCostingLotDeduct: decision.pi === 'fulfill',
               });
             } else {
               await this.stockService.deduct({
-                productId, quantity: qty, reference,
+                productId: oi.productId, quantity: oi.quantity, reference,
                 performedBy: performedBy || 'system', tx,
+                skipCostingLotDeduct: decision.pi === 'fulfill',
               });
             }
-            // Mark deduction done on OrderItem
-            if (orderItem) {
-              await tx.orderItem.update({
-                where: { id: orderItem.id },
-                data: { managedStockDeducted: true },
-              });
-            }
+            await tx.orderItem.update({
+              where: { id: oi.id },
+              data: { managedStockDeducted: true },
+            });
           }
 
-          // ── Physical Inventory deduction ──────────────────────────────────────
-          // NOTE: The PhysicalReservation was already created at Confirm time.
-          // At HANDED_OVER we only need to FULFILL (consume) that reservation.
-          // We do NOT re-check physical availability — the reservation already locked the qty.
-          if (decision.pi === 'fulfill') {
-            // Find all OrderItems for this product
-            const productOrderItems = await tx.orderItem.findMany({
-              where: { orderId: dispatch.orderId, productId, variantId: variantId || null },
-              select: { id: true },
+          // B. Physical reservation fulfill
+          if (decision.pi === 'fulfill' && activeCycle) {
+            const reservation = await tx.physicalReservation.findUnique({
+              where: {
+                orderItemId_cycleId: { orderItemId: oi.id, cycleId: activeCycle.id },
+              },
+              select: { id: true, status: true },
             });
 
-            for (const oi of productOrderItems) {
-              const reservation = await tx.physicalReservation.findUnique({
-                where: { orderItemId: oi.id },
-                select: { id: true, status: true },
+            if (reservation?.status === 'CONSUMED') continue;
+
+            if (reservation?.status === 'ACTIVE') {
+              await this.stockService.fulfillPhysicalReservation({
+                orderId: dispatch.orderId,
+                cycleId: activeCycle.id,
+                orderItemId: oi.id,
+                quantity: oi.quantity,
+                reference,
+                performedBy: performedBy || 'system',
+                tx,
               });
 
-              // Reservation was already fulfilled (idempotent retry) — skip
-              if (reservation?.status === 'CONSUMED') continue;
-
-              // Reservation exists and is ACTIVE → fulfill it
-              if (reservation?.status === 'ACTIVE') {
-                await this.stockService.fulfillPhysicalReservation({
-                  orderId: dispatch.orderId,
-                  orderItemId: oi.id,
-                  quantity: qty,
-                  reference,
-                  performedBy: performedBy || 'system',
-                  tx,
-                });
-
-                // Upgrade costType from 'estimated' to 'actual' using FIFO consumption records
-                const consumptions = await tx.costingLotConsumption.findMany({
-                  where: {
-                    type: 'FULFILLMENT',
-                    referenceType: 'ORDER_ITEM',
-                    referenceId: oi.id,
-                  },
-                });
-                if (consumptions.length > 0) {
-                  const totalCost = consumptions.reduce(
-                    (sum, c) => sum + Number(c.unitCost) * c.quantity, 0,
-                  );
-                  const totalQty = consumptions.reduce((sum, c) => sum + c.quantity, 0);
-                  const actualCost = totalQty > 0 ? totalCost / totalQty : 0;
-                  await tx.orderItem.update({
-                    where: { id: oi.id },
-                    data: { costSnapshot: actualCost, costType: 'actual' },
-                  });
-                }
-                continue;
-              }
-
-              // No reservation at all — something went wrong at Confirm.
-              // Check if physical inventory even exists to give a meaningful error.
-              const hasPhysicalInventory = await tx.physicalInventory.findFirst({
-                where: { productId, variantId: variantId || null },
-                select: { id: true },
+              // Upgrade costType from 'estimated' to 'actual' using FIFO consumption records
+              const consumptions = await tx.costingLotConsumption.findMany({
+                where: {
+                  type: 'FULFILLMENT',
+                  referenceType: 'ORDER_ITEM',
+                  referenceId: oi.id,
+                  cycleId: activeCycle.id,
+                },
               });
-              if (!hasPhysicalInventory) {
-                throw new BadRequestException(
-                  `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
-                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Dispatch করা যাবে না।`,
+              if (consumptions.length > 0) {
+                const totalCost = consumptions.reduce(
+                  (sum, c) => sum + Number(c.unitCost) * c.quantity, 0,
                 );
+                const totalQty = consumptions.reduce((sum, c) => sum + c.quantity, 0);
+                const actualCost = totalQty > 0 ? totalCost / totalQty : 0;
+                await tx.orderItem.update({
+                  where: { id: oi.id },
+                  data: { costSnapshot: actualCost, costType: 'actual' },
+                });
               }
+              continue;
+            }
+
+            // No reservation at all — something went wrong at Confirm.
+            const hasPhysicalInventory = await tx.physicalInventory.findFirst({
+              where: { productId: oi.productId, variantId: oi.variantId || null },
+              select: { id: true },
+            });
+            if (!hasPhysicalInventory) {
               throw new BadRequestException(
-                `"${product.name}" এর Physical Reservation পাওয়া যায়নি। ` +
-                `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
+                `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
+                `Inventory Management চালু থাকলে Physical Stock ছাড়া Dispatch করা যাবে না।`,
               );
             }
+            throw new BadRequestException(
+              `"${product.name}" এর Physical Reservation পাওয়া যায়নি। ` +
+              `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
+            );
           }
         }
       }
+
 
       // IN_TRANSIT: recheck that deduction was applied (like Confirmed rechecks reservation).
       // If any managed stock deduction was missed, retry it now.
@@ -348,22 +408,79 @@ export class DispatchService {
         const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
         const reference = `In Transit DEDUCT RECHECK: ${dispatch.consignmentId}`;
 
+        // Load active cycle for cycle-scoped reservation lookup
+        const activeCycleForTransit = await tx.orderStockCycle.findFirst({
+          where: { orderId: dispatch.orderId, status: 'ACTIVE' },
+        });
+
         const orderItems = await tx.orderItem.findMany({
           where: { orderId: dispatch.orderId },
-          select: {
-            id: true, productId: true, variantId: true,
-            quantity: true, managedStockDeducted: true,
+          include: {
+            product: {
+              select: { id: true, availabilityMode: true, manageStock: true, syncManagedStock: true, warehouseId: true, name: true },
+            },
           },
         });
 
         for (const oi of orderItems) {
-          if (!oi.productId) continue;
+          if (!oi.productId && !oi.comboId) continue;
 
-          const product = await tx.product.findUnique({
-            where: { id: oi.productId },
-            select: { availabilityMode: true, syncManagedStock: true, name: true },
-          });
-          if (!product) continue;
+          // ── Combo Item: recheck/repair each child snapshot independently ─────
+          if (oi.comboId) {
+            const snapshots = await tx.orderItemComboComponent.findMany({
+              where: { orderItemId: oi.id },
+              include: { product: true },
+            });
+
+            for (const snap of snapshots) {
+              const compProduct = snap.product;
+              const decision = this.stockRouter.resolve(
+                compProduct.availabilityMode, 'deduct', imEnabled, compProduct.syncManagedStock ?? undefined,
+              );
+
+              // If managed stock should have been deducted but wasn't, do it now
+              if (decision.ms === 'deduct' && !snap.managedStockDeducted) {
+                if (snap.variantId) {
+                  await this.stockService.deduct({
+                    variantId: snap.variantId, quantity: snap.totalQuantity, reference,
+                    performedBy: performedBy || 'system', tx,
+                    skipCostingLotDeduct: decision.pi === 'fulfill',
+                  });
+                } else {
+                  await this.stockService.deduct({
+                    productId: snap.productId, quantity: snap.totalQuantity, reference,
+                    performedBy: performedBy || 'system', tx,
+                    skipCostingLotDeduct: decision.pi === 'fulfill',
+                  });
+                }
+                await tx.orderItemComboComponent.update({
+                  where: { id: snap.id },
+                  data: { managedStockDeducted: true },
+                });
+              }
+
+              // Verify physical reservation was fulfilled (CONSUMED) if applicable
+              if (decision.pi === 'fulfill' && activeCycleForTransit) {
+                const compRes = await tx.comboComponentPhysicalReservation.findUnique({
+                  where: {
+                    componentId_cycleId: { componentId: snap.id, cycleId: activeCycleForTransit.id },
+                  },
+                  select: { status: true },
+                });
+                if (compRes && compRes.status !== 'CONSUMED') {
+                  throw new BadRequestException(
+                    `"${compProduct.name}" এর Physical Stock Deduction এখনও সম্পন্ন হয়নি। ` +
+                    `In Transit-এ যাওয়ার আগে Handed Over স্ট্যাটাসে Physical Stock ডিডাক্ট হওয়া প্রয়োজন।`,
+                  );
+                }
+              }
+            }
+            continue;
+          }
+
+          // ── Standalone Item ──────────────────────────────────────────────────
+          const product = oi.product;
+          if (!product || !oi.productId) continue;
 
           const decision = this.stockRouter.resolve(
             product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
@@ -375,11 +492,13 @@ export class DispatchService {
               await this.stockService.deduct({
                 variantId: oi.variantId, quantity: oi.quantity, reference,
                 performedBy: performedBy || 'system', tx,
+                skipCostingLotDeduct: decision.pi === 'fulfill',
               });
             } else {
               await this.stockService.deduct({
                 productId: oi.productId, quantity: oi.quantity, reference,
                 performedBy: performedBy || 'system', tx,
+                skipCostingLotDeduct: decision.pi === 'fulfill',
               });
             }
             await tx.orderItem.update({
@@ -389,9 +508,11 @@ export class DispatchService {
           }
 
           // Verify physical reservation was fulfilled (CONSUMED) if applicable
-          if (decision.pi === 'fulfill') {
+          if (decision.pi === 'fulfill' && activeCycleForTransit) {
             const reservation = await tx.physicalReservation.findUnique({
-              where: { orderItemId: oi.id },
+              where: {
+                orderItemId_cycleId: { orderItemId: oi.id, cycleId: activeCycleForTransit.id },
+              },
               select: { status: true },
             });
             if (reservation && reservation.status !== 'CONSUMED') {
@@ -403,6 +524,7 @@ export class DispatchService {
           }
         }
       }
+
 
       return { claimed: true, dispatch };
     });

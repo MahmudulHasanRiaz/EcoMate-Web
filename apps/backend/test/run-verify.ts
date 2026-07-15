@@ -11,7 +11,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Silence Prisma query logs in test
-prisma.$on('query' as any, () => {});
+(prisma as any).$on('query', () => {});
 
 const UQ = `v${Date.now()}`;
 const WAREHOUSE_ID = '5430fd1a-ad81-4b97-9a04-18ca8568c725';
@@ -303,6 +303,13 @@ async function scenario(
   if (post.pi && pre.pi) {
     assertSnap(label, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
     if (imOn && mode === 'MANAGED_STOCK' && !sync) {
+      // syncOFF: physical reservation happens at Confirm (allocate)
+      assertSnap(label, 'pi:rsv', pre.pi, post.pi, `+${orderQty}`, 'reservedQuantity');
+    } else if (imOn && mode === 'MANAGED_STOCK' && sync) {
+      // syncON: physical reservation also happens at Confirm (allocate)
+      assertSnap(label, 'pi:rsv', pre.pi, post.pi, `+${orderQty}`, 'reservedQuantity');
+    } else if (imOn && mode === 'INVENTORY_CONTROLLED') {
+      // IC: physical reservation also deferred to Confirm
       assertSnap(label, 'pi:rsv', pre.pi, post.pi, `+${orderQty}`, 'reservedQuantity');
     } else {
       assertSnap(label, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
@@ -491,18 +498,16 @@ function verifyReserve(S: string, pre: Snapshot, post: Snapshot, qty: number, cf
     R(S, 'reserve', true, 'SKIP');
     return;
   }
-  if (cfg.imOn && cfg.mode === 'INVENTORY_CONTROLLED') {
-    assertSnap(S, 'pi:rsv', pre.pi, post.pi, `+${qty}`, 'reservedQuantity');
+  if (cfg.mode === 'INVENTORY_CONTROLLED') {
+    assertSnap(S, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
     assertSnap(S, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
     assertSnap(S, 'ms:rs', pre.p, post.p, 'same', 'reservedStock');
     assertSnap(S, 'ms:stock', pre.p, post.p, 'same', 'managedStockQuantity');
-    assertCount(S, 'prs', pre.prs, post.prs, '+1');
+    assertCount(S, 'prs', pre.prs, post.prs, 'same');
   } else {
     assertSnap(S, 'ms:rs', pre.p, post.p, `+${qty}`, 'reservedStock');
     assertSnap(S, 'ms:stock', pre.p, post.p, 'same', 'managedStockQuantity');
-    if (cfg.imOn && cfg.sync && post.pi) {
-      assertSnap(S, 'pi:rsv', pre.pi, post.pi, `+${qty}`, 'reservedQuantity');
-    } else if (post.pi) {
+    if (post.pi) {
       assertSnap(S, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
     }
   }
@@ -516,16 +521,20 @@ function verifyCancel(S: string, pre: Snapshot, post: Snapshot, qty: number, cfg
     R(S, 'cancel', true, 'SKIP');
     return;
   }
-  if (cfg.imOn && cfg.mode === 'INVENTORY_CONTROLLED') {
-    assertSnap(S, 'ms:rs', pre.p, post.p, 'same', 'reservedStock');
+  if (cfg.imOn && (cfg.mode === 'INVENTORY_CONTROLLED' || cfg.mode === 'MANAGED_STOCK')) {
+    assertSnap(S, 'ms:rs', pre.p, post.p, cfg.mode === 'MANAGED_STOCK' ? `-${qty}` : 'same', 'reservedStock');
+    if (post.pi && pre.pi) {
+      assertSnap(S, 'pi:rsv', pre.pi, post.pi, `-${qty}`, 'reservedQuantity');
+      assertSnap(S, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
+    }
   } else {
     assertSnap(S, 'ms:rs', pre.p, post.p, `-${qty}`, 'reservedStock');
+    if (post.pi && pre.pi) {
+      assertSnap(S, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
+      assertSnap(S, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
+    }
   }
   assertSnap(S, 'ms:stock', pre.p, post.p, 'same', 'managedStockQuantity');
-  if (post.pi && pre.pi) {
-    assertSnap(S, 'pi:rsv', pre.pi, post.pi, `-${qty}`, 'reservedQuantity');
-    assertSnap(S, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
-  }
   assertCount(S, 'prs', pre.prs, post.prs, 'same');
   if (!cfg.imOn || cfg.mode !== 'INVENTORY_CONTROLLED') {
     const ce = post.msLedger?.find((l: any) => l.type === 'CANCEL_RELEASE');
@@ -546,21 +555,19 @@ function verifyHandedOver(S: string, pre: Snapshot, post: Snapshot, qty: number,
     assertSnap(S, 'pi:rsv', pre.pi, post.pi, `-${qty}`, 'reservedQuantity');
     assertSnap(S, 'ms:stock', pre.p, post.p, 'same', 'managedStockQuantity');
     assertSnap(S, 'ms:rs', pre.p, post.p, 'same', 'reservedStock');
-  } else if (cfg.imOn && cfg.mode === 'MANAGED_STOCK' && !cfg.sync) {
-    // IM ON + MS + no sync: PI consumed, MS quantity unchanged (no parallel deduct)
-    assertSnap(S, 'ms:stock', pre.p, post.p, 'same', 'managedStockQuantity');
+  } else if (cfg.imOn && cfg.mode === 'MANAGED_STOCK') {
+    // IM ON + MS: both PI consumed, MS quantity deducted (always under new architecture)
+    assertSnap(S, 'ms:stock', pre.p, post.p, `-${qty}`, 'managedStockQuantity');
     assertSnap(S, 'ms:rs', pre.p, post.p, `-${qty}`, 'reservedStock');
     if (post.pi && pre.pi) {
       assertSnap(S, 'pi:qty', pre.pi, post.pi, `-${qty}`, 'quantity');
       assertSnap(S, 'pi:rsv', pre.pi, post.pi, `-${qty}`, 'reservedQuantity');
     }
   } else {
+    // IM OFF + MS: MS quantity deducted, rs decremented, no PI change
     assertSnap(S, 'ms:stock', pre.p, post.p, `-${qty}`, 'managedStockQuantity');
     assertSnap(S, 'ms:rs', pre.p, post.p, `-${qty}`, 'reservedStock');
-    if (cfg.imOn && cfg.sync && post.pi && pre.pi) {
-      assertSnap(S, 'pi:qty', pre.pi, post.pi, `-${qty}`, 'quantity');
-      assertSnap(S, 'pi:rsv', pre.pi, post.pi, `-${qty}`, 'reservedQuantity');
-    } else if (post.pi && pre.pi) {
+    if (post.pi && pre.pi) {
       assertSnap(S, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
       assertSnap(S, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
     }
@@ -581,22 +588,23 @@ function verifyReturn(S: string, pre: Snapshot, post: Snapshot, qty: number, cfg
     if (post.pi && pre.pi) {
       assertSnap(S, 'ret:piQty', pre.pi, post.pi, `+${qty}`, 'quantity');
     }
-    const piRet = post.piLedger?.filter((l: any) => l.direction === 'IN' && l.type === 'RETURN');
+    const piRet = post.piLedger?.filter((l: any) => l.direction === 'IN' && l.type === 'RESTORATION');
     R(S, 'ret:ledger', piRet?.length > 0,
       piRet?.length > 0 ? `PI RETURN entries: ${piRet.length}` : 'no PI RETURN entry');
-  } else if (cfg.imOn && cfg.mode === 'MANAGED_STOCK' && !cfg.sync) {
-    // IM ON + MS + no sync: PI restock only (MS never deducted)
-    assertSnap(S, 'ret:ms', pre.p, post.p, 'same', 'managedStockQuantity');
-    if (post.pi && pre.pi) {
-      assertSnap(S, 'ret:piQty', pre.pi, post.pi, `+${qty}`, 'quantity');
-    }
-    const piRet = post.piLedger?.filter((l: any) => l.direction === 'IN' && l.type === 'RETURN');
-    R(S, 'ret:ledger', piRet?.length > 0,
-      piRet?.length > 0 ? `PI RETURN entries: ${piRet.length}` : 'no PI RETURN entry');
-  } else {
+  } else if (cfg.imOn && cfg.mode === 'MANAGED_STOCK') {
+    // IM ON + MS: both PI returned, MS quantity restored (always under new architecture)
     assertSnap(S, 'ret:ms', pre.p, post.p, `+${qty}`, 'managedStockQuantity');
     if (post.pi && pre.pi) {
       assertSnap(S, 'ret:piQty', pre.pi, post.pi, `+${qty}`, 'quantity');
+    }
+    const retEntries = post.msLedger?.filter((l: any) => l.type === 'RETURN');
+    R(S, 'ret:ledger', retEntries?.length > 0,
+      retEntries?.length > 0 ? `RETURN entries: ${retEntries.length}` : 'no RETURN entry');
+  } else {
+    // IM OFF + MS: MS quantity restored, no PI change
+    assertSnap(S, 'ret:ms', pre.p, post.p, `+${qty}`, 'managedStockQuantity');
+    if (post.pi && pre.pi) {
+      assertSnap(S, 'ret:piQty', pre.pi, post.pi, 'same', 'quantity');
     }
     const retEntries = post.msLedger?.filter((l: any) => l.type === 'RETURN');
     R(S, 'ret:ledger', retEntries?.length > 0,
@@ -696,6 +704,7 @@ async function regPiLifecycle(label: string, sync: boolean, token: string, admin
   const orderId = order.data.id;
   let post = await snap(prodId, WAREHOUSE_ID);
   const cfg = { imOn: true, mode: 'MANAGED_STOCK' as const, sync };
+  // New architecture: PI reservation always deferred to Confirm (regardless of sync flag)
   verifyReserve(label, pre, post, orderQty, cfg);
   pre = post;
 
@@ -708,11 +717,8 @@ async function regPiLifecycle(label: string, sync: boolean, token: string, admin
   assertSnap(label, 'ms:rs', pre.p, post.p, 'same', 'reservedStock');
   if (post.pi && pre.pi) {
     assertSnap(label, 'pi:qty', pre.pi, post.pi, 'same', 'quantity');
-    if (!sync) {
-      assertSnap(label, 'pi:rsv', pre.pi, post.pi, `+${orderQty}`, 'reservedQuantity');
-    } else {
-      assertSnap(label, 'pi:rsv', pre.pi, post.pi, 'same', 'reservedQuantity');
-    }
+    // New architecture: PI reservation always happens at Confirm (both syncOn and syncOff)
+    assertSnap(label, 'pi:rsv', pre.pi, post.pi, `+${orderQty}`, 'reservedQuantity');
   }
   R(label, 'confirm', true, `PI ${piQty}, sync=${sync}`);
   pre = post;

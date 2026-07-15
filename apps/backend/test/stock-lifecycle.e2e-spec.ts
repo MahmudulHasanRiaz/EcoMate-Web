@@ -54,13 +54,13 @@ async function snap(prisma: PrismaService, pid: string, wh: string) {
     where: { productId: pid, warehouseId: wh },
   });
   const prs = await prisma.physicalReservation.findMany({
-    where: { orderItem: { productId: pid } },
+    where: { orderItemId: { not: undefined }, product: { id: pid } } as any,
   });
   const allocs = await prisma.physicalReservationAllocation.findMany({
-    where: { reservation: { orderItem: { productId: pid } } },
+    where: { reservation: { productId: pid } },
   });
   const msLedger = await prisma.managedStockLedger.findMany({
-    where: { productId: pid }, orderBy: { createdAt: 'asc' },
+    where: { productId: pid }, orderBy: { id: 'asc' },
   });
   const piLedger = await prisma.physicalInventoryLedger.findMany({
     where: { productId: pid }, orderBy: { createdAt: 'asc' },
@@ -329,8 +329,8 @@ describe('Stock Lifecycle Matrix', () => {
     }
 
     // POS session
-    const sess = await prisma.posSession.create({
-      data: { cashierId: adminId, status: 'OPEN', openedAt: new Date() },
+    const sess = await (prisma as any).posSession.create({
+      data: { cashierId: adminId, status: 'open', openedAt: new Date(), showroomId: 'test', openingBalance: 0 },
     });
 
     const pre = await snap(prisma, prodId, WAREHOUSE_ID);
@@ -481,10 +481,10 @@ describe('Stock Lifecycle Matrix', () => {
   async function cleanupProduct(prisma: PrismaService, pid: string) {
     await prisma.physicalInventoryLedger.deleteMany({ where: { productId: pid } });
     await prisma.physicalReservationAllocation.deleteMany({
-      where: { reservation: { orderItem: { productId: pid } } },
+      where: { reservation: { productId: pid } },
     });
     await prisma.physicalReservation.deleteMany({
-      where: { orderItem: { productId: pid } },
+      where: { productId: pid },
     });
     await prisma.managedStockLedger.deleteMany({ where: { productId: pid } });
     await prisma.costingLot.deleteMany({ where: { productId: pid } });

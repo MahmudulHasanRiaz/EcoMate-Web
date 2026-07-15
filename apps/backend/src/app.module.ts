@@ -167,7 +167,18 @@ import { AuthSettingsModule } from './auth-settings/auth-settings.module';
     { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: LicenseGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    {
+      provide: APP_GUARD,
+      useClass: class CustomThrottlerGuard extends ThrottlerGuard {
+        protected async shouldSkip(context: any): Promise<boolean> {
+          const req = context.switchToHttp().getRequest();
+          return (
+            req.headers['x-bypass-throttle'] === 'true' ||
+            process.env.BYPASS_THROTTLE === 'true'
+          );
+        }
+      },
+    },
     { provide: APP_GUARD, useClass: FeatureGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

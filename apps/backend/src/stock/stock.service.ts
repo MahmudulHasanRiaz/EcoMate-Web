@@ -24,6 +24,7 @@ export interface StockOperationParams {
   binLocationId?: string;
   referenceType?: ReferenceEntity;
   referenceId?: string;
+  skipCostingLotDeduct?: boolean;
 }
 
 interface StockTarget {
@@ -199,7 +200,7 @@ export class StockService {
         if (!isManagedField(p!)) continue;
         const avail =
           field === 'reservedStock'
-            ? v.managedStockQuantity - v.reservedStock
+            ? (op === 'increment' ? v.managedStockQuantity - v.reservedStock : v.reservedStock)
             : v.managedStockQuantity;
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
@@ -209,9 +210,13 @@ export class StockService {
         await adjust('productVariant', t.variantId, field, t.qty);
         // Also update parent product stock if it manages stock
         if (p && p.manageStock && p.type === 'simple') {
-          if (op === 'decrement' && Number(p[field]) < t.qty) {
+          const pAvail =
+            field === 'reservedStock'
+              ? (op === 'increment' ? Number(p.managedStockQuantity) - Number(p.reservedStock) : Number(p.reservedStock))
+              : Number(p.managedStockQuantity);
+          if (op === 'decrement' && pAvail < t.qty) {
             throw new BadRequestException(
-              `Insufficient stock product ${t.productId}. Available: ${Number(p[field])}, needed: ${t.qty}.`,
+              `Insufficient stock product ${t.productId}. Available: ${pAvail}, needed: ${t.qty}.`,
             );
           }
           await adjust('product', t.productId, field, t.qty);
@@ -223,7 +228,7 @@ export class StockService {
         if (!isManagedField(p)) continue;
         const avail =
           field === 'reservedStock'
-            ? p.managedStockQuantity - p.reservedStock
+            ? (op === 'increment' ? p.managedStockQuantity - p.reservedStock : p.reservedStock)
             : p.managedStockQuantity;
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
         if (op === 'decrement' && avail < t.qty) {
@@ -651,7 +656,9 @@ export class StockService {
           tx,
         );
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
-        await this.deductCostingLots(targets, tx);
+        if (!params.skipCostingLotDeduct) {
+          await this.deductCostingLots(targets, tx);
+        }
         await this.logInventory(
           targets,
           'order_fulfilled',
@@ -824,14 +831,16 @@ export class StockService {
   }
 
   /**
-   * Claim + allocate physical reservation for an order item.
+   * Claim + allocate physical reservation for an order item or combo component.
    * Strategy: parent upsert (atomic) + Serializable transaction with check-before-create.
    * No P2002 possible: parent uses upsert, allocations check existing before create.
    * Retry on serialization conflict.
    */
   async reservePhysicalAllocated(params: {
     orderId: string;
-    orderItemId: string;
+    cycleId: string;
+    orderItemId?: string;
+    comboComponentId?: string;
     productId: string;
     variantId?: string;
     warehouseId: string;
@@ -839,54 +848,68 @@ export class StockService {
     tx?: Prisma.TransactionClient;
   }) {
     const exec = async (tx: Prisma.TransactionClient) => {
-      const parent = await tx.physicalReservation.upsert({
-        where: { orderItemId: params.orderItemId },
-        create: {
-          orderId: params.orderId,
-          orderItemId: params.orderItemId,
-          productId: params.productId,
-          variantId: params.variantId,
-          warehouseId: params.warehouseId,
-          quantity: params.quantity,
-          status: 'ALLOCATING',
-        },
-        update: {},
-      });
-
-      const existingAllocations = await tx.physicalReservationAllocation.findMany({
-        where: { reservationId: parent.id },
-      });
-      if (existingAllocations.length > 0) {
-        if (parent.status === 'ALLOCATING') {
-          await tx.physicalReservation.update({
-            where: { id: parent.id },
-            data: { status: 'ACTIVE' },
-          });
-        }
-        return existingAllocations;
+      let parent: any;
+      if (params.comboComponentId) {
+        parent = await tx.comboComponentPhysicalReservation.upsert({
+          where: {
+            componentId_cycleId: {
+              componentId: params.comboComponentId,
+              cycleId: params.cycleId,
+            },
+          },
+          create: {
+            orderId: params.orderId,
+            componentId: params.comboComponentId,
+            cycleId: params.cycleId,
+            productId: params.productId,
+            variantId: params.variantId || null,
+            warehouseId: params.warehouseId,
+            quantity: params.quantity,
+            status: 'ACTIVE',
+          },
+          update: {},
+        });
+      } else if (params.orderItemId) {
+        parent = await tx.physicalReservation.upsert({
+          where: {
+            orderItemId_cycleId: {
+              orderItemId: params.orderItemId,
+              cycleId: params.cycleId,
+            },
+          },
+          create: {
+            orderId: params.orderId,
+            orderItemId: params.orderItemId,
+            cycleId: params.cycleId,
+            productId: params.productId,
+            variantId: params.variantId || null,
+            warehouseId: params.warehouseId,
+            quantity: params.quantity,
+            status: 'ACTIVE',
+          },
+          update: {},
+        });
+      } else {
+        throw new BadRequestException('orderItemId or comboComponentId required');
       }
 
-      if (parent.status === 'ALLOCATING') {
-        const elapsed = Date.now() - parent.createdAt.getTime();
-        const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
-        if (elapsed > STUCK_THRESHOLD_MS) {
-          this.logger.warn(`Recovering stuck ALLOCATING reservation ${parent.id} (age: ${Math.round(elapsed / 1000)}s)`);
-          await tx.physicalReservation.update({
-            where: { id: parent.id },
-            data: { status: 'ALLOCATING', quantity: params.quantity },
+      const existingAllocations = params.comboComponentId
+        ? await tx.comboComponentPhysicalReservationAllocation.findMany({
+            where: { reservationId: parent.id },
+          })
+        : await tx.physicalReservationAllocation.findMany({
+            where: { reservationId: parent.id },
           });
-        }
+
+      if (existingAllocations.length > 0) {
+        return existingAllocations;
       }
 
       const whereClause: any = {
         productId: params.productId,
         warehouseId: params.warehouseId,
+        variantId: params.variantId || null,
       };
-      if (params.variantId) {
-        whereClause.variantId = params.variantId;
-      } else {
-        whereClause.variantId = null;
-      }
 
       const eligible = await tx.physicalInventory.findMany({
         where: whereClause,
@@ -903,15 +926,27 @@ export class StockService {
 
         const allocQty = Math.min(remaining, available);
 
-        const allocation = await tx.physicalReservationAllocation.create({
-          data: {
-            reservationId: parent.id,
-            physicalInventoryId: pi.id,
-            binLocationId: pi.binLocationId,
-            quantity: allocQty,
-          },
-        });
-        newAllocations.push(allocation);
+        if (params.comboComponentId) {
+          const allocation = await tx.comboComponentPhysicalReservationAllocation.create({
+            data: {
+              reservationId: parent.id,
+              physicalInventoryId: pi.id,
+              binLocationId: pi.binLocationId,
+              quantity: allocQty,
+            },
+          });
+          newAllocations.push(allocation);
+        } else {
+          const allocation = await tx.physicalReservationAllocation.create({
+            data: {
+              reservationId: parent.id,
+              physicalInventoryId: pi.id,
+              binLocationId: pi.binLocationId,
+              quantity: allocQty,
+            },
+          });
+          newAllocations.push(allocation);
+        }
 
         await tx.physicalInventory.update({
           where: { id: pi.id },
@@ -926,11 +961,6 @@ export class StockService {
           `Insufficient physical stock for product ${params.productId}. Requested: ${params.quantity}, allocated: ${params.quantity - remaining}`,
         );
       }
-
-      await tx.physicalReservation.update({
-        where: { id: parent.id },
-        data: { status: 'ACTIVE' },
-      });
 
       return newAllocations;
     };
@@ -963,15 +993,36 @@ export class StockService {
    */
   async releasePhysicalAllocated(params: {
     orderId: string;
-    orderItemId: string;
+    cycleId: string;
+    orderItemId?: string;
+    comboComponentId?: string;
     tx?: Prisma.TransactionClient;
   }) {
     const client = params.tx || this.prisma;
 
-    const parent = await client.physicalReservation.findUnique({
-      where: { orderItemId: params.orderItemId },
-      include: { allocations: true },
-    });
+    let parent: any;
+    if (params.comboComponentId) {
+      parent = await client.comboComponentPhysicalReservation.findUnique({
+        where: {
+          componentId_cycleId: {
+            componentId: params.comboComponentId,
+            cycleId: params.cycleId,
+          },
+        },
+        include: { allocations: true },
+      });
+    } else if (params.orderItemId) {
+      parent = await client.physicalReservation.findUnique({
+        where: {
+          orderItemId_cycleId: {
+            orderItemId: params.orderItemId,
+            cycleId: params.cycleId,
+          },
+        },
+        include: { allocations: true },
+      });
+    }
+
     if (!parent || parent.status === 'RELEASED' || parent.status === 'CONSUMED') return;
 
     for (const alloc of parent.allocations) {
@@ -981,10 +1032,17 @@ export class StockService {
       });
     }
 
-    await client.physicalReservation.update({
-      where: { id: parent.id },
-      data: { status: 'RELEASED' },
-    });
+    if (params.comboComponentId) {
+      await client.comboComponentPhysicalReservation.update({
+        where: { id: parent.id },
+        data: { status: 'RELEASED' },
+      });
+    } else {
+      await client.physicalReservation.update({
+        where: { id: parent.id },
+        data: { status: 'RELEASED' },
+      });
+    }
   }
 
   /**
@@ -993,7 +1051,9 @@ export class StockService {
    */
   async fulfillPhysicalReservation(params: {
     orderId: string;
-    orderItemId: string;
+    cycleId: string;
+    orderItemId?: string;
+    comboComponentId?: string;
     quantity: number;
     reference: string;
     performedBy?: string;
@@ -1001,18 +1061,45 @@ export class StockService {
   }) {
     const client = params.tx || this.prisma;
 
-    const parent = await client.physicalReservation.findUnique({
-      where: { orderItemId: params.orderItemId },
-      include: { allocations: true },
-    });
+    let parent: any;
+    if (params.comboComponentId) {
+      parent = await client.comboComponentPhysicalReservation.findUnique({
+        where: {
+          componentId_cycleId: {
+            componentId: params.comboComponentId,
+            cycleId: params.cycleId,
+          },
+        },
+        include: { allocations: true },
+      });
+    } else if (params.orderItemId) {
+      parent = await client.physicalReservation.findUnique({
+        where: {
+          orderItemId_cycleId: {
+            orderItemId: params.orderItemId,
+            cycleId: params.cycleId,
+          },
+        },
+        include: { allocations: true },
+      });
+    }
+
     if (!parent || parent.status === 'CONSUMED') return;
 
     // Atomic claim: ACTIVE → CONSUMED
-    const result = await client.physicalReservation.updateMany({
-      where: { id: parent.id, status: 'ACTIVE' },
-      data: { status: 'CONSUMED' },
-    });
-    if (result.count === 0) return; // Already consumed
+    let updateResult: any;
+    if (params.comboComponentId) {
+      updateResult = await client.comboComponentPhysicalReservation.updateMany({
+        where: { id: parent.id, status: 'ACTIVE' },
+        data: { status: 'CONSUMED' },
+      });
+    } else {
+      updateResult = await client.physicalReservation.updateMany({
+        where: { id: parent.id, status: 'ACTIVE' },
+        data: { status: 'CONSUMED' },
+      });
+    }
+    if (updateResult.count === 0) return; // Already consumed
 
     let remaining = params.quantity;
 
@@ -1030,16 +1117,30 @@ export class StockService {
         },
       });
 
-      // Consume FIFO CostingLots via CostingLotService (warehouse-scoped, variant-filtered)
+      // Consume FIFO CostingLots via CostingLotService
+      const referenceType = params.comboComponentId ? 'COMBO_COMPONENT' : 'ORDER_ITEM';
+      const referenceId = params.comboComponentId || params.orderItemId!;
+
       await this.costingLotService.consumeFIFOAggregated({
         productId: parent.productId,
         variantId: parent.variantId,
         warehouseId: parent.warehouseId,
         quantity: deductQty,
         type: 'FULFILLMENT',
-        referenceType: 'ORDER_ITEM',
-        referenceId: params.orderItemId,
+        referenceType,
+        referenceId,
         tx: client,
+      });
+
+      // Associate cycleId with new CostingLotConsumption records
+      await client.costingLotConsumption.updateMany({
+        where: {
+          referenceType,
+          referenceId,
+          type: 'FULFILLMENT',
+          cycleId: null,
+        },
+        data: { cycleId: params.cycleId },
       });
 
       // Write ledger entry
@@ -1066,15 +1167,28 @@ export class StockService {
     }
   }
 
-  async hasExistingPhysicalReservation(orderId: string, orderItemId?: string): Promise<boolean> {
-    const where: any = { orderId, status: { in: ['ACTIVE', 'CONSUMED'] } };
-    if (orderItemId) where.orderItemId = orderItemId;
-    const existing = await this.prisma.physicalReservation.findFirst({ where });
-    return !!existing;
+  async hasExistingPhysicalReservation(
+    orderId: string,
+    orderItemId?: string,
+    comboComponentId?: string,
+    cycleId?: string,
+  ): Promise<boolean> {
+    if (comboComponentId) {
+      const where: any = { orderId, status: { in: ['ACTIVE', 'CONSUMED'] } };
+      where.componentId = comboComponentId;
+      if (cycleId) where.cycleId = cycleId;
+      const existing = await this.prisma.comboComponentPhysicalReservation.findFirst({ where });
+      return !!existing;
+    } else {
+      const where: any = { orderId, status: { in: ['ACTIVE', 'CONSUMED'] } };
+      if (orderItemId) where.orderItemId = orderItemId;
+      if (cycleId) where.cycleId = cycleId;
+      const existing = await this.prisma.physicalReservation.findFirst({ where });
+      return !!existing;
+    }
   }
 
   async hasExistingPhysicalRelease(referenceId: string): Promise<boolean> {
-    // Check via PhysicalReservation instead of ledger (ledger fields removed)
     const existing = await this.prisma.physicalReservation.findFirst({
       where: {
         orderId: referenceId,
