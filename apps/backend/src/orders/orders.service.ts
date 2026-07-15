@@ -94,7 +94,17 @@ export class OrdersService {
     });
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
     const decision = this.stockRouter.resolve(product?.availabilityMode, opType, imEnabled, product?.syncManagedStock ?? undefined);
-    const wh = options?.warehouseId || product?.warehouseId;
+    let wh = options?.warehouseId || product?.warehouseId;
+    if (!wh && decision.pi !== 'skip') {
+      const firstStock = await tx.physicalInventory.findFirst({
+        where: {
+          productId,
+          variantId: variantId || null,
+        },
+        select: { warehouseId: true },
+      });
+      if (firstStock) wh = firstStock.warehouseId;
+    }
 
     if (decision.ms !== 'skip') {
       const shouldApplyMs = !decision.msConditionalOnSync || product?.syncManagedStock;
@@ -2140,14 +2150,26 @@ export class OrdersService {
           product.availabilityMode, 'allocate',
           imEnabled, product.syncManagedStock ?? undefined,
         );
-        if (product.warehouseId && decision.pi !== 'skip') {
+        let whId = product.warehouseId;
+        if (!whId && decision.pi !== 'skip') {
+          const firstStock = await tx.physicalInventory.findFirst({
+            where: {
+              productId: item.productId!,
+              variantId: item.variantId || null,
+            },
+            select: { warehouseId: true },
+          });
+          whId = firstStock?.warehouseId || null;
+        }
+
+        if (whId && decision.pi !== 'skip') {
           const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
           if (!alreadyReserved) {
             const existingPi = await tx.physicalInventory.findFirst({
               where: {
                 productId: item.productId!,
                 variantId: item.variantId || null,
-                warehouseId: product.warehouseId,
+                warehouseId: whId,
               },
             });
             if (!existingPi) {
@@ -2166,7 +2188,7 @@ export class OrdersService {
               orderItemId: item.id,
               productId: item.productId!,
               variantId: item.variantId ?? undefined,
-              warehouseId: product.warehouseId,
+              warehouseId: whId,
               quantity: item.quantity,
               tx,
             });
@@ -2174,10 +2196,23 @@ export class OrdersService {
         }
       }
 
-      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && product.warehouseId) {
+      let icWhId = product.warehouseId;
+      if (!icWhId && product.availabilityMode === 'INVENTORY_CONTROLLED') {
+        const firstStock = await tx.physicalInventory.findFirst({
+          where: {
+            productId: item.productId!,
+            variantId: item.variantId || null,
+          },
+          select: { warehouseId: true },
+        });
+        icWhId = firstStock?.warehouseId || null;
+      }
+
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && icWhId) {
         // IC: verify physical availability (reserved at Create, just check)
         const physAvail = await this.stockService.checkPhysicalAvailability(
-          item.productId!, product.warehouseId,
+          item.productId!,
+          icWhId,
         );
         if (!physAvail.available || physAvail.availableStock < item.quantity) {
           throw new BadRequestException(
@@ -2187,6 +2222,7 @@ export class OrdersService {
       }
     }
   }
+
 
   private async releaseStockForCancelledOrder(
     orderId: string,
