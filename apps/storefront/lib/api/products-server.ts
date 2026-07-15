@@ -1,6 +1,7 @@
 import { serverFetch } from "../api-server";
 import type { Product, Variant, Category } from "../types";
 import { transformBackendProduct } from "./products";
+import { getStorefrontConfigServer } from "./storefront-config-server";
 
 export interface ServerProductsResponse {
   data: Product[];
@@ -103,30 +104,39 @@ export async function getBrandsServer(): Promise<any[]> {
 }
 
 export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]> {
+  const config = await getStorefrontConfigServer().catch(() => null);
+  const hideOos = config?.features?.hideOosFromArchive === true;
   const res = await fetchProductsServer({
     isActive: true,
     isFeatured: true,
     perPage,
+    hasStock: hideOos || undefined,
   });
   return res.data;
 }
 
 export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
+  const config = await getStorefrontConfigServer().catch(() => null);
+  const hideOos = config?.features?.hideOosFromArchive === true;
   const res = await fetchProductsServer({
     isActive: true,
     perPage,
     sort: 'createdAt',
     order: 'desc',
+    hasStock: hideOos || undefined,
   });
   return res.data;
 }
 
 export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
+  const config = await getStorefrontConfigServer().catch(() => null);
+  const hideOos = config?.features?.hideOosFromArchive === true;
   const res = await fetchProductsServer({
     isActive: true,
     perPage,
     sort: 'popularity',
     order: 'desc',
+    hasStock: hideOos || undefined,
   });
   return res.data;
 }

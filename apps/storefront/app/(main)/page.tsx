@@ -46,12 +46,14 @@ export default async function HomePage() {
           sort = 'popularity';
           order = 'desc';
         }
+        const hideOos = config?.features?.hideOosFromArchive === true;
         const res = await fetchProductsServer({
           categoryId: sec.categoryId,
           isActive: true,
           perPage: limit,
           sort,
           order,
+          hasStock: hideOos || undefined,
         });
         products = res.data;
       }

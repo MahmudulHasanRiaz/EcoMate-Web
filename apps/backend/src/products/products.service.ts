@@ -274,13 +274,29 @@ export class ProductsService {
           OR: [
             // MANAGED_STOCK non-variable: check stock quantity
             { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
-            // MANAGED_STOCK variable: any variant with stock
-            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
+            // MANAGED_STOCK variable: any active variant with stock
+            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { isActive: true, managedStockQuantity: { gt: 0 } } } },
             // ALWAYS_IN_STOCK: always available
             { availabilityMode: 'ALWAYS_IN_STOCK' },
-            // INVENTORY_CONTROLLED: check physical inventory records
-            { availabilityMode: 'INVENTORY_CONTROLLED', physicalInventories: { some: { quantity: { gt: 0 } } } },
-            // ALWAYS_OUT_OF_STOCK: excluded (don't add this condition)
+            // INVENTORY_CONTROLLED: check physical inventory records of active variants
+            {
+              availabilityMode: 'INVENTORY_CONTROLLED',
+              OR: [
+                {
+                  type: { not: 'variable' },
+                  physicalInventories: { some: { quantity: { gt: 0 } } },
+                },
+                {
+                  type: 'variable',
+                  physicalInventories: {
+                    some: {
+                      quantity: { gt: 0 },
+                      variant: { isActive: true },
+                    },
+                  },
+                },
+              ],
+            },
           ],
         },
       ];
@@ -487,9 +503,26 @@ export class ProductsService {
         {
           OR: [
             { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
-            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { managedStockQuantity: { gt: 0 } } } },
+            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { isActive: true, managedStockQuantity: { gt: 0 } } } },
             { availabilityMode: 'ALWAYS_IN_STOCK' },
-            { availabilityMode: 'INVENTORY_CONTROLLED', physicalInventories: { some: { quantity: { gt: 0 } } } },
+            {
+              availabilityMode: 'INVENTORY_CONTROLLED',
+              OR: [
+                {
+                  type: { not: 'variable' },
+                  physicalInventories: { some: { quantity: { gt: 0 } } },
+                },
+                {
+                  type: 'variable',
+                  physicalInventories: {
+                    some: {
+                      quantity: { gt: 0 },
+                      variant: { isActive: true },
+                    },
+                  },
+                },
+              ],
+            },
           ],
         },
       ];

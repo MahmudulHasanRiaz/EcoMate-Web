@@ -40,7 +40,7 @@ export default async function ProductsPage({
     getCategoriesServer(),
   ]);
 
-  const hideOos = config?.features?.hideOosFromArchive === true;
+  const hideOos = config?.features?.hideOosFromArchive === true && !sp.search;
 
   const { data, meta } = await fetchProductsServer({
     perPage: 24,
