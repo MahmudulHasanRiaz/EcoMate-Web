@@ -555,29 +555,6 @@ export function CreateOrder() {
                   {/* Search results dropdown */}
                   {showProductDropdown && productResults.length > 0 && (
                     <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg overflow-hidden'>
-                      {/* Category filter chips inside dropdown */}
-                      {categories.length > 0 && (
-                        <div className='flex items-center gap-1.5 px-2 py-1.5 border-b bg-muted/30 overflow-x-auto'>
-                          <span className='text-[10px] text-muted-foreground shrink-0'>Category:</span>
-                          <button
-                            type='button'
-                            onClick={() => setSelectedCategoryId('')}
-                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                              !selectedCategoryId ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
-                            }`}
-                          >All</button>
-                          {categories.slice(0, 8).map((c: any) => (
-                            <button
-                              key={c.id}
-                              type='button'
-                              onClick={() => setSelectedCategoryId(prev => prev === c.id ? '' : c.id)}
-                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                                selectedCategoryId === c.id ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
-                              }`}
-                            >{c.name}</button>
-                          ))}
-                        </div>
-                      )}
                       <div className='max-h-56 overflow-y-auto'>
                         {productResults.map((p: any) => (
                           <button
