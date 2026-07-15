@@ -88,7 +88,7 @@ export function CreateOrder() {
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
   const [salesChannel, setSalesChannel] = useState('WEBSITE')
 
-  const [paymentMethod, setPaymentMethod] = useState('cod')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
@@ -725,7 +725,7 @@ export function CreateOrder() {
                 <div>
                   <Label className='text-xs'>Method</Label>
                   <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option value='cod'>COD</option>
+                    <option value='cash'>Cash</option>
                     <option value='bkash'>bKash</option>
                     <option value='nagad'>Nagad</option>
                     <option value='bank'>Bank</option>

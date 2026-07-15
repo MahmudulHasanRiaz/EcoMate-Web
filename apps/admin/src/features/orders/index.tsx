@@ -99,7 +99,8 @@ function paymentMethodLabel(method: string): { label: string; colorClass: string
   if (m.includes('nagad')) return { label: 'Nagad', colorClass: 'text-orange-500' }
   if (m.includes('rocket')) return { label: 'Rocket', colorClass: 'text-purple-500' }
   if (m.includes('card') || m.includes('visa') || m.includes('master')) return { label: method, colorClass: 'text-blue-500' }
-  if (m.includes('cod') || m.includes('cash') || m.includes('delivery')) return { label: 'COD', colorClass: 'text-emerald-600 dark:text-emerald-400' }
+  if (m.includes('cash')) return { label: 'Cash', colorClass: 'text-emerald-600 dark:text-emerald-400' }
+  if (m.includes('cod') || m.includes('delivery')) return { label: 'COD', colorClass: 'text-emerald-600 dark:text-emerald-400' }
   if (m.includes('bank') || m.includes('transfer')) return { label: method, colorClass: 'text-slate-500' }
   if (m.includes('gateway')) return { label: method.split('_').slice(1).join(' ') || method, colorClass: 'text-muted-foreground' }
   return { label: method, colorClass: 'text-muted-foreground' }
