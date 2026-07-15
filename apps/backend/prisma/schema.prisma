@@ -673,6 +673,7 @@ model OrderItem {
   price          Decimal  @db.Decimal(10, 2)
   costSnapshot   Decimal? @db.Decimal(10, 2)
   costType       String?  // 'estimated' | 'actual'
+  managedStockReserved Boolean @default(false)
   createdAt      DateTime @default(now())
 
   order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)

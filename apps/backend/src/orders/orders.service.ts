@@ -120,6 +120,20 @@ export class OrdersService {
           tx,
           ledgerType: options?.ledgerType,
         });
+
+        if (options?.orderItemId) {
+          if (decision.ms === 'reserve') {
+            await tx.orderItem.update({
+              where: { id: options.orderItemId },
+              data: { managedStockReserved: true },
+            });
+          } else if (decision.ms === 'release' || decision.ms === 'deduct') {
+            await tx.orderItem.update({
+              where: { id: options.orderItemId },
+              data: { managedStockReserved: false },
+            });
+          }
+        }
       }
     }
 
@@ -1303,33 +1317,41 @@ export class OrdersService {
   }
 
   async verifyPayment(orderId: string, verified: boolean, note?: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: { status: true },
-    });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
-    if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
-      throw new BadRequestException(
-        'Order is not awaiting payment verification',
-      );
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { status: true },
+      });
+      if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+      if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
+        throw new BadRequestException(
+          'Order is not awaiting payment verification',
+        );
+      }
 
-    const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
-    const targetStatus = await this.prisma.orderStatus.findUnique({
-      where: { name: targetStatusName },
-    });
+      const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
+      const targetStatus = await tx.orderStatus.findUnique({
+        where: { name: targetStatusName },
+      });
 
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        paymentStatus: verified ? 'PAID' : 'PAYMENT_PENDING',
-        statusId: targetStatus!.id,
-        ...(note ? { internalNote: note } : {}),
-      },
-      include: {
-        status: true,
-        payments: true,
-      },
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          paymentStatus: verified ? 'PAID' : 'PAYMENT_PENDING',
+          statusId: targetStatus!.id,
+          ...(note ? { internalNote: note } : {}),
+        },
+        include: {
+          status: true,
+          payments: true,
+        },
+      });
+
+      if (verified) {
+        await this.handleConfirmedSideEffects(tx, orderId);
+      }
+
+      return updated;
     });
   }
 
@@ -1528,6 +1550,12 @@ export class OrdersService {
         if (targetStatus.name === 'Cancelled') {
           for (const cancelOrderId of validIds) {
             await this.handleCancelledSideEffects(tx, cancelOrderId, userId);
+          }
+        }
+
+        if (targetStatus.name === 'Confirmed') {
+          for (const confirmOrderId of validIds) {
+            await this.handleConfirmedSideEffects(tx, confirmOrderId, userId);
           }
         }
 
@@ -2123,6 +2151,8 @@ export class OrdersService {
 
     if (!order) return;
 
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
     for (const item of order.items) {
       const product = item.product;
       if (!product) continue;
@@ -2133,91 +2163,146 @@ export class OrdersService {
       }
 
       if (product.availabilityMode === 'MANAGED_STOCK') {
-        if (!product.manageStock) continue;
-        // Verify managed stock is still sufficient
-        const avail = await this.stockService.getAvailableStock(
-          item.productId!,
-          item.variantId ?? undefined,
-        );
-        if (avail.available < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient stock for "${product.name}". Available: ${avail.available}, needed: ${item.quantity}.`,
-          );
-        }
-        // Physical reserve at Confirm for MANAGED+IM products with warehouse
-        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-        const decision = this.stockRouter.resolve(
-          product.availabilityMode, 'allocate',
-          imEnabled, product.syncManagedStock ?? undefined,
-        );
-        let whId = product.warehouseId;
-        if (!whId && decision.pi !== 'skip') {
-          const firstStock = await tx.physicalInventory.findFirst({
-            where: {
-              productId: item.productId!,
-              variantId: item.variantId || null,
-            },
-            select: { warehouseId: true },
-          });
-          whId = firstStock?.warehouseId || null;
-        }
+        if (product.manageStock) {
+          // 1. Managed Stock reservation if not already reserved
+          if (!item.managedStockReserved) {
+            // Verify managed stock is still sufficient
+            const avail = await this.stockService.getAvailableStock(
+              item.productId!,
+              item.variantId ?? undefined,
+            );
+            if (avail.available < item.quantity) {
+              throw new BadRequestException(
+                `Insufficient stock for "${product.name}". Available: ${avail.available}, needed: ${item.quantity}.`,
+              );
+            }
 
-        if (whId && decision.pi !== 'skip') {
-          const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
-          if (!alreadyReserved) {
-            const existingPi = await tx.physicalInventory.findFirst({
+            // Reserve the managed stock now
+            await this.resolveAndApplyStock(
+              'reserve',
+              item.productId!,
+              item.variantId ?? undefined,
+              item.quantity,
+              order.displayId,
+              tx,
+              {
+                orderId,
+                orderItemId: item.id,
+              },
+            );
+          }
+
+          // 2. Physical reserve at Confirm for MANAGED+IM products with warehouse if IM is ON
+          const decision = this.stockRouter.resolve(
+            product.availabilityMode, 'allocate',
+            imEnabled, product.syncManagedStock ?? undefined,
+          );
+          let whId = product.warehouseId;
+          if (!whId && decision.pi !== 'skip') {
+            const firstStock = await tx.physicalInventory.findFirst({
               where: {
                 productId: item.productId!,
                 variantId: item.variantId || null,
-                warehouseId: whId,
               },
+              select: { warehouseId: true },
             });
-            if (!existingPi) {
-              throw new BadRequestException(
-                `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
-              );
+            whId = firstStock?.warehouseId || null;
+          }
+
+          if (whId && decision.pi !== 'skip') {
+            const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
+            if (!alreadyReserved) {
+              const existingPi = await tx.physicalInventory.findFirst({
+                where: {
+                  productId: item.productId!,
+                  variantId: item.variantId || null,
+                  warehouseId: whId,
+                },
+              });
+              if (!existingPi) {
+                throw new BadRequestException(
+                  `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
+                );
+              }
+              const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+              if (availablePhysical < item.quantity) {
+                throw new BadRequestException(
+                  `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
+                );
+              }
+              await this.stockService.reservePhysicalAllocated({
+                orderId,
+                orderItemId: item.id,
+                productId: item.productId!,
+                variantId: item.variantId ?? undefined,
+                warehouseId: whId,
+                quantity: item.quantity,
+                tx,
+              });
             }
-            const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
-            if (availablePhysical < item.quantity) {
-              throw new BadRequestException(
-                `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
-              );
-            }
-            await this.stockService.reservePhysicalAllocated({
-              orderId,
-              orderItemId: item.id,
-              productId: item.productId!,
-              variantId: item.variantId ?? undefined,
-              warehouseId: whId,
-              quantity: item.quantity,
-              tx,
-            });
           }
         }
       }
 
-      let icWhId = product.warehouseId;
-      if (!icWhId && product.availabilityMode === 'INVENTORY_CONTROLLED') {
-        const firstStock = await tx.physicalInventory.findFirst({
-          where: {
-            productId: item.productId!,
-            variantId: item.variantId || null,
-          },
-          select: { warehouseId: true },
-        });
-        icWhId = firstStock?.warehouseId || null;
-      }
+      if (product.availabilityMode === 'INVENTORY_CONTROLLED') {
+        if (imEnabled) {
+          let icWhId = product.warehouseId;
+          if (!icWhId) {
+            const firstStock = await tx.physicalInventory.findFirst({
+              where: {
+                productId: item.productId!,
+                variantId: item.variantId || null,
+              },
+              select: { warehouseId: true },
+            });
+            icWhId = firstStock?.warehouseId || null;
+          }
 
-      if (product.availabilityMode === 'INVENTORY_CONTROLLED' && icWhId) {
-        // IC: verify physical availability (reserved at Create, just check)
-        const physAvail = await this.stockService.checkPhysicalAvailability(
-          item.productId!,
-          icWhId,
-        );
-        if (!physAvail.available || physAvail.availableStock < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient physical stock for "${product.name}". Available: ${physAvail.availableStock}, needed: ${item.quantity}.`,
-          );
+          if (icWhId) {
+            // Check if physical reservation already exists. If not, allocate it now!
+            const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
+            if (!alreadyReserved) {
+              const existingPi = await tx.physicalInventory.findFirst({
+                where: {
+                  productId: item.productId!,
+                  variantId: item.variantId || null,
+                  warehouseId: icWhId,
+                },
+              });
+              if (!existingPi) {
+                throw new BadRequestException(
+                  `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
+                );
+              }
+              const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+              if (availablePhysical < item.quantity) {
+                throw new BadRequestException(
+                  `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
+                );
+              }
+              await this.stockService.reservePhysicalAllocated({
+                orderId,
+                orderItemId: item.id,
+                productId: item.productId!,
+                variantId: item.variantId ?? undefined,
+                warehouseId: icWhId,
+                quantity: item.quantity,
+                tx,
+              });
+            } else {
+              // Already reserved, but double check availability.
+              const physAvail = await this.stockService.checkPhysicalAvailability(
+                item.productId!,
+                icWhId,
+                item.variantId ?? undefined,
+              );
+              if (physAvail.availableStock < 0) {
+                throw new BadRequestException(
+                  `Insufficient physical stock for "${product.name}". Available: ${physAvail.availableStock}, needed: ${item.quantity}.`,
+                );
+              }
+            }
+          }
         }
       }
     }
