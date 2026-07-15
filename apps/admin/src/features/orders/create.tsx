@@ -224,7 +224,7 @@ export function CreateOrder() {
         variantId: variant?.id || null,
         product: { ...product, name: variant ? `${product.name} (${variant.name || variant.sku})` : product.name },
         quantity: 1,
-        price: variant?.salePrice ?? variant?.price ?? product.salePrice ?? product.basePrice ?? 0,
+        price: parseFloat(variant?.salePrice ?? variant?.price ?? product.salePrice ?? product.basePrice ?? 0) || 0,
         variant: variant || null,
       }]
     })
@@ -270,8 +270,8 @@ export function CreateOrder() {
     const payload: any = {
       items: cartItems.map(item => ({
         productId: item.productId,
-        quantity: item.quantity,
-        price: item.price,
+        quantity: parseInt(item.quantity as any) || 1,
+        price: parseFloat(item.price as any) || 0,
         ...(item.variantId ? { variantId: item.variantId } : {}),
       })),
       shippingCharge: parseFloat(shippingCharge) || 0,
