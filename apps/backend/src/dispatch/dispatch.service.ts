@@ -206,48 +206,90 @@ export class DispatchService {
           return { claimed: true, dispatch };
         }
 
-        // HANDED_OVER: use router
+        // HANDED_OVER: deduct stock.
+        // Rule: MANAGED_STOCK + IM ON → deduct BOTH managed stock AND physical inventory.
+        //       MANAGED_STOCK + IM OFF → deduct managed stock only.
+        //       INVENTORY_CONTROLLED + IM ON → fulfill physical reservation only.
+        //       If IM ON and no physical inventory record exists → BLOCK with clear error.
         const items = productMapping && productMapping.length > 0
           ? productMapping
           : await this.getOrderItemsForStock(dispatch.orderId);
 
         const reference = `Dispatch DEDUCT: ${dispatch.consignmentId}`;
+        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
+        // Load all order items to get tracking flags (managedStockDeducted, id)
+        const orderItems = await tx.orderItem.findMany({
+          where: { orderId: dispatch.orderId },
+          select: { id: true, productId: true, variantId: true, managedStockDeducted: true },
+        });
+        const orderItemMap = new Map(
+          orderItems.map((oi) => [`${oi.productId}:${oi.variantId ?? ''}`, oi]),
+        );
 
         for (const item of items) {
           const qty = item.quantity || 1;
-          const variantId = item.productVariantId || item.variantId;
+          const variantId = item.productVariantId || item.variantId || null;
           const productId = item.productId;
-
           if (!productId) continue;
 
           const product = await tx.product.findUnique({
             where: { id: productId },
-            select: { availabilityMode: true, syncManagedStock: true },
+            select: { availabilityMode: true, syncManagedStock: true, warehouseId: true, name: true },
           });
+          if (!product) continue;
 
-          const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', imEnabled, product?.syncManagedStock ?? undefined);
+          const decision = this.stockRouter.resolve(
+            product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
+          );
 
-          if (decision.ms === 'deduct') {
-            // Deduct managed stock (always, since msConditionalOnSync is false for MANAGED_STOCK+IM)
+          const orderItemKey = `${productId}:${variantId ?? ''}`;
+          const orderItem = orderItemMap.get(orderItemKey);
+
+          // ── MANAGED_STOCK: deduct managed stock ──────────────────────────────
+          if (decision.ms === 'deduct' && !orderItem?.managedStockDeducted) {
             if (variantId) {
-              await this.stockService.deduct({ variantId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              await this.stockService.deduct({
+                variantId, quantity: qty, reference,
+                performedBy: performedBy || 'system', tx,
+              });
             } else {
-              await this.stockService.deduct({ productId, quantity: qty, reference, performedBy: performedBy || 'system', tx });
+              await this.stockService.deduct({
+                productId, quantity: qty, reference,
+                performedBy: performedBy || 'system', tx,
+              });
+            }
+            // Mark deduction done on OrderItem
+            if (orderItem) {
+              await tx.orderItem.update({
+                where: { id: orderItem.id },
+                data: { managedStockDeducted: true },
+              });
             }
           }
 
+          // ── Physical Inventory deduction ──────────────────────────────────────
+          // NOTE: The PhysicalReservation was already created at Confirm time.
+          // At HANDED_OVER we only need to FULFILL (consume) that reservation.
+          // We do NOT re-check physical availability — the reservation already locked the qty.
           if (decision.pi === 'fulfill') {
-            const prod = await tx.product.findUnique({
-              where: { id: productId },
-              select: { warehouseId: true },
+            // Find all OrderItems for this product
+            const productOrderItems = await tx.orderItem.findMany({
+              where: { orderId: dispatch.orderId, productId, variantId: variantId || null },
+              select: { id: true },
             });
-            if (prod?.warehouseId) {
-              const orderItems = await tx.orderItem.findMany({
-                where: { orderId: dispatch.orderId, productId },
-                select: { id: true, variantId: true },
+
+            for (const oi of productOrderItems) {
+              const reservation = await tx.physicalReservation.findUnique({
+                where: { orderItemId: oi.id },
+                select: { id: true, status: true },
               });
-              for (const oi of orderItems) {
+
+              // Reservation was already fulfilled (idempotent retry) — skip
+              if (reservation?.status === 'CONSUMED') continue;
+
+              // Reservation exists and is ACTIVE → fulfill it
+              if (reservation?.status === 'ACTIVE') {
                 await this.stockService.fulfillPhysicalReservation({
                   orderId: dispatch.orderId,
                   orderItemId: oi.id,
@@ -256,6 +298,7 @@ export class DispatchService {
                   performedBy: performedBy || 'system',
                   tx,
                 });
+
                 // Upgrade costType from 'estimated' to 'actual' using FIFO consumption records
                 const consumptions = await tx.costingLotConsumption.findMany({
                   where: {
@@ -272,13 +315,90 @@ export class DispatchService {
                   const actualCost = totalQty > 0 ? totalCost / totalQty : 0;
                   await tx.orderItem.update({
                     where: { id: oi.id },
-                    data: {
-                      costSnapshot: actualCost,
-                      costType: 'actual',
-                    },
+                    data: { costSnapshot: actualCost, costType: 'actual' },
                   });
                 }
+                continue;
               }
+
+              // No reservation at all — something went wrong at Confirm.
+              // Check if physical inventory even exists to give a meaningful error.
+              const hasPhysicalInventory = await tx.physicalInventory.findFirst({
+                where: { productId, variantId: variantId || null },
+                select: { id: true },
+              });
+              if (!hasPhysicalInventory) {
+                throw new BadRequestException(
+                  `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
+                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Dispatch করা যাবে না।`,
+                );
+              }
+              throw new BadRequestException(
+                `"${product.name}" এর Physical Reservation পাওয়া যায়নি। ` +
+                `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
+              );
+            }
+          }
+        }
+      }
+
+      // IN_TRANSIT: recheck that deduction was applied (like Confirmed rechecks reservation).
+      // If any managed stock deduction was missed, retry it now.
+      if (status === 'IN_TRANSIT') {
+        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+        const reference = `In Transit DEDUCT RECHECK: ${dispatch.consignmentId}`;
+
+        const orderItems = await tx.orderItem.findMany({
+          where: { orderId: dispatch.orderId },
+          select: {
+            id: true, productId: true, variantId: true,
+            quantity: true, managedStockDeducted: true,
+          },
+        });
+
+        for (const oi of orderItems) {
+          if (!oi.productId) continue;
+
+          const product = await tx.product.findUnique({
+            where: { id: oi.productId },
+            select: { availabilityMode: true, syncManagedStock: true, name: true },
+          });
+          if (!product) continue;
+
+          const decision = this.stockRouter.resolve(
+            product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
+          );
+
+          // If managed stock should have been deducted but wasn't, do it now
+          if (decision.ms === 'deduct' && !oi.managedStockDeducted) {
+            if (oi.variantId) {
+              await this.stockService.deduct({
+                variantId: oi.variantId, quantity: oi.quantity, reference,
+                performedBy: performedBy || 'system', tx,
+              });
+            } else {
+              await this.stockService.deduct({
+                productId: oi.productId, quantity: oi.quantity, reference,
+                performedBy: performedBy || 'system', tx,
+              });
+            }
+            await tx.orderItem.update({
+              where: { id: oi.id },
+              data: { managedStockDeducted: true },
+            });
+          }
+
+          // Verify physical reservation was fulfilled (CONSUMED) if applicable
+          if (decision.pi === 'fulfill') {
+            const reservation = await tx.physicalReservation.findUnique({
+              where: { orderItemId: oi.id },
+              select: { status: true },
+            });
+            if (reservation && reservation.status !== 'CONSUMED') {
+              throw new BadRequestException(
+                `"${product.name}" এর Physical Stock Deduction এখনও সম্পন্ন হয়নি। ` +
+                `In Transit-এ যাওয়ার আগে Handed Over স্ট্যাটাসে Physical Stock ডিডাক্ট হওয়া প্রয়োজন।`,
+              );
             }
           }
         }

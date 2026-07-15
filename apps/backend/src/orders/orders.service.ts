@@ -2192,24 +2192,36 @@ export class OrdersService {
             );
           }
 
-          // 2. Physical reserve at Confirm for MANAGED+IM products with warehouse if IM is ON
+          // 2. Physical reserve at Confirm for MANAGED+IM products if IM is ON.
+          //    When IM is ON, physical stock is the REAL stock. Managed stock is virtual.
+          //    We MUST have physical inventory to confirm — even if managed stock is fine.
           const decision = this.stockRouter.resolve(
             product.availabilityMode, 'allocate',
             imEnabled, product.syncManagedStock ?? undefined,
           );
-          let whId = product.warehouseId;
-          if (!whId && decision.pi !== 'skip') {
-            const firstStock = await tx.physicalInventory.findFirst({
-              where: {
-                productId: item.productId!,
-                variantId: item.variantId || null,
-              },
-              select: { warehouseId: true },
-            });
-            whId = firstStock?.warehouseId || null;
-          }
 
-          if (whId && decision.pi !== 'skip') {
+          if (decision.pi !== 'skip') {
+            // Resolve warehouse from product or fallback to any physical record
+            let whId = product.warehouseId;
+            if (!whId) {
+              const firstStock = await tx.physicalInventory.findFirst({
+                where: {
+                  productId: item.productId!,
+                  variantId: item.variantId || null,
+                },
+                select: { warehouseId: true },
+              });
+              whId = firstStock?.warehouseId || null;
+            }
+
+            // If IM is ON, physical stock MUST exist — no physical record = block confirmation
+            if (!whId) {
+              throw new BadRequestException(
+                `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
+                `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
+              );
+            }
+
             const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(orderId, item.id);
             if (!alreadyReserved) {
               const existingPi = await tx.physicalInventory.findFirst({
@@ -2221,13 +2233,16 @@ export class OrdersService {
               });
               if (!existingPi) {
                 throw new BadRequestException(
-                  `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
+                  `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
+                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
                 );
               }
               const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
               if (availablePhysical < item.quantity) {
                 throw new BadRequestException(
-                  `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
+                  `"${product.name}" এর Physical Stock অপর্যাপ্ত। ` +
+                  `Available: ${availablePhysical}, Needed: ${item.quantity}। ` +
+                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
                 );
               }
               await this.stockService.reservePhysicalAllocated({
