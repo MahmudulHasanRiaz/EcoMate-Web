@@ -23,11 +23,11 @@ describe('OrdersService', () => {
     isInitial: true,
     nextStatuses: ['status-processing'],
   };
-  const mockProcessingStatus = {
-    id: 'status-processing',
-    name: 'Processing',
+  const mockConfirmedStatus = {
+    id: 'status-confirmed',
+    name: 'Confirmed',
     isInitial: false,
-    nextStatuses: ['status-shipped'],
+    nextStatuses: [],
   };
   const mockShippedStatus = {
     id: 'status-shipped',
@@ -47,7 +47,7 @@ describe('OrdersService', () => {
     discountType: 'flat',
     total: 2050,
     viewToken: 'mock-view-token',
-    shippingAddress: { address: '123 Test St', city: 'Test City' },
+    shippingAddress: { address: '123 Test St', city: 'Test City', zone: '' },
     customerNotes: null,
     officeNotes: null,
     timeline: [
@@ -63,9 +63,11 @@ describe('OrdersService', () => {
     status: mockInitialStatus,
     customer: {
       id: 'customer-id-1',
-      firstName: 'John',
-      lastName: 'Doe',
+      name: 'John Doe',
+      firstName: 'John Doe',
+      lastName: '',
       email: 'john@example.com',
+      phone: '+1234567890',
       phoneNumber: '+1234567890',
     },
     items: [
@@ -115,6 +117,8 @@ describe('OrdersService', () => {
               createMany: jest.fn(),
               create: jest.fn(),
               delete: jest.fn(),
+              update: jest.fn().mockResolvedValue({}),
+              findMany: jest.fn().mockResolvedValue([]),
             },
             orderCounter: {
               upsert: jest.fn(),
@@ -139,20 +143,29 @@ describe('OrdersService', () => {
                 availabilityMode: 'MANAGED_STOCK',
                 warehouseId: 'wh-1',
               }),
-              findMany: jest.fn().mockResolvedValue([
-                {
-                  id: 'prod-1',
-                  basePrice: 1000,
-                  salePrice: null,
-                  isActive: true,
-                },
-                {
-                  id: 'prod-2',
-                  basePrice: 500,
-                  salePrice: null,
-                  isActive: true,
-                },
-              ]),
+              findMany: jest.fn().mockImplementation(async (args) => {
+                if (args?.where?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+                  return [];
+                }
+                return [
+                  {
+                    id: 'prod-1',
+                    basePrice: 1000,
+                    salePrice: null,
+                    isActive: true,
+                    availabilityMode: 'MANAGED_STOCK',
+                    name: 'Prod 1',
+                  },
+                  {
+                    id: 'prod-2',
+                    basePrice: 500,
+                    salePrice: null,
+                    isActive: true,
+                    availabilityMode: 'MANAGED_STOCK',
+                    name: 'Prod 2',
+                  },
+                ];
+              }),
             },
             combo: {
               findMany: jest.fn().mockResolvedValue([]),
@@ -166,6 +179,9 @@ describe('OrdersService', () => {
             },
             checkoutLead: {
               updateMany: jest.fn(),
+            },
+            systemSetting: {
+              findMany: jest.fn().mockResolvedValue([]),
             },
             user: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -319,19 +335,15 @@ describe('OrdersService', () => {
               { displayId: { contains: 'ORD-25', mode: 'insensitive' } },
               {
                 customer: {
-                  firstName: { contains: 'ORD-25', mode: 'insensitive' },
+                  name: { contains: 'ORD-25', mode: 'insensitive' },
                 },
               },
-              {
-                customer: {
-                  lastName: { contains: 'ORD-25', mode: 'insensitive' },
-                },
-              },
-              { customer: { phoneNumber: { contains: 'ORD-25' } } },
+              { customer: { phone: { contains: 'ORD-25' } } },
               { guestName: { contains: 'ORD-25', mode: 'insensitive' } },
               { guestPhone: { contains: 'ORD-25' } },
             ],
             statusId: 'status-pending',
+            trashedAt: null,
           },
         }),
       );
@@ -505,21 +517,23 @@ describe('OrdersService', () => {
 
   describe('updateStatus', () => {
     const updateStatusDto = {
-      statusId: 'status-processing',
-      note: 'Processing order',
+      statusId: 'status-confirmed',
+      note: 'Confirming order',
     };
     const userId = 'admin-user-id';
 
     it('should update order status successfully', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
-        mockProcessingStatus,
+        mockConfirmedStatus,
       );
       (prisma.order.update as jest.Mock).mockResolvedValue({
         ...mockOrder,
-        statusId: 'status-processing',
-        status: mockProcessingStatus,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
       });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
 
       const result = await service.updateStatus(
         'order-id-1',
@@ -532,10 +546,10 @@ describe('OrdersService', () => {
         include: { status: true },
       });
       expect(prisma.orderStatus.findUnique).toHaveBeenCalledWith({
-        where: { id: 'status-processing' },
+        where: { id: 'status-confirmed' },
       });
       expect(prisma.order.update).toHaveBeenCalled();
-      expect(result.statusId).toBe('status-processing');
+      expect(result.statusId).toBe('status-confirmed');
     });
 
     it('should throw NotFoundException if order not found', async () => {

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DispatchService } from './dispatch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
+import { StockRouterService } from '../stock/stock-router.service';
 
 describe('DispatchService', () => {
   let service: DispatchService;
@@ -32,6 +33,15 @@ describe('DispatchService', () => {
           provide: StockService,
           useValue: {
             operate: jest.fn().mockResolvedValue([]),
+            deduct: jest.fn().mockResolvedValue(undefined),
+            fulfillPhysicalReservation: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: StockRouterService,
+          useValue: {
+            isInventoryManagementEnabled: jest.fn().mockResolvedValue(false),
+            resolve: jest.fn().mockReturnValue({ ms: 'skip', pi: 'skip' }),
           },
         },
       ],
