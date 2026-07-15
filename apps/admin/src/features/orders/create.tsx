@@ -76,11 +76,8 @@ export function CreateOrder() {
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<any[]>([])
   const [productSearching, setProductSearching] = useState(false)
-  const [selectedCategoryId, setSelectedCategoryId] = useState('')
-  const [categories, setCategories] = useState<any[]>([])
   const [cartItems, setCartItems] = useState<any[]>([])
   const [showProductDropdown, setShowProductDropdown] = useState(false)
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const productInputRef = useRef<HTMLInputElement>(null)
 
   const [shippingCharge, setShippingCharge] = useState('0')
@@ -101,7 +98,6 @@ export function CreateOrder() {
   const productDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    apiClient.get('/categories').then(r => setCategories(r.data as any[])).catch(() => toast.error('Failed to load categories'))
     apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
   }, [])
 
@@ -164,14 +160,13 @@ export function CreateOrder() {
     clearTimeout(productSearchRef.current)
     productSearchRef.current = setTimeout(() => {
       const params: any = { search: productSearch, perPage: 12 }
-      if (selectedCategoryId) params.categoryId = selectedCategoryId
       apiClient.get('/products', { params })
         .then(r => { setProductResults(r.data?.data || r.data || []); setShowProductDropdown(true) })
         .catch(() => {})
         .finally(() => setProductSearching(false))
     }, 300)
     return () => clearTimeout(productSearchRef.current)
-  }, [productSearch, selectedCategoryId])
+  }, [productSearch])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -472,21 +467,6 @@ export function CreateOrder() {
               <CardContent className='space-y-3'>
                 {/* ── Unified Smart Search Bar ── */}
                 <div className='relative' ref={productDropdownRef}>
-                  {/* Active category filter chip */}
-                  {selectedCategoryId && (
-                    <div className='mb-1.5 flex items-center gap-1'>
-                      <span className='text-xs text-muted-foreground'>Filtered by:</span>
-                      <button
-                        type='button'
-                        onClick={() => setSelectedCategoryId('')}
-                        className='inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5 font-medium hover:bg-primary/20 transition-colors'
-                      >
-                        {categories.find((c: any) => c.id === selectedCategoryId)?.name || 'Category'}
-                        <X className='h-3 w-3' />
-                      </button>
-                    </div>
-                  )}
-
                   <div className='relative flex items-center'>
                     <Barcode className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
                     <input
@@ -495,11 +475,10 @@ export function CreateOrder() {
                       value={productSearch}
                       onChange={e => {
                         setProductSearch(e.target.value)
-                        if (!e.target.value) { setShowProductDropdown(false); setShowCategoryPicker(false) }
+                        if (!e.target.value) { setShowProductDropdown(false); }
                       }}
                       onFocus={() => {
                         if (productResults.length > 0) setShowProductDropdown(true)
-                        else if (!productSearch) setShowCategoryPicker(true)
                       }}
                       onKeyDown={e => {
                         if (e.key === 'Enter' && productSearch.trim()) {
@@ -517,7 +496,7 @@ export function CreateOrder() {
                             handleBarcodeSearch(productSearch.trim())
                           }
                         }
-                        if (e.key === 'Escape') { setShowProductDropdown(false); setShowCategoryPicker(false) }
+                        if (e.key === 'Escape') { setShowProductDropdown(false); }
                       }}
                       placeholder='Search by name or SKU / scan barcode → Enter to add'
                       className='w-full h-10 pl-9 pr-9 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
@@ -528,29 +507,6 @@ export function CreateOrder() {
                       : productSearch && <button type='button' onClick={() => { setProductSearch(''); setShowProductDropdown(false) }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground'><X className='h-4 w-4' /></button>
                     }
                   </div>
-
-                  {/* Category picker panel — shown on empty focus */}
-                  {showCategoryPicker && !productSearch && categories.length > 0 && (
-                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg p-2'>
-                      <p className='text-xs text-muted-foreground mb-2 px-1'>Browse by category</p>
-                      <div className='flex flex-wrap gap-1.5'>
-                        {categories.map((c: any) => (
-                          <button
-                            key={c.id}
-                            type='button'
-                            onClick={() => { setSelectedCategoryId(c.id); setShowCategoryPicker(false); productInputRef.current?.focus() }}
-                            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                              selectedCategoryId === c.id
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'hover:bg-muted'
-                            }`}
-                          >
-                            {c.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Search results dropdown */}
                   {showProductDropdown && productResults.length > 0 && (
