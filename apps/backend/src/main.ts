@@ -22,6 +22,11 @@ async function bootstrap() {
   config();                                                          // cwd fallback
 
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'JWT_SECRET and JWT_REFRESH_SECRET are required in production. Set them via environment variables.',
+      );
+    }
     console.warn('[bootstrap] JWT_SECRET/JWT_REFRESH_SECRET not set — using dev defaults');
     process.env['JWT_SECRET'] = process.env['JWT_SECRET'] || 'eco-mate-jwt-secret-change-in-production-2026';
     process.env['JWT_REFRESH_SECRET'] = process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret-change-in-production-2026';

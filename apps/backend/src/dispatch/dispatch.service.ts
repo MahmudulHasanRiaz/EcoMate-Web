@@ -174,7 +174,6 @@ export class DispatchService {
   async updateStatus(id: string, status: string, performedBy?: string) {
     // Validate transition BEFORE transaction
     const current = await this.prisma.dispatch.findUnique({ where: { id }, select: { status: true } });
-    console.log('COMBO-DBG updateStatus start:', { id, status, currentStatus: current?.status });
     if (!current) throw new NotFoundException('Dispatch not found');
     const allowed = DISPATCH_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
@@ -201,7 +200,6 @@ export class DispatchService {
           handedOverAt: data.handedOverAt || null,
         },
       });
-      console.log('COMBO-DBG updateResult count:', updateResult.count);
 
       if (updateResult.count === 0) {
         return { claimed: false, dispatch: await this.findOne(id) };
@@ -222,7 +220,6 @@ export class DispatchService {
         const reference = `Dispatch DEDUCT: ${dispatch.consignmentId}`;
         const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
-        console.log('COMBO-DBG dispatch record in updateStatus:', JSON.stringify(dispatch));
         // Find the active cycle for this order
         const activeCycle = await tx.orderStockCycle.findFirst({
           where: { orderId: dispatch.orderId, status: 'ACTIVE' },
@@ -283,7 +280,6 @@ export class DispatchService {
                   },
                   select: { id: true, status: true },
                 });
-                console.log('COMBO-DBG dispatch-service compRes:', compRes);
 
                 if (compRes?.status === 'CONSUMED') continue;
                 if (compRes?.status === 'ACTIVE') {

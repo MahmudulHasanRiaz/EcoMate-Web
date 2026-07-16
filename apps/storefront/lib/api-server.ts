@@ -15,16 +15,17 @@ function isRetryableError(err: unknown): boolean {
 
 export async function serverFetch<T = unknown>(
   path: string,
-  options?: RequestInit & { revalidate?: number }
+  options?: RequestInit & { revalidate?: number; timeout?: number }
 ): Promise<T> {
-  const { revalidate, ...fetchOptions } = options || {};
+  const { revalidate, timeout: customTimeout, ...fetchOptions } = options || {};
   const MAX_RETRIES = 3;
   const BASE_DELAY = 500;
+  const TIMEOUT = customTimeout || 15000;
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT);
     try {
       const res = await fetch(`${API}${path}`, {
         headers: { "Content-Type": "application/json" },

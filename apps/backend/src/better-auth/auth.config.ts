@@ -5,13 +5,18 @@ import { customSession } from 'better-auth/plugins';
 import { baPrisma } from './prisma';
 import { getAllPermissions } from '../common/permissions/registry';
 
-const secret = process.env.BETTER_AUTH_SECRET || 'dev-secret-local-fallback-2026';
-if (!process.env.BETTER_AUTH_SECRET) {
+const secret = process.env.BETTER_AUTH_SECRET;
+if (!secret) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'BETTER_AUTH_SECRET is required in production. Set it via environment variables.',
+    );
+  }
   console.warn('[BA] BETTER_AUTH_SECRET not set — using dev fallback. Set in .env for production.');
 }
 
 export const auth = betterAuth({
-  secret,
+  secret: secret || 'dev-secret-local-fallback-2026',
   basePath: '/api/better-auth',
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:4000',
   database: prismaAdapter(baPrisma, { provider: 'postgresql' }),

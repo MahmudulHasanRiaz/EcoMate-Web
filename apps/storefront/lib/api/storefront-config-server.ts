@@ -13,12 +13,19 @@ export class StorefrontConfigError extends Error {
 }
 
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
-  const config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
-    next: { revalidate: 60 },
-  });
+  let config: StorefrontConfig;
+  try {
+    config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
+      next: { revalidate: 60 },
+      timeout: 30000,
+    });
+  } catch (err) {
+    console.warn('[StorefrontConfig] Failed to fetch store config from backend — using fallback. Details:', err instanceof Error ? err.message : err);
+    config = { store: { name: 'Store', tagline: '', email: '', phone: '', address: '' } } as StorefrontConfig;
+  }
 
-  if (!config || !config.store?.name) {
-    throw new StorefrontConfigError('Storefront config is empty or invalid');
+  if (!config?.store?.name) {
+    config = { store: { name: 'Store', tagline: '', email: '', phone: '', address: '' } } as StorefrontConfig;
   }
 
   // Categories and license can be fetched in parallel — both independent of each other
