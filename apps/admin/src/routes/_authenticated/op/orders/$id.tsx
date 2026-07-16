@@ -192,7 +192,7 @@ function OrderDetailPage() {
           productId: i.productId,
           variantId: i.variantId,
           quantity: i.quantity,
-          price: i.price,
+          price: Number(i.price),
         })),
       },
     })

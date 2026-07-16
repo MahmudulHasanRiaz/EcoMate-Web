@@ -6,7 +6,7 @@ const ACCESS_TOKEN_KEY = 'eco_mate_access_token'
 
 function resolveApiUrl(): string {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  return 'http://localhost:4000/api'
+  return '/api'
 }
 
 const API_BASE_URL = resolveApiUrl()

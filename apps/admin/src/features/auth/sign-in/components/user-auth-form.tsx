@@ -54,7 +54,7 @@ export function UserAuthForm({
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+    const API_URL = import.meta.env.VITE_API_URL || '/api'
 
     try {
       // Retry on network errors (ECONNREFUSED during backend startup race)

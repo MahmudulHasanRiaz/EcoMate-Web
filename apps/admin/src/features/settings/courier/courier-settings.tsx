@@ -24,7 +24,7 @@ const webhookBase = (() => {
   if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
     return `${window.location.origin}/api/webhooks/courier`
   }
-  return 'http://localhost:4000/api/webhooks/courier'
+  return '/api/webhooks/courier'
 })()
 
 const courierApi = {

@@ -18,7 +18,7 @@ export const PLACEHOLDER_IMAGE =
   )
 
 /** Base URL for API calls — derived from VITE_API_URL or falls back to localhost */
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+export const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 /**
  * Resolves a relative URL (e.g. /uploads/foo.jpg) to an absolute URL using
