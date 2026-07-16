@@ -12,6 +12,37 @@ export class StorefrontConfigError extends Error {
   }
 }
 
+const DEFAULT_CONFIG: StorefrontConfig = {
+  store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
+  systems: [],
+  currency: { code: "BDT", symbol: "৳" },
+  delivery: { charge: 0, freeDeliveryMin: 0 },
+  hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
+  social: { facebook: "", instagram: "", youtube: "", whatsapp: "", messengerUsername: "" },
+  order: { whatsapp: "", callNumber: "" },
+  branding: { storefrontFavicon: "", storefrontOgImage: "", storeLogo: "", adminTitle: "", adminFavicon: "", adminTagline: "", colors: { primary: '#0089CD', primaryDark: '#006da3', accent: '#E77250', text: '#0a0a0a', background: '#FFFFFF', success: '#22C55E', danger: '#EF4444', border: '#E5E7EB', shadowSoft: '0 8px 25px rgba(0,137,205,0.15)', shadowStrong: '0 15px 45px -5px rgba(0,137,205,0.6)' } },
+  seo: { title: "", description: "", keywords: "" },
+  footer: { description: "", copyright: "" },
+  about: { text: "" },
+  shipping: { info: "" },
+  payment: { info: "" },
+  meta: { pixelEnabled: false, pixelId: "", purchaseMode: "instant", validatedStatus: "" },
+  tiktok: { pixelEnabled: false, pixelCode: "", purchaseMode: "instant", validatedStatus: "" },
+  menu: { header: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, mobile: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, footer: { columns: [] } },
+  faq: { items: [] },
+  hours: { label: "", details: [] },
+  company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
+  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false },
+  districtCharges: {},
+  shippingMode: 'options',
+  shippingOptions: [],
+  shippingZones: [],
+  features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
+  thankYou: { title: '', subtitle: '', description: '' },
+  licenseFeatures: [],
+  homepageSections: [],
+};
+
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
   let config: StorefrontConfig;
   try {
@@ -20,13 +51,16 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
       timeout: 30000,
     });
   } catch (err) {
-    console.warn('[StorefrontConfig] Failed to fetch store config from backend — using fallback. Details:', err instanceof Error ? err.message : err);
-    config = { store: { name: 'Store', tagline: '', email: '', phone: '', address: '' } } as StorefrontConfig;
+    console.warn('[StorefrontConfig] Failed to fetch config — using fallback. Details:', err instanceof Error ? err.message : err);
+    return DEFAULT_CONFIG;
   }
 
   if (!config?.store?.name) {
-    config = { store: { name: 'Store', tagline: '', email: '', phone: '', address: '' } } as StorefrontConfig;
+    return DEFAULT_CONFIG;
   }
+
+  // Merge server config over defaults so missing nested fields never cause crashes
+  config = { ...DEFAULT_CONFIG, ...config };
 
   // Categories and license can be fetched in parallel — both independent of each other
   const [categories, licenseStatus] = await Promise.all([
