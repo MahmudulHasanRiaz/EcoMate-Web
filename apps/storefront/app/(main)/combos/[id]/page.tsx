@@ -33,10 +33,13 @@ async function getCombo(id: string) {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const combo = await getCombo(id);
+  const [combo, config] = await Promise.all([
+    getCombo(id),
+    getStorefrontConfigServer().catch(() => ({ store: { name: 'Store' } })),
+  ]);
   if (!combo) return { title: 'Combo Not Found' };
   return {
-    title: `${combo.name} — Fixed Plus`,
+    title: `${combo.name} — ${(config as any).store?.name || 'Store'}`,
     description: combo.shortDesc?.slice(0, 160) || `Check out our ${combo.name} combo deal`,
     openGraph: {
       title: combo.name,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Download, X } from 'lucide-react';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -9,6 +10,8 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export default function PWAInstallBanner() {
+  const { config } = useStorefrontConfig();
+  const storeName = config.store.name || 'Store';
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showBanner, setShowBanner] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -66,7 +69,7 @@ export default function PWAInstallBanner() {
           <Download size={20} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900">Install Fixed Plus</p>
+          <p className="text-sm font-bold text-gray-900">Install {storeName}</p>
           <p className="text-xs text-gray-500">Add to home screen for faster access</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
