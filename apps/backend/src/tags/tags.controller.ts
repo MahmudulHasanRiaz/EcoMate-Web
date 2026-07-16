@@ -23,7 +23,7 @@ export class TagsController {
   constructor(private readonly svc: TagsService) {}
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Get()
   async findAll(@Query('search') search?: string) {
     return this.svc.findAll(search);
@@ -36,14 +36,14 @@ export class TagsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Post()
   async create(
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
@@ -53,7 +53,7 @@ export class TagsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Put(':id')
   async update(
     @Param('id') id: string,
@@ -64,14 +64,14 @@ export class TagsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Post('bulk-delete')
   async bulkDelete(
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
@@ -81,7 +81,7 @@ export class TagsController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_tags')
+  @RequiresFeature('admin_products')
   @Post('merge')
   async merge(
     @Body(new ValidationPipe({ whitelist: true, transform: true }))

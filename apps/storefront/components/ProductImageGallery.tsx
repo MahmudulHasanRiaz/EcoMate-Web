@@ -19,7 +19,11 @@ function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, varian
 
 const AUTO_SLIDE_MS = 4000;
 
-export function ProductImageGallery({ images, productName, badge, mediaMeta }: Props) {
+export function ProductImageGallery({ images: rawImages, productName, badge, mediaMeta }: Props) {
+  const images = (rawImages || [])
+    .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
+    .filter((img: any) => img !== '');
+
   const [activeIndex, setActiveIndex] = useState(0);
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);

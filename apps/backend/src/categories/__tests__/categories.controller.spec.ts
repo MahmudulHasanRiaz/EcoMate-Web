@@ -8,13 +8,13 @@ describe('CategoriesController', () => {
 
   describe('admin methods', () => {
     it.each(adminMethods)(
-      'adds RequiresFeature(admin_categories) on %s',
+      'adds RequiresFeature(admin_products) on %s',
       (method) => {
         const meta = Reflect.getMetadata(
           REQUIRES_FEATURE_KEY,
           CategoriesController.prototype[method],
         );
-        expect(meta).toBe('admin_categories');
+        expect(meta).toBe('admin_products');
       },
     );
   });

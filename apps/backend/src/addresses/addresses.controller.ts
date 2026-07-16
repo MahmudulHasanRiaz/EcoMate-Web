@@ -17,7 +17,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('addresses')
-@RequiresFeature('storefront_account')
+@RequiresFeature('storefront')
 export class AddressesController {
   constructor(private readonly svc: AddressesService) {}
 

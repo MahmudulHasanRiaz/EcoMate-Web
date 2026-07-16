@@ -17,7 +17,7 @@ import {
 } from './dto/attribute.dto';
 
 @Controller('attributes')
-@RequiresFeature('admin_attributes')
+@RequiresFeature('admin_products')
 export class AttributesController {
   constructor(private readonly svc: AttributesService) {}
 
