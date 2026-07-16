@@ -158,6 +158,94 @@ export class OrdersService {
         ledgerType: options?.ledgerType,
       });
     }
+
+    // ── Physical reservation: allocate (reserve at order creation/revision) ──
+    if (decision.pi === 'allocate' && opType === 'reserve' && options?.orderId && options?.orderItemId) {
+      let cycle = await tx.orderStockCycle.findFirst({
+        where: { orderId: options.orderId, status: 'ACTIVE' },
+      });
+      if (!cycle) {
+        cycle = await tx.orderStockCycle.create({
+          data: { orderId: options.orderId, status: 'ACTIVE' },
+        });
+      }
+
+      if (!wh) {
+        const firstStock = await tx.physicalInventory.findFirst({
+          where: { productId, variantId: variantId || null },
+          select: { warehouseId: true },
+        });
+        if (firstStock) wh = firstStock.warehouseId;
+      }
+
+      if (wh) {
+        const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(
+          options.orderId,
+          options.orderItemId,
+          undefined,
+          cycle.id,
+        );
+        if (!alreadyReserved) {
+          const existingPi = await tx.physicalInventory.findFirst({
+            where: { productId, variantId: variantId || null, warehouseId: wh },
+          });
+          if (!existingPi) {
+            throw new BadRequestException(
+              `Insufficient physical stock. No physical inventory record found.`,
+            );
+          }
+          const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+          if (availablePhysical < quantity) {
+            throw new BadRequestException(
+              `Insufficient physical stock. Available: ${availablePhysical}, needed: ${quantity}.`,
+            );
+          }
+          await this.stockService.reservePhysicalAllocated({
+            orderId: options.orderId,
+            cycleId: cycle.id,
+            orderItemId: options.orderItemId,
+            productId: productId!,
+            variantId: variantId ?? undefined,
+            warehouseId: wh,
+            quantity,
+            tx,
+          });
+        }
+      }
+    }
+
+    // ── Physical reservation: release (cancel/edit) ──
+    if (decision.pi === 'release' && opType === 'release' && options?.orderId && options?.orderItemId) {
+      const cycle = await tx.orderStockCycle.findFirst({
+        where: { orderId: options.orderId, status: 'ACTIVE' },
+      });
+      if (cycle) {
+        await this.stockService.releasePhysicalAllocated({
+          orderId: options.orderId,
+          cycleId: cycle.id,
+          orderItemId: options.orderItemId,
+          tx,
+        });
+      }
+    }
+
+    // ── Physical reservation: fulfill (deduct at dispatch/other) ──
+    if (decision.pi === 'fulfill' && opType === 'deduct' && options?.orderId && options?.orderItemId) {
+      const cycle = await tx.orderStockCycle.findFirst({
+        where: { orderId: options.orderId, status: 'ACTIVE' },
+      });
+      if (cycle) {
+        await this.stockService.fulfillPhysicalReservation({
+          orderId: options.orderId,
+          cycleId: cycle.id,
+          orderItemId: options.orderItemId,
+          quantity,
+          reference,
+          performedBy: options?.performedBy,
+          tx,
+        });
+      }
+    }
   }
 
   private parseTimeline(timeline: unknown): any[] {
@@ -864,6 +952,59 @@ export class OrdersService {
                   data: { managedStockReserved: true },
                 });
               }
+
+              // Physical reservation for INVENTORY_CONTROLLED combo components at order creation
+              if (snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED') {
+                const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+                if (imEnabled) {
+                  const decision = this.stockRouter.resolve(
+                    snapshot.product.availabilityMode, 'reserve', imEnabled, snapshot.product.syncManagedStock ?? undefined,
+                  );
+                  if (decision.pi === 'allocate') {
+                    let cycle = await tx.orderStockCycle.findFirst({
+                      where: { orderId: created.id, status: 'ACTIVE' },
+                    });
+                    if (!cycle) {
+                      cycle = await tx.orderStockCycle.create({
+                        data: { orderId: created.id, status: 'ACTIVE' },
+                      });
+                    }
+
+                    let wh = snapshot.product.warehouseId;
+                    if (!wh) {
+                      const firstStock = await tx.physicalInventory.findFirst({
+                        where: { productId: snapshot.productId, variantId: snapshot.variantId || null },
+                        select: { warehouseId: true },
+                      });
+                      if (firstStock) wh = firstStock.warehouseId;
+                    }
+
+                    if (wh) {
+                      const existingPi = await tx.physicalInventory.findFirst({
+                        where: { productId: snapshot.productId, variantId: snapshot.variantId || null, warehouseId: wh },
+                      });
+                      if (existingPi) {
+                        const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+                        if (availablePhysical < snapshot.totalQuantity) {
+                          throw new BadRequestException(
+                            `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
+                          );
+                        }
+                        await this.stockService.reservePhysicalAllocated({
+                          orderId: created.id,
+                          cycleId: cycle.id,
+                          comboComponentId: snapshot.id,
+                          productId: snapshot.productId,
+                          variantId: snapshot.variantId ?? undefined,
+                          warehouseId: wh,
+                          quantity: snapshot.totalQuantity,
+                          tx,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         } else if (createdItem) {
@@ -926,7 +1067,11 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        items: { include: { product: { select: { id: true, name: true } } } },
+        items: {
+          include: {
+            product: { select: { id: true, name: true, availabilityMode: true } },
+          },
+        },
       },
     });
     if (!order || order.trashedAt) throw new NotFoundException('Order not found');
@@ -970,11 +1115,32 @@ export class OrdersService {
     }
 
     if (dto.items && dto.items.length > 0) {
+      // Build a detailed diff of item changes
+      const oldMap = new Map(
+        order.items.map((i: any) => {
+          const key = i.variantId || i.productId || i.id;
+          return [key, { productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: Number(i.price), productName: (i.product as any)?.name }];
+        }),
+      );
+      const changes: string[] = [];
+      for (const newItem of dto.items) {
+        const key = newItem.variantId || newItem.productId || '';
+        const old = oldMap.get(key);
+        if (!old) {
+          changes.push(`Added: ${newItem.quantity}x ${newItem.productId?.slice(0,8) || '?'} @ ৳${newItem.price}`);
+        } else if (old.quantity !== newItem.quantity || old.price !== newItem.price) {
+          changes.push(`Updated: ${old.productName || old.productId?.slice(0,8)} qty ${old.quantity}→${newItem.quantity}, price ৳${old.price}→৳${newItem.price}`);
+        }
+        oldMap.delete(key);
+      }
+      for (const [_, old] of oldMap) {
+        changes.push(`Removed: ${old.productName || old.productId?.slice(0,8)} (${old.quantity}x @ ৳${old.price})`);
+      }
       timeline.push({
         type: 'items',
         visibility: 'public',
         timestamp: now,
-        note: 'Order items updated',
+        note: changes.length > 0 ? changes.join('; ') : 'Order items updated',
       });
     }
 
@@ -1057,18 +1223,23 @@ export class OrdersService {
               }
             }
           } else {
-            await this.resolveAndApplyStock(
-              'release',
-              item.productId,
-              item.variantId,
-              item.quantity,
-              order.displayId,
-              tx,
-              {
-                orderId: id,
-                orderItemId: item.id,
-              },
-            );
+            const itemAny = item as any;
+            // Skip managed stock release if already deducted (avoids double-decrement of reservedStock).
+            // Physical reservation release (pi:'release') is safe either way — handles CONSUMED skip.
+            if (!itemAny.managedStockDeducted) {
+              await this.resolveAndApplyStock(
+                'release',
+                item.productId,
+                item.variantId,
+                item.quantity,
+                order.displayId,
+                tx,
+                {
+                  orderId: id,
+                  orderItemId: item.id,
+                },
+              );
+            }
           }
         }
 
@@ -1155,6 +1326,59 @@ export class OrdersService {
                     where: { id: snapshot.id },
                     data: { managedStockReserved: true },
                   });
+                }
+
+                // Physical reservation for INVENTORY_CONTROLLED combo components at order update
+                if (snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED') {
+                  const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+                  if (imEnabled) {
+                    const decision = this.stockRouter.resolve(
+                      snapshot.product.availabilityMode, 'reserve', imEnabled, snapshot.product.syncManagedStock ?? undefined,
+                    );
+                    if (decision.pi === 'allocate') {
+                      let cycle = await tx.orderStockCycle.findFirst({
+                        where: { orderId: id, status: 'ACTIVE' },
+                      });
+                      if (!cycle) {
+                        cycle = await tx.orderStockCycle.create({
+                          data: { orderId: id, status: 'ACTIVE' },
+                        });
+                      }
+
+                      let wh = snapshot.product.warehouseId;
+                      if (!wh) {
+                        const firstStock = await tx.physicalInventory.findFirst({
+                          where: { productId: snapshot.productId, variantId: snapshot.variantId || null },
+                          select: { warehouseId: true },
+                        });
+                        if (firstStock) wh = firstStock.warehouseId;
+                      }
+
+                      if (wh) {
+                        const existingPi = await tx.physicalInventory.findFirst({
+                          where: { productId: snapshot.productId, variantId: snapshot.variantId || null, warehouseId: wh },
+                        });
+                        if (existingPi) {
+                          const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+                          if (availablePhysical < snapshot.totalQuantity) {
+                            throw new BadRequestException(
+                              `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
+                            );
+                          }
+                          await this.stockService.reservePhysicalAllocated({
+                            orderId: id,
+                            cycleId: cycle.id,
+                            comboComponentId: snapshot.id,
+                            productId: snapshot.productId,
+                            variantId: snapshot.variantId ?? undefined,
+                            warehouseId: wh,
+                            quantity: snapshot.totalQuantity,
+                            tx,
+                          });
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1522,9 +1746,19 @@ export class OrdersService {
         order.discountType || 'flat',
       );
 
+      const timeline = [
+        ...this.parseTimeline(order.timeline),
+        {
+          type: 'item_added',
+          visibility: 'public',
+          timestamp: new Date().toISOString(),
+          note: `Item added: ${dto.quantity}x @ ৳${dto.price}`,
+        },
+      ];
+
       return tx.order.update({
         where: { id: orderId },
-        data: { subtotal, total },
+        data: { subtotal, total, timeline: timeline as any },
         include: {
           items: {
             include: {
@@ -1549,20 +1783,24 @@ export class OrdersService {
     if (!removedItem) throw new NotFoundException('Order item not found');
 
     return this.prisma.$transaction(async (tx) => {
-      await this.resolveAndApplyStock(
-        'release',
-        removedItem.productId,
-        removedItem.variantId,
-        removedItem.quantity,
-        order.displayId,
-        tx,
-        {
-          comboId: removedItem.comboId || undefined,
-          comboSelection: (removedItem.comboSelection as Record<string, string>) || undefined,
-          orderId,
-          orderItemId: removedItem.id,
-        },
-      );
+      const itemAny = removedItem as any;
+      // Only release stock if not already deducted (avoids double-decrement of reservedStock)
+      if (!itemAny.managedStockDeducted) {
+        await this.resolveAndApplyStock(
+          'release',
+          removedItem.productId,
+          removedItem.variantId,
+          removedItem.quantity,
+          order.displayId,
+          tx,
+          {
+            comboId: removedItem.comboId || undefined,
+            comboSelection: (removedItem.comboSelection as Record<string, string>) || undefined,
+            orderId,
+            orderItemId: removedItem.id,
+          },
+        );
+      }
 
       await tx.orderItem.delete({ where: { id: itemId } });
 
@@ -1576,9 +1814,19 @@ export class OrdersService {
         order.discountType || 'flat',
       );
 
+      const timeline = [
+        ...this.parseTimeline(order.timeline),
+        {
+          type: 'item_removed',
+          visibility: 'public',
+          timestamp: new Date().toISOString(),
+          note: `Item removed: ${removedItem.productId?.slice(0,8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
+        },
+      ];
+
       return tx.order.update({
         where: { id: orderId },
-        data: { subtotal, total },
+        data: { subtotal, total, timeline: timeline as any },
         include: {
           items: {
             include: {

@@ -5,24 +5,9 @@ import { customSession } from 'better-auth/plugins';
 import { baPrisma } from './prisma';
 import { getAllPermissions } from '../common/permissions/registry';
 
-const secret = process.env.BETTER_AUTH_SECRET;
-if (!secret) {
-  const similar = Object.keys(process.env).filter(
-    (k) => k.includes('SECRET') || k.includes('AUTH') || k.includes('BETTER'),
-  );
-  console.error('[BA] BETTER_AUTH_SECRET is NOT SET');
-  console.error(
-    '[BA] Available related env vars:',
-    similar.join(', ') || '(none)',
-  );
-  console.error(
-    '[BA] All env var keys:',
-    Object.keys(process.env).sort().join(', '),
-  );
-  throw new Error(
-    'BETTER_AUTH_SECRET is not set in environment variables. ' +
-      'Add it in Portainer stack Environment Variables section, then re-deploy the stack.',
-  );
+const secret = process.env.BETTER_AUTH_SECRET || 'dev-secret-local-fallback-2026';
+if (!process.env.BETTER_AUTH_SECRET) {
+  console.warn('[BA] BETTER_AUTH_SECRET not set — using dev fallback. Set in .env for production.');
 }
 
 export const auth = betterAuth({
