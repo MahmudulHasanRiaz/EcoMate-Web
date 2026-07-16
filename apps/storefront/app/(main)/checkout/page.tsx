@@ -158,13 +158,26 @@ function SearchableSelect({
 function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol }: any) {
   const s = currencySymbol || '৳';
   const key = getItemKey(item);
+  const [imgError, setImgError] = React.useState(false);
   return (
     <div className="flex gap-3 py-3.5 border-b border-gray-100 last:border-0 items-start">
       {/* Thumbnail with Badge */}
       <div className="relative flex-shrink-0">
         <div className="w-14 h-14 border border-gray-200 rounded-md flex items-center justify-center p-1 bg-white">
-          <Image src={item.image || '/placeholder.svg'} alt={item.name} width={56} height={56} className="w-full h-full object-contain rounded"
-            onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }} />
+          {imgError ? (
+            <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded">
+              <Package2 size={20} className="text-gray-300" />
+            </div>
+          ) : (
+            <Image
+              src={item.image || '/placeholder.svg'}
+              alt={item.name}
+              width={56}
+              height={56}
+              className="w-full h-full object-contain rounded"
+              onError={() => setImgError(true)}
+            />
+          )}
         </div>
         <span className="absolute -top-1.5 -right-1.5 bg-gray-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shadow-sm border border-white">
           {item.quantity}
@@ -225,6 +238,7 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
     </div>
   );
 }
+
 
 function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClose, onSuccess }: {
   orderId: string;
@@ -572,16 +586,15 @@ export default function CheckoutPage() {
   useEffect(() => { localStorage.setItem('checkout_paymentOptionType', paymentOptionType); }, [paymentOptionType]);
 
   useEffect(() => {
-    if (paymentOptionType === 'CASH_ON_DELIVERY' && !hasCodGateway) {
-      if (hasFullPayment) {
-        setPaymentOptionType('FULL_PAYMENT');
-      } else if (hasPartialPayment) {
-        setPaymentOptionType('PARTIAL_PAYMENT');
-      } else {
-        setPaymentOptionType('CASH_ON_DELIVERY');
-      }
+    if (!hasCodGateway) {
+      setPaymentOptionType((current) => {
+        if (current !== 'CASH_ON_DELIVERY') return current;
+        if (hasFullPayment) return 'FULL_PAYMENT';
+        if (hasPartialPayment) return 'PARTIAL_PAYMENT';
+        return current; // no-op: same reference, React bails out
+      });
     }
-  }, [hasCodGateway, hasFullPayment, hasPartialPayment, paymentOptionType]);
+  }, [hasCodGateway, hasFullPayment, hasPartialPayment]);
 
   const initiatedRef = useRef(false);
 

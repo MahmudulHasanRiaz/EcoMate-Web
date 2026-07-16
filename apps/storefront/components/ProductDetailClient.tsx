@@ -37,7 +37,7 @@ function StockBadge({ stock }: { stock?: number }) {
     return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>;
   }
   if (stock > 10) {
-    return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-green-100 text-green-800">In Stock</span>;
+    return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-green-100 text-green-800">In Stock ({stock})</span>;
   }
   return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-orange-100 text-orange-800">Only {stock} left!</span>;
 }
@@ -392,17 +392,30 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   };
 
   const effectiveStock = useMemo(() => {
-    if (product.manageStock !== true) return undefined;
+    const isTracked =
+      product.availabilityMode === 'INVENTORY_CONTROLLED' ||
+      product.availabilityMode === 'MANAGED_STOCK' ||
+      product.manageStock === true;
+
+    if (!isTracked) return undefined;
+    if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return 0;
+    if (product.availabilityMode === 'ALWAYS_IN_STOCK') return undefined;
+
+    // Simple product
+    if (!isVariable) {
+      return product.stock ?? 0;
+    }
+
+    // Variable product
     const variants = product.variants || [];
     const selectedCount = Object.keys(selectedAttrs).length;
 
-    // No explicit selection: check any active variant has stock
+    // No explicit selection: sum stock of all active variants
     if (selectedCount === 0) {
-      const anyStock = variants.some(v => v.isActive && v.stock > 0);
-      return anyStock ? 999 : 0;
+      return variants.reduce((sum, v) => sum + (v.isActive ? (v.stock ?? 0) : 0), 0);
     }
 
-    // Partial selection: find variants matching explicitly selected attrs
+    // Partial selection: sum stock of matching active variants
     if (selectedCount < allAttrNames.length) {
       const matching = variants.filter(v => {
         if (!v.isActive) return false;
@@ -412,12 +425,12 @@ export default function ProductDetailClient({ product, defaultColor }: { product
           )
         );
       });
-      return matching.some(v => v.stock > 0) ? 999 : 0;
+      return matching.reduce((sum, v) => sum + (v.stock ?? 0), 0);
     }
 
     // Full selection: use selected variant's stock
     return selectedVariant?.stock ?? 0;
-  }, [product, selectedVariant, selectedAttrs, allAttrNames]);
+  }, [product, selectedVariant, selectedAttrs, allAttrNames, isVariable]);
 
   useEffect(() => {
     window.scrollTo(0, 0);

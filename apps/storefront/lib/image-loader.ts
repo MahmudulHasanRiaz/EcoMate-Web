@@ -22,6 +22,16 @@ function closestVariant(width: number): string {
 export default function imageLoader({ src, width, quality }: ImageLoaderProps) {
   if (src.startsWith("data:") || src.startsWith("blob:")) return src;
 
+  // Local static assets (e.g. /placeholder.svg, /icons/*.svg) — return as-is.
+  // Only /uploads/ and /assets/ are backend-served and need the resize proxy.
+  if (
+    src.startsWith("/") &&
+    !src.startsWith("/uploads/") &&
+    !src.startsWith("/assets/")
+  ) {
+    return src;
+  }
+
   // Derivative URLs: map requested width to closest variant
   const match = src.match(DERIVATIVE_REGEX);
   if (match) {
