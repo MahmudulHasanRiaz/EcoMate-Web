@@ -22,7 +22,7 @@ coverage/
 # IDE
 .vscode/
 .idea/
-.claude/.
+.claude/
 .codex/
 
 # OS
