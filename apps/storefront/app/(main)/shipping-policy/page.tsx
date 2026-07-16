@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { Truck } from "lucide-react";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const metadata: Metadata = {
-  title: 'Shipping Policy — Fixed Plus',
-  description: 'Learn about our shipping policies, delivery areas, charges, and estimated delivery times.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const config = await getStorefrontConfigServer().catch(() => null);
+  return {
+    title: `Shipping Policy — ${config?.store?.name || 'Store'}`,
+    description: 'Learn about our shipping policies, delivery areas, charges, and estimated delivery times.',
+  };
+}
 
 export default async function ShippingPolicyPage() {
   let storeName = "Store";
