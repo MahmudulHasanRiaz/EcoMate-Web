@@ -67,7 +67,7 @@ export function MovementHistory() {
     }
   }, [imEnabled])
   const [page, setPage] = useState(1)
-  const [typeFilter, setTypeFilter] = useState('adjustment')
+  const [typeFilter, setTypeFilter] = useState('all')
   const [warehouseFilter, setWarehouseFilter] = useState('all')
 
   // Product Search State
@@ -157,7 +157,7 @@ export function MovementHistory() {
                 className="h-7 text-xs px-3 rounded-md font-medium"
                 onClick={() => {
                   setLedgerMode('PHYSICAL')
-                  setTypeFilter('adjustment')
+                  setTypeFilter('all')
                 }}
               >
                 Physical Stock Ledger

@@ -159,8 +159,8 @@ export class InventoryService {
         where.type = { in: ['adjustment', 'ADJUSTMENT', 'physical_adjustment', 'PHYSICAL_ADJUSTMENT'] };
       } else if (type === 'transfer') {
         where.type = { in: ['transfer', 'TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] };
-      } else if (type === 'sale') {
-        where.type = { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED'] };
+      } else if (type === 'sale' || type === 'order_fulfilled') {
+        where.type = { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED', 'DEDUCTION'] };
       } else if (type === 'return') {
         where.type = { in: ['return', 'RETURN'] };
       } else {
