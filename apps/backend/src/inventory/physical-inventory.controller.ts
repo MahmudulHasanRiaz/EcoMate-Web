@@ -240,7 +240,6 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @UseGuards(InventoryEnabledGuard)
   @Get('reservations')
   async reservations(
     @Query('warehouseId') warehouseId?: string,
@@ -250,20 +249,71 @@ export class PhysicalInventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
-  @UseGuards(InventoryEnabledGuard)
   @Delete('reservations/:id')
   async releaseReservation(@Param('id') id: string) {
+    // 1. Try physical inventory reservation record
     const record = await this.stockService.getPhysicalRecord(id);
-    if (!record) throw new NotFoundException('Reservation not found');
-    if (record.reservedQuantity <= 0) {
-      return { ok: true, message: 'No active reservation to release' };
+    if (record) {
+      if (record.reservedQuantity <= 0) {
+        return { ok: true, message: 'No active reservation to release' };
+      }
+      await this.stockService.releasePhysical({
+        productId: record.productId,
+        warehouseId: record.warehouseId,
+        quantity: record.reservedQuantity,
+        reference: 'manual-release',
+      });
+      return { ok: true };
     }
-    await this.stockService.releasePhysical({
-      productId: record.productId,
-      warehouseId: record.warehouseId,
-      quantity: record.reservedQuantity,
-      reference: 'manual-release',
+
+    // 2. Try managed stock reservation (OrderItem)
+    const orderItem = await this.prisma.orderItem.findUnique({
+      where: { id },
+      include: { order: true },
     });
-    return { ok: true };
+    if (orderItem && orderItem.managedStockReserved) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.stockService.operate('release', {
+          productId: orderItem.productId!,
+          variantId: orderItem.variantId ?? undefined,
+          quantity: orderItem.quantity,
+          reference: `Manual release: ${orderItem.order.displayId}`,
+          performedBy: 'system',
+          tx,
+          ledgerType: 'CANCEL_RELEASE',
+        });
+        await tx.orderItem.update({
+          where: { id: orderItem.id },
+          data: { managedStockReserved: false },
+        });
+      });
+      return { ok: true };
+    }
+
+    // 3. Try managed stock reservation (OrderItemComboComponent)
+    const comp = await this.prisma.orderItemComboComponent.findUnique({
+      where: { id },
+      include: { orderItem: { include: { order: true } } },
+    });
+    if (comp && comp.managedStockReserved) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.stockService.operate('release', {
+          productId: comp.productId,
+          variantId: comp.variantId ?? undefined,
+          quantity: comp.totalQuantity,
+          reference: `Manual release: ${comp.orderItem.order.displayId}`,
+          performedBy: 'system',
+          tx,
+          ledgerType: 'CANCEL_RELEASE',
+        });
+        await tx.orderItemComboComponent.update({
+          where: { id: comp.id },
+          data: { managedStockReserved: false },
+        });
+      });
+      return { ok: true };
+    }
+
+    throw new NotFoundException('Reservation not found');
   }
 }

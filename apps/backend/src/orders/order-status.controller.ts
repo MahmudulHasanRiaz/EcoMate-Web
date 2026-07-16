@@ -13,7 +13,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
 @Controller('order-statuses')
-@RequiresFeature('admin_order_statuses')
+@RequiresFeature('admin_orders')
 export class OrderStatusController {
   constructor(private readonly prisma: PrismaService) {}
 

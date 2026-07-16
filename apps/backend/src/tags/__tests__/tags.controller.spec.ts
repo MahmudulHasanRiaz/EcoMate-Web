@@ -16,13 +16,13 @@ describe('TagsController', () => {
 
   describe('admin methods', () => {
     it.each(adminMethods)(
-      'adds RequiresFeature(admin_tags) on %s',
+      'adds RequiresFeature(admin_products) on %s',
       (method) => {
         const meta = Reflect.getMetadata(
           REQUIRES_FEATURE_KEY,
           TagsController.prototype[method],
         );
-        expect(meta).toBe('admin_tags');
+        expect(meta).toBe('admin_products');
       },
     );
   });

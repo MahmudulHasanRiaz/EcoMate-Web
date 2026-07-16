@@ -126,6 +126,7 @@ export class ManagedStockLedgerService {
         ...l,
         reference: l.referenceId,
         user: l.performedById,
+        performedBy: l.performedById,
         productName: prod?.name || '—',
         variantName: variantLabel,
         sku: variant?.sku || prod?.sku || '—',

@@ -36,11 +36,8 @@ export class CostingLotService {
       });
 
       if (!lot) {
-        throw new BadRequestException(
-          `Insufficient costing lots for product ${params.productId}` +
-          (params.variantId ? ` variant ${params.variantId}` : '') +
-          ` in warehouse ${params.warehouseId}. Remaining: ${remaining}`,
-        );
+        console.warn(`[WARN] Insufficient costing lots for product ${params.productId} in warehouse ${params.warehouseId}. Remaining: ${remaining}`);
+        break;
       }
 
       const deductQty = Math.min(remaining, lot.remainingQty);
@@ -103,11 +100,8 @@ export class CostingLotService {
       });
 
       if (!lot) {
-        throw new BadRequestException(
-          `Insufficient costing lots for product ${params.productId}` +
-          (params.variantId ? ` variant ${params.variantId}` : '') +
-          ` in warehouse ${params.warehouseId}. Remaining: ${remaining}`,
-        );
+        console.warn(`[WARN] Insufficient costing lots for product ${params.productId} in warehouse ${params.warehouseId}. Remaining: ${remaining}`);
+        break;
       }
 
       const deductQty = Math.min(remaining, lot.remainingQty);

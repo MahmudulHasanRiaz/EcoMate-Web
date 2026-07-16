@@ -4,7 +4,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('dashboard')
-@RequiresFeature('admin_dashboard')
+@RequiresFeature('admin_orders')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 

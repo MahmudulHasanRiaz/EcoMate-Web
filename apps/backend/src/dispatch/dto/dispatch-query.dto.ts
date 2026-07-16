@@ -19,4 +19,10 @@ export class DispatchQueryDto {
   @IsOptional()
   @IsString()
   endDate?: string;
+  @IsOptional()
+  @IsString()
+  page?: string;
+  @IsOptional()
+  @IsString()
+  perPage?: string;
 }

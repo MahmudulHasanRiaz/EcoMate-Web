@@ -159,8 +159,8 @@ export class InventoryService {
         where.type = { in: ['adjustment', 'ADJUSTMENT', 'physical_adjustment', 'PHYSICAL_ADJUSTMENT'] };
       } else if (type === 'transfer') {
         where.type = { in: ['transfer', 'TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] };
-      } else if (type === 'sale') {
-        where.type = { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED'] };
+      } else if (type === 'sale' || type === 'order_fulfilled') {
+        where.type = { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED', 'DEDUCTION'] };
       } else if (type === 'return') {
         where.type = { in: ['return', 'RETURN'] };
       } else {
@@ -861,13 +861,18 @@ export class InventoryService {
         ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
         : p.managedStockQuantity;
 
+      const managedReservedSum = p.type === 'variable'
+        ? p.variants.reduce((sum, v) => sum + (v.reservedStock ?? 0), 0)
+        : p.reservedStock ?? 0;
+
       return {
         ...p,
         managedStockQuantity: managedStockSum,
+        reservedStock: p.availabilityMode === 'MANAGED_STOCK' ? managedReservedSum : p.reservedStock,
         _physicalStock: physicalStockSum,
         availableStock:
           p.availabilityMode === 'MANAGED_STOCK'
-            ? managedStockSum - (p.reservedStock ?? 0)
+            ? managedStockSum - managedReservedSum
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
               ? physicalStockSum - physicalReservedSum
               : p.availabilityMode === 'ALWAYS_IN_STOCK'

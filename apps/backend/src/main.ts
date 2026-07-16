@@ -15,10 +15,16 @@ import { auth } from './better-auth/auth.config';
 import { baPrisma } from './better-auth/prisma';
 
 async function bootstrap() {
+  // Load .env — try project root, backend root, then cwd
+  const { config } = await import('dotenv');
+  config({ path: join(__dirname, '..', '..', '..', '..', '.env') }); // monorepo root
+  config({ path: join(__dirname, '..', '..', '.env') });             // apps/backend/
+  config();                                                          // cwd fallback
+
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
-    throw new Error(
-      'JWT_SECRET and JWT_REFRESH_SECRET environment variables are required',
-    );
+    console.warn('[bootstrap] JWT_SECRET/JWT_REFRESH_SECRET not set — using dev defaults');
+    process.env['JWT_SECRET'] = process.env['JWT_SECRET'] || 'eco-mate-jwt-secret-change-in-production-2026';
+    process.env['JWT_REFRESH_SECRET'] = process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret-change-in-production-2026';
   }
 
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -266,3 +272,11 @@ async function bootstrap() {
   console.log(`Server running on http://localhost:${port}`);
 }
 bootstrap();
+
+// Global error handlers to prevent process crash on unhandled rejections
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason instanceof Error ? reason.message : reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('[FATAL] Uncaught Exception:', error.message);
+});

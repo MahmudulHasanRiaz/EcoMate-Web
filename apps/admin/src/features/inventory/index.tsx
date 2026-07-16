@@ -174,9 +174,9 @@ export function Inventory() {
           lot: '—',
           expiry: '—',
           available: p.availableStock,
-          reserved: 0,
+          reserved: p.availabilityMode === 'MANAGED_STOCK' ? (p.reservedStock ?? 0) : 0,
           allocated: 0,
-          onHand: p.availableStock,
+          onHand: p.availabilityMode === 'MANAGED_STOCK' ? (p.managedStockQuantity ?? 0) : p.availableStock,
           cost: p.basePrice || 0,
           lowStockQty: p.lowStockQty,
           updated: '—',
@@ -607,7 +607,7 @@ export function Inventory() {
                               <TableCell className={`text-right font-semibold text-sm ${avail === null ? 'text-muted-foreground' : avail < 0 ? 'text-red-600' : avail < 10 ? 'text-amber-600' : 'text-green-600'}`}>
                                 {avail === null ? '∞' : avail}
                               </TableCell>
-                              <TableCell className="text-right text-muted-foreground text-xs">0</TableCell>
+                              <TableCell className="text-right text-muted-foreground text-xs">{v.reservedStock ?? 0}</TableCell>
                               <TableCell className="text-right text-muted-foreground text-xs">0</TableCell>
                               <TableCell className="text-right font-medium text-sm">
                                 {v.managedStockQuantity}
