@@ -163,41 +163,11 @@ export class CancelReturnStockService {
             reference,
             performedBy: performedBy || 'system',
             tx,
+            ledgerType: 'CANCEL_RELEASE',
           });
           await tx.orderItemComboComponent.update({
             where: { id: snap.id },
             data: { managedStockReserved: false },
-          });
-
-          // Log reservation release to managedStockLedger
-          let currentStock = 0;
-          if (snap.variantId) {
-            const v = await tx.productVariant.findUnique({
-              where: { id: snap.variantId },
-              select: { managedStockQuantity: true },
-            });
-            currentStock = v?.managedStockQuantity ?? 0;
-          } else {
-            const p = await tx.product.findUnique({
-              where: { id: snap.productId },
-              select: { managedStockQuantity: true },
-            });
-            currentStock = p?.managedStockQuantity ?? 0;
-          }
-          await tx.managedStockLedger.create({
-            data: {
-              productId: snap.productId,
-              variantId: snap.variantId || null,
-              quantity: snap.totalQuantity,
-              direction: 'IN',
-              type: 'CANCEL_RELEASE',
-              stockBefore: currentStock,
-              stockAfter: currentStock,
-              referenceType: 'ORDER',
-              referenceId: item.orderId,
-              performedById: performedBy || 'system',
-              note: `Released reservation for combo component of order ${item.orderId}`,
-            },
           });
         }
       }
@@ -265,41 +235,11 @@ export class CancelReturnStockService {
           reference,
           performedBy: performedBy || 'system',
           tx,
+          ledgerType: 'CANCEL_RELEASE',
         });
         await tx.orderItem.update({
           where: { id: item.id },
           data: { managedStockReserved: false },
-        });
-
-        // Log reservation release to managedStockLedger
-        let currentStock = 0;
-        if (item.variantId) {
-          const v = await tx.productVariant.findUnique({
-            where: { id: item.variantId },
-            select: { managedStockQuantity: true },
-          });
-          currentStock = v?.managedStockQuantity ?? 0;
-        } else {
-          const p = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: { managedStockQuantity: true },
-          });
-          currentStock = p?.managedStockQuantity ?? 0;
-        }
-        await tx.managedStockLedger.create({
-          data: {
-            productId: item.productId,
-            variantId: item.variantId || null,
-            quantity: item.quantity,
-            direction: 'IN',
-            type: 'CANCEL_RELEASE',
-            stockBefore: currentStock,
-            stockAfter: currentStock,
-            referenceType: 'ORDER',
-            referenceId: item.orderId,
-            performedById: performedBy || 'system',
-            note: `Released reservation for order ${item.orderId}`,
-          },
         });
       }
     }
@@ -543,41 +483,11 @@ export class CancelReturnStockService {
         reference: `${reference}-legacy-combo`,
         performedBy: performedBy || 'system',
         tx,
+        ledgerType: 'CANCEL_RELEASE',
       });
       await tx.orderItem.update({
         where: { id: item.id },
         data: { managedStockReserved: false },
-      });
-
-      // Log reservation release to managedStockLedger
-      let currentStock = 0;
-      if (item.variantId) {
-        const v = await tx.productVariant.findUnique({
-          where: { id: item.variantId },
-          select: { managedStockQuantity: true },
-        });
-        currentStock = v?.managedStockQuantity ?? 0;
-      } else {
-        const p = await tx.product.findUnique({
-          where: { id: item.productId },
-          select: { managedStockQuantity: true },
-        });
-        currentStock = p?.managedStockQuantity ?? 0;
-      }
-      await tx.managedStockLedger.create({
-        data: {
-          productId: item.productId,
-          variantId: item.variantId || null,
-          quantity: item.quantity,
-          direction: 'IN',
-          type: 'CANCEL_RELEASE',
-          stockBefore: currentStock,
-          stockAfter: currentStock,
-          referenceType: 'ORDER',
-          referenceId: item.orderId,
-          performedById: performedBy || 'system',
-          note: `Released reservation for legacy order ${item.orderId}`,
-        },
       });
     }
   }

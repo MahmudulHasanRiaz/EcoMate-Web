@@ -639,6 +639,49 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        for (const t of targets) {
+          const p = await tx.product.findUnique({
+            where: { id: t.productId },
+            select: { availabilityMode: true, managedStockQuantity: true },
+          });
+          if (p?.availabilityMode === 'MANAGED_STOCK') {
+            let currentStock = 0;
+            if (t.variantId) {
+              const v = await tx.productVariant.findUnique({
+                where: { id: t.variantId },
+                select: { managedStockQuantity: true },
+              });
+              currentStock = v?.managedStockQuantity ?? 0;
+            } else {
+              currentStock = p.managedStockQuantity ?? 0;
+            }
+            let orderId: string | null = null;
+            const displayIdMatch = params.reference.match(/ORD-\d{6}-\d{4}/);
+            if (displayIdMatch) {
+              const order = await tx.order.findFirst({
+                where: { displayId: displayIdMatch[0] },
+                select: { id: true },
+              });
+              orderId = order?.id || null;
+            }
+            await tx.managedStockLedger.create({
+              data: {
+                productId: t.productId,
+                variantId: t.variantId,
+                comboId: params.comboId ?? null,
+                quantity: t.qty,
+                direction: 'OUT',
+                type: (params.ledgerType as any) || 'RESERVE',
+                stockBefore: currentStock,
+                stockAfter: currentStock,
+                referenceType: 'ORDER',
+                referenceId: orderId,
+                performedById: params.performedBy || 'system',
+                note: `Reserved for ${params.reference}`,
+              },
+            });
+          }
+        }
       } else if (operation === 'release') {
         await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
         await this.logInventory(
@@ -648,6 +691,49 @@ export class StockService {
           params.performedBy,
           tx,
         );
+        for (const t of targets) {
+          const p = await tx.product.findUnique({
+            where: { id: t.productId },
+            select: { availabilityMode: true, managedStockQuantity: true },
+          });
+          if (p?.availabilityMode === 'MANAGED_STOCK') {
+            let currentStock = 0;
+            if (t.variantId) {
+              const v = await tx.productVariant.findUnique({
+                where: { id: t.variantId },
+                select: { managedStockQuantity: true },
+              });
+              currentStock = v?.managedStockQuantity ?? 0;
+            } else {
+              currentStock = p.managedStockQuantity ?? 0;
+            }
+            let orderId: string | null = null;
+            const displayIdMatch = params.reference.match(/ORD-\d{6}-\d{4}/);
+            if (displayIdMatch) {
+              const order = await tx.order.findFirst({
+                where: { displayId: displayIdMatch[0] },
+                select: { id: true },
+              });
+              orderId = order?.id || null;
+            }
+            await tx.managedStockLedger.create({
+              data: {
+                productId: t.productId,
+                variantId: t.variantId,
+                comboId: params.comboId ?? null,
+                quantity: t.qty,
+                direction: 'IN',
+                type: (params.ledgerType as any) || 'RELEASE',
+                stockBefore: currentStock,
+                stockAfter: currentStock,
+                referenceType: 'ORDER',
+                referenceId: orderId,
+                performedById: params.performedBy || 'system',
+                note: `Released for ${params.reference}`,
+              },
+            });
+          }
+        }
       } else if (operation === 'deduct') {
         await this.applyStockChange(
           targets,
@@ -1415,14 +1501,120 @@ export class StockService {
   }
 
   async listReservations(warehouseId?: string, productId?: string) {
-    const where: any = { reservedQuantity: { gt: 0 } };
-    if (warehouseId) where.warehouseId = warehouseId;
-    if (productId) where.productId = productId;
-    return this.prisma.physicalInventory.findMany({
-      where,
-      include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const showPhysical = !warehouseId || warehouseId !== 'managed';
+    const showManaged = !warehouseId || warehouseId === 'managed';
+
+    const results: any[] = [];
+
+    if (showPhysical) {
+      const where: any = { reservedQuantity: { gt: 0 } };
+      if (warehouseId && warehouseId !== 'all') where.warehouseId = warehouseId;
+      if (productId) where.productId = productId;
+      const phys = await this.prisma.physicalInventory.findMany({
+        where,
+        include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+      results.push(...phys);
+    }
+
+    if (showManaged) {
+      const orderItemWhere: any = { managedStockReserved: true };
+      if (productId) orderItemWhere.productId = productId;
+      const managedItems = await this.prisma.orderItem.findMany({
+        where: orderItemWhere,
+        include: {
+          product: { select: { id: true, name: true, sku: true, images: true } },
+          variant: { select: { id: true, sku: true, managedStockQuantity: true, reservedStock: true } },
+          order: { select: { displayId: true, updatedAt: true } },
+        },
+      });
+
+      const comboCompWhere: any = { managedStockReserved: true };
+      if (productId) comboCompWhere.productId = productId;
+      const managedComboComps = await this.prisma.orderItemComboComponent.findMany({
+        where: comboCompWhere,
+        include: {
+          orderItem: { include: { order: { select: { displayId: true, updatedAt: true } } } },
+        },
+      });
+
+      // Load products for combo components manually
+      const compProductIds = [...new Set(managedComboComps.map(c => c.productId))];
+      const compProducts = compProductIds.length
+        ? await this.prisma.product.findMany({
+            where: { id: { in: compProductIds } },
+            select: { id: true, name: true, sku: true, images: true, managedStockQuantity: true },
+          })
+        : [];
+      const productMap = new Map(compProducts.map(p => [p.id, p]));
+
+      // Load variants for combo components manually
+      const compVariantIds = [...new Set(managedComboComps.map(c => c.variantId).filter(Boolean))] as string[];
+      const compVariants = compVariantIds.length
+        ? await this.prisma.productVariant.findMany({
+            where: { id: { in: compVariantIds } },
+            select: { id: true, sku: true, managedStockQuantity: true, reservedStock: true },
+          })
+        : [];
+      const variantMap = new Map(compVariants.map(v => [v.id, v]));
+
+      const formattedManaged = managedItems.map((item) => {
+        const variantLabel = item.variant
+          ? ` (${item.variant.sku})`
+          : '';
+        return {
+          id: item.id,
+          productId: item.productId,
+          warehouseId: 'managed',
+          quantity: item.variant ? item.variant.managedStockQuantity : ((item.product as any)?.managedStockQuantity ?? 0),
+          reservedQuantity: item.quantity,
+          updatedAt: item.order.updatedAt,
+          product: {
+            id: item.product?.id,
+            name: item.product?.name + variantLabel,
+            sku: item.variant?.sku || item.product?.sku || '',
+            images: item.product?.images || [],
+          },
+          warehouse: {
+            id: 'managed',
+            name: 'Managed Stock',
+          },
+          isManaged: true,
+        };
+      });
+
+      const formattedComboComps = managedComboComps.map((comp) => {
+        const prod = productMap.get(comp.productId);
+        const variant = comp.variantId ? variantMap.get(comp.variantId) : null;
+        const variantLabel = variant
+          ? ` (${variant.sku})`
+          : '';
+        return {
+          id: comp.id,
+          productId: comp.productId,
+          warehouseId: 'managed',
+          quantity: variant ? variant.managedStockQuantity : (prod?.managedStockQuantity ?? 0),
+          reservedQuantity: comp.totalQuantity,
+          updatedAt: comp.orderItem.order.updatedAt,
+          product: {
+            id: prod?.id,
+            name: (prod?.name ?? 'Unknown Component') + variantLabel,
+            sku: variant?.sku || prod?.sku || '',
+            images: prod?.images || [],
+          },
+          warehouse: {
+            id: 'managed',
+            name: 'Managed Stock',
+          },
+          isManaged: true,
+        };
+      });
+
+      results.push(...formattedManaged, ...formattedComboComps);
+    }
+
+    return results.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
   async getPhysicalRecord(id: string) {

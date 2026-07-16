@@ -1183,6 +1183,8 @@ enum ManagedStockMovementType {
   ADJUSTMENT
   RETURN
   CANCEL_RELEASE
+  RESERVE
+  RELEASE
 }
 
 enum MovementDirection {

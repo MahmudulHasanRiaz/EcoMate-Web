@@ -49,7 +49,11 @@ export class DispatchService {
       if (query.endDate) where.createdAt.lte = new Date(query.endDate);
     }
 
-    return this.prisma.dispatch.findMany({
+    const page = (query as any).page ? Number((query as any).page) : 1;
+    const perPage = (query as any).perPage ? Number((query as any).perPage) : 10;
+
+    const total = await this.prisma.dispatch.count({ where });
+    const data = await this.prisma.dispatch.findMany({
       where,
       include: {
         order: {
@@ -63,7 +67,11 @@ export class DispatchService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * perPage,
+      take: perPage,
     });
+
+    return { data, total };
   }
 
   async findOne(id: string) {

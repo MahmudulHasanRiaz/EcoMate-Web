@@ -861,13 +861,18 @@ export class InventoryService {
         ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
         : p.managedStockQuantity;
 
+      const managedReservedSum = p.type === 'variable'
+        ? p.variants.reduce((sum, v) => sum + (v.reservedStock ?? 0), 0)
+        : p.reservedStock ?? 0;
+
       return {
         ...p,
         managedStockQuantity: managedStockSum,
+        reservedStock: p.availabilityMode === 'MANAGED_STOCK' ? managedReservedSum : p.reservedStock,
         _physicalStock: physicalStockSum,
         availableStock:
           p.availabilityMode === 'MANAGED_STOCK'
-            ? managedStockSum - (p.reservedStock ?? 0)
+            ? managedStockSum - managedReservedSum
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
               ? physicalStockSum - physicalReservedSum
               : p.availabilityMode === 'ALWAYS_IN_STOCK'

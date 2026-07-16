@@ -292,6 +292,8 @@ export function MovementHistory() {
                     <SelectItem value="ORDER_DEDUCTION">Order Deduction</SelectItem>
                     <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
                     <SelectItem value="CANCEL_RELEASE">Cancel Release</SelectItem>
+                    <SelectItem value="RESERVE">Reserve</SelectItem>
+                    <SelectItem value="RELEASE">Release</SelectItem>
                   </>
                 )}
               </SelectContent>
