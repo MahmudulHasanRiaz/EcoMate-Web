@@ -96,6 +96,7 @@ import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
+import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
 import { Route as AuthenticatedOpInventoryPhysicalIndexRouteImport } from './routes/_authenticated/op/inventory/physical/index'
@@ -106,6 +107,7 @@ import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './r
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
 import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
+import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './routes/_authenticated/mon/settings/price-label/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsLicenseIndexRouteImport } from './routes/_authenticated/mon/settings/license/index'
@@ -624,6 +626,12 @@ const AuthenticatedOpSettingsPersonalIndexRoute =
     path: '/personal/',
     getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
   } as any)
+const AuthenticatedOpPrintPriceLabelsIndexRoute =
+  AuthenticatedOpPrintPriceLabelsIndexRouteImport.update({
+    id: '/price-labels/',
+    path: '/price-labels/',
+    getParentRoute: () => AuthenticatedOpPrintRouteRoute,
+  } as any)
 const AuthenticatedOpPrintBulkIndexRoute =
   AuthenticatedOpPrintBulkIndexRouteImport.update({
     id: '/bulk/',
@@ -682,6 +690,12 @@ const AuthenticatedMonSettingsShippingIndexRoute =
   AuthenticatedMonSettingsShippingIndexRouteImport.update({
     id: '/shipping/',
     path: '/shipping/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsPriceLabelIndexRoute =
+  AuthenticatedMonSettingsPriceLabelIndexRouteImport.update({
+    id: '/price-label/',
+    path: '/price-label/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedMonSettingsOrderStatusesIndexRoute =
@@ -875,6 +889,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
@@ -885,6 +900,7 @@ export interface FileRoutesByFullPath {
   '/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -988,6 +1004,7 @@ export interface FileRoutesByTo {
   '/mon/settings/license': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/price-label': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
@@ -998,6 +1015,7 @@ export interface FileRoutesByTo {
   '/op/inventory/physical': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/op/print/price-labels': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -1103,6 +1121,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/_authenticated/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
@@ -1113,6 +1132,7 @@ export interface FileRoutesById {
   '/_authenticated/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
+  '/_authenticated/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/_authenticated/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
 }
@@ -1218,6 +1238,7 @@ export interface FileRouteTypes {
     | '/mon/settings/license/'
     | '/mon/settings/menu/'
     | '/mon/settings/order-statuses/'
+    | '/mon/settings/price-label/'
     | '/mon/settings/shipping/'
     | '/mon/settings/smtp/'
     | '/mon/settings/storage/'
@@ -1228,6 +1249,7 @@ export interface FileRouteTypes {
     | '/op/inventory/physical/'
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
+    | '/op/print/price-labels/'
     | '/op/settings/personal/'
     | '/op/orders/incomplete-leads/$id/convert'
   fileRoutesByTo: FileRoutesByTo
@@ -1331,6 +1353,7 @@ export interface FileRouteTypes {
     | '/mon/settings/license'
     | '/mon/settings/menu'
     | '/mon/settings/order-statuses'
+    | '/mon/settings/price-label'
     | '/mon/settings/shipping'
     | '/mon/settings/smtp'
     | '/mon/settings/storage'
@@ -1341,6 +1364,7 @@ export interface FileRouteTypes {
     | '/op/inventory/physical'
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
+    | '/op/print/price-labels'
     | '/op/settings/personal'
     | '/op/orders/incomplete-leads/$id/convert'
   id:
@@ -1445,6 +1469,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/license/'
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/order-statuses/'
+    | '/_authenticated/mon/settings/price-label/'
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/smtp/'
     | '/_authenticated/mon/settings/storage/'
@@ -1455,6 +1480,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/inventory/physical/'
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
+    | '/_authenticated/op/print/price-labels/'
     | '/_authenticated/op/settings/personal/'
     | '/_authenticated/op/orders/incomplete-leads/$id/convert'
   fileRoutesById: FileRoutesById
@@ -2086,6 +2112,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpSettingsPersonalIndexRouteImport
       parentRoute: typeof AuthenticatedOpSettingsRouteRoute
     }
+    '/_authenticated/op/print/price-labels/': {
+      id: '/_authenticated/op/print/price-labels/'
+      path: '/price-labels'
+      fullPath: '/op/print/price-labels/'
+      preLoaderRoute: typeof AuthenticatedOpPrintPriceLabelsIndexRouteImport
+      parentRoute: typeof AuthenticatedOpPrintRouteRoute
+    }
     '/_authenticated/op/print/bulk/': {
       id: '/_authenticated/op/print/bulk/'
       path: '/bulk'
@@ -2154,6 +2187,13 @@ declare module '@tanstack/react-router' {
       path: '/shipping'
       fullPath: '/mon/settings/shipping/'
       preLoaderRoute: typeof AuthenticatedMonSettingsShippingIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/price-label/': {
+      id: '/_authenticated/mon/settings/price-label/'
+      path: '/price-label'
+      fullPath: '/mon/settings/price-label/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsPriceLabelIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/order-statuses/': {
@@ -2275,6 +2315,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsLicenseIndexRoute: typeof AuthenticatedMonSettingsLicenseIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  AuthenticatedMonSettingsPriceLabelIndexRoute: typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
@@ -2305,6 +2346,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsMenuIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
+    AuthenticatedMonSettingsPriceLabelIndexRoute:
+      AuthenticatedMonSettingsPriceLabelIndexRoute,
     AuthenticatedMonSettingsShippingIndexRoute:
       AuthenticatedMonSettingsShippingIndexRoute,
     AuthenticatedMonSettingsSmtpIndexRoute:
@@ -2328,6 +2371,7 @@ interface AuthenticatedOpPrintRouteRouteChildren {
   AuthenticatedOpPrintInvoiceIdRoute: typeof AuthenticatedOpPrintInvoiceIdRoute
   AuthenticatedOpPrintStickerIdRoute: typeof AuthenticatedOpPrintStickerIdRoute
   AuthenticatedOpPrintBulkIndexRoute: typeof AuthenticatedOpPrintBulkIndexRoute
+  AuthenticatedOpPrintPriceLabelsIndexRoute: typeof AuthenticatedOpPrintPriceLabelsIndexRoute
 }
 
 const AuthenticatedOpPrintRouteRouteChildren: AuthenticatedOpPrintRouteRouteChildren =
@@ -2335,6 +2379,8 @@ const AuthenticatedOpPrintRouteRouteChildren: AuthenticatedOpPrintRouteRouteChil
     AuthenticatedOpPrintInvoiceIdRoute: AuthenticatedOpPrintInvoiceIdRoute,
     AuthenticatedOpPrintStickerIdRoute: AuthenticatedOpPrintStickerIdRoute,
     AuthenticatedOpPrintBulkIndexRoute: AuthenticatedOpPrintBulkIndexRoute,
+    AuthenticatedOpPrintPriceLabelsIndexRoute:
+      AuthenticatedOpPrintPriceLabelsIndexRoute,
   }
 
 const AuthenticatedOpPrintRouteRouteWithChildren =

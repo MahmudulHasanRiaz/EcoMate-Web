@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
-import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package } from 'lucide-react'
+import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package, Printer } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -19,6 +19,7 @@ import { type ProductResponse } from './api'
 import { categoriesApi } from '@/features/categories/api'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { ManagedStockAdjustmentModal } from './components/managed-stock-adjustment-modal'
+import { PriceLabelOptionsModal } from '@/features/print/components/price-label-options-modal'
 
 export function Products() {
   const queryClient = useQueryClient()
@@ -32,6 +33,7 @@ export function Products() {
   const [filterCategoryId, setFilterCategoryId] = useState<string[]>([])
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [adjustmentProductId, setAdjustmentProductId] = useState<string | undefined>()
+  const [priceLabelModalOpen, setPriceLabelModalOpen] = useState(false)
   const [duplicateSourceRow, setDuplicateSourceRow] = useState<ProductResponse | undefined>()
 
   const { data: allCats } = useQuery({
@@ -234,6 +236,13 @@ export function Products() {
               </Button>
               <Button
                 variant='outline' size='sm'
+                onClick={() => setPriceLabelModalOpen(true)}
+              >
+                <Printer className='h-4 w-4 mr-1.5' />
+                Price Label
+              </Button>
+              <Button
+                variant='outline' size='sm'
                 className='text-destructive hover:text-destructive'
                 onClick={() => setBulkAction('delete')}
                 disabled={isBulkPending}
@@ -301,6 +310,12 @@ export function Products() {
         open={adjustmentModalOpen}
         onOpenChange={setAdjustmentModalOpen}
         initialProductId={adjustmentProductId}
+      />
+
+      <PriceLabelOptionsModal
+        open={priceLabelModalOpen}
+        onOpenChange={setPriceLabelModalOpen}
+        selectedIds={selectedIds}
       />
     </>
   )
