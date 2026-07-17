@@ -3,15 +3,55 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from '../orders/orders.service';
 
-const ADVANCED_STATUSES = new Set([
-  'In Courier',
-  'Shipped',
-  'Delivered',
-  'Return Pending',
-  'Partial Return',
-  'Returned',
-  'Damaged',
-]);
+const ORDER_TRANSITIONS: Record<string, string[]> = {
+  'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
+  'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
+  'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
+  'Hold': ['Pending', 'Confirmed', 'Cancelled'],
+  'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
+  'Packed': ['Shipping', 'Packing Hold'],
+  'Packing Hold': ['Packed', 'Cancelled'],
+  'Shipping': ['Delivered', 'Partial'],
+  'Delivered': ['Return Pending'],
+  'Partial': ['Return Pending'],
+  'Return Pending': ['Returned', 'Damaged'],
+  'Returned': ['Damaged'],
+  'Cancelled': ['Confirmed'],
+  'Damaged': [],
+};
+
+const ORDER_STATUS_FLOW = [
+  'Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Confirmed',
+  'Packed', 'Packing Hold', 'Shipping', 'Delivered', 'Partial',
+  'Return Pending', 'Returned', 'Damaged', 'Cancelled',
+];
+
+// Steadfast status → DispatchStatus (direct mapping)
+const STEADFAST_DISPATCH_MAP: Record<string, string | null> = {
+  in_review: 'DISPATCHED',
+  pending: 'PICKED_UP',
+  hold: 'HOLD',
+  delivered_approval_pending: 'ASSIGNED_TO_RIDER',
+  partial_delivered_approval_pending: 'ASSIGNED_TO_RIDER',
+  cancelled_approval_pending: 'ASSIGNED_TO_RIDER',
+  unknown_approval_pending: null,
+  delivered: 'DELIVERED',
+  partial_delivered: 'PARTIAL',
+  cancelled: null, // handled conditionally in handleSteadfast
+  unknown: 'CANCELLED',
+};
+
+// DispatchStatus → OrderStatus name mapping (when webhook should auto-update order)
+const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
+  HANDED_OVER: 'Shipping',
+  PICKED_UP: 'Shipping',
+  HOLD: 'Shipping',
+  ASSIGNED_TO_RIDER: 'Shipping',
+  DELIVERED: 'Delivered',
+  PARTIAL: null, // dispatch only — never update order via webhook
+  RETURN_PENDING: 'Return Pending',
+  CANCELLED: null,
+};
 
 @Injectable()
 export class CourierWebhookService {
@@ -24,49 +64,176 @@ export class CourierWebhookService {
   ) {}
 
   async handleSteadfast(body: Record<string, unknown>) {
-    const consignmentId = body['consignment_id'] as string;
-    const status = (body['status'] as string)?.toLowerCase();
+    const notificationType = body['notification_type'] as string;
+    const consignmentId = String(body['consignment_id'] ?? '');
 
-    if (!consignmentId) return { error: 'Missing consignment_id' };
+    if (!consignmentId) {
+      this.logger.warn('Steadfast webhook missing consignment_id');
+      return { status: 'error', message: 'Missing consignment_id' };
+    }
 
     const order = await this.prisma.order.findFirst({
       where: { courierConsignmentId: consignmentId, trashedAt: null },
     });
-    if (!order) return { error: 'Order not found' };
-
-    const mappedStatus = mapSteadfastStatus(status);
-    if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
-
-    if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(
-        `Steadfast regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`,
-      );
-      return { ok: true, skipped: 'Status regression blocked' };
+    if (!order) {
+      this.logger.warn(`Steadfast: Order not found for consignment ${consignmentId}`);
+      return { status: 'error', message: 'Order not found' };
     }
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        courierStatus: mappedStatus,
-        courierTrackingCode:
-          (body['tracking_code'] as string) || order.courierTrackingCode,
-        courierService: 'steadfast',
+    // Handle tracking_update — just add timeline entry, no status change
+    if (notificationType === 'tracking_update') {
+      const trackingMsg = (body['tracking_message'] as string) || 'Tracking update';
+      await this.addTimelineEntry(order.id, 'steadfast', trackingMsg);
+      this.logger.log(`Steadfast tracking: ${consignmentId} — ${trackingMsg}`);
+      return { status: 'success', message: 'Tracking update received' };
+    }
+
+    const rawStatus = (body['status'] as string)?.toLowerCase() || '';
+    let dispatchStatus: string | null = STEADFAST_DISPATCH_MAP[rawStatus];
+
+    if (rawStatus === 'cancelled') {
+      dispatchStatus = await this.resolveCancelledStatus(order.id);
+    }
+
+    if (!dispatchStatus) {
+      this.logger.log(`Steadfast: ${consignmentId} status "${rawStatus}" → skipped`);
+      return { status: 'success', message: 'No status change needed' };
+    }
+
+    await this.upsertDispatch(order.id, 'steadfast', consignmentId, dispatchStatus, body);
+
+    await this.addTimelineEntry(order.id, 'steadfast', dispatchStatus);
+
+    const orderStatusName = DISPATCH_TO_ORDER_STATUS[dispatchStatus];
+    if (orderStatusName) {
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    this.logger.log(`Steadfast: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
+    return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  private async resolveCancelledStatus(orderId: string): Promise<string> {
+    const hasProgress = await this.prisma.dispatch.findFirst({
+      where: {
+        orderId,
+        status: { in: ['HANDED_OVER', 'PICKED_UP', 'IN_TRANSIT', 'ASSIGNED_TO_RIDER', 'DELIVERED', 'PARTIAL'] },
       },
     });
-    await this.addTimelineEntry(order.id, 'steadfast', mappedStatus);
-    await this.syncToDispatch(
-      order.id,
-      'steadfast',
-      consignmentId,
-      mappedStatus,
-    );
-    this.logger.log(`Steadfast: ${consignmentId} → ${mappedStatus}`);
-    return { ok: true, status: mappedStatus };
+    return hasProgress ? 'RETURN_PENDING' : 'CANCELLED';
+  }
+
+  private async upsertDispatch(
+    orderId: string,
+    courier: string,
+    consignmentId: string,
+    status: string,
+    body: Record<string, unknown>,
+  ) {
+    const trackingCode = (body['tracking_code'] as string) || undefined;
+    await this.prisma.dispatch.upsert({
+      where: {
+        courier_consignmentId: { courier: courier as any, consignmentId },
+      },
+      update: { status: status as any, trackingCode },
+      create: {
+        orderId,
+        courier: courier as any,
+        consignmentId,
+        trackingCode,
+        status: status as any,
+      },
+    });
+  }
+
+  private async tryAdvanceOrderStatus(orderId: string, targetName: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order || order.trashedAt) return;
+
+    const currentIdx = ORDER_STATUS_FLOW.indexOf(order.status.name);
+    const targetIdx = ORDER_STATUS_FLOW.indexOf(targetName);
+    if (currentIdx < 0 || targetIdx < 0) return;
+    if (currentIdx >= targetIdx) return;
+
+    const targetStatus = await this.prisma.orderStatus.findUnique({
+      where: { name: targetName },
+    });
+    if (!targetStatus) return;
+
+    try {
+      await this.ordersService.updateStatus(orderId, { statusId: targetStatus.id }, 'system');
+      return;
+    } catch (e) {
+      this.logger.warn(`Direct transition to ${targetName} failed: ${(e as Error).message}`);
+    }
+
+    const path = this.findTransitionPath(order.status.name, targetName);
+    for (const step of path) {
+      const current = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { status: true },
+      });
+      if (!current || current.status.name === targetName) break;
+      const stepStatus = await this.prisma.orderStatus.findUnique({
+        where: { name: step },
+      });
+      if (!stepStatus) continue;
+      const allowed = ORDER_TRANSITIONS[current.status.name] || [];
+      if (!allowed.includes(step)) continue;
+      try {
+        await this.ordersService.updateStatus(orderId, { statusId: stepStatus.id }, 'system');
+      } catch (e2) {
+        this.logger.warn(`Step ${current.status.name}→${step} failed: ${(e2 as Error).message}`);
+        break;
+      }
+    }
+  }
+
+  private findTransitionPath(from: string, to: string): string[] {
+    const visited = new Set<string>();
+    const queue: { status: string; path: string[] }[] = [{ status: from, path: [] }];
+    visited.add(from);
+
+    while (queue.length > 0) {
+      const { status, path } = queue.shift()!;
+      const allowed = ORDER_TRANSITIONS[status] || [];
+      for (const next of allowed) {
+        if (next === to) return [...path, next];
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push({ status: next, path: [...path, next] });
+        }
+      }
+    }
+    return [];
+  }
+
+  private async addTimelineEntry(orderId: string, courier: string, status: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, trashedAt: null },
+    });
+    if (!order) return;
+    const timeline = [
+      ...((order.timeline as unknown[]) || []),
+      {
+        type: 'courier',
+        courier,
+        status,
+        timestamp: new Date().toISOString(),
+        note: `${courier}: ${status}`,
+      },
+    ];
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { timeline: timeline as Prisma.InputJsonValue },
+    });
   }
 
   async handlePathao(body: Record<string, unknown>) {
-    const consignmentId = (body['consignment_id'] ||
-      body['data']?.['consignment_id']) as string;
+    const consignmentId = (body['consignment_id'] || body['data']?.['consignment_id']) as string;
     const event = body['event'] as string;
 
     if (!consignmentId) return { error: 'Missing consignment_id' };
@@ -80,9 +247,7 @@ export class CourierWebhookService {
     if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
 
     if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(
-        `Pathao regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`,
-      );
+      this.logger.warn(`Pathao regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`);
       return { ok: true, skipped: 'Status regression blocked' };
     }
 
@@ -125,9 +290,7 @@ export class CourierWebhookService {
     if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
 
     if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(
-        `RedX regression blocked: ${trackingNumber} ${order.courierStatus} → ${mappedStatus}`,
-      );
+      this.logger.warn(`RedX regression blocked: ${trackingNumber} ${order.courierStatus} → ${mappedStatus}`);
       return { ok: true, skipped: 'Status regression blocked' };
     }
 
@@ -141,15 +304,8 @@ export class CourierWebhookService {
     });
     await this.addTimelineEntry(order.id, 'redx', mappedStatus);
     const redxConsignmentId = trackingNumber || invoiceNumber || '';
-    await this.syncToDispatch(
-      order.id,
-      'redx',
-      redxConsignmentId,
-      mappedStatus,
-    );
-    this.logger.log(
-      `RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`,
-    );
+    await this.syncToDispatch(order.id, 'redx', redxConsignmentId, mappedStatus);
+    this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`);
     return { ok: true, status: mappedStatus, deliveryType };
   }
 
@@ -179,9 +335,7 @@ export class CourierWebhookService {
     if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
 
     if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(
-        `Carrybee regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`,
-      );
+      this.logger.warn(`Carrybee regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`);
       return { ok: true, skipped: 'Status regression blocked' };
     }
 
@@ -194,15 +348,8 @@ export class CourierWebhookService {
       },
     });
     await this.addTimelineEntry(order.id, 'carrybee', mappedStatus);
-    await this.syncToDispatch(
-      order.id,
-      'carrybee',
-      consignmentId || '',
-      mappedStatus,
-    );
-    this.logger.log(
-      `Carrybee: ${consignmentId || orderNumber} → ${mappedStatus}`,
-    );
+    await this.syncToDispatch(order.id, 'carrybee', consignmentId || '', mappedStatus);
+    this.logger.log(`Carrybee: ${consignmentId || orderNumber} → ${mappedStatus}`);
     return { ok: true, status: mappedStatus };
   }
 
@@ -233,31 +380,6 @@ export class CourierWebhookService {
     );
   }
 
-  private async addTimelineEntry(
-    orderId: string,
-    courier: string,
-    status: string,
-  ) {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, trashedAt: null },
-    });
-    if (!order) return;
-    const timeline = [
-      ...((order.timeline as unknown[]) || []),
-      {
-        type: 'courier',
-        courier,
-        status,
-        timestamp: new Date().toISOString(),
-        note: `${courier}: ${status}`,
-      },
-    ];
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { timeline: timeline as Prisma.InputJsonValue },
-    });
-  }
-
   private async syncToDispatch(
     orderId: string,
     courier: string,
@@ -279,6 +401,15 @@ export class CourierWebhookService {
         where: { id: existingDispatch.id },
         data: { status: mappedStatus as any },
       });
+    } else {
+      await this.prisma.dispatch.create({
+        data: {
+          orderId,
+          courier: courier as any,
+          consignmentId,
+          status: mappedStatus as any,
+        },
+      });
     }
 
     const orderStatusMap: Record<string, string> = {
@@ -297,47 +428,23 @@ export class CourierWebhookService {
           orderId,
           { statusId: targetStatus.id },
           'system',
-        );
-        this.logger.log(
-          `Order ${orderId} status auto-synced to ${targetOrderStatusName} via dispatch webhook`,
-        );
+        ).catch((e) => {
+          this.logger.warn(`Order ${orderId} status sync to ${targetOrderStatusName} failed: ${(e as Error).message}`);
+        });
       }
     }
   }
 }
 
-function mapSteadfastStatus(raw?: string | null): string | null {
-  if (!raw) return null;
-  const s = raw.toLowerCase().replace(/[\s-]+/g, '_');
-  if (
-    [
-      'in_review',
-      'in_review_approval_pending',
-      'delivered_approval_pending',
-      'partial_delivered_approval_pending',
-      'cancelled_approval_pending',
-      'unknown_approval_pending',
-    ].includes(s)
-  )
-    return null;
-  if (
-    [
-      'pending',
-      'picked',
-      'in_transit',
-      'at_hub',
-      'out_for_delivery',
-      'hold',
-    ].includes(s)
-  )
-    return 'In Courier';
-  if (s === 'delivered' || s.startsWith('delivered')) return 'Delivered';
-  if (s === 'cancelled' || s.startsWith('cancelled')) return 'Cancelled';
-  if (['partial', 'partial_delivered'].includes(s)) return 'Partial Return';
-  if (s.includes('return')) return 'Return Pending';
-  if (s === 'unknown') return 'Unknown';
-  return null;
-}
+const ADVANCED_STATUSES = new Set([
+  'In Courier',
+  'Shipped',
+  'Delivered',
+  'Return Pending',
+  'Partial Return',
+  'Returned',
+  'Damaged',
+]);
 
 function mapPathaoStatus(raw?: string | null): string | null {
   if (!raw) return null;

@@ -11,11 +11,12 @@ import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 
 const DISPATCH_TRANSITIONS: Record<string, string[]> = {
-  DISPATCHED: ['HANDED_OVER', 'CANCELLED'],
-  HANDED_OVER: ['PICKED_UP', 'CANCELLED'],
-  PICKED_UP: ['IN_TRANSIT', 'CANCELLED'],
-  IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'CANCELLED'],
-  ASSIGNED_TO_RIDER: ['DELIVERED', 'CANCELLED'],
+  DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED'],
+  HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED'],
+  PICKED_UP: ['IN_TRANSIT', 'HOLD', 'CANCELLED'],
+  IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
+  ASSIGNED_TO_RIDER: ['HOLD', 'DELIVERED', 'CANCELLED'],
+  HOLD: ['PICKED_UP', 'IN_TRANSIT', 'ASSIGNED_TO_RIDER', 'DELIVERED', 'CANCELLED'],
   DELIVERED: ['PARTIAL', 'RETURN_PENDING'],
   PARTIAL: ['RETURN_PENDING', 'CANCELLED'],
   RETURN_PENDING: ['RETURNED', 'CANCELLED'],
@@ -41,6 +42,9 @@ export class DispatchService {
       where.OR = [
         { consignmentId: { contains: query.search, mode: 'insensitive' } },
         { trackingCode: { contains: query.search, mode: 'insensitive' } },
+        { order: { displayId: { contains: query.search, mode: 'insensitive' } } },
+        { order: { guestPhone: { contains: query.search, mode: 'insensitive' } } },
+        { order: { customer: { phone: { contains: query.search, mode: 'insensitive' } } } },
       ];
     }
     if (query.startDate || query.endDate) {
@@ -533,7 +537,61 @@ export class DispatchService {
       return { claimed: true, dispatch };
     });
 
+    if (result.claimed) {
+      await this.syncOrderStatus(result.dispatch.orderId, result.dispatch.status, result.dispatch.courier as string);
+    }
+
     return result.dispatch;
+  }
+
+  private async syncOrderStatus(orderId: string, dispatchStatus: string, courier: string) {
+    const map: Record<string, string> = {
+      HANDED_OVER: 'Shipping',
+      PICKED_UP: 'Shipping',
+      HOLD: 'Shipping',
+      ASSIGNED_TO_RIDER: 'Shipping',
+      DELIVERED: 'Delivered',
+      PARTIAL: 'Partial',
+      RETURN_PENDING: 'Return Pending',
+      RETURNED: 'Returned',
+      CANCELLED: 'Cancelled',
+    };
+
+    const targetName = map[dispatchStatus];
+    if (!targetName) return;
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order || order.trashedAt) return;
+
+    const forder = ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Confirmed', 'Packed', 'Packing Hold', 'Shipping', 'Delivered', 'Partial', 'Return Pending', 'Returned', 'Damaged', 'Cancelled'];
+    const curIdx = forder.indexOf(order.status.name);
+    const tgtIdx = forder.indexOf(targetName);
+    if (curIdx < 0 || tgtIdx < 0 || curIdx >= tgtIdx) return;
+
+    const targetStatus = await this.prisma.orderStatus.findUnique({ where: { name: targetName } });
+    if (!targetStatus) return;
+
+    const timeline = [
+      ...((order.timeline as unknown[]) || []),
+      {
+        status: targetName,
+        oldStatus: order.status.name,
+        timestamp: new Date().toISOString(),
+        note: `Sync from dispatch (${dispatchStatus})`,
+        performedBy: 'system',
+      },
+    ];
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        statusId: targetStatus.id,
+        timeline: timeline as any,
+      },
+    });
   }
 
   private async getOrderItemsForStock(

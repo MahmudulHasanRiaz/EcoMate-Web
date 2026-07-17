@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Plus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
@@ -17,12 +17,22 @@ export function DispatchPage() {
     pageIndex: 0,
     pageSize: 10,
   })
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [search])
+
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data, isLoading } = useDispatchList({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
+    search: debouncedSearch || undefined,
   })
 
   const { remove } = useDispatchMutations()
@@ -55,6 +65,8 @@ export function DispatchPage() {
           total={data?.total || 0}
           pagination={pagination}
           onPaginationChange={setPagination}
+          search={search}
+          onSearchChange={setSearch}
           isLoading={isLoading}
           onDelete={(id) => setDeleteId(id)}
         />

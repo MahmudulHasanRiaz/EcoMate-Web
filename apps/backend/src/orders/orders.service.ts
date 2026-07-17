@@ -276,11 +276,12 @@ export class OrdersService {
         : order.customer,
       shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
-      trackingUrl: buildTrackingUrl(
-        order.courierService,
-        order.courierTrackingCode,
-        order.courierConsignmentId,
-      ),
+      trackingUrl: order.dispatches?.[0]?.trackingUrl
+        || buildTrackingUrl(
+          order.courierService,
+          order.courierTrackingCode,
+          order.courierConsignmentId,
+        ),
     };
   }
 
@@ -519,6 +520,7 @@ export class OrdersService {
           },
         },
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
+        dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order || order.trashedAt) throw new NotFoundException('Order not found');
@@ -1995,6 +1997,7 @@ export class OrdersService {
         status: true,
         payments: true,
         shipment: true,
+        dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order) throw new NotFoundException('Order not found');
@@ -2030,6 +2033,7 @@ export class OrdersService {
         status: true,
         payments: true,
         shipment: true,
+        dispatches: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     });

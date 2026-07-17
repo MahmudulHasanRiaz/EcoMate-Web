@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DotsHorizontalIcon } from '@radix-ui/react-icons'
+import { DotsHorizontalIcon, Cross2Icon } from '@radix-ui/react-icons'
 import {
   type ColumnDef,
   type PaginationState,
@@ -13,8 +13,9 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Trash2, Eye } from 'lucide-react'
+import { Trash2, Eye, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   Table,
   TableBody,
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,15 +35,19 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
+import { DataTablePagination } from '@/components/data-table'
+import { DataTableViewOptions } from '@/components/data-table/view-options'
+import { DataTableFacetedFilter } from '@/components/data-table/faceted-filter'
 import { type DispatchResponse } from './api'
-import { DISPATCH_STATUSES, ALL_COURIERS } from './data/data'
+import { DISPATCH_STATUSES, ALL_COURIERS, getCourierColor } from './data/data'
 
 type DispatchTableProps = {
   data: DispatchResponse[]
   total: number
   pagination: PaginationState
   onPaginationChange: (pagination: PaginationState) => void
+  search: string
+  onSearchChange: (search: string) => void
   isLoading?: boolean
   onDelete: (id: string) => void
 }
@@ -51,6 +57,8 @@ export function DispatchTable({
   total,
   pagination,
   onPaginationChange,
+  search,
+  onSearchChange,
   isLoading,
   onDelete,
 }: DispatchTableProps) {
@@ -83,9 +91,19 @@ export function DispatchTable({
     {
       accessorKey: 'courier',
       header: 'Courier',
-      cell: ({ row }) => (
-        <div className='capitalize'>{row.getValue('courier')}</div>
-      ),
+      cell: ({ row }) => {
+        const val = row.getValue('courier') as string
+        const color = getCourierColor(val)
+        return (
+          <Badge
+            variant='outline'
+            className='capitalize border-0 text-white font-medium'
+            style={{ backgroundColor: color || '#6b7280' }}
+          >
+            {val}
+          </Badge>
+        )
+      },
       meta: { className: 'w-24', tdClassName: 'ps-4' },
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
@@ -96,6 +114,21 @@ export function DispatchTable({
         <div className='font-mono text-sm'>{row.getValue('consignmentId')}</div>
       ),
       meta: { tdClassName: 'ps-4' },
+    },
+    {
+      id: 'tracking',
+      header: 'Tracking',
+      cell: ({ row }) => {
+        const url = row.original.trackingUrl
+        return url ? (
+          <Button variant='link' size='sm' className='h-6 px-0 text-xs gap-1' onClick={() => window.open(url, '_blank')}>
+            Track <ExternalLink className='h-3 w-3' />
+          </Button>
+        ) : (
+          <span className='text-xs text-muted-foreground'>—</span>
+        )
+      },
+      meta: { className: 'w-20', tdClassName: 'ps-4' },
     },
     {
       accessorKey: 'status',
@@ -135,6 +168,8 @@ export function DispatchTable({
       id: 'actions',
       cell: ({ row }) => {
         const dispatch = row.original
+        const role = useAuthStore((s) => s.auth.user?.role)
+        const canDelete = role === 'superadmin' || role === 'admin'
         return (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
@@ -151,13 +186,17 @@ export function DispatchTable({
                 <Eye size={16} className='me-2' />
                 View
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(dispatch.id)}>
-                Delete
-                <DropdownMenuShortcut>
-                  <Trash2 size={16} />
-                </DropdownMenuShortcut>
-              </DropdownMenuItem>
+              {canDelete && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onDelete(dispatch.id)}>
+                    Delete
+                    <DropdownMenuShortcut>
+                      <Trash2 size={16} />
+                    </DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -203,14 +242,27 @@ export function DispatchTable({
 
   return (
     <div className='flex flex-1 flex-col gap-4'>
-      <DataTableToolbar
-        table={table}
-        searchPlaceholder='Search by ID or consignment...'
-        filters={[
-          { columnId: 'status', title: 'Status', options: statusFilterOpts },
-          { columnId: 'courier', title: 'Courier', options: courierFilterOpts },
-        ]}
-      />
+      <div className='flex items-center justify-between'>
+        <div className='flex flex-1 flex-col-reverse items-start gap-y-2 sm:flex-row sm:items-center sm:space-x-2'>
+          <Input
+            placeholder='Search by order, consignment, phone...'
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className='h-8 w-37.5 lg:w-62.5'
+          />
+          <div className='flex gap-x-2'>
+            <DataTableFacetedFilter column={table.getColumn('status')!} title='Status' options={statusFilterOpts} />
+            <DataTableFacetedFilter column={table.getColumn('courier')!} title='Courier' options={courierFilterOpts} />
+          </div>
+          {search && (
+            <Button variant='ghost' onClick={() => onSearchChange('')} className='h-8 px-2 lg:px-3'>
+              Reset
+              <Cross2Icon className='ms-2 h-4 w-4' />
+            </Button>
+          )}
+        </div>
+        <DataTableViewOptions table={table} />
+      </div>
       <div className='overflow-hidden rounded-md border'>
         <Table className='min-w-xl'>
           <TableHeader>

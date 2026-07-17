@@ -52,7 +52,14 @@ export class CourierManagerService {
         `HTTP ${res.status} from courier API: ${text.slice(0, 200)}`,
       );
     }
-    return (await res.json()) as Record<string, unknown>;
+    try {
+      return (await res.json()) as Record<string, unknown>;
+    } catch {
+      const text = await res.text().catch(() => '');
+      throw new BadRequestException(
+        `Courier API returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`,
+      );
+    }
   }
 
   private async getBaseUrl(courier: string): Promise<string> {
@@ -110,6 +117,16 @@ export class CourierManagerService {
       },
     });
 
+    const existing = await this.prisma.dispatch.findMany({
+      where: {
+        orderId: { in: orderIds },
+        courier: courier as any,
+        status: { not: 'CANCELLED' },
+      },
+      select: { orderId: true, status: true },
+    });
+    const alreadyDispatched = new Set(existing.map((e) => e.orderId));
+
     const results: {
       id: string;
       ok: boolean;
@@ -118,6 +135,10 @@ export class CourierManagerService {
       trackingCode?: string;
     }[] = [];
     for (const order of orders) {
+      if (alreadyDispatched.has(order.id)) {
+        results.push({ id: order.id, ok: false, message: 'Already dispatched' });
+        continue;
+      }
       try {
         const result = await this.dispatchOne(courier, order);
         results.push({ id: order.id, ok: true, ...result });
@@ -161,7 +182,7 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const recipient = order.customer;
-    const phone = this.normalizePhone(recipient.phoneNumber);
+    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
@@ -173,7 +194,7 @@ export class CourierManagerService {
     const payload: Record<string, unknown> = {
       invoice: order.displayId,
       recipient_name:
-        `${recipient.firstName} ${recipient.lastName}`.trim() || 'Customer',
+        recipient?.name || order.guestName || 'Customer',
       recipient_phone: phone,
       recipient_address:
         address?.address ||
@@ -184,7 +205,7 @@ export class CourierManagerService {
       delivery_type: address?.deliveryType === 'hub' ? 1 : 0,
     };
 
-    if (recipient.email) {
+    if (recipient?.email) {
       payload.recipient_email = recipient.email;
     }
 
@@ -206,7 +227,16 @@ export class CourierManagerService {
           },
           body: JSON.stringify(payload),
         });
-        const data = (await res.json()) as Record<string, unknown>;
+
+        let data: Record<string, unknown>;
+        try {
+          data = (await res.json()) as Record<string, unknown>;
+        } catch {
+          const text = await res.text().catch(() => '');
+          throw new BadRequestException(
+            `Steadfast API returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+          );
+        }
 
         const consignment = data['consignment'] as
           | Record<string, unknown>
@@ -223,28 +253,54 @@ export class CourierManagerService {
           const trackingCode = String(
             consignment?.['tracking_code'] || data['tracking_code'] || '',
           );
-          await this.prisma.order.update({
-            where: { id: order.id },
-            data: {
-              courierService: 'steadfast',
-              courierConsignmentId: consignmentId,
-              courierTrackingCode: trackingCode,
-            },
-          });
-          await this.logDispatch({
-            orderId: order.id,
-            courier: 'steadfast',
-            status: 'success',
-            consignmentId,
-            trackingCode,
-            requestPayload: payload,
-            responsePayload: data,
-          });
+          const trackingUrl = String(
+            consignment?.['tracking_link'] || data['tracking_link'] || '',
+          );
+
+          try {
+            await this.prisma.order.update({
+              where: { id: order.id },
+              data: {
+                courierService: 'steadfast',
+                courierConsignmentId: consignmentId,
+                courierTrackingCode: trackingCode,
+              },
+            });
+            await this.prisma.dispatch.upsert({
+              where: {
+                courier_consignmentId: { courier: 'steadfast', consignmentId },
+              },
+              update: { trackingCode, trackingUrl, status: 'DISPATCHED' },
+              create: {
+                orderId: order.id,
+                courier: 'steadfast',
+                consignmentId,
+                trackingCode,
+                trackingUrl,
+                status: 'DISPATCHED',
+              },
+            });
+            await this.logDispatch({
+              orderId: order.id,
+              courier: 'steadfast',
+              status: 'success',
+              consignmentId,
+              trackingCode,
+              requestPayload: payload,
+              responsePayload: data,
+            });
+          } catch (dbErr) {
+            this.logger.error(
+              `Steadfast dispatch succeeded but DB update failed: ${(dbErr as Error).message}`,
+            );
+          }
+
           return { consignmentId, trackingCode };
         }
-        const msg = String(
-          data['message'] || data['error'] || 'Steadfast dispatch failed',
-        );
+        const apiMsg = String(data['message'] || data['error'] || '');
+        const msg = apiMsg
+          ? `Steadfast: ${apiMsg}`
+          : `Steadfast API error (HTTP ${res.status}): ${JSON.stringify(data).slice(0, 200)}`;
         await this.logDispatch({
           orderId: order.id,
           courier: 'steadfast',
@@ -288,7 +344,7 @@ export class CourierManagerService {
 
     const storeId = creds.storeId || creds.credentials?.['storeId'] || '1';
     const recipient = order.customer;
-    const phone = this.normalizePhone(recipient.phoneNumber);
+    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
@@ -300,7 +356,7 @@ export class CourierManagerService {
     const payload: Record<string, unknown> = {
       store_id: parseInt(storeId),
       recipient_name:
-        `${recipient.firstName} ${recipient.lastName}`.trim() || 'Customer',
+        recipient?.name || order.guestName || 'Customer',
       recipient_phone: phone,
       recipient_address: address?.address || 'Dhaka',
       delivery_type: 48,
@@ -446,10 +502,10 @@ export class CourierManagerService {
       throw new BadRequestException('RedX API token not configured');
 
     const recipient = order.customer;
-    const phone = this.normalizePhone(recipient.phoneNumber);
+    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
-    const name = `${recipient.firstName} ${recipient.lastName}`.trim();
+    const name = recipient?.name || order.guestName || 'Customer';
 
     const district = (address?.district as string) || 'Dhaka';
     const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
@@ -553,10 +609,10 @@ export class CourierManagerService {
       throw new BadRequestException('Carrybee credentials not configured');
 
     const recipient = order.customer;
-    const phone = this.normalizePhone(recipient.phoneNumber);
+    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
     const total = Number(order.total);
     const address = order.shippingAddress;
-    const name = `${recipient.firstName} ${recipient.lastName}`.trim();
+    const name = recipient?.name || order.guestName || 'Customer';
 
     const payload = {
       full_name: name || 'Customer',
@@ -773,9 +829,8 @@ export class CourierManagerService {
     const bodyData = orders.map((order) => ({
       invoice: order.displayId,
       recipient_name:
-        `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim() ||
-        'Customer',
-      recipient_phone: this.normalizePhone(order.customer?.phoneNumber),
+        order.customer?.name || order.guestName || 'Customer',
+      recipient_phone: this.normalizePhone(order.customer?.phone || order.guestPhone),
       recipient_address:
         order.shippingAddress?.address ||
         order.shippingAddress?.district ||
@@ -799,18 +854,70 @@ export class CourierManagerService {
       orderId: string;
       consignmentId: string;
       trackingCode: string;
+      trackingUrl: string;
     }[] = [];
     const failedResults: { orderId: string; message: string }[] = [];
 
     for (const result of results) {
       const invoice = result['invoice'] as string;
       const status = result['status'] as string;
-      if (status === 'success' && result['consignment_id']) {
-        successResults.push({
-          orderId: invoice,
-          consignmentId: String(result['consignment_id']),
-          trackingCode: String(result['tracking_code']),
-        });
+      const consignmentId = String(result['consignment_id'] || '');
+      const trackingCode = String(result['tracking_code'] || '');
+      const trackingUrl = String(result['tracking_link'] || '');
+
+      if (status === 'success' && consignmentId) {
+        try {
+          const order = await this.prisma.order.findFirst({
+            where: { displayId: invoice, trashedAt: null },
+            select: { id: true },
+          });
+
+          if (order) {
+            await this.prisma.order.update({
+              where: { id: order.id },
+              data: {
+                courierService: 'steadfast',
+                courierConsignmentId: consignmentId,
+                courierTrackingCode: trackingCode,
+              },
+            });
+
+            await this.prisma.dispatch.upsert({
+              where: {
+                courier_consignmentId: { courier: 'steadfast', consignmentId },
+              },
+              update: { trackingCode, trackingUrl, status: 'DISPATCHED' },
+              create: {
+                orderId: order.id,
+                courier: 'steadfast',
+                consignmentId,
+                trackingCode,
+                trackingUrl,
+                status: 'DISPATCHED',
+              },
+            });
+
+            await this.logDispatch({
+              orderId: order.id,
+              courier: 'steadfast',
+              status: 'success',
+              consignmentId,
+              trackingCode,
+              requestPayload: bodyData,
+              responsePayload: response,
+            });
+          }
+
+          successResults.push({
+            orderId: invoice,
+            consignmentId,
+            trackingCode,
+            trackingUrl,
+          });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Failed to process';
+          failedResults.push({ orderId: invoice, message: msg });
+        }
       } else {
         failedResults.push({
           orderId: invoice,

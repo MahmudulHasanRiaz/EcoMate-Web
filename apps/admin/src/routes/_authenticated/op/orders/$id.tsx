@@ -275,11 +275,15 @@ function OrderDetailPage() {
                 <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
                   {order.status.name}
                 </Badge>
-                {order.courierService && order.courierStatus && (
-                  <Badge variant='outline' className='text-xs flex items-center gap-1'>
-                    <Truck className='h-3 w-3' />{order.courierStatus}
-                  </Badge>
-                )}
+                {order.dispatches && order.dispatches.length > 0 && (() => {
+                  const latestDispatch = order.dispatches[order.dispatches.length - 1]
+                  const ds = DISPATCH_STATUSES.find(d => d.value === latestDispatch.status)
+                  return (
+                    <Badge variant='outline' className={`text-xs flex items-center gap-1 ${ds?.color ? ds.color.replace('bg-', 'text-').replace('-500', '-600') : ''}`}>
+                      <Truck className='h-3 w-3' />{ds?.label || latestDispatch.status}
+                    </Badge>
+                  )
+                })()}
                 {order.trackingUrl && (
                   <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}>
                     <ExternalLink className='h-3 w-3' />

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight, ArrowLeft, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import apiClient from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
@@ -36,6 +36,7 @@ interface OrderData {
   createdAt: string;
   items: OrderItem[];
   shippingAddress: ShippingAddress | null;
+  trackingUrl: string | null;
   shipment: {
     courier?: string;
     trackingCode?: string;
@@ -232,6 +233,28 @@ export default function OrdersPage() {
                 <p className="text-xl font-bold text-[#2ecc71]">{order.status.name}</p>
               </div>
             </div>
+
+            {/* Tracking Button */}
+            {order.trackingUrl && (
+              <a
+                href={order.trackingUrl}
+                target="_blank"
+                className="bg-white rounded-2xl border border-brand-blue p-6 shadow-sm flex items-center justify-between gap-4 hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue">
+                    <Truck size={28} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-800 text-lg">Track Your Parcel</h3>
+                    <p className="text-[14px] text-gray-500">Click to view live tracking on courier website</p>
+                  </div>
+                </div>
+                <div className="text-brand-blue group-hover:translate-x-1 transition-transform">
+                  <ExternalLink size={24} />
+                </div>
+              </a>
+            )}
 
             {/* Tracking Steps from Timeline */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6 md:p-10 shadow-sm">

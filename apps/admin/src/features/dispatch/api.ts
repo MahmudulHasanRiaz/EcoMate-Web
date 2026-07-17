@@ -6,6 +6,7 @@ export interface DispatchResponse {
   courier: string
   consignmentId: string
   trackingCode: string | null
+  trackingUrl: string | null
   status: string
   handedOverAt: string | null
   pickedUpAt: string | null

@@ -12,6 +12,7 @@ import { DispatchService } from './dispatch.service';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('dispatch')
 export class DispatchController {
@@ -61,6 +62,7 @@ export class DispatchController {
   }
 
   @Delete(':id')
+  @Roles('superadmin', 'admin')
   remove(@Param('id') id: string) {
     return this.dispatchService.remove(id);
   }

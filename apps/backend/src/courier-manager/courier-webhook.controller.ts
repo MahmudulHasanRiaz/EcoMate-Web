@@ -44,6 +44,7 @@ export class CourierWebhookController {
       throw new UnauthorizedException('Invalid token');
   }
 
+  @Public()
   @Post('steadfast')
   async steadfast(
     @Body() body: Record<string, unknown>,
@@ -55,6 +56,7 @@ export class CourierWebhookController {
     return this.svc.handleSteadfast(body);
   }
 
+  @Public()
   @Post('pathao')
   async pathao(
     @Body() body: Record<string, unknown>,
@@ -83,6 +85,7 @@ export class CourierWebhookController {
     return this.svc.handlePathao(body);
   }
 
+  @Public()
   @Post('redx')
   async redx(
     @Body() body: Record<string, unknown>,
@@ -104,6 +107,7 @@ export class CourierWebhookController {
     return this.svc.handleRedx(body);
   }
 
+  @Public()
   @Post('carrybee')
   async carrybee(
     @Body() body: Record<string, unknown>,

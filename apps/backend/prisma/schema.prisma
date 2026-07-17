@@ -981,6 +981,7 @@ enum DispatchStatus {
   PICKED_UP
   IN_TRANSIT
   ASSIGNED_TO_RIDER
+  HOLD
   DELIVERED
   PARTIAL
   RETURN_PENDING
@@ -994,6 +995,7 @@ model Dispatch {
   courier        CourierService
   consignmentId  String
   trackingCode   String?
+  trackingUrl    String?
   status         DispatchStatus @default(DISPATCHED)
   handedOverAt   DateTime?
   pickedUpAt     DateTime?

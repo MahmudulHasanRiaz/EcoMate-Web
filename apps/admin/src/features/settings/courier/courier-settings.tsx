@@ -20,8 +20,15 @@ const courierLogos: Record<string, string> = {
 }
 
 const webhookBase = (() => {
-  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/webhooks/courier`
-  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+  const apiUrl = import.meta.env.VITE_API_URL
+  if (apiUrl) {
+    const base = apiUrl.replace(/\/+$/, '')
+    if (base.startsWith('/')) {
+      return `${window.location.origin}${base}/webhooks/courier`
+    }
+    return `${base}/webhooks/courier`
+  }
+  if (typeof window !== 'undefined') {
     return `${window.location.origin}/api/webhooks/courier`
   }
   return '/api/webhooks/courier'
