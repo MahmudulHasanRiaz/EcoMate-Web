@@ -43,11 +43,12 @@ const courierApi = {
 interface CourierFormState {
   enabled: boolean; apiKey: string; secretKey: string; username: string
   password: string; clientId: string; clientSecret: string; storeId: string; mode: string
-  webhookSecret?: string
+  webhookSecret?: string; pathaoIntegrationSecret?: string
 }
 
 interface CourierInfo {
   name: string; color: string; fields: (keyof CourierFormState)[]; guide: string; docUrl?: string
+  integrationField?: keyof CourierFormState
 }
 
 const courierInfo: Record<string, CourierInfo> = {
@@ -62,6 +63,7 @@ const courierInfo: Record<string, CourierInfo> = {
     fields: ['clientId', 'clientSecret', 'username', 'password', 'storeId'],
     guide: 'Get credentials from Pathao Merchant Portal. Store ID found in Store Settings.',
     docUrl: 'https://merchant.pathao.com',
+    integrationField: 'pathaoIntegrationSecret',
   },
   redx: {
     name: 'RedX', color: '#EF4444',
@@ -80,7 +82,7 @@ const courierInfo: Record<string, CourierInfo> = {
 const defaultForm: CourierFormState = {
   enabled: false, apiKey: '', secretKey: '', username: '',
   password: '', clientId: '', clientSecret: '', storeId: '', mode: 'sandbox',
-  webhookSecret: '',
+  webhookSecret: '', pathaoIntegrationSecret: '',
 }
 
 export function CourierSettings() {
@@ -119,6 +121,7 @@ export function CourierSettings() {
           storeId: (c['storeId'] as string) || (c['credentials'] as Record<string, string>)?.['storeId'] || '',
           mode: (c['mode'] as string) || 'sandbox',
           webhookSecret: (c['webhookSecret'] as string) || '',
+          pathaoIntegrationSecret: (c['pathaoIntegrationSecret'] as string) || '',
         }
       }
       setForms(f)
@@ -204,7 +207,7 @@ export function CourierSettings() {
   const fieldLabel: Record<string, string> = {
     apiKey: 'API Key', secretKey: 'Secret Key', username: 'Username',
     password: 'Password', clientId: 'Client ID', clientSecret: 'Client Secret',
-    storeId: 'Store ID',
+    storeId: 'Store ID', pathaoIntegrationSecret: 'Integration Secret (from Pathao)',
   }
 
   return (
@@ -266,6 +269,17 @@ export function CourierSettings() {
                       />
                     </div>
                   ))}
+                  {info.integrationField && (
+                    <div>
+                      <Label className='text-xs'>{fieldLabel[info.integrationField] || info.integrationField}</Label>
+                      <Input
+                        className='h-8 text-sm'
+                        value={String(form[info.integrationField] || '')}
+                        onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [info.integrationField!]: e.target.value } }))}
+                        placeholder='Paste value from Pathao dashboard...'
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <p className='text-[11px] text-muted-foreground leading-relaxed'>

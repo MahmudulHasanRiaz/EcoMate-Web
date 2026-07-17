@@ -78,7 +78,7 @@ export class CourierWebhookController {
 
     res.header(
       'X-Pathao-Merchant-Webhook-Integration-Secret',
-      creds.webhookSecret,
+      creds.pathaoIntegrationSecret || creds.webhookSecret,
     );
     res.status(202);
 

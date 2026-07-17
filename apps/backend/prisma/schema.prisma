@@ -952,6 +952,7 @@ model CourierCredentials {
   clientSecret  String?
   storeId       String?
   webhookSecret String?
+  pathaoIntegrationSecret String?
   credentials   Json?    @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
