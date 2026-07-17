@@ -155,6 +155,21 @@ export function DispatchTable({
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
+      id: 'courierStatus',
+      header: 'Courier Status',
+      cell: ({ row }) => {
+        const cs = row.original.order?.courierStatus
+        return cs ? (
+          <Badge variant='secondary' className='font-mono text-xs max-w-[160px] truncate'>
+            {cs}
+          </Badge>
+        ) : (
+          <span className='text-xs text-muted-foreground'>—</span>
+        )
+      },
+      meta: { className: 'w-32', tdClassName: 'ps-4' },
+    },
+    {
       accessorKey: 'createdAt',
       header: 'Created At',
       cell: ({ row }) => (

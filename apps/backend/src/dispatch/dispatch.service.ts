@@ -119,17 +119,18 @@ export class DispatchService {
           notes: dto.notes,
           flaggedAt: new Date(),
         },
-        include: {
-          order: {
-            select: {
-              id: true,
-              displayId: true,
-              total: true,
-              guestName: true,
-              guestPhone: true,
-            },
+      include: {
+        order: {
+          select: {
+            id: true,
+            displayId: true,
+            total: true,
+            guestName: true,
+            guestPhone: true,
+            courierStatus: true,
           },
         },
+      },
       });
 
       await this.prisma.courierDispatchLog.create({

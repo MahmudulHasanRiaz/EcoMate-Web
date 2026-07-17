@@ -80,6 +80,7 @@ export class CourierWebhookController {
       'X-Pathao-Merchant-Webhook-Integration-Secret',
       creds.webhookSecret,
     );
+    res.status(202);
 
     this.logger.log('Pathao webhook received');
     return this.svc.handlePathao(body);

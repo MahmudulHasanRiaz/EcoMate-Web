@@ -419,10 +419,29 @@ export class CourierManagerService {
           const cId = String(
             (data['data'] as Record<string, unknown>)['consignment_id'],
           );
-          await this.prisma.order.update({
-            where: { id: order.id },
-            data: { courierService: 'pathao', courierConsignmentId: cId },
-          });
+          const trackingUrl = `https://merchant.pathao.com/tracking?consignment_id=${encodeURIComponent(cId)}`;
+          try {
+            await this.prisma.order.update({
+              where: { id: order.id },
+              data: { courierService: 'pathao', courierConsignmentId: cId },
+            });
+            await this.prisma.dispatch.upsert({
+              where: {
+                courier_consignmentId: { courier: 'pathao', consignmentId: cId },
+              },
+              update: { trackingCode: cId, trackingUrl, status: 'DISPATCHED' },
+              create: {
+                orderId: order.id,
+                courier: 'pathao',
+                consignmentId: cId,
+                trackingCode: cId,
+                trackingUrl,
+                status: 'DISPATCHED',
+              },
+            });
+          } catch (dbErr) {
+            this.logger.error(`Pathao dispatch DB save failed: ${(dbErr as Error).message}`);
+          }
           await this.logDispatch({
             orderId: order.id,
             courier: 'pathao',

@@ -15,7 +15,7 @@ export interface DispatchResponse {
   notes: string | null
   createdAt: string
   updatedAt: string
-  order?: { displayId: string; total: number; guestName?: string; guestPhone?: string }
+  order?: { displayId: string; total: number; guestName?: string; guestPhone?: string; courierStatus?: string | null }
 }
 
 export interface DispatchMetricsResponse {

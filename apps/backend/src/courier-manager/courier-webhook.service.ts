@@ -48,8 +48,47 @@ const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
-  PARTIAL: null, // dispatch only — never update order via webhook
+  PARTIAL: null,
   RETURN_PENDING: 'Return Pending',
+  CANCELLED: null,
+};
+
+// Pathao event → DispatchStatus
+const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
+  'order.created': 'DISPATCHED',
+  'order.updated': null,
+  'order.pickup-requested': null,
+  'order.assigned-for-pickup': null,
+  'order.picked': 'PICKED_UP',
+  'order.pickup-failed': null,
+  'order.pickup-cancelled': 'CANCELLED',
+  'order.at-the-sorting-hub': 'IN_TRANSIT',
+  'order.in-transit': 'IN_TRANSIT',
+  'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+  'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
+  'order.delivered': 'DELIVERED',
+  'order.partial-delivery': 'PARTIAL',
+  'order.returned': 'RETURN_PENDING',
+  'order.delivery-failed': null,
+  'order.on-hold': 'HOLD',
+  'order.paid': 'DELIVERED',
+  'order.paid-return': 'RETURN_PENDING',
+  'order.exchanged': 'DELIVERED',
+  'order.return-id-created': 'RETURN_PENDING',
+  'order.return-in-transit': 'RETURN_PENDING',
+  'order.returned-to-merchant': 'RETURNED',
+};
+
+// Pathao DispatchStatus → OrderStatus
+const PATHAO_DISPATCH_TO_ORDER: Record<string, string | null> = {
+  HANDED_OVER: 'Shipping',
+  PICKED_UP: 'Shipping',
+  HOLD: 'Shipping',
+  ASSIGNED_TO_RIDER: 'Shipping',
+  DELIVERED: 'Delivered',
+  PARTIAL: 'Partial',
+  RETURN_PENDING: 'Return Pending',
+  RETURNED: 'Return Pending',
   CANCELLED: null,
 };
 
@@ -99,6 +138,11 @@ export class CourierWebhookService {
       this.logger.log(`Steadfast: ${consignmentId} status "${rawStatus}" → skipped`);
       return { status: 'success', message: 'No status change needed' };
     }
+
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: { courierStatus: rawStatus, courierService: 'steadfast' },
+    });
 
     await this.upsertDispatch(order.id, 'steadfast', consignmentId, dispatchStatus, body);
 
@@ -211,20 +255,30 @@ export class CourierWebhookService {
     return [];
   }
 
-  private async addTimelineEntry(orderId: string, courier: string, status: string) {
+  private async addTimelineEntry(
+    orderId: string,
+    courier: string,
+    status: string,
+    extra?: Record<string, unknown>,
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, trashedAt: null },
     });
     if (!order) return;
+    const entry: Record<string, unknown> = {
+      type: 'courier',
+      courier,
+      status,
+      timestamp: new Date().toISOString(),
+      note: `${courier}: ${status}`,
+    };
+    if (extra?.reason) entry.reason = extra.reason;
+    if (extra?.collected_amount != null) entry.collectedAmount = extra.collected_amount;
+    if (extra?.return_type) entry.returnType = extra.return_type;
+    if (extra?.return_consignment_id) entry.returnConsignmentId = extra.return_consignment_id;
     const timeline = [
       ...((order.timeline as unknown[]) || []),
-      {
-        type: 'courier',
-        courier,
-        status,
-        timestamp: new Date().toISOString(),
-        note: `${courier}: ${status}`,
-      },
+      entry,
     ];
     await this.prisma.order.update({
       where: { id: orderId },
@@ -233,32 +287,63 @@ export class CourierWebhookService {
   }
 
   async handlePathao(body: Record<string, unknown>) {
-    const consignmentId = (body['consignment_id'] || body['data']?.['consignment_id']) as string;
     const event = body['event'] as string;
 
-    if (!consignmentId) return { error: 'Missing consignment_id' };
+    if (event === 'webhook_integration') {
+      this.logger.log('Pathao webhook integration test received');
+      return { status: 'success', message: 'Webhook integration successful' };
+    }
+
+    if (event?.startsWith('store.')) {
+      return { status: 'success', message: 'Store event, no action needed' };
+    }
+
+    const consignmentId = body['consignment_id'] as string;
+    if (!consignmentId) {
+      this.logger.warn('Pathao webhook missing consignment_id');
+      return { status: 'error', message: 'Missing consignment_id' };
+    }
 
     const order = await this.prisma.order.findFirst({
       where: { courierConsignmentId: consignmentId, trashedAt: null },
     });
-    if (!order) return { error: 'Order not found' };
+    if (!order) {
+      this.logger.warn(`Pathao: Order not found for consignment ${consignmentId}`);
+      return { status: 'error', message: 'Order not found' };
+    }
 
-    const mappedStatus = mapPathaoStatus(event);
-    if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
+    let dispatchStatus: string | null = PATHAO_DISPATCH_MAP[event] ?? null;
 
-    if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(`Pathao regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`);
-      return { ok: true, skipped: 'Status regression blocked' };
+    if (['order.pickup-failed', 'order.delivery-failed'].includes(event)) {
+      dispatchStatus = await this.resolveCancelledStatus(order.id);
+    }
+
+    if (!dispatchStatus) {
+      this.logger.log(`Pathao: ${consignmentId} event "${event}" → skipped`);
+      return { status: 'success', message: 'No status change needed' };
     }
 
     await this.prisma.order.update({
       where: { id: order.id },
-      data: { courierStatus: mappedStatus, courierService: 'pathao' },
+      data: { courierStatus: event, courierService: 'pathao' },
     });
-    await this.addTimelineEntry(order.id, 'pathao', mappedStatus);
-    await this.syncToDispatch(order.id, 'pathao', consignmentId, mappedStatus);
-    this.logger.log(`Pathao: ${consignmentId} → ${mappedStatus}`);
-    return { ok: true, status: mappedStatus };
+
+    await this.upsertDispatch(order.id, 'pathao', consignmentId, dispatchStatus, body);
+
+    const extra: Record<string, unknown> = {};
+    if (body['reason']) extra.reason = body['reason'];
+    if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
+    if (body['return_type']) extra.return_type = body['return_type'];
+    if (body['return_consignment_id']) extra.return_consignment_id = body['return_consignment_id'];
+    await this.addTimelineEntry(order.id, 'pathao', dispatchStatus, extra);
+
+    const orderStatusName = PATHAO_DISPATCH_TO_ORDER[dispatchStatus];
+    if (orderStatusName) {
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    this.logger.log(`Pathao: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
+    return { status: 'success', message: 'Webhook received successfully.' };
   }
 
   async handleRedx(body: Record<string, unknown>) {
@@ -446,29 +531,17 @@ const ADVANCED_STATUSES = new Set([
   'Damaged',
 ]);
 
-function mapPathaoStatus(raw?: string | null): string | null {
-  if (!raw) return null;
-  const s = (raw || '').toLowerCase().replace(/[\s-]+/g, '_');
-  if (s === 'order.pickup-cancelled') return null;
-  if (
-    [
-      'order.picked',
-      'order.at-the-sorting-hub',
-      'order.in-transit',
-      'order.received-at-last-mile-hub',
-      'order.assigned-for-delivery',
-      'order.on-hold',
-    ].includes(s)
-  )
-    return 'In Courier';
-  if (s === 'order.delivered') return 'Delivered';
-  if (s === 'order.partial-delivery') return 'Partial Return';
-  if (['order.cancelled', 'order.canceled'].includes(s)) return 'Cancelled';
-  if (
-    ['order.returned', 'order.delivery-failed', 'order.paid-return'].includes(s)
-  )
-    return 'Return Pending';
-  return null;
+function mapToDispatchStatus(status: string): string | null {
+  const map: Record<string, string> = {
+    'In Courier': 'IN_TRANSIT',
+    Delivered: 'DELIVERED',
+    Cancelled: 'CANCELLED',
+    Canceled: 'CANCELLED',
+    'Partial Return': 'PARTIAL',
+    'Return Pending': 'RETURN_PENDING',
+    Returned: 'RETURNED',
+  };
+  return map[status] || null;
 }
 
 function mapRedxStatus(raw?: string | null): string | null {
@@ -528,19 +601,6 @@ function mapCarrybeeStatus(
   if (['delivered', 'complete'].includes(s)) return 'Delivered';
   if (s.includes('return')) return 'Return Pending';
   return null;
-}
-
-function mapToDispatchStatus(status: string): string | null {
-  const map: Record<string, string> = {
-    'In Courier': 'IN_TRANSIT',
-    Delivered: 'DELIVERED',
-    Cancelled: 'CANCELLED',
-    Canceled: 'CANCELLED',
-    'Partial Return': 'PARTIAL',
-    'Return Pending': 'RETURN_PENDING',
-    Returned: 'RETURNED',
-  };
-  return map[status] || null;
 }
 
 export function buildTrackingUrl(
