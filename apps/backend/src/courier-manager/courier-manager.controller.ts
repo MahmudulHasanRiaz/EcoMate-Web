@@ -73,6 +73,7 @@ export class CourierManagerController {
         clientSecret: dto['clientSecret'] as string,
         storeId: dto['storeId'] as string,
         webhookSecret: dto['webhookSecret'] as string,
+        pathaoIntegrationSecret: dto['pathaoIntegrationSecret'] as string,
         credentials: dto['credentials'] || {},
       },
       update: {
@@ -86,6 +87,7 @@ export class CourierManagerController {
         clientSecret: dto['clientSecret'] as string,
         storeId: dto['storeId'] as string,
         webhookSecret: dto['webhookSecret'] as string,
+        pathaoIntegrationSecret: dto['pathaoIntegrationSecret'] as string,
         credentials: dto['credentials'] || {},
       },
     });
