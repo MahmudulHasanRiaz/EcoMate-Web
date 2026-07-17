@@ -134,6 +134,31 @@ const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
   CANCELLED: null,
 };
 
+// RedX webhook status → DispatchStatus
+const REDX_DISPATCH_MAP: Record<string, string | null> = {
+  'ready-for-delivery': 'PICKED_UP',
+  'delivery-in-progress': 'ASSIGNED_TO_RIDER',
+  delivered: 'DELIVERED',
+  'agent-hold': 'HOLD',
+  'agent-returning': 'RETURN_PENDING',
+  returned: 'RETURN_PENDING',
+  'agent-area-change': null,
+};
+
+// RedX DispatchStatus → OrderStatus
+const REDX_DISPATCH_TO_ORDER: Record<string, string | null> = {
+  DISPATCHED: null,
+  HANDED_OVER: 'Shipping',
+  PICKED_UP: 'Shipping',
+  HOLD: 'Shipping',
+  ASSIGNED_TO_RIDER: 'Shipping',
+  DELIVERED: 'Delivered',
+  PARTIAL: 'Partial',
+  RETURN_PENDING: 'Return Pending',
+  RETURNED: 'Return Pending',
+  CANCELLED: null,
+};
+
 @Injectable()
 export class CourierWebhookService {
   private readonly logger = new Logger(CourierWebhookService.name);
@@ -417,27 +442,41 @@ export class CourierWebhookService {
       });
     if (!order) return { error: 'Order not found or not a RedX order' };
 
-    const mappedStatus = mapRedxStatus(status);
-    if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
+    let dispatchStatus: string | null = REDX_DISPATCH_MAP[status] ?? null;
 
-    if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(`RedX regression blocked: ${trackingNumber} ${order.courierStatus} → ${mappedStatus}`);
-      return { ok: true, skipped: 'Status regression blocked' };
+    if (status === 'delivered' && deliveryType === 'partial-delivery') {
+      dispatchStatus = 'PARTIAL';
+    }
+
+    if (!dispatchStatus) {
+      this.logger.log(`RedX: ${trackingNumber || invoiceNumber} status "${status}" → skipped`);
+      return { status: 'success', message: 'No status change needed' };
     }
 
     await this.prisma.order.update({
       where: { id: order.id },
       data: {
-        courierStatus: mappedStatus,
+        courierStatus: status,
         courierTrackingCode: trackingNumber || order.courierTrackingCode,
         courierService: 'redx',
       },
     });
-    await this.addTimelineEntry(order.id, 'redx', mappedStatus);
-    const redxConsignmentId = trackingNumber || invoiceNumber || '';
-    await this.syncToDispatch(order.id, 'redx', redxConsignmentId, mappedStatus);
-    this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → ${mappedStatus}${messageEn ? ` (${messageEn})` : ''}`);
-    return { ok: true, status: mappedStatus, deliveryType };
+
+    const consignmentId = trackingNumber || invoiceNumber || '';
+    await this.upsertDispatch(order.id, 'redx', consignmentId, dispatchStatus, body);
+
+    const extra: Record<string, unknown> = {};
+    if (messageEn) extra.remarks = messageEn;
+    if (deliveryType) extra.delivery_type = deliveryType;
+    await this.addTimelineEntry(order.id, 'redx', dispatchStatus, extra);
+
+    const orderStatusName = REDX_DISPATCH_TO_ORDER[dispatchStatus];
+    if (orderStatusName) {
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}${messageEn ? ` (${messageEn})` : ''}`);
+    return { status: 'success', message: 'Webhook received successfully.' };
   }
 
   async handleCarrybee(body: Record<string, unknown>) {
@@ -498,17 +537,6 @@ export class CourierWebhookService {
     return { status: 'success', message: 'Webhook received successfully.' };
   }
 
-  private isRegression(currentStatus: string, newStatus: string): boolean {
-    if (!currentStatus || !ADVANCED_STATUSES.has(currentStatus)) return false;
-    if (newStatus === 'Cancelled' || newStatus === 'Canceled') return true;
-    if (
-      currentStatus === 'Delivered' &&
-      (newStatus === 'Returned' || newStatus === 'Return Pending')
-    )
-      return false;
-    return false;
-  }
-
   private logWebhookRequest(courier: string, body: Record<string, unknown>) {
     const tracking =
       body['tracking_number'] ||
@@ -524,105 +552,6 @@ export class CourierWebhookService {
       `Webhook ${courier}: tracking=${tracking} invoice=${invoice} status=${body['status'] || body['event'] || 'unknown'}`,
     );
   }
-
-  private async syncToDispatch(
-    orderId: string,
-    courier: string,
-    consignmentId: string,
-    status: string,
-  ) {
-    if (!consignmentId) return;
-    const mappedStatus = mapToDispatchStatus(status);
-    if (!mappedStatus) return;
-
-    const existingDispatch = await this.prisma.dispatch.findUnique({
-      where: {
-        courier_consignmentId: { courier: courier as any, consignmentId },
-      },
-    });
-
-    if (existingDispatch) {
-      await this.prisma.dispatch.update({
-        where: { id: existingDispatch.id },
-        data: { status: mappedStatus as any },
-      });
-    } else {
-      await this.prisma.dispatch.create({
-        data: {
-          orderId,
-          courier: courier as any,
-          consignmentId,
-          status: mappedStatus as any,
-        },
-      });
-    }
-
-    const orderStatusMap: Record<string, string> = {
-      DELIVERED: 'Delivered',
-      PARTIAL: 'Partial',
-      RETURN_PENDING: 'Return Pending',
-    };
-
-    const targetOrderStatusName = orderStatusMap[mappedStatus];
-    if (targetOrderStatusName) {
-      const targetStatus = await this.prisma.orderStatus.findUnique({
-        where: { name: targetOrderStatusName },
-      });
-      if (targetStatus) {
-        await this.ordersService.updateStatus(
-          orderId,
-          { statusId: targetStatus.id },
-          'system',
-        ).catch((e) => {
-          this.logger.warn(`Order ${orderId} status sync to ${targetOrderStatusName} failed: ${(e as Error).message}`);
-        });
-      }
-    }
-  }
-}
-
-const ADVANCED_STATUSES = new Set([
-  'In Courier',
-  'Shipped',
-  'Delivered',
-  'Return Pending',
-  'Partial Return',
-  'Returned',
-  'Damaged',
-]);
-
-function mapToDispatchStatus(status: string): string | null {
-  const map: Record<string, string> = {
-    'In Courier': 'IN_TRANSIT',
-    Delivered: 'DELIVERED',
-    Cancelled: 'CANCELLED',
-    Canceled: 'CANCELLED',
-    'Partial Return': 'PARTIAL',
-    'Return Pending': 'RETURN_PENDING',
-    Returned: 'RETURNED',
-  };
-  return map[status] || null;
-}
-
-function mapRedxStatus(raw?: string | null): string | null {
-  if (!raw) return null;
-  const s = raw.toLowerCase().replace(/[\s-]+/g, '_');
-  if (
-    [
-      'pending',
-      'picked',
-      'in_transit',
-      'ofd',
-      'out_for_delivery',
-      'hold',
-    ].includes(s)
-  )
-    return 'In Courier';
-  if (s === 'delivered') return 'Delivered';
-  if (['cancelled', 'canceled'].includes(s)) return 'Cancelled';
-  if (s === 'partial_delivered') return 'Partial Return';
-  if (s.includes('return')) return 'Return Pending';
-  return null;
 }
 
 export function buildTrackingUrl(

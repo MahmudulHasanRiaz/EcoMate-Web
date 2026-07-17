@@ -585,6 +585,30 @@ export class CourierManagerService {
             requestPayload: payload,
             responsePayload: data,
           });
+          await this.prisma.dispatch.create({
+            data: {
+              orderId: order.id,
+              courier: 'redx',
+              consignmentId: trackingCode,
+              status: 'DISPATCHED',
+            },
+          });
+          const currentOrder = await this.prisma.order.findUnique({
+            where: { id: order.id },
+            select: { timeline: true },
+          });
+          const timeline = ((currentOrder?.timeline as unknown[]) || []);
+          timeline.push({
+            type: 'courier',
+            courier: 'redx',
+            status: 'DISPATCHED',
+            timestamp: new Date().toISOString(),
+            note: 'redx: Parcel created',
+          });
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { timeline: timeline as any },
+          });
           return { trackingCode };
         }
         const msg = String(data['message'] || 'RedX dispatch failed');
