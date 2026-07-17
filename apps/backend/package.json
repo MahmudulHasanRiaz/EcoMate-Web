@@ -118,6 +118,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+  "testEnvironment": "node",
+  "moduleNameMapper": {
+   "^better-auth/crypto$": "<rootDir>/../__mocks__/better-auth-crypto.ts",
+   "^.*better-auth/prisma$": "<rootDir>/../__mocks__/better-auth-prisma.ts"
   }
+ }
 }

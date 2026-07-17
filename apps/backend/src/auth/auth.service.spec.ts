@@ -19,6 +19,7 @@ jest.mock('bcryptjs', () => ({
 }));
 
 import * as bcrypt from 'bcryptjs';
+import { baPrisma } from '../better-auth/prisma';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -78,6 +79,10 @@ describe('AuthService', () => {
               delete: jest.fn(),
               deleteMany: jest.fn(),
             },
+            customerProfile: {
+              upsert: jest.fn(),
+              findUnique: jest.fn(),
+            },
             verificationToken: {
               create: jest.fn(),
               findFirst: jest.fn(),
@@ -123,11 +128,14 @@ describe('AuthService', () => {
 
     it('should register a new user successfully', async () => {
       (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      const baUserCreate = baPrisma.betterAuthUser.create as jest.Mock;
+      baUserCreate.mockResolvedValue({ id: 'ba-user-id' });
       (prisma.userProfile.create as jest.Mock).mockResolvedValue(mockUser);
       (prisma.userSettings.create as jest.Mock).mockResolvedValue({
         id: 'settings-id',
         userId: mockUser.id,
       });
+      (prisma.customerProfile.upsert as jest.Mock).mockResolvedValue({});
       (jwtService.sign as jest.Mock)
         .mockReturnValueOnce('access-token-mock')
         .mockReturnValueOnce('refresh-token-mock');
@@ -149,6 +157,12 @@ describe('AuthService', () => {
         },
       });
       expect(bcrypt.hash).toHaveBeenCalledWith(registerDto.password, 12);
+      expect(baUserCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ email: registerDto.email, role: 'customer' }),
+        }),
+      );
+      expect(baPrisma.betterAuthAccount.create).toHaveBeenCalled();
       expect(prisma.userProfile.create).toHaveBeenCalledWith({
         data: {
           firstName: registerDto.firstName,
@@ -157,11 +171,14 @@ describe('AuthService', () => {
           email: registerDto.email,
           phoneNumber: '+8801712345678',
           password: '$2a$12$hashedpassword',
+          role: 'customer',
+          betterAuthUserId: 'ba-user-id',
         },
       });
       expect(prisma.userSettings.create).toHaveBeenCalledWith({
         data: { userId: mockUser.id },
       });
+      expect(prisma.customerProfile.upsert).toHaveBeenCalled();
       expect(result).toEqual({
         accessToken: 'access-token-mock',
         refreshToken: 'refresh-token-mock',
@@ -253,12 +270,9 @@ describe('AuthService', () => {
     const refreshToken = 'valid-refresh-token';
 
     it('should refresh tokens successfully', async () => {
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
         mockTokenRecord,
       );
-      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
-        count: 1,
-      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(mockUser);
       (jwtService.sign as jest.Mock)
         .mockReturnValueOnce('new-access-token')
@@ -270,18 +284,15 @@ describe('AuthService', () => {
 
       const result = await service.refresh(userId, refreshToken);
 
-      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
+      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
         where: { token: refreshToken },
-      });
-      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { id: mockTokenRecord.id },
       });
       expect(result.accessToken).toBe('new-access-token');
       expect(result.refreshToken).toBe('new-refresh-token');
     });
 
     it('should throw UnauthorizedException if refresh token not found', async () => {
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(null);
 
       await expect(service.refresh(userId, 'invalid-token')).rejects.toThrow(
         UnauthorizedException,
@@ -292,28 +303,19 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if refresh token is expired', async () => {
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
         mockExpiredToken,
       );
-      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
-        count: 1,
-      });
 
       await expect(service.refresh(userId, 'expired-token')).rejects.toThrow(
         UnauthorizedException,
       );
-      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { id: mockExpiredToken.id },
-      });
     });
 
     it('should throw UnauthorizedException if user not found after token valid', async () => {
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
         mockTokenRecord,
       );
-      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
-        count: 1,
-      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.refresh(userId, refreshToken)).rejects.toThrow(
@@ -323,12 +325,29 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('should logout and clear refresh tokens', async () => {
+    it('should logout and clear all refresh tokens for device', async () => {
       (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
         count: 2,
       });
 
-      const result = await service.logout('user-id-1');
+      const result = await service.logout('user-id-1', 'some-token');
+
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: 'some-token', userId: 'user-id-1' },
+      });
+      expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('should logout from all devices', async () => {
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 3,
+      });
+
+      const result = await service.logout(
+        'user-id-1',
+        undefined,
+        true,
+      );
 
       expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-id-1' },

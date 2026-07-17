@@ -374,6 +374,11 @@ describe('UsersService', () => {
   describe('bulkDelete', () => {
     it('should delete multiple users', async () => {
       const ids = ['user-id-1', 'user-id-2', 'user-id-3'];
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([
+        { id: 'user-id-1', betterAuthUserId: 'ba-1' },
+        { id: 'user-id-2', betterAuthUserId: 'ba-2' },
+        { id: 'user-id-3', betterAuthUserId: null },
+      ]);
       (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({
         count: 3,
       });
@@ -387,6 +392,7 @@ describe('UsersService', () => {
     });
 
     it('should handle empty array without error', async () => {
+      (prisma.userProfile.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.userProfile.deleteMany as jest.Mock).mockResolvedValue({
         count: 0,
       });

@@ -12,10 +12,12 @@ import { SecurityService } from '../security/security.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../stock/costing-lot.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
   let prisma: PrismaService;
+  let module: TestingModule;
 
   const mockInitialStatus = {
     id: 'status-pending',
@@ -91,7 +93,7 @@ describe('OrdersService', () => {
   };
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         OrdersService,
         {
@@ -197,6 +199,10 @@ describe('OrdersService', () => {
             costingLotRestoration: {
               findFirst: jest.fn().mockResolvedValue(null),
             },
+            orderStockCycle: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'cycle-1' }),
+            },
             userProfile: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -283,6 +289,12 @@ describe('OrdersService', () => {
           provide: CostingLotService,
           useValue: {
             restoreForReturn: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CancelReturnStockService,
+          useValue: {
+            restoreForOrder: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -616,7 +628,7 @@ describe('OrdersService', () => {
       expect(prisma.order.findUnique).toHaveBeenCalledWith({
         where: { id: 'order-id-1' },
         include: {
-          items: { include: { product: { select: { id: true, name: true } } } },
+          items: { include: { product: { select: { id: true, name: true, availabilityMode: true } } } },
         },
       });
       expect(prisma.order.update).toHaveBeenCalled();
@@ -737,98 +749,18 @@ describe('OrdersService', () => {
     });
   });
 
-  describe('releaseStockForCancelledOrder and handleReturnedSideEffects', () => {
-    let mockOrderForCancel: any;
-
-    beforeEach(() => {
-      mockOrderForCancel = {
-        id: 'order-id-1',
-        displayId: 'ORD-250115-0001',
-        items: [
-          {
-            id: 'item-id-1',
-            orderId: 'order-id-1',
-            productId: 'prod-1',
-            variantId: 'variant-1',
-            quantity: 2,
-            price: 1000,
-            managedStockReserved: true,
-            managedStockDeducted: true,
-            product: {
-              id: 'prod-1',
-              availabilityMode: 'MANAGED_STOCK',
-              manageStock: true,
-              type: 'PHYSICAL',
-              warehouseId: 'wh-1',
-              syncManagedStock: true,
-            },
-            variant: { id: 'variant-1' },
-          },
-        ],
-      };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
-        availabilityMode: 'MANAGED_STOCK',
-        warehouseId: 'wh-1',
-        syncManagedStock: true,
-      });
-      (prisma.physicalReservation.findUnique as jest.Mock).mockResolvedValue({
-        status: 'CONSUMED',
-      });
-    });
-
-    it('should restore managed stock if managedStockDeducted is true in releaseStockForCancelledOrder', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrderForCancel);
-      const resolveAndApplyStockSpy = jest.spyOn(service as any, 'resolveAndApplyStock').mockResolvedValue(undefined);
-
-      await (service as any).releaseStockForCancelledOrder('order-id-1', prisma);
-
-      expect(resolveAndApplyStockSpy).toHaveBeenCalledWith(
-        'add',
-        'prod-1',
-        'variant-1',
-        2,
-        'cancel-order-id-1',
-        prisma,
-        expect.objectContaining({ ledgerType: 'CANCEL_RELEASE' }),
-      );
-    });
-
-    it('should release managed stock reservation if managedStockReserved is true and managedStockDeducted is false', async () => {
-      mockOrderForCancel.items[0].managedStockDeducted = false;
-      (prisma.physicalReservation.findUnique as jest.Mock).mockResolvedValue({
-        status: 'ACTIVE',
-      });
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrderForCancel);
-      const resolveAndApplyStockSpy = jest.spyOn(service as any, 'resolveAndApplyStock').mockResolvedValue(undefined);
-
-      await (service as any).releaseStockForCancelledOrder('order-id-1', prisma);
-
-      expect(resolveAndApplyStockSpy).toHaveBeenCalledWith(
-        'release',
-        'prod-1',
-        'variant-1',
-        2,
-        'cancel-order-id-1',
-        prisma,
-        expect.any(Object),
-      );
-    });
-
-    it('should restore managed stock if managedStockDeducted is true in handleReturnedSideEffects', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrderForCancel);
-      const resolveAndApplyStockSpy = jest.spyOn(service as any, 'resolveAndApplyStock').mockResolvedValue(undefined);
+  describe('handleReturnedSideEffects', () => {
+    it('should call cancelReturnStock.restoreForOrder', async () => {
+      const cancelReturnStock = module.get<CancelReturnStockService>(CancelReturnStockService);
 
       await (service as any).handleReturnedSideEffects(prisma, 'order-id-1');
 
-      expect(resolveAndApplyStockSpy).toHaveBeenCalledWith(
-        'add',
-        'prod-1',
-        'variant-1',
-        2,
-        'return-order-id-1',
-        prisma,
-        expect.objectContaining({ ledgerType: 'RETURN' }),
-      );
+      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith({
+        orderId: 'order-id-1',
+        referencePrefix: 'return',
+        performedBy: undefined,
+        tx: prisma,
+      });
     });
   });
 });

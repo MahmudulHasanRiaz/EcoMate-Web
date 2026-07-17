@@ -56,7 +56,7 @@ describe('DispatchService', () => {
 
   it('should return dispatches list', async () => {
     const result = await service.findAll({});
-    expect(result).toEqual([]);
+    expect(result).toEqual({ data: [], total: 0 });
     expect(prisma.dispatch.findMany).toHaveBeenCalled();
   });
 
