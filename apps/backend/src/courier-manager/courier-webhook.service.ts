@@ -92,6 +92,48 @@ const PATHAO_DISPATCH_TO_ORDER: Record<string, string | null> = {
   CANCELLED: null,
 };
 
+// Carrybee event → DispatchStatus
+const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
+  'order.created': 'DISPATCHED',
+  'order.create-failed': 'CANCELLED',
+  'order.updated': null,
+  'order.pickup-requested': null,
+  'order.assigned-for-pickup': null,
+  'order.picked': 'PICKED_UP',
+  'order.pickup-failed': null,
+  'order.pickup-cancelled': 'CANCELLED',
+  'order.at-the-sorting-hub': 'IN_TRANSIT',
+  'order.on-the-way-to-central-warehouse': 'IN_TRANSIT',
+  'order.at-central-warehouse': 'IN_TRANSIT',
+  'order.in-transit': 'IN_TRANSIT',
+  'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+  'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
+  'order.delivery-on-hold': 'HOLD',
+  'order.delivered': 'DELIVERED',
+  'order.partial-delivery': 'PARTIAL',
+  'order.delivery-failed': null,
+  'order.returned': 'RETURN_PENDING',
+  'order.paid-return': 'RETURN_PENDING',
+  'order.exchange': 'DELIVERED',
+  'order.paid': 'DELIVERED',
+  'order.returned-at-sorting': 'RETURN_PENDING',
+  'order.returned-in-transit': 'RETURN_PENDING',
+  'order.returned-to-merchant': 'RETURNED',
+};
+
+// Carrybee DispatchStatus → OrderStatus
+const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
+  HANDED_OVER: 'Shipping',
+  PICKED_UP: 'Shipping',
+  HOLD: 'Shipping',
+  ASSIGNED_TO_RIDER: 'Shipping',
+  DELIVERED: 'Delivered',
+  PARTIAL: 'Partial',
+  RETURN_PENDING: 'Return Pending',
+  RETURNED: 'Return Pending',
+  CANCELLED: null,
+};
+
 @Injectable()
 export class CourierWebhookService {
   private readonly logger = new Logger(CourierWebhookService.name);
@@ -276,6 +318,10 @@ export class CourierWebhookService {
     if (extra?.collected_amount != null) entry.collectedAmount = extra.collected_amount;
     if (extra?.return_type) entry.returnType = extra.return_type;
     if (extra?.return_consignment_id) entry.returnConsignmentId = extra.return_consignment_id;
+    if (extra?.remarks) entry.remarks = extra.remarks;
+    if (extra?.attempt != null) entry.attempt = extra.attempt;
+    if (extra?.agent_name) entry.agentName = extra.agent_name;
+    if (extra?.agent_phone) entry.agentPhone = extra.agent_phone;
     const timeline = [
       ...((order.timeline as unknown[]) || []),
       entry,
@@ -395,47 +441,61 @@ export class CourierWebhookService {
   }
 
   async handleCarrybee(body: Record<string, unknown>) {
-    const consignmentId = body['consignment_id'] as string;
     const event = body['event'] as string;
-    const deliveryStatus = body['delivery_status'] as string;
-    const orderNumber = body['merchant_order_id'] as string;
 
-    let order: {
-      id: string;
-      courierStatus: string | null;
-      courierTrackingCode: string | null;
-      courierConsignmentId: string | null;
-    } | null = null;
-    if (consignmentId)
-      order = await this.prisma.order.findFirst({
-        where: { courierConsignmentId: consignmentId, trashedAt: null },
-      });
-    if (!order && orderNumber)
-      order = await this.prisma.order.findFirst({
-        where: { displayId: orderNumber, trashedAt: null },
-      });
-    if (!order) return { error: 'Order not found' };
+    if (event === 'webhook_integration') {
+      this.logger.log('Carrybee webhook integration test received');
+      return { status: 'success', message: 'Webhook integration successful' };
+    }
 
-    const mappedStatus = mapCarrybeeStatus(event, deliveryStatus);
-    if (!mappedStatus) return { ok: true, skipped: 'No status change needed' };
+    const consignmentId = body['consignment_id'] as string;
+    if (!consignmentId) {
+      this.logger.warn('Carrybee webhook missing consignment_id');
+      return { status: 'error', message: 'Missing consignment_id' };
+    }
 
-    if (this.isRegression(order.courierStatus || '', mappedStatus)) {
-      this.logger.warn(`Carrybee regression blocked: ${consignmentId} ${order.courierStatus} → ${mappedStatus}`);
-      return { ok: true, skipped: 'Status regression blocked' };
+    const order = await this.prisma.order.findFirst({
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
+    });
+    if (!order) {
+      this.logger.warn(`Carrybee: Order not found for consignment ${consignmentId}`);
+      return { status: 'error', message: 'Order not found' };
+    }
+
+    let dispatchStatus: string | null = CARRYBEE_DISPATCH_MAP[event] ?? null;
+
+    if (['order.pickup-failed', 'order.delivery-failed'].includes(event)) {
+      dispatchStatus = await this.resolveCancelledStatus(order.id);
+    }
+
+    if (!dispatchStatus) {
+      this.logger.log(`Carrybee: ${consignmentId} event "${event}" → skipped`);
+      return { status: 'success', message: 'No status change needed' };
     }
 
     await this.prisma.order.update({
       where: { id: order.id },
-      data: {
-        courierStatus: mappedStatus,
-        courierConsignmentId: consignmentId || order.courierConsignmentId,
-        courierService: 'carrybee',
-      },
+      data: { courierStatus: event, courierService: 'carrybee' },
     });
-    await this.addTimelineEntry(order.id, 'carrybee', mappedStatus);
-    await this.syncToDispatch(order.id, 'carrybee', consignmentId || '', mappedStatus);
-    this.logger.log(`Carrybee: ${consignmentId || orderNumber} → ${mappedStatus}`);
-    return { ok: true, status: mappedStatus };
+
+    await this.upsertDispatch(order.id, 'carrybee', consignmentId, dispatchStatus, body);
+
+    const extra: Record<string, unknown> = {};
+    if (body['reason']) extra.reason = body['reason'];
+    if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
+    if (body['remarks']) extra.remarks = body['remarks'];
+    if (body['attempt'] != null) extra.attempt = body['attempt'];
+    if (body['agent_name']) extra.agent_name = body['agent_name'];
+    if (body['agent_phone']) extra.agent_phone = body['agent_phone'];
+    await this.addTimelineEntry(order.id, 'carrybee', dispatchStatus, extra);
+
+    const orderStatusName = CARRYBEE_DISPATCH_TO_ORDER[dispatchStatus];
+    if (orderStatusName) {
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    this.logger.log(`Carrybee: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
+    return { status: 'success', message: 'Webhook received successfully.' };
   }
 
   private isRegression(currentStatus: string, newStatus: string): boolean {
@@ -561,44 +621,6 @@ function mapRedxStatus(raw?: string | null): string | null {
   if (s === 'delivered') return 'Delivered';
   if (['cancelled', 'canceled'].includes(s)) return 'Cancelled';
   if (s === 'partial_delivered') return 'Partial Return';
-  if (s.includes('return')) return 'Return Pending';
-  return null;
-}
-
-function mapCarrybeeStatus(
-  event?: string | null,
-  deliveryStatus?: string | null,
-): string | null {
-  const raw = event || deliveryStatus;
-  if (!raw) return null;
-  const slug = raw.toLowerCase().replace(/[\s-]+/g, '-');
-  if (slug === 'order.pickup-cancelled') return null;
-  if (
-    [
-      'order.picked',
-      'order.assigned-for-pickup',
-      'order.pickup-requested',
-    ].includes(slug)
-  )
-    return 'In Courier';
-  if (slug === 'order.delivered') return 'Delivered';
-  if (slug === 'order.partial-delivery') return 'Partial Return';
-  if (['order.cancelled', 'order.canceled'].includes(slug)) return 'Cancelled';
-  if (
-    [
-      'order.delivery-failed',
-      'order.returned',
-      'order.returned-at-sorting',
-      'order.returned-to-merchant',
-    ].includes(slug)
-  )
-    return 'Return Pending';
-  const s = (deliveryStatus || '').toLowerCase().replace(/[\s-]+/g, '_');
-  if (
-    ['pending', 'picked', 'in_transit', 'ofd', 'out_for_delivery'].includes(s)
-  )
-    return 'In Courier';
-  if (['delivered', 'complete'].includes(s)) return 'Delivered';
   if (s.includes('return')) return 'Return Pending';
   return null;
 }

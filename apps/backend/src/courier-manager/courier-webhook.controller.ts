@@ -113,9 +113,24 @@ export class CourierWebhookController {
   async carrybee(
     @Body() body: Record<string, unknown>,
     @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const authHeader = req.headers['authorization'];
-    await this.validateWebhookToken('carrybee', authHeader);
+    const signature = req.headers['x-carrybee-webhook-signature'] as string | undefined;
+    if (!signature)
+      throw new UnauthorizedException('Missing X-Carrybee-Webhook-Signature header');
+
+    const creds = await this.prisma.courierCredentials.findUnique({
+      where: { courier: 'carrybee' },
+    });
+    if (!creds?.webhookSecret)
+      throw new UnauthorizedException('Carrybee webhook not configured');
+
+    if (signature !== creds.webhookSecret)
+      throw new UnauthorizedException('Invalid X-Carrybee-Webhook-Signature');
+
+    res.header('X-CB-Webhook-Integration-Header', creds.webhookSecret);
+    res.status(202);
+
     this.logger.log('Carrybee webhook received');
     return this.svc.handleCarrybee(body);
   }
