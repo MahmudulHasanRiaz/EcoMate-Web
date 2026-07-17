@@ -24,7 +24,7 @@ export class DeliveryAreasController {
       nameBn: d.nameBn,
       charge: charges[d.name] ?? null,
       thanaCount: d.thanas.length,
-    }));
+    })).sort((a, b) => (a.nameBn ?? a.name).localeCompare(b.nameBn ?? b.name, 'bn'));
   }
 
   private async getCachedCharges(): Promise<Record<string, number>> {
@@ -55,6 +55,8 @@ export class DeliveryAreasController {
         d.name.toLowerCase() === decodeURIComponent(district).toLowerCase(),
     );
     if (!found) throw new NotFoundException('District not found');
-    return found.thanas.map((t) => ({ name: t.name, nameBn: t.nameBn }));
+    return found.thanas
+      .map((t) => ({ name: t.name, nameBn: t.nameBn }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 }
