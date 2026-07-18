@@ -46,7 +46,7 @@ const courierApi = {
 interface CourierFormState {
   enabled: boolean; apiKey: string; secretKey: string; username: string
   password: string; clientId: string; clientSecret: string; clientContext: string
-  storeId: string; mode: string
+  storeId: string; shopId: string; mode: string
   webhookSecret?: string; pathaoIntegrationSecret?: string
 }
 
@@ -71,8 +71,8 @@ const courierInfo: Record<string, CourierInfo> = {
   },
   redx: {
     name: 'RedX', color: '#EF4444',
-    fields: ['apiKey'],
-    guide: 'API Access Token from RedX Merchant Dashboard → Developer API.',
+    fields: ['apiKey', 'username', 'password', 'shopId'],
+    guide: 'API Access Token from RedX Merchant Dashboard → Developer API. Username/Password for merchant login. Shop ID found in dashboard settings.',
     docUrl: 'https://redx.com.bd/developer-api/',
   },
   carrybee: {
@@ -86,7 +86,7 @@ const courierInfo: Record<string, CourierInfo> = {
 const defaultForm: CourierFormState = {
   enabled: false, apiKey: '', secretKey: '', username: '',
   password: '', clientId: '', clientSecret: '', clientContext: '',
-  storeId: '', mode: 'sandbox',
+  storeId: '', shopId: '', mode: 'sandbox',
   webhookSecret: '', pathaoIntegrationSecret: '',
 }
 
@@ -125,6 +125,7 @@ export function CourierSettings() {
           clientSecret: (c['clientSecret'] as string) || (c['credentials'] as Record<string, string>)?.['clientSecret'] || '',
           clientContext: (c['clientContext'] as string) || (c['credentials'] as Record<string, string>)?.['clientContext'] || '',
           storeId: (c['storeId'] as string) || (c['credentials'] as Record<string, string>)?.['storeId'] || '',
+          shopId: (c['shopId'] as string) || (c['credentials'] as Record<string, string>)?.['shopId'] || '',
           mode: (c['mode'] as string) || 'sandbox',
           webhookSecret: (c['webhookSecret'] as string) || '',
           pathaoIntegrationSecret: (c['pathaoIntegrationSecret'] as string) || '',
@@ -227,6 +228,7 @@ export function CourierSettings() {
     apiKey: 'API Key', secretKey: 'Secret Key', username: 'Username (Merchant Login)',
     password: 'Password (Merchant Login)', clientId: 'Client ID', clientSecret: 'Client Secret',
     clientContext: 'Client Context', storeId: 'Store ID',
+    shopId: 'Shop ID',
     pathaoIntegrationSecret: 'Integration Secret (from Pathao)',
   }
 

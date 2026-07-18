@@ -952,6 +952,7 @@ model CourierCredentials {
   clientSecret  String?
   clientContext String?
   storeId       String?
+  shopId        String?
   webhookSecret String?
   pathaoIntegrationSecret String?
   credentials   Json?    @default("{}")

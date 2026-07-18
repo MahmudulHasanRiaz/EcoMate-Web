@@ -241,27 +241,61 @@ export class CourierCustomerHistoryService {
   private async fetchRedx(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('redx');
     if (!creds?.enabled) return null;
-    const apiToken = creds.apiKey || (creds.credentials as any)?.apiKey;
-    if (!apiToken) return null;
 
-    const dataRes = await this.fetchWithTimeout(
-      `https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate?phoneNumber=88${phone}`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Accept': 'application/json, text/plain, */*',
-          'Content-Type': 'application/json',
-          'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
+    const loginPhone = creds.username || (creds.credentials as any)?.username;
+    const loginPassword = creds.password || (creds.credentials as any)?.password;
+    const shopId = creds.shopId || (creds.credentials as any)?.shopId;
+
+    if (!loginPhone || !loginPassword || !shopId) return null;
+
+    try {
+      const loginRes = await this.fetchWithTimeout('https://api.redx.com.bd/v4/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ phone: `88${loginPhone.replace(/^0/, '')}`, password: loginPassword }),
+      });
+      if (!loginRes.ok) return null;
+      const loginData = await loginRes.json();
+      const accessToken = (loginData as any)?.data?.accessToken || (loginData as any)?.accessToken;
+      if (!accessToken) return null;
+
+      const dataRes = await this.fetchWithTimeout(
+        `https://api.redx.com.bd/v1/logistics/customer-parcel-requests/${shopId}?customerPhone=${phone}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'x-access-token': accessToken,
+          },
         },
-      },
-    );
-    if (!dataRes.ok) return null;
-    const data = await dataRes.json();
-    const d = (data as any)?.data;
-    const success = Number(d?.deliveredParcels ?? 0);
-    const total = Number(d?.totalParcels ?? 0);
-    const cancel = Math.max(0, total - success);
-    return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0 };
+      );
+      if (!dataRes.ok) return null;
+      const data = await dataRes.json();
+      const body = (data as any)?.body ?? data;
+      const parcels = body?.data ?? body?.parcels ?? (Array.isArray(body) ? body : null);
+      if (Array.isArray(parcels) && parcels.length > 0) {
+        let delivered = 0, cancelled = 0;
+        for (const p of parcels) {
+          const status = (p.status || '').toLowerCase();
+          if (status.includes('delivered') || status === 'completed') delivered++;
+          else if (status.includes('cancel') || status.includes('return')) cancelled++;
+        }
+        const total = parcels.length;
+        return { success: delivered, cancel: cancelled, total, successRatio: Math.round((delivered / total) * 10000) / 100 };
+      }
+      const d = (body as any)?.data ?? body;
+      const success = Number(d?.deliveredParcels ?? d?.delivered ?? d?.success ?? 0);
+      const total = Number(d?.totalParcels ?? d?.total ?? 0);
+      if (total > 0) {
+        const cancel = Number(d?.cancelledParcels ?? d?.cancelled ?? d?.cancel ?? Math.max(0, total - success));
+        return { success, cancel, total, successRatio: Math.round((success / total) * 10000) / 100 };
+      }
+      return null;
+    } catch (e) {
+      this.logger.error(`RedX error for ${phone}: ${(e as Error).message}`);
+      return null;
+    }
   }
 
   private parseCookies(resp: Response): Map<string, string> {
