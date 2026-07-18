@@ -648,6 +648,8 @@ export class CourierManagerService {
     const clientId = creds.clientId || creds.credentials?.['clientId'];
     const clientSecret =
       creds.clientSecret || creds.credentials?.['clientSecret'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
     if (!clientId || !clientSecret)
       throw new BadRequestException('Carrybee credentials not configured');
 
@@ -678,7 +680,7 @@ export class CourierManagerService {
           'Content-Type': 'application/json',
           'Client-ID': clientId,
           'Client-Secret': clientSecret,
-          'Client-Context': 'merchant',
+          'Client-Context': clientContext,
         },
         body: JSON.stringify(payload),
       });
@@ -1123,13 +1125,15 @@ export class CourierManagerService {
     const base =
       BASE_URLS['carrybee']?.[creds.mode] ||
       BASE_URLS['carrybee']?.['production'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
     const parsed: Record<string, unknown> = await this.jsonFetch(
       `${base}/api/v2/cities`,
       {
         headers: {
           'Client-ID': creds.clientId,
           'Client-Secret': creds.clientSecret,
-          'Client-Context': 'merchant',
+          'Client-Context': clientContext,
         },
       },
     );
@@ -1148,13 +1152,15 @@ export class CourierManagerService {
     const base =
       BASE_URLS['carrybee']?.[creds.mode] ||
       BASE_URLS['carrybee']?.['production'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
     const parsed: Record<string, unknown> = await this.jsonFetch(
       `${base}/api/v2/cities/${cityId}/zones`,
       {
         headers: {
           'Client-ID': creds.clientId,
           'Client-Secret': creds.clientSecret,
-          'Client-Context': 'merchant',
+          'Client-Context': clientContext,
         },
       },
     );

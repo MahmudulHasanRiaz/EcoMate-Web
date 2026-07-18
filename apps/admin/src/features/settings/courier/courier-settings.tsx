@@ -45,7 +45,8 @@ const courierApi = {
 
 interface CourierFormState {
   enabled: boolean; apiKey: string; secretKey: string; username: string
-  password: string; clientId: string; clientSecret: string; storeId: string; mode: string
+  password: string; clientId: string; clientSecret: string; clientContext: string
+  storeId: string; mode: string
   webhookSecret?: string; pathaoIntegrationSecret?: string
 }
 
@@ -71,20 +72,21 @@ const courierInfo: Record<string, CourierInfo> = {
   redx: {
     name: 'RedX', color: '#EF4444',
     fields: ['apiKey'],
-    guide: 'Get your API token from RedX Merchant Dashboard → API Settings. Use as API Key.',
+    guide: 'API Access Token from RedX Merchant Dashboard → Developer API.',
     docUrl: 'https://redx.com.bd/developer-api/',
   },
   carrybee: {
     name: 'Carrybee', color: '#8B5CF6',
-    fields: ['clientId', 'clientSecret'],
-    guide: 'Get Client ID and Client Secret from Carrybee Developer Portal.',
+    fields: ['clientId', 'clientSecret', 'clientContext', 'username', 'password', 'storeId'],
+    guide: 'Client ID/Secret/Context from Carrybee Developer Portal → Applications. Username/Password for merchant portal login (customer history). Store ID for dispatch.',
     docUrl: 'https://developers.carrybee.com',
   },
 }
 
 const defaultForm: CourierFormState = {
   enabled: false, apiKey: '', secretKey: '', username: '',
-  password: '', clientId: '', clientSecret: '', storeId: '', mode: 'sandbox',
+  password: '', clientId: '', clientSecret: '', clientContext: '',
+  storeId: '', mode: 'sandbox',
   webhookSecret: '', pathaoIntegrationSecret: '',
 }
 
@@ -121,6 +123,7 @@ export function CourierSettings() {
           password: (c['password'] as string) || (c['credentials'] as Record<string, string>)?.['password'] || '',
           clientId: (c['clientId'] as string) || (c['credentials'] as Record<string, string>)?.['clientId'] || '',
           clientSecret: (c['clientSecret'] as string) || (c['credentials'] as Record<string, string>)?.['clientSecret'] || '',
+          clientContext: (c['clientContext'] as string) || (c['credentials'] as Record<string, string>)?.['clientContext'] || '',
           storeId: (c['storeId'] as string) || (c['credentials'] as Record<string, string>)?.['storeId'] || '',
           mode: (c['mode'] as string) || 'sandbox',
           webhookSecret: (c['webhookSecret'] as string) || '',
@@ -221,9 +224,10 @@ export function CourierSettings() {
   }
 
   const fieldLabel: Record<string, string> = {
-    apiKey: 'API Key', secretKey: 'Secret Key', username: 'Username',
-    password: 'Password', clientId: 'Client ID', clientSecret: 'Client Secret',
-    storeId: 'Store ID', pathaoIntegrationSecret: 'Integration Secret (from Pathao)',
+    apiKey: 'API Key', secretKey: 'Secret Key', username: 'Username (Merchant Login)',
+    password: 'Password (Merchant Login)', clientId: 'Client ID', clientSecret: 'Client Secret',
+    clientContext: 'Client Context', storeId: 'Store ID',
+    pathaoIntegrationSecret: 'Integration Secret (from Pathao)',
   }
 
   return (

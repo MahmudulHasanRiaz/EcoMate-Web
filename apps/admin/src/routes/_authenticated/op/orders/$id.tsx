@@ -7,6 +7,7 @@ import { SafeImage } from '@/components/safe-image'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { CustomerViewCard } from '@/features/orders/customer-view-card'
+import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
@@ -89,7 +90,6 @@ function OrderDetailPage() {
   const [statusNote, setStatusNote] = useState('')
 
   // ── Collapsible sidebar panels ────────────────────────────────────
-  const [showCustomerHistory, setShowCustomerHistory] = useState(false)
   const [showCourier, setShowCourier] = useState(false)
 
   // ── Dispatch ─────────────────────────────────────────────────────
@@ -275,7 +275,7 @@ function OrderDetailPage() {
                 <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
                   {order.status.name}
                 </Badge>
-                {order.dispatches && order.dispatches.length > 0 && (() => {
+                {order.dispatches?.length > 0 && (() => {
                   const latestDispatch = order.dispatches[order.dispatches.length - 1]
                   const ds = DISPATCH_STATUSES.find(d => d.value === latestDispatch.status)
                   return (
@@ -646,12 +646,12 @@ function OrderDetailPage() {
               </Card>
 
               {/* Dispatch History */}
-              {order.dispatches && order.dispatches.length > 0 && (
-                <Card>
-                  <CardHeader className='pb-2'>
-                    <CardTitle className='text-sm font-semibold flex items-center gap-1.5'><Truck className='h-4 w-4' /> Dispatch History</CardTitle>
-                  </CardHeader>
-                  <CardContent className='p-0'>
+              <Card>
+                <CardHeader className='pb-2'>
+                  <CardTitle className='text-sm font-semibold flex items-center gap-1.5'><Truck className='h-4 w-4' /> Dispatch History</CardTitle>
+                </CardHeader>
+                <CardContent className='p-0'>
+                  {order.dispatches && order.dispatches.length > 0 ? (
                     <div className='overflow-x-auto'>
                     <Table>
                       <TableHeader>
@@ -681,9 +681,14 @@ function OrderDetailPage() {
                       </TableBody>
                     </Table>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  ) : (
+                    <div className='flex items-center justify-center py-6 text-sm text-muted-foreground'>
+                      <Truck className='h-4 w-4 mr-2 text-muted-foreground/50' />
+                      Not yet dispatched to courier
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             {/* ════ RIGHT COLUMN (1/3) ════ */}
@@ -820,29 +825,65 @@ function OrderDetailPage() {
 
               {/* Customer Order History */}
               <Card>
-                <CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCustomerHistory(!showCustomerHistory)}>
-                  <CardTitle className='text-sm font-semibold flex items-center justify-between'>
-                    <span className='flex items-center gap-1.5'><User className='h-3.5 w-3.5' /> Customer History</span>
-                    {showCustomerHistory ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+                <CardHeader className='pb-2'>
+                  <CardTitle className='text-sm font-semibold flex items-center gap-1.5'>
+                    <User className='h-3.5 w-3.5' /> Customer History
                   </CardTitle>
                 </CardHeader>
-                {showCustomerHistory && customerSummary?.customer ? (
-                  <CardContent className='pt-0'>
-                    <div className='grid grid-cols-2 gap-2 text-sm'>
-                      <div className='bg-muted/50 rounded p-2 text-center'>
-                        <p className='text-lg font-bold'>{customerSummary.summary.totalOrders}</p>
-                        <p className='text-xs text-muted-foreground'>Orders</p>
+                <CardContent className='pt-0 space-y-3'>
+                  {customerSummary?.customer ? (
+                    <>
+                      <div className='grid grid-cols-3 gap-2 text-sm'>
+                        <div className='bg-muted/50 rounded p-2 text-center'>
+                          <p className='text-lg font-bold'>{customerSummary.summary.totalOrders}</p>
+                          <p className='text-xs text-muted-foreground'>Orders</p>
+                        </div>
+                        <div className='bg-muted/50 rounded p-2 text-center'>
+                          <p className='text-lg font-bold'>৳{nn(customerSummary.summary.totalSpent).toFixed(0)}</p>
+                          <p className='text-xs text-muted-foreground'>Spent</p>
+                        </div>
+                        <div className='bg-muted/50 rounded p-2 text-center'>
+                          <p className={`text-lg font-bold ${customerSummary.summary.successRate >= 70 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {customerSummary.summary.successRate}%
+                          </p>
+                          <p className='text-xs text-muted-foreground'>Success Rate</p>
+                        </div>
                       </div>
-                      <div className='bg-muted/50 rounded p-2 text-center'>
-                        <p className='text-lg font-bold'>৳{nn(customerSummary.summary.totalSpent).toFixed(0)}</p>
-                        <p className='text-xs text-muted-foreground'>Spent</p>
+
+                      <div className='space-y-1'>
+                        <div className='h-2 w-full rounded-full bg-muted overflow-hidden flex'>
+                          <div className='h-full bg-emerald-500 transition-all duration-500' style={{ width: `${customerSummary.summary.successRate}%` }} />
+                          <div className='h-full bg-red-400 transition-all duration-500' style={{ width: `${customerSummary.summary.failRate}%` }} />
+                        </div>
+                        <div className='flex justify-between text-[10px] font-semibold text-muted-foreground'>
+                          <span className='text-emerald-600'>{customerSummary.summary.delivered} Delivered</span>
+                          <span className='text-red-500'>{customerSummary.summary.cancelled} Cancelled</span>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                ) : showCustomerHistory && (
-                  <CardContent className='pt-0'><p className='text-xs text-muted-foreground'>No history</p></CardContent>
-                )}
+
+                      {customerSummary.recentOrders?.length > 0 && (
+                        <div className='space-y-1 pt-1 border-t border-border/50'>
+                          <p className='text-[10px] font-semibold text-muted-foreground uppercase tracking-wider'>Recent Orders</p>
+                          {customerSummary.recentOrders.map((o: any) => (
+                            <div key={o.id} className='flex items-center justify-between text-xs'>
+                              <span className='font-mono text-muted-foreground'>{o.displayId}</span>
+                              <span className='font-semibold'>৳{nn(o.total).toFixed(0)}</span>
+                              <Badge style={{ backgroundColor: o.status?.color || '#6B7280', color: '#fff' }} className='text-[9px] px-1 py-0'>
+                                {o.status?.name}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className='text-xs text-muted-foreground'>No history</p>
+                  )}
+                </CardContent>
               </Card>
+
+              {/* Courier Customer History */}
+              <CourierCustomerHistoryCard phone={order.customer?.phone || order.guestPhone} />
 
               {/* Live Tracking Timeline */}
               <Card>

@@ -281,7 +281,15 @@ export class CustomersService {
 
     if (!user) return null;
 
-    const [aggregation, recentOrders] = await Promise.all([
+    const statuses = await this.prisma.orderStatus.findMany({
+      select: { id: true, name: true },
+    });
+    const deliveredIds = statuses.filter(s => s.name === 'Delivered').map(s => s.id);
+    const cancelledIds = statuses.filter(s =>
+      ['Cancelled', 'Returned', 'Return Pending', 'Damaged', 'Partial'].includes(s.name),
+    ).map(s => s.id);
+
+    const [aggregation, recentOrders, deliveredCount, cancelledCount] = await Promise.all([
       this.prisma.order.aggregate({
         where: { customerId: user.id, trashedAt: null },
         _count: true,
@@ -300,14 +308,28 @@ export class CustomersService {
           status: { select: { name: true, color: true } },
         },
       }),
+      deliveredIds.length > 0
+        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, statusId: { in: deliveredIds } } })
+        : Promise.resolve(0),
+      cancelledIds.length > 0
+        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, statusId: { in: cancelledIds } } })
+        : Promise.resolve(0),
     ]);
+
+    const totalSales = aggregation._count;
+    const successRate = totalSales > 0 ? Math.round((deliveredCount / totalSales) * 100) : 0;
+    const failRate = totalSales > 0 ? Math.round((cancelledCount / totalSales) * 100) : 0;
 
     return {
       customer: user,
       summary: {
-        totalOrders: aggregation._count,
+        totalOrders: totalSales,
         totalSpent: Number(aggregation._sum.total || 0),
         lastOrderDate: recentOrders[0]?.createdAt || null,
+        delivered: deliveredCount,
+        cancelled: cancelledCount,
+        successRate,
+        failRate,
       },
       recentOrders,
     };

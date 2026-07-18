@@ -950,6 +950,7 @@ model CourierCredentials {
   password      String?
   clientId      String?
   clientSecret  String?
+  clientContext String?
   storeId       String?
   webhookSecret String?
   pathaoIntegrationSecret String?
