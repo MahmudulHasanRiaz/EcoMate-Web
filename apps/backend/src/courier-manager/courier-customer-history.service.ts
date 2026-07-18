@@ -109,18 +109,6 @@ export class CourierCustomerHistoryService {
     return results;
   }
 
-  private async refreshInBackground(courier: string, phone: string) {
-    const cached = await this.prisma.courierReportCache.findUnique({
-      where: { courier_phone: { courier, phone } },
-    });
-    const report = await this.fetchFromCourier(courier, phone).catch(() => null);
-    if (report) {
-      await this.saveToCache(courier, phone, report, 'fresh').catch(() => {});
-    } else {
-      await this.saveToCache(courier, phone, null, 'no_data').catch(() => {});
-    }
-  }
-
   private async saveToCache(courier: string, phone: string, report: CourierReport | null, status = 'fresh') {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + CACHE_TTL_MS);
