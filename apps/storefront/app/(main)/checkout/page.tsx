@@ -538,6 +538,7 @@ export default function CheckoutPage() {
       deliveryCharge = opt?.amount ?? 0;
     }
   } else {
+    deliveryCharge = config.delivery.charge;
     if (district) {
       const zoneGroup = config.shippingZones?.find(z => z.districts.includes(district));
       if (zoneGroup?.type === 'no_delivery') {
@@ -545,12 +546,10 @@ export default function CheckoutPage() {
         deliveryCharge = 0;
       } else if (zoneGroup?.type === 'custom_amount') {
         deliveryCharge = zoneGroup.amount ?? config.delivery.charge;
-      } else {
-        deliveryCharge = config.delivery.charge;
       }
-      if (cartTotal >= config.delivery.freeDeliveryMin) {
-        deliveryCharge = 0;
-      }
+    }
+    if (cartTotal >= config.delivery.freeDeliveryMin) {
+      deliveryCharge = 0;
     }
   }
   const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
@@ -563,6 +562,13 @@ export default function CheckoutPage() {
   useEffect(() => {
     getDistricts().then(setDistricts).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (config.shippingMode === 'options' && config.shippingOptions?.length > 0 && !selectedShippingOptionId) {
+      const highest = [...config.shippingOptions].sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+      setSelectedShippingOptionId(highest.id);
+    }
+  }, [config.shippingMode, config.shippingOptions, selectedShippingOptionId]);
 
   useEffect(() => {
     if (district) {
@@ -1324,11 +1330,13 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {config.shippingMode !== 'options' && district && deliveryCharge > 0 && !noDeliveryError && (
+              {config.shippingMode !== 'options' && deliveryCharge > 0 && !noDeliveryError && (
                 <p className="text-[10px] text-gray-400">
-                  Delivery cost for {district}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
-                  {cartTotal >= config.delivery.freeDeliveryMin && (
-                    <span className="text-green-600 ml-2 font-bold">(Free shipping on orders above {s}{config.delivery.freeDeliveryMin})</span>
+                  Delivery cost{district ? ` for ${district}` : ''}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
+                  {cartTotal >= config.delivery.freeDeliveryMin ? (
+                    <span className="text-green-600 ml-2 font-bold">(Free)</span>
+                  ) : config.delivery.freeDeliveryMin > 0 && (
+                    <span className="text-gray-400 ml-1">(Free above {s}{config.delivery.freeDeliveryMin})</span>
                   )}
                 </p>
               )}

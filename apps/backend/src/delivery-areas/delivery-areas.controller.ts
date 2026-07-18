@@ -24,7 +24,7 @@ export class DeliveryAreasController {
       nameBn: d.nameBn,
       charge: charges[d.name] ?? null,
       thanaCount: d.thanas.length,
-    })).sort((a, b) => (a.nameBn ?? a.name).localeCompare(b.nameBn ?? b.name, 'bn'));
+    })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private async getCachedCharges(): Promise<Record<string, number>> {
