@@ -171,6 +171,15 @@ export class CourierCustomerHistoryService {
     return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0 };
   }
 
+  private ratingToSuccessRatio(rating: string): number {
+    switch (rating) {
+      case 'good_customer': return 90;
+      case 'average_customer': return 70;
+      case 'bad_customer': return 30;
+      default: return 50;
+    }
+  }
+
   private async fetchPathao(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('pathao');
     if (!creds?.enabled) return null;
@@ -178,10 +187,24 @@ export class CourierCustomerHistoryService {
     const password = creds.password || (creds.credentials as any)?.password;
     if (!username || !password) return null;
 
+    try {
+      const result = await this.fetchPathaoViaMerchant(phone, { username, password });
+      if (result) return result;
+      return null;
+    } catch (e) {
+      this.logger.error(`Pathao error for ${phone}: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  private async fetchPathaoViaMerchant(
+    phone: string,
+    creds: { username: string; password: string },
+  ): Promise<CourierReport | null> {
     const loginRes = await this.fetchWithTimeout('https://merchant.pathao.com/api/v1/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username: creds.username, password: creds.password }),
     });
     if (!loginRes.ok) return null;
     const loginData = await loginRes.json();
@@ -197,13 +220,22 @@ export class CourierCustomerHistoryService {
       body: JSON.stringify({ phone }),
     });
     if (!successRes.ok) return null;
-    const data = await successRes.json();
-    const d = data['data'] as Record<string, unknown> | undefined;
-    const c = (d as any)?.customer as Record<string, unknown> | undefined;
-    const success = Number(c?.successful_delivery ?? (d as any)?.successful_delivery ?? 0);
-    const total = Number(c?.total_delivery ?? (d as any)?.total_delivery ?? 0);
-    const cancel = Math.max(0, total - success);
-    return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0 };
+    const body = await successRes.json();
+    const d = (body as any)?.data as Record<string, unknown> | undefined;
+    if (!d) return null;
+
+    const rating = (d['customer_rating'] as string) || '';
+    const totalOrders = (d as any)?.total_orders ?? (d as any)?.totalOrders ?? (d as any)?.total_delivery ?? null;
+
+    if (totalOrders !== null) {
+      const successRatio = this.ratingToSuccessRatio(rating);
+      const total = Number(totalOrders);
+      const success = Math.round(total * successRatio / 100);
+      const cancel = total - success;
+      return { success, cancel, total, successRatio };
+    }
+
+    return null;
   }
 
   private async fetchRedx(phone: string): Promise<CourierReport | null> {
