@@ -3,11 +3,20 @@ import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Orders } from '../index'
 
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+  Link: ({ children, to, ...rest }: { children?: React.ReactNode; to: string }) => (
+    <a href={to} {...rest}>{children}</a>
+  ),
+}))
+
 vi.mock('@/components/search', () => ({ Search: () => null }))
+vi.mock('@/components/global-search-bar', () => ({ GlobalSearchBar: () => null }))
 vi.mock('@/components/theme-switch', () => ({ ThemeSwitch: () => null }))
 vi.mock('@/components/profile-dropdown', () => ({ ProfileDropdown: () => null }))
 vi.mock('@/components/payment-logo', () => ({ PaymentLogo: () => null }))
 vi.mock('@/components/ui/sidebar', () => ({ SidebarTrigger: () => null, Separator: () => null }))
+vi.mock('@/components/ui/searchable-select', () => ({ SearchableSelect: () => null }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const mockGet = vi.hoisted(() => vi.fn())
@@ -76,79 +85,83 @@ function renderOrders() {
   )
 }
 
+function mockSuccessfulAPIs(response?: any) {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
+      if (url === '/orders') return Promise.resolve({ data: response ?? singlePageResponse })
+      if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
+      if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
+      return Promise.reject(new Error('Unexpected URL'))
+    })
+  }
+
 describe('Orders page', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    localStorage.clear()
+  })
+
+  it('renders page heading', async () => {
+    mockSuccessfulAPIs()
+
+    const { getByRole } = await renderOrders()
+
+    const heading = getByRole('heading', { level: 2, name: 'Orders' })
+    await expect.element(heading).toBeInTheDocument()
   })
 
   it('shows loading state while fetching orders', async () => {
-    mockGet.mockImplementation(
-      () => new Promise(() => {}),
-    )
+    mockGet.mockImplementation(() => new Promise(() => {}))
 
-    const { getByText } = await renderOrders()
+    const { getByRole } = await renderOrders()
 
-    await expect.element(getByText('Order ID')).toBeInTheDocument()
-    await expect.element(getByText('#ORD-001')).not.toBeInTheDocument()
+    await expect.element(getByRole('heading', { name: 'Orders' })).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: '#ORD-001' })).not.toBeInTheDocument()
   })
 
   it('shows empty state when there are no orders', async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
       if (url === '/orders') return Promise.resolve({ data: emptyPageResponse })
+      if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
+      if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
       return Promise.reject(new Error('Unexpected URL'))
     })
 
     const { getByText } = await renderOrders()
 
-    await expect.element(getByText('No orders yet')).toBeInTheDocument()
+    await expect.element(getByText(/No orders found/i)).toBeInTheDocument()
   })
 
   it('renders orders in the table', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
+    mockSuccessfulAPIs()
 
-    const { getByText } = await renderOrders()
+    const { getByText, getByRole } = await renderOrders()
 
     await expect.element(getByText('#ORD-001')).toBeInTheDocument()
-    await expect.element(getByText('John Doe')).toBeInTheDocument()
-    await expect.element(getByText('Pending')).toBeInTheDocument()
+    await expect.element(getByText('John')).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: '৳210.00' })).toBeInTheDocument()
   })
 
   it('renders customer name and phone in the table', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
+    mockSuccessfulAPIs()
 
-    const { getByText } = await renderOrders()
+    const { getByRole } = await renderOrders()
 
-    await expect.element(getByText('John Doe')).toBeInTheDocument()
-    await expect.element(getByText('+1234567890')).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: /John Doe/i })).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: /1234567890/ })).toBeInTheDocument()
   })
 
   it('shows order total with currency symbol', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
+    mockSuccessfulAPIs()
 
-    const { getByText } = await renderOrders()
+    const { getByRole } = await renderOrders()
 
-    await expect.element(getByText('৳210.00')).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: /^৳210\.00$/ })).toBeInTheDocument()
   })
 
   it('shows item count in the table', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
+    mockSuccessfulAPIs()
 
     const { getByRole } = await renderOrders()
 
@@ -157,13 +170,14 @@ describe('Orders page', () => {
   })
 
   it('renders multiple orders in the table', async () => {
-    const multiPageResponse = {
+    const twoOrderResponse = {
       data: [
         mockOrder,
         {
           ...mockOrder,
           id: '2',
           displayId: '#ORD-002',
+          total: '150',
           customer: {
             ...mockOrder.customer,
             firstName: 'Jane',
@@ -176,30 +190,13 @@ describe('Orders page', () => {
       meta: { total: 2, page: 1, perPage: 10, totalPages: 1 },
     }
 
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: multiPageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
+    mockSuccessfulAPIs(twoOrderResponse)
 
-    const { getByText } = await renderOrders()
+    const { getByText, getByRole } = await renderOrders()
 
     await expect.element(getByText('#ORD-001')).toBeInTheDocument()
     await expect.element(getByText('#ORD-002')).toBeInTheDocument()
-    await expect.element(getByText('Jane Smith')).toBeInTheDocument()
-    await expect.element(getByText('Confirmed')).toBeInTheDocument()
-  })
-
-  it('renders page heading', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      return Promise.reject(new Error('Unexpected URL'))
-    })
-
-    const { getByRole } = await renderOrders()
-
-    const heading = getByRole('heading', { level: 2, name: 'Orders' })
-    await expect.element(heading).toBeInTheDocument()
+    await expect.element(getByText(/Jane Smith/i)).toBeInTheDocument()
+    await expect.element(getByRole('cell', { name: '৳150.00' })).toBeInTheDocument()
   })
 })

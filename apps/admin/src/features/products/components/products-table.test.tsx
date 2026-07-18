@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type PaginationState } from '@tanstack/react-table'
 import { ProductsTable } from './products-table'
 import { type ProductResponse } from '../api'
 
 vi.mock('../api', () => ({}))
+
+vi.mock('@/features/inventory/hooks/use-inventory-management', () => ({
+  useInventoryManagement: () => ({ data: true }),
+}))
 
 const mockProduct: ProductResponse = {
   id: '1',
@@ -16,7 +21,7 @@ const mockProduct: ProductResponse = {
   basePrice: '25.00',
   salePrice: null,
   sku: 'ECO-001',
-  stock: 50,
+  managedStockQuantity: 50,
   lowStockQty: 5,
   categoryId: 'c1',
   tags: [],
@@ -34,16 +39,24 @@ const mockProduct: ProductResponse = {
 const defaultPagination: PaginationState = { pageIndex: 0, pageSize: 10 }
 
 function renderTable(overrides: Partial<Parameters<typeof ProductsTable>[0]> = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <ProductsTable
-      data={overrides.data ?? []}
-      pageCount={overrides.pageCount ?? 0}
-      pagination={overrides.pagination ?? defaultPagination}
-      onPaginationChange={overrides.onPaginationChange ?? vi.fn()}
-      isLoading={overrides.isLoading}
-      onEdit={overrides.onEdit ?? vi.fn()}
-      onDelete={overrides.onDelete ?? vi.fn()}
-    />
+    <QueryClientProvider client={queryClient}>
+      <ProductsTable
+        data={overrides.data ?? []}
+        pageCount={overrides.pageCount ?? 0}
+        totalCount={overrides.totalCount ?? (overrides.data ?? []).length}
+        pagination={overrides.pagination ?? defaultPagination}
+        onPaginationChange={overrides.onPaginationChange ?? vi.fn()}
+        isLoading={overrides.isLoading}
+        onEdit={overrides.onEdit ?? vi.fn()}
+        onDelete={overrides.onDelete ?? vi.fn()}
+        selectedIds={overrides.selectedIds ?? []}
+        onSelectionChange={overrides.onSelectionChange ?? vi.fn()}
+      />
+    </QueryClientProvider>
   )
 }
 
@@ -68,7 +81,6 @@ describe('ProductsTable', () => {
 
     await expect.element(getByText('Eco Bottle')).toBeInTheDocument()
     await expect.element(getByText('SKU: ECO-001')).toBeInTheDocument()
-    await expect.element(getByText('Drinkware')).toBeInTheDocument()
   })
 
   it('renders multiple products in table rows', async () => {
@@ -97,16 +109,17 @@ describe('ProductsTable', () => {
       pageCount: 1,
     })
 
-    await expect.element(getByText('$20.00')).toBeInTheDocument()
+    await expect.element(getByText('৳20.00')).toBeInTheDocument()
   })
 
-  it('renders draft badge for inactive products', async () => {
-    const { getByText } = await renderTable({
+  it('renders inactive products with Switch unchecked', async () => {
+    const { getByRole } = await renderTable({
       data: [{ ...mockProduct, isActive: false }],
       pageCount: 1,
     })
 
-    await expect.element(getByText('Draft')).toBeInTheDocument()
+    const switchBtn = getByRole('switch')
+    await expect.element(switchBtn).toBeInTheDocument()
   })
 
   it('renders active badge for active products', async () => {

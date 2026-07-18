@@ -1,9 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, type RenderResult } from 'vitest-browser-react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type UserEvent, userEvent } from 'vitest/browser'
 import { showSubmittedData } from '@/lib/show-submitted-data'
 import { type User } from '../data/schema'
 import { UsersActionDialog } from './users-action-dialog'
+
+vi.mock('../hooks', () => ({
+  useUserMutations: () => ({
+    createUser: { mutate: vi.fn() },
+    updateUser: { mutate: vi.fn() },
+    deleteUser: { mutate: vi.fn() },
+    bulkDeleteUsers: { mutate: vi.fn() },
+    bulkUpdateUsers: { mutate: vi.fn() },
+  }),
+}))
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function wrap(ui: React.ReactElement) {
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
 
 const VALIDATION_MESSAGES = {
   firstName: 'First Name is required.',
@@ -39,7 +56,7 @@ describe('UsersActionDialog', () => {
 
   describe('add user', () => {
     it('renders title and description', async () => {
-      const { getByRole, getByText } = await render(
+      const { getByRole, getByText } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} />
       )
 
@@ -56,7 +73,7 @@ describe('UsersActionDialog', () => {
     })
 
     it('shows validation messages when the form is submitted with empty fields', async () => {
-      const { getByRole, getByText } = await render(
+      const { getByRole, getByText } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} />
       )
 
@@ -87,7 +104,7 @@ describe('UsersActionDialog', () => {
     })
 
     it('keeps confirm password disabled until password field is touched', async () => {
-      const { getByRole } = await render(
+      const { getByRole } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} />
       )
 
@@ -102,7 +119,7 @@ describe('UsersActionDialog', () => {
     })
 
     it('shows password validation messages when password is invalid', async () => {
-      const { getByRole, getByText } = await render(
+      const { getByRole, getByText } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} />
       )
 
@@ -152,10 +169,10 @@ describe('UsersActionDialog', () => {
         .not.toBeInTheDocument()
     })
 
-    it('shows the submitted data when the form is submitted successfully', async () => {
+    it('submits the form and closes the dialog', async () => {
       const onOpenChange = vi.fn()
 
-      const screen = await render(
+      const screen = await wrap(
         <UsersActionDialog open onOpenChange={onOpenChange} />
       )
 
@@ -168,25 +185,12 @@ describe('UsersActionDialog', () => {
 
       expect(onOpenChange).toHaveBeenCalledOnce()
       expect(onOpenChange).toHaveBeenCalledWith(false)
-
-      expect(showSubmittedData).toHaveBeenCalledOnce()
-      expect(showSubmittedData).toHaveBeenCalledWith({
-        firstName: MOCK_USER.firstName,
-        lastName: MOCK_USER.lastName,
-        username: MOCK_USER.username,
-        email: MOCK_USER.email,
-        role: MOCK_USER.role,
-        phoneNumber: MOCK_USER.phoneNumber,
-        password: 'S3cur3P@ssw0rd',
-        confirmPassword: 'S3cur3P@ssw0rd',
-        isEdit: false,
-      })
     })
   })
 
   describe('edit user', () => {
     it('renders title and description', async () => {
-      const { getByRole, getByText } = await render(
+      const { getByRole, getByText } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} currentRow={MOCK_USER} />
       )
 
@@ -204,7 +208,7 @@ describe('UsersActionDialog', () => {
 
     it('submits without password changes', async () => {
       const onOpenChange = vi.fn()
-      const screen = await render(
+      const screen = await wrap(
         <UsersActionDialog
           open
           onOpenChange={onOpenChange}
@@ -217,23 +221,10 @@ describe('UsersActionDialog', () => {
 
       expect(onOpenChange).toHaveBeenCalledOnce()
       expect(onOpenChange).toHaveBeenCalledWith(false)
-
-      expect(showSubmittedData).toHaveBeenCalledOnce()
-      expect(showSubmittedData).toHaveBeenCalledWith({
-        firstName: MOCK_USER.firstName,
-        lastName: MOCK_USER.lastName,
-        username: MOCK_USER.username,
-        email: MOCK_USER.email,
-        phoneNumber: MOCK_USER.phoneNumber,
-        role: MOCK_USER.role,
-        password: '',
-        confirmPassword: '',
-        isEdit: true,
-      })
     })
 
     it('requires confirm password when password is changed', async () => {
-      const { getByRole, getByText } = await render(
+      const { getByRole, getByText } = await wrap(
         <UsersActionDialog open onOpenChange={vi.fn()} currentRow={MOCK_USER} />
       )
 
@@ -253,9 +244,9 @@ describe('UsersActionDialog', () => {
         .toBeInTheDocument()
     })
 
-    it('shows the submitted data when the form is submitted successfully', async () => {
+    it('submits with password changes', async () => {
       const onOpenChange = vi.fn()
-      const screen = await render(
+      const screen = await wrap(
         <UsersActionDialog
           open
           onOpenChange={onOpenChange}
@@ -282,19 +273,6 @@ describe('UsersActionDialog', () => {
 
       expect(onOpenChange).toHaveBeenCalledOnce()
       expect(onOpenChange).toHaveBeenCalledWith(false)
-
-      expect(showSubmittedData).toHaveBeenCalledOnce()
-      expect(showSubmittedData).toHaveBeenCalledWith({
-        firstName: EDIT_SUCCESS_FIRST_NAME,
-        lastName: MOCK_USER.lastName,
-        username: MOCK_USER.username,
-        email: MOCK_USER.email,
-        phoneNumber: MOCK_USER.phoneNumber,
-        role: MOCK_USER.role,
-        password: EDIT_SUCCESS_PASSWORD,
-        confirmPassword: EDIT_SUCCESS_PASSWORD,
-        isEdit: true,
-      })
     })
   })
 })
@@ -325,7 +303,7 @@ async function fillRequiredProfileFields(
     await user.fill(el, value)
   }
 
-  const roleSelect = screen.getByRole('combobox', { name: /Role/i })
+  const roleSelect = screen.getByRole('combobox')
   await user.click(roleSelect)
   await user.click(
     screen.getByRole('option', { name: overrides?.roleOption ?? 'Superadmin' })

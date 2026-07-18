@@ -22,6 +22,17 @@ vi.mock('@/stores/auth-store', () => ({
   }),
 }))
 
+vi.mock('axios', () => ({
+  default: {
+    post: vi.fn().mockResolvedValue({
+      data: {
+        user: { email: 'a@b.com', accountNo: 'ACC-001', role: ['admin'], exp: 9999999999 },
+        accessToken: 'mock-access-token',
+      },
+    }),
+  },
+}))
+
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {

@@ -2,10 +2,17 @@ import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
-import { showSubmittedData } from '@/lib/show-submitted-data'
 import { UsersInviteDialog } from './users-invite-dialog'
 
-vi.mock('@/lib/show-submitted-data', () => ({ showSubmittedData: vi.fn() }))
+vi.mock('@/lib/api-client', () => ({
+  apiClient: {
+    post: vi.fn().mockResolvedValue({ data: {} }),
+    get: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    patch: vi.fn(),
+  },
+}))
 
 describe('UsersInviteDialog', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -69,7 +76,7 @@ describe('UsersInviteDialog', () => {
     const emailInput = getByRole('textbox', { name: /Email/i })
     await userEvent.fill(emailInput, 'test@example.com')
 
-    const roleSelect = getByRole('combobox', { name: /Role/i })
+    const roleSelect = getByRole('combobox')
     await userEvent.click(roleSelect)
     await userEvent.click(getByRole('option', { name: /Superadmin/i }))
 
@@ -99,7 +106,7 @@ describe('UsersInviteDialog', () => {
     const emailInput = getByRole('textbox', { name: /Email/i })
     await userEvent.fill(emailInput, EMAIL_VALUE)
 
-    const roleSelect = getByRole('combobox', { name: /Role/i })
+    const roleSelect = getByRole('combobox')
     await userEvent.click(roleSelect)
     await userEvent.click(getByRole('option', { name: ROLE_VALUE }))
 
@@ -128,13 +135,13 @@ describe('UsersInviteDialog', () => {
     )
 
     const EMAIL_VALUE = 'test@example.com'
-    const ROLE_VALUE = 'superadmin'
+    const ROLE_VALUE = 'Superadmin'
     const DESC_VALUE = 'Welcome aboard!'
 
     const emailInput = getByRole('textbox', { name: /Email/i })
     await userEvent.fill(emailInput, EMAIL_VALUE)
 
-    const roleSelect = getByRole('combobox', { name: /Role/i })
+    const roleSelect = getByRole('combobox')
     await userEvent.click(roleSelect)
     await userEvent.click(getByRole('option', { name: ROLE_VALUE }))
 
@@ -144,14 +151,9 @@ describe('UsersInviteDialog', () => {
     const submitButton = getByRole('button', { name: /Invite/i })
     await userEvent.click(submitButton)
 
-    expect(onOpenChange).toHaveBeenCalledOnce()
-    expect(onOpenChange).toHaveBeenCalledWith(false)
-
-    expect(showSubmittedData).toHaveBeenCalledOnce()
-    expect(showSubmittedData).toHaveBeenCalledWith({
-      email: EMAIL_VALUE,
-      role: ROLE_VALUE,
-      desc: DESC_VALUE,
+    await vi.waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledOnce()
+      expect(onOpenChange).toHaveBeenCalledWith(false)
     })
   })
 })

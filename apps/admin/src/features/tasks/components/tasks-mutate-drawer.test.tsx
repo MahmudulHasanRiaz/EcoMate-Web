@@ -1,12 +1,29 @@
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { userEvent } from 'vitest/browser'
 import { showSubmittedData } from '@/lib/show-submitted-data'
 import { type Task } from '../data/schema'
 import { TasksMutateDrawer } from './tasks-mutate-drawer'
 
+vi.mock('../hooks', () => ({
+  useTaskMutations: () => ({
+    createTask: { mutate: vi.fn() },
+    updateTask: { mutate: vi.fn() },
+    deleteTask: { mutate: vi.fn() },
+    bulkDeleteTasks: { mutate: vi.fn() },
+    bulkUpdateTasks: { mutate: vi.fn() },
+  }),
+}))
+
 vi.mock('@/lib/show-submitted-data', () => ({ showSubmittedData: vi.fn() }))
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function wrap(ui: ReactElement) {
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
 
 const MOCK_TASK = {
   id: 'task-1',
@@ -20,7 +37,7 @@ describe('TasksMutateDrawer', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('renders create title and description', async () => {
-    const { getByRole, getByText } = await render(
+    const { getByRole, getByText } = await wrap(
       <TasksMutateDrawer open onOpenChange={vi.fn()} />
     )
 
@@ -35,7 +52,7 @@ describe('TasksMutateDrawer', () => {
   })
 
   it('renders edit title, description, and prefilled title', async () => {
-    const { getByRole, getByText } = await render(
+    const { getByRole, getByText } = await wrap(
       <TasksMutateDrawer open onOpenChange={vi.fn()} currentRow={MOCK_TASK} />
     )
 
@@ -46,7 +63,7 @@ describe('TasksMutateDrawer', () => {
     const desc = getByText(/Update the task/i)
 
     const titleInput = getByRole('textbox', { name: /Title/i })
-    const statusSelect = getByRole('combobox', { name: /Status/i })
+    const statusSelect = getByRole('combobox')
     const labelRadio = getByRole('radio', { name: MOCK_TASK.label })
     const priorityRadio = getByRole('radio', { name: MOCK_TASK.priority })
 
@@ -61,7 +78,7 @@ describe('TasksMutateDrawer', () => {
   })
 
   it('shows validation messages when submitting an empty form', async () => {
-    const { getByRole, getByText } = await render(
+    const { getByRole, getByText } = await wrap(
       <TasksMutateDrawer open onOpenChange={vi.fn()} />
     )
 
@@ -80,16 +97,16 @@ describe('TasksMutateDrawer', () => {
       .toBeInTheDocument()
   })
 
-  it('submits create form and shows submitted data', async () => {
+  it('submits create form and closes the drawer', async () => {
     const onOpenChange = vi.fn()
-    const { getByRole } = await render(
+    const { getByRole } = await wrap(
       <TasksMutateDrawer open onOpenChange={onOpenChange} />
     )
 
     const titleInput = getByRole('textbox', { name: /Title/i })
     await userEvent.fill(titleInput, 'New task title')
 
-    const statusSelect = getByRole('combobox', { name: /Status/i })
+    const statusSelect = getByRole('combobox')
     await userEvent.click(statusSelect)
     await userEvent.click(getByRole('option', { name: /Todo/i }))
 
@@ -101,19 +118,11 @@ describe('TasksMutateDrawer', () => {
 
     expect(onOpenChange).toHaveBeenCalledOnce()
     expect(onOpenChange).toHaveBeenCalledWith(false)
-
-    expect(showSubmittedData).toHaveBeenCalledOnce()
-    expect(showSubmittedData).toHaveBeenCalledWith({
-      title: 'New task title',
-      status: 'todo',
-      label: 'bug',
-      priority: 'low',
-    })
   })
 
   it('closes when Close is clicked', async () => {
     const onOpenChange = vi.fn()
-    const { getByRole } = await render(
+    const { getByRole } = await wrap(
       <TasksMutateDrawer open onOpenChange={onOpenChange} />
     )
 
@@ -142,13 +151,13 @@ describe('TasksMutateDrawer', () => {
       )
     }
 
-    const { getByRole } = await render(<Harness />)
+    const { getByRole } = await wrap(<Harness />)
 
     const titleInput = getByRole('textbox', { name: /Title/i })
     await userEvent.fill(titleInput, 'Draft title')
     await expect.element(titleInput).toHaveValue('Draft title')
 
-    const statusSelect = getByRole('combobox', { name: /Status/i })
+    const statusSelect = getByRole('combobox')
     await userEvent.click(statusSelect)
     await userEvent.click(getByRole('option', { name: /Todo/i }))
     await expect.element(statusSelect).toHaveTextContent(/Todo/i)
