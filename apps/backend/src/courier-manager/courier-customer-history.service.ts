@@ -70,20 +70,29 @@ export class CourierCustomerHistoryService {
       where: { courier_phone: { courier, phone } },
     });
 
-    if (cached) {
-      const age = Date.now() - cached.fetchedAt.getTime();
-      if (age < CACHE_TTL_MS) {
-        return { report: cached.report as unknown as CourierReport, cached: true, fresh: true };
+    const now = Date.now();
+    const expired = !cached || (now - cached.fetchedAt.getTime() >= CACHE_TTL_MS);
+    const hasData = cached?.report != null && cached?.courierStatus !== 'no_data' && cached?.courierStatus !== 'empty';
+
+    if (!expired) {
+      if (hasData) {
+        return { report: cached!.report as unknown as CourierReport, cached: true, fresh: true };
       }
-      this.refreshInBackground(courier, phone);
-      return { report: cached.report as unknown as CourierReport, cached: true, fresh: false };
+      return { report: null, cached: true, fresh: true };
     }
 
-    const report = await this.fetchFromCourier(courier, phone);
+    const report = await this.fetchFromCourier(courier, phone).catch(() => null);
     if (report) {
-      await this.saveToCache(courier, phone, report);
+      await this.saveToCache(courier, phone, report, 'fresh');
       return { report, cached: false, fresh: true };
     }
+
+    if (hasData) {
+      await this.saveToCache(courier, phone, cached!.report as unknown as CourierReport, 'stale');
+      return { report: cached!.report as unknown as CourierReport, cached: true, fresh: false };
+    }
+
+    await this.saveToCache(courier, phone, null, 'no_data');
     return { report: null, cached: false, fresh: false };
   }
 
@@ -101,30 +110,25 @@ export class CourierCustomerHistoryService {
   }
 
   private async refreshInBackground(courier: string, phone: string) {
+    const cached = await this.prisma.courierReportCache.findUnique({
+      where: { courier_phone: { courier, phone } },
+    });
     const report = await this.fetchFromCourier(courier, phone).catch(() => null);
     if (report) {
-      await this.saveToCache(courier, phone, report).catch(() => {});
+      await this.saveToCache(courier, phone, report, 'fresh').catch(() => {});
+    } else {
+      await this.saveToCache(courier, phone, null, 'no_data').catch(() => {});
     }
   }
 
-  private async saveToCache(courier: string, phone: string, report: CourierReport) {
+  private async saveToCache(courier: string, phone: string, report: CourierReport | null, status = 'fresh') {
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + CACHE_TTL_MS);
+    const payload = report || { success: 0, cancel: 0, total: 0, successRatio: 0 };
     await this.prisma.courierReportCache.upsert({
       where: { courier_phone: { courier, phone } },
-      create: {
-        courier,
-        phone,
-        report: report as any,
-        courierStatus: 'fresh',
-        fetchedAt: now,
-        expiresAt: new Date(now.getTime() + CACHE_TTL_MS),
-      },
-      update: {
-        report: report as any,
-        courierStatus: 'fresh',
-        fetchedAt: now,
-        expiresAt: new Date(now.getTime() + CACHE_TTL_MS),
-      },
+      create: { courier, phone, report: payload as any, courierStatus: status, fetchedAt: now, expiresAt },
+      update: { report: payload as any, courierStatus: status, fetchedAt: now, expiresAt },
     });
   }
 
