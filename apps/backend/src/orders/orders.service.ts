@@ -630,6 +630,8 @@ export class OrdersService {
       }
     }
 
+    const resolvedOfficeNotes = dto.officeNotes ?? (await this.prisma.systemSetting.findUnique({ where: { key: 'default_office_note' } }))?.value ?? null;
+
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
       const productIds = Array.from(
@@ -826,7 +828,7 @@ export class OrdersService {
             thana: dto.thana,
           },
           customerNotes: dto.customerNotes,
-          officeNotes: dto.officeNotes,
+          officeNotes: resolvedOfficeNotes,
           salesChannel: dto.salesChannel || 'WEBSITE',
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,

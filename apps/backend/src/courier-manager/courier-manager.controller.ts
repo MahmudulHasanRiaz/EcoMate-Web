@@ -46,6 +46,24 @@ export class CourierManagerController {
     return existing;
   }
 
+  @Get('default-note')
+  async getDefaultNote() {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'default_office_note' },
+    });
+    return { note: setting?.value || '' };
+  }
+
+  @Put('default-note')
+  async setDefaultNote(@Body() dto: { note: string }) {
+    await this.prisma.systemSetting.upsert({
+      where: { key: 'default_office_note' },
+      create: { key: 'default_office_note', value: dto.note || '' },
+      update: { value: dto.note || '' },
+    });
+    return { note: dto.note || '' };
+  }
+
   @Get('cities')
   async getCities() {
     return this.svc.getCities();

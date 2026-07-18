@@ -9,11 +9,12 @@ import redxLogo from '@/assets/payment-logos/redx.webp'
 import carrybeeLogo from '@/assets/payment-logos/carrybee.jpg'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, FileText } from 'lucide-react'
 
 const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
@@ -38,6 +39,8 @@ const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),
   updateCreds: (courier: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credentials/${courier}`, d),
   generateWebhookSecret: (courier: string) => apiClient.post(`/couriers/credentials/${courier}/generate-webhook-secret`, {}),
+  defaultNote: () => apiClient.get('/couriers/default-note'),
+  saveDefaultNote: (note: string) => apiClient.put('/couriers/default-note', { note }),
 }
 
 interface CourierFormState {
@@ -136,6 +139,19 @@ export function CourierSettings() {
 
   const [showSecret, setShowSecret] = useState<Record<string, boolean>>({})
 
+  const { data: defaultNoteData, isLoading: noteLoading } = useQuery({
+    queryKey: ['courier-default-note'],
+    queryFn: () => courierApi.defaultNote().then(r => r.data?.note || ''),
+  })
+  const [defaultNote, setDefaultNote] = useState('')
+  useEffect(() => { if (defaultNoteData !== undefined) setDefaultNote(defaultNoteData) }, [defaultNoteData])
+
+  const saveDefaultNoteMut = useMutation({
+    mutationFn: (note: string) => courierApi.saveDefaultNote(note),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courier-default-note'] }); toast.success('Default note saved') },
+    onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to save') },
+  })
+
   const generateWebhookMut = useMutation({
     mutationFn: (courier: string) => courierApi.generateWebhookSecret(courier),
     onSuccess: (res: unknown, courier) => {
@@ -218,6 +234,34 @@ export function CourierSettings() {
           <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
         </div>
       </div>
+
+      <Card className='mb-6 border-dashed'>
+        <CardHeader className='pb-3'>
+          <div className='flex items-center gap-2'>
+            <FileText className='h-4 w-4 text-muted-foreground' />
+            <CardTitle className='text-base'>Default Office Note</CardTitle>
+          </div>
+          <p className='text-xs text-muted-foreground'>This note is automatically added to every new order as the office note. Can be overridden per order in the order editor.</p>
+        </CardHeader>
+        <CardContent className='space-y-3'>
+          <Textarea
+            value={defaultNote}
+            onChange={e => setDefaultNote(e.target.value)}
+            placeholder='e.g. Handle with care — fragile items'
+            rows={3}
+            className='resize-none text-sm'
+          />
+          <Button
+            size='sm'
+            onClick={() => saveDefaultNoteMut.mutate(defaultNote)}
+            disabled={saveDefaultNoteMut.isPending || noteLoading}
+            className='gap-2'
+          >
+            {saveDefaultNoteMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : <Save className='h-3.5 w-3.5' />}
+            Save Default Note
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className='grid gap-4 md:grid-cols-2'>
         {list.map((c: Record<string, unknown>) => {
