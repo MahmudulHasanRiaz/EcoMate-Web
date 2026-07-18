@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
+import { CourierTrackingService } from './courier-tracking.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomBytes } from 'node:crypto';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -11,6 +12,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class CourierManagerController {
   constructor(
     private readonly svc: CourierManagerService,
+    private readonly tracking: CourierTrackingService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -247,5 +249,10 @@ export class CourierManagerController {
     @Body() dto: { reason: string },
   ) {
     return this.svc.cancelRedxParcel(trackingId, dto.reason);
+  }
+
+  @Get('order-tracking/:orderId')
+  async getOrderTracking(@Param('orderId') orderId: string) {
+    return this.tracking.getOrderTracking(orderId);
   }
 }

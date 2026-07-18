@@ -114,7 +114,7 @@ function OrderDetailPage() {
 
   const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
   const { data: customerSummary } = useQuery({ queryKey: ['customer-summary', phone], queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data), enabled: !!phone })
-  const { data: courierData, isLoading: courierLoading } = useQuery({ queryKey: ['courier-search', phone], queryFn: () => apiClient.get(`/courier/search?phone=${phone}`).then(r => r.data), enabled: showCourier && !!phone })
+  const { data: orderTracking, isLoading: trackingLoading } = useQuery({ queryKey: ['order-tracking', id], queryFn: () => apiClient.get(`/couriers/order-tracking/${id}`).then(r => r.data), enabled: showCourier, refetchInterval: 30_000 })
 
   // ── Effects ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -844,66 +844,81 @@ function OrderDetailPage() {
                 )}
               </Card>
 
-              {/* Courier Delivery Rate */}
+              {/* Live Tracking Timeline */}
               <Card>
                 <CardHeader className='pb-2 cursor-pointer' onClick={() => setShowCourier(!showCourier)}>
                   <CardTitle className='text-sm font-semibold flex items-center justify-between'>
-                    <span className='flex items-center gap-1.5'><Truck className='h-3.5 w-3.5' /> Courier History</span>
+                    <span className='flex items-center gap-1.5'><Truck className='h-3.5 w-3.5' /> Live Tracking</span>
                     {showCourier ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
                   </CardTitle>
                 </CardHeader>
                 {showCourier && (() => {
-                  if (courierLoading) return <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent>
-                  const isDummy = !!courierData?.error
-                  const summariesToUse = isDummy ? {
-                    'Steadfast (Dummy)': { 'Total Parcels': 15, 'Delivered Parcels': 12, 'Canceled Parcels': 3 },
-                    'Pathao (Dummy)': { 'Total Delivery': 8, 'Successful Delivery': 5, 'Canceled Delivery': 3 },
-                    'RedX (Dummy)': { 'Total Parcels': 22, 'Delivered Parcels': 15, 'Canceled Parcels': 7 },
-                  } : courierData?.Summaries
-                  if (!summariesToUse) return <CardContent><p className='text-xs text-muted-foreground'>No data</p></CardContent>
-                  const entries = Object.entries(summariesToUse as Record<string, any>)
-                  let overallDelivered = 0; let overallCancelled = 0; let overallTotal = 0
-                  entries.forEach(([, stats]) => {
-                    overallDelivered += (stats['Delivered Parcels'] || stats['Successful Delivery'] || 0)
-                    overallCancelled += (stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0)
-                    overallTotal += (stats['Total Parcels'] || stats['Total Delivery'] || 0)
-                  })
-                  const successRate = overallTotal > 0 ? Math.round((overallDelivered / overallTotal) * 100) : 0
-                  const failRate = overallTotal > 0 ? Math.round((overallCancelled / overallTotal) * 100) : 0
+                  if (trackingLoading) return <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent>
+                  const trackers = orderTracking?.trackers as any[] | undefined
+                  if (!trackers?.length) return <CardContent><p className='text-xs text-muted-foreground'>Not yet dispatched to courier</p></CardContent>
+                  const allUnconfigured = trackers.every((t: any) => !t.configured)
+                  if (allUnconfigured) return (
+                    <CardContent>
+                      <p className='text-xs text-muted-foreground'>Configure courier credentials to see live tracking</p>
+                    </CardContent>
+                  )
                   return (
-                    <CardContent className='pt-0 space-y-3 text-sm'>
-                      {isDummy && (
-                        <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 text-xs px-2 py-1.5 rounded-md flex items-center gap-1.5'>
-                          <AlertTriangle className='h-3.5 w-3.5 shrink-0' /> Demo data
-                        </div>
-                      )}
-                      <div className='space-y-1'>
-                        <div className='flex justify-between text-xs font-medium'>
-                          <span className='text-emerald-600'>{successRate}% delivered</span>
-                          <span className='text-red-500'>{failRate}% cancelled</span>
-                        </div>
-                        <div className='h-2 w-full rounded-full bg-muted overflow-hidden flex'>
-                          <div className='h-full bg-emerald-500 transition-all' style={{ width: `${successRate}%` }} />
-                          <div className='h-full bg-red-500 transition-all' style={{ width: `${failRate}%` }} />
-                        </div>
-                        <p className='text-xs text-muted-foreground text-center'>{overallTotal} total parcels</p>
-                      </div>
-                      <div className='space-y-1'>
-                        {entries.map(([name, stats]) => {
-                          const d = stats['Delivered Parcels'] || stats['Successful Delivery'] || 0
-                          const c = stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0
-                          return (
-                            <div key={name} className='flex items-center justify-between text-xs bg-muted/40 rounded px-2 py-1'>
-                              <span className='font-medium'>{name.replace(' (Dummy)', '')}</span>
-                              <div className='flex items-center gap-1'>
-                                <span className='text-emerald-600 font-bold'>{d}</span>
-                                <span className='text-muted-foreground'>/</span>
-                                <span className='text-red-500 font-bold'>{c}</span>
+                    <CardContent className='pt-0 space-y-4 text-sm'>
+                      {trackers.map((tracker: any) => {
+                        if (!tracker.configured) return null
+                        const statusColors: Record<string, string> = {
+                          dispatched: '#6366F1', handed_over: '#06B6D4', picked_up: '#06B6D4',
+                          in_transit: '#3B82F6', assigned_to_rider: '#8B5CF6', hold: '#F59E0B',
+                          delivered: '#22C55E', partial: '#F97316', cancelled: '#EF4444',
+                          return_pending: '#EC4899', returned: '#DC2626',
+                        }
+                        const cs = (tracker.currentStatus || '').toLowerCase().replace(/[\s-]+/g, '_')
+                        const color = statusColors[cs] || '#6B7280'
+                        const events = (tracker.events || []) as any[]
+                        return (
+                          <div key={tracker.consignmentId} className='space-y-2'>
+                            <div className='flex items-center justify-between'>
+                              <div className='flex items-center gap-2'>
+                                <span className='font-medium capitalize text-xs'>{tracker.courier}</span>
+                                <span className='text-xs px-1.5 py-0.5 rounded text-white' style={{ backgroundColor: color }}>
+                                  {tracker.currentStatus || tracker.currentMessage || '—'}
+                                </span>
                               </div>
+                              {tracker.trackingUrl && (
+                                <a href={tracker.trackingUrl} target='_blank' rel='noreferrer' className='text-xs text-blue-500 hover:underline flex items-center gap-1'>
+                                  Track <ExternalLink className='h-3 w-3' />
+                                </a>
+                              )}
                             </div>
-                          )
-                        })}
-                      </div>
+                            {events.length > 0 && (
+                              <div className='relative pl-4 border-l-2 border-muted space-y-2 ml-1'>
+                                {events.map((evt: any, i: number) => {
+                                  const evtStatus = (evt.status || '').toLowerCase().replace(/[\s-]+/g, '_')
+                                  const dotColor = statusColors[evtStatus] || '#9CA3AF'
+                                  const isLast = i === events.length - 1
+                                  return (
+                                    <div key={i} className='relative pb-1'>
+                                      <div className='absolute -left-[13px] top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white' style={{ backgroundColor: dotColor }} />
+                                      <div className='text-xs'>
+                                        <p className='font-medium'>{evt.message || evt.status}</p>
+                                        <p className='text-[10px] text-muted-foreground'>{evt.status}</p>
+                                        {evt.timestamp && (
+                                          <p className='text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5'>
+                                            <Clock className='h-3 w-3' /> {new Date(evt.timestamp).toLocaleString()}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            {tracker.error && (
+                              <p className='text-[10px] text-red-500'>{tracker.error}</p>
+                            )}
+                          </div>
+                        )
+                      })}
                     </CardContent>
                   )
                 })()}
