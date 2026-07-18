@@ -72,7 +72,7 @@ export default function RelatedProducts({ product }: Props) {
 
   return (
     <div className="border-t border-gray-100 pt-8 mt-8 px-4 max-w-screen-xl mx-auto">
-      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">আরো দেখুন</h3>
+      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">You May Also Like</h3>
 
       <div className="flex gap-3 overflow-x-auto hide-scrollbar md:hidden pb-2 -mx-4 px-4">
         {products.map((p) => (

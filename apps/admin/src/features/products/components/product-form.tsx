@@ -562,7 +562,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setVariantImgMgr({ ...variantImgMgr, images: variantImgMgr.images.filter(i => i !== url) })
   }
 
-  const handleBulkUpdate = () => {
+  const handleBulkUpdate = async () => {
     const patch: Record<string, any> = {}
     if (bulkOverridePrice && bulkPrice) patch.price = parseFloat(bulkPrice)
     if (bulkOverrideSalePrice) patch.salePrice = bulkSalePrice ? parseFloat(bulkSalePrice) : null
@@ -576,14 +576,20 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     } else {
       const rowId = currentRow?.id || createdProductId
       if (!rowId) return
-      let done = 0
-      const total = variantList.length
-      for (const v of variantList) {
-        updateVariantMut.mutate(
-          { id: rowId, variantId: v.id, data: patch },
-          { onSuccess: () => { done++; if (done === total) toast.success(`Updated ${total} variants`) } },
+      const results = await Promise.allSettled(
+        variantList.map(v =>
+          productsApi.updateVariant(rowId, v.id, patch)
         )
+      )
+      const succeeded = results.filter(r => r.status === 'fulfilled').length
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed === 0) {
+        toast.success(`Updated ${succeeded} variants`)
+      } else {
+        toast.error(`Updated ${succeeded}, ${failed} failed`)
       }
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', rowId] })
     }
     setBulkUpdateOpen(false)
     setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost(''); setBulkStock('')
@@ -1527,10 +1533,7 @@ function VariantRow({
 
   return (
     <div className='p-3 flex items-center gap-3 text-sm hover:bg-muted/10 transition-colors'>
-      <div className='shrink-0 cursor-pointer' onClick={() => {
-        const e = new CustomEvent('openVariantImgMgr', { detail: variant })
-        window.dispatchEvent(e)
-      }}>
+      <div className='shrink-0 cursor-pointer' onClick={onImagePick}>
         {variantImages.length === 0 ? (
           <div className='h-12 w-12 rounded border bg-muted overflow-hidden flex items-center justify-center'>
             <ImageIcon className='h-4 w-4 text-muted-foreground' />
