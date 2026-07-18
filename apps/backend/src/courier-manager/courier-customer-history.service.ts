@@ -273,7 +273,8 @@ export class CourierCustomerHistoryService {
       if (!dataRes.ok) return null;
       const data = await dataRes.json();
       const body = (data as any)?.body ?? data;
-      const parcels = body?.data ?? body?.parcels ?? (Array.isArray(body) ? body : null);
+      const payload = (body as any)?.data ?? body;
+      const parcels = (payload as any)?.data ?? (payload as any)?.parcels ?? (Array.isArray(payload) ? payload : Array.isArray(body) ? body : null);
       if (Array.isArray(parcels) && parcels.length > 0) {
         let delivered = 0, cancelled = 0;
         for (const p of parcels) {
@@ -284,9 +285,9 @@ export class CourierCustomerHistoryService {
         const total = parcels.length;
         return { success: delivered, cancel: cancelled, total, successRatio: Math.round((delivered / total) * 10000) / 100 };
       }
-      const d = (body as any)?.data ?? body;
+      const d = payload;
       const success = Number(d?.deliveredParcels ?? d?.delivered ?? d?.success ?? 0);
-      const total = Number(d?.totalParcels ?? d?.total ?? 0);
+      const total = Number(d?.totalParcels ?? d?.total ?? d?.totalParcel ?? 0);
       if (total > 0) {
         const cancel = Number(d?.cancelledParcels ?? d?.cancelled ?? d?.cancel ?? Math.max(0, total - success));
         return { success, cancel, total, successRatio: Math.round((success / total) * 10000) / 100 };
