@@ -238,21 +238,26 @@ export class CourierCustomerHistoryService {
     return null;
   }
 
+  private toBdPhone(raw: string): string {
+    const digits = raw.replace(/\D/g, '');
+    const local = digits.length > 11 ? digits.slice(-11) : digits;
+    return `880${local.replace(/^0?/, '')}`;
+  }
+
   private async fetchRedx(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('redx');
     if (!creds?.enabled) return null;
 
     const loginPhone = creds.username || (creds.credentials as any)?.username;
     const loginPassword = creds.password || (creds.credentials as any)?.password;
-    const shopId = creds.shopId || (creds.credentials as any)?.shopId;
 
-    if (!loginPhone || !loginPassword || !shopId) return null;
+    if (!loginPhone || !loginPassword) return null;
 
     try {
       const loginRes = await this.fetchWithTimeout('https://api.redx.com.bd/v4/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ phone: `88${loginPhone.replace(/^0/, '')}`, password: loginPassword }),
+        body: JSON.stringify({ phone: this.toBdPhone(loginPhone), password: loginPassword }),
       });
       if (!loginRes.ok) return null;
       const loginData = await loginRes.json();
@@ -260,36 +265,23 @@ export class CourierCustomerHistoryService {
       if (!accessToken) return null;
 
       const dataRes = await this.fetchWithTimeout(
-        `https://api.redx.com.bd/v1/logistics/customer-parcel-requests/${shopId}?customerPhone=${phone}`,
+        `https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate?phoneNumber=${this.toBdPhone(phone)}`,
         {
           headers: {
             'User-Agent': 'Mozilla/5.0',
             'Accept': 'application/json, text/plain, */*',
             'Content-Type': 'application/json',
-            'x-access-token': accessToken,
+            'Authorization': `Bearer ${accessToken}`,
           },
         },
       );
       if (!dataRes.ok) return null;
       const data = await dataRes.json();
-      const body = (data as any)?.body ?? data;
-      const payload = (body as any)?.data ?? body;
-      const parcels = (payload as any)?.data ?? (payload as any)?.parcels ?? (Array.isArray(payload) ? payload : Array.isArray(body) ? body : null);
-      if (Array.isArray(parcels) && parcels.length > 0) {
-        let delivered = 0, cancelled = 0;
-        for (const p of parcels) {
-          const status = (p.status || '').toLowerCase();
-          if (status.includes('delivered') || status === 'completed') delivered++;
-          else if (status.includes('cancel') || status.includes('return')) cancelled++;
-        }
-        const total = parcels.length;
-        return { success: delivered, cancel: cancelled, total, successRatio: Math.round((delivered / total) * 10000) / 100 };
-      }
-      const d = payload;
-      const success = Number(d?.deliveredParcels ?? d?.delivered ?? d?.success ?? 0);
-      const total = Number(d?.totalParcels ?? d?.total ?? d?.totalParcel ?? 0);
+      const d = (data as any)?.data;
+      const success = Number(d?.deliveredParcels ?? d?.delivered ?? 0);
+      const total = Number(d?.totalParcels ?? d?.total ?? 0);
       if (total > 0) {
-        const cancel = Number(d?.cancelledParcels ?? d?.cancelled ?? d?.cancel ?? Math.max(0, total - success));
+        const cancel = Number(d?.cancelledParcels ?? d?.cancelled ?? Math.max(0, total - success));
         return { success, cancel, total, successRatio: Math.round((success / total) * 10000) / 100 };
       }
       return null;
