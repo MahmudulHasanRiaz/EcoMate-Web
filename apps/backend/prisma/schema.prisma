@@ -976,6 +976,23 @@ model CourierDispatchLog {
   @@index([courier])
 }
 
+model CourierReportCache {
+  id             String   @id @default(uuid())
+  courier        String
+  phone          String
+  report         Json
+  courierStatus  String?
+  fetchedAt      DateTime
+  expiresAt      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courier, phone])
+  @@index([phone])
+  @@index([courier])
+  @@index([expiresAt])
+}
+
 enum DispatchStatus {
   DISPATCHED
   HANDED_OVER

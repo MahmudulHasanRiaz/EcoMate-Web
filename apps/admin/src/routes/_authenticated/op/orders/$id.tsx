@@ -856,12 +856,18 @@ function OrderDetailPage() {
                   if (trackingLoading) return <CardContent><Loader2 className='animate-spin h-4 w-4' /></CardContent>
                   const trackers = orderTracking?.trackers as any[] | undefined
                   if (!trackers?.length) return <CardContent><p className='text-xs text-muted-foreground'>Not yet dispatched to courier</p></CardContent>
-                  const allUnconfigured = trackers.every((t: any) => !t.configured)
-                  if (allUnconfigured) return (
+                  const allConfigured = trackers.some((t: any) => t.configured)
+                  if (!allConfigured) return (
                     <CardContent>
                       <p className='text-xs text-muted-foreground'>Configure courier credentials to see live tracking</p>
                     </CardContent>
                   )
+                  const ago = (iso: string) => {
+                    const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+                    if (sec < 60) return `${sec}s ago`
+                    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
+                    return `${Math.floor(sec / 3600)}h ago`
+                  }
                   return (
                     <CardContent className='pt-0 space-y-4 text-sm'>
                       {trackers.map((tracker: any) => {
@@ -878,24 +884,35 @@ function OrderDetailPage() {
                         return (
                           <div key={tracker.consignmentId} className='space-y-2'>
                             <div className='flex items-center justify-between'>
-                              <div className='flex items-center gap-2'>
+                              <div className='flex items-center gap-2 flex-wrap'>
                                 <span className='font-medium capitalize text-xs'>{tracker.courier}</span>
                                 <span className='text-xs px-1.5 py-0.5 rounded text-white' style={{ backgroundColor: color }}>
                                   {tracker.currentStatus || tracker.currentMessage || '—'}
                                 </span>
+                                {tracker.stale && (
+                                  <span className='text-[10px] text-amber-500 flex items-center gap-0.5'>
+                                    <Clock className='h-3 w-3' /> cached
+                                  </span>
+                                )}
                               </div>
-                              {tracker.trackingUrl && (
-                                <a href={tracker.trackingUrl} target='_blank' rel='noreferrer' className='text-xs text-blue-500 hover:underline flex items-center gap-1'>
-                                  Track <ExternalLink className='h-3 w-3' />
-                                </a>
-                              )}
+                              <div className='flex items-center gap-2'>
+                                {tracker.trackingUrl && (
+                                  <a href={tracker.trackingUrl} target='_blank' rel='noreferrer' className='text-xs text-blue-500 hover:underline flex items-center gap-1'>
+                                    Track <ExternalLink className='h-3 w-3' />
+                                  </a>
+                                )}
+                              </div>
                             </div>
+                            {(tracker.staleAt || tracker.fetchedAt) && (
+                              <p className='text-[10px] text-muted-foreground text-right -mt-1'>
+                                Updated {ago(tracker.staleAt || tracker.fetchedAt)}
+                              </p>
+                            )}
                             {events.length > 0 && (
                               <div className='relative pl-4 border-l-2 border-muted space-y-2 ml-1'>
                                 {events.map((evt: any, i: number) => {
                                   const evtStatus = (evt.status || '').toLowerCase().replace(/[\s-]+/g, '_')
                                   const dotColor = statusColors[evtStatus] || '#9CA3AF'
-                                  const isLast = i === events.length - 1
                                   return (
                                     <div key={i} className='relative pb-1'>
                                       <div className='absolute -left-[13px] top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white' style={{ backgroundColor: dotColor }} />
@@ -913,7 +930,7 @@ function OrderDetailPage() {
                                 })}
                               </div>
                             )}
-                            {tracker.error && (
+                            {tracker.error && !tracker.stale && (
                               <p className='text-[10px] text-red-500'>{tracker.error}</p>
                             )}
                           </div>
