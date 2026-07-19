@@ -104,7 +104,6 @@ export const sidebarData: SidebarData = {
           feature: 'admin_email_campaigns',
           items: [
             { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
-            { title: 'Product Catalogs', url: '/op/product-feeds', icon: Upload, feature: 'admin_product_feeds' },
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },
@@ -137,7 +136,7 @@ export const sidebarData: SidebarData = {
         { title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' },
         { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' },
         { title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' },
-        { title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Megaphone, feature: 'admin_product_feeds' },
+        { title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Upload, feature: 'admin_product_feeds' },
       ],
     },
 
