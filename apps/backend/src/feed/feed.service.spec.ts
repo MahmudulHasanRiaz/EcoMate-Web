@@ -307,6 +307,42 @@ describe('FeedService', () => {
     });
   });
 
+  describe('generateFeed', () => {
+    it('should log real IP and user-agent on feed access', async () => {
+      mockPrisma.productFeedConfig.findFirst.mockResolvedValue(mockConfig);
+      mockFeatureFlags.canUse.mockReturnValue(true);
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([]);
+      mockPrisma.productFeedLog.create.mockResolvedValue({});
+      mockPrisma.productFeedConfig.update.mockResolvedValue(mockConfig);
+
+      const mockReply = {
+        raw: {
+          setHeader: jest.fn(),
+          write: jest.fn(),
+          end: jest.fn(),
+          on: jest.fn(),
+          once: jest.fn(),
+          emit: jest.fn(),
+          removeListener: jest.fn(),
+        },
+      };
+
+      await service.generateFeed(
+        'abc', 'meta', mockReply, '203.0.113.42', 'TestBot/1.0',
+      );
+
+      expect(mockPrisma.productFeedLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ipAddress: '203.0.113.42',
+            userAgent: 'TestBot/1.0',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('getLogs', () => {
     const mockLog = {
       id: 'log-1',

@@ -54,11 +54,17 @@ export class FeedService {
     return { config, tenantId: config.tenantId };
   }
 
-  async generateFeed(token: string, platform: string, reply: any) {
+  async generateFeed(
+    token: string,
+    platform: string,
+    reply: any,
+    ipAddress: string,
+    userAgent: string,
+  ) {
     const { config, tenantId } = await this.validateToken(token, platform);
     const startTime = Date.now();
 
-    const filter = await this.buildProductFilter(config);
+    const filter = this.buildProductFilter(config);
     const ns = PLATFORM_NAMESPACES[platform] || PLATFORM_NAMESPACES.meta;
 
     const res = reply.raw || reply;
@@ -192,7 +198,7 @@ export class FeedService {
     }
 
     const durationMs = Date.now() - startTime;
-    await this.logAccess(tenantId, platform, durationMs);
+    await this.logAccess(tenantId, platform, durationMs, ipAddress, userAgent);
     await this.prisma.productFeedConfig.update({
       where: { id: config.id },
       data: { lastFetchedAt: new Date() },
@@ -281,7 +287,7 @@ export class FeedService {
     }
   }
 
-  private async buildProductFilter(config: any): Promise<any> {
+  private buildProductFilter(config: any): any {
     const filter: any = { isActive: true };
 
     if (config.excludeOutOfStock) {
@@ -289,7 +295,15 @@ export class FeedService {
         { availabilityMode: 'ALWAYS_IN_STOCK' as any },
         {
           availabilityMode: 'MANAGED_STOCK' as any,
+          type: 'simple',
           managedStockQuantity: { gt: 0 },
+        },
+        {
+          availabilityMode: 'MANAGED_STOCK' as any,
+          type: 'variable',
+          variants: {
+            some: { managedStockQuantity: { gt: 0 } },
+          },
         },
         {
           availabilityMode: 'INVENTORY_CONTROLLED' as any,
@@ -332,14 +346,16 @@ export class FeedService {
     tenantId: string,
     platform: string,
     durationMs: number,
+    ipAddress: string,
+    userAgent: string,
   ) {
     await this.prisma.productFeedLog
       .create({
         data: {
           tenantId,
           platform,
-          ipAddress: '0.0.0.0',
-          userAgent: 'feed-generator',
+          ipAddress,
+          userAgent,
           statusCode: 200,
           durationMs,
         },
@@ -377,9 +393,13 @@ export class FeedService {
   }
 
   async updateConfig(id: string, dto: any) {
+    const allowed: any = {};
+    if (dto.isActive !== undefined) allowed.isActive = dto.isActive;
+    if (dto.excludeOutOfStock !== undefined) allowed.excludeOutOfStock = dto.excludeOutOfStock;
+    if (dto.minPriceFilter !== undefined) allowed.minPriceFilter = dto.minPriceFilter;
     return this.prisma.productFeedConfig.update({
       where: { id },
-      data: dto,
+      data: allowed,
     });
   }
 

@@ -27,7 +27,13 @@ export class FeedController {
     @Param('platform') platform: string,
     @Res() reply: Response,
   ) {
-    await this.svc.generateFeed(token, platform, reply);
+    const req = (reply as any).req;
+    const ip = req?.ip
+      || req?.connection?.remoteAddress
+      || req?.headers?.['x-forwarded-for']?.split(',')?.[0]?.trim()
+      || '0.0.0.0';
+    const ua = req?.headers?.['user-agent'] || 'unknown';
+    await this.svc.generateFeed(token, platform, reply, ip, ua);
   }
 
   @Roles('admin', 'superadmin')
