@@ -94,7 +94,7 @@ export function FeedsPage() {
     onError: () => toast.error('Failed to regenerate token'),
   });
 
-  const { data: logs } = useQuery({
+  const { data: logs, isLoading: logsLoading } = useQuery({
     queryKey: ['feed-logs', expandedPlatform],
     queryFn: () => feedsApi.logs(expandedPlatform ?? undefined),
     enabled: !!expandedPlatform,
@@ -175,6 +175,7 @@ export function FeedsPage() {
                   </div>
                   <Switch
                     checked={feed.isActive}
+                    disabled={toggleMut.isPending}
                     onCheckedChange={(checked) =>
                       toggleMut.mutate({ id: feed.id, isActive: checked })
                     }
@@ -278,13 +279,18 @@ export function FeedsPage() {
                   </Button>
                 </div>
 
-                {expandedPlatform === feed.platform && (
+                    {expandedPlatform === feed.platform && (
                   <div className="border rounded-md p-3">
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
                       <Activity className="h-3 w-3" />
                       Access Logs
                     </h4>
-                    {logs && logs.length > 0 ? (
+                    {logsLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Loading logs...
+                      </div>
+                    ) : logs && logs.length > 0 ? (
                       <Table>
                         <TableHeader>
                           <TableRow>
