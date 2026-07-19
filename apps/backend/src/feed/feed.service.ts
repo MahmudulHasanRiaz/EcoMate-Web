@@ -305,9 +305,6 @@ export class FeedService {
             some: { managedStockQuantity: { gt: 0 } },
           },
         },
-        {
-          availabilityMode: 'INVENTORY_CONTROLLED' as any,
-        },
       ];
     }
 
