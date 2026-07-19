@@ -40,6 +40,9 @@ describe('FeedService', () => {
     product: {
       findMany: jest.fn(),
     },
+    physicalInventory: {
+      findMany: jest.fn(),
+    },
   };
 
   const mockFeatureFlags = {
@@ -212,6 +215,95 @@ describe('FeedService', () => {
         where: { id: 'cfg-1' },
         data: { secureToken: expect.stringMatching(/^[a-f0-9]{64}$/) },
       });
+    });
+  });
+
+  describe('enrichProductsWithStock', () => {
+    it('should set _availableStock=null for ALWAYS_IN_STOCK products', async () => {
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([]);
+      const products = [{
+        id: 'p1',
+        availabilityMode: 'ALWAYS_IN_STOCK',
+        type: 'simple',
+        managedStockQuantity: 0,
+        reservedStock: 0,
+        variants: [],
+      }];
+
+      await (service as any).enrichProductsWithStock(products);
+
+      expect(products[0]._availableStock).toBeNull();
+    });
+
+    it('should set _availableStock=0 for ALWAYS_OUT_OF_STOCK', async () => {
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([]);
+      const products = [{
+        id: 'p1',
+        availabilityMode: 'ALWAYS_OUT_OF_STOCK',
+        type: 'simple',
+        managedStockQuantity: 100,
+        reservedStock: 0,
+        variants: [],
+      }];
+
+      await (service as any).enrichProductsWithStock(products);
+
+      expect(products[0]._availableStock).toBe(0);
+    });
+
+    it('should compute MANAGED_STOCK as qty minus reserved', async () => {
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([]);
+      const products = [{
+        id: 'p1',
+        availabilityMode: 'MANAGED_STOCK',
+        type: 'simple',
+        managedStockQuantity: 50,
+        reservedStock: 10,
+        variants: [],
+      }];
+
+      await (service as any).enrichProductsWithStock(products);
+
+      expect(products[0]._availableStock).toBe(40);
+    });
+
+    it('should handle variable products by summing variant stock', async () => {
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([]);
+      const products = [{
+        id: 'p1',
+        availabilityMode: 'MANAGED_STOCK',
+        type: 'variable',
+        managedStockQuantity: 0,
+        reservedStock: 0,
+        variants: [
+          { id: 'v1', managedStockQuantity: 10, reservedStock: 2 },
+          { id: 'v2', managedStockQuantity: 5, reservedStock: 0 },
+        ],
+      }];
+
+      await (service as any).enrichProductsWithStock(products);
+
+      expect(products[0]._availableStock).toBe(15); // (10+5) - 0 (product reservedStock)
+      expect(products[0].variants[0]._availableStock).toBe(8); // 10-2
+      expect(products[0].variants[1]._availableStock).toBe(5); // 5-0
+    });
+
+    it('should use PhysicalInventory for INVENTORY_CONTROLLED mode', async () => {
+      mockPrisma.physicalInventory.findMany.mockResolvedValue([
+        { productId: 'p1', variantId: null, quantity: 30, reservedQuantity: 5 },
+      ]);
+      const products = [{
+        id: 'p1',
+        availabilityMode: 'INVENTORY_CONTROLLED',
+        type: 'simple',
+        managedStockQuantity: 0,
+        reservedStock: 0,
+        variants: [],
+      }];
+
+      await (service as any).enrichProductsWithStock(products);
+
+      expect(products[0]._availableStock).toBe(25); // 30-5
     });
   });
 

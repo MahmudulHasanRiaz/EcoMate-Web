@@ -102,6 +102,7 @@ export class FeedService {
                 price: true,
                 salePrice: true,
                 managedStockQuantity: true,
+                reservedStock: true,
                 image: true,
               },
             },
@@ -116,6 +117,8 @@ export class FeedService {
         const products = (await this.prisma.product.findMany(
           queryOpts,
         )) as any[];
+
+        await this.enrichProductsWithStock(products);
 
         if (products.length === 0) break;
 
@@ -137,7 +140,7 @@ export class FeedService {
                     link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
                     imageLink: variant.image || images[0] || '',
                     availability:
-                      variant.managedStockQuantity > 0
+                      variant._availableStock === null || variant._availableStock > 0
                         ? 'in stock'
                         : 'out of stock',
                     price: variant.price || product.basePrice,
@@ -162,7 +165,7 @@ export class FeedService {
                   link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
                   imageLink: images[0] || '',
                   availability:
-                    product.managedStockQuantity > 0
+                    product._availableStock === null || product._availableStock > 0
                       ? 'in stock'
                       : 'out of stock',
                   price: product.basePrice,
@@ -196,11 +199,102 @@ export class FeedService {
     });
   }
 
+  private async enrichProductsWithStock(products: any[]): Promise<void> {
+    if (products.length === 0) return;
+
+    const variantIds = new Set<string>();
+    const productIds = new Set<string>();
+    for (const p of products) {
+      productIds.add(p.id);
+      if (p.type === 'variable' && p.variants?.length) {
+        for (const v of p.variants) {
+          variantIds.add(v.id);
+        }
+      }
+    }
+
+    const inventoryRows = await this.prisma.physicalInventory.findMany({
+      where: {
+        OR: [
+          { productId: { in: Array.from(productIds) }, variantId: null },
+          { variantId: { in: Array.from(variantIds) } },
+        ],
+      },
+      select: {
+        productId: true,
+        variantId: true,
+        quantity: true,
+        reservedQuantity: true,
+      },
+    });
+
+    const invByProduct = new Map<string, { qty: number; reserved: number }>();
+    const invByVariant = new Map<string, { qty: number; reserved: number }>();
+    for (const row of inventoryRows) {
+      if (row.variantId) {
+        const cur = invByVariant.get(row.variantId) ?? { qty: 0, reserved: 0 };
+        cur.qty += row.quantity;
+        cur.reserved += row.reservedQuantity;
+        invByVariant.set(row.variantId, cur);
+      } else {
+        const cur = invByProduct.get(row.productId) ?? { qty: 0, reserved: 0 };
+        cur.qty += row.quantity;
+        cur.reserved += row.reservedQuantity;
+        invByProduct.set(row.productId, cur);
+      }
+    }
+
+    for (const p of products) {
+      const phys = invByProduct.get(p.id);
+
+      p._availableStock =
+        p.availabilityMode === 'ALWAYS_IN_STOCK'
+          ? null
+          : p.availabilityMode === 'ALWAYS_OUT_OF_STOCK'
+            ? 0
+            : p.availabilityMode === 'INVENTORY_CONTROLLED'
+              ? (phys?.qty ?? 0) - (phys?.reserved ?? 0)
+              : // MANAGED_STOCK (default)
+                (p.type === 'variable'
+                  ? (p.variants ?? []).reduce(
+                      (sum: number, v: any) =>
+                        sum + (v.managedStockQuantity ?? 0),
+                      0,
+                    )
+                  : (p.managedStockQuantity ?? 0)) -
+                  (p.reservedStock ?? 0);
+
+      if (p.variants) {
+        for (const v of p.variants) {
+          const vPhys = invByVariant.get(v.id);
+          v._availableStock =
+            p.availabilityMode === 'ALWAYS_IN_STOCK'
+              ? null
+              : p.availabilityMode === 'ALWAYS_OUT_OF_STOCK'
+                ? 0
+                : p.availabilityMode === 'INVENTORY_CONTROLLED'
+                  ? (vPhys?.qty ?? 0) - (vPhys?.reserved ?? 0)
+                  : // MANAGED_STOCK
+                    (v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0);
+        }
+      }
+    }
+  }
+
   private async buildProductFilter(config: any): Promise<any> {
     const filter: any = { isActive: true };
 
     if (config.excludeOutOfStock) {
-      filter.managedStockQuantity = { gt: 0 };
+      filter.OR = [
+        { availabilityMode: 'ALWAYS_IN_STOCK' as any },
+        {
+          availabilityMode: 'MANAGED_STOCK' as any,
+          managedStockQuantity: { gt: 0 },
+        },
+        {
+          availabilityMode: 'INVENTORY_CONTROLLED' as any,
+        },
+      ];
     }
 
     if (config.minPriceFilter) {
