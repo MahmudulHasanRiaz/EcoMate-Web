@@ -35,10 +35,14 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 const PLATFORM_ORDER = ['meta', 'google', 'tiktok'];
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:4000/api').replace(/\/api$/, '');
-
 function getFeedUrl(token: string, platform: string): string {
-  return `${API_ORIGIN}/v1/feeds/catalog/${token}/${platform}`;
+  const api = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+
+  if (api.startsWith('http')) {
+    return `${api.replace(/\/api$/, '')}/v1/feeds/catalog/${token}/${platform}`;
+  }
+
+  return `${window.location.origin}${api}/v1/feeds/catalog/${token}/${platform}`;
 }
 
 export function FeedsPage() {
