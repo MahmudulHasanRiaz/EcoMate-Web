@@ -43,7 +43,6 @@ import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
-import { Route as AuthenticatedOpProductFeedsIndexRouteImport } from './routes/_authenticated/op/product-feeds/index'
 import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authenticated/op/payroll/index'
 import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_authenticated/op/payments/index'
 import { Route as AuthenticatedOpPackingIndexRouteImport } from './routes/_authenticated/op/packing/index'
@@ -308,12 +307,6 @@ const AuthenticatedOpProductsIndexRoute =
   AuthenticatedOpProductsIndexRouteImport.update({
     id: '/op/products/',
     path: '/op/products/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedOpProductFeedsIndexRoute =
-  AuthenticatedOpProductFeedsIndexRouteImport.update({
-    id: '/op/product-feeds/',
-    path: '/op/product-feeds/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpPayrollIndexRoute =
@@ -863,7 +856,6 @@ export interface FileRoutesByFullPath {
   '/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
-  '/op/product-feeds/': typeof AuthenticatedOpProductFeedsIndexRoute
   '/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
@@ -978,7 +970,6 @@ export interface FileRoutesByTo {
   '/op/packing': typeof AuthenticatedOpPackingIndexRoute
   '/op/payments': typeof AuthenticatedOpPaymentsIndexRoute
   '/op/payroll': typeof AuthenticatedOpPayrollIndexRoute
-  '/op/product-feeds': typeof AuthenticatedOpProductFeedsIndexRoute
   '/op/products': typeof AuthenticatedOpProductsIndexRoute
   '/op/purchases': typeof AuthenticatedOpPurchasesIndexRoute
   '/op/referrals': typeof AuthenticatedOpReferralsIndexRoute
@@ -1095,7 +1086,6 @@ export interface FileRoutesById {
   '/_authenticated/op/packing/': typeof AuthenticatedOpPackingIndexRoute
   '/_authenticated/op/payments/': typeof AuthenticatedOpPaymentsIndexRoute
   '/_authenticated/op/payroll/': typeof AuthenticatedOpPayrollIndexRoute
-  '/_authenticated/op/product-feeds/': typeof AuthenticatedOpProductFeedsIndexRoute
   '/_authenticated/op/products/': typeof AuthenticatedOpProductsIndexRoute
   '/_authenticated/op/purchases/': typeof AuthenticatedOpPurchasesIndexRoute
   '/_authenticated/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
@@ -1212,7 +1202,6 @@ export interface FileRouteTypes {
     | '/op/packing/'
     | '/op/payments/'
     | '/op/payroll/'
-    | '/op/product-feeds/'
     | '/op/products/'
     | '/op/purchases/'
     | '/op/referrals/'
@@ -1327,7 +1316,6 @@ export interface FileRouteTypes {
     | '/op/packing'
     | '/op/payments'
     | '/op/payroll'
-    | '/op/product-feeds'
     | '/op/products'
     | '/op/purchases'
     | '/op/referrals'
@@ -1443,7 +1431,6 @@ export interface FileRouteTypes {
     | '/_authenticated/op/packing/'
     | '/_authenticated/op/payments/'
     | '/_authenticated/op/payroll/'
-    | '/_authenticated/op/product-feeds/'
     | '/_authenticated/op/products/'
     | '/_authenticated/op/purchases/'
     | '/_authenticated/op/referrals/'
@@ -1739,13 +1726,6 @@ declare module '@tanstack/react-router' {
       path: '/op/products'
       fullPath: '/op/products/'
       preLoaderRoute: typeof AuthenticatedOpProductsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/op/product-feeds/': {
-      id: '/_authenticated/op/product-feeds/'
-      path: '/op/product-feeds'
-      fullPath: '/op/product-feeds/'
-      preLoaderRoute: typeof AuthenticatedOpProductFeedsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/payroll/': {
@@ -2465,7 +2445,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPackingIndexRoute: typeof AuthenticatedOpPackingIndexRoute
   AuthenticatedOpPaymentsIndexRoute: typeof AuthenticatedOpPaymentsIndexRoute
   AuthenticatedOpPayrollIndexRoute: typeof AuthenticatedOpPayrollIndexRoute
-  AuthenticatedOpProductFeedsIndexRoute: typeof AuthenticatedOpProductFeedsIndexRoute
   AuthenticatedOpProductsIndexRoute: typeof AuthenticatedOpProductsIndexRoute
   AuthenticatedOpPurchasesIndexRoute: typeof AuthenticatedOpPurchasesIndexRoute
   AuthenticatedOpReferralsIndexRoute: typeof AuthenticatedOpReferralsIndexRoute
@@ -2561,7 +2540,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpPackingIndexRoute: AuthenticatedOpPackingIndexRoute,
   AuthenticatedOpPaymentsIndexRoute: AuthenticatedOpPaymentsIndexRoute,
   AuthenticatedOpPayrollIndexRoute: AuthenticatedOpPayrollIndexRoute,
-  AuthenticatedOpProductFeedsIndexRoute: AuthenticatedOpProductFeedsIndexRoute,
   AuthenticatedOpProductsIndexRoute: AuthenticatedOpProductsIndexRoute,
   AuthenticatedOpPurchasesIndexRoute: AuthenticatedOpPurchasesIndexRoute,
   AuthenticatedOpReferralsIndexRoute: AuthenticatedOpReferralsIndexRoute,
