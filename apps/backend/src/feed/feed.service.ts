@@ -10,6 +10,7 @@ import * as zlib from 'zlib';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { GOOGLE_PRODUCT_TAXONOMY } from './data/google-product-taxonomy';
 
 const PLATFORM_NAMESPACES: Record<string, string> = {
   meta: 'http://base.google.com/ns/1.0',
@@ -707,26 +708,7 @@ export class FeedService {
     });
   }
 
-  private taxonomyCache: { id: number; path: string }[] | null = null;
-
   async getTaxonomy(): Promise<{ id: number; path: string }[]> {
-    if (this.taxonomyCache) return this.taxonomyCache;
-    const candidates = [
-      path.join(__dirname, 'data', 'google-product-taxonomy.json'),
-      path.join(process.cwd(), 'dist', 'feed', 'data', 'google-product-taxonomy.json'),
-      path.join(process.cwd(), 'dist', 'src', 'feed', 'data', 'google-product-taxonomy.json'),
-      path.join(__dirname, '..', '..', '..', 'data', 'google-product-taxonomy.json'),
-      path.join(__dirname, '..', '..', 'feed', 'data', 'google-product-taxonomy.json'),
-    ];
-    for (const p of candidates) {
-      try {
-        const raw = fs.readFileSync(p, 'utf-8');
-        const parsed: { id: number; path: string }[] = JSON.parse(raw);
-        this.taxonomyCache = parsed;
-        return parsed;
-      } catch { /* try next */ }
-    }
-    this.taxonomyCache = [];
-    return this.taxonomyCache;
+    return GOOGLE_PRODUCT_TAXONOMY;
   }
 }
