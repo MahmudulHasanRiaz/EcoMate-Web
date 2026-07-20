@@ -124,6 +124,12 @@ export class FeedService {
           where: filter,
           include: {
             brand: { select: { name: true } },
+            categories: {
+              select: {
+                category: { select: { name: true } },
+              },
+              take: 1,
+            },
             variants: {
               where: { isActive: true },
               select: {
@@ -171,6 +177,7 @@ export class FeedService {
             for (const variant of product.variants) {
               const img = this.getImages(product, variant);
               const attr = this.getVariantAttributes(variant);
+              const productType = product.categories?.[0]?.category?.name;
               gzip.write(
                 this.mapToItemXml(
                   {
@@ -189,8 +196,12 @@ export class FeedService {
                     price: variant.price || product.basePrice,
                     salePrice: variant.salePrice || product.salePrice,
                     brand: product.brand?.name || 'Store Brand',
+                    productType,
                     color: attr.color,
                     size: attr.size,
+                    gender: attr.gender,
+                    material: attr.material,
+                    pattern: attr.pattern,
                     itemGroupId: product.id,
                   },
                   platform,
@@ -200,6 +211,7 @@ export class FeedService {
             }
           } else {
             const img = this.getImages(product);
+            const productType = product.categories?.[0]?.category?.name;
             gzip.write(
               this.mapToItemXml(
                 {
@@ -218,6 +230,7 @@ export class FeedService {
                   price: product.basePrice,
                   salePrice: product.salePrice,
                   brand: product.brand?.name || 'Store Brand',
+                  productType,
                   itemGroupId: undefined,
                 },
                 platform,
@@ -356,14 +369,30 @@ export class FeedService {
     return filter;
   }
 
-  private getVariantAttributes(variant: any): { color?: string; size?: string } {
+  private getVariantAttributes(variant: any): {
+    color?: string;
+    size?: string;
+    gender?: string;
+    material?: string;
+    pattern?: string;
+  } {
     const attrs = variant.attributeValues || [];
-    const result: { color?: string; size?: string } = {};
+    const result: {
+      color?: string;
+      size?: string;
+      gender?: string;
+      material?: string;
+      pattern?: string;
+    } = {};
     for (const av of attrs) {
       const name = av.attributeValue?.attribute?.name?.toLowerCase();
       const value = av.attributeValue?.value;
-      if (name === 'color' && value) result.color = value;
-      if (name === 'size' && value) result.size = value;
+      if (!name || !value) continue;
+      if (name === 'color') result.color = value;
+      if (name === 'size') result.size = value;
+      if (name === 'gender') result.gender = value;
+      if (name === 'material') result.material = value;
+      if (name === 'pattern') result.pattern = value;
     }
     return result;
   }
@@ -393,6 +422,10 @@ export class FeedService {
       xml += `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n`;
     }
 
+    if (p.productType) {
+      xml += `      <g:product_type>${e(p.productType)}</g:product_type>\n`;
+    }
+
     xml += `      <g:brand>${e(p.brand)}</g:brand>\n`;
 
     if (p.color) {
@@ -401,6 +434,18 @@ export class FeedService {
 
     if (p.size) {
       xml += `      <g:size>${e(p.size)}</g:size>\n`;
+    }
+
+    if (p.gender) {
+      xml += `      <g:gender>${e(p.gender)}</g:gender>\n`;
+    }
+
+    if (p.material) {
+      xml += `      <g:material>${e(p.material)}</g:material>\n`;
+    }
+
+    if (p.pattern) {
+      xml += `      <g:pattern>${e(p.pattern)}</g:pattern>\n`;
     }
 
     xml += `      <g:condition>new</g:condition>\n`;
