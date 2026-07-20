@@ -29,6 +29,9 @@ RUN javascript-obfuscator dist/ \
     --config obfuscator.config.json && \
     rm -rf dist && \
     mv dist-obfuscated dist
+# Restore non-JS data files lost during obfuscation
+COPY --from=builder /app/apps/backend/dist ./dist-base
+RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
 FROM node:22-alpine AS runner
 WORKDIR /app
