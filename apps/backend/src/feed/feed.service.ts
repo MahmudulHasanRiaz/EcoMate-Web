@@ -39,6 +39,25 @@ export class FeedService {
     return str.replace(/<[^>]*>/g, '').trim();
   }
 
+  private toAbsoluteUrl(url: string | null | undefined): string {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const base = (process.env.STOREFRONT_URL || '').replace(/\/$/, '');
+    return base ? `${base}${url}` : url;
+  }
+
+  private getImages(product: any, variant?: any): { primary: string; additional: string[] } {
+    const productImages = (product.images as string[]) || [];
+    const variantImages = variant ? (variant.images as string[]) || [] : [];
+    const all = variant ? [...variantImages, ...productImages] : productImages;
+    const unique = [...new Set(all.filter(Boolean))];
+    const withVarImage = variant?.image && !unique.includes(variant.image)
+      ? [variant.image, ...unique]
+      : unique;
+    const absolute = withVarImage.map((u) => this.toAbsoluteUrl(u));
+    return { primary: absolute[0] || '', additional: absolute.slice(1) };
+  }
+
   async validateToken(
     token: string,
     platform: string,
@@ -111,6 +130,7 @@ export class FeedService {
                 managedStockQuantity: true,
                 reservedStock: true,
                 image: true,
+                images: true,
               },
             },
           },
@@ -130,12 +150,12 @@ export class FeedService {
         if (products.length === 0) break;
 
         for (const product of products) {
-          const images = (product.images as string[]) || [];
           const hasVariants =
             product.type === 'variable' && product.variants.length > 0;
 
           if (hasVariants) {
             for (const variant of product.variants) {
+              const img = this.getImages(product, variant);
               gzip.write(
                 this.mapToItemXml(
                   {
@@ -145,7 +165,8 @@ export class FeedService {
                       product.shortDesc || product.description || '',
                     ),
                     link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
-                    imageLink: variant.image || images[0] || '',
+                    imageLink: img.primary,
+                    additionalImageLinks: img.additional,
                     availability:
                       variant._availableStock === null || variant._availableStock > 0
                         ? 'in stock'
@@ -161,6 +182,7 @@ export class FeedService {
               productCount++;
             }
           } else {
+            const img = this.getImages(product);
             gzip.write(
               this.mapToItemXml(
                 {
@@ -170,7 +192,8 @@ export class FeedService {
                     product.shortDesc || product.description || '',
                   ),
                   link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
-                  imageLink: images[0] || '',
+                  imageLink: img.primary,
+                  additionalImageLinks: img.additional,
                   availability:
                     product._availableStock === null || product._availableStock > 0
                       ? 'in stock'
@@ -319,25 +342,38 @@ export class FeedService {
   private mapToItemXml(p: any, platform: string): string {
     const e = (s: any) => this.escapeXml(String(s ?? ''));
 
-    return (
+    let xml =
       `    <item>\n` +
       `      <g:id>${e(p.id)}</g:id>\n` +
       `      <g:title>${e(p.title)}</g:title>\n` +
       `      <g:description>${e(p.description)}</g:description>\n` +
       `      <g:link>${e(p.link)}</g:link>\n` +
-      `      <g:image_link>${e(p.imageLink)}</g:image_link>\n` +
+      `      <g:image_link>${e(p.imageLink)}</g:image_link>\n`;
+
+    if (p.additionalImageLinks?.length) {
+      for (const url of p.additionalImageLinks) {
+        xml += `      <g:additional_image_link>${e(url)}</g:additional_image_link>\n`;
+      }
+    }
+
+    xml +=
       `      <g:availability>${p.availability}</g:availability>\n` +
-      `      <g:price>${e(p.price)} BDT</g:price>\n` +
-      (p.salePrice
-        ? `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n`
-        : '') +
+      `      <g:price>${e(p.price)} BDT</g:price>\n`;
+
+    if (p.salePrice) {
+      xml += `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n`;
+    }
+
+    xml +=
       `      <g:brand>${e(p.brand)}</g:brand>\n` +
-      `      <g:condition>new</g:condition>\n` +
-      (p.itemGroupId
-        ? `      <g:item_group_id>${e(p.itemGroupId)}</g:item_group_id>\n`
-        : '') +
-      `    </item>\n`
-    );
+      `      <g:condition>new</g:condition>\n`;
+
+    if (p.itemGroupId) {
+      xml += `      <g:item_group_id>${e(p.itemGroupId)}</g:item_group_id>\n`;
+    }
+
+    xml += `    </item>\n`;
+    return xml;
   }
 
   private async logAccess(
