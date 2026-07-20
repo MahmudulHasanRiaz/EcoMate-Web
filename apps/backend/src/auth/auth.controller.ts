@@ -25,6 +25,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { SecurityService } from '../security/security.service';
+import { getAllPermissions } from '../common/permissions/registry';
 
 @Controller('auth')
 export class AuthController {
@@ -124,8 +125,6 @@ export class AuthController {
     let permissions = user.permissions;
     if (!permissions || !Array.isArray(permissions)) {
       if (user.role === 'superadmin' || user.role === 'admin') {
-        const { getAllPermissions } =
-          await import('../common/permissions/registry.js');
         permissions = getAllPermissions();
       } else {
         permissions = [];
