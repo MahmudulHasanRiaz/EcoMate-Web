@@ -36,7 +36,11 @@ export class FeedService {
 
   private stripHtml(str?: string): string {
     if (!str) return '';
-    return str.replace(/<[^>]*>/g, '').trim();
+    return str
+      .replace(/<[^>]*>/g, '')
+      .replace(/\\n|\\r|\\t/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private toAbsoluteUrl(url: string | null | undefined): string {
@@ -131,6 +135,16 @@ export class FeedService {
                 reservedStock: true,
                 image: true,
                 images: true,
+                attributeValues: {
+                  select: {
+                    attributeValue: {
+                      select: {
+                        value: true,
+                        attribute: { select: { name: true } },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -156,6 +170,7 @@ export class FeedService {
           if (hasVariants) {
             for (const variant of product.variants) {
               const img = this.getImages(product, variant);
+              const attr = this.getVariantAttributes(variant);
               gzip.write(
                 this.mapToItemXml(
                   {
@@ -174,6 +189,8 @@ export class FeedService {
                     price: variant.price || product.basePrice,
                     salePrice: variant.salePrice || product.salePrice,
                     brand: product.brand?.name || 'Store Brand',
+                    color: attr.color,
+                    size: attr.size,
                     itemGroupId: product.id,
                   },
                   platform,
@@ -339,6 +356,18 @@ export class FeedService {
     return filter;
   }
 
+  private getVariantAttributes(variant: any): { color?: string; size?: string } {
+    const attrs = variant.attributeValues || [];
+    const result: { color?: string; size?: string } = {};
+    for (const av of attrs) {
+      const name = av.attributeValue?.attribute?.name?.toLowerCase();
+      const value = av.attributeValue?.value;
+      if (name === 'color' && value) result.color = value;
+      if (name === 'size' && value) result.size = value;
+    }
+    return result;
+  }
+
   private mapToItemXml(p: any, platform: string): string {
     const e = (s: any) => this.escapeXml(String(s ?? ''));
 
@@ -364,9 +393,17 @@ export class FeedService {
       xml += `      <g:sale_price>${e(p.salePrice)} BDT</g:sale_price>\n`;
     }
 
-    xml +=
-      `      <g:brand>${e(p.brand)}</g:brand>\n` +
-      `      <g:condition>new</g:condition>\n`;
+    xml += `      <g:brand>${e(p.brand)}</g:brand>\n`;
+
+    if (p.color) {
+      xml += `      <g:color>${e(p.color)}</g:color>\n`;
+    }
+
+    if (p.size) {
+      xml += `      <g:size>${e(p.size)}</g:size>\n`;
+    }
+
+    xml += `      <g:condition>new</g:condition>\n`;
 
     if (p.itemGroupId) {
       xml += `      <g:item_group_id>${e(p.itemGroupId)}</g:item_group_id>\n`;
