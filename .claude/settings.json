@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "ask": [
+      "Bash(git push *)",
+      "Bash(npm publish *)",
+      "Bash(npm run prod *)",
+      "Bash(npx prisma db push *)",
+      "Bash(npx prisma migrate reset *)",
+      "Bash(npx prisma migrate deploy *)"
+    ]
+  }
+}

@@ -22,7 +22,10 @@ coverage/
 # IDE
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/rules/
+!.claude/rules/**
 .codex/
 
 # OS
