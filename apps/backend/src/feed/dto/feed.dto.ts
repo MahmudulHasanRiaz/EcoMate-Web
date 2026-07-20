@@ -22,6 +22,10 @@ export class CreateFeedConfigDto {
   @Min(0)
   @Type(() => Number)
   minPriceFilter?: number;
+
+  @IsOptional()
+  @IsString()
+  googleProductCategory?: string;
 }
 
 export class UpdateFeedConfigDto {
@@ -38,4 +42,8 @@ export class UpdateFeedConfigDto {
   @Min(0)
   @Type(() => Number)
   minPriceFilter?: number;
+
+  @IsOptional()
+  @IsString()
+  googleProductCategory?: string;
 }

@@ -2103,9 +2103,10 @@ model ProductFeedConfig {
   platform          String // meta, google, tiktok
   secureToken       String    @unique
   isActive          Boolean   @default(true)
-  excludeOutOfStock Boolean   @default(false)
-  minPriceFilter    Decimal?  @db.Decimal(10, 2)
-  lastFetchedAt     DateTime?
+  excludeOutOfStock     Boolean   @default(false)
+  minPriceFilter        Decimal?  @db.Decimal(10, 2)
+  googleProductCategory String?
+  lastFetchedAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

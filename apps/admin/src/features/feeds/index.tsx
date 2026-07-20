@@ -17,8 +17,9 @@ import {
 } from '@/components/ui/table';
 import { toast } from 'sonner';
 import {
-  Copy, RefreshCw, Clock, Activity, Loader2, Plus, Eye, EyeOff, ExternalLink,
+  Copy, RefreshCw, Clock, Activity, Loader2, Plus, Eye, EyeOff, ExternalLink, FileText,
 } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { feedsApi } from './api';
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ export function FeedsPage() {
   const [creating, setCreating] = useState<string | null>(null);
   const [confirmRegen, setConfirmRegen] = useState<string | null>(null);
   const [copyLabel, setCopyLabel] = useState<string | null>(null);
+  const [previewFeedId, setPreviewFeedId] = useState<string | null>(null);
 
   const { data: feeds = [], isLoading } = useQuery({
     queryKey: ['feeds'],
@@ -102,6 +104,12 @@ export function FeedsPage() {
     queryKey: ['feed-logs', expandedPlatform],
     queryFn: () => feedsApi.logs(expandedPlatform ?? undefined),
     enabled: !!expandedPlatform,
+  });
+
+  const { data: previewXml, isLoading: previewLoading } = useQuery({
+    queryKey: ['feed-preview', previewFeedId],
+    queryFn: () => feedsApi.preview(previewFeedId!),
+    enabled: !!previewFeedId,
   });
 
   const handleCreate = async (platform: string) => {
@@ -244,8 +252,8 @@ export function FeedsPage() {
                   </Button>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <div className="flex gap-4 items-center">
+                <div className="flex items-center justify-between pt-2 border-t flex-wrap gap-2">
+                  <div className="flex gap-4 items-center flex-wrap">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input
                         type="checkbox"
@@ -272,15 +280,39 @@ export function FeedsPage() {
                         }}
                       />
                     </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Label className="text-xs whitespace-nowrap">Google Category:</Label>
+                      <Input
+                        className="w-40 h-7 text-xs"
+                        placeholder="e.g. 187"
+                        defaultValue={feed.googleProductCategory ?? ''}
+                        onBlur={(e) => {
+                          const val = e.target.value || null;
+                          if (val !== feed.googleProductCategory) {
+                            updateMut.mutate({ id: feed.id, googleProductCategory: val });
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setConfirmRegen(feed.id)}
-                  >
-                    <RefreshCw className="h-3 w-3 mr-1" />
-                    Regenerate
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPreviewFeedId(feed.id)}
+                    >
+                      <FileText className="h-3 w-3 mr-1" />
+                      Preview
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setConfirmRegen(feed.id)}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Regenerate
+                    </Button>
+                  </div>
                 </div>
 
                     {expandedPlatform === feed.platform && (
@@ -359,6 +391,25 @@ export function FeedsPage() {
               Regenerate
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewFeedId} onOpenChange={(o) => !o && setPreviewFeedId(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Feed Preview (first 5 products)</DialogTitle>
+          </DialogHeader>
+          {previewLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <ScrollArea className="h-[60vh]">
+              <pre className="text-xs font-mono p-4 rounded bg-muted whitespace-pre-wrap break-all">
+                {previewXml || 'No preview available'}
+              </pre>
+            </ScrollArea>
+          )}
         </DialogContent>
       </Dialog>
     </div>

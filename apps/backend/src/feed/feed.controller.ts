@@ -70,6 +70,13 @@ export class FeedController {
 
   @Roles('admin', 'superadmin')
   @RequiresFeature('admin_product_feeds')
+  @Get('config/:id/preview')
+  async previewFeed(@Param('id') id: string) {
+    return this.svc.previewFeed(id);
+  }
+
+  @Roles('admin', 'superadmin')
+  @RequiresFeature('admin_product_feeds')
   @Get('logs')
   async getLogs(@Query('platform') platform?: string) {
     return this.svc.getLogs(platform);

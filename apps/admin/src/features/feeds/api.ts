@@ -7,6 +7,7 @@ export interface FeedConfig {
   isActive: boolean;
   excludeOutOfStock: boolean;
   minPriceFilter: number | null;
+  googleProductCategory: string | null;
   lastFetchedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -42,5 +43,10 @@ export const feedsApi = {
   logs: (platform?: string) =>
     apiClient
       .get<FeedLog[]>('/v1/feeds/logs', { params: { platform } })
+      .then((r) => r.data),
+
+  preview: (id: string) =>
+    apiClient
+      .get<string>(`/v1/feeds/config/${id}/preview`)
       .then((r) => r.data),
 };
