@@ -34,6 +34,13 @@ export class FeedService {
       .replace(/'/g, '&apos;');
   }
 
+  private async getStoreName(): Promise<string> {
+    const s = await this.prisma.systemSetting.findUnique({
+      where: { key: 'store_name' },
+    });
+    return s?.value || '';
+  }
+
   private stripHtml(str?: string, maxLen?: number): string {
     if (!str) return '';
     let clean = str
@@ -89,6 +96,7 @@ export class FeedService {
     userAgent: string,
   ) {
     const { config, tenantId } = await this.validateToken(token, platform);
+    const storeName = await this.getStoreName();
     const startTime = Date.now();
 
     const filter = this.buildProductFilter(config);
@@ -204,7 +212,7 @@ export class FeedService {
                         : 'out of stock',
                     price: variant.price || product.basePrice,
                     salePrice: variant.salePrice || product.salePrice,
-                    brand: product.brand?.name || 'Store Brand',
+                    brand: product.brand?.name || storeName || 'Store Brand',
                     productType,
                     googleProductCategory: config.googleProductCategory,
                     color: attr.color,
@@ -242,7 +250,7 @@ export class FeedService {
                       : 'out of stock',
                   price: product.basePrice,
                   salePrice: product.salePrice,
-                  brand: product.brand?.name || 'Store Brand',
+                  brand: product.brand?.name || storeName || 'Store Brand',
                   productType,
                   googleProductCategory: config.googleProductCategory,
                   customLabels,
@@ -541,6 +549,7 @@ export class FeedService {
     });
     if (!config) throw new NotFoundException('Feed config not found');
 
+    const storeName = await this.getStoreName();
     const filter = this.buildProductFilter(config);
     const ns = PLATFORM_NAMESPACES[config.platform] || PLATFORM_NAMESPACES.meta;
 
@@ -609,7 +618,7 @@ export class FeedService {
             availability: variant._availableStock === null || variant._availableStock > 0 ? 'in stock' : 'out of stock',
             price: variant.price || product.basePrice,
             salePrice: variant.salePrice || product.salePrice,
-            brand: product.brand?.name || 'Store Brand',
+            brand: product.brand?.name || storeName || 'Store Brand',
             productType,
             googleProductCategory: config.googleProductCategory,
             color: attr.color, size: attr.size,
@@ -632,7 +641,7 @@ export class FeedService {
           availability: product._availableStock === null || product._availableStock > 0 ? 'in stock' : 'out of stock',
           price: product.basePrice,
           salePrice: product.salePrice,
-          brand: product.brand?.name || 'Store Brand',
+          brand: product.brand?.name || storeName || 'Store Brand',
           productType,
           googleProductCategory: config.googleProductCategory,
           customLabels,

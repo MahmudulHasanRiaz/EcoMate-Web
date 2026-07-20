@@ -43,6 +43,9 @@ describe('FeedService', () => {
     physicalInventory: {
       findMany: jest.fn(),
     },
+    systemSetting: {
+      findUnique: jest.fn().mockResolvedValue({ value: 'Test Store' }),
+    },
   };
 
   const mockFeatureFlags = {
