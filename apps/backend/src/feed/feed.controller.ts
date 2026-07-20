@@ -77,6 +77,13 @@ export class FeedController {
 
   @Roles('admin', 'superadmin')
   @RequiresFeature('admin_product_feeds')
+  @Get('taxonomy')
+  async getTaxonomy() {
+    return this.svc.getTaxonomy();
+  }
+
+  @Roles('admin', 'superadmin')
+  @RequiresFeature('admin_product_feeds')
   @Get('logs')
   async getLogs(@Query('platform') platform?: string) {
     return this.svc.getLogs(platform);

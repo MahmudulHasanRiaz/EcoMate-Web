@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, CardHeader, CardTitle, CardContent,
@@ -15,11 +15,18 @@ import {
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '@/components/ui/table';
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from '@/components/ui/popover';
+import {
+  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+} from '@/components/ui/command';
 import { toast } from 'sonner';
 import {
-  Copy, RefreshCw, Clock, Activity, Loader2, Plus, Eye, EyeOff, ExternalLink, FileText,
+  Copy, RefreshCw, Clock, Activity, Loader2, Plus, Eye, EyeOff, ExternalLink, FileText, Check, ChevronsUpDown,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 import { feedsApi } from './api';
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -111,6 +118,25 @@ export function FeedsPage() {
     queryFn: () => feedsApi.preview(previewFeedId!),
     enabled: !!previewFeedId,
   });
+
+  const { data: taxonomy = [] } = useQuery({
+    queryKey: ['feed-taxonomy'],
+    queryFn: feedsApi.taxonomy,
+    staleTime: 1000 * 60 * 60 * 24,
+  });
+
+  const taxonomyById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const t of taxonomy) m.set(t.id, t.path);
+    return m;
+  }, [taxonomy]);
+
+  function getCatPath(idOrPath: string | null): string {
+    if (!idOrPath) return '';
+    const n = Number(idOrPath);
+    if (!isNaN(n) && taxonomyById.has(n)) return taxonomyById.get(n)!;
+    return idOrPath;
+  }
 
   const handleCreate = async (platform: string) => {
     setCreating(platform);
@@ -282,17 +308,53 @@ export function FeedsPage() {
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Label className="text-xs whitespace-nowrap">Google Category:</Label>
-                      <Input
-                        className="w-40 h-7 text-xs"
-                        placeholder="e.g. 187"
-                        defaultValue={feed.googleProductCategory ?? ''}
-                        onBlur={(e) => {
-                          const val = e.target.value || null;
-                          if (val !== feed.googleProductCategory) {
-                            updateMut.mutate({ id: feed.id, googleProductCategory: val });
-                          }
-                        }}
-                      />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="w-52 h-7 justify-between text-xs font-normal"
+                          >
+                            {feed.googleProductCategory
+                              ? getCatPath(feed.googleProductCategory).slice(0, 40) + '…'
+                              : 'Select category…'}
+                            <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80 p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search category…" className="h-8 text-xs" />
+                            <CommandList>
+                              <CommandEmpty className="text-xs py-2">No category found</CommandEmpty>
+                              <CommandGroup className="max-h-60">
+                                {taxonomy.map((cat) => (
+                                  <CommandItem
+                                    key={cat.id}
+                                    value={`${cat.id} ${cat.path}`}
+                                    className="text-xs"
+                                    onSelect={() => {
+                                      const val = String(cat.id);
+                                      if (val !== feed.googleProductCategory) {
+                                        updateMut.mutate({ id: feed.id, googleProductCategory: val });
+                                      }
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mr-1 h-3 w-3 shrink-0',
+                                        feed.googleProductCategory === String(cat.id)
+                                          ? 'opacity-100'
+                                          : 'opacity-0',
+                                      )}
+                                    />
+                                    <span className="truncate">{cat.path}</span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
                   <div className="flex gap-2">

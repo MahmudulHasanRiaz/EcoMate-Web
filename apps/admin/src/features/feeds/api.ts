@@ -49,4 +49,9 @@ export const feedsApi = {
     apiClient
       .get<string>(`/v1/feeds/config/${id}/preview`)
       .then((r) => r.data),
+
+  taxonomy: () =>
+    apiClient
+      .get<{ id: number; path: string }[]>('/v1/feeds/taxonomy')
+      .then((r) => r.data),
 };

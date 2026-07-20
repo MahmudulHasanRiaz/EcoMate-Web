@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import * as zlib from 'zlib';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const PLATFORM_NAMESPACES: Record<string, string> = {
   meta: 'http://base.google.com/ns/1.0',
@@ -710,5 +712,15 @@ export class FeedService {
       orderBy: { fetchedAt: 'desc' },
       take: 100,
     });
+  }
+
+  private taxonomyCache: any[] | null = null;
+
+  async getTaxonomy(): Promise<{ id: number; path: string }[]> {
+    if (this.taxonomyCache) return this.taxonomyCache;
+    const p = path.join(__dirname, 'data', 'google-product-taxonomy.json');
+    const raw = fs.readFileSync(p, 'utf-8');
+    this.taxonomyCache = JSON.parse(raw);
+    return this.taxonomyCache!;
   }
 }
