@@ -69,6 +69,7 @@ export class FeedService {
 
     const res = reply.raw || reply;
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Cache-Control', 'public, max-age=3600');
 
     const gzip = zlib.createGzip();
