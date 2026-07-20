@@ -707,13 +707,25 @@ export class FeedService {
     });
   }
 
-  private taxonomyCache: any[] | null = null;
+  private taxonomyCache: { id: number; path: string }[] | null = null;
 
   async getTaxonomy(): Promise<{ id: number; path: string }[]> {
     if (this.taxonomyCache) return this.taxonomyCache;
-    const p = path.join(__dirname, 'data', 'google-product-taxonomy.json');
-    const raw = fs.readFileSync(p, 'utf-8');
-    this.taxonomyCache = JSON.parse(raw);
-    return this.taxonomyCache!;
+    const candidates = [
+      path.join(__dirname, 'data', 'google-product-taxonomy.json'),
+      path.join(process.cwd(), 'dist', 'feed', 'data', 'google-product-taxonomy.json'),
+      path.join(process.cwd(), 'dist', 'src', 'feed', 'data', 'google-product-taxonomy.json'),
+      path.join(__dirname, '..', '..', '..', 'data', 'google-product-taxonomy.json'),
+    ];
+    for (const p of candidates) {
+      try {
+        const raw = fs.readFileSync(p, 'utf-8');
+        const parsed: { id: number; path: string }[] = JSON.parse(raw);
+        this.taxonomyCache = parsed;
+        return parsed;
+      } catch { /* try next */ }
+    }
+    this.taxonomyCache = [];
+    return this.taxonomyCache;
   }
 }
