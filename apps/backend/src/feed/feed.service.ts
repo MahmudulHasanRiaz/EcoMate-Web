@@ -716,6 +716,7 @@ export class FeedService {
       path.join(process.cwd(), 'dist', 'feed', 'data', 'google-product-taxonomy.json'),
       path.join(process.cwd(), 'dist', 'src', 'feed', 'data', 'google-product-taxonomy.json'),
       path.join(__dirname, '..', '..', '..', 'data', 'google-product-taxonomy.json'),
+      path.join(__dirname, '..', '..', 'feed', 'data', 'google-product-taxonomy.json'),
     ];
     for (const p of candidates) {
       try {

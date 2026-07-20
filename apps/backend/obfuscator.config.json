@@ -5,9 +5,10 @@
   "stringArrayThreshold": 0.8,
   "deadCodeInjection": true,
   "deadCodeInjectionThreshold": 0.4,
-  "selfDefending": true,
+  "selfDefending": false,
   "disableConsoleOutput": false,
   "renameGlobals": false,
+  "seed": 42,
   "reservedStrings": ["\\bEcoMate\\b", "\\bhandle\\b", "\\bapp\\b"],
   "reservedNames": ["\\becomate\\b", "\\bapp\\b", "\\bmodule\\b", "\\bservice\\b"]
 }
