@@ -23,6 +23,33 @@ export interface FeedLog {
   fetchedAt: string;
 }
 
+export interface FeedPreviewItem {
+  id: string;
+  title: string;
+  description: string;
+  link: string;
+  imageLink: string;
+  additionalImages: number;
+  availability: string;
+  price: number;
+  salePrice: number | null;
+  brand: string;
+  productType: string | null;
+  color?: string;
+  size?: string;
+  gender?: string;
+  material?: string;
+  pattern?: string;
+}
+
+export interface FeedPreview {
+  platform: string;
+  googleProductCategory: string | null;
+  totalProducts: number;
+  totalItems: number;
+  items: FeedPreviewItem[];
+}
+
 export const feedsApi = {
   list: () =>
     apiClient.get<FeedConfig[]>('/v1/feeds/config').then((r) => r.data),
@@ -47,7 +74,7 @@ export const feedsApi = {
 
   preview: (id: string) =>
     apiClient
-      .get<string>(`/v1/feeds/config/${id}/preview`)
+      .get<FeedPreview>(`/v1/feeds/config/${id}/preview`)
       .then((r) => r.data),
 
   taxonomy: () =>

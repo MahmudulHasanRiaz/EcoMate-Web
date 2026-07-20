@@ -545,7 +545,13 @@ export class FeedService {
 
   // -- Admin methods --
 
-  async previewFeed(id: string): Promise<string> {
+  async previewFeed(id: string): Promise<{
+    platform: string;
+    googleProductCategory: string | null;
+    totalProducts: number;
+    totalItems: number;
+    items: any[];
+  }> {
     const config = await this.prisma.productFeedConfig.findUnique({
       where: { id },
     });
@@ -553,7 +559,7 @@ export class FeedService {
 
     const storeName = await this.getStoreName();
     const filter = this.buildProductFilter(config);
-    const ns = PLATFORM_NAMESPACES[config.platform] || PLATFORM_NAMESPACES.meta;
+    const totalProducts = await this.prisma.product.count({ where: filter });
 
     const products = (await this.prisma.product.findMany({
       take: 5,
@@ -579,10 +585,7 @@ export class FeedService {
             attributeValues: {
               select: {
                 attributeValue: {
-                  select: {
-                    value: true,
-                    attribute: { select: { name: true } },
-                  },
+                  select: { value: true, attribute: { select: { name: true } } },
                 },
               },
             },
@@ -593,14 +596,7 @@ export class FeedService {
 
     await this.enrichProductsWithStock(products);
 
-    let xml =
-      `<?xml version="1.0" encoding="UTF-8"?>\n` +
-      `<rss xmlns:g="${this.escapeXml(ns)}" version="2.0">\n` +
-      `  <channel>\n` +
-      `    <title>Product Catalog Preview — ${this.escapeXml(config.platform)}</title>\n` +
-      `    <link>${process.env.STOREFRONT_URL || 'https://yourstore.com'}</link>\n` +
-      `    <description>Preview (first 5 products)</description>\n`;
-
+    const items: any[] = [];
     for (const product of products) {
       const hasVariants = product.type === 'variable' && product.variants.length > 0;
 
@@ -609,51 +605,48 @@ export class FeedService {
           const img = this.getImages(product, variant);
           const attr = this.getVariantAttributes(variant);
           const productType = product.productCategories?.[0]?.category?.name;
-          const customLabels = this.computeCustomLabels(product);
-          xml += this.mapToItemXml({
+          items.push({
             id: variant.sku || `${product.sku}-${variant.id}`,
             title: this.stripHtml(`${product.name} - ${variant.sku}`, 150),
             description: this.stripHtml(product.shortDesc || product.description || '', 5000),
             link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}?variant=${variant.id}`,
             imageLink: img.primary,
-            additionalImageLinks: img.additional,
+            additionalImages: img.additional.length,
             availability: variant._availableStock === null || variant._availableStock > 0 ? 'in stock' : 'out of stock',
-            price: variant.price || product.basePrice,
-            salePrice: variant.salePrice || product.salePrice,
+            price: Number(variant.price || product.basePrice),
+            salePrice: variant.salePrice ? Number(variant.salePrice) : null,
             brand: product.brand?.name || storeName || 'Store Brand',
             productType,
-            googleProductCategory: config.googleProductCategory,
             color: attr.color, size: attr.size,
             gender: attr.gender, material: attr.material, pattern: attr.pattern,
-            customLabels,
-            itemGroupId: product.id,
-          }, config.platform);
+          });
         }
       } else {
         const img = this.getImages(product);
         const productType = product.productCategories?.[0]?.category?.name;
-        const customLabels = this.computeCustomLabels(product);
-        xml += this.mapToItemXml({
+        items.push({
           id: product.sku || product.id,
           title: this.stripHtml(product.name, 150),
           description: this.stripHtml(product.shortDesc || product.description || '', 5000),
           link: `${process.env.STOREFRONT_URL || 'https://yourstore.com'}/product/${product.slug}`,
           imageLink: img.primary,
-          additionalImageLinks: img.additional,
+          additionalImages: img.additional.length,
           availability: product._availableStock === null || product._availableStock > 0 ? 'in stock' : 'out of stock',
-          price: product.basePrice,
-          salePrice: product.salePrice,
+          price: Number(product.basePrice),
+          salePrice: product.salePrice ? Number(product.salePrice) : null,
           brand: product.brand?.name || storeName || 'Store Brand',
           productType,
-          googleProductCategory: config.googleProductCategory,
-          customLabels,
-          itemGroupId: undefined,
-        }, config.platform);
+        });
       }
     }
 
-    xml += `  </channel>\n</rss>\n`;
-    return xml;
+    return {
+      platform: config.platform,
+      googleProductCategory: config.googleProductCategory,
+      totalProducts,
+      totalItems: items.length,
+      items,
+    };
   }
 
   async listConfigs() {

@@ -457,20 +457,79 @@ export function FeedsPage() {
       </Dialog>
 
       <Dialog open={!!previewFeedId} onOpenChange={(o) => !o && setPreviewFeedId(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
+        <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Feed Preview (first 5 products)</DialogTitle>
+            <DialogTitle>Feed Preview</DialogTitle>
           </DialogHeader>
           {previewLoading ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
+          ) : previewXml ? (
+            <div className="space-y-3">
+              <div className="flex gap-4 text-sm text-muted-foreground">
+                <span>Products: <strong>{previewXml.totalProducts}</strong></span>
+                <span>Feed items: <strong>{previewXml.totalItems}</strong></span>
+                <span>Showing: <strong>{Math.min(previewXml.items.length, 10)}</strong></span>
+              </div>
+              <ScrollArea className="h-[55vh]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Image</TableHead>
+                      <TableHead className="text-xs">ID</TableHead>
+                      <TableHead className="text-xs">Title</TableHead>
+                      <TableHead className="text-xs">Price</TableHead>
+                      <TableHead className="text-xs">Sale</TableHead>
+                      <TableHead className="text-xs">Stock</TableHead>
+                      <TableHead className="text-xs">Brand</TableHead>
+                      <TableHead className="text-xs">Size</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewXml.items.slice(0, 10).map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          {item.imageLink ? (
+                            <img
+                              src={item.imageLink}
+                              alt=""
+                              className="w-8 h-8 rounded object-cover"
+                            />
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono max-w-[100px] truncate">
+                          {item.id}
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate" title={item.title}>
+                          {item.title}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {item.price} BDT
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {item.salePrice ? `${item.salePrice} BDT` : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant={item.availability === 'in stock' ? 'default' : 'secondary'} className="text-xs">
+                            {item.availability}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs max-w-[80px] truncate">{item.brand}</TableCell>
+                        <TableCell className="text-xs">{item.size || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+              {previewXml.items.length > 10 ? (
+                <p className="text-xs text-muted-foreground text-center">
+                  … and {previewXml.items.length - 10} more items
+                </p>
+              ) : null}
+            </div>
           ) : (
-            <ScrollArea className="h-[60vh]">
-              <pre className="text-xs font-mono p-4 rounded bg-muted whitespace-pre-wrap break-all">
-                {previewXml || 'No preview available'}
-              </pre>
-            </ScrollArea>
+            <p className="text-sm text-muted-foreground py-8 text-center">No preview available</p>
           )}
         </DialogContent>
       </Dialog>
