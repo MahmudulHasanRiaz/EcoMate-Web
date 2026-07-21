@@ -117,8 +117,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Rebuild native binaries
-        run: npm rebuild @tailwindcss/oxide
+      - name: Install native binary (Tailwind Oxide)
+        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
 
       - name: Lint
         working-directory: apps/storefront
@@ -151,8 +151,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Rebuild native binaries
-        run: npm rebuild @tailwindcss/oxide
+      - name: Install native binary (Tailwind Oxide)
+        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
 
       - name: Lint
         working-directory: apps/admin
@@ -189,8 +189,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Rebuild native binaries
-        run: npm rebuild @tailwindcss/oxide
+      - name: Install native binary (Tailwind Oxide)
+        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
 
       - name: Build
         working-directory: apps/pos
