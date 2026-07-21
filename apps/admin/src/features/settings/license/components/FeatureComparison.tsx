@@ -1,4 +1,4 @@
-import { FEATURES } from '@ecomate/shared-types'
+import * as shared from '@ecomate/shared-types'
 import { Check, X } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -70,7 +70,7 @@ export function FeatureComparison({ activeFeatures }: FeatureComparisonProps) {
                   </TableCell>
                 </TableRow>
                 {group.keys.map((key) => {
-                  const feat = FEATURES[key]
+                  const feat = shared.FEATURES[key]
                   if (!feat) return null
                   const isActive = activeSet.has(key)
 

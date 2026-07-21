@@ -58,6 +58,11 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  build: {
+    commonjsOptions: {
+      include: [/@ecomate\/shared-types/, /node_modules/],
+    },
+  },
   optimizeDeps: {
     include: ['@ecomate/shared-types'],
   },

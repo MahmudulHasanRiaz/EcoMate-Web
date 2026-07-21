@@ -7,8 +7,6 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   PHYSICAL_ADJUSTMENT: 'Physical Adjustment',
   TRANSFER_OUT: 'Transfer Out',
   TRANSFER_IN: 'Transfer In',
-  purchase_receive: 'Purchase Receive',
-  order_fulfilled: 'Order Fulfilled',
   DEDUCTION: 'Deduction',
 
   // Managed Stock Ledger types
