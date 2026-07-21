@@ -700,6 +700,7 @@ model Payment {
   gatewayCode   String // Links to PaymentGateway.code (e.g., 'bkash', 'nagad', 'bkash_pgw', 'cash')
   amount        Decimal       @db.Decimal(10, 2)
   transactionId String?
+  providerPaymentId String?   @unique // bKash paymentID, bound at initiation
   screenshot    String?
   status        PaymentStatus @default(PENDING)
   verifiedBy    String?
@@ -713,6 +714,7 @@ model Payment {
   @@index([orderId])
   @@index([gatewayCode])
   @@index([transactionId])
+  @@unique([transactionId, gatewayCode])
 }
 
 model CheckoutLead {

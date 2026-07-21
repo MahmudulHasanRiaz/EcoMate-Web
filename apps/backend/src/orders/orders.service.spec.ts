@@ -189,6 +189,7 @@ describe('OrdersService', () => {
             },
             systemSetting: {
               findMany: jest.fn().mockResolvedValue([]),
+              findUnique: jest.fn().mockResolvedValue(null),
             },
             user: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),

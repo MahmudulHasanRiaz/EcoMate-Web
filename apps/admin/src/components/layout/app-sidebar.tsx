@@ -6,26 +6,7 @@ import { NavGroup } from './nav-group'
 import { NavUser } from './nav-user'
 import { TeamSwitcher } from './team-switcher'
 import { useLicenseStore } from '@/stores/license-store'
-import type { NavCollapsible, NavItem, NavLink } from './types'
-
-const EVERYTHING_FEATURE = '*'
-
-function filterNavItems(items: NavItem[], features: string[]): NavItem[] {
-  const hasFeature = (key: string) => features.includes(EVERYTHING_FEATURE) || features.includes(key)
-  return items.reduce<NavItem[]>((acc, item) => {
-    if ('items' in item && item.items) {
-      const subItems = filterNavItems(item.items, features)
-      const parentHasFeature = !item.feature || hasFeature(item.feature)
-      if (!parentHasFeature) return acc
-      if (subItems.length === 0) return acc
-      acc.push({ ...item, items: subItems } as NavCollapsible)
-    } else {
-      if (item.feature && !hasFeature(item.feature)) return acc
-      acc.push(item as NavLink)
-    }
-    return acc
-  }, [])
-}
+import { filterNavItems } from './data/sidebar-filter'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()

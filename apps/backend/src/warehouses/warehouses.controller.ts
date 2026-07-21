@@ -27,11 +27,13 @@ import {
 export class WarehousesController {
   constructor(private readonly svc: WarehousesService) {}
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get()
   findAll(@Query('type') type?: string) {
     return this.svc.findAll(type);
   }
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get('bin-locations')
   findAllBinLocations(
     @Query('warehouseId') warehouseId?: string,
@@ -44,6 +46,7 @@ export class WarehousesController {
     return this.svc.findAllBins(warehouseId, search, isActive, zoneId, rackId, shelfId);
   }
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -69,6 +72,7 @@ export class WarehousesController {
 
   /* ── Bin Locations ── */
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get(':id/bin-locations')
   listBinLocations(@Param('id') warehouseId: string) {
     return this.svc.listBinLocations(warehouseId);
@@ -100,6 +104,7 @@ export class WarehousesController {
 
   /* ── Zones ── */
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get(':id/zones')
   listZones(@Param('id') warehouseId: string) {
     return this.svc.listZones(warehouseId);
@@ -131,6 +136,7 @@ export class WarehousesController {
 
   /* ── Racks ── */
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get(':id/zones/:zoneId/racks')
   listRacks(@Param('zoneId') zoneId: string) {
     return this.svc.listRacks(zoneId);
@@ -162,6 +168,7 @@ export class WarehousesController {
 
   /* ── Shelves ── */
 
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get(':id/zones/:zoneId/racks/:rackId/shelves')
   listShelves(@Param('rackId') rackId: string) {
     return this.svc.listShelves(rackId);

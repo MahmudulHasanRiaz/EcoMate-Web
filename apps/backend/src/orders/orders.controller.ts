@@ -26,6 +26,7 @@ import {
   BulkDispatchDto,
   BulkAssignDto,
 } from './dto/bulk-order.dto';
+import { SubmitPaymentProofDto } from './dto/public-order-tracking.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
@@ -39,6 +40,7 @@ export class OrdersController {
     private readonly events: OrdersEventService,
   ) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -95,8 +97,8 @@ export class OrdersController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post()
-  create(@Body() dto: CreateOrderDto, @Req() req: any) {
-    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '');
+  create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: { userId: string }) {
+    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '', user?.userId);
   }
 
   @Roles('superadmin', 'admin')
@@ -107,18 +109,48 @@ export class OrdersController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Get('public/phone/:phone')
   findByPhone(@Param('phone') phone: string) {
     return this.svc.findByPhone(phone);
   }
 
+  /**
+   * Display-id (order-number) lookup. Strictly no-PII.
+   * Never accepts or searches by viewToken.
+   */
   @Public()
-  @Get('public/:viewToken')
-  findByViewToken(@Param('viewToken') viewTokenOrDisplayId: string) {
-    return this.svc.findByViewToken(viewTokenOrDisplayId);
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Get('public/display/:displayId')
+  findByDisplayId(@Param('displayId') displayId: string) {
+    return this.svc.findByDisplayId(displayId);
+  }
+
+  /**
+   * Guest tracking lookup by secret viewToken.
+   * Returns a richer but still-allowlisted guest DTO.
+   * Never treats the input as a displayId.
+   */
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Get('public/token/:viewToken')
+  findByViewToken(@Param('viewToken') viewToken: string) {
+    return this.svc.findByViewToken(viewToken);
+  }
+
+  /**
+   * Legacy public reference route — treats the input as a displayId only.
+   * Never guesses or treats it as a viewToken.
+   */
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Get('public/:reference')
+  findByReference(@Param('reference') reference: string) {
+    return this.svc.findByDisplayId(reference);
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Get(':id')
   findOne(
     @Param('id') id: string,
@@ -128,14 +160,23 @@ export class OrdersController {
     return this.svc.findOne(id, { token, userId: user?.userId });
   }
 
+  /** Public, but requires valid viewToken (for guests) OR authenticated ownership (for logged-in customers). */
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post(':id/submit-payment-proof')
   async submitPaymentProof(
     @Param('id') id: string,
-    @Body() proofData: { transactionId?: string; screenshot?: string },
+    @Body() proofData: SubmitPaymentProofDto,
+    @CurrentUser() user: { userId: string } | null | undefined,
   ) {
-    return this.svc.submitPaymentProof(id, proofData);
+    return this.svc.submitPaymentProof(id, proofData, {
+      userId: user?.userId,
+      token: proofData.token,
+    });
   }
 
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
   @Post(':id/verify-payment')
   async verifyPayment(
     @Param('id') id: string,

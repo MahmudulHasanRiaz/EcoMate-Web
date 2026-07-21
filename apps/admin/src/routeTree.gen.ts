@@ -93,6 +93,7 @@ import { Route as AuthenticatedOpEmployeesCreateRouteImport } from './routes/_au
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
+import { Route as AuthenticatedMonUsersPresetsRouteImport } from './routes/_authenticated/mon/users/presets'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
@@ -608,6 +609,12 @@ const AuthenticatedOpAccountingJournalEntriesRoute =
     path: '/op/accounting/journal-entries',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonUsersPresetsRoute =
+  AuthenticatedMonUsersPresetsRouteImport.update({
+    id: '/mon/users/presets',
+    path: '/mon/users/presets',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
   id: '/mon/users/$id',
   path: '/mon/users/$id',
@@ -806,6 +813,7 @@ export interface FileRoutesByFullPath {
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
@@ -920,6 +928,7 @@ export interface FileRoutesByTo {
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
@@ -1036,6 +1045,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
@@ -1152,6 +1162,7 @@ export interface FileRouteTypes {
     | '/mon/'
     | '/op/'
     | '/mon/users/$id'
+    | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/customers/$id'
@@ -1266,6 +1277,7 @@ export interface FileRouteTypes {
     | '/mon'
     | '/op'
     | '/mon/users/$id'
+    | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/customers/$id'
@@ -1381,6 +1393,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
     | '/_authenticated/mon/users/$id'
+    | '/_authenticated/mon/users/presets'
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
     | '/_authenticated/op/customers/$id'
@@ -2078,6 +2091,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpAccountingJournalEntriesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/users/presets': {
+      id: '/_authenticated/mon/users/presets'
+      path: '/mon/users/presets'
+      fullPath: '/mon/users/presets'
+      preLoaderRoute: typeof AuthenticatedMonUsersPresetsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/users/$id': {
       id: '/_authenticated/mon/users/$id'
       path: '/mon/users/$id'
@@ -2395,6 +2415,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
+  AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
@@ -2478,6 +2499,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
+  AuthenticatedMonUsersPresetsRoute: AuthenticatedMonUsersPresetsRoute,
   AuthenticatedOpAccountingJournalEntriesRoute:
     AuthenticatedOpAccountingJournalEntriesRoute,
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,

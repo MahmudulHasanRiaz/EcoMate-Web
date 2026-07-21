@@ -104,19 +104,18 @@ export interface BkashResumeResponse {
 
 export async function resumeBkasPayment(
   orderId: string,
-  partialAmount?: number,
-  invoiceNo?: string,
+  opts?: { token?: string; partialAmount?: number; invoiceNo?: string },
 ): Promise<BkashResumeResponse> {
   const amount =
-    typeof partialAmount === "number" && partialAmount > 0
-      ? partialAmount
+    typeof opts?.partialAmount === "number" && opts.partialAmount > 0
+      ? opts.partialAmount
       : 0;
   const { data } = await apiClient.post<BkashResumeResponse>(
     "/payments/bkash/create",
     {
-      amount,
       orderId,
-      invoiceNo: invoiceNo || orderId,
+      invoiceNo: opts?.invoiceNo || orderId,
+      ...(opts?.token ? { token: opts.token } : {}),
     },
   );
   return data;
@@ -137,6 +136,7 @@ export async function submitManualPaymentProof(
   file: File,
   transactionId?: string,
   amount?: number,
+  token?: string,
 ): Promise<unknown> {
   const screenshot = await fileToBase64(file);
   const { data } = await apiClient.post(
@@ -146,6 +146,7 @@ export async function submitManualPaymentProof(
       amount: typeof amount === "number" ? amount : 0,
       transactionId: transactionId || undefined,
       screenshot,
+      ...(token ? { token } : {}),
     },
   );
   return data;

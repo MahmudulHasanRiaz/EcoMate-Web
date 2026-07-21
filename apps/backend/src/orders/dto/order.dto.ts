@@ -109,6 +109,7 @@ export class CreatePaymentDto {
   @IsOptional() @IsString() transactionId?: string;
   @IsOptional() @IsString() screenshot?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() token?: string;
 }
 
 export class VerifyPaymentDto {

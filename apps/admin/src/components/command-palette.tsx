@@ -24,6 +24,8 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { sidebarData } from './layout/data/sidebar-data'
+import { filterNavItems } from './layout/data/sidebar-filter'
+import { useLicenseStore } from '@/stores/license-store'
 import { ScrollArea } from './ui/scroll-area'
 
 function formatCurrency(n: number) {
@@ -38,6 +40,7 @@ function formatCurrency(n: number) {
 export function CommandPalette() {
   const navigate = useNavigate()
   const { setTheme } = useTheme()
+  const features = useLicenseStore((s) => s.features)
   const {
     open,
     setOpen,
@@ -58,6 +61,13 @@ export function CommandPalette() {
       command()
     },
     [setOpen],
+  )
+
+  const filteredNavGroups = React.useMemo(
+    () => sidebarData.navGroups
+      .map((g) => ({ ...g, items: filterNavItems(g.items, features) }))
+      .filter((g) => g.items.length > 0),
+    [features],
   )
 
   const handleSelect = (
@@ -268,7 +278,7 @@ export function CommandPalette() {
           {/* Navigation + Theme (only in command mode with no query) */}
           {mode === 'command' && query.length === 0 && !isLoading && !error && (
             <>
-              {sidebarData.navGroups.map((group) => (
+              {filteredNavGroups.map((group) => (
                 <CommandGroup
                   key={group.title || 'nav'}
                   heading={group.title}

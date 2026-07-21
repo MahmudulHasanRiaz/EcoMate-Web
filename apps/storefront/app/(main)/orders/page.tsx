@@ -43,7 +43,7 @@ interface OrderData {
     estimatedDelivery?: string;
   } | null;
   timeline: TimelineEntry[];
-  customer?: { firstName: string; lastName: string; phoneNumber: string };
+  customer?: { firstName?: string; lastName?: string; phoneNumber?: string; name?: string; phone?: string };
   total: number;
 }
 
@@ -98,7 +98,7 @@ export default function OrdersPage() {
           setOrdersList(data);
         }
       } else {
-        const { data } = await apiClient.get<OrderData>(`/orders/public/${encodeURIComponent(trimmed)}`);
+        const { data } = await apiClient.get<OrderData>(`/orders/public/display/${encodeURIComponent(trimmed)}`);
         setOrder(data);
       }
     } catch (err: any) {
@@ -307,7 +307,7 @@ export default function OrdersPage() {
                           {order.shippingAddress.address && <>{order.shippingAddress.address}<br /></>}
                           {[order.shippingAddress.thana, order.shippingAddress.district, order.shippingAddress.city].filter(Boolean).join(', ')}
                           <br />
-                          Phone: {order.shippingAddress.phone || order.customer?.phoneNumber}
+                          Phone: {order.shippingAddress.phone || order.customer?.phone || order.customer?.phoneNumber || ''}
                         </>
                       ) : (
                         'No shipping address available'

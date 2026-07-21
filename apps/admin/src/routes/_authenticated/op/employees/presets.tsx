@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import AccessPresetsPage from '@/features/access-presets'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/op/employees/presets')({
-  component: AccessPresetsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/mon/users/presets' })
+  },
 })

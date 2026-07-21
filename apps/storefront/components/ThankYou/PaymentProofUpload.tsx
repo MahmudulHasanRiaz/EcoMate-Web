@@ -10,12 +10,14 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 export interface PaymentProofUploadProps {
   orderId: string;
+  token?: string;
   amount?: number;
   className?: string;
 }
 
 export function PaymentProofUpload({
   orderId,
+  token,
   amount,
   className = "",
 }: PaymentProofUploadProps) {
@@ -62,7 +64,7 @@ export function PaymentProofUpload({
     if (submitting) return;
     setSubmitting(true);
     try {
-      await submitManualPaymentProof(orderId, file, transactionId, amount);
+      await submitManualPaymentProof(orderId, file, transactionId, amount, token);
       setSubmitted(true);
       toast.success("Proof submitted. Awaiting verification.");
     } catch (err) {

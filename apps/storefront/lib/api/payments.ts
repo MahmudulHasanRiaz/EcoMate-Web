@@ -5,6 +5,7 @@ export interface SubmitPaymentData {
   amount: number;
   transactionId?: string;
   notes?: string;
+  token?: string;
 }
 
 export async function submitPayment(orderId: string, data: SubmitPaymentData) {
