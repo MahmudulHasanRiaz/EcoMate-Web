@@ -245,7 +245,7 @@ function mockResponse(opts: {
   } else {
     process.nextTick(() => res.push(null));
   }
-  if (opts.destroy) res.destroy = () => {};
+  if (opts.destroy) res.destroy = () => { return res; };
   return res;
 }
 
@@ -337,7 +337,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     const transport: HttpTransport = {
       request: async (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1, remoteAddress: '10.0.0.1' });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: '10.0.0.1' };
       },
     };
@@ -357,7 +357,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     const transport: HttpTransport = {
       request: async (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1, remoteAddress: '1.2.3.4' });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: '1.2.3.4' };
       },
     };
@@ -408,7 +408,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1 });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: undefined };
       },
     );
@@ -433,7 +433,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
             statusCode: 302,
             headers: { location: 'http://10.0.0.1/secret' },
           });
-          res.destroy = () => { redirectDestroyed = true; };
+          res.destroy = () => { redirectDestroyed = true; return res; };
           return { response: res };
         }
         return { response: mockResponse({ statusCode: 200, body: PNG_1x1 }) };
@@ -455,7 +455,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
           headers: { 'content-length': '99999999' },
           body: PNG_1x1,
         });
-        res.destroy = () => { contentLengthDestroyed = true; };
+        res.destroy = () => { contentLengthDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -472,7 +472,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: bigChunk });
-        res.destroy = () => { streamDestroyed = true; };
+        res.destroy = () => { streamDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -488,7 +488,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 500, body: Buffer.from('error') });
-        res.destroy = () => { non2xxDestroyed = true; };
+        res.destroy = () => { non2xxDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -810,12 +810,12 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
   it('corrupt cached .webp file — resize regenerates and returns valid WebP', async () => {
     const svc = createSvc();
     // Write source PNG
-    const sourcePath = path.join(svc.uploadRoot, 'source.png');
+    const sourcePath = path.join((svc as any).uploadRoot, 'source.png');
     fs.writeFileSync(sourcePath, sourcePNG);
 
     // Write corrupt cache at the expected cache path
     const key = cacheKey('/uploads/source.png', 100, 100);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, Buffer.from([0x00, 0x01, 0x02, 0x03]));
 
     const result = await svc.resize({ path: '/uploads/source.png', w: 100, h: 100 });
@@ -829,12 +829,12 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
 
   it('valid PNG at .webp cache path — resize rejects and regenerates WebP', async () => {
     const svc = createSvc();
-    const sourcePath = path.join(svc.uploadRoot, 'source.png');
+    const sourcePath = path.join((svc as any).uploadRoot, 'source.png');
     fs.writeFileSync(sourcePath, sourcePNG);
 
     // Place valid PNG where .webp cache is expected
     const key = cacheKey('/uploads/source.png', 50, 50);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, sourcePNG); // PNG bytes, not WebP
 
     const result = await svc.resize({ path: '/uploads/source.png', w: 50, h: 50 });
@@ -850,7 +850,7 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
     const svc = createSvc();
     // Don't write a source — the cache hit path is reached before source is needed
     const key = cacheKey('/uploads/nonexistent.png', 100, 100);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, validWebP);
 
     const result = await svc.resize({ path: '/uploads/nonexistent.png', w: 100, h: 100 });

@@ -275,8 +275,9 @@ function OrderDetailPage() {
                 <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
                   {order.status.name}
                 </Badge>
-                {order.dispatches?.length > 0 && (() => {
-                  const latestDispatch = order.dispatches[order.dispatches.length - 1]
+                {order.dispatches && order.dispatches.length > 0 && (() => {
+                  const d = order.dispatches
+                  const latestDispatch = d[d.length - 1]
                   const ds = DISPATCH_STATUSES.find(d => d.value === latestDispatch.status)
                   return (
                     <Badge variant='outline' className={`text-xs flex items-center gap-1 ${ds?.color ? ds.color.replace('bg-', 'text-').replace('-500', '-600') : ''}`}>
@@ -883,7 +884,7 @@ function OrderDetailPage() {
               </Card>
 
               {/* Courier Customer History */}
-              <CourierCustomerHistoryCard phone={order.customer?.phone || order.guestPhone} />
+              <CourierCustomerHistoryCard phone={order.customer?.phoneNumber || order.guestPhone} />
 
               {/* Live Tracking Timeline */}
               <Card>

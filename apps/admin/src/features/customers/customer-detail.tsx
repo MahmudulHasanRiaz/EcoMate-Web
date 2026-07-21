@@ -160,7 +160,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
                     size='icon'
                     className='h-6 w-6 text-destructive hover:text-destructive'
                     onClick={() => {
-                      setNewIp(customer.lastIp)
+                      setNewIp(customer.lastIp ?? '')
                       setIpReason(`Customer: ${customer.firstName} ${customer.lastName}`)
                     }}
                     title='Block this IP'

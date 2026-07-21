@@ -13,9 +13,9 @@ export interface PaymentVerificationOrder {
 
 export const paymentsApi = {
   listVerifying: () =>
-    apiClient.get<PaymentVerificationOrder[]>('/orders', {
+    apiClient.get<{ data: PaymentVerificationOrder[] }>('/orders', {
       params: { paymentStatus: 'PAYMENT_VERIFYING' },
-    }).then(r => r.data?.data || r.data),
+    }).then(r => r.data.data),
   verify: (id: string, verified: boolean, note?: string) =>
     apiClient.post(`/orders/${id}/verify-payment`, { verified, note }),
 };

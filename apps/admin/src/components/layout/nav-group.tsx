@@ -72,7 +72,7 @@ function NavBadge({ children }: { children: ReactNode }) {
 
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
   const { setOpenMobile } = useSidebar()
-  const isExternal = !item.url.startsWith('/op/') && !item.url.startsWith('/mon/')
+  const isExternal = !item.url!.startsWith('/op/') && !item.url!.startsWith('/mon/')
   const isActive = isExternal ? false : checkIsActive(href, item)
 
   return (

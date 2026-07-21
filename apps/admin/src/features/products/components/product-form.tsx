@@ -1228,7 +1228,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
         <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
           <Button variant='outline' onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
-          <Button onClick={handleSaveClick} disabled={createMut.isPending || updateMut.isPending}>
+          <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending}>
             {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {isEdit ? 'Update Product' : 'Create Product'}
           </Button>

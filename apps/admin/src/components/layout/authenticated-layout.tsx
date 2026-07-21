@@ -37,7 +37,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     apiClient.get('/auth/me').then(r => {
       const u = r.data?.user || r.data
       if (u) {
-        setUser({ id: u.id, email: u.email, role: u.role })
+        setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
         if (u.role === 'packing_assistant') {
           const isOnPacking = window.location.pathname.startsWith('/op/packing')
           if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
@@ -69,7 +69,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         const u = res.data?.user || res.data
         if (u) {
           const { setUser } = useAuthStore.getState().auth
-          setUser({ id: u.id, email: u.email, role: u.role })
+          setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
         }
       } catch {
         // Silent — the interceptor handles 401 with exponential backoff.
