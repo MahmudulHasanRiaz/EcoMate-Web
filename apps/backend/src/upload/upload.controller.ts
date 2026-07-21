@@ -5,11 +5,12 @@ import {
   Body,
   Req,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+
 import * as fastify from 'fastify';
 import { MediaService } from '../media/media.service';
 import type { UploadFile } from '../storage/storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { validateMagicBytes } from '../common/utils/file-validation';
@@ -23,7 +24,7 @@ export class UploadController {
   constructor(private readonly media: MediaService) {}
 
   @Post('image')
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadImage(
     @Req() req: fastify.FastifyRequest,
@@ -65,7 +66,7 @@ export class UploadController {
   }
 
   @Post('images')
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadImages(
     @Req() req: fastify.FastifyRequest,
@@ -136,7 +137,7 @@ export class UploadController {
   }
 
   @Post('from-url')
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Roles('superadmin', 'admin', 'manager', 'cashier')
   async uploadFromUrl(
     @Body('url') url: string,

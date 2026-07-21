@@ -1,9 +1,9 @@
 import { Controller, Get, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
-import { SkipThrottle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 
-@SkipThrottle()
+@RateLimitPolicy('health')
 @Controller('health')
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);

@@ -11,9 +11,10 @@ import {
 import { CheckoutLeadsService } from './checkout-leads.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Throttle } from '@nestjs/throttler';
+
 import { ConvertOrderDto } from './dto/convert-order.dto';
 import { UpsertLeadDto } from './dto/upsert-lead.dto';
 
@@ -58,7 +59,7 @@ export class CheckoutLeadsController {
     return this.svc.findOne(id);
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('checkout')
   @Public()
   @Post()
   upsert(@Body() dto: UpsertLeadDto) {

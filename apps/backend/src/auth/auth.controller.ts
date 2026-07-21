@@ -23,7 +23,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { RefreshJwtGuard } from './refresh-jwt.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SecurityService } from '../security/security.service';
 import { getAllPermissions } from '../common/permissions/registry';
 
@@ -35,7 +35,7 @@ export class AuthController {
   ) {}
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('auth')
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
@@ -53,7 +53,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('auth')
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -78,7 +78,7 @@ export class AuthController {
     }
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @RateLimitPolicy('auth')
   @Public()
   @UseGuards(RefreshJwtGuard)
   @Post('refresh')
@@ -101,7 +101,7 @@ export class AuthController {
     return { accessToken: result.accessToken, user: result.user };
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('auth')
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(
@@ -116,7 +116,7 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('auth')
   @Get('me')
   async me(@CurrentUser() user: any) {
     const profile = await this.authService.me(user.userId);
@@ -133,7 +133,7 @@ export class AuthController {
     return { ...profile, permissions };
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('auth')
   @Put('me')
   @HttpCode(HttpStatus.OK)
   async updateProfile(
@@ -143,7 +143,7 @@ export class AuthController {
     return this.authService.updateProfile(user.userId, dto);
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('auth')
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(
@@ -154,7 +154,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @RateLimitPolicy('auth')
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
@@ -162,7 +162,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('auth')
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() dto: VerifyOtpDto) {
@@ -170,7 +170,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @RateLimitPolicy('auth')
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {
@@ -178,7 +178,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('auth')
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   async verifyEmail(@Body() dto: VerifyEmailDto) {

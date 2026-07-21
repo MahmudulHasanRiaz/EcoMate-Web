@@ -10,7 +10,8 @@ import {
   Sse,
   Req,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
+
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import {
@@ -95,7 +96,7 @@ export class OrdersController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Post()
   create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: { userId: string }) {
     return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '', user?.userId);
@@ -109,7 +110,7 @@ export class OrdersController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Get('public/phone/:phone')
   findByPhone(@Param('phone') phone: string) {
     return this.svc.findByPhone(phone);
@@ -120,7 +121,7 @@ export class OrdersController {
    * Never accepts or searches by viewToken.
    */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Get('public/display/:displayId')
   findByDisplayId(@Param('displayId') displayId: string) {
     return this.svc.findByDisplayId(displayId);
@@ -132,7 +133,7 @@ export class OrdersController {
    * Never treats the input as a displayId.
    */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Get('public/token/:viewToken')
   findByViewToken(@Param('viewToken') viewToken: string) {
     return this.svc.findByViewToken(viewToken);
@@ -143,14 +144,14 @@ export class OrdersController {
    * Never guesses or treats it as a viewToken.
    */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Get('public/:reference')
   findByReference(@Param('reference') reference: string) {
     return this.svc.findByDisplayId(reference);
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @RateLimitPolicy('checkout')
   @Get(':id')
   findOne(
     @Param('id') id: string,
@@ -162,7 +163,7 @@ export class OrdersController {
 
   /** Public, but requires valid viewToken (for guests) OR authenticated ownership (for logged-in customers). */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @RateLimitPolicy('checkout')
   @Post(':id/submit-payment-proof')
   async submitPaymentProof(
     @Param('id') id: string,
@@ -302,7 +303,7 @@ export class OrdersController {
     return this.svc.getStaff();
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('api')
   @Get('stream/updates')
   @Sse()
   streamUpdates(): Observable<MessageEvent> {

@@ -10,7 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -100,13 +100,13 @@ export class UsersController {
     };
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('api')
   @Get('settings')
   async getSettings(@CurrentUser() user: { userId: string }) {
     return this.usersService.getSettings(user.userId);
   }
 
-  @SkipThrottle()
+  @RateLimitPolicy('api')
   @Put('settings')
   @HttpCode(HttpStatus.OK)
   async updateSettings(

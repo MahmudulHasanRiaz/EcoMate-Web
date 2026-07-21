@@ -159,6 +159,14 @@ export default async function RootLayout({
         )}
 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+
+        {/* Browser trust for adaptive rate limiting — set on first visit */}
+        <script
+          id="__RM_BROWSER_TRUST__"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(!document.cookie||document.cookie.includes("_rm_bt="))return;fetch("/api/rate-limit/browser-check").then(function(r){return r.json()}).then(function(d){if(d&&d.token){var s=location.protocol==="https:"?";Secure":"";document.cookie="_rm_bt="+d.token+s+";path=/;max-age=86400;SameSite=Lax"}}).catch(function(){})}())`,
+          }}
+        />
       </head>
       <body className="min-h-screen flex flex-col bg-brand-bg text-gray-900 antialiased" suppressHydrationWarning>
         <AuthProvider>

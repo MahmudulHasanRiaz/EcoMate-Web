@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Req, Ip } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import * as fastify from 'fastify';
 import { TrackingService } from './tracking.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -15,8 +15,8 @@ export class TrackingController {
     private readonly pageViewBuffer: PageViewBufferService,
   ) {}
 
+  @RateLimitPolicy('storefront')
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post('events')
   async trackEvent(
     @Body() body: TrackEventDto,
@@ -36,7 +36,7 @@ export class TrackingController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @RateLimitPolicy('storefront')
   @Post('context')
   async saveContext(@Body() body: SaveContextDto) {
     await this.tracking.saveContext(body.orderId, {
@@ -49,7 +49,7 @@ export class TrackingController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 100 } })
+  @RateLimitPolicy('storefront')
   @Post('page-view')
   async trackPageView(
     @Body() body: PageViewDto,

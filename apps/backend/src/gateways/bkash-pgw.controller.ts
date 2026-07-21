@@ -15,7 +15,7 @@ import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import type { FastifyReply } from 'fastify';
 
 /**
@@ -47,7 +47,7 @@ export class BkashPgwController {
    * the outstanding balance permanently.
    */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @RateLimitPolicy('checkout')
   @Post('create')
   async create(
     @Body()
@@ -149,7 +149,7 @@ export class BkashPgwController {
    * order id or token is ever exposed in the Location header.
    */
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @RateLimitPolicy('checkout')
   @Get('callback')
   async callback(@Query() query: any, @Res() res: FastifyReply) {
     const { paymentID, status } = query;

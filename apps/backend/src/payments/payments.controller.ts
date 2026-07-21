@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -31,7 +31,7 @@ export class PaymentsController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @RateLimitPolicy('checkout')
   @Post(':orderId')
   create(
     @Param('orderId') orderId: string,
