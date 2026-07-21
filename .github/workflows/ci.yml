@@ -117,6 +117,9 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
+      - name: Rebuild native binaries
+        run: npm rebuild @tailwindcss/oxide
+
       - name: Lint
         working-directory: apps/storefront
         run: npm run lint || true
@@ -147,6 +150,9 @@ jobs:
 
       - name: Install dependencies (Root)
         run: npm ci
+
+      - name: Rebuild native binaries
+        run: npm rebuild @tailwindcss/oxide
 
       - name: Lint
         working-directory: apps/admin
@@ -182,6 +188,9 @@ jobs:
 
       - name: Install dependencies (Root)
         run: npm ci
+
+      - name: Rebuild native binaries
+        run: npm rebuild @tailwindcss/oxide
 
       - name: Build
         working-directory: apps/pos
