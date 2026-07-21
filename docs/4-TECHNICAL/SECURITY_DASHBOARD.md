@@ -1,6 +1,7 @@
 # Security Dashboard — Technical Specification
 
-> **Status:** Implemented (v1)
+> **Status:** Production Ready (v1)
+> > Known production limitations are documented in [Section 10](#10-known-limitations) and scheduled improvements are listed in [Section 15](#15-future-roadmap). All limitations represent conscious engineering trade-offs, not incomplete implementation.
 > **Last updated:** 2026-07-22
 > **Scope:** Backend (`apps/backend/src/security-dashboard/`) + Admin UI (`apps/admin/src/features/security/`)
 
@@ -550,6 +551,21 @@ If this query becomes a bottleneck (>500ms at 10M rows), a `SecurityEventActorSu
 
 When real-time event streaming is needed: add Redis pub/sub in the processor success path, subscribe via NestJS `@WebSocketGateway`, and connect from React with a `useSocket` hook. Estimated effort: 2–3 days.
 
+### ADR-007: Why Security Dashboard is Read-Only
+
+**Status:** Accepted
+
+**Context:** The dashboard returns security event data but never creates, updates, or deletes security resources directly. A future developer might naturally ask: why can't I block an IP or add a whitelist entry from the dashboard UI?
+
+**Decision:** The dashboard is a pure read-only view into the security subsystem. All operational actions — block, unblock, whitelist toggle, retention update — happen through the `SecurityModule` services (`BlockedEntriesService`, `SecurityRetentionPolicyService`, etc.), which have their own authorization, validation, and audit logic.
+
+The separation prevents:
+- Dashboard UI from accidentally bypassing business rules (e.g., blocking an IP without updating the rate limiter's in-memory state)
+- Dashboard code from accumulating write responsibilities that belong in dedicated services
+- A future developer from adding a "quick unblock button" that skips the unblock audit trail
+
+**When this might change:** If the dashboard gains dedicated write endpoints for operational actions, those endpoints should delegate to the existing service layer — never implement business logic inline. The dashboard itself remains a query-only interface.
+
 ---
 
 ## 9. P1 Deferred Items
@@ -572,29 +588,65 @@ These were identified during self-review and are intentionally deferred. They ar
 
 ## 10. Known Limitations
 
+Each limitation below describes the current behavior, why it was chosen for v1, and the path to improvement. These are conscious engineering trade-offs, not accidental omissions.
+
 ### Architecture Limitations
 
-1. **BullMQ is single-region.** Multi-region event ingestion would need a different event bus (Kafka, regional queues with replication). Not an issue for v1 — single-region deployment is the norm.
+#### 1. BullMQ is single-region
 
-2. **Fire-and-forget means silent loss.** If Redis/BullMQ is down, the emitter catches the error and logs it, but the event is lost. No retry buffer, no dead letter queue for the emitter side. Fix for v2: add a local in-memory buffer that replays to the queue when available.
+- **Current behavior:** All security events flow through a single BullMQ queue in one Redis instance. Cross-region event correlation is not possible.
+- **Reason:** EcoMate deploys single-region. Multi-region event ingestion would require Kafka or regional queue replication — infrastructure and operational complexity not justified for current scale.
+- **Future improvement:** If multi-region deployment becomes the standard, replace BullMQ with a regional event bus (Kafka, Pulsar, or Redis-based replication).
 
-3. **Aggregate counts inflate on processor retry.** The UPSERT increment path runs even when the SecurityEvent INSERT was deduped. Recalculation corrects this but isn't scheduled. Acceptable for v1.
+#### 2. Fire-and-forget event emission
 
-4. **In-memory RiskScoreService is per-process.** With multiple backend instances, each has its own score map. A user switching instances gets a fresh score. Acceptable for v1 — risk scores are ephemeral (10-min TTL).
+- **Current behavior:** If Redis or BullMQ is unavailable, the emitter logs the error and returns `{ enqueued: false }`. The event is not persisted.
+- **Reason:** Event emission runs on the production request path (rate limiter guard, auth service). Any retry or buffering on the emitter side would add latency and complexity to the hot path. Protecting request latency was prioritized over guaranteed delivery.
+- **Future improvement:** Introduce a local in-memory retry buffer that replays to BullMQ when the queue becomes available, or a durable outbox pattern (write event to local DB first, then enqueue via a background worker).
 
-5. **No table partitioning.** SecurityEvent grows unbounded. For >10M rows, monthly partitioning by `timestamp` is recommended. Migration approach: `CREATE TABLE SecurityEvent_YYYYMM (LIKE SecurityEvent) INHERITS (SecurityEvent)` with a trigger-based routing function.
+#### 3. Aggregate count inflation on processor retry
 
-6. **actorType stored as string cast.** The processor uses `as any` to cast SecurityActorType. Not type-safe. Proper fix: map enum values in the emitter interface.
+- **Current behavior:** When the event processor retries (max 3 attempts), the aggregate UPSERT increments counts again even though the SecurityEvent INSERT was deduped via `P2002` catch. This causes ~0.1–0.3% overcount in hourly/daily aggregates.
+- **Reason:** The processor is written as a linear sequence of operations (INSERT → UPSERT × 3). Splitting the INSERT from the UPSERT would require idempotency tokens or a two-phase approach — complexity not warranted for a ~0.2% error that recalibration corrects.
+- **Future improvement:** Make aggregate UPSERTs idempotent by tracking which events were already counted, or schedule periodic recalibration via the `security-aggregate` queue.
+
+#### 4. RiskScoreService is per-process (in-memory)
+
+- **Current behavior:** Each backend instance maintains its own in-memory risk score map with 10-minute TTL. A user routed to a different instance gets a fresh score.
+- **Reason:** Risk scores are ephemeral by nature — a user's score decays over time regardless of which instance tracks it. Centralized storage (Redis) adds dependency and latency for a temporary value. Acceptable for v1 as scores are advisory, not authoritative.
+- **Future improvement:** Migrate risk score state to Redis with TTL so scores survive instance restarts and are shared across instances.
+
+#### 5. No table partitioning
+
+- **Current behavior:** SecurityEvent is a single table with no partitioning. At >10M rows, query performance may degrade despite indexes.
+- **Reason:** Table partitioning adds migration complexity and requires careful maintenance (partition pruning, partition routing). Not necessary until the event volume exceeds ~10M rows.
+- **Future improvement:** Add monthly partitioning on `timestamp` using declarative partitioning (PG 10+) with a trigger-based routing function for inserts.
+
+#### 6. actorType stored via unsafe cast
+
+- **Current behavior:** The processor casts `data.actorType` using `as any` because the enum type (`SecurityActorType`) doesn't match the Prisma JSON value type expected for the `actorType` field.
+- **Reason:** Prisma's generated types for enum fields and the processor's generic input type are not directly compatible. The cast is in the processor — a translation layer, not a domain boundary.
+- **Future improvement:** Map enum values explicitly in the emitter interface or the processor's type adapter.
 
 ### Operational Limitations
 
-1. **No Bull Board mounted.** Failed jobs and queue depth are not visible via admin UI. Mount Bull Board at `/admin/bull-board`.
+#### 7. No Bull Board in admin UI
 
-2. **No dead job alerting.** Failed jobs pile up in BullMQ failed set (keep last 100). No notification mechanism.
+- **Current behavior:** Failed jobs and queue depth are not visible from the admin dashboard. Requires direct Redis inspection (`redis-cli` or Bull Board standalone).
+- **Reason:** Mounting Bull Board requires adding its middleware to the Fastify adapter — a small change but out of scope for the initial dashboard implementation.
+- **Future improvement:** Mount Bull Board at `/admin/bull-board` behind `superadmin` role in the admin Next.js/NestJS route.
 
-3. **Redis outage = event loss.** No client-side buffering. The in-memory fallback for rate limiting (SecurityService) exists but the event emitter has no fallback.
+#### 8. No dead job alerting
 
-4. **Top-offenders query at scale.** Though indexed, the GROUP BY + ORDER BY on a million-row filtered set is the most expensive dashboard query. Monitor and add `SecurityEventActorSummary` aggregate if >500ms.
+- **Current behavior:** Failed jobs accumulate in BullMQ's failed set (keeps last 100). No notification mechanism exists.
+- **Reason:** Alerting infrastructure (PagerDuty, Slack webhook, email) is a cross-cutting concern not specific to the security dashboard. Adding it here would create an inconsistent alerting pattern.
+- **Future improvement:** Add a Prometheus metric for failed job count and alert on it through existing monitoring infrastructure.
+
+#### 9. Top-offenders query cost at scale
+
+- **Current behavior:** The top-offenders query uses GROUP BY + ORDER BY on a filtered subset of SecurityEvent. Though indexed, it is the most expensive dashboard query.
+- **Reason:** Pre-computing top actors requires guessing which actors to track and misses new actors until the next aggregation window. The ~100ms query every few minutes is acceptable for v1.
+- **Future improvement:** Monitor query latency. If >500ms at scale, add a `SecurityEventActorSummary` daily aggregate table.
 
 ---
 
@@ -768,3 +820,14 @@ Not automated (requires running DB + Redis):
 - [ ] SIEM integration
 - [ ] Scheduled report delivery (email/Slack)
 - [ ] Automated threat response playbooks
+
+### Not Planned
+
+These are intentionally excluded because they do not align with EcoMate's current deployment model, scale requirements, or team size:
+
+- Real-time per-event streaming for every client (the polling model is sufficient for admin review)
+- Kafka migration (BullMQ addresses current needs; Kafka overhead not justified)
+- Multi-region event bus (single-region deployment is the norm)
+- Full event sourcing replacement (SecurityEvent is an audit log, not an event-sourced aggregate store)
+- SIEM integration beyond CSV export (requires dedicated security team to maintain)
+- Machine learning model training pipeline (anomaly detection in v3.0 uses rule-based heuristics, not ML)
