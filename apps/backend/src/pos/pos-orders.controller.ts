@@ -2,11 +2,9 @@ import {
   Controller,
   Post,
   Get,
-  Delete,
   Param,
   Body,
   Query,
-  Req,
   Headers,
   BadRequestException,
 } from '@nestjs/common';
@@ -14,6 +12,7 @@ import { PosOrdersService } from './pos-orders.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('pos')
 export class PosOrdersController {
@@ -23,7 +22,7 @@ export class PosOrdersController {
   @Roles('cashier', 'admin')
   create(
     @Body() dto: CreatePosOrderDto,
-    @Req() req: any,
+    @CurrentUser() user: { userId: string },
     @Headers('x-pos-session-id') sessionId?: string,
     @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
@@ -31,7 +30,7 @@ export class PosOrdersController {
       throw new BadRequestException(
         'POS session required (x-pos-session-id header)',
       );
-    return this.svc.create(dto, sessionId, req.user.id, idempotencyKey);
+    return this.svc.create(dto, sessionId, user.userId, idempotencyKey);
   }
 
   @Get('customers')

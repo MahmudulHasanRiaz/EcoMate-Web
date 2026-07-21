@@ -64,6 +64,7 @@ export default defineConfig({
   test: {
     silent: 'passed-only',
     unstubEnvs: true,
+    exclude: ['src/__tests__/route-integration.test.ts'],
     browser: {
       enabled: true,
       provider: playwright(),

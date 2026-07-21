@@ -32,6 +32,11 @@ export class MediaQueueProcessor extends WorkerHost {
     super();
   }
 
+  private async loadSharp() {
+    const mod = await import('sharp');
+    return mod.default;
+  }
+
   async process(job: Job): Promise<void> {
     if (job.name === 'recover') {
       await this.mediaQueue.recoverStuck();
@@ -63,7 +68,7 @@ export class MediaQueueProcessor extends WorkerHost {
     });
 
     try {
-      const sharp = (await import('sharp')).default;
+      const sharp = await this.loadSharp();
       const original = await this.storage.read(media.filename);
       const metadata = await sharp(original).metadata();
       const needsJpegFallback = NON_NATIVE_FORMATS.has(media.mimeType);
@@ -108,17 +113,27 @@ export class MediaQueueProcessor extends WorkerHost {
       });
 
     } catch (err) {
-      this.logger.error(
-        `Failed to process media ${mediaId}: ${(err as Error).message}`,
-      );
-      await this.prisma.media.update({
-        where: { id: mediaId },
-        data: {
-          processingStatus: 'FAILED',
-          processingError: (err as Error).message,
-          updatedAt: new Date(),
-        },
-      });
+      const msg = (err as Error).message;
+      this.logger.error(`Failed to process media ${mediaId}: ${msg}`);
+
+      // Best-effort status update — if this fails too, log but still rethrow original
+      try {
+        await this.prisma.media.update({
+          where: { id: mediaId },
+          data: {
+            processingStatus: 'FAILED',
+            processingError: msg,
+            updatedAt: new Date(),
+          },
+        });
+      } catch (updateErr) {
+        this.logger.error(
+          `Failed to persist FAILED status for media ${mediaId}: ${(updateErr as Error).message}`,
+        );
+      }
+
+      // Rethrow original so BullMQ retries with configured attempts/backoff
+      throw err;
     }
   }
 }

@@ -18,21 +18,25 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   findAll(@Query() query: DispatchQueryDto) {
     return this.dispatchService.findAll(query);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('metrics')
   getMetrics() {
     return this.dispatchService.getMetrics();
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get('flagged')
   findFlagged() {
     return this.dispatchService.findFlagged();
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post(':id/resolve-flagged')
   resolveFlagged(
     @Param('id') id: string,
@@ -41,16 +45,19 @@ export class DispatchController {
     return this.dispatchService.resolveFlagged(id, action);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.dispatchService.findOne(id);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Post()
   create(@Body() dto: CreateDispatchDto) {
     return this.dispatchService.create(dto);
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,

@@ -7,6 +7,7 @@ import { resumeBkasPayment } from "@/lib/api/orders";
 
 export interface ResumePaymentButtonProps {
   orderId: string;
+  token?: string;
   partialAmount?: number;
   label?: string;
   className?: string;
@@ -14,6 +15,7 @@ export interface ResumePaymentButtonProps {
 
 export function ResumePaymentButton({
   orderId,
+  token,
   partialAmount,
   label = "Pay with bKash",
   className = "",
@@ -24,7 +26,7 @@ export function ResumePaymentButton({
     if (loading) return;
     setLoading(true);
     try {
-      const res = await resumeBkasPayment(orderId, partialAmount);
+      const res = await resumeBkasPayment(orderId, { token, partialAmount });
       if (res?.bkashURL) {
         window.location.href = res.bkashURL;
         return;

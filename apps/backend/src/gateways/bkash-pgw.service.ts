@@ -66,7 +66,7 @@ export class BkashPgwService {
     }
   }
 
-  async createPayment(amount: number, orderId: string, invoiceNo: string) {
+  async createPayment(amount: number, payerReference: string, invoiceNo: string) {
     const creds = await this.getCredentials();
     const { token } = await this.grantToken();
 
@@ -85,8 +85,8 @@ export class BkashPgwService {
         },
         body: JSON.stringify({
           mode: '0011',
-          payerReference: orderId,
-          callbackURL: `${callbackBase}/api/payments/bkash/callback?orderId=${orderId}`,
+          payerReference,
+          callbackURL: `${callbackBase}/api/payments/bkash/callback`,
           amount: String(amount),
           currency: 'BDT',
           intent: 'sale',
@@ -98,7 +98,7 @@ export class BkashPgwService {
         throw new BadRequestException(
           data.statusMessage || 'bKash create payment failed',
         );
-      return { paymentID: data.paymentID, bkashURL: data.bkashURL, token };
+      return { paymentID: data.paymentID, bkashURL: data.bkashURL };
     } catch (e: any) {
       throw new BadRequestException(e.message || 'bKash create error');
     }

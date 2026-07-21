@@ -20,6 +20,7 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 export class CouponsController {
   constructor(private readonly couponsService: CouponsService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get() async findAll() {
     return this.couponsService.findAll();
   }

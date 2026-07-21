@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -30,9 +31,14 @@ export class PaymentsController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post(':orderId')
-  create(@Param('orderId') orderId: string, @Body() dto: CreatePaymentDto) {
-    return this.svc.create(orderId, dto);
+  create(
+    @Param('orderId') orderId: string,
+    @Body() dto: CreatePaymentDto,
+    @CurrentUser() user: { userId: string } | null | undefined,
+  ) {
+    return this.svc.create(orderId, dto, { userId: user?.userId, token: dto.token });
   }
 
   @Roles('superadmin', 'admin', 'manager')

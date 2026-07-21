@@ -53,6 +53,56 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   Damaged: [],
 };
 
+/** Public display-only tracking item — exported for controller type inference. */
+export interface PublicDisplayItem {
+  id: string; quantity: number; price: number;
+  product: { name: string; slug: string; images: string[] } | null;
+}
+
+/** Public display-only tracking order — strictly no PII. */
+export interface PublicDisplayOrder {
+  id: string; displayId: string; createdAt: Date;
+  status: { name: string; color?: string } | null;
+  items: PublicDisplayItem[];
+  total: number;
+  trackingUrl: string | null;
+}
+
+/** Guest token-based tracking — minimally richer but still no staff/payment/internal fields. */
+export interface PublicTokenOrder extends PublicDisplayOrder {
+  customer: { name: string } | null;
+  shippingAddress: { city: string; zone: string; district: string } | null;
+  timeline: Array<{ status: string; timestamp: string }>;
+}
+
+/** Typed Prisma select for public display lookup — fetches no PII. */
+const PUBLIC_DISPLAY_SELECT = {
+  id: true, displayId: true, createdAt: true, total: true,
+  courierService: true, courierTrackingCode: true, courierConsignmentId: true,
+  status: { select: { name: true, color: true } },
+  items: {
+    select: {
+      id: true, quantity: true, price: true,
+      product: { select: { name: true, slug: true, images: true } },
+    },
+  },
+} satisfies Prisma.OrderSelect;
+
+/** Typed Prisma select for public token lookup. */
+const PUBLIC_TOKEN_SELECT = {
+  id: true, displayId: true, createdAt: true, total: true,
+  shippingAddress: true, timeline: true,
+  courierService: true, courierTrackingCode: true, courierConsignmentId: true,
+  status: { select: { name: true, color: true } },
+  customer: { select: { name: true } },
+  items: {
+    select: {
+      id: true, quantity: true, price: true,
+      product: { select: { name: true, slug: true, images: true } },
+    },
+  },
+} satisfies Prisma.OrderSelect;
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -524,22 +574,31 @@ export class OrdersService {
       },
     });
     if (!order || order.trashedAt) throw new NotFoundException('Order not found');
-    if (!opts.userId && (!opts.token || order.viewToken !== opts.token)) {
-      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-      if (!order.createdAt || new Date(order.createdAt) < fiveMinAgo) {
-        throw new NotFoundException('Order not found');
-      }
+    const ownsOrder = opts.userId && order.customerId === opts.userId;
+    const hasValidToken = opts.token && order.viewToken === opts.token;
+    if (!ownsOrder && !hasValidToken) {
+      throw new NotFoundException('Order not found');
     }
     return this.transformOrder(order);
   }
 
-  async create(dto: CreateOrderDto, clientIp?: string) {
+  async create(dto: CreateOrderDto, clientIp?: string, userId?: string) {
     const displayId = await this.generateDisplayId();
     const initialStatus = await this.prisma.orderStatus.findFirst({
       where: { isInitial: true },
     });
     if (!initialStatus)
       throw new BadRequestException('No initial order status configured');
+
+    // ── Authenticated identity override ──
+    if (userId) {
+      dto.customerId = userId;
+      dto.guestPhone = undefined;
+      dto.guestName = undefined;
+    } else {
+      // Guest checkout: ignore any client-supplied customerId
+      dto.customerId = undefined;
+    }
 
     if (dto.guestPhone) {
       const normalized = normalizePhone(dto.guestPhone);
@@ -630,7 +689,7 @@ export class OrdersService {
       }
     }
 
-    const resolvedOfficeNotes = dto.officeNotes ?? (await this.prisma.systemSetting.findUnique({ where: { key: 'default_office_note' } }))?.value ?? null;
+    const resolvedOfficeNotes = null; // Public checkout does not accept office notes
 
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
@@ -730,6 +789,12 @@ export class OrdersService {
           if (!variant.isActive) {
             throw new BadRequestException(`Variant is no longer active`);
           }
+          // Reject variant-product mismatch
+          if (item.productId && item.productId !== variant.productId) {
+            throw new BadRequestException(
+              `Variant ${item.variantId} does not belong to product ${item.productId}`,
+            );
+          }
           const parentProduct = productMap.get(variant.productId);
           if (!parentProduct) {
             throw new BadRequestException(
@@ -774,33 +839,173 @@ export class OrdersService {
         }
       }
 
-      const { subtotal, total } = this.recalculate(
-        dto.items,
-        dto.shippingCharge || 0,
-        dto.discount || 0,
-        dto.discountType,
+      // ── Derive shipping server-side ──
+      const computedSubtotal = dto.items.reduce(
+        (s, i) => s + i.price * i.quantity, 0,
       );
+      const [shippingModeSetting, deliveryChargeSetting, freeDeliveryMinSetting, districtChargesSetting] =
+        await Promise.all([
+          tx.systemSetting.findUnique({ where: { key: 'shipping_mode' } }).catch(() => null),
+          tx.systemSetting.findUnique({ where: { key: 'delivery_charge' } }),
+          tx.systemSetting.findUnique({ where: { key: 'free_delivery_min' } }),
+          tx.systemSetting.findUnique({ where: { key: 'district_charges' } }),
+        ]);
 
-      if (dto.couponCode) {
-        const coupons = await tx.$queryRawUnsafe<any[]>(
-          'SELECT "minOrderValue" FROM "Coupon" WHERE code = $1 FOR UPDATE',
-          dto.couponCode,
-        );
-        const coupon = coupons[0];
-        if (
-          coupon?.minOrderValue &&
-          Number(subtotal) < Number(coupon.minOrderValue)
-        ) {
-          throw new BadRequestException(
-            `Minimum order value of ${coupon.minOrderValue} required for this coupon`,
-          );
+      const shippingMode = shippingModeSetting?.value || 'auto_district';
+
+      let derivedShippingCharge = 0;
+
+      if (shippingMode === 'options') {
+        // Options mode: require a selected active shipping option, use its DB amount
+        const hasOptions = await tx.shippingOption.findFirst({ where: { isActive: true }, select: { id: true } });
+        if (hasOptions) {
+          if (!dto.selectedShippingOptionId) {
+            throw new BadRequestException('A shipping option is required');
+          }
+          const shippingOption = await tx.shippingOption.findUnique({
+            where: { id: dto.selectedShippingOptionId },
+          });
+          if (!shippingOption || !shippingOption.isActive) {
+            throw new BadRequestException('Selected shipping option is not available');
+          }
+          derivedShippingCharge = Number(shippingOption.amount);
+        }
+      } else {
+        // auto_district/default mode
+        derivedShippingCharge = Number(deliveryChargeSetting?.value || 0);
+
+        const dtoDistrict =
+          dto.district ||
+          (typeof dto.shippingAddress === 'object' && dto.shippingAddress
+            ? (dto.shippingAddress as any).district
+            : undefined);
+        if (dtoDistrict) {
+          const activeZones = await tx.shippingZoneGroup.findMany({
+            where: { isActive: true },
+          });
+          let zoneMatched = false;
+          for (const zone of activeZones) {
+            const zoneDistricts = zone.districts as string[];
+            if (zoneDistricts.includes(dtoDistrict)) {
+              zoneMatched = true;
+              if (zone.type === 'no_delivery') {
+                throw new BadRequestException(
+                  'Delivery is not available for your area',
+                );
+              }
+              if (zone.type === 'custom_amount' && zone.amount != null) {
+                derivedShippingCharge = Number(zone.amount);
+              }
+              break;
+            }
+          }
+          if (!zoneMatched && districtChargesSetting?.value) {
+            try {
+              const districtCharges: Record<string, number> = JSON.parse(districtChargesSetting.value);
+              if (districtCharges[dtoDistrict] !== undefined) {
+                derivedShippingCharge = districtCharges[dtoDistrict];
+              }
+            } catch {
+              throw new BadRequestException('Invalid district charges configuration');
+            }
+          }
+        }
+
+        // Free delivery threshold — applies to both auto_district and default
+        const freeDeliveryMin = Number(freeDeliveryMinSetting?.value || 0);
+        if (freeDeliveryMin > 0 && computedSubtotal >= freeDeliveryMin) {
+          derivedShippingCharge = 0;
         }
       }
+
+      const { subtotal } = this.recalculate(
+        dto.items,
+        derivedShippingCharge,
+        0,
+        'flat',
+      );
+
+      let effectiveDiscount = 0;
+      let effectiveDiscountType: string = 'flat';
+      let effectiveDiscountMonetary = 0;
+      let couponRow: any = null;
+
+      if (dto.couponCode) {
+        // Fetch full coupon server-side and compute validated discount
+        [couponRow] = await tx.$queryRawUnsafe(
+          'SELECT id, "isActive", type, value, "minOrderValue", "percentageCap", "maxUses", "usedCount", "maxUsesPerCustomer", "expiresAt", "startsAt" FROM "Coupon" WHERE code = $1 FOR UPDATE',
+          dto.couponCode,
+        );
+        if (!couponRow) {
+          throw new BadRequestException('Coupon not found');
+        }
+        if (!couponRow.isActive) {
+          throw new BadRequestException('Coupon is no longer active');
+        }
+        if (couponRow.maxUses && couponRow.usedCount >= couponRow.maxUses) {
+          throw new BadRequestException('Coupon usage limit reached');
+        }
+        if (couponRow.expiresAt && new Date() > new Date(couponRow.expiresAt)) {
+          throw new BadRequestException('Coupon has expired');
+        }
+        if (couponRow.startsAt && new Date() < new Date(couponRow.startsAt)) {
+          throw new BadRequestException('Coupon is not yet active');
+        }
+        if (
+          couponRow.minOrderValue &&
+          Number(subtotal) < Number(couponRow.minOrderValue)
+        ) {
+          throw new BadRequestException(
+            `Minimum order value of ${couponRow.minOrderValue} required for this coupon`,
+          );
+        }
+
+        // Check per-customer usage limit inside the transaction
+        if (dto.customerId && couponRow.maxUsesPerCustomer) {
+          const userUsageCount = await tx.couponUsage.count({
+            where: { couponId: couponRow.id, userId: dto.customerId },
+          });
+          if (userUsageCount >= couponRow.maxUsesPerCustomer) {
+            throw new BadRequestException(
+              'Per-customer usage limit reached for this coupon',
+            );
+          }
+        }
+
+        // Compute discount from coupon
+      const rawValue = Number(couponRow.value);
+
+      if (couponRow.type === 'percentage') {
+        let cappedPercent = rawValue;
+        if (couponRow.percentageCap) {
+          const maxPctOfSubtotal =
+            (Number(couponRow.percentageCap) / Number(subtotal)) * 100;
+          cappedPercent = Math.min(rawValue, maxPctOfSubtotal);
+        }
+        effectiveDiscount = cappedPercent;
+        effectiveDiscountType = 'percentage';
+        effectiveDiscountMonetary = subtotal * (cappedPercent / 100);
+        if (couponRow.percentageCap) {
+          effectiveDiscountMonetary = Math.min(effectiveDiscountMonetary, Number(couponRow.percentageCap));
+        }
+      } else {
+        effectiveDiscount = Math.min(rawValue, Number(subtotal));
+        effectiveDiscountType = 'flat';
+        effectiveDiscountMonetary = effectiveDiscount;
+      }
+      }
+
+      const { subtotal: finalSubtotal, total: finalTotal } = this.recalculate(
+        dto.items,
+        derivedShippingCharge,
+        effectiveDiscount,
+        effectiveDiscountType,
+      );
 
       if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
         if (
           dto.partialAmount !== undefined &&
-          (dto.partialAmount <= 0 || dto.partialAmount > Number(total))
+          (dto.partialAmount <= 0 || dto.partialAmount > Number(finalTotal))
         ) {
           throw new BadRequestException(
             'Partial payment amount must be greater than 0 and not exceed the order total',
@@ -813,12 +1018,12 @@ export class OrdersService {
           displayId,
           customerId: dto.customerId ?? null,
           statusId: initialStatus.id,
-          subtotal,
-          shippingCharge: dto.shippingCharge || 0,
+          subtotal: finalSubtotal,
+          shippingCharge: derivedShippingCharge,
           selectedShippingOptionId: dto.selectedShippingOptionId || null,
-          discount: dto.discount || 0,
-          discountType: dto.discountType || 'flat',
-          total,
+          discount: effectiveDiscount,
+          discountType: effectiveDiscountType,
+          total: finalTotal,
           viewToken: randomUUID(),
           shippingAddress: {
             ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
@@ -881,7 +1086,7 @@ export class OrdersService {
         const paymentAmount =
           dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
             ? dto.partialAmount
-            : total;
+            : finalTotal;
         const gatewayCode =
           dto.gatewayCode ||
           (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
@@ -905,6 +1110,22 @@ export class OrdersService {
             status: 'CONVERTED',
             convertedOrderId: created.id,
             convertedAt: new Date(),
+          },
+        });
+      }
+
+      // Coupon usage increment — in the same transaction as order creation.
+      if (couponRow) {
+        await tx.coupon.update({
+          where: { id: couponRow.id },
+          data: { usedCount: { increment: 1 } },
+        });
+        await tx.couponUsage.create({
+          data: {
+            couponId: couponRow.id,
+            orderId: created.id,
+            userId: dto.customerId || null,
+            discount: effectiveDiscountMonetary,
           },
         });
       }
@@ -1616,12 +1837,21 @@ export class OrdersService {
   async submitPaymentProof(
     orderId: string,
     proofData: { transactionId?: string; screenshot?: string },
+    opts?: { userId?: string; token?: string },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { status: true },
     });
     if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+
+    // Ownership gate: user must own the order (by customerId) or present a valid viewToken
+    const ownsOrder = opts?.userId && order.customerId === opts.userId;
+    const hasValidToken = opts?.token && order.viewToken === opts.token;
+    if (!ownsOrder && !hasValidToken) {
+      throw new NotFoundException('Order not found');
+    }
+
     if (
       order.status?.name !== 'Payment Pending' &&
       order.status?.name !== 'Payment Verifying'
@@ -1970,42 +2200,57 @@ export class OrdersService {
     });
   }
 
-  async findByViewToken(viewTokenOrDisplayId: string) {
-    let queryStr = viewTokenOrDisplayId.trim();
-    if (queryStr.startsWith('#')) {
-      queryStr = queryStr.substring(1).trim();
-    }
-    const order = await this.prisma.order.findFirst({
-      where: {
-        trashedAt: null,
-        OR: [
-          { viewToken: queryStr },
-          { displayId: { equals: queryStr, mode: 'insensitive' } },
-        ],
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
-        },
-        items: {
-          include: {
-            product: { select: { name: true, slug: true, images: true } },
-          },
-        },
-        status: true,
-        payments: true,
-        shipment: true,
-        dispatches: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-    if (!order) throw new NotFoundException('Order not found');
-    return this.transformOrder(order);
-  }
+/**
+ * Strictest public tracking DTO — for displayId / phone-number lookups.
+ * Absolutely no PII: no customer name, no shipping address, no timeline notes,
+ * no payment/staff/internal fields.
+ * Type: PublicDisplayOrder.
+ */
+private toPublicDisplayDto(order: any): PublicDisplayOrder {
+  return {
+    id: order.id,
+    displayId: order.displayId,
+    createdAt: order.createdAt,
+    status: order.status
+      ? { name: order.status.name, color: order.status.color }
+      : null,
+    items: (order.items || []).map((i: any) => ({
+      id: i.id,
+      quantity: i.quantity,
+      price: i.price,
+      product: i.product
+        ? { name: i.product.name, slug: i.product.slug, images: i.product.images }
+        : null,
+    })),
+    total: order.total,
+    trackingUrl: buildTrackingUrl(
+      order.courierService,
+      order.courierTrackingCode,
+      order.courierConsignmentId,
+    ),
+  };
+}
 
+/**
+ * Slightly richer DTO for view-token-authenticated guest tracking.
+ * Still no payment/staff/internal fields; allows customer name and
+ * city-level shipping info for order confirmation.
+ * Type: PublicTokenOrder.
+ */
+private toPublicTokenDto(order: any): PublicTokenOrder {
+  return {
+    ...this.toPublicDisplayDto(order),
+    customer: order.customer ? { name: order.customer.name || '' } : null,
+    shippingAddress: order.shippingAddress && typeof order.shippingAddress === 'object'
+      ? { city: order.shippingAddress.city || '', zone: order.shippingAddress.zone || '', district: order.shippingAddress.district || '' }
+      : null,
+    timeline: (Array.isArray(order.timeline) ? order.timeline : []).map(
+      (t: any) => ({ status: t.status, timestamp: t.timestamp }),
+    ),
+  };
+}
+
+/** Public order lookup by phone — bounded to 10 most recent, minimal fields only. */
   async findByPhone(phone: string) {
     const normalized = normalizePhone(phone);
     if (!normalized) {
@@ -2014,33 +2259,54 @@ export class OrdersService {
       );
     }
 
+    if (normalized.length > 20) {
+      throw new BadRequestException('Invalid phone number');
+    }
+
     const orders = await this.prisma.order.findMany({
       where: {
         trashedAt: null,
         OR: [{ guestPhone: normalized }, { customer: { phone: normalized } }],
       },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
-        },
-        items: {
-          include: {
-            product: { select: { name: true, slug: true, images: true } },
-          },
-        },
-        status: true,
-        payments: true,
-        shipment: true,
-        dispatches: { orderBy: { createdAt: 'desc' } },
-      },
+      select: PUBLIC_DISPLAY_SELECT,
       orderBy: { createdAt: 'desc' },
+      take: 10,
     });
 
-    return orders.map((order) => this.transformOrder(order));
+    return orders.map((o) => this.toPublicDisplayDto(o));
+  }
+
+  /** Public order-number (displayId) lookup — strictly no-PII DTO, viewToken never accepted. */
+  async findByDisplayId(displayId: string) {
+    let queryStr = displayId.trim();
+    if (queryStr.length > 100) {
+      throw new BadRequestException('Invalid order reference');
+    }
+    if (queryStr.startsWith('#')) {
+      queryStr = queryStr.substring(1).trim();
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { trashedAt: null, displayId: { equals: queryStr, mode: 'insensitive' } },
+      select: PUBLIC_DISPLAY_SELECT,
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.toPublicDisplayDto(order);
+  }
+
+  /** Guest tracking lookup by secret viewToken — never treated as displayId. */
+  async findByViewToken(viewToken: string) {
+    const queryStr = viewToken.trim();
+    if (queryStr.length > 100) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { trashedAt: null, viewToken: queryStr },
+      select: PUBLIC_TOKEN_SELECT,
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.toPublicTokenDto(order);
   }
 
   async rotateViewToken(orderId: string) {

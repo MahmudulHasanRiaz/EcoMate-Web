@@ -115,7 +115,6 @@ export const sidebarData: SidebarData = {
             { title: 'All Employees', url: '/op/employees' },
             { title: 'Create Employee', url: '/op/employees/create' },
             { title: 'Designations', url: '/op/employees/designations' },
-            { title: 'Access Presets', url: '/op/employees/presets' },
           ],
         },
         { title: 'Payroll', url: '/op/payroll', icon: DollarSign, feature: 'admin_payroll' },
@@ -132,7 +131,14 @@ export const sidebarData: SidebarData = {
       items: [
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
         { title: 'Analytics', url: '/mon/analytics', icon: Monitor, feature: 'admin_analytics' },
-        { title: 'User Management', url: '/mon/users', icon: Users, feature: 'admin_users' },
+        {
+          title: 'User Management',
+          icon: Users,
+          items: [
+            { title: 'All Users', url: '/mon/users', feature: 'admin_users' },
+            { title: 'Access Presets', url: '/mon/users/presets', feature: 'admin_access_presets' },
+          ],
+        },
         { title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' },
         { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' },
         { title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' },

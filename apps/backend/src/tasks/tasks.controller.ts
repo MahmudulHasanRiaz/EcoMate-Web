@@ -21,6 +21,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -44,6 +45,7 @@ export class TasksController {
     });
   }
 
+  @Roles('superadmin', 'admin', 'manager')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.tasksService.findOne(id);

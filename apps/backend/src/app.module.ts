@@ -2,7 +2,7 @@ import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtModule } from '@nestjs/jwt';
 import { FeatureGuard } from '@ecomate/feature-flags';
 import { LicenseGuard } from './license/license.guard';
@@ -80,6 +80,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthSettingsModule } from './auth-settings/auth-settings.module';
+import { EcoMateThrottlerGuard } from './common/auth/throttle-guard';
 
 @Module({
   imports: [
@@ -167,18 +168,7 @@ import { AuthSettingsModule } from './auth-settings/auth-settings.module';
     { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: LicenseGuard },
-    {
-      provide: APP_GUARD,
-      useClass: class CustomThrottlerGuard extends ThrottlerGuard {
-        protected async shouldSkip(context: any): Promise<boolean> {
-          const req = context.switchToHttp().getRequest();
-          return (
-            req.headers['x-bypass-throttle'] === 'true' ||
-            process.env.BYPASS_THROTTLE === 'true'
-          );
-        }
-      },
-    },
+    { provide: APP_GUARD, useClass: EcoMateThrottlerGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

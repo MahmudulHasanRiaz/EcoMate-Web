@@ -206,6 +206,7 @@ export default function ThankYouContent({
         amount: orderTotal,
         transactionId: trxId.trim(),
         notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
+        ...(token ? { token } : {}),
       });
       setSubmittedPayment(true);
     } catch {
@@ -345,6 +346,7 @@ export default function ThankYouContent({
                   </p>
                   <ResumePaymentButton
                     orderId={order.id}
+                    token={token ?? undefined}
                     partialAmount={paymentStatus === 'partial' ? remaining : undefined}
                     label={paymentStatus === 'partial' ? `Pay ${config.currency.symbol}${fmt(remaining)} with bKash` : 'Pay with bKash'}
                   />
@@ -354,6 +356,7 @@ export default function ThankYouContent({
               {isManual && (
                 <PaymentProofUpload
                   orderId={order.id}
+                  token={token ?? undefined}
                   amount={paymentStatus === 'partial' ? remaining : orderTotal}
                 />
               )}

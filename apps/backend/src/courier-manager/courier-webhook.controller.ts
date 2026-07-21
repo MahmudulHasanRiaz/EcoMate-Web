@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import {
   Controller,
   Post,
@@ -13,6 +12,7 @@ import { CourierWebhookService } from './courier-webhook.service';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { verifyRedxHmac } from './webhook-verifier';
 
 @Controller('webhooks/courier')
 export class CourierWebhookController {
@@ -92,18 +92,21 @@ export class CourierWebhookController {
     @Body() body: Record<string, unknown>,
     @Req() req: FastifyRequest,
   ) {
-    const signature = req.headers['x-redx-signature'] as string;
-    const webhookSecret = process.env['REDX_WEBHOOK_SECRET'];
-    if (webhookSecret && signature) {
-      const payload = JSON.stringify(body);
-      const expected = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(payload)
-        .digest('hex');
-      if (signature !== expected) {
-        throw new UnauthorizedException('Invalid webhook signature');
+    try {
+      verifyRedxHmac(
+        body,
+        req.headers['x-redx-signature'],
+        process.env['REDX_WEBHOOK_SECRET'],
+      );
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Distinguish "not configured" for server log only — caller sees same generic error
+      if (msg === 'RedX webhook not configured') {
+        this.logger.error('RedX webhook called but REDX_WEBHOOK_SECRET is not set');
       }
+      throw new UnauthorizedException('Invalid webhook signature');
     }
+
     this.logger.log('RedX webhook received');
     return this.svc.handleRedx(body);
   }

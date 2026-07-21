@@ -26,6 +26,7 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Roles('superadmin', 'admin')
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -47,11 +48,13 @@ export class UsersController {
     });
   }
 
+  @Roles('superadmin', 'admin')
   @Get('by-email/:email')
   async findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
   }
 
+  @Roles('superadmin', 'admin')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);

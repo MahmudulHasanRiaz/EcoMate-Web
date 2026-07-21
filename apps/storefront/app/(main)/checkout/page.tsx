@@ -279,9 +279,9 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: total,
           orderId,
           invoiceNo: `INV-${orderId.slice(0, 8)}`,
+          ...(viewToken ? { token: viewToken } : {}),
         }),
       });
       const data = await res.json();
@@ -313,6 +313,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
         amount: total,
         transactionId: trxId.trim(),
         notes: senderPhone ? `Sent from: ${senderPhone}` : undefined,
+        ...(viewToken ? { token: viewToken } : {}),
       });
       onSuccess?.();
       setSubmitted(true);

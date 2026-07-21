@@ -43,7 +43,11 @@ export class PaymentsService {
     };
   }
 
-  async create(orderId: string, dto: CreatePaymentDto) {
+  async create(
+    orderId: string,
+    dto: CreatePaymentDto,
+    opts?: { userId?: string; token?: string },
+  ) {
     return this.prisma.$transaction(async (tx) => {
       // Lock the order row first — prevents concurrent payment insert races
       await tx.$queryRawUnsafe(
@@ -55,6 +59,13 @@ export class PaymentsService {
         where: { id: orderId },
         include: { payments: true },
       });
+
+      // Ownership gate: user must own the order or present a valid viewToken
+      const ownsOrder = opts?.userId && order.customerId === opts.userId;
+      const hasValidToken = opts?.token && order.viewToken === opts.token;
+      if (!ownsOrder && !hasValidToken) {
+        throw new NotFoundException('Order not found');
+      }
 
       const paymentAmount = Number(dto.amount);
       if (isNaN(paymentAmount) || paymentAmount <= 0) {

@@ -50,6 +50,253 @@ export class PosOrdersService {
     });
   }
 
+  /**
+   * Validate all items and return authoritative priced items fetched from the DB.
+   * Must be called inside a Prisma transaction (tx) to close the TOCTOU window.
+   */
+  private async validateAndFetchAuthoritativeItems(
+    dto: CreatePosOrderDto,
+    tx: any,
+  ): Promise<
+    Array<{
+      productId?: string;
+      variantId?: string;
+      comboId?: string;
+      comboSelection?: Record<string, string>;
+      quantity: number;
+      price: number;
+      discount?: number;
+      discountType?: string;
+    }>
+  > {
+    const productIds = [
+      ...new Set(
+        dto.items
+          .filter((i) => i.productId && !i.variantId && !i.comboId)
+          .map((i) => i.productId!),
+      ),
+    ];
+    const variantIds = [
+      ...new Set(
+        dto.items.filter((i) => i.variantId).map((i) => i.variantId!),
+      ),
+    ];
+    const comboIds = [
+      ...new Set(
+        dto.items.filter((i) => i.comboId && !i.variantId).map((i) => i.comboId!),
+      ),
+    ];
+
+    const [products, variants, combos] = await Promise.all([
+      productIds.length
+        ? tx.product.findMany({
+            where: { id: { in: productIds } },
+            select: {
+              id: true,
+              isActive: true,
+              basePrice: true,
+              salePrice: true,
+              name: true,
+            },
+          })
+        : (Promise.resolve([]) as Promise<any[]>),
+      variantIds.length
+        ? tx.productVariant.findMany({
+            where: { id: { in: variantIds } },
+            select: {
+              id: true,
+              isActive: true,
+              price: true,
+              salePrice: true,
+              productId: true,
+              product: {
+                select: { id: true, isActive: true, name: true },
+              },
+            },
+          })
+        : (Promise.resolve([]) as Promise<any[]>),
+      comboIds.length
+        ? tx.combo.findMany({
+            where: { id: { in: comboIds } },
+            select: {
+              id: true,
+              isActive: true,
+              basePrice: true,
+              salePrice: true,
+              name: true,
+            },
+          })
+        : (Promise.resolve([]) as Promise<any[]>),
+    ]);
+
+    const productMap: Map<string, any> = new Map(products.map((p: any) => [p.id, p]));
+    const variantMap: Map<string, any> = new Map(variants.map((v: any) => [v.id, v]));
+    const comboMap: Map<string, any> = new Map(combos.map((c: any) => [c.id, c]));
+
+    return dto.items.map((item) => {
+      if (!item.productId && !item.variantId && !item.comboId) {
+        throw new BadRequestException(
+          'Each item must have at least one of productId, variantId, or comboId',
+        );
+      }
+
+      if (item.quantity <= 0) {
+        throw new BadRequestException(
+          `Invalid quantity ${item.quantity} for item`,
+        );
+      }
+
+      let effectivePrice: number;
+
+      if (item.variantId) {
+        const variant = variantMap.get(item.variantId);
+        if (!variant) {
+          throw new BadRequestException(
+            `Variant ${item.variantId} not found`,
+          );
+        }
+        if (!variant.isActive) {
+          throw new BadRequestException(
+            `Variant ${item.variantId} is inactive`,
+          );
+        }
+        // Reject variant-product mismatch
+        if (item.productId && item.productId !== variant.productId) {
+          throw new BadRequestException(
+            `Variant ${item.variantId} does not belong to product ${item.productId}`,
+          );
+        }
+        if (!variant.product.isActive) {
+          throw new BadRequestException(
+            `Product ${variant.productId} for variant ${item.variantId} is inactive`,
+          );
+        }
+
+        effectivePrice = Number(variant.salePrice ?? variant.price ?? 0);
+        const clientPrice = Number(item.price);
+        if (Math.abs(clientPrice - effectivePrice) > 0.005) {
+          throw new BadRequestException(
+            `Price mismatch for variant ${item.variantId}: client ${clientPrice} vs DB ${effectivePrice}`,
+          );
+        }
+      } else if (item.productId) {
+        const product = productMap.get(item.productId);
+        if (!product) {
+          throw new BadRequestException(
+            `Product ${item.productId} not found`,
+          );
+        }
+        if (!product.isActive) {
+          throw new BadRequestException(
+            `Product ${item.productId} is inactive`,
+          );
+        }
+
+        effectivePrice = Number(product.salePrice ?? product.basePrice);
+        const clientPrice = Number(item.price);
+        if (Math.abs(clientPrice - effectivePrice) > 0.005) {
+          throw new BadRequestException(
+            `Price mismatch for product ${item.productId}: client ${clientPrice} vs DB ${effectivePrice}`,
+          );
+        }
+      } else if (item.comboId) {
+        const combo = comboMap.get(item.comboId);
+        if (!combo) {
+          throw new BadRequestException(`Combo ${item.comboId} not found`);
+        }
+        if (!combo.isActive) {
+          throw new BadRequestException(
+            `Combo ${item.comboId} is inactive`,
+          );
+        }
+
+        effectivePrice = Number(combo.salePrice ?? combo.basePrice);
+        const clientPrice = Number(item.price);
+        if (Math.abs(clientPrice - effectivePrice) > 0.005) {
+          throw new BadRequestException(
+            `Price mismatch for combo ${item.comboId}: client ${clientPrice} vs DB ${effectivePrice}`,
+          );
+        }
+      } else {
+        // Should not reach here due to check above, but satisfies TS exhaustiveness
+        effectivePrice = 0;
+      }
+
+      return {
+        productId: item.productId,
+        variantId: item.variantId,
+        comboId: item.comboId,
+        comboSelection: item.comboSelection,
+        quantity: item.quantity,
+        price: effectivePrice,
+        discount: item.discount,
+        discountType: item.discountType,
+      };
+    });
+  }
+
+  private validateDiscount(
+    discount: number | undefined,
+    discountType: string | undefined,
+    subtotal: number,
+  ): void {
+    if (discount == null || discount === 0) return;
+
+    if (!Number.isFinite(discount)) {
+      throw new BadRequestException('Discount must be a finite number');
+    }
+
+    if (discountType === 'percentage') {
+      if (discount < 0) {
+        throw new BadRequestException(
+          'Percentage discount cannot be negative',
+        );
+      }
+      if (discount > 100) {
+        throw new BadRequestException(
+          'Percentage discount cannot exceed 100',
+        );
+      }
+    } else {
+      if (discount < 0) {
+        throw new BadRequestException('Flat discount cannot be negative');
+      }
+      if (discount > subtotal) {
+        throw new BadRequestException(
+          'Flat discount cannot exceed subtotal',
+        );
+      }
+    }
+  }
+
+  /**
+   * Validates that provided payments sum exactly to the order total.
+   * POS orders always set PAID status, so exact reconciliation is required.
+   * When no payments are provided, a single CASH payment for the full total
+   * is created by the caller (always exact).
+   */
+  private validatePaymentsExact(
+    payments: { amount: number }[] | undefined,
+    total: number,
+  ): void {
+    if (!payments?.length) return;
+
+    const sum = payments.reduce((acc, p) => acc + p.amount, 0);
+    const roundedSum = Math.round(sum * 100) / 100;
+    const roundedTotal = Math.round(total * 100) / 100;
+
+    if (roundedSum > roundedTotal) {
+      throw new BadRequestException(
+        `Payment total ${roundedSum} exceeds order total ${roundedTotal}`,
+      );
+    }
+    if (roundedSum < roundedTotal) {
+      throw new BadRequestException(
+        `Payment total ${roundedSum} is less than order total ${roundedTotal}. Exact payment required for POS orders.`,
+      );
+    }
+  }
+
   private recalculate(
     items: {
       price: number;
@@ -67,6 +314,17 @@ export class PosOrdersService {
       const lineTotal = item.price * item.quantity;
       subtotal += lineTotal;
       if (item.discount) {
+        // Validate item-level discount against its own line total
+        if (!Number.isFinite(item.discount)) {
+          throw new BadRequestException('Item discount must be a finite number');
+        }
+        if (item.discountType === 'percentage') {
+          if (item.discount < 0) throw new BadRequestException('Item percentage discount cannot be negative');
+          if (item.discount > 100) throw new BadRequestException('Item percentage discount cannot exceed 100');
+        } else {
+          if (item.discount < 0) throw new BadRequestException('Item flat discount cannot be negative');
+          if (item.discount > lineTotal) throw new BadRequestException('Item flat discount cannot exceed line total');
+        }
         totalItemDiscount +=
           item.discountType === 'percentage'
             ? (lineTotal * item.discount) / 100
@@ -131,13 +389,26 @@ export class PosOrdersService {
     });
   }
 
-  async create(dto: CreatePosOrderDto, sessionId: string, cashierId: string, idempotencyKey?: string) {
+  async create(
+    dto: CreatePosOrderDto,
+    sessionId: string,
+    cashierId: string,
+    idempotencyKey?: string,
+  ) {
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },
       include: { showroom: true },
     });
-    if (!session || session.status !== 'open') {
-      throw new BadRequestException('No active POS session');
+    if (!session) {
+      throw new BadRequestException('POS session not found');
+    }
+    if (session.status !== 'open') {
+      throw new BadRequestException('POS session is not active');
+    }
+    if (session.cashierId !== cashierId) {
+      throw new BadRequestException(
+        'Session does not belong to this cashier',
+      );
     }
 
     // Idempotency check: if key provided and already processed, return existing order
@@ -147,33 +418,53 @@ export class PosOrdersService {
         include: { items: true, payments: true, customer: true },
       });
       if (existing) {
-        this.logger.warn(`Idempotent request — returning existing order ${existing.displayId} (key: ${idempotencyKey})`);
+        this.logger.warn(
+          `Idempotent request — returning existing order ${existing.displayId} (key: ${idempotencyKey})`,
+        );
         return existing;
       }
     }
 
     const displayId = await this.generateDisplayId();
-    const { subtotal, total, discount } = this.recalculate(
-      dto.items,
-      dto.discount || 0,
-      dto.discountType || 'flat',
-    );
 
-    const deliveryMethod = dto.deliveryMethod || 'Counter Sale';
-    const isInstantDelivery = ['Counter Sale', 'Takeaway'].includes(
-      deliveryMethod,
-    );
+    // Everything that reads or writes DB prices/stock happens inside a single
+    // Prisma transaction to close the TOCTOU (time-of-check-time-of-use) window.
+    return this.prisma.$transaction(async (tx) => {
+      // Server-authoritative pricing and item validation INSIDE transaction
+      const authItems =
+        await this.validateAndFetchAuthoritativeItems(dto, tx);
 
-    const statusName = isInstantDelivery ? 'delivered' : 'confirmed';
-    const status = await this.prisma.orderStatus.findFirst({
-      where: { name: { equals: statusName, mode: 'insensitive' } },
-    });
-    if (!status)
-      throw new BadRequestException(
-        `Status "${statusName}" not found. Please create an order status named "${isInstantDelivery ? 'Delivered' : 'Confirmed'}" in settings.`,
+      // Server-side discount validation using authoritative prices
+      const authSubtotal = authItems.reduce(
+        (sum, i) => sum + i.price * i.quantity,
+        0,
+      );
+      this.validateDiscount(dto.discount, dto.discountType, authSubtotal);
+
+      // Recalculate using authoritative prices
+      const { subtotal, total, discount } = this.recalculate(
+        authItems,
+        dto.discount || 0,
+        dto.discountType || 'flat',
       );
 
-    return this.prisma.$transaction(async (tx) => {
+      // Exact payment split reconciliation (POS always sets PAID status)
+      this.validatePaymentsExact(dto.payments, total);
+
+      const deliveryMethod = dto.deliveryMethod || 'Counter Sale';
+      const isInstantDelivery = ['Counter Sale', 'Takeaway'].includes(
+        deliveryMethod,
+      );
+
+      const statusName = isInstantDelivery ? 'delivered' : 'confirmed';
+      const status = await tx.orderStatus.findFirst({
+        where: { name: { equals: statusName, mode: 'insensitive' } },
+      });
+      if (!status)
+        throw new BadRequestException(
+          `Status "${statusName}" not found. Please create an order status named "${isInstantDelivery ? 'Delivered' : 'Confirmed'}" in settings.`,
+        );
+
       const order = await tx.order.create({
         data: {
           displayId,
@@ -193,13 +484,22 @@ export class PosOrdersService {
           customerNotes: dto.notes,
           paymentStatus: 'PAID',
           timeline: [
-            { type: 'created', by: cashierId, at: new Date().toISOString() },
-            { type: 'payment', status: 'PAID', at: new Date().toISOString() },
+            {
+              type: 'created',
+              by: cashierId,
+              at: new Date().toISOString(),
+            },
+            {
+              type: 'payment',
+              status: 'PAID',
+              at: new Date().toISOString(),
+            },
           ],
         },
       });
 
-      for (const item of dto.items) {
+      // Persist order items with authoritative DB prices
+      for (const item of authItems) {
         await tx.orderItem.create({
           data: {
             orderId: order.id,
@@ -213,9 +513,10 @@ export class PosOrdersService {
         });
       }
 
-      const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+      const imEnabled =
+        await this.stockRouter.isInventoryManagementEnabled();
 
-      for (const item of dto.items) {
+      for (const item of authItems) {
         if (imEnabled) {
           // POS has no reservation flow — use addPhysical with negative qty
           // to decrement quantity only (skips reservedQuantity decrement)
@@ -232,11 +533,17 @@ export class PosOrdersService {
             tx,
           });
         } else {
-          const product = item.productId ? await tx.product.findUnique({
-            where: { id: item.productId },
-            select: { availabilityMode: true },
-          }) : null;
-          const decision = this.stockRouter.resolve(product?.availabilityMode, 'deduct', false);
+          const product = item.productId
+            ? await tx.product.findUnique({
+                where: { id: item.productId },
+                select: { availabilityMode: true },
+              })
+            : null;
+          const decision = this.stockRouter.resolve(
+            product?.availabilityMode,
+            'deduct',
+            false,
+          );
 
           if (decision.ms === 'deduct') {
             // POS skips reserve step; reserve then deduct so reservedStock ends at 0
