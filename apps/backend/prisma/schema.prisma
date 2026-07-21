@@ -1341,6 +1341,152 @@ model BlockSettings {
   data Json
 }
 
+enum SecurityEventSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum SecurityEventCategory {
+  RATE_LIMIT
+  AUTH
+  FRAUD
+  BLOCK
+  SYSTEM
+  WAF
+  BOT
+  THREAT_INTEL
+}
+
+enum SecurityActorType {
+  IP
+  USER
+  SESSION
+  BROWSER_TRUST
+  SYSTEM
+}
+
+/// Canonical event store for the entire security domain.
+/// Every security-relevant action across the platform is recorded here.
+/// This is NOT a dashboard table — the dashboard reads from aggregates.
+/// Other consumers: audit timeline, notifications, SIEM export, AI analysis.
+model SecurityEvent {
+  id              String                   @id @default(uuid())
+  tenant          String                   @default("default")
+
+  // Event classification (registry-backed strings — not bare enums)
+  eventType       String                   // from SecurityEventType registry
+  severity        SecurityEventSeverity
+  category        SecurityEventCategory
+  source          String                   // from SecurityEventSource registry (e.g. "adaptive_rate_limiter")
+
+  // When it happened
+  timestamp       DateTime                 @default(now())
+
+  // Actor identity — normalized, nullable, independently queryable
+  actorType       SecurityActorType
+  ipAddress       String?                  // populated when actor is IP or IP-known
+  userId          String?                  // populated for authenticated actors
+  sessionId       String?                  // populated for session-level actors
+  browserTrustId  String?                  // populated for browser-trust actors
+  phone           String?                  // populated for phone-related events
+  trustTier       String?                  // "AUTHENTICATED" | "SESSION" | "BROWSER_TRUST" | "UNKNOWN"
+
+  // Context
+  riskScore       Int?
+  metadataVersion Int                      @default(1)
+  metadata        Json                     // versioned — metadataVersion tells the parser how to interpret this
+
+  // Correlation — chains related events into incidents
+  correlationId       String?              // UUID — groups this batch of related events
+  parentCorrelationId String?              // UUID — connects this event to a parent incident
+
+  description     String?                  // human-readable summary for dashboard/audit display
+
+  // Retention override — critical events survive default cleanup
+  retentionOverride Boolean                @default(false)
+
+  // Dedup — retry protection only (NOT event collapsing)
+  // Same emission instance always has same dedupKey
+  // Emitter generates a unique UUID per event emission
+  dedupKey        String                   @unique
+
+  createdAt       DateTime                 @default(now())
+
+  @@index([tenant, timestamp])
+  @@index([tenant, eventType, timestamp])
+  @@index([tenant, severity, timestamp])
+  @@index([tenant, category, severity, timestamp])
+  @@index([tenant, ipAddress, timestamp])
+  @@index([tenant, userId, timestamp])
+  @@index([tenant, correlationId])
+  @@index([tenant, parentCorrelationId])
+  @@index([createdAt])
+  @@index([retentionOverride, createdAt])
+}
+
+/// Hourly event counts for dashboard trend widgets.
+/// Updated by SecurityEventProcessor after each event insert.
+model SecurityEventHourly {
+  id          String                  @id @default(uuid())
+  tenant      String                  @default("default")
+  bucket      DateTime                // truncated to hour boundary
+  eventType   String
+  severity    SecurityEventSeverity
+  category    SecurityEventCategory
+  count       Int                     @default(0)
+  updatedAt   DateTime                @updatedAt
+
+  @@unique([tenant, bucket, eventType, severity, category])
+  @@index([tenant, bucket, severity])
+}
+
+/// Daily event counts for "Today / 7d / 30d" trend charts.
+model SecurityEventDaily {
+  id          String                  @id @default(uuid())
+  tenant      String                  @default("default")
+  date        DateTime                // date only (time truncated)
+  eventType   String
+  severity    SecurityEventSeverity
+  category    SecurityEventCategory
+  count       Int                     @default(0)
+  updatedAt   DateTime                @updatedAt
+
+  @@unique([tenant, date, eventType, severity, category])
+  @@index([tenant, date, severity])
+}
+
+/// Daily block source/target summaries for block-activity charts.
+model SecurityBlockDaily {
+  id          String   @id @default(uuid())
+  tenant      String   @default("default")
+  date        DateTime                 // date only
+  blockSource String                   // 'auto' | 'manual'
+  targetType  String                   // 'ip' | 'phone'
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenant, date, blockSource, targetType])
+  @@index([tenant, date])
+}
+
+/// Per-category/severity retention configuration.
+/// Application-level defaults apply when no DB row exists.
+model SecurityRetentionPolicy {
+  id          String   @id @default(uuid())
+  tenant      String   @default("default")
+  category    SecurityEventCategory
+  severity    SecurityEventSeverity
+  retentionDays Int    @default(30)
+
+  /// Override for critical events (retentionOverride=true)
+  criticalRetentionDays Int?
+
+  @@unique([tenant, category, severity])
+}
+
 model Tag {
   id           String       @id @default(uuid())
   name         String       @unique

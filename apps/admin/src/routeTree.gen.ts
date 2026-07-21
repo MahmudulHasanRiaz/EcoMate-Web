@@ -69,6 +69,7 @@ import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
+import { Route as AuthenticatedMonSecurityIndexRouteImport } from './routes/_authenticated/mon/security/index'
 import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
 import { Route as AuthenticatedMonNotificationsIndexRouteImport } from './routes/_authenticated/mon/notifications/index'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
@@ -466,6 +467,12 @@ const AuthenticatedMonUsersIndexRoute =
     path: '/mon/users/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonSecurityIndexRoute =
+  AuthenticatedMonSecurityIndexRouteImport.update({
+    id: '/mon/security/',
+    path: '/mon/security/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonPagesIndexRoute =
   AuthenticatedMonPagesIndexRouteImport.update({
     id: '/mon/pages/',
@@ -838,6 +845,7 @@ export interface FileRoutesByFullPath {
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
+  '/mon/security/': typeof AuthenticatedMonSecurityIndexRoute
   '/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
   '/op/apps/': typeof AuthenticatedOpAppsIndexRoute
@@ -953,6 +961,7 @@ export interface FileRoutesByTo {
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
+  '/mon/security': typeof AuthenticatedMonSecurityIndexRoute
   '/mon/users': typeof AuthenticatedMonUsersIndexRoute
   '/op/accounting': typeof AuthenticatedOpAccountingIndexRoute
   '/op/apps': typeof AuthenticatedOpAppsIndexRoute
@@ -1070,6 +1079,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/_authenticated/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
+  '/_authenticated/mon/security/': typeof AuthenticatedMonSecurityIndexRoute
   '/_authenticated/mon/users/': typeof AuthenticatedMonUsersIndexRoute
   '/_authenticated/op/accounting/': typeof AuthenticatedOpAccountingIndexRoute
   '/_authenticated/op/apps/': typeof AuthenticatedOpAppsIndexRoute
@@ -1187,6 +1197,7 @@ export interface FileRouteTypes {
     | '/mon/help-center/'
     | '/mon/notifications/'
     | '/mon/pages/'
+    | '/mon/security/'
     | '/mon/users/'
     | '/op/accounting/'
     | '/op/apps/'
@@ -1302,6 +1313,7 @@ export interface FileRouteTypes {
     | '/mon/help-center'
     | '/mon/notifications'
     | '/mon/pages'
+    | '/mon/security'
     | '/mon/users'
     | '/op/accounting'
     | '/op/apps'
@@ -1418,6 +1430,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/help-center/'
     | '/_authenticated/mon/notifications/'
     | '/_authenticated/mon/pages/'
+    | '/_authenticated/mon/security/'
     | '/_authenticated/mon/users/'
     | '/_authenticated/op/accounting/'
     | '/_authenticated/op/apps/'
@@ -1921,6 +1934,13 @@ declare module '@tanstack/react-router' {
       path: '/mon/users'
       fullPath: '/mon/users/'
       preLoaderRoute: typeof AuthenticatedMonUsersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/security/': {
+      id: '/_authenticated/mon/security/'
+      path: '/mon/security'
+      fullPath: '/mon/security/'
+      preLoaderRoute: typeof AuthenticatedMonSecurityIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/pages/': {
@@ -2440,6 +2460,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
   AuthenticatedMonNotificationsIndexRoute: typeof AuthenticatedMonNotificationsIndexRoute
   AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
+  AuthenticatedMonSecurityIndexRoute: typeof AuthenticatedMonSecurityIndexRoute
   AuthenticatedMonUsersIndexRoute: typeof AuthenticatedMonUsersIndexRoute
   AuthenticatedOpAccountingIndexRoute: typeof AuthenticatedOpAccountingIndexRoute
   AuthenticatedOpAppsIndexRoute: typeof AuthenticatedOpAppsIndexRoute
@@ -2534,6 +2555,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonNotificationsIndexRoute:
     AuthenticatedMonNotificationsIndexRoute,
   AuthenticatedMonPagesIndexRoute: AuthenticatedMonPagesIndexRoute,
+  AuthenticatedMonSecurityIndexRoute: AuthenticatedMonSecurityIndexRoute,
   AuthenticatedMonUsersIndexRoute: AuthenticatedMonUsersIndexRoute,
   AuthenticatedOpAccountingIndexRoute: AuthenticatedOpAccountingIndexRoute,
   AuthenticatedOpAppsIndexRoute: AuthenticatedOpAppsIndexRoute,

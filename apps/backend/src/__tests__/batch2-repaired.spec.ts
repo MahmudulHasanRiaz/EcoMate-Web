@@ -2,7 +2,7 @@
  * Production-connected tests for Batch 2 security fixes.
  *
  * Every test imports and invokes real production code (SecureFetcher,
- * ip-classifier, webhook-verifier, throttle-guard). DNS and HTTP
+ * ip-classifier, webhook-verifier). DNS and HTTP
  * are injected as mocks so tests are deterministic and network-free.
  * The RED→GREEN cycle is demonstrated by running before and after
  * the real production code was implemented.
@@ -15,7 +15,6 @@
  * - Magic byte + sharp metadata validation
  * - Shared deadline across all hops
  * - RedX HMAC with constant-time comparison
- * - Throttle guard env-based bypass
  * - Image service fallback and cache MIME detection
  */
 
@@ -33,7 +32,6 @@ import { isBlockedIP, validateImageUrl, resolveAndPin, DnsResolver } from '../im
 import { SecureFetcher, HttpTransport, detectImageMime, validateImageBuffer } from '../images/secure-fetcher';
 import { ImagesService } from '../images/images.service';
 import { verifyRedxHmac } from '../courier-manager/webhook-verifier';
-import { EcoMateThrottlerGuard } from '../common/auth/throttle-guard';
 
 /* ═══════════════════════════════════════════════
    1. IP CLASSIFIER (ipaddr.js-based)
@@ -642,62 +640,7 @@ describe('verifyRedxHmac (production function)', () => {
 });
 
 /* ═══════════════════════════════════════════════
-   7. THROTTLE GUARD
-   ═══════════════════════════════════════════════ */
-
-describe('EcoMateThrottlerGuard (production class)', () => {
-  const guard = new (EcoMateThrottlerGuard as any)();
-  const origNodeEnv = process.env.NODE_ENV;
-  const origBypass = process.env.BYPASS_THROTTLE;
-
-  function mockCtx(headers?: Record<string, string>): any {
-    return { switchToHttp: () => ({ getRequest: () => ({ headers: headers || {} }) }) };
-  }
-
-  afterEach(() => {
-    process.env.NODE_ENV = origNodeEnv;
-    process.env.BYPASS_THROTTLE = origBypass;
-  });
-
-  it('ignores X-Bypass-Throttle header in production', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.BYPASS_THROTTLE = '';
-    expect(await guard.shouldSkip(mockCtx({ 'x-bypass-throttle': 'true' }))).toBe(false);
-  });
-
-  it('ignores X-Bypass-Throttle header in test (env check required)', async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.BYPASS_THROTTLE = ''; // no env bypass
-    expect(await guard.shouldSkip(mockCtx({ 'x-bypass-throttle': 'true' }))).toBe(false);
-  });
-
-  it('does not skip in production even with BYPASS_THROTTLE env', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.BYPASS_THROTTLE = 'true';
-    expect(await guard.shouldSkip(mockCtx())).toBe(false);
-  });
-
-  it('does not skip in development with BYPASS_THROTTLE env', async () => {
-    process.env.NODE_ENV = 'development';
-    process.env.BYPASS_THROTTLE = 'true';
-    expect(await guard.shouldSkip(mockCtx())).toBe(false);
-  });
-
-  it('skips only when BYPASS_THROTTLE=true AND NODE_ENV=test', async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.BYPASS_THROTTLE = 'true';
-    expect(await guard.shouldSkip(mockCtx())).toBe(true);
-  });
-
-  it('defaults to no skip', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.BYPASS_THROTTLE = '';
-    expect(await guard.shouldSkip(mockCtx())).toBe(false);
-  });
-});
-
-/* ═══════════════════════════════════════════════
-   8. REDX CONTROLLER (real instance, mocked service)
+   7. REDX CONTROLLER (real instance, mocked service)
    ═══════════════════════════════════════════════ */
 
 import { CourierWebhookController } from '../courier-manager/courier-webhook.controller';

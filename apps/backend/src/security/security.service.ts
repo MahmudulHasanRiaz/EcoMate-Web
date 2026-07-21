@@ -7,6 +7,9 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { BlockSettingsService } from '../block-settings/block-settings.service';
+import { SecurityEventEmitterService } from '../security-dashboard/services/security-event-emitter.service';
+import { SecurityEventType } from '../security-dashboard/registries/event-type.registry';
+import { SecurityEventSource } from '../security-dashboard/registries/source.registry';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -29,6 +32,7 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly blockedEntries: BlockedEntriesService,
     private readonly blockSettings: BlockSettingsService,
+    private readonly eventEmitter: SecurityEventEmitterService,
   ) {
     this.cleanupInterval = setInterval(() => {
       this.cleanup().catch(() => {});
@@ -127,11 +131,37 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
         this.failedLoginsFallback.delete(ip);
       }
 
+      // Fire-and-forget: emit failed login threshold exceeded event
+      this.eventEmitter.emit({
+        eventType: SecurityEventType.FAILED_LOGIN,
+        severity: 'HIGH' as any,
+        category: 'AUTH' as any,
+        source: SecurityEventSource.SECURITY_SERVICE,
+        actorType: ('IP' as any),
+        ipAddress: ip,
+        description: `Failed login threshold exceeded for IP ${ip}: ${count}/${threshold} attempts`,
+        riskScore: count,
+        metadata: { attemptCount: count, threshold },
+        retentionOverride: false,
+      }).catch(() => {});
+
       if (settings.autoBlock.autoFullBlockIp) {
         this.logger.warn(
           `Auto full-blocking IP ${ip} (${count} failed logins)`,
         );
         await this.blockedEntries.createAutoBlock('ip', ip, 'full', 1440);
+
+        this.eventEmitter.emit({
+          eventType: SecurityEventType.AUTO_BLOCK_CREATED,
+          severity: 'CRITICAL' as any,
+          category: 'BLOCK' as any,
+          source: SecurityEventSource.SECURITY_SERVICE,
+          actorType: ('SYSTEM' as any),
+          ipAddress: ip,
+          description: `Auto full-blocked IP ${ip}: ${count} failed logins exceeded threshold ${threshold}`,
+          metadata: { reason: 'failed_login_threshold', attemptCount: count },
+          retentionOverride: true,
+        }).catch(() => {});
       }
     }
   }
@@ -154,6 +184,18 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
           'order',
           settings.phoneOrderRestriction.blockDurationMinutes,
         );
+
+        this.eventEmitter.emit({
+          eventType: SecurityEventType.AUTO_BLOCK_CREATED,
+          severity: 'HIGH' as any,
+          category: 'FRAUD' as any,
+          source: SecurityEventSource.SECURITY_SERVICE,
+          actorType: ('SYSTEM' as any),
+          phone,
+          description: `Auto order-blocked phone ${phone}: ${count} orders in ${settings.phoneOrderRestriction.timeWindowMinutes}min window`,
+          metadata: { reason: 'order_threshold', orderCount: count },
+          retentionOverride: true,
+        }).catch(() => {});
       }
     }
 
@@ -222,6 +264,18 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
           'order',
           settings.ipOrderRestriction.blockDurationMinutes,
         );
+
+        this.eventEmitter.emit({
+          eventType: SecurityEventType.AUTO_BLOCK_CREATED,
+          severity: 'HIGH' as any,
+          category: 'FRAUD' as any,
+          source: SecurityEventSource.SECURITY_SERVICE,
+          actorType: ('SYSTEM' as any),
+          ipAddress: ip,
+          description: `Auto order-blocked IP ${ip}: ${count} orders in ${settings.ipOrderRestriction.timeWindowMinutes}min window`,
+          metadata: { reason: 'order_threshold', orderCount: count },
+          retentionOverride: true,
+        }).catch(() => {});
       }
     }
   }
