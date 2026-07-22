@@ -61,7 +61,7 @@
     "prisma": "^7.8.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
@@ -119,10 +119,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-  "testEnvironment": "node",
-  "moduleNameMapper": {
-   "^better-auth/crypto$": "<rootDir>/../__mocks__/better-auth-crypto.ts",
-   "^.*better-auth/prisma$": "<rootDir>/../__mocks__/better-auth-prisma.ts"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^better-auth/crypto$": "<rootDir>/../__mocks__/better-auth-crypto.ts",
+      "^.*better-auth/prisma$": "<rootDir>/../__mocks__/better-auth-prisma.ts"
+    }
   }
- }
 }
