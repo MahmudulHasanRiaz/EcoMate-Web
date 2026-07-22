@@ -45,6 +45,7 @@ interface StockOverviewItem {
     attributeValues: Array<{ attributeValue: { value: string } }>
   }>
   _count: { orderItems: number }
+  reservedStock: number
 }
 
 interface StockOverviewResponse {
@@ -112,9 +113,9 @@ export function Inventory() {
     }
 
     // Bin Filter
-    if (selectedBin !== 'all_bins') {
-      data = data.filter((p: any) => p.binLocationId === selectedBin)
-    } else if (selectedBin === 'unassigned') {
+    if (selectedBin === 'unassigned') {
+      data = data.filter((p: any) => !p.binLocationId)
+    } else if (selectedBin !== 'all_bins') {
       data = data.filter((p: any) => !p.binLocationId)
     }
 
@@ -528,7 +529,7 @@ export function Inventory() {
                         </TableCell>
                         {viewMode === 'PHYSICAL' && (
                           <TableCell>
-                            <span className="text-sm font-mono">{p.bin || '—'}</span>
+                            <span className="text-sm font-mono">{(p as any).bin || '—'}</span>
                           </TableCell>
                         )}
                         <TableCell className={`text-right font-medium ${p.available === null ? 'text-muted-foreground' : p.available < 0 ? 'text-red-600' : p.available < 10 ? 'text-amber-600' : ''}`}>
@@ -640,8 +641,8 @@ export function Inventory() {
                           )
                         })
                       }
-                      {p.raw?.type === 'variable' && expandedRows[p.id] && viewMode === 'PHYSICAL' && p._physicalVariants &&
-                        p._physicalVariants.map((pv: any) => {
+                      {(p as any).raw?.type === 'variable' && expandedRows[p.id] && viewMode === 'PHYSICAL' && (p as any)._physicalVariants &&
+                        (p as any)._physicalVariants.map((pv: any) => {
                           const attrs = pv.variant?.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'
                           const variantImg = pv.variant?.image || p.image
                           const pvAvail = (pv.quantity || 0) - (pv.reservedQuantity || 0)

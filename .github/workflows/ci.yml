@@ -117,6 +117,9 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
+
       - name: Lint
         working-directory: apps/storefront
         run: npm run lint || true
@@ -147,6 +150,9 @@ jobs:
 
       - name: Install dependencies (Root)
         run: npm ci
+
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
 
       - name: Lint
         working-directory: apps/admin
@@ -182,6 +188,9 @@ jobs:
 
       - name: Install dependencies (Root)
         run: npm ci
+
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
 
       - name: Build
         working-directory: apps/pos

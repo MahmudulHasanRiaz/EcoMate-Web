@@ -28,7 +28,7 @@ export function TrafficSourcesChart({ dateRange }: Props) {
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(156,163,175,0.1)" />
               <XAxis type="number" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis dataKey="name" type="category" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={70} />
-              <Tooltip formatter={(v: number, n: string) => [v.toLocaleString(), n === 'visits' ? 'Visits' : '']} />
+              <Tooltip formatter={(value: any, name: any) => [value?.toLocaleString?.() ?? value, name === 'visits' ? 'Visits' : '']} />
               <Bar dataKey="visits" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={20} />
             </BarChart>
           </ResponsiveContainer>

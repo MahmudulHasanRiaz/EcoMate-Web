@@ -23,7 +23,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
-import { EventEmitter } from 'node:events';
 import { IncomingMessage } from 'node:http';
 import { Socket } from 'node:net';
 
@@ -172,8 +171,8 @@ describe('validateImageUrl', () => {
 
 describe('resolveAndPin (with mock DNS)', () => {
   const mockDns: DnsResolver = {
-    resolve4: async () => [],
-    resolve6: async () => [],
+    resolve4: () => [],
+    resolve6: () => [],
   };
 
   it('rejects hostname that resolves to empty', async () => {
@@ -183,22 +182,22 @@ describe('resolveAndPin (with mock DNS)', () => {
 
   it('rejects hostname with mixed public+private IPs', async () => {
     await expect(resolveAndPin('mix.example.com', {
-      resolve4: async () => ['8.8.8.8', '10.0.0.1'],
-      resolve6: async () => [],
+      resolve4: () => ['8.8.8.8', '10.0.0.1'],
+      resolve6: () => [],
     })).rejects.toThrow('DNS resolution resolved to a blocked IP');
   });
 
   it('rejects hostname that resolves entirely to private', async () => {
     await expect(resolveAndPin('private.example.com', {
-      resolve4: async () => ['10.0.0.1'],
-      resolve6: async () => [],
+      resolve4: () => ['10.0.0.1'],
+      resolve6: () => [],
     })).rejects.toThrow('DNS resolution resolved to a blocked IP');
   });
 
   it('returns pinned address for clean hostname', async () => {
     const pinned = await resolveAndPin('safe.example.com', {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     });
     expect(pinned).toBe('93.184.216.34');
   });
@@ -245,7 +244,7 @@ function mockResponse(opts: {
   } else {
     process.nextTick(() => res.push(null));
   }
-  if (opts.destroy) res.destroy = () => {};
+  if (opts.destroy) res.destroy = () => { return res; };
   return res;
 }
 
@@ -256,11 +255,11 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     httpHandler: (...args: any[]) => any,
   ) {
     const dns: DnsResolver = {
-      resolve4: async (h: string) => {
+      resolve4: (h: string) => {
         const r = dnsResolve(h);
         return r;
       },
-      resolve6: async () => [],
+      resolve6: () => [],
     };
 
     let capturedOptions: any = null;
@@ -296,8 +295,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
 
   it('sends request with pinned IP via custom lookup, hostname preserved in options, fetch succeeds', async () => {
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     let capturedOpts: any = null;
     const transport: HttpTransport = {
@@ -331,13 +330,13 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('post-connect socket mismatch: public DNS result but private connectedAddress triggers destroy and error', async () => {
     let destroyed = false;
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1, remoteAddress: '10.0.0.1' });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: '10.0.0.1' };
       },
     };
@@ -351,13 +350,13 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('different public connected address (not matching pinned) is rejected and destroyed', async () => {
     let destroyed = false;
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1, remoteAddress: '1.2.3.4' });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: '1.2.3.4' };
       },
     };
@@ -372,7 +371,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     const resolve6Spy = jest.fn().mockResolvedValue(['2001:4860:4860:0000:0000:0000:0000:8888']);
     const dns: DnsResolver = {
       resolve6: resolve6Spy,
-      resolve4: async () => [],
+      resolve4: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -388,8 +387,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
 
   it('IPv4 DNS vs ::ffff-mapped IPv6 connected succeeds (ipaddr.process converts)', async () => {
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -408,7 +407,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: PNG_1x1 });
-        res.destroy = () => { destroyed = true; };
+        res.destroy = () => { destroyed = true; return res; };
         return { response: res, connectedAddress: undefined };
       },
     );
@@ -433,7 +432,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
             statusCode: 302,
             headers: { location: 'http://10.0.0.1/secret' },
           });
-          res.destroy = () => { redirectDestroyed = true; };
+          res.destroy = () => { redirectDestroyed = true; return res; };
           return { response: res };
         }
         return { response: mockResponse({ statusCode: 200, body: PNG_1x1 }) };
@@ -455,7 +454,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
           headers: { 'content-length': '99999999' },
           body: PNG_1x1,
         });
-        res.destroy = () => { contentLengthDestroyed = true; };
+        res.destroy = () => { contentLengthDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -472,7 +471,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 200, body: bigChunk });
-        res.destroy = () => { streamDestroyed = true; };
+        res.destroy = () => { streamDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -488,7 +487,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
       () => ['93.184.216.34'],
       (opts: any) => {
         const res = mockResponse({ statusCode: 500, body: Buffer.from('error') });
-        res.destroy = () => { non2xxDestroyed = true; };
+        res.destroy = () => { non2xxDestroyed = true; return res; };
         return { response: res };
       },
     );
@@ -528,11 +527,11 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('total deadline aborts across DNS resolution', async () => {
     const fetcher = new SecureFetcher(
       {
-        resolve4: async () => {
+        resolve4: () => {
           await new Promise((r) => setTimeout(r, 200));
           return ['93.184.216.34'];
         },
-        resolve6: async () => [],
+        resolve6: () => [],
       },
       {
         request: async () => ({ response: mockResponse({ statusCode: 200, body: Buffer.alloc(0) }) }),
@@ -810,12 +809,12 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
   it('corrupt cached .webp file — resize regenerates and returns valid WebP', async () => {
     const svc = createSvc();
     // Write source PNG
-    const sourcePath = path.join(svc.uploadRoot, 'source.png');
+    const sourcePath = path.join((svc as any).uploadRoot, 'source.png');
     fs.writeFileSync(sourcePath, sourcePNG);
 
     // Write corrupt cache at the expected cache path
     const key = cacheKey('/uploads/source.png', 100, 100);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, Buffer.from([0x00, 0x01, 0x02, 0x03]));
 
     const result = await svc.resize({ path: '/uploads/source.png', w: 100, h: 100 });
@@ -829,12 +828,12 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
 
   it('valid PNG at .webp cache path — resize rejects and regenerates WebP', async () => {
     const svc = createSvc();
-    const sourcePath = path.join(svc.uploadRoot, 'source.png');
+    const sourcePath = path.join((svc as any).uploadRoot, 'source.png');
     fs.writeFileSync(sourcePath, sourcePNG);
 
     // Place valid PNG where .webp cache is expected
     const key = cacheKey('/uploads/source.png', 50, 50);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, sourcePNG); // PNG bytes, not WebP
 
     const result = await svc.resize({ path: '/uploads/source.png', w: 50, h: 50 });
@@ -850,7 +849,7 @@ describe('ImagesService.resize cache behavior (temp dirs)', () => {
     const svc = createSvc();
     // Don't write a source — the cache hit path is reached before source is needed
     const key = cacheKey('/uploads/nonexistent.png', 100, 100);
-    const cacheFile = path.join(svc.cacheRoot, key + '.webp');
+    const cacheFile = path.join((svc as any).cacheRoot, key + '.webp');
     fs.writeFileSync(cacheFile, validWebP);
 
     const result = await svc.resize({ path: '/uploads/nonexistent.png', w: 100, h: 100 });

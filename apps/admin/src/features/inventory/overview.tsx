@@ -25,6 +25,7 @@ type LowStockItem = {
   type: 'product' | 'variant'
   variantSku?: string
   variantAttributes?: string
+  image?: string
 }
 
 type LowStockResponse = {
