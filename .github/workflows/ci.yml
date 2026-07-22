@@ -168,21 +168,22 @@ jobs:
         run: npx tsc -p packages/shared-types/tsconfig.json
 
       - name: Build
+        id: build
         working-directory: apps/admin
+        continue-on-error: true
         run: |
-          OUTPUT=$(npm run build:skip-tsc 2>&1); EXIT_CODE=$?
-          echo "$OUTPUT"
-          if [ $EXIT_CODE -ne 0 ]; then
-            ERROR_LINE=$(echo "$OUTPUT" | grep -iE "(error|Error)" | head -5)
-            echo "::error title=Vite Build Failed::$(echo "$ERROR_LINE" | head -1 | tr '\n' ' ')"
-            echo ""
-            echo "=== BUILD ERROR (last 30 lines) ==="
-            echo "$OUTPUT" | tail -30
-            echo "=== END ==="
-            exit $EXIT_CODE
-          fi
+          npm run build:skip-tsc > /tmp/vite-build.log 2>&1; EXIT_CODE=$?
+          cat /tmp/vite-build.log
+          exit $EXIT_CODE
         env:
           VITE_API_URL: /api
+
+      - name: Capture Build Error
+        if: steps.build.outcome == 'failure'
+        run: |
+          LAST_LINES=$(tail -5 /tmp/vite-build.log 2>/dev/null | tr '\n' ';' || echo 'no output')
+          echo "::error title=Vite Build Error::$LAST_LINES"
+          exit 1
 
   pos:
     needs: detect-changes
