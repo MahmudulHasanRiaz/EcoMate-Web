@@ -169,7 +169,7 @@ jobs:
 
       - name: Build
         working-directory: apps/admin
-        run: npm run build:skip-tsc
+        run: npm run build:skip-tsc -- --debug 2>&1
         env:
           VITE_API_URL: /api
 
