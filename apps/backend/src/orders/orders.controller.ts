@@ -158,7 +158,7 @@ export class OrdersController {
     @CurrentUser() user: { userId: string } | null | undefined,
     @Query('t') token?: string,
   ) {
-    return this.svc.findOne(id, { token, userId: user?.userId });
+    return this.svc.findOne(id, { token, userId: user?.userId, role: user?.role });
   }
 
   /** Public, but requires valid viewToken (for guests) OR authenticated ownership (for logged-in customers). */
