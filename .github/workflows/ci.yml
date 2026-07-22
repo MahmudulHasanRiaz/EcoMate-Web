@@ -118,7 +118,7 @@ jobs:
         run: npm ci
 
       - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 --no-save
 
       - name: Lint
         working-directory: apps/storefront
@@ -152,7 +152,7 @@ jobs:
         run: npm ci
 
       - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 --no-save
 
       - name: Lint
         working-directory: apps/admin
@@ -190,7 +190,7 @@ jobs:
         run: npm ci
 
       - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
+        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 --no-save
 
       - name: Build
         working-directory: apps/pos
