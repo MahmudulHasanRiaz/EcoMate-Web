@@ -138,11 +138,6 @@ services:
 
   admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
-    build:
-      context: .
-      dockerfile: apps/admin/Dockerfile
-      args:
-        VITE_BASE: ${ADMIN_VITE_BASE:-/admin/}
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -169,11 +164,6 @@ services:
 
   pos:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-pos:latest
-    build:
-      context: .
-      dockerfile: apps/pos/Dockerfile
-      args:
-        VITE_BASE: ${POS_VITE_BASE:-/pos/}
     restart: unless-stopped
     networks:
       - ecomate-network
