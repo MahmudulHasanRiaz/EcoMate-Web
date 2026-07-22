@@ -117,8 +117,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Install native binary (Tailwind Oxide)
-        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
 
       - name: Lint
         working-directory: apps/storefront
@@ -151,8 +151,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Install native binary (Tailwind Oxide)
-        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
 
       - name: Lint
         working-directory: apps/admin
@@ -168,22 +168,10 @@ jobs:
         run: npx tsc -p packages/shared-types/tsconfig.json
 
       - name: Build
-        id: build
         working-directory: apps/admin
-        continue-on-error: true
-        run: |
-          npm run build:skip-tsc > /tmp/vite-build.log 2>&1; EXIT_CODE=$?
-          cat /tmp/vite-build.log
-          exit $EXIT_CODE
+        run: npm run build:skip-tsc
         env:
           VITE_API_URL: /api
-
-      - name: Capture Build Error
-        if: steps.build.outcome == 'failure'
-        run: |
-          LAST_LINES=$(tail -30 /tmp/vite-build.log 2>/dev/null | tr '\n' ';' || echo 'no output')
-          echo "::error title=Vite Build Error::$LAST_LINES"
-          exit 1
 
   pos:
     needs: detect-changes
@@ -201,8 +189,8 @@ jobs:
       - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Install native binary (Tailwind Oxide)
-        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save
+      - name: Install native binaries
+        run: npm install @tailwindcss/oxide-linux-x64-gnu lightningcss-linux-x64-gnu --no-save
 
       - name: Build
         working-directory: apps/pos
