@@ -168,10 +168,21 @@ jobs:
         run: npx tsc -p packages/shared-types/tsconfig.json
 
       - name: Build
+        id: build
         working-directory: apps/admin
-        run: npm run build:skip-tsc
+        continue-on-error: true
+        run: |
+          npm run build:skip-tsc > /tmp/vite-build.log 2>&1; EXIT_CODE=$?
+          cat /tmp/vite-build.log
+          exit $EXIT_CODE
         env:
           VITE_API_URL: /api
+
+      - name: Check Build Status
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error title=Vite Build Error::$(tail -40 /tmp/vite-build.log 2>/dev/null | tr '\n' ';')"
+          exit 1
 
   pos:
     needs: detect-changes
