@@ -9,7 +9,7 @@ import { playwright } from '@vitest/browser-playwright'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/admin/',
+  base: process.env.VITE_BASE || '/admin/',
   server: {
     host: '0.0.0.0',
     proxy: {
