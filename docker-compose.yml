@@ -72,6 +72,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       APP_URL: ${APP_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       STOREFRONT_URL: ${STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-}
       META_PIXEL_ID: ${META_PIXEL_ID:-}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       TIKTOK_PIXEL_CODE: ${TIKTOK_PIXEL_CODE:-}
@@ -137,6 +138,11 @@ services:
 
   admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        VITE_BASE: ${ADMIN_VITE_BASE:-/admin/}
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -144,10 +150,11 @@ services:
       - "${ADMIN_PORT:-8080}:80"
     environment:
       VITE_API_URL: ${ADMIN_VITE_API_URL:-/api}
+      VITE_BASE: ${ADMIN_VITE_BASE:-/admin/}
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/admin/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80${ADMIN_VITE_BASE:-/admin/}"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -162,15 +169,22 @@ services:
 
   pos:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-pos:latest
+    build:
+      context: .
+      dockerfile: apps/pos/Dockerfile
+      args:
+        VITE_BASE: ${POS_VITE_BASE:-/pos/}
     restart: unless-stopped
     networks:
       - ecomate-network
     ports:
       - "${POS_PORT:-8081}:80"
+    environment:
+      VITE_BASE: ${POS_VITE_BASE:-/pos/}
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/pos/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80${POS_VITE_BASE:-/pos/}"]
       interval: 30s
       timeout: 5s
       retries: 3

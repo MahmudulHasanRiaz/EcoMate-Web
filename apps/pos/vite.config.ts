@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 export default defineConfig({
-  base: '/pos/',
+  base: process.env.VITE_BASE || '/pos/',
   server: {
     host: '0.0.0.0',
     port: 5174,
