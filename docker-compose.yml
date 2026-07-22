@@ -72,6 +72,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       APP_URL: ${APP_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       STOREFRONT_URL: ${STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-}
       META_PIXEL_ID: ${META_PIXEL_ID:-}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       TIKTOK_PIXEL_CODE: ${TIKTOK_PIXEL_CODE:-}

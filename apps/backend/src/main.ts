@@ -58,7 +58,7 @@ async function bootstrap() {
           'https://*.r2.dev',
           'https://images.unsplash.com',
         ],
-        connectSrc: ["'self'", 'https://*.r2.dev'],
+        connectSrc: ["'self'", 'https://*.r2.dev', ...(process.env['CSP_CONNECT_SRC'] ? [process.env['CSP_CONNECT_SRC']] : [])],
         fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
