@@ -181,7 +181,7 @@ jobs:
       - name: Capture Build Error
         if: steps.build.outcome == 'failure'
         run: |
-          LAST_LINES=$(tail -5 /tmp/vite-build.log 2>/dev/null | tr '\n' ';' || echo 'no output')
+          LAST_LINES=$(tail -30 /tmp/vite-build.log 2>/dev/null | tr '\n' ';' || echo 'no output')
           echo "::error title=Vite Build Error::$LAST_LINES"
           exit 1
 
