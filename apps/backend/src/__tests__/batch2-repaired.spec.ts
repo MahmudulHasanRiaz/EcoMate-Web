@@ -23,7 +23,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
-import { EventEmitter } from 'node:events';
 import { IncomingMessage } from 'node:http';
 import { Socket } from 'node:net';
 
@@ -172,8 +171,8 @@ describe('validateImageUrl', () => {
 
 describe('resolveAndPin (with mock DNS)', () => {
   const mockDns: DnsResolver = {
-    resolve4: async () => [],
-    resolve6: async () => [],
+    resolve4: () => [],
+    resolve6: () => [],
   };
 
   it('rejects hostname that resolves to empty', async () => {
@@ -183,22 +182,22 @@ describe('resolveAndPin (with mock DNS)', () => {
 
   it('rejects hostname with mixed public+private IPs', async () => {
     await expect(resolveAndPin('mix.example.com', {
-      resolve4: async () => ['8.8.8.8', '10.0.0.1'],
-      resolve6: async () => [],
+      resolve4: () => ['8.8.8.8', '10.0.0.1'],
+      resolve6: () => [],
     })).rejects.toThrow('DNS resolution resolved to a blocked IP');
   });
 
   it('rejects hostname that resolves entirely to private', async () => {
     await expect(resolveAndPin('private.example.com', {
-      resolve4: async () => ['10.0.0.1'],
-      resolve6: async () => [],
+      resolve4: () => ['10.0.0.1'],
+      resolve6: () => [],
     })).rejects.toThrow('DNS resolution resolved to a blocked IP');
   });
 
   it('returns pinned address for clean hostname', async () => {
     const pinned = await resolveAndPin('safe.example.com', {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     });
     expect(pinned).toBe('93.184.216.34');
   });
@@ -256,11 +255,11 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     httpHandler: (...args: any[]) => any,
   ) {
     const dns: DnsResolver = {
-      resolve4: async (h: string) => {
+      resolve4: (h: string) => {
         const r = dnsResolve(h);
         return r;
       },
-      resolve6: async () => [],
+      resolve6: () => [],
     };
 
     let capturedOptions: any = null;
@@ -296,8 +295,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
 
   it('sends request with pinned IP via custom lookup, hostname preserved in options, fetch succeeds', async () => {
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     let capturedOpts: any = null;
     const transport: HttpTransport = {
@@ -331,8 +330,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('post-connect socket mismatch: public DNS result but private connectedAddress triggers destroy and error', async () => {
     let destroyed = false;
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -351,8 +350,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('different public connected address (not matching pinned) is rejected and destroyed', async () => {
     let destroyed = false;
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -372,7 +371,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
     const resolve6Spy = jest.fn().mockResolvedValue(['2001:4860:4860:0000:0000:0000:0000:8888']);
     const dns: DnsResolver = {
       resolve6: resolve6Spy,
-      resolve4: async () => [],
+      resolve4: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -388,8 +387,8 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
 
   it('IPv4 DNS vs ::ffff-mapped IPv6 connected succeeds (ipaddr.process converts)', async () => {
     const dns: DnsResolver = {
-      resolve4: async () => ['93.184.216.34'],
-      resolve6: async () => [],
+      resolve4: () => ['93.184.216.34'],
+      resolve6: () => [],
     };
     const transport: HttpTransport = {
       request: async (opts: any) => {
@@ -528,11 +527,11 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('total deadline aborts across DNS resolution', async () => {
     const fetcher = new SecureFetcher(
       {
-        resolve4: async () => {
+        resolve4: () => {
           await new Promise((r) => setTimeout(r, 200));
           return ['93.184.216.34'];
         },
-        resolve6: async () => [],
+        resolve6: () => [],
       },
       {
         request: async () => ({ response: mockResponse({ statusCode: 200, body: Buffer.alloc(0) }) }),
