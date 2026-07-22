@@ -1,4 +1,6 @@
 FROM node:22-alpine AS builder
+ARG VITE_BASE=/pos/
+ENV VITE_BASE=${VITE_BASE}
 WORKDIR /app
 COPY package*.json ./
 COPY apps/pos/package.json apps/pos/package.json
