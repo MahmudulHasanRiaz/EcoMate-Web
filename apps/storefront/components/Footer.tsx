@@ -1,61 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { MapPin, Phone, Mail } from 'lucide-react';
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { StoreBrand } from "./StoreBrand";
 import EcoMateAttribution from "./EcoMateAttribution";
 import { usePathname } from "next/navigation";
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
-function getPlatform(): 'android' | 'ios' | 'other' {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('android')) return 'android';
-  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return 'ios';
-  return 'other';
-}
+import Link from 'next/link';
 
 export default function Footer({}: {}) {
   const pathname = usePathname();
   const { config } = useStorefrontConfig();
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
-  const platform = getPlatform();
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    const flag = localStorage.getItem('pwa-installed');
-    if (flag) setInstalled(true);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstall = useCallback(async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    if (outcome === 'accepted') {
-      setInstalled(true);
-      localStorage.setItem('pwa-installed', '1');
-    }
-  }, [deferredPrompt]);
-
   if (pathname && pathname.startsWith('/checkout')) return null;
   const { store, social, footer: footerConfig } = config;
   const playStoreUrl = (config as any).playStoreUrl || '';
   const appStoreUrl = (config as any).appStoreUrl || '';
-  const canInstall = deferredPrompt !== null;
 
-  /* ... rest of footer ... */
   const footerColumns = config.menu?.footer?.columns || [];
 
   const defaultColumns = [
@@ -95,6 +55,7 @@ export default function Footer({}: {}) {
     ]},
   ];
 
+  // Merge admin columns with defaults, cap at 4
   const columns = (() => {
     if (footerColumns.length === 0) return defaultColumns;
     const merged = [...footerColumns];
@@ -109,98 +70,13 @@ export default function Footer({}: {}) {
 
   const colCount = columns.length;
 
-  const googleBtn = playStoreUrl ? (
-    <a href={playStoreUrl} target="_blank" rel="noreferrer"
-      className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Download on</p>
-        <p className="text-[14px] font-bold leading-tight">Google Play</p>
-      </div>
-    </a>
-  ) : installed ? (
-    <span className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-gray-400 border border-gray-800">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Installed</p>
-        <p className="text-[14px] font-bold leading-tight">Google Play</p>
-      </div>
-    </span>
-  ) : platform === 'android' && canInstall ? (
-    <button onClick={handleInstall}
-      className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors cursor-pointer">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Download on</p>
-        <p className="text-[14px] font-bold leading-tight">Google Play</p>
-      </div>
-    </button>
-  ) : (
-    <span className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-gray-400 border border-gray-800">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Android</p>
-        <p className="text-[14px] font-bold leading-tight">Google Play</p>
-      </div>
-    </span>
-  );
-
-  const appleBtn = appStoreUrl ? (
-    <a href={appStoreUrl} target="_blank" rel="noreferrer"
-      className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Download on</p>
-        <p className="text-[14px] font-bold leading-tight">App Store</p>
-      </div>
-    </a>
-  ) : installed ? (
-    <span className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-gray-400 border border-gray-800">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Installed</p>
-        <p className="text-[14px] font-bold leading-tight">App Store</p>
-      </div>
-    </span>
-  ) : platform === 'ios' && canInstall ? (
-    <button onClick={handleInstall}
-      className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors cursor-pointer">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">Download on</p>
-        <p className="text-[14px] font-bold leading-tight">App Store</p>
-      </div>
-    </button>
-  ) : (
-    <span className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-gray-400 border border-gray-800">
-      <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-      </svg>
-      <div className="text-left">
-        <p className="text-[10px] leading-none text-gray-400">iOS</p>
-        <p className="text-[14px] font-bold leading-tight">App Store</p>
-      </div>
-    </span>
-  );
-
   return (
     <footer className="bg-white pt-16 pb-0 border-t border-gray-100">
       <div className="max-w-7xl mx-auto px-4">
+        {/* Top Grid */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-10 md:gap-8 mb-12">
+
+          {/* Brand Info */}
           <div className="md:col-span-2">
             <div className="flex items-center gap-2 mb-6">
               <StoreBrand />
@@ -228,6 +104,8 @@ export default function Footer({}: {}) {
                 </div>
               )}
             </div>
+
+            {/* Social Icons */}
             <div className="flex items-center gap-4 mt-8">
               {social.facebook && (
                 <a href={social.facebook} target="_blank" rel="noreferrer" aria-label="Facebook" className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-gray-400 hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-all">
@@ -247,19 +125,65 @@ export default function Footer({}: {}) {
             </div>
           </div>
 
+          {/* Columns */}
           <div className={`grid grid-cols-2 md:col-span-3 gap-8 md:gap-4 ${colCount === 1 ? 'md:grid-cols-1' : colCount === 2 ? 'md:grid-cols-2' : colCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
             {columns.map((col: any) => (
               <FooterColumn key={col.id} title={col.title} items={col.items} />
             ))}
           </div>
+
         </div>
 
-        {/* Apps Download Section */}
+        {/* Apps Download Section — always clickable */}
         <div className="pt-10 border-t border-gray-100 mb-10">
           <p className="font-bold text-[13px] text-gray-800 mb-4">Download App on Mobile :</p>
           <div className="flex flex-wrap items-center gap-3">
-            {googleBtn}
-            {appleBtn}
+            {playStoreUrl ? (
+              <a href={playStoreUrl} target="_blank" rel="noreferrer"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
+                </div>
+              </a>
+            ) : (
+              <Link href="/download"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Get it on</p>
+                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
+                </div>
+              </Link>
+            )}
+            {appStoreUrl ? (
+              <a href={appStoreUrl} target="_blank" rel="noreferrer"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">App Store</p>
+                </div>
+              </a>
+            ) : (
+              <Link href="/download"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Get it on</p>
+                  <p className="text-[14px] font-bold leading-tight">App Store</p>
+                </div>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -283,9 +207,9 @@ function FooterColumn({ title, items }: { title: string, items: any[] }) {
           if (href) {
             return (
               <li key={item.id}>
-                <a href={href} className="text-[12px] text-gray-500 hover:text-brand-blue transition-colors text-left">
+                <Link href={href} className="text-[12px] text-gray-500 hover:text-brand-blue transition-colors text-left">
                   {item.label}
-                </a>
+                </Link>
               </li>
             );
           }
