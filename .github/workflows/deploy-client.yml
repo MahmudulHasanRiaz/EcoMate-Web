@@ -48,29 +48,40 @@ jobs:
         env:
           LICENSE_CLIENT_ID: ${{ github.event.inputs.client }}
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Build mobile APK (storefront)
         env:
           CLIENT: ${{ github.event.inputs.client }}
         run: |
-          mkdir -p mobile-builds/storefront/android \
-                   mobile-builds/admin/android \
-                   mobile-builds/pos/android
-          cd apps/capacitor/storefront
-          CAP_APP_NAME="${CLIENT} Store" \
-          CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          mkdir -p "${GITHUB_WORKSPACE}/mobile-builds/storefront/android" \
+                   "${GITHUB_WORKSPACE}/mobile-builds/admin/android" \
+                   "${GITHUB_WORKSPACE}/mobile-builds/pos/android"
+          cd "${GITHUB_WORKSPACE}/apps/capacitor/storefront"
+          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
             npx cap add android --no-telemetry 2>/dev/null || true
-          npx cap copy --no-telemetry 2>/dev/null || true
-          npx cap sync --no-telemetry 2>/dev/null || true
-          if [ -d "android" ] && [ -f "android/gradlew" ]; then
-            cd android
-            ./gradlew assembleRelease 2>/dev/null || echo "Native build skipped (no Android SDK)"
+          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+            npx cap copy --no-telemetry 2>/dev/null || true
+          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+            npx cap sync --no-telemetry 2>/dev/null || true
+          if [ -f "android/gradlew" ]; then
+            (cd android && ./gradlew assembleRelease) || echo "Native build failed"
           fi
           if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk \
-              ${GITHUB_WORKSPACE}/mobile-builds/storefront/android/latest.apk
+            cp "android/app/build/outputs/apk/release/app-release.apk" \
+              "${GITHUB_WORKSPACE}/mobile-builds/storefront/android/latest.apk"
+            echo "APK built successfully"
+          else
+            echo "APK not produced — check Android SDK setup"
           fi
         continue-on-error: true
-        working-directory: ${{ github.workspace }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
