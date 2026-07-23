@@ -1,0 +1,18 @@
+{
+  "name": "@ecomate/capacitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:storefront": "bash build.sh storefront",
+    "build:admin": "bash build.sh admin",
+    "build:pos": "bash build.sh pos",
+    "build:all": "bash build.sh all"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0"
+  }
+}
