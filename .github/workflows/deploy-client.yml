@@ -19,6 +19,11 @@ on:
           - enterprise
           - ultimate
         default: 'enterprise'
+      server_url:
+        description: 'App server URL (for Capacitor mobile app)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build-and-deploy:
@@ -60,16 +65,23 @@ jobs:
       - name: Build mobile APK (storefront)
         env:
           CLIENT: ${{ github.event.inputs.client }}
+          CAP_SERVER_URL: ${{ github.event.inputs.server_url }}
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/mobile-builds/storefront/android" \
                    "${GITHUB_WORKSPACE}/mobile-builds/admin/android" \
                    "${GITHUB_WORKSPACE}/mobile-builds/pos/android"
           cd "${GITHUB_WORKSPACE}/apps/capacitor/storefront"
-          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap add android --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap copy --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT} Store" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+          CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap sync --no-telemetry 2>/dev/null || true
           if [ -f "android/gradlew" ]; then
             (cd android && ./gradlew assembleRelease) || echo "Native build failed"
