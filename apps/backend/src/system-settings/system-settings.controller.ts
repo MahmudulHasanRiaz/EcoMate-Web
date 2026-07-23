@@ -8,6 +8,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
@@ -170,6 +171,7 @@ export class SystemSettingsController {
     private readonly media: MediaService,
     private readonly mediaResolver: MediaResolverService,
     private readonly cache: CacheService,
+    private readonly featureFlags: FeatureFlagsService,
   ) {}
 
   @Get()
@@ -543,6 +545,18 @@ export class SystemSettingsController {
   @Public()
   @Get('admin-manifest')
   async getAdminManifest() {
+    const hasMobileDistro = this.featureFlags.canUse('mobile_distribution');
+    if (!hasMobileDistro) {
+      return {
+        name: 'EcoMate Admin',
+        short_name: 'EcoMate Admin',
+        description: 'Admin dashboard',
+        start_url: '/admin/',
+        display: 'browser',
+        background_color: '#ffffff',
+        theme_color: '#2563eb',
+      };
+    }
     const settings = await this.prisma.systemSetting.findMany({
       where: {
         key: { in: ['store_name', 'admin_favicon', 'brand_primary', 'brand_bg'] },
@@ -575,6 +589,18 @@ export class SystemSettingsController {
   @Public()
   @Get('pos-manifest')
   async getPosManifest() {
+    const hasMobileDistro = this.featureFlags.canUse('mobile_distribution');
+    if (!hasMobileDistro) {
+      return {
+        name: 'EcoMate POS',
+        short_name: 'EcoMate POS',
+        description: 'Point of Sale terminal',
+        start_url: '/pos/',
+        display: 'browser',
+        background_color: '#ffffff',
+        theme_color: '#2563eb',
+      };
+    }
     const settings = await this.prisma.systemSetting.findMany({
       where: {
         key: { in: ['store_name', 'admin_favicon', 'brand_primary', 'brand_bg'] },

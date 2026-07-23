@@ -199,6 +199,33 @@
       })();
     </script>
 
+    <!-- License-gated PWA teardown: unregister SW if mobile_distribution not active -->
+    <script>
+      (function () {
+        try {
+          var apiBase = (function () {
+            if (location.hostname.indexOf('localhost') === -1) return '/api';
+            return 'http://localhost:4000/api';
+          })();
+          fetch(apiBase + '/license/status', { credentials: 'include', cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data) return;
+              var features = data.features || [];
+              if (features.indexOf('*') !== -1 || features.indexOf('mobile_distribution') !== -1) return;
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  regs.forEach(function (reg) { reg.unregister(); });
+                });
+              }
+              var manifestLink = document.querySelector('link[rel="manifest"]');
+              if (manifestLink) manifestLink.remove();
+            })
+            .catch(function () {});
+        } catch (_) {}
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

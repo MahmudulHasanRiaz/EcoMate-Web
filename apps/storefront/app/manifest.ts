@@ -1,9 +1,27 @@
 import type { MetadataRoute } from 'next'
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server'
 
+const WILDCARD = '*';
+
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   try {
     const config = await getStorefrontConfigServer()
+    const licenseFeatures: string[] = (config as any)?.licenseFeatures ?? [];
+    const hasMobileDistro = licenseFeatures.includes(WILDCARD) || licenseFeatures.includes('mobile_distribution');
+
+    // Without mobile distribution: return non-installable manifest
+    if (!hasMobileDistro) {
+      return {
+        name: config.store.name || 'Store',
+        short_name: config.store.name || 'Store',
+        description: config.seo.description || '',
+        start_url: '/',
+        display: 'browser',
+        background_color: '#ffffff',
+        theme_color: config.branding?.colors?.primary || '#0089CD',
+      };
+    }
+
     let faviconUrl = config.branding?.storefrontFavicon || '/favicon.svg'
     const primaryColor = config.branding?.colors?.primary || '#0089CD'
     const faviconPngUrl = faviconUrl.replace(/\.svg$/, '.png')
@@ -28,15 +46,9 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
       short_name: 'Store',
       description: '',
       start_url: '/',
-      display: 'standalone',
+      display: 'browser',
       background_color: '#ffffff',
       theme_color: '#0089CD',
-      icons: [
-        { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
-        { src: '/favicon.png', sizes: '192x192', type: 'image/png' },
-        { src: '/favicon.png', sizes: '512x512', type: 'image/png' },
-        { src: '/favicon.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      ],
     }
   }
 }

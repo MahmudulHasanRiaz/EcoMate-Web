@@ -74,9 +74,10 @@ export default async function DownloadPage() {
   const storeName = config?.store?.name || 'Store';
   const licenseFeatures: string[] = (config as any)?.licenseFeatures ?? [];
   const licenseActive = (config as any)?._licenseActive ?? true;
-  const hasMobileDistro = licenseFeatures.includes('mobile_distribution');
-  const hasMobileAdmin = licenseFeatures.includes('mobile_distribution_admin');
-  const hasMobilePos = licenseFeatures.includes('mobile_distribution_pos');
+  const hasWildcard = licenseFeatures.includes('*');
+  const hasMobileDistro = hasWildcard || licenseFeatures.includes('mobile_distribution');
+  const hasMobileAdmin = hasWildcard || licenseFeatures.includes('mobile_distribution_admin');
+  const hasMobilePos = hasWildcard || licenseFeatures.includes('mobile_distribution_pos');
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 md:py-16">

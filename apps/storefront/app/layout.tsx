@@ -86,6 +86,8 @@ export default async function RootLayout({
   // License status comes from getStorefrontConfigServer() — no duplicate fetch needed
   const licenseActive = (initialConfig as any)?._licenseActive ?? true;
   const licenseMessage = (initialConfig as any)?._licenseMessage ?? '';
+  const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
+  const hasMobileDistro = licenseFeatures.includes('*') || licenseFeatures.includes('mobile_distribution');
 
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
 
@@ -129,11 +131,15 @@ export default async function RootLayout({
     >
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
-        <meta name="theme-color" content={initialConfig?.branding?.colors?.primary || '#0089CD'} />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
-        <link rel="apple-touch-icon" href={initialConfig?.branding?.storefrontFavicon || '/favicon.svg'} />
+        {hasMobileDistro && (
+          <>
+            <meta name="theme-color" content={initialConfig?.branding?.colors?.primary || '#0089CD'} />
+            <meta name="apple-mobile-web-app-capable" content="yes" />
+            <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+            <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
+            <link rel="apple-touch-icon" href={initialConfig?.branding?.storefrontFavicon || '/favicon.svg'} />
+          </>
+        )}
 
         {/* Preconnect to critical third-party origins */}
         <link rel="preconnect" href="https://static.cloudflareinsights.com" />
@@ -143,16 +149,18 @@ export default async function RootLayout({
         {/* DNS prefetch for faster connection setup */}
         <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />
 
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              window.addEventListener('beforeinstallprompt', function(e) {
-                e.preventDefault();
-                window.__deferredPWAInstall = e;
-              });
-            `,
-          }}
-        />
+        {hasMobileDistro && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.addEventListener('beforeinstallprompt', function(e) {
+                  e.preventDefault();
+                  window.__deferredPWAInstall = e;
+                });
+              `,
+            }}
+          />
+        )}
 
         {initialConfig && (
           <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
@@ -238,13 +246,13 @@ export default async function RootLayout({
               duration={4000}
             />
             <OfflineBanner />
-            <PWAInstallBanner />
+            {hasMobileDistro && <PWAInstallBanner />}
             </StorefrontConfigProvider>
             <PageViewTracker />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
-        {process.env.NODE_ENV === 'production' && (
+        {hasMobileDistro && process.env.NODE_ENV === 'production' && (
           <Script id="sw-register" strategy="afterInteractive">
             {`
               if ('serviceWorker' in navigator) {
