@@ -57,6 +57,6 @@ RUN chown -R nestjs:nodejs /app/mobile-builds
 USER nestjs
 EXPOSE 4000
 ENV NODE_ENV=production
-HEALTHCHECK --interval=30s --timeout=3s --start-period=300s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=600s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4000/api/health || exit 1
 CMD ["./startup.sh"]

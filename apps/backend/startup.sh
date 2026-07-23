@@ -10,10 +10,13 @@ if [ "$RUN_SEED" = "true" ]; then
   npx prisma db seed
 fi
 
-# ── Build Capacitor APK first (uses full container memory before server starts) ──
+# ── Build Capacitor APK before server start (full 512MB memory for Gradle) ──
 if [ -n "$CLIENT_DOMAIN" ] && [ ! -f "/app/mobile-builds/storefront/android/latest.apk" ]; then
-  echo "[Startup] CLIENT_DOMAIN=$CLIENT_DOMAIN — building mobile APK..."
+  echo "[Startup] CLIENT_DOMAIN=$CLIENT_DOMAIN — building mobile APK (first deploy ~5min)..."
 
+  # Point Gradle cache to persistent volume so SDK isn't re-downloaded on every deploy
+  export GRADLE_USER_HOME="/app/mobile-builds/.gradle"
+  mkdir -p "$GRADLE_USER_HOME"
   export CAP_APP_ID="${CAP_APP_ID:-com.ecomate.storefront}"
   export CAP_SERVER_URL="https://${CLIENT_DOMAIN}"
   export CAP_APP_NAME="${CAP_APP_NAME:-EcoMate}"
