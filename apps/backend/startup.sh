@@ -68,7 +68,12 @@ CONF
     # Build APK
     echo "[Startup] Building Android APK..."
     if [ -f "android/gradlew" ]; then
-      export GRADLE_OPTS="-Xmx256m -Dorg.gradle.jvmargs=-Xmx256m"
+      # Write gradle.properties with memory limits (env vars don't propagate to daemon on Alpine)
+      cat > android/gradle.properties <<PROP
+org.gradle.jvmargs=-Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC
+org.gradle.daemon=false
+PROP
+      export GRADLE_OPTS="-Xmx256m"
       (cd android && ./gradlew assembleDebug --no-daemon 2>&1) || echo "[Startup] Gradle build failed"
     else
       echo "[Startup] android/gradlew not found — skipping build"
