@@ -89,6 +89,8 @@ PROP
     echo "[Startup] APK ready: /app/mobile-builds/storefront/android/latest.apk"
   fi
 
+  fi
+
   cd /app
   echo "[Startup] Mobile APK build complete"
 fi
