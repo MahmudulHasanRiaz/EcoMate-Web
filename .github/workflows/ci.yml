@@ -222,6 +222,58 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (Root)
+        run: npm ci
+
+      - name: Build web apps for mobile
+        if: matrix.service.name == 'backend'
+        run: |
+          npm run build --workspace=storefront 2>/dev/null || true
+
+      - name: Setup Android SDK
+        if: matrix.service.name == 'backend'
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Java
+        if: matrix.service.name == 'backend'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build mobile APK
+        if: matrix.service.name == 'backend'
+        env:
+          CLIENT: ${{ github.repository_owner }}
+        run: |
+          mkdir -p mobile-builds/storefront/android \
+                   mobile-builds/admin/android \
+                   mobile-builds/pos/android
+          cd apps/capacitor/storefront
+          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+            npx cap add android --no-telemetry 2>/dev/null || true
+          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+            npx cap copy --no-telemetry 2>/dev/null || true
+          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
+            npx cap sync --no-telemetry 2>/dev/null || true
+          if [ -f "android/gradlew" ]; then
+            (cd android && ./gradlew assembleRelease) || echo "Native build failed"
+          fi
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            cp "android/app/build/outputs/apk/release/app-release.apk" \
+              "${GITHUB_WORKSPACE}/mobile-builds/storefront/android/latest.apk"
+            echo "APK built successfully for ${CLIENT}"
+          else
+            echo "No APK produced — check Android SDK"
+          fi
+        continue-on-error: true
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
