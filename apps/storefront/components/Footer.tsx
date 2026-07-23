@@ -13,6 +13,8 @@ export default function Footer({}: {}) {
   const { config } = useStorefrontConfig();
   if (pathname && pathname.startsWith('/checkout')) return null;
   const { store, social, footer: footerConfig } = config;
+  const playStoreUrl = (config as any).playStoreUrl || '';
+  const appStoreUrl = (config as any).appStoreUrl || '';
 
   const footerColumns = config.menu?.footer?.columns || [];
 
@@ -137,24 +139,64 @@ export default function Footer({}: {}) {
         <div className="pt-10 border-t border-gray-100 mb-10">
           <p className="font-bold text-[13px] text-gray-800 mb-4">Download App on Mobile :</p>
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={() => alert('Android App coming soon!')} className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.523 15.341c-.551 0-1 .449-1 1s.449 1 1 1 1-.449 1-1-.449-1-1-1zm-11.045 0c-.551 0-1 .449-1 1s.449 1 1 1 1-.449 1-1-.449-1-1-1zM22 13.5v-3c0-.827-.673-1.5-1.5-1.5h-1.564c-.456-2.906-2.973-5-6-5s-5.544 2.094-6 5H5.45C4.623 9 4 9.673 4 10.5v3c0 .827.673 1.5 1.5 1.5h1.564c.266 1.696 1.159 3.097 2.436 4.015L7.9 21.1c-.13.38.07.79.45.92s.79-.07.92-.45l1.62-4.71c.36.09.73.14 1.11.14s.75-.05 1.11-.14l1.62 4.71c.13.38.54.58.92.45.38-.13.58-.54.45-.92l-1.6-4.585c1.277-.918 2.17-2.319 2.436-4.015H18.5c.827 0 1.5-.673 1.5-1.5z"></path>
-              </svg>
-              <div className="text-left">
-                <p className="text-[10px] leading-none text-gray-400">Download on</p>
-                <p className="text-[14px] font-bold leading-tight">Google Play</p>
-              </div>
-            </button>
-            <button onClick={() => alert('iOS App coming soon!')} className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.1 2.48-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .76-3.27.82-1.31.05-2.31-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91 1.34.05 3 .53 4 2.17-2.51 1.48-2.11 4.77.46 5.82-.9 2.14-2.14 4.54-3.57 6.67zM14.96 6.9c.14-1.34-.45-3.01-1.37-4.14-1.12-1.31-2.95-1.72-4.2-.67-.14 1.34.45 3.01 1.37 4.14 1.12 1.31 2.95 1.72 4.2.67z"></path>
-              </svg>
-              <div className="text-left">
-                <p className="text-[10px] leading-none text-gray-400">Download on</p>
-                <p className="text-[14px] font-bold leading-tight">App Store</p>
-              </div>
-            </button>
+            {playStoreUrl ? (
+              <a
+                href={playStoreUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
+                </div>
+              </a>
+            ) : (
+              <Link
+                href="/download"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
+                </div>
+              </Link>
+            )}
+            {appStoreUrl ? (
+              <a
+                href={appStoreUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2zM256 160c-51.3 0-85.9-33.5-87.2-82 0-6.6.3-13.3 1.1-19.8-40.6 2-75.3 21.9-96.5 52.4-20.3 29.4-32.2 63.3-32.2 100.9 0 0 0 .1 0 .2 7.6-3.4 14.4-5.2 20.5-5.2 17.4 0 52.9 18.4 70.4 18.4 20.1 0 53.1-18.1 71.3-18.1 12.6 0 39.2 8.4 55.9 17.8 8.6-13.5 20.4-31 33.7-49.9-9.4-9.6-21-18.4-35.8-27.4z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">App Store</p>
+                </div>
+              </a>
+            ) : (
+              <Link
+                href="/download"
+                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2zM256 160c-51.3 0-85.9-33.5-87.2-82 0-6.6.3-13.3 1.1-19.8-40.6 2-75.3 21.9-96.5 52.4-20.3 29.4-32.2 63.3-32.2 100.9 0 0 0 .1 0 .2 7.6-3.4 14.4-5.2 20.5-5.2 17.4 0 52.9 18.4 70.4 18.4 20.1 0 53.1-18.1 71.3-18.1 12.6 0 39.2 8.4 55.9 17.8 8.6-13.5 20.4-31 33.7-49.9-9.4-9.6-21-18.4-35.8-27.4z"/>
+                </svg>
+                <div className="text-left">
+                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
+                  <p className="text-[14px] font-bold leading-tight">App Store</p>
+                </div>
+              </Link>
+            )}
           </div>
         </div>
 

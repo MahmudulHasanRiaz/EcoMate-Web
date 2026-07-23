@@ -518,6 +518,8 @@ export class SystemSettingsController {
           subtitle: map['thanks_page_subtitle'] || '',
           description: map['thanks_page_description'] || '',
         },
+        playStoreUrl: map['play_store_url'] || '',
+        appStoreUrl: map['app_store_url'] || '',
       };
       const heroImageUrls = [
         ...heroSlides.map(s => s.image).filter(Boolean),
