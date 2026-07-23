@@ -1,0 +1,110 @@
+name: Build Mobile App
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App to build'
+        required: true
+        default: 'storefront'
+        type: choice
+        options:
+          - storefront
+          - admin
+          - pos
+          - all
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'android'
+        type: choice
+        options:
+          - android
+          - ios
+          - both
+
+jobs:
+  build-android:
+    if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: ${{ fromJSON(inputs.app == 'all' && '["storefront","admin","pos"]' || format('["{0}"]', inputs.app)) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+      - name: Build web app (${{ matrix.app }})
+        run: npm run build --workspace=${{ matrix.app == 'storefront' && 'storefront' || matrix.app }}
+      - name: Setup Capacitor
+        working-directory: apps/capacitor/${{ matrix.app }}
+        run: |
+          npx cap add android
+          npx cap copy
+          npx cap sync
+      - name: Build Android APK
+        working-directory: apps/capacitor/${{ matrix.app }}/android
+        run: ./gradlew assembleRelease
+      - name: Copy APK to output
+        run: |
+          mkdir -p mobile-builds/${{ matrix.app }}/android
+          cp apps/capacitor/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release.apk \
+             mobile-builds/${{ matrix.app }}/android/latest.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-android-apk
+          path: mobile-builds/${{ matrix.app }}/android/latest.apk
+
+  build-ios:
+    if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        app: ${{ fromJSON(inputs.app == 'all' && '["storefront","admin","pos"]' || format('["{0}"]', inputs.app)) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+      - name: Build web app (${{ matrix.app }})
+        run: npm run build --workspace=${{ matrix.app == 'storefront' && 'storefront' || matrix.app }}
+      - name: Setup Capacitor
+        working-directory: apps/capacitor/${{ matrix.app }}
+        run: |
+          npx cap add ios
+          npx cap copy
+          npx cap sync
+      - name: Build iOS IPA
+        working-directory: apps/capacitor/${{ matrix.app }}/ios
+        run: |
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath ./build/App.xcarchive \
+            archive
+          xcodebuild -exportArchive \
+            -archivePath ./build/App.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath ./build/
+      - name: Copy IPA to output
+        run: |
+          mkdir -p mobile-builds/${{ matrix.app }}/ios
+          cp apps/capacitor/${{ matrix.app }}/ios/build/App.ipa \
+             mobile-builds/${{ matrix.app }}/ios/latest.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-ios-ipa
+          path: mobile-builds/${{ matrix.app }}/ios/latest.ipa
