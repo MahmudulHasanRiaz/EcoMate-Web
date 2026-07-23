@@ -19,11 +19,6 @@ on:
           - enterprise
           - ultimate
         default: 'enterprise'
-      server_url:
-        description: 'App server URL (for Capacitor mobile app)'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   build-and-deploy:
@@ -48,6 +43,23 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Read client domain from config
+        id: client-config
+        run: |
+          CONFIG_FILE="clients/${{ github.event.inputs.client }}/client.config.ts"
+          if [ -f "$CONFIG_FILE" ]; then
+            DOMAIN=$(grep "domain:" "$CONFIG_FILE" | sed "s/.*domain: *'\(.*\)'.*/\1/")
+            if [ -n "$DOMAIN" ]; then
+              echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+              echo "CAP_SERVER_URL=https://$DOMAIN" >> $GITHUB_ENV
+              echo "Using domain from client config: $DOMAIN"
+            fi
+          fi
+          if [ -z "${CAP_SERVER_URL:-}" ]; then
+            echo "No domain in client config. APK will use default URL."
+            echo "CAP_SERVER_URL=" >> $GITHUB_ENV
+          fi
+
       - name: Build apps
         run: npm run build
         env:
@@ -65,21 +77,20 @@ jobs:
       - name: Build mobile APK (storefront)
         env:
           CLIENT: ${{ github.event.inputs.client }}
-          CAP_SERVER_URL: ${{ github.event.inputs.server_url }}
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/mobile-builds/storefront/android" \
                    "${GITHUB_WORKSPACE}/mobile-builds/admin/android" \
                    "${GITHUB_WORKSPACE}/mobile-builds/pos/android"
           cd "${GITHUB_WORKSPACE}/apps/capacitor/storefront"
-          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_NAME="${CLIENT}" \
           CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
           CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap add android --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_NAME="${CLIENT}" \
           CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
           CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap copy --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT} Store" \
+          CAP_APP_NAME="${CLIENT}" \
           CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
           CAP_SERVER_URL="${CAP_SERVER_URL}" \
             npx cap sync --no-telemetry 2>/dev/null || true
