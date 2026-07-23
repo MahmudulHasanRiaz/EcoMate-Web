@@ -132,7 +132,10 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_activity_logs: { key: 'admin_activity_logs', enabled: true },
   admin_help_center: { key: 'admin_help_center', enabled: true },
 
-  // ── O: Infrastructure (6) ──
+  // ── O: Infrastructure (9) ──
+  mobile_distribution: { key: 'mobile_distribution', enabled: true, dependencies: ['storefront'] },
+  mobile_distribution_admin: { key: 'mobile_distribution_admin', enabled: true, dependencies: ['mobile_distribution'] },
+  mobile_distribution_pos: { key: 'mobile_distribution_pos', enabled: true, dependencies: ['mobile_distribution'] },
   image_resize_proxy: { key: 'image_resize_proxy', enabled: true },
   pos_system: { key: 'pos_system', enabled: true, dependencies: ['admin_products'] },
   smtp_server: { key: 'smtp_server', enabled: true },
@@ -165,6 +168,9 @@ export const DEPENDENCY_MAP: Record<string, string[]> = {
   gateway_surjopay: ['storefront'],
   gateway_aamarpay: ['storefront'],
   pos_system: ['admin_products'],
+  mobile_distribution: ['storefront'],
+  mobile_distribution_admin: ['mobile_distribution'],
+  mobile_distribution_pos: ['mobile_distribution'],
   admin_barcode_search: ['pos_system'],
   admin_order_import: ['admin_orders'],
 };

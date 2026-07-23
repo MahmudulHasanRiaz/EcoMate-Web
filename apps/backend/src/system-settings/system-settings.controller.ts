@@ -573,6 +573,38 @@ export class SystemSettingsController {
   }
 
   @Public()
+  @Get('pos-manifest')
+  async getPosManifest() {
+    const settings = await this.prisma.systemSetting.findMany({
+      where: {
+        key: { in: ['store_name', 'admin_favicon', 'brand_primary', 'brand_bg'] },
+      },
+    });
+    const map: Record<string, string> = {};
+    for (const s of settings) map[s.key] = s.value;
+    const favicon = map['admin_favicon'] || '/images/favicon.png';
+    return {
+      name: (map['store_name'] || 'EcoMate') + ' POS',
+      short_name: (map['store_name'] || 'EcoMate') + ' POS',
+      description: 'Point of Sale terminal',
+      start_url: '/pos/',
+      scope: '/pos/',
+      display: 'standalone',
+      display_override: ['window-controls-overlay', 'standalone'],
+      background_color: map['brand_bg'] || '#ffffff',
+      theme_color: map['brand_primary'] || '#2563eb',
+      orientation: 'portrait-primary',
+      categories: ['business', 'ecommerce'],
+      lang: 'en',
+      icons: [
+        { src: favicon, sizes: '192x192', type: 'image/png' },
+        { src: favicon, sizes: '512x512', type: 'image/png' },
+        { src: favicon, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      ],
+    };
+  }
+
+  @Public()
   @Get('inventory-enabled')
   async getInventoryEnabled() {
     const setting = await this.prisma.systemSetting.findUnique({
