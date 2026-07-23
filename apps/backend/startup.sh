@@ -59,6 +59,9 @@ CONF
       npx cap add android 2>&1 || echo "[Startup] cap add android failed (will retry next startup)"
     fi
 
+    # Ensure required dirs exist for cap sync (may be missing if cap add skipped copy step)
+    mkdir -p dist android/app/src/main/assets
+
     # Sync config changes to native project
     npx cap sync android 2>&1 || echo "[Startup] cap sync android failed"
 
