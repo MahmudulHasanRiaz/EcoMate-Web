@@ -26,6 +26,9 @@ if [ -n "$CLIENT_DOMAIN" ]; then
 
     cd /app/capacitor/storefront
 
+    # Install Capacitor dependencies (package.json exists but node_modules doesn't in Docker)
+    npm install --no-save --silent 2>/dev/null || true
+
     # Create capacitor.config.ts with runtime values
     cat > capacitor.config.ts <<CONF
 import type { CapacitorConfig } from '@capacitor/cli';
@@ -51,7 +54,8 @@ CONF
 
     # Add Android platform if not present
     if [ ! -f "android/build.gradle" ]; then
-      echo "[Startup] Adding Android platform..."
+      echo "[Startup] Installing Android platform..."
+      npm ls @capacitor/android 2>/dev/null || npm install @capacitor/android --no-save 2>/dev/null || true
       npx cap add android 2>&1 || echo "[Startup] cap add android failed (will retry next startup)"
     fi
 
