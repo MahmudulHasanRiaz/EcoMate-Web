@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
@@ -9,7 +8,6 @@ import { StorefrontConfigProvider } from "@/context/StorefrontConfigContext";
 import TrackingScripts from "@/components/TrackingScripts";
 import { PageViewTracker } from "@/components/PageViewTracker";
 import OfflineBanner from "@/components/OfflineBanner";
-import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import type { CSSProperties } from "react";
@@ -149,19 +147,6 @@ export default async function RootLayout({
         {/* DNS prefetch for faster connection setup */}
         <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />
 
-        {hasMobileDistro && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                window.addEventListener('beforeinstallprompt', function(e) {
-                  e.preventDefault();
-                  window.__deferredPWAInstall = e;
-                });
-              `,
-            }}
-          />
-        )}
-
         {initialConfig && (
           <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
         )}
@@ -246,23 +231,11 @@ export default async function RootLayout({
               duration={4000}
             />
             <OfflineBanner />
-            {hasMobileDistro && <PWAInstallBanner />}
             </StorefrontConfigProvider>
             <PageViewTracker />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
-        {hasMobileDistro && process.env.NODE_ENV === 'production' && (
-          <Script id="sw-register" strategy="afterInteractive">
-            {`
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/sw.js').catch(() => {});
-                });
-              }
-            `}
-          </Script>
-        )}
       </body>
     </html>
   );
