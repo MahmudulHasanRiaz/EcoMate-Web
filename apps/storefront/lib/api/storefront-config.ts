@@ -148,6 +148,8 @@ export interface StorefrontConfig {
     showReviews: boolean;
   };
   licenseFeatures: string[];
+  playStoreUrl: string;
+  appStoreUrl: string;
 }
 
 export function hasLicenseFeature(config: StorefrontConfig, key: string): boolean {

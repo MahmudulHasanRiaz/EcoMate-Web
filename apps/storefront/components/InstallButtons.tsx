@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Smartphone } from 'lucide-react';
+import { Download } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -16,10 +16,15 @@ function getPlatform(): 'android' | 'ios' | 'other' {
   return 'other';
 }
 
-export default function InstallButtons() {
+export default function InstallButtons({
+  playStoreUrl,
+  appStoreUrl,
+}: {
+  playStoreUrl?: string;
+  appStoreUrl?: string;
+}) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
-  const [supported, setSupported] = useState(true);
   const platform = getPlatform();
 
   useEffect(() => {
@@ -32,9 +37,6 @@ export default function InstallButtons() {
 
     if (window.__deferredPWAInstall) {
       setDeferredPrompt(window.__deferredPWAInstall as BeforeInstallPromptEvent);
-    } else if (!('BeforeInstallPromptEvent' in window)) {
-      // beforeinstallprompt not supported — PWA install still possible manually
-      setSupported(false);
     }
 
     window.addEventListener('beforeinstallprompt', handler);
@@ -65,36 +67,58 @@ export default function InstallButtons() {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {/* Android: show Install button (triggers PWA prompt in browser) */}
+      {/* Android — Play Store link or PWA prompt */}
       {platform === 'android' && (
-        <button
-          onClick={handleInstall}
-          disabled={!deferredPrompt}
-          className="inline-flex items-center gap-1.5 bg-brand-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download size={14} />
-          {deferredPrompt ? 'Install App' : 'Add to Home Screen'}
-        </button>
+        playStoreUrl ? (
+          <a
+            href={playStoreUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 bg-brand-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-blue-dark transition-colors"
+          >
+            <Download size={14} />
+            Get it on Google Play
+          </a>
+        ) : (
+          <>
+            <button
+              onClick={handleInstall}
+              disabled={!deferredPrompt}
+              className="inline-flex items-center gap-1.5 bg-brand-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={14} />
+              {deferredPrompt ? 'Install App' : 'Add to Home Screen'}
+            </button>
+            <span className="text-[11px] text-gray-400">
+              or browser menu → Add to Home Screen
+            </span>
+          </>
+        )
       )}
 
-      {/* iOS: show instructions (no programmatic install on iOS) */}
+      {/* iOS — App Store link or Safari instructions */}
       {platform === 'ios' && (
-        <span className="text-xs text-gray-500">
-          Open Safari → Share → Add to Home Screen
-        </span>
+        appStoreUrl ? (
+          <a
+            href={appStoreUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 bg-brand-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-brand-blue-dark transition-colors"
+          >
+            <Download size={14} />
+            Download on the App Store
+          </a>
+        ) : (
+          <span className="text-xs text-gray-500">
+            Open Safari → Share → Add to Home Screen
+          </span>
+        )
       )}
 
-      {/* Desktop / unknown: show generic install option */}
+      {/* Desktop — generic guidance */}
       {platform === 'other' && (
         <span className="text-[11px] text-gray-400">
           Open on your phone to install the app
-        </span>
-      )}
-
-      {/* Platform-agnostic fallback: always visible */}
-      {platform !== 'ios' && (
-        <span className="text-[11px] text-gray-400">
-          or browser menu → Add to Home Screen
         </span>
       )}
     </div>

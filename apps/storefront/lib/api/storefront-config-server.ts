@@ -39,6 +39,8 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   shippingZones: [],
   features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
   thankYou: { title: '', subtitle: '', description: '' },
+  playStoreUrl: '',
+  appStoreUrl: '',
   licenseFeatures: [],
   homepageSections: [],
 };

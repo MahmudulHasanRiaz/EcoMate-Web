@@ -31,6 +31,8 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
   thankYou: { title: '', subtitle: '', description: '' },
   licenseFeatures: [],
+  playStoreUrl: '',
+  appStoreUrl: '',
   homepageSections: [],
 };
 
