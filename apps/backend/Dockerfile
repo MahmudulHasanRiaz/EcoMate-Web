@@ -33,11 +33,10 @@ RUN javascript-obfuscator dist/ \
 COPY --from=builder /app/apps/backend/dist ./dist-base
 RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
-FROM node:22 AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
-# Java 17 + Android SDK tools for Capacitor APK build at container startup
-RUN apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip && \
-    rm -rf /var/lib/apt/lists/* && \
+# Java 17 + unzip for Capacitor APK build at container startup
+RUN apk add --no-cache openjdk17-jdk unzip && \
     npm install -g @capacitor/cli@^7.0.0 --silent 2>/dev/null
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
@@ -54,6 +53,7 @@ RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds /app/capacitor && \
     chmod +x startup.sh
 # Pre-create mobile-builds directory with .gitkeep for clean COPY
 COPY mobile-builds /app/mobile-builds/
+RUN chown -R nestjs:nodejs /app/mobile-builds
 USER nestjs
 EXPOSE 4000
 ENV NODE_ENV=production
