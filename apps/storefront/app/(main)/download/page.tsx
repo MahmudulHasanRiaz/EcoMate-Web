@@ -4,6 +4,8 @@ import { pageMetadata } from "@/lib/metadata";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { StoreAppCard } from "./StoreAppCard";
 
+export const dynamic = 'force-dynamic';
+
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfigServer().catch(() => null);
   const storeName = config?.store?.name || 'Store';
