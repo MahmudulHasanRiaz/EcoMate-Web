@@ -44,8 +44,11 @@ COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
 COPY apps/backend/startup.sh ./startup.sh
-RUN mkdir -p /app/uploads /app/.cache && chown -R nestjs:nodejs /app/uploads /app/.cache && \
+RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds && \
+    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds && \
     chmod +x startup.sh
+# Copy pre-built mobile APK from build context (empty dir if CI didn't build)
+COPY mobile-builds /app/mobile-builds/
 USER nestjs
 EXPOSE 4000
 ENV NODE_ENV=production
