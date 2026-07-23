@@ -68,6 +68,7 @@ CONF
     # Build APK
     echo "[Startup] Building Android APK..."
     if [ -f "android/gradlew" ]; then
+      export GRADLE_OPTS="-Xmx256m -Dorg.gradle.jvmargs=-Xmx256m"
       (cd android && ./gradlew assembleDebug --no-daemon 2>&1) || echo "[Startup] Gradle build failed"
     else
       echo "[Startup] android/gradlew not found — skipping build"
