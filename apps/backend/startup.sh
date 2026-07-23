@@ -11,8 +11,15 @@ if [ "$RUN_SEED" = "true" ]; then
 fi
 
 # ── Build Capacitor APK before server start (full 512MB memory for Gradle) ──
-if [ -n "$CLIENT_DOMAIN" ] && [ ! -f "/app/mobile-builds/storefront/android/latest.apk" ]; then
-  echo "[Startup] CLIENT_DOMAIN=$CLIENT_DOMAIN — building mobile APK (first deploy ~5min)..."
+if [ -n "$CLIENT_DOMAIN" ]; then
+  APK_PATH="/app/mobile-builds/storefront/android/latest.apk"
+  DOMAIN_FILE="/app/mobile-builds/storefront/android/.domain"
+
+  # Check if APK already exists for this CLIENT_DOMAIN
+  if [ -f "$APK_PATH" ] && [ -f "$DOMAIN_FILE" ] && [ "$(cat $DOMAIN_FILE)" = "$CLIENT_DOMAIN" ]; then
+    echo "[Startup] APK already exists for $CLIENT_DOMAIN — skipping build"
+  else
+    echo "[Startup] CLIENT_DOMAIN=$CLIENT_DOMAIN — building mobile APK..."
 
   # Point Gradle cache to persistent volume so SDK isn't re-downloaded on every deploy
   export GRADLE_USER_HOME="/app/mobile-builds/.gradle"
@@ -78,6 +85,7 @@ PROP
   if [ -f "$APK_SRC" ]; then
     mkdir -p /app/mobile-builds/storefront/android
     cp "$APK_SRC" /app/mobile-builds/storefront/android/latest.apk
+    echo "$CLIENT_DOMAIN" > /app/mobile-builds/storefront/android/.domain
     echo "[Startup] APK ready: /app/mobile-builds/storefront/android/latest.apk"
   fi
 
