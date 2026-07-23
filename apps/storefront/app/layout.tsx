@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
@@ -147,6 +148,19 @@ export default async function RootLayout({
         {/* DNS prefetch for faster connection setup */}
         <link rel="dns-prefetch" href="//static.cloudflareinsights.com" />
 
+        {hasMobileDistro && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.addEventListener('beforeinstallprompt', function(e) {
+                  e.preventDefault();
+                  window.__deferredPWAInstall = e;
+                });
+              `,
+            }}
+          />
+        )}
+
         {initialConfig && (
           <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
         )}
@@ -236,6 +250,17 @@ export default async function RootLayout({
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
+        {hasMobileDistro && process.env.NODE_ENV === 'production' && (
+          <Script id="sw-register" strategy="afterInteractive">
+            {`
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `}
+          </Script>
+        )}
       </body>
     </html>
   );
