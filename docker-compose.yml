@@ -5,6 +5,7 @@ networks:
 volumes:
   postgres-data:
   uploads-data:
+  mobile-builds-data:
 
 services:
   postgres:
@@ -58,8 +59,10 @@ services:
       - "${BACKEND_PORT:-4000}:4000"
     volumes:
       - uploads-data:/app/uploads
+      - mobile-builds-data:/app/mobile-builds
     environment:
       NODE_ENV: production
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN}
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
