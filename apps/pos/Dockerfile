@@ -19,9 +19,14 @@ RUN javascript-obfuscator dist/ \
     --config obfuscator.config.json && \
     rm -rf dist && \
     mv dist-obfuscated dist
-# Restore non-JS files (index.html, CSS, images) that obfuscator passes through unchanged
+# Restore files that obfuscation may have corrupted (service worker, manifest, images)
 COPY --from=builder /app/apps/pos/dist ./dist-base
-RUN cp dist-base/index.html dist/index.html 2>/dev/null; rm -rf dist-base
+RUN cp dist-base/index.html dist/index.html 2>/dev/null; \
+    cp -r dist-base/sw.js dist/sw.js 2>/dev/null; \
+    cp -r dist-base/workbox-*.js dist/ 2>/dev/null; \
+    cp dist-base/manifest.webmanifest dist/manifest.webmanifest 2>/dev/null; \
+    cp -r dist-base/images dist/ 2>/dev/null; \
+    rm -rf dist-base
 
 FROM nginx:stable-alpine AS runner
 COPY --from=builder /app/apps/pos/dist /usr/share/nginx/html/pos
