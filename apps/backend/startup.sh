@@ -68,9 +68,9 @@ CONF
     # Build APK
     echo "[Startup] Building Android APK..."
     if [ -f "android/gradlew" ]; then
-      # Write gradle.properties with memory limits (env vars don't propagate to daemon on Alpine)
+      # Write gradle.properties with memory limits (container is 512MB total)
       cat > android/gradle.properties <<PROP
-org.gradle.jvmargs=-Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC
+org.gradle.jvmargs=-Xmx128m -XX:MaxMetaspaceSize=64m -XX:+UseSerialGC
 org.gradle.daemon=false
 PROP
       export GRADLE_OPTS="-Xmx256m"
