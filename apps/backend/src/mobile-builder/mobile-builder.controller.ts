@@ -86,6 +86,12 @@ export class MobileBuilderController {
     return {
       ready: missing.length === 0,
       missing,
+      summary: {
+        license: this.featureFlags.canUse('mobile_distribution'),
+        branding: !!(map['store_name'] && map['storefront_favicon'] && map['brand_primary']),
+        domain: !!process.env.CLIENT_DOMAIN,
+        packageId: true,
+      },
     };
   }
 
@@ -126,131 +132,84 @@ export class MobileBuilderController {
   @Roles('superadmin', 'admin')
   @RequiresFeature('mobile_distribution')
   async publishBuild(@Body() body: { app?: string; platform?: string }) {
-    const app = body?.app || 'storefront';
+    const appInput = body?.app || 'storefront';
     const platform = body?.platform || 'android';
-    if (!['storefront', 'admin', 'pos'].includes(app)) throw new BadRequestException('app must be storefront, admin, or pos');
+
+    // Resolve target apps
+    const apps = appInput === 'all'
+      ? ['storefront', 'admin', 'pos'].filter(a => this.featureFlags.canUse(a === 'storefront' ? 'mobile_distribution' : `mobile_distribution_${a}`))
+      : [appInput];
+
+    if (apps.length === 0) throw new BadRequestException('No licensed apps to publish');
+    for (const a of apps) {
+      if (!['storefront', 'admin', 'pos'].includes(a)) throw new BadRequestException(`Invalid app: ${a}`);
+    }
+    if (apps.length === 1 && !['storefront', 'admin', 'pos'].includes(appInput)) throw new BadRequestException('app must be storefront, admin, pos, or all');
     if (!['android', 'ios'].includes(platform)) throw new BadRequestException('platform must be android or ios');
 
-    // Validate prerequisites
+    // Validate prerequisites once
     const readyStatus = await this.getReadyStatus();
     if (!readyStatus.ready) throw new BadRequestException(`Prerequisites not met: ${readyStatus.missing.join(', ')}`);
 
-    // Auto-fail stale builds stuck on running/uploading for > 30 min
+    // Auto-fail stale builds
     const staleCutoff = new Date(Date.now() - STALE_BUILD_MINUTES * 60 * 1000);
-    const staleBuilds = await this.prisma.mobileBuild.findMany({
-      where: {
-        status: { in: ['running', 'uploading'] },
-        clientDomain: process.env.CLIENT_DOMAIN,
-        updatedAt: { lt: staleCutoff },
-      },
-    });
-    for (const stale of staleBuilds) {
-      await this.prisma.mobileBuild.update({
-        where: { id: stale.id },
-        data: { status: 'failed', errorMessage: `Stale: no status update for ${STALE_BUILD_MINUTES}+ minutes` },
-      });
-    }
+    const staleBuilds = await this.prisma.mobileBuild.findMany({ where: { status: { in: ['running', 'uploading'] }, clientDomain: process.env.CLIENT_DOMAIN, updatedAt: { lt: staleCutoff } } });
+    for (const s of staleBuilds) await this.prisma.mobileBuild.update({ where: { id: s.id }, data: { status: 'failed', errorMessage: `Stale: no update for ${STALE_BUILD_MINUTES}+ min` } });
 
-    // Queue check: only 1 active (queued/running/uploading) build per client
-    const runningCount = await this.prisma.mobileBuild.count({
-      where: {
-        status: { in: ['queued', 'running', 'uploading'] },
-        clientDomain: process.env.CLIENT_DOMAIN,
-      },
-    });
-    if (runningCount > 0) throw new ConflictException('A build is already queued or in progress for this client');
+    const runningCount = await this.prisma.mobileBuild.count({ where: { status: { in: ['queued', 'running', 'uploading'] }, clientDomain: process.env.CLIENT_DOMAIN } });
+    if (runningCount > 0) throw new ConflictException('A build is already queued or in progress');
 
     // Resolve immutable packageId
     const locked = await this.prisma.systemSetting.findUnique({ where: { key: PKG_LOCK_KEY } });
-    const settings = await this.prisma.systemSetting.findMany({
-      where: { key: { in: ['store_name'] as string[] } },
-    });
-    const map: Record<string, string> = {};
-    for (const s of settings) map[s.key] = s.value;
-    const packageId = locked?.value || computePackageId(map['store_name'] || '');
+    const settings = await this.prisma.systemSetting.findMany({ where: { key: { in: ['store_name'] as string[] } } });
+    const smap: Record<string, string> = {};
+    for (const s of settings) smap[s.key] = s.value;
+    const packageId = locked?.value || computePackageId(smap['store_name'] || '');
+    if (!locked) await this.prisma.systemSetting.upsert({ where: { key: PKG_LOCK_KEY }, create: { key: PKG_LOCK_KEY, value: packageId }, update: {} });
 
-    // Lock packageId on first publish
-    if (!locked) {
-      await this.prisma.systemSetting.upsert({
-        where: { key: PKG_LOCK_KEY },
-        create: { key: PKG_LOCK_KEY, value: packageId },
-        update: {},
-      });
+    // Create build records for each app
+    const builds: any[] = [];
+    for (const a of apps) {
+      const latest = await this.prisma.mobileBuild.findFirst({ where: { app: a, platform }, orderBy: { versionCode: 'desc' } });
+      builds.push(await this.prisma.mobileBuild.create({ data: { app: a, platform, status: 'queued', versionName: '1.0.0', versionCode: (latest?.versionCode || 0) + 1, clientDomain: process.env.CLIENT_DOMAIN || '', packageId } }));
     }
-
-    // Compute versionCode: next increment from latest build
-    const latestBuild = await this.prisma.mobileBuild.findFirst({
-      where: { app, platform },
-      orderBy: { versionCode: 'desc' },
-    });
-    const versionCode = (latestBuild?.versionCode || 0) + 1;
-
-    // Create build record
-    const build = await this.prisma.mobileBuild.create({
-      data: {
-        app,
-        platform,
-        status: 'queued',
-        versionName: '1.0.0',
-        versionCode,
-        clientDomain: process.env.CLIENT_DOMAIN || '',
-        packageId,
-      },
-    });
 
     // Trigger GitHub dispatch
     const githubToken = process.env.MOBILE_BUILDER_GITHUB_TOKEN;
     const builderRepo = process.env.MOBILE_BUILDER_REPO || 'EcoMate-Mobile-Builder';
     const githubOwner = process.env.GITHUB_REPOSITORY_OWNER || 'mahmudulhasanriaz';
-
     if (!githubToken) {
-      await this.prisma.mobileBuild.update({
-        where: { id: build.id },
-        data: { status: 'failed', errorMessage: 'MOBILE_BUILDER_GITHUB_TOKEN not configured' },
-      });
+      for (const b of builds) await this.prisma.mobileBuild.update({ where: { id: b.id }, data: { status: 'failed', errorMessage: 'MOBILE_BUILDER_GITHUB_TOKEN missing' } });
       throw new InternalServerErrorException('Builder token not configured');
     }
 
     try {
       const erpUrl = process.env.BETTER_AUTH_URL || `https://${process.env.CLIENT_DOMAIN}`;
-      const response = await fetch(
-        `https://api.github.com/repos/${githubOwner}/${builderRepo}/dispatches`,
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/vnd.github+json',
-            Authorization: `Bearer ${githubToken}`,
-            'User-Agent': 'EcoMate-Backend',
-          },
-          body: JSON.stringify({
-            event_type: 'mobile-build',
-            client_payload: {
-              buildId: build.id,
-              erpUrl,
-              callbackToken: process.env.MOBILE_BUILDER_CALLBACK_TOKEN || '',
-            },
-          }),
-        },
-      );
+      await this.prisma.mobileBuild.update({ where: { id: builds[0].id }, data: { status: 'running' } });
+
+      const response = await fetch(`https://api.github.com/repos/${githubOwner}/${builderRepo}/dispatches`, {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${githubToken}`, 'User-Agent': 'EcoMate-Backend' },
+        body: JSON.stringify({
+          event_type: 'mobile-build',
+          client_payload: { buildId: builds[0].id, app: appInput, platform, erpUrl, callbackToken: process.env.MOBILE_BUILDER_CALLBACK_TOKEN || '' },
+        }),
+      });
 
       if (!response.ok) {
         const text = await response.text().catch(() => 'unknown');
-        await this.prisma.mobileBuild.update({
-          where: { id: build.id },
-          data: { status: 'failed', errorMessage: `GitHub API: ${response.status} — ${text}` },
-        });
+        for (const b of builds) await this.prisma.mobileBuild.update({ where: { id: b.id }, data: { status: 'failed', errorMessage: `GitHub API: ${response.status}` } });
         throw new Error(`GitHub API responded ${response.status}`);
       }
 
-      // Mark running
-      await this.prisma.mobileBuild.update({ where: { id: build.id }, data: { status: 'running' } });
-
-      return { published: true, buildId: build.id, app, platform, status: 'running' };
+      return {
+        published: true,
+        builds: builds.map(b => ({ buildId: b.id, app: b.app, platform, status: b.id === builds[0].id ? 'running' : 'queued' })),
+        app: appInput,
+        platform,
+      };
     } catch (err: any) {
-      await this.prisma.mobileBuild.update({
-        where: { id: build.id },
-        data: { status: 'failed', errorMessage: err.message },
-      });
+      for (const b of builds) await this.prisma.mobileBuild.update({ where: { id: b.id }, data: { status: 'failed', errorMessage: err.message } });
       throw new InternalServerErrorException(`Publish failed: ${err.message}`);
     }
   }

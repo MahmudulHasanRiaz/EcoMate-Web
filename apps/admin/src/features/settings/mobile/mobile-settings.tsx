@@ -57,7 +57,7 @@ interface BuildRecord {
   updatedAt: string;
 }
 
-const APPS = ['storefront', 'admin', 'pos'] as const;
+const APPS = ['storefront', 'admin', 'pos', 'all'] as const;
 const PLATFORMS = ['android', 'ios'] as const;
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -228,8 +228,8 @@ export function MobileSettings() {
             <p className='text-sm font-medium mb-3'>Application</p>
             <div className='flex flex-wrap gap-2'>
               {APPS.map((app) => {
-                const featureKey = `mobile_distribution${app === 'storefront' ? '' : '_' + app}`;
-                const licensed = hasFeature(featureKey);
+                const featureKey = app === 'all' ? 'mobile_distribution' : `mobile_distribution${app === 'storefront' ? '' : '_' + app}`;
+                const licensed = app === 'all' ? hasFeature('mobile_distribution') : hasFeature(featureKey);
                 return (
                   <Button
                     key={app}
@@ -238,7 +238,7 @@ export function MobileSettings() {
                     disabled={!licensed}
                     onClick={() => setSelectedApp(app)}
                   >
-                    {app.charAt(0).toUpperCase() + app.slice(1)}
+                    {app === 'all' ? 'All Apps' : app.charAt(0).toUpperCase() + app.slice(1)}
                     {!licensed && <XCircle className='h-3 w-3 ml-2' />}
                   </Button>
                 );
