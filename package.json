@@ -46,7 +46,9 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.0.0",
+    "@rollup/rollup-linux-x64-musl": "^4.0.0",
     "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0",
+    "@tailwindcss/oxide-linux-x64-musl": "^4.0.0",
     "@next/swc-linux-x64-gnu": "^15.0.0",
     "@oxc-parser/binding-linux-x64-gnu": "^0.56.0",
     "@rolldown/binding-linux-x64-gnu": "^1.0.0"
