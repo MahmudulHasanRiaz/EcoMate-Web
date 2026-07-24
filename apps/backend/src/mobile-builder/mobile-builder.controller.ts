@@ -65,7 +65,6 @@ export class MobileBuilderController {
   @Public()
   @SkipLicenseCheck()
   @Get('metadata/:buildId')
-  @RequiresFeature('mobile_distribution')
   async getMetadataForBuild(@Param('buildId') buildId: string) {
     const build = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
     if (!build) throw new BadRequestException('Build not found');
@@ -222,7 +221,7 @@ export class MobileBuilderController {
     }
 
     try {
-      const erpUrl = process.env.BETTER_AUTH_URL || `https://${process.env.CLIENT_DOMAIN}`;
+      const erpUrl = `https://${process.env.CLIENT_DOMAIN}`;
       await this.prisma.mobileBuild.update({ where: { id: builds[0].id }, data: { status: 'running' } });
 
       const response = await fetch(`https://api.github.com/repos/${githubOwner}/${builderRepo}/dispatches`, {
