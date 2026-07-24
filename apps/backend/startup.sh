@@ -23,8 +23,9 @@ if [ -n "$CLIENT_DOMAIN" ]; then
 
   # Point Gradle cache to persistent volume so SDK isn't re-downloaded on every deploy
   export GRADLE_USER_HOME="/app/mobile-builds/.gradle"
-  mkdir -p "$GRADLE_USER_HOME"
+  mkdir -p "$GRADLE_USER_HOME" /app/mobile-builds/.gradle-tmp
   export CAP_APP_ID="${CAP_APP_ID:-com.ecomate.storefront}"
+  export JAVA_OPTS="-Djava.io.tmpdir=/app/mobile-builds/.gradle-tmp"
   export CAP_SERVER_URL="https://${CLIENT_DOMAIN}"
   export CAP_APP_NAME="${CAP_APP_NAME:-EcoMate}"
 
@@ -72,8 +73,9 @@ CONF
   echo "[Startup] Building Android APK..."
   if [ -f "android/gradlew" ]; then
     cat > android/gradle.properties <<PROP
-org.gradle.jvmargs=-Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC
+org.gradle.jvmargs=-Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -Djava.io.tmpdir=/app/mobile-builds/.gradle-tmp
 org.gradle.daemon=false
+org.gradle.native=false
 PROP
     (cd android && ./gradlew assembleDebug --no-daemon 2>&1) || echo "[Startup] Gradle build failed"
   else
