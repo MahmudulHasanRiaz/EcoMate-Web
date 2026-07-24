@@ -63,6 +63,9 @@ jobs:
       - name: Build packages
         run: npx tsc -p packages/shared-types/tsconfig.json && npx tsc -p packages/license-engine/tsconfig.json && npx tsc -p packages/feature-flags/tsconfig.json
 
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
+
       - name: Build apps
         run: npm run build
         env:
