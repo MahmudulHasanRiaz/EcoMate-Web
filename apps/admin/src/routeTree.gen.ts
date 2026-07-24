@@ -110,6 +110,7 @@ import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './routes/_authenticated/mon/settings/price-label/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
+import { Route as AuthenticatedMonSettingsMobileIndexRouteImport } from './routes/_authenticated/mon/settings/mobile/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsLicenseIndexRouteImport } from './routes/_authenticated/mon/settings/license/index'
 import { Route as AuthenticatedMonSettingsInventoryIndexRouteImport } from './routes/_authenticated/mon/settings/inventory/index'
@@ -711,6 +712,12 @@ const AuthenticatedMonSettingsOrderStatusesIndexRoute =
     path: '/order-statuses/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsMobileIndexRoute =
+  AuthenticatedMonSettingsMobileIndexRouteImport.update({
+    id: '/mobile/',
+    path: '/mobile/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsMenuIndexRoute =
   AuthenticatedMonSettingsMenuIndexRouteImport.update({
     id: '/menu/',
@@ -896,6 +903,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
+  '/mon/settings/mobile/': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -1012,6 +1020,7 @@ export interface FileRoutesByTo {
   '/mon/settings/inventory': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/mon/settings/license': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
+  '/mon/settings/mobile': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/mon/settings/price-label': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -1130,6 +1139,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
   '/_authenticated/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
+  '/_authenticated/mon/settings/mobile/': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   '/_authenticated/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -1248,6 +1258,7 @@ export interface FileRouteTypes {
     | '/mon/settings/inventory/'
     | '/mon/settings/license/'
     | '/mon/settings/menu/'
+    | '/mon/settings/mobile/'
     | '/mon/settings/order-statuses/'
     | '/mon/settings/price-label/'
     | '/mon/settings/shipping/'
@@ -1364,6 +1375,7 @@ export interface FileRouteTypes {
     | '/mon/settings/inventory'
     | '/mon/settings/license'
     | '/mon/settings/menu'
+    | '/mon/settings/mobile'
     | '/mon/settings/order-statuses'
     | '/mon/settings/price-label'
     | '/mon/settings/shipping'
@@ -1481,6 +1493,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/inventory/'
     | '/_authenticated/mon/settings/license/'
     | '/_authenticated/mon/settings/menu/'
+    | '/_authenticated/mon/settings/mobile/'
     | '/_authenticated/mon/settings/order-statuses/'
     | '/_authenticated/mon/settings/price-label/'
     | '/_authenticated/mon/settings/shipping/'
@@ -2223,6 +2236,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/mobile/': {
+      id: '/_authenticated/mon/settings/mobile/'
+      path: '/mobile'
+      fullPath: '/mon/settings/mobile/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsMobileIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/menu/': {
       id: '/_authenticated/mon/settings/menu/'
       path: '/menu'
@@ -2334,6 +2354,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsInventoryIndexRoute: typeof AuthenticatedMonSettingsInventoryIndexRoute
   AuthenticatedMonSettingsLicenseIndexRoute: typeof AuthenticatedMonSettingsLicenseIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
+  AuthenticatedMonSettingsMobileIndexRoute: typeof AuthenticatedMonSettingsMobileIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
   AuthenticatedMonSettingsPriceLabelIndexRoute: typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
@@ -2364,6 +2385,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsLicenseIndexRoute,
     AuthenticatedMonSettingsMenuIndexRoute:
       AuthenticatedMonSettingsMenuIndexRoute,
+    AuthenticatedMonSettingsMobileIndexRoute:
+      AuthenticatedMonSettingsMobileIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
     AuthenticatedMonSettingsPriceLabelIndexRoute:
