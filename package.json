@@ -25,7 +25,8 @@
     "@nestjs/platform-express": {
       "multer": "2.2.0"
     },
-    "postcss": "8.5.10",
+    "postcss": "8.5.12",
+    "find-my-way": "9.7.0",
     "vitest": "4.1.10",
     "vite": "^8.0.8",
     "esbuild": "0.25.0",
@@ -43,5 +44,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.6"
+  },
+  "peerDependencies": {
   }
 }

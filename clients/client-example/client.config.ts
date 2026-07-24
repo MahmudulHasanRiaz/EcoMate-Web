@@ -3,7 +3,6 @@ import type { ClientConfig } from '@ecomate/shared-types';
 const config: ClientConfig = {
   clientId: 'example-client',
   displayName: 'Example Store',
-  domain: 'example-store.com',
   features: {},
   overrides: {},
   branding: {

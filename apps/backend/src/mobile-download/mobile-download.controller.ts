@@ -46,6 +46,15 @@ export class MobileDownloadController {
     return this.handleDownload(app, 'ios', 'ipa', res);
   }
 
+  @Public()
+  @Get(':app/ipa')
+  async downloadIpaAlt(
+    @Param('app') app: string,
+    @Res() res: Response,
+  ) {
+    return this.handleDownload(app, 'ios', 'ipa', res);
+  }
+
   private async handleDownload(
     app: string,
     platform: 'android' | 'ios',
