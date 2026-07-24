@@ -16,6 +16,8 @@ import { extname, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
+import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 const PKG_LOCK_KEY = 'android_package_id_locked';
@@ -59,7 +61,9 @@ export class MobileBuilderController {
     };
   }
 
-  // ── Minimal compile-time metadata, by buildId ──
+  // ── Minimal compile-time metadata, by buildId (public for builder) ──
+  @Public()
+  @SkipLicenseCheck()
   @Get('metadata/:buildId')
   @RequiresFeature('mobile_distribution')
   async getMetadataForBuild(@Param('buildId') buildId: string) {
