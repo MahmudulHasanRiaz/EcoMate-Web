@@ -38,6 +38,27 @@ export class MobileBuilderController {
     private readonly featureFlags: FeatureFlagsService,
   ) {}
 
+  // ── Generic compile-time metadata (for admin UI preview) ──
+  @Get('metadata')
+  @RequiresFeature('mobile_distribution')
+  async getGenericMetadata() {
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { key: { in: COMPILE_KEYS as unknown as string[] } },
+    });
+    const map: Record<string, string> = {};
+    for (const s of settings) map[s.key] = s.value;
+
+    return {
+      clientDomain: process.env.CLIENT_DOMAIN || '',
+      appName: map['store_name'] || 'EcoMate',
+      packageId: `com.ecomate.${(map['store_name'] || 'app').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      versionName: '1.0.0',
+      versionCode: 1,
+      iconUrl: map['storefront_favicon'] || '',
+      splashColor: map['brand_primary'] || '#0089CD',
+    };
+  }
+
   // ── Minimal compile-time metadata, by buildId ──
   @Get('metadata/:buildId')
   @RequiresFeature('mobile_distribution')
