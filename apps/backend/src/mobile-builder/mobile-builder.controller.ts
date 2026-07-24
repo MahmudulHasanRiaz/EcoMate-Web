@@ -20,7 +20,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 
 const PKG_LOCK_KEY = 'android_package_id_locked';
 const COMPILE_KEYS = ['store_name', 'storefront_favicon', 'brand_primary'] as const;
-const STALE_BUILD_MINUTES = 30;
+const STALE_BUILD_MINUTES = 15;
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -146,6 +146,19 @@ export class MobileBuilderController {
     const build = await this.prisma.mobileBuild.findUnique({ where: { id } });
     if (!build) throw new BadRequestException('Build not found');
     return build;
+  }
+
+  // ── Cancel a build ──
+  @Post('builds/:id/cancel')
+  @Roles('superadmin', 'admin')
+  @RequiresFeature('mobile_distribution')
+  async cancelBuild(@Param('id') id: string) {
+    const build = await this.prisma.mobileBuild.findUnique({ where: { id } });
+    if (!build) throw new BadRequestException('Build not found');
+    if (!['queued', 'running', 'uploading'].includes(build.status)) throw new BadRequestException(`Cannot cancel build with status ${build.status}`);
+
+    await this.prisma.mobileBuild.update({ where: { id }, data: { status: 'cancelled', errorMessage: 'Cancelled by admin' } });
+    return { cancelled: true, buildId: id };
   }
 
   // ── Publish (trigger) ──

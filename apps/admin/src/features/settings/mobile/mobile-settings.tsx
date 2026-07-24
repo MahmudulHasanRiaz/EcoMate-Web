@@ -108,6 +108,15 @@ export function MobileSettings() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: (buildId: string) => apiClient.post(`/mobile-builder/builds/${buildId}/cancel`).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Build cancelled');
+      queryClient.invalidateQueries({ queryKey: ['mobile-builder-builds'] });
+    },
+    onError: (err: any) => toast.error(`Cancel failed: ${err.message}`),
+  });
+
   const isLicensed = hasFeature('mobile_distribution');
 
   // Play Store / App Store URL state
@@ -368,6 +377,7 @@ export function MobileSettings() {
             <div className='space-y-2'>
               {builds.slice(0, 10).map((build) => {
                 const badge = STATUS_BADGE[build.status] || STATUS_BADGE.queued;
+                const canCancel = ['queued', 'running', 'uploading'].includes(build.status);
                 return (
                   <div key={build.id} className='flex items-center justify-between p-3 border rounded-lg text-sm'>
                     <div className='flex items-center gap-3'>
@@ -382,6 +392,12 @@ export function MobileSettings() {
                           <a href={build.artifactPath || '#'} target='_blank' rel='noreferrer'>
                             <Download className='h-4 w-4' />
                           </a>
+                        </Button>
+                      )}
+                      {canCancel && (
+                        <Button variant='outline' size='sm' onClick={() => cancelMutation.mutate(build.id)} disabled={cancelMutation.isPending}>
+                          <XCircle className='h-3.5 w-3.5 mr-1' />
+                          Cancel
                         </Button>
                       )}
                       <span className='text-xs text-muted-foreground'>
