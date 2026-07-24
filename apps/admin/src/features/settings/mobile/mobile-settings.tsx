@@ -98,7 +98,8 @@ export function MobileSettings() {
     mutationFn: () =>
       apiClient.post('/mobile-builder/publish', { app: selectedApp, platform: selectedPlatform }).then((r) => r.data),
     onSuccess: (res: any) => {
-      toast.success(`Build published! ID: ${res.buildId}`);
+      const id = res.buildId || res.builds?.[0]?.buildId || 'unknown';
+      toast.success(`Build published! ID: ${id}`);
       queryClient.invalidateQueries({ queryKey: ['mobile-builder-builds'] });
       queryClient.invalidateQueries({ queryKey: ['mobile-builder-ready'] });
     },
