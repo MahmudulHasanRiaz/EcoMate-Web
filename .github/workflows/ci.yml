@@ -1,319 +1,86 @@
-name: CI/CD
+name: Build Images
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
     branches: [main]
 
-jobs:
-  detect-changes:
-    permissions:
-      contents: read
-      pull-requests: read
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      storefront: ${{ steps.filter.outputs.storefront }}
-      admin: ${{ steps.filter.outputs.admin }}
-      pos: ${{ steps.filter.outputs.pos }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'apps/backend/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
-              - 'docker-compose.yml'
-            storefront:
-              - 'apps/storefront/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
-            admin:
-              - 'apps/admin/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
-            pos:
-              - 'apps/pos/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
+permissions:
+  contents: read
+  packages: write
 
-  backend:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+jobs:
+  build:
+    name: Build and push Docker images
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ecomate_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
-      - uses: actions/checkout@v7
-      
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies (Root)
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build workspace packages
+      - name: Normalize owner name
+        id: meta
         run: |
-          npx tsc -p packages/shared-types/tsconfig.json
-          npx tsc -p packages/license-engine/tsconfig.json
-          npx tsc -p packages/feature-flags/tsconfig.json
+          OWNER="${{ github.repository_owner }}"
+          SHA="${{ github.sha }}"
+          echo "owner_lower=${OWNER,,}" >> $GITHUB_OUTPUT
+          echo "sha_short=${SHA:0:7}" >> $GITHUB_OUTPUT
+
+      - name: Build packages
+        run: npx tsc -p packages/shared-types/tsconfig.json && npx tsc -p packages/license-engine/tsconfig.json && npx tsc -p packages/feature-flags/tsconfig.json
 
       - name: Generate Prisma client
-        working-directory: apps/backend
-        run: npx prisma generate
+        run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
 
-      - name: Lint
-        working-directory: apps/backend
-        run: npm run lint || true
-
-      - name: Run tests
-        working-directory: apps/backend
-        run: npm test || true
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecomate_test
-          JWT_SECRET: test-jwt-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
-          NODE_ENV: test
-
-  storefront:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.storefront == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies (Root)
-        run: npm ci
-
-      - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
-
-      - name: Lint
-        working-directory: apps/storefront
-        run: npm run lint || true
-
-      - name: Run tests
-        working-directory: apps/storefront
-        run: npm test || true
-
-      - name: Build
-        working-directory: apps/storefront
+      - name: Build apps
         run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:4000/api
-          NEXT_PUBLIC_STOREFRONT_URL: http://localhost:3000
-
-  admin:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.admin == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies (Root)
-        run: npm ci
-
-      - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
-
-      - name: Lint
-        working-directory: apps/admin
-        run: npm run lint || true
-
-      - name: Run tests
-        working-directory: apps/admin
-        run: npm test || true
-        env:
-          VITE_API_URL: http://localhost:4000/api
-
-      - name: Build workspace packages
-        run: npx tsc -p packages/shared-types/tsconfig.json
-
-      - name: Build
-        working-directory: apps/admin
-        run: npm run build:skip-tsc
-        env:
-          VITE_API_URL: /api
-
-  pos:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.pos == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies (Root)
-        run: npm ci
-
-      - name: Install native binaries
-        run: npm install @tailwindcss/oxide-linux-x64-gnu@4.3.1 lightningcss-linux-x64-gnu@1.32.0 @rollup/rollup-linux-x64-gnu@4.62.2 --no-save
-
-      - name: Build
-        working-directory: apps/pos
-        run: npm run build
-
-  build-and-push:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - name: backend
-            context: .
-            dockerfile: apps/backend/Dockerfile
-          - name: storefront
-            context: apps/storefront
-            dockerfile: apps/storefront/Dockerfile
-          - name: admin
-            context: .
-            dockerfile: apps/admin/Dockerfile
-          - name: pos
-            context: .
-            dockerfile: apps/pos/Dockerfile
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies (Root)
-        run: npm ci
-
-      - name: Build web apps for mobile
-        if: matrix.service.name == 'backend'
-        run: |
-          npm run build --workspace=storefront 2>/dev/null || true
-
-      - name: Setup Android SDK
-        if: matrix.service.name == 'backend'
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Java
-        if: matrix.service.name == 'backend'
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Build mobile APK
-        if: matrix.service.name == 'backend'
-        env:
-          CLIENT: ${{ github.repository_owner }}
-        run: |
-          mkdir -p mobile-builds/storefront/android \
-                   mobile-builds/admin/android \
-                   mobile-builds/pos/android
-          cd apps/capacitor/storefront
-          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
-            npx cap add android --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
-            npx cap copy --no-telemetry 2>/dev/null || true
-          CAP_APP_NAME="${CLIENT}" CAP_APP_ID="com.ecomate.${CLIENT}.storefront" \
-            npx cap sync --no-telemetry 2>/dev/null || true
-          if [ -f "android/gradlew" ]; then
-            (cd android && ./gradlew assembleRelease) || echo "Native build failed"
-          fi
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            cp "android/app/build/outputs/apk/release/app-release.apk" \
-              "${GITHUB_WORKSPACE}/mobile-builds/storefront/android/latest.apk"
-            echo "APK built successfully for ${CLIENT}"
-          else
-            echo "No APK produced — check Android SDK"
-          fi
-        continue-on-error: true
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ steps.meta.outputs.owner_lower }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Downcase registry owner
-        id: owner
-        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build and push ${{ matrix.service.name }}
-        shell: bash
-        run: |
-          max_attempts=3
-          attempt=0
-          until [ $attempt -ge $max_attempts ]; do
-            attempt=$((attempt + 1))
-            echo "Build attempt $attempt/$max_attempts for ${{ matrix.service.name }}"
-            if docker buildx build \
-              --cache-from type=gha \
-              --cache-to type=gha,mode=max \
-              --file ${{ matrix.service.dockerfile }} \
-              --tag ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:latest \
-              --tag ghcr.io/${{ steps.owner.outputs.owner }}/ecomate-${{ matrix.service.name }}:${{ github.sha }} \
-              --push \
-              ${{ matrix.service.context }}; then
-              echo "Build succeeded on attempt $attempt"
-              exit 0
-            fi
-            last_exit_code=$?
-            echo "Build failed (exit $last_exit_code) on attempt $attempt"
-            if [ $attempt -lt $max_attempts ]; then
-              sleep_delay=$((attempt * 10))
-              echo "Retrying in ${sleep_delay}s..."
-              sleep $sleep_delay
-            fi
-          done
-          echo "All $max_attempts attempts failed"
-          exit $last_exit_code
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-backend:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-backend:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push storefront image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/storefront
+          file: apps/storefront/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-storefront:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-storefront:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push admin image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-admin:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-admin:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -12,111 +12,20 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  build-and-deploy:
+  deploy:
     name: Deploy ${{ github.event.inputs.client }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Check for client overlay
-        id: overlay
-        run: |
-          if [ -d "clients/${{ github.event.inputs.client }}" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Normalize client name
         id: client
         run: |
-          OWNER="${{ github.repository_owner }}"
           CLIENT="${{ github.event.inputs.client }}"
           echo "name=${CLIENT}" >> $GITHUB_OUTPUT
           echo "name_lower=${CLIENT,,}" >> $GITHUB_OUTPUT
-          echo "owner_lower=${OWNER,,}" >> $GITHUB_OUTPUT
-
-      - name: Read client domain from config
-        id: client-config
-        run: |
-          CONFIG_FILE="clients/${{ github.event.inputs.client }}/client.config.ts"
-          if [ -f "$CONFIG_FILE" ]; then
-            DOMAIN=$(grep "domain:" "$CONFIG_FILE" | sed "s/.*domain: *'\(.*\)'.*/\1/")
-            if [ -n "$DOMAIN" ]; then
-              echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
-              echo "CAP_SERVER_URL=https://$DOMAIN" >> $GITHUB_ENV
-              echo "Using domain from client config: $DOMAIN"
-            fi
-          fi
-          if [ -z "${CAP_SERVER_URL:-}" ]; then
-            echo "No domain in client config. APK will use default URL."
-            echo "CAP_SERVER_URL=" >> $GITHUB_ENV
-          fi
-
-      - name: Build packages
-        run: npx tsc -p packages/shared-types/tsconfig.json && npx tsc -p packages/license-engine/tsconfig.json && npx tsc -p packages/feature-flags/tsconfig.json
-
-      - name: Generate Prisma client
-        run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
-
-      - name: Build apps
-        run: npm run build
-        env:
-          LICENSE_CLIENT_ID: ${{ github.event.inputs.client }}
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/backend/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.client.outputs.owner_lower }}/ecomate-backend:${{ steps.client.outputs.name_lower }}
-            ghcr.io/${{ steps.client.outputs.owner_lower }}/ecomate-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push storefront image
-        uses: docker/build-push-action@v5
-        with:
-          context: apps/storefront
-          file: apps/storefront/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.client.outputs.owner_lower }}/ecomate-storefront:${{ steps.client.outputs.name_lower }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push admin image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/admin/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.client.outputs.owner_lower }}/ecomate-admin:${{ steps.client.outputs.name_lower }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Deploy via Portainer webhook
         env:
@@ -125,7 +34,7 @@ jobs:
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
             echo "No webhook secret PORTAINER_WEBHOOK_$CLIENT_NAME configured."
-            echo "Images pushed. Configure webhook and deploy manually via Portainer."
+            echo "Pull and redeploy manually via Portainer UI."
             exit 0
           fi
 
