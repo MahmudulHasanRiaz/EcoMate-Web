@@ -10,6 +10,10 @@ on:
         options:
           - FIXEDPLUS
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-deploy:
     name: Deploy ${{ github.event.inputs.client }}
@@ -74,7 +78,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
