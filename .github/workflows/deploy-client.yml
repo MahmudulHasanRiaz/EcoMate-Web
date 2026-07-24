@@ -60,6 +60,9 @@ jobs:
             echo "CAP_SERVER_URL=" >> $GITHUB_ENV
           fi
 
+      - name: Build packages
+        run: npx tsc -p packages/shared-types/tsconfig.json && npx tsc -p packages/license-engine/tsconfig.json && npx tsc -p packages/feature-flags/tsconfig.json
+
       - name: Build apps
         run: npm run build
         env:
