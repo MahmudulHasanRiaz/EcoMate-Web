@@ -43,6 +43,13 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Normalize client name
+        id: client
+        run: |
+          CLIENT="${{ github.event.inputs.client }}"
+          echo "name=${CLIENT}" >> $GITHUB_OUTPUT
+          echo "name_lower=${CLIENT,,}" >> $GITHUB_OUTPUT
+
       - name: Read client domain from config
         id: client-config
         run: |
@@ -88,7 +95,7 @@ jobs:
           file: apps/backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ecomate-backend:${{ github.event.inputs.client }}
+            ghcr.io/${{ github.repository_owner }}/ecomate-backend:${{ steps.client.outputs.name_lower }}
             ghcr.io/${{ github.repository_owner }}/ecomate-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -100,7 +107,7 @@ jobs:
           file: apps/storefront/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ecomate-storefront:${{ github.event.inputs.client }}
+            ghcr.io/${{ github.repository_owner }}/ecomate-storefront:${{ steps.client.outputs.name_lower }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -111,7 +118,7 @@ jobs:
           file: apps/admin/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ecomate-admin:${{ github.event.inputs.client }}
+            ghcr.io/${{ github.repository_owner }}/ecomate-admin:${{ steps.client.outputs.name_lower }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
