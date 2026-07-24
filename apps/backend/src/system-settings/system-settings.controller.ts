@@ -520,6 +520,12 @@ export class SystemSettingsController {
         },
         playStoreUrl: map['play_store_url'] || '',
         appStoreUrl: map['app_store_url'] || '',
+        storefrontPlayStoreUrl: map['storefront_play_store_url'] || '',
+        storefrontAppStoreUrl: map['storefront_app_store_url'] || '',
+        adminPlayStoreUrl: map['admin_play_store_url'] || '',
+        adminAppStoreUrl: map['admin_app_store_url'] || '',
+        posPlayStoreUrl: map['pos_play_store_url'] || '',
+        posAppStoreUrl: map['pos_app_store_url'] || '',
       };
       const heroImageUrls = [
         ...heroSlides.map(s => s.image).filter(Boolean),

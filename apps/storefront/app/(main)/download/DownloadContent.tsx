@@ -15,6 +15,12 @@ export default function DownloadContent() {
   const hasMobilePos = hasWildcard || licenseFeatures.includes('mobile_distribution_pos');
   const playStoreUrl = (config as any)?.playStoreUrl || '';
   const appStoreUrl = (config as any)?.appStoreUrl || '';
+  const storefrontPlayStoreUrl = (config as any)?.storefrontPlayStoreUrl || '';
+  const storefrontAppStoreUrl = (config as any)?.storefrontAppStoreUrl || '';
+  const adminPlayStoreUrl = (config as any)?.adminPlayStoreUrl || '';
+  const adminAppStoreUrl = (config as any)?.adminAppStoreUrl || '';
+  const posPlayStoreUrl = (config as any)?.posPlayStoreUrl || '';
+  const posAppStoreUrl = (config as any)?.posAppStoreUrl || '';
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 md:py-16">
@@ -64,8 +70,8 @@ export default function DownloadContent() {
           description={`Shop directly from the ${storeName} app — browse products, track orders, and get push notifications for flash sales and deals.`}
           icon={Download}
           badge="Customer App"
-          playStoreUrl={playStoreUrl}
-          appStoreUrl={appStoreUrl}
+          playStoreUrl={storefrontPlayStoreUrl || playStoreUrl}
+          appStoreUrl={storefrontAppStoreUrl || appStoreUrl}
         />
       )}
 
@@ -87,8 +93,8 @@ export default function DownloadContent() {
                 description="Full admin dashboard on mobile — manage products, orders, customers, inventory, and analytics from anywhere."
                 icon={Tablet}
                 badge="Admin"
-                playStoreUrl={playStoreUrl}
-                appStoreUrl={appStoreUrl}
+                playStoreUrl={adminPlayStoreUrl || playStoreUrl}
+                appStoreUrl={adminAppStoreUrl || appStoreUrl}
               />
             )}
             {hasMobilePos && (
@@ -97,8 +103,8 @@ export default function DownloadContent() {
                 description="Point-of-sale terminal for mobile devices. Process orders, take payments, and print receipts on the floor."
                 icon={Monitor}
                 badge="POS"
-                playStoreUrl={playStoreUrl}
-                appStoreUrl={appStoreUrl}
+                playStoreUrl={posPlayStoreUrl || playStoreUrl}
+                appStoreUrl={posAppStoreUrl || appStoreUrl}
               />
             )}
           </div>

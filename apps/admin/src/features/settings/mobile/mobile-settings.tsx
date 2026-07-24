@@ -115,12 +115,27 @@ export function MobileSettings() {
     queryFn: () => systemSettingsApi.getAll().then(r => r.data),
     staleTime: 30_000,
   });
+  // Generic store URLs (fallback)
   const [playStoreUrl, setPlayStoreUrl] = useState('');
   const [appStoreUrl, setAppStoreUrl] = useState('');
+  // Per-app store URLs
+  const [sfPlayStore, setSfPlayStore] = useState('');
+  const [sfAppStore, setSfAppStore] = useState('');
+  const [adPlayStore, setAdPlayStore] = useState('');
+  const [adAppStore, setAdAppStore] = useState('');
+  const [posPlayStore, setPosPlayStore] = useState('');
+  const [posAppStore, setPosAppStore] = useState('');
+
   useEffect(() => {
     if (allSettings) {
       setPlayStoreUrl(allSettings.play_store_url || '');
       setAppStoreUrl(allSettings.app_store_url || '');
+      setSfPlayStore(allSettings.storefront_play_store_url || '');
+      setSfAppStore(allSettings.storefront_app_store_url || '');
+      setAdPlayStore(allSettings.admin_play_store_url || '');
+      setAdAppStore(allSettings.admin_app_store_url || '');
+      setPosPlayStore(allSettings.pos_play_store_url || '');
+      setPosAppStore(allSettings.pos_app_store_url || '');
     }
   }, [allSettings]);
 
@@ -280,52 +295,57 @@ export function MobileSettings() {
             Store Listing URLs
           </CardTitle>
           <CardDescription>
-            Configure public app store links. When set, the footer and download page will redirect users to the store instead of serving direct APK/IPA downloads.
+            Configure per-app store links. When set, the download page will redirect to the store instead of serving direct APK/IPA. Leave blank to use the generic fallback or direct download.
           </CardDescription>
         </CardHeader>
-        <CardContent className='space-y-4'>
-          <div className='grid gap-4 md:grid-cols-2'>
-            <div className='space-y-2'>
-              <Label htmlFor='play-store-url'>Google Play URL</Label>
-              <div className='flex gap-2'>
-                <Input
-                  id='play-store-url'
-                  value={playStoreUrl}
-                  onChange={(e) => setPlayStoreUrl(e.target.value)}
-                  placeholder='https://play.google.com/store/apps/details?id=...'
-                />
-                <Button
-                  variant='outline'
-                  size='sm'
-                  disabled={saveUrlMutation.isPending}
-                  onClick={() => saveUrlMutation.mutate({ key: 'play_store_url', value: playStoreUrl })}
-                >
-                  <Save className='h-4 w-4' />
-                </Button>
+        <CardContent className='space-y-6'>
+          {[
+            { label: 'Generic (fallback)', fields: [
+              { id: 'play-store-url', key: 'play_store_url', val: playStoreUrl, set: setPlayStoreUrl },
+              { id: 'app-store-url', key: 'app_store_url', val: appStoreUrl, set: setAppStoreUrl },
+            ]},
+            { label: 'Storefront App', fields: [
+              { id: 'sf-play-store', key: 'storefront_play_store_url', val: sfPlayStore, set: setSfPlayStore },
+              { id: 'sf-app-store', key: 'storefront_app_store_url', val: sfAppStore, set: setSfAppStore },
+            ]},
+            { label: 'Admin App', fields: [
+              { id: 'ad-play-store', key: 'admin_play_store_url', val: adPlayStore, set: setAdPlayStore },
+              { id: 'ad-app-store', key: 'admin_app_store_url', val: adAppStore, set: setAdAppStore },
+            ]},
+            { label: 'POS App', fields: [
+              { id: 'pos-play-store', key: 'pos_play_store_url', val: posPlayStore, set: setPosPlayStore },
+              { id: 'pos-app-store', key: 'pos_app_store_url', val: posAppStore, set: setPosAppStore },
+            ]},
+          ].map((group) => (
+            <div key={group.label}>
+              <p className='text-sm font-medium mb-2'>{group.label}</p>
+              <div className='grid gap-3 md:grid-cols-2'>
+                {group.fields.map((f) => (
+                  <div key={f.id} className='flex gap-2 items-end'>
+                    <div className='flex-1 space-y-1'>
+                      <Label htmlFor={f.id} className='text-xs text-muted-foreground'>
+                        {f.id.includes('play') ? 'Google Play URL' : 'Apple App Store URL'}
+                      </Label>
+                      <Input
+                        id={f.id}
+                        value={f.val}
+                        onChange={(e) => f.set(e.target.value)}
+                        placeholder={f.id.includes('play') ? 'https://play.google.com/...' : 'https://apps.apple.com/...'}
+                      />
+                    </div>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      disabled={saveUrlMutation.isPending}
+                      onClick={() => saveUrlMutation.mutate({ key: f.key, value: f.val })}
+                    >
+                      <Save className='h-4 w-4' />
+                    </Button>
+                  </div>
+                ))}
               </div>
-              <p className='text-xs text-muted-foreground'>Direct link to your Google Play Store listing.</p>
             </div>
-            <div className='space-y-2'>
-              <Label htmlFor='app-store-url'>Apple App Store URL</Label>
-              <div className='flex gap-2'>
-                <Input
-                  id='app-store-url'
-                  value={appStoreUrl}
-                  onChange={(e) => setAppStoreUrl(e.target.value)}
-                  placeholder='https://apps.apple.com/app/id...'
-                />
-                <Button
-                  variant='outline'
-                  size='sm'
-                  disabled={saveUrlMutation.isPending}
-                  onClick={() => saveUrlMutation.mutate({ key: 'app_store_url', value: appStoreUrl })}
-                >
-                  <Save className='h-4 w-4' />
-                </Button>
-              </div>
-              <p className='text-xs text-muted-foreground'>Direct link to your Apple App Store listing.</p>
-            </div>
-          </div>
+          ))}
         </CardContent>
       </Card>
 
