@@ -7,6 +7,13 @@ COPY packages/ packages/
 COPY apps/admin/package.json apps/admin/package.json
 RUN npm install
 RUN npx tsc -p packages/shared-types/tsconfig.json
+# Dereference workspace symlinks so vite resolve produces real files
+RUN for pkg in shared-types; do \
+      target="node_modules/@ecomate/$pkg"; \
+      [ -L "$target" ] && rm -rf "$target" && mkdir -p "$target" && \
+      cp "packages/$pkg/package.json" "$target/" && \
+      cp -r "packages/$pkg/dist" "$target/"; \
+    done
 COPY apps/admin apps/admin
 WORKDIR /app/apps/admin
 RUN npm run build:skip-tsc
