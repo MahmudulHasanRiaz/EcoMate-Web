@@ -45,6 +45,7 @@
     "@tanstack/react-virtual": "^3.14.6"
   },
   "optionalDependencies": {
-    "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0"
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0",
+    "@rollup/rollup-linux-x64-gnu": "^4.0.0"
   }
 }
