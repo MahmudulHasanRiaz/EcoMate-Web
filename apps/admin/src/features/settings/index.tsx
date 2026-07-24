@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List, Mail, Key, Shield, Printer } from 'lucide-react'
+import { Monitor, Palette, UserCog, HardDrive, CreditCard, Settings as SettingsIcon, Truck, RefreshCw, Store, Package, FileText, Radio, List, Mail, Key, Shield, Printer, Smartphone } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -63,6 +63,7 @@ export function Settings() {
       items: [
         { title: 'Order Statuses', href: '/mon/settings/order-statuses', icon: <RefreshCw size={18} /> },
         { title: 'License Settings', href: '/mon/settings/license', icon: <Key size={18} /> },
+        { title: 'Mobile App', href: '/mon/settings/mobile', icon: <Smartphone size={18} /> },
         { title: 'Price Label', href: '/mon/settings/price-label', icon: <Printer size={18} /> },
       ],
     },

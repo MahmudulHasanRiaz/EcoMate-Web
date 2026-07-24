@@ -35,10 +35,8 @@ RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-# Java 17 + unzip for Capacitor APK build at container startup
-RUN apk add --no-cache openjdk17-jdk unzip && \
-    npm install -g @capacitor/cli@^7.0.0 --silent 2>/dev/null
-RUN addgroup --system --gid 1001 nodejs && \
+RUN apk add --no-cache unzip && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=obfuscator /app/dist ./dist
@@ -46,12 +44,10 @@ COPY --from=builder /app/apps/backend/prisma ./prisma
 COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
-COPY apps/capacitor /app/capacitor
 COPY apps/backend/startup.sh ./startup.sh
-RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds /app/capacitor && \
-    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds /app/capacitor && \
+RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds && \
+    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds && \
     chmod +x startup.sh
-# Pre-create mobile-builds directory with .gitkeep for clean COPY
 COPY mobile-builds /app/mobile-builds/
 RUN chown -R nestjs:nodejs /app/mobile-builds
 USER nestjs
