@@ -88,6 +88,12 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
+      # Mobile Build (optional — only if client has mobile license)
+      MOBILE_BUILDER_GITHUB_TOKEN: ${MOBILE_BUILDER_GITHUB_TOKEN:-}
+      MOBILE_BUILDER_CALLBACK_TOKEN: ${MOBILE_BUILDER_CALLBACK_TOKEN:-}
+      MOBILE_BUILDER_REPO: ${MOBILE_BUILDER_REPO:-EcoMate-Mobile-Builder}
+      GITHUB_REPOSITORY_OWNER: ${GITHUB_REPOSITORY_OWNER:-mahmudulhasanriaz}
+      MOBILE_BUILD_DIR: ${MOBILE_BUILD_DIR:-./mobile-builds}
     depends_on:
       postgres:
         condition: service_healthy
