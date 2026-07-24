@@ -33,13 +33,10 @@ RUN javascript-obfuscator dist/ \
 COPY --from=builder /app/apps/backend/dist ./dist-base
 RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
-FROM node:22 AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
-# Java 17 + Android SDK tools for Capacitor APK build at container startup
-RUN apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless unzip && \
-    rm -rf /var/lib/apt/lists/* && \
-    npm install -g @capacitor/cli@^7.0.0 --silent 2>/dev/null
-RUN addgroup --system --gid 1001 nodejs && \
+RUN apk add --no-cache unzip && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=obfuscator /app/dist ./dist
@@ -47,16 +44,15 @@ COPY --from=builder /app/apps/backend/prisma ./prisma
 COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
-COPY apps/capacitor /app/capacitor
 COPY apps/backend/startup.sh ./startup.sh
-RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds /app/capacitor && \
-    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds /app/capacitor && \
+RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds && \
+    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds && \
     chmod +x startup.sh
-# Pre-create mobile-builds directory with .gitkeep for clean COPY
 COPY mobile-builds /app/mobile-builds/
+RUN chown -R nestjs:nodejs /app/mobile-builds
 USER nestjs
 EXPOSE 4000
 ENV NODE_ENV=production
-HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=600s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4000/api/health || exit 1
 CMD ["./startup.sh"]

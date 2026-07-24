@@ -2389,3 +2389,26 @@ model ComboComponentPhysicalReservationAllocation {
   @@unique([reservationId, physicalInventoryId])
   @@index([reservationId])
 }
+
+model MobileBuild {
+  id             String   @id @default(uuid())
+  app            String   // storefront | admin | pos
+  platform       String   // android | ios
+  status         String   @default("queued") // queued | running | uploading | completed | failed | cancelled
+  versionName    String   @default("1.0.0")
+  versionCode    Int      @default(1)
+  artifactPath   String?
+  buildLogUrl    String?
+  triggeredBy    String?
+  triggeredById  String?
+  clientDomain   String?
+  packageId      String?
+  errorMessage   String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([app])
+  @@index([status])
+  @@index([createdAt])
+}

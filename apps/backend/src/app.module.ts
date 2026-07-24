@@ -22,6 +22,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { MobileDownloadModule } from './mobile-download/mobile-download.module';
+import { MobileBuilderModule } from './mobile-builder/mobile-builder.module';
 import { MediaModule } from './media/media.module';
 import { CustomersModule } from './customers/customers.module';
 import { CourierModule } from './courier/courier.module';
@@ -106,6 +107,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     UploadModule,
     SystemSettingsModule,
     MobileDownloadModule,
+    MobileBuilderModule,
     MediaModule,
     CustomersModule,
     CourierModule,
