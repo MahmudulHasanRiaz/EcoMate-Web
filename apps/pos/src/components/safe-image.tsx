@@ -3,6 +3,16 @@ import { Search } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
+/** Derive the API origin from VITE_API_URL.
+ *  "http://localhost:4000/api" -> "http://localhost:4000"
+ *  "/api"                     -> "" (same origin)
+ *  "https://api.example.com"   -> "https://api.example.com" */
+const API_ORIGIN = (() => {
+  const base = API_BASE.replace(/\/+$/, '')
+  if (base.startsWith('http')) return base.replace(/\/api$/, '')
+  return ''
+})()
+
 const PLACEHOLDER_SVG =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
@@ -22,11 +32,9 @@ const PLACEHOLDER_SVG =
 export function safeImageUrl(src?: string | null): string | undefined {
   if (!src) return undefined
   if (src.startsWith('http')) return src
-  if (src.startsWith('/')) {
-    const origin = typeof window !== 'undefined'
-      ? window.location.origin
-      : ''
-    return `${origin}${src}`
+  // Resolve /uploads/ paths against the API origin
+  if (src.startsWith('/uploads/') && API_ORIGIN) {
+    return `${API_ORIGIN}${src}`
   }
   return src
 }

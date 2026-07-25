@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { loginApi } from '../api/client'
 import { Store, KeyRound, Mail, Loader2 } from 'lucide-react'
+import { safeImageUrl } from '../components/safe-image'
 
 interface Props { onSuccess: () => void }
 
@@ -9,6 +10,14 @@ export function LoginPage({ onSuccess }: Props) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [storeLogo, setStoreLogo] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/system-settings/branding')
+      .then(r => r.json())
+      .then(d => { if (d?.storeLogo) setStoreLogo(d.storeLogo) })
+      .catch(() => {}) // silently fall back
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -41,9 +50,13 @@ export function LoginPage({ onSuccess }: Props) {
         className="glass-dark relative z-10 w-full max-w-md rounded-2xl p-8 text-white shadow-2xl transition-all duration-300"
       >
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">
-            <Store size={28} />
-          </div>
+          {storeLogo ? (
+            <img src={safeImageUrl(storeLogo)} alt="Store" className="h-16 w-16 rounded-2xl object-cover ring-1 ring-emerald-500/30" />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">
+              <Store size={28} />
+            </div>
+          )}
           <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-100">EcoMate POS</h1>
           <p className="mt-1 text-sm text-slate-400">Sign in to your checkout terminal</p>
         </div>
