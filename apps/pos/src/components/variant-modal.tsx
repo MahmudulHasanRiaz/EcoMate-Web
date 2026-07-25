@@ -59,7 +59,6 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                   <div className="h-10 w-10 overflow-hidden rounded-lg border border-slate-200 bg-white shrink-0">
                     <SafeImage src={variantImgUrl} alt={variantName} className="h-full w-full object-cover" />
                   </div>
-                  )}
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-slate-800 truncate">{variantName}</p>
