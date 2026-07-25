@@ -446,7 +446,17 @@ export class MobileBuilderController {
     // 5. Copy to mobile-builds
     const outDir = join(baseDir, app, platform);
     mkdirSync(outDir, { recursive: true });
-    copyFileSync(apkFile, join(outDir, 'latest.apk'));
+    try {
+      copyFileSync(apkFile, join(outDir, 'latest.apk'));
+    } catch (err: any) {
+      if (err.code === 'EACCES') {
+        // Volume mount may be root-owned — try to fix
+        execSync('chmod -R 777 ' + baseDir + ' 2>/dev/null; chown -R 1001:1001 ' + baseDir + ' 2>/dev/null', { stdio: 'pipe' });
+        copyFileSync(apkFile, join(outDir, 'latest.apk'));
+      } else {
+        throw err;
+      }
+    }
 
     // 6. Cleanup
     try { rmSync(zipPath); rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
