@@ -242,7 +242,7 @@ export class MobileBuilderController {
       // Mark first build as running, start background poll
       if (builds.length > 0) {
         await this.prisma.mobileBuild.update({ where: { id: builds[0].id }, data: { status: 'running' } });
-        this.pollForArtifact(builds[0].id, appInput, platform || 'android', githubToken, githubOwner, builderRepo);
+        this.pollForArtifact(builds[0].id, appInput, platform || 'android', githubToken, githubOwner, builderRepo, false);
       }
 
       return {
@@ -255,6 +255,49 @@ export class MobileBuilderController {
       for (const b of builds) await this.prisma.mobileBuild.update({ where: { id: b.id }, data: { status: 'failed', errorMessage: err.message } });
       throw new InternalServerErrorException(`Publish failed: ${err.message}`);
     }
+  }
+
+  // ── Manual pull: check GitHub for latest completed build ──
+  @Post('pull-pending')
+  @Roles('superadmin', 'admin')
+  @RequiresFeature('mobile_distribution')
+  async pullPendingBuild(@Body() body: { buildId?: string }) {
+    const token = process.env.MOBILE_BUILDER_GITHUB_TOKEN;
+    const repoName = process.env.MOBILE_BUILDER_REPO || 'EcoMate-Mobile-Builder';
+    const owner = process.env.GITHUB_REPOSITORY_OWNER || 'mahmudulhasanriaz';
+
+    if (!token) throw new InternalServerErrorException('MOBILE_BUILDER_GITHUB_TOKEN not configured');
+
+    // Find the build to pull for
+    const where: any = { status: { in: ['running', 'queued'] } };
+    if (body.buildId) where.id = body.buildId;
+    const build = await this.prisma.mobileBuild.findFirst({ where, orderBy: { createdAt: 'desc' } });
+    if (!build) throw new BadRequestException('No pending builds found');
+
+    const app = build.app || 'storefront';
+    const platform = build.platform || 'android';
+
+    // Query latest successful runs from builder repo
+    const since = new Date(build.createdAt.getTime() - 60_000).toISOString();
+    const runsUrl = `https://api.github.com/repos/${owner}/${repoName}/actions/runs?event=repository_dispatch&created=>=${since}&per_page=5&status=completed`;
+    const res = await fetch(runsUrl, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'EcoMate-Backend' },
+    });
+    if (!res.ok) throw new InternalServerErrorException(`GitHub API ${res.status}`);
+
+    const data: any = await res.json();
+    const run = data.workflow_runs?.find((r: any) => r.conclusion === 'success');
+    if (!run) throw new BadRequestException('No completed build found on GitHub. CI may still be running.');
+
+    // Pull artifact
+    const artifactPath = await this.pullArtifactFromGitHub(String(run.id), app, platform, build.id, token, owner, repoName);
+
+    await this.prisma.mobileBuild.update({
+      where: { id: build.id },
+      data: { status: 'completed', artifactPath },
+    });
+
+    return { success: true, buildId: build.id, status: 'completed', artifactPath, runId: run.id };
   }
 
   // ── Artifact upload (multipart) ──
@@ -414,6 +457,7 @@ export class MobileBuilderController {
   private pollForArtifact(
     buildId: string, app: string, platform: string,
     token: string, owner: string, repo: string,
+    quiet = true,
   ): void {
     const dispatchTime = new Date();
     let attempts = 0;
