@@ -117,6 +117,21 @@ export function MobileSettings() {
     onError: (err: any) => toast.error(`Cancel failed: ${err.message}`),
   });
 
+  const pullPendingMutation = useMutation({
+    mutationFn: () => apiClient.post('/mobile-builder/pull-pending').then((r) => r.data),
+    onSuccess: (res: any) => {
+      toast.success(`Artifact pulled! Build: ${res.buildId?.slice(0, 8)}...`);
+      queryClient.invalidateQueries({ queryKey: ['mobile-builder-builds'] });
+    },
+    onError: (err: any) => {
+      if (err.message?.includes('No pending builds') || err.message?.includes('No completed build')) {
+        toast.info('CI build may still be running. Check GitHub Actions and try again.');
+      } else {
+        toast.error(`Pull failed: ${err.message}`);
+      }
+    },
+  });
+
   const isLicensed = hasFeature('mobile_distribution');
 
   // Play Store / App Store URL state
@@ -362,10 +377,25 @@ export function MobileSettings() {
       {/* Build History */}
       <Card>
         <CardHeader>
-          <CardTitle className='flex items-center gap-2'>
-            <Clock className='h-5 w-5' />
-            Build History
-          </CardTitle>
+          <div className='flex items-center justify-between'>
+            <CardTitle className='flex items-center gap-2'>
+              <Clock className='h-5 w-5' />
+              Build History
+            </CardTitle>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => pullPendingMutation.mutate()}
+              disabled={pullPendingMutation.isPending}
+            >
+              {pullPendingMutation.isPending ? (
+                <Loader2 className='animate-spin h-4 w-4 mr-1' />
+              ) : (
+                <Download className='h-4 w-4 mr-1' />
+              )}
+              Check & Pull
+            </Button>
+          </div>
           <CardDescription>Recent build records.</CardDescription>
         </CardHeader>
         <CardContent>
