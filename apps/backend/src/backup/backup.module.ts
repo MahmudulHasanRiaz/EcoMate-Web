@@ -4,6 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { BackupService } from './backup.service';
 import { BackupController } from './backup.controller';
 import { BackupJobProcessor } from './backup-job.processor';
+import { StorageService } from '../storage/storage.service';
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { BackupJobProcessor } from './backup-job.processor';
     BullModule.registerQueue({ name: 'backup' }),
   ],
   controllers: [BackupController],
-  providers: [BackupService, BackupJobProcessor],
+  providers: [BackupService, BackupJobProcessor, StorageService],
   exports: [BackupService],
 })
 export class BackupModule {}
