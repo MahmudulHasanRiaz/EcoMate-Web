@@ -32,8 +32,9 @@ export class BackupController {
   @Get(':id/download')
   async download(@Param('id') id: string, @Res() reply: FastifyReply) {
     const { stream, filename, mimeType } = await this.backup.downloadBackup(id);
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     reply.header('Content-Type', mimeType);
-    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    reply.header('Content-Disposition', `attachment; filename="${safeFilename}"`);
     return reply.send(stream);
   }
 
