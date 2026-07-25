@@ -261,18 +261,32 @@ export class MobileBuilderController {
   @Post('pull-pending')
   @Roles('superadmin', 'admin')
   @RequiresFeature('mobile_distribution')
-  async pullPendingBuild(@Body() body: { buildId?: string }) {
+  async pullPendingBuild(@Body() body: any = {}) {
     const token = process.env.MOBILE_BUILDER_GITHUB_TOKEN;
     const repoName = process.env.MOBILE_BUILDER_REPO || 'EcoMate-Mobile-Builder';
     const owner = process.env.GITHUB_REPOSITORY_OWNER || 'mahmudulhasanriaz';
 
     if (!token) throw new InternalServerErrorException('MOBILE_BUILDER_GITHUB_TOKEN not configured');
 
-    // Find the build to pull for
-    const where: any = { status: { in: ['running', 'queued'] } };
-    if (body.buildId) where.id = body.buildId;
-    const build = await this.prisma.mobileBuild.findFirst({ where, orderBy: { createdAt: 'desc' } });
-    if (!build) throw new BadRequestException('No pending builds found');
+    // Find the build — try pending, then recently failed (in case auto-poll timed out)
+    let build: any = null;
+    if (body?.buildId) {
+      build = await this.prisma.mobileBuild.findUnique({ where: { id: body.buildId } });
+    } else {
+      build = await this.prisma.mobileBuild.findFirst({
+        where: { status: { in: ['running', 'queued'] } },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    // Fallback: if no pending build, look for one failed in the last 10 min
+    if (!build) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+      build = await this.prisma.mobileBuild.findFirst({
+        where: { status: 'failed', updatedAt: { gte: tenMinAgo } },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    if (!build) throw new BadRequestException('No pending or recently failed builds found. Publish first.');
 
     const app = build.app || 'storefront';
     const platform = build.platform || 'android';
@@ -287,7 +301,7 @@ export class MobileBuilderController {
 
     const data: any = await res.json();
     const run = data.workflow_runs?.find((r: any) => r.conclusion === 'success');
-    if (!run) throw new BadRequestException('No completed build found on GitHub. CI may still be running.');
+    if (!run) throw new BadRequestException('No completed build found on GitHub. CI may still be running or has failed.');
 
     // Pull artifact
     const artifactPath = await this.pullArtifactFromGitHub(String(run.id), app, platform, build.id, token, owner, repoName);
