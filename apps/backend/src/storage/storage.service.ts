@@ -11,9 +11,11 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
+import { createReadStream } from 'fs';
 import { join, extname } from 'path';
 import { v4 as uuid } from 'uuid';
 import { existsSync } from 'fs';
+import { Readable } from 'stream';
 
 const MIME_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -234,6 +236,62 @@ export class StorageService {
         ? await this.uploadToR2(key, buffer, mimeType, config)
         : await this.uploadToLocal(key, buffer);
     return url;
+  }
+
+  /** Stream a file to storage without loading entire file into memory.
+   *  For local: pipes stream to file. For R2: sends stream directly to S3 API.
+   *  Returns the public URL. */
+  async storeStream(
+    key: string,
+    stream: Readable,
+    mimeType: string,
+  ): Promise<string> {
+    const config = await this.getConfig();
+    if (config.provider === 'r2') {
+      const client = this.getS3Client(config);
+      await client.send(
+        new PutObjectCommand({
+          Bucket: config.r2Bucket!,
+          Key: key,
+          Body: stream,
+          ContentType: mimeType,
+        }),
+      );
+      const baseUrl = config.r2PublicUrl || config.r2Endpoint!;
+      return `${baseUrl.replace(/\/$/, '')}/${key}`;
+    }
+    // Local: pipe stream to file
+    const filepath = join(process.cwd(), 'uploads', key);
+    const parentDir = join(filepath, '..');
+    if (!existsSync(parentDir)) {
+      await mkdir(parentDir, { recursive: true });
+    }
+    const { pipeline } = await import('stream/promises');
+    const { createWriteStream } = await import('fs');
+    const dest = createWriteStream(filepath);
+    await pipeline(stream, dest);
+    return `/uploads/${key}`;
+  }
+
+  /** Stream file content from storage (no full Buffer load).
+   *  For local: returns a ReadStream. For R2: returns the S3 response body stream. */
+  async readStream(key: string): Promise<Readable> {
+    const config = await this.getConfig();
+    if (config.provider === 'r2') {
+      const client = this.getS3Client(config);
+      const resp = await client.send(
+        new GetObjectCommand({ Bucket: config.r2Bucket!, Key: key }),
+      );
+      const body = resp.Body;
+      if (!body) throw new InternalServerErrorException('Empty response from R2');
+      // AWS S3 SDK returns a Readable for Node.js runtime
+      return body as Readable;
+    }
+    const filepath = join(process.cwd(), 'uploads', key);
+    if (!existsSync(filepath)) {
+      throw new InternalServerErrorException(`File not found: ${key}`);
+    }
+    return createReadStream(filepath);
   }
 
   async uploadFromBuffer(

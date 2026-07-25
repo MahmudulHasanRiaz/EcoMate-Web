@@ -160,23 +160,10 @@ export class BackupService implements OnModuleInit {
       const fStat = await stat(finalPath);
       const finalSize = fStat.size;
 
-      // Upload to storage
+      // Upload to storage via streaming (no full file load into memory)
       const storageKey = `backups/${backupId}/${finalName}`;
-      const config = await this.storage.getConfig();
-      if (config.provider === 'local') {
-        // For local storage, copy directly (no memory overhead)
-        const uploadDir = join(process.cwd(), 'uploads', 'backups', backupId);
-        if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
-        const destPath = join(uploadDir, finalName);
-        await copyFile(finalPath, destPath);
-        // No need to call storage.store since we copied directly
-        // storage.store would do the same writeFile, so we skip it
-      } else {
-        // For R2, must read into buffer for S3 API
-        this.logger.warn(`Large backup for ${backupId}: loading ${(finalSize / 1024 / 1024).toFixed(1)}MB into memory for R2 upload`);
-        const buffer = await readFile(finalPath);
-        await this.storage.store(storageKey, buffer, 'application/gzip');
-      }
+      const fileStream = createReadStream(finalPath);
+      await this.storage.storeStream(storageKey, fileStream, 'application/gzip');
 
       // Update record
       await this.prisma.backupJob.update({
@@ -385,18 +372,7 @@ export class BackupService implements OnModuleInit {
     if (job.status !== 'completed') throw new BadRequestException('Backup not completed');
 
     const filename = job.fileKey.split('/').pop() || `backup-${id}.sql.gz`;
-    const mimeType = 'application/gzip';
-
-    // Stream directly for local storage, buffer for R2
-    const config = await this.storage.getConfig();
-    if (config.provider === 'local') {
-      const filepath = join(process.cwd(), 'uploads', job.fileKey);
-      if (!existsSync(filepath)) throw new BadRequestException('Backup file not found on disk');
-      return { stream: createReadStream(filepath), filename, mimeType };
-    }
-    // For R2, fall back to buffer-based read
-    const buffer = await this.storage.read(job.fileKey);
-    return { stream: Readable.from(buffer), filename, mimeType };
+    return { stream: await this.storage.readStream(job.fileKey), filename, mimeType: 'application/gzip' };
   }
 
   async restoreFromBackup(id: string): Promise<{ id: string }> {
@@ -515,12 +491,15 @@ export class BackupService implements OnModuleInit {
       let tmpPath = opts?.tmpPath;
 
       if (!tmpPath) {
-        // Download from storage
+        // Download from storage via streaming (no full file load)
         const job = await this.prisma.backupJob.findUnique({ where: { id: backupId } });
         if (!job?.fileKey) throw new Error('No backup file');
-        const buffer = await this.storage.read(job.fileKey);
         tmpPath = join(tmpDir, job.fileKey.split('/').pop()!);
-        await writeFile(tmpPath, buffer);
+        const readStream = await this.storage.readStream(job.fileKey);
+        const { createWriteStream } = await import('fs');
+        const dest = createWriteStream(tmpPath);
+        const { pipeline } = await import('stream/promises');
+        await pipeline(readStream, dest);
       }
 
       // Decompress
