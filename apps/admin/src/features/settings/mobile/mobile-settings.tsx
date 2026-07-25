@@ -419,7 +419,7 @@ export function MobileSettings() {
                     <div className='flex items-center gap-2'>
                       {build.status === 'completed' && (
                         <Button variant='ghost' size='sm' asChild>
-                          <a href={build.artifactPath || '#'} target='_blank' rel='noreferrer'>
+                          <a href={`/api/mobile-download/${build.app}/${build.platform}`} target='_blank' rel='noreferrer'>
                             <Download className='h-4 w-4' />
                           </a>
                         </Button>
