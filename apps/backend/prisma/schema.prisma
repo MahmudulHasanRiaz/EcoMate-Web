@@ -2412,3 +2412,25 @@ model MobileBuild {
   @@index([status])
   @@index([createdAt])
 }
+
+model BackupJob {
+  id            String    @id @default(cuid())
+  type          String    // manual | scheduled
+  scope         String    // db_only | db_files
+  status        String    @default("pending") // pending | running | completed | failed | restoring
+  fileKey       String?   // storage path: backups/{id}/{filename}
+  fileSize      BigInt?   // total backup file size (bytes)
+  checksum      String?   // SHA-256 hex
+  dbDumpSize    BigInt?   // raw SQL dump size (bytes)
+  filesSize     BigInt?   // content archive size (bytes, null if db_only)
+  locked        Boolean   @default(false)
+  errorMessage  String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([type])
+}
