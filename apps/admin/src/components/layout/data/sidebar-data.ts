@@ -3,7 +3,8 @@ import {
   Users, ShieldCheck, HelpCircle, Percent,
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
   Building2, ShoppingCart, Receipt, Bell,
-  Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert
+  Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
+  HardDrive,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -132,6 +133,7 @@ export const sidebarData: SidebarData = {
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
         { title: 'Analytics', url: '/mon/analytics', icon: Monitor, feature: 'admin_analytics' },
         { title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert },
+        { title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive },
         {
           title: 'User Management',
           icon: Users,
