@@ -10,12 +10,12 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
-import { mkdir, unlink, rm, stat, writeFile, readFile } from 'fs/promises';
+import { mkdir, unlink, rm, stat, writeFile, readFile, copyFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, extname } from 'path';
 import { createGzip, createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
-import { Readable } from 'stream';
+import { Transform, Readable } from 'stream';
 import { tmpdir } from 'os';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -88,6 +88,18 @@ export class BackupService implements OnModuleInit {
     const record = await this.prisma.backupJob.findUnique({ where: { id: backupId } });
     if (!record) throw new Error(`BackupJob ${backupId} not found`);
 
+    // Prevent concurrent backups — if another is already running, abort
+    const running = await this.prisma.backupJob.findFirst({
+      where: { status: 'running', id: { not: backupId } },
+    });
+    if (running) {
+      await this.prisma.backupJob.update({
+        where: { id: backupId },
+        data: { status: 'failed', errorMessage: 'Another backup is already running' },
+      });
+      return;
+    }
+
     await this.prisma.backupJob.update({
       where: { id: backupId },
       data: { status: 'running', startedAt: new Date() },
@@ -129,16 +141,19 @@ export class BackupService implements OnModuleInit {
         }
         filesSize = contentSize > BigInt(0) ? contentSize : null;
       } else {
-        // Compress dump with gzip
+        // Compress dump with gzip, compute checksum while streaming
         finalName = `backup-${backupId}.sql.gz`;
         finalPath = join(tmpDir, finalName);
         const gzip = createGzip();
         const source = createReadStream(dumpPath);
+        const hashTransform = new Transform({
+          transform(chunk, _encoding, callback) {
+            checksum.update(chunk);
+            callback(null, chunk);
+          },
+        });
         const dest = createWriteStream(finalPath);
-        await pipeline(source, gzip, dest);
-        // Update checksum with compressed
-        const compressedData = await readFile(finalPath);
-        checksum.update(compressedData);
+        await pipeline(source, gzip, hashTransform, dest);
       }
 
       const finalChecksum = checksum.digest('hex');
@@ -147,8 +162,21 @@ export class BackupService implements OnModuleInit {
 
       // Upload to storage
       const storageKey = `backups/${backupId}/${finalName}`;
-      const buffer = await readFile(finalPath);
-      await this.storage.store(storageKey, buffer, record.scope === 'db_files' ? 'application/gzip' : 'application/gzip');
+      const config = await this.storage.getConfig();
+      if (config.provider === 'local') {
+        // For local storage, copy directly (no memory overhead)
+        const uploadDir = join(process.cwd(), 'uploads', 'backups', backupId);
+        if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
+        const destPath = join(uploadDir, finalName);
+        await copyFile(finalPath, destPath);
+        // No need to call storage.store since we copied directly
+        // storage.store would do the same writeFile, so we skip it
+      } else {
+        // For R2, must read into buffer for S3 API
+        this.logger.warn(`Large backup for ${backupId}: loading ${(finalSize / 1024 / 1024).toFixed(1)}MB into memory for R2 upload`);
+        const buffer = await readFile(finalPath);
+        await this.storage.store(storageKey, buffer, 'application/gzip');
+      }
 
       // Update record
       await this.prisma.backupJob.update({
@@ -241,9 +269,11 @@ export class BackupService implements OnModuleInit {
 
     await execFileAsync('tar', args, { timeout: 300000 });
 
-    // Update checksum
-    const data = await readFile(outputPath);
-    checksum.update(data);
+    // Update checksum via streaming (no full file load into memory)
+    const hashStream = createReadStream(outputPath);
+    for await (const chunk of hashStream) {
+      checksum.update(chunk as Buffer);
+    }
   }
 
   async performCleanup(): Promise<number> {
@@ -354,9 +384,18 @@ export class BackupService implements OnModuleInit {
     if (!job.fileKey) throw new BadRequestException('Backup file not available');
     if (job.status !== 'completed') throw new BadRequestException('Backup not completed');
 
-    const buffer = await this.storage.read(job.fileKey);
     const filename = job.fileKey.split('/').pop() || `backup-${id}.sql.gz`;
-    const mimeType = job.scope === 'db_files' ? 'application/gzip' : 'application/gzip';
+    const mimeType = 'application/gzip';
+
+    // Stream directly for local storage, buffer for R2
+    const config = await this.storage.getConfig();
+    if (config.provider === 'local') {
+      const filepath = join(process.cwd(), 'uploads', job.fileKey);
+      if (!existsSync(filepath)) throw new BadRequestException('Backup file not found on disk');
+      return { stream: createReadStream(filepath), filename, mimeType };
+    }
+    // For R2, fall back to buffer-based read
+    const buffer = await this.storage.read(job.fileKey);
     return { stream: Readable.from(buffer), filename, mimeType };
   }
 
