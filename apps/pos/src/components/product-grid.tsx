@@ -3,6 +3,7 @@ import { getPosProducts } from '../api/client'
 import { useCartStore } from '../stores/cart-store'
 import { Search, Plus, Layers, RefreshCw, WifiOff } from 'lucide-react'
 import { VariantModal } from './variant-modal'
+import { SafeImage } from './safe-image'
 
 interface Props {
   categoryId: string | null
@@ -199,13 +200,7 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
 
               {/* Product Image or Fallback - Edge-to-edge full width */}
               <div className="w-full aspect-square bg-slate-50 overflow-hidden relative flex items-center justify-center border-b border-slate-100">
-                {imgUrl ? (
-                  <img src={imgUrl} alt={p.name} className="h-full w-full object-cover transition duration-350 group-hover:scale-105" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 text-slate-300">
-                    <Search size={26} className="opacity-45" />
-                  </div>
-                )}
+                <SafeImage src={imgUrl} alt={p.name} className="h-full w-full object-cover" />
               </div>
 
               {/* Product Meta padding */}

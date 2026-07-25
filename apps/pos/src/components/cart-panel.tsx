@@ -4,6 +4,7 @@ import { CustomerQuickAdd } from './customer-quick-add'
 import { DiscountModal } from './discount-modal'
 import { PaymentModal } from './payment-modal'
 import { Trash2, Percent, ShoppingCart, X, CreditCard, ChevronDown, Award, FileText } from 'lucide-react'
+import { SafeImage } from './safe-image'
 
 interface Props {
   onCloseSession: () => void
@@ -82,15 +83,9 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
           items.map((item, i) => (
             <div key={i} className="group flex items-center justify-between gap-2.5 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5 hover:border-slate-200 hover:bg-slate-50 transition-all">
               {/* Product Thumbnail */}
-              {item.image ? (
-                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                </div>
-              ) : (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400">
-                  <ShoppingCart size={14} className="opacity-40" />
-                </div>
-              )}
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <SafeImage src={item.image} alt={item.name} className="h-full w-full object-cover" />
+              </div>
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold text-slate-800" title={item.name}>{item.name}</p>

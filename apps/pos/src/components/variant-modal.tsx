@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X, ShoppingCart, Layers } from 'lucide-react'
+import { SafeImage } from './safe-image'
 
 interface Props {
   open: boolean
@@ -55,14 +56,9 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                   className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5 hover:border-emerald-500/20 hover:bg-slate-50 transition-all"
                 >
                   {/* Thumbnail image */}
-                  {variantImgUrl ? (
-                    <div className="h-10 w-10 overflow-hidden rounded-lg border border-slate-200 bg-white shrink-0">
-                      <img src={variantImgUrl} alt={variantName} className="h-full w-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400">
-                      <Layers size={14} className="opacity-40" />
-                    </div>
+                  <div className="h-10 w-10 overflow-hidden rounded-lg border border-slate-200 bg-white shrink-0">
+                    <SafeImage src={variantImgUrl} alt={variantName} className="h-full w-full object-cover" />
+                  </div>
                   )}
 
                   <div className="min-w-0 flex-1">
