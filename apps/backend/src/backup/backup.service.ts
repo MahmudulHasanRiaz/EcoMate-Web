@@ -408,24 +408,26 @@ export class BackupService implements OnModuleInit {
     return { id };
   }
 
-  async restoreFromUpload(fileBuffer: Buffer, filename: string): Promise<{ id: string }> {
+  async restoreFromUpload(tmpPath: string, filename: string): Promise<{ id: string }> {
+    const tmpDir = join(tmpdir(), `restore-upload-${randomUUID()}`);
+    if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true });
+
+    // Move file to our managed temp dir
+    const managedPath = join(tmpDir, filename);
+    await rename(tmpPath, managedPath);
+    const { size } = await stat(managedPath);
+
     // Create a backup record in restoring status
     const job = await this.prisma.backupJob.create({
       data: {
         type: 'manual',
         scope: filename.endsWith('.tar.gz') ? 'db_files' : 'db_only',
         status: 'restoring',
-        fileSize: BigInt(fileBuffer.length),
+        fileSize: BigInt(size),
       },
     });
 
-    // Save to temp and restore
-    const tmpDir = join(tmpdir(), `restore-upload-${job.id}`);
-    if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true });
-    const tmpPath = join(tmpDir, filename);
-    await writeFile(tmpPath, fileBuffer);
-
-    this.runRestorePipeline(job.id, { tmpPath, isUpload: true }).catch((err) => {
+    this.runRestorePipeline(job.id, { tmpPath: managedPath, isUpload: true }).catch((err) => {
       this.logger.error(`Upload restore ${job.id} failed: ${err.message}`);
       this.prisma.backupJob.update({
         where: { id: job.id },
@@ -436,17 +438,20 @@ export class BackupService implements OnModuleInit {
     return { id: job.id };
   }
 
-  async uploadOnly(fileBuffer: Buffer, filename: string): Promise<{ id: string }> {
+  async uploadOnly(tmpPath: string, filename: string): Promise<{ id: string }> {
     const tmpDir = join(tmpdir(), `backup-upload-only-${randomUUID()}`);
     if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true });
 
-    // Store file to temp
-    const tmpPath = join(tmpDir, filename);
-    await writeFile(tmpPath, fileBuffer);
+    const managedPath = join(tmpDir, filename);
+    await rename(tmpPath, managedPath);
+    const { size } = await stat(managedPath);
 
-    // Compute checksum
+    // Compute checksum via streaming
     const checksum = createHash('sha256');
-    checksum.update(fileBuffer);
+    const hashStream = createReadStream(managedPath);
+    for await (const chunk of hashStream) {
+      checksum.update(chunk as Buffer);
+    }
     const checksumHex = checksum.digest('hex');
 
     const job = await this.prisma.backupJob.create({
@@ -454,14 +459,15 @@ export class BackupService implements OnModuleInit {
         type: 'manual',
         scope: filename.endsWith('.tar.gz') ? 'db_files' : 'db_only',
         status: 'pending',
-        fileSize: BigInt(fileBuffer.length),
+        fileSize: BigInt(size),
         checksum: checksumHex,
       },
     });
 
-    // Upload to storage
+    // Upload to storage via streaming
     const storageKey = `backups/${job.id}/${filename}`;
-    await this.storage.store(storageKey, fileBuffer, filename.endsWith('.tar.gz') ? 'application/gzip' : 'application/gzip');
+    const fileStream = createReadStream(managedPath);
+    await this.storage.storeStream(storageKey, fileStream, 'application/gzip');
 
     // Mark completed
     await this.prisma.backupJob.update({
