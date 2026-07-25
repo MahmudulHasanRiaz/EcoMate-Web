@@ -19,6 +19,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { execSync } from 'child_process';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
 
 const PKG_LOCK_KEY = 'android_package_id_locked';
 const COMPILE_KEYS = ['store_name', 'storefront_favicon', 'brand_primary'] as const;
@@ -293,5 +295,112 @@ export class MobileBuilderController {
     await this.prisma.mobileBuild.update({ where: { id: buildId }, data: updateData });
 
     return { received: true, buildId, status };
+  }
+
+  // ── Pull artifact from GitHub Actions (no multipart upload needed) ──
+  @Post('artifact/pull')
+  async receiveArtifactFromGitHub(@Body() body: any) {
+    const callbackToken = process.env.MOBILE_BUILDER_CALLBACK_TOKEN;
+    if (callbackToken && body.callbackToken !== callbackToken) {
+      throw new BadRequestException('Invalid callback token');
+    }
+
+    const { buildId, app, platform, status, runId } = body;
+    if (!buildId || !status) throw new BadRequestException('buildId and status required');
+    if (body.status === 'completed' && !runId) throw new BadRequestException('runId required for GitHub artifact pull');
+
+    const existing = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
+    if (!existing) throw new BadRequestException(`Build ${buildId} not found`);
+
+    // If status is completed, pull artifact from GitHub
+    let artifactPath: string | undefined;
+    if (body.status === 'completed' && runId) {
+      const token = process.env.MOBILE_BUILDER_GITHUB_TOKEN;
+      const owner = process.env.GITHUB_REPOSITORY_OWNER || 'mahmudulhasanriaz';
+      const repo = process.env.MOBILE_BUILDER_REPO || 'EcoMate-Mobile-Builder';
+
+      if (!token) throw new InternalServerErrorException('MOBILE_BUILDER_GITHUB_TOKEN not configured');
+
+      try {
+        artifactPath = await this.pullArtifactFromGitHub(runId, app || 'storefront', platform || 'android', buildId, token, owner, repo);
+      } catch (err: any) {
+        await this.prisma.mobileBuild.update({
+          where: { id: buildId },
+          data: { status: 'failed', errorMessage: `Artifact pull failed: ${err.message}` },
+        });
+        return { received: true, buildId, status: 'failed', errorMessage: err.message };
+      }
+    }
+
+    const updateData: any = { status };
+    if (artifactPath) updateData.artifactPath = artifactPath;
+    if (body.buildLogUrl) updateData.buildLogUrl = body.buildLogUrl;
+    if (body.errorMessage) updateData.errorMessage = body.errorMessage;
+    if (app) updateData.app = app;
+    if (platform) updateData.platform = platform;
+
+    await this.prisma.mobileBuild.update({ where: { id: buildId }, data: updateData });
+    return { received: true, buildId, status, artifactPath };
+  }
+
+  private async pullArtifactFromGitHub(
+    runId: string, app: string, platform: string, buildId: string,
+    token: string, owner: string, repo: string,
+  ): Promise<string> {
+    const artifactName = `${app}-${platform}-apk`;
+
+    // 1. List artifacts for the run
+    const listUrl = `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`;
+    const listRes = await fetch(listUrl, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'EcoMate-Backend' },
+    });
+    if (!listRes.ok) throw new Error(`GitHub API ${listRes.status} listing artifacts`);
+
+    const listData: any = await listRes.json();
+    const artifact = listData.artifacts?.find((a: any) => a.name === artifactName);
+    if (!artifact) throw new Error(`Artifact "${artifactName}" not found`);
+
+    // 2. Download (follow redirect)
+    const dlRes = await fetch(artifact.archive_download_url, {
+      headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'EcoMate-Backend' },
+      redirect: 'follow',
+    });
+    if (!dlRes.ok) throw new Error(`Download returned ${dlRes.status}`);
+
+    // 3. Save zip + extract
+    const baseDir = process.env.MOBILE_BUILD_DIR || './mobile-builds';
+    const tmpDir = join(baseDir, '.tmp', buildId);
+    const zipPath = join(baseDir, '.tmp', `${buildId}.zip`);
+    mkdirSync(join(baseDir, '.tmp'), { recursive: true });
+
+    writeFileSync(zipPath, Buffer.from(await dlRes.arrayBuffer()));
+    execSync(`unzip -o "${zipPath}" -d "${tmpDir}"`, { stdio: 'pipe' });
+
+    // 4. Find APK in extracted files
+    const apkFile = this.findFile(tmpDir, (p: string) => p.endsWith('.apk'));
+    if (!apkFile) throw new Error('No APK found in downloaded artifact');
+
+    // 5. Copy to mobile-builds
+    const outDir = join(baseDir, app, platform);
+    mkdirSync(outDir, { recursive: true });
+    copyFileSync(apkFile, join(outDir, 'latest.apk'));
+
+    // 6. Cleanup
+    try { rmSync(zipPath); rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+
+    return join(outDir, 'latest.apk');
+  }
+
+  private findFile(dir: string, predicate: (path: string) => boolean): string | null {
+    if (!existsSync(dir)) return null;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (predicate(full)) return full;
+      if (entry.isDirectory()) {
+        const found = this.findFile(full, predicate);
+        if (found) return found;
+      }
+    }
+    return null;
   }
 }
