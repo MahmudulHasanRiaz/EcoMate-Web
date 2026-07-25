@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useBackups, useTriggerBackup, useRestoreBackup,
-  useRestoreUpload, useToggleLock, useDeleteBackup } from './hooks'
+  useUploadBackup, useToggleLock, useDeleteBackup } from './hooks'
 import { BackupTable } from './components/BackupTable'
 import { BackupStats } from './components/BackupStats'
 import { RunBackupDialog } from './components/RunBackupDialog'
@@ -13,7 +13,7 @@ export function BackupPage() {
   const { data, isLoading } = useBackups({ page, limit: 20 })
   const trigger = useTriggerBackup()
   const restore = useRestoreBackup()
-  const uploadRestore = useRestoreUpload()
+  const uploadBackup = useUploadBackup()
   const toggleLock = useToggleLock()
   const deleteBackup = useDeleteBackup()
 
@@ -55,12 +55,12 @@ export function BackupPage() {
     }
   }, [deleteBackup])
 
-  const handleUploadRestore = useCallback((file: File) => {
-    uploadRestore.mutate(file, {
-      onSuccess: () => toast.success('Upload restore started'),
-      onError: (err: any) => toast.error(err.response?.data?.message || 'Upload restore failed'),
+  const handleUploadBackup = useCallback((file: File) => {
+    uploadBackup.mutate(file, {
+      onSuccess: () => toast.success('Backup uploaded'),
+      onError: (err: any) => toast.error(err.response?.data?.message || 'Upload failed'),
     })
-  }, [uploadRestore])
+  }, [uploadBackup])
 
   const handleRunBackup = useCallback((scope: 'db_only' | 'db_files') => {
     trigger.mutate(scope, {
@@ -74,7 +74,7 @@ export function BackupPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Backup & Restore</h1>
         <div className="flex gap-2">
-          <UploadRestoreDialog onUpload={handleUploadRestore} isPending={uploadRestore.isPending} />
+          <UploadRestoreDialog onUpload={handleUploadBackup} isPending={uploadBackup.isPending} />
           <RunBackupDialog onRun={handleRunBackup} isPending={trigger.isPending} />
         </div>
       </div>

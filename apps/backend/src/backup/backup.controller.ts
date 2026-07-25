@@ -61,6 +61,24 @@ export class BackupController {
     return this.backup.restoreFromUpload(buffer, name);
   }
 
+  @Post('upload')
+  async uploadOnly(@Req() req: FastifyRequest) {
+    const file = await req.file();
+    if (!file) throw new BadRequestException('File required');
+
+    const buffer = await file.toBuffer();
+    if (buffer.length > 5 * 1024 * 1024 * 1024) {
+      throw new BadRequestException('File exceeds 5GB limit');
+    }
+
+    const name = file.filename;
+    if (!name.endsWith('.sql.gz') && !name.endsWith('.tar.gz')) {
+      throw new BadRequestException('File must be .sql.gz or .tar.gz');
+    }
+
+    return this.backup.uploadOnly(buffer, name);
+  }
+
   @Patch(':id/lock')
   async toggleLock(@Param('id') id: string, @Body() body: { locked: boolean }) {
     await this.backup.toggleLock(id, body.locked);

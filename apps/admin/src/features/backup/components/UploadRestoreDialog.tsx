@@ -3,8 +3,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Upload, File } from 'lucide-react'
-import { AlertTriangle } from 'lucide-react'
+import { Upload, File, CheckCircle2 } from 'lucide-react'
 
 interface Props {
   onUpload: (file: File) => void
@@ -27,12 +26,12 @@ export function UploadRestoreDialog({ onUpload, isPending }: Props) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline"><Upload className="mr-2 h-4 w-4" />Upload & Restore</Button>
+        <Button variant="outline"><Upload className="mr-2 h-4 w-4" />Upload Backup</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-orange-600">
-            <AlertTriangle className="h-5 w-5" /> Upload Backup & Restore
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" /> Upload Backup File
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -59,10 +58,10 @@ export function UploadRestoreDialog({ onUpload, isPending }: Props) {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            This will overwrite your database. Max 5GB.
+            Upload a backup file to the server. Then click <strong>Restore</strong> on the backup row to restore it. Max 5GB.
           </p>
           <Button onClick={handleUpload} disabled={!file || isPending} className="w-full">
-            {isPending ? 'Restoring...' : 'Upload & Restore'}
+            {isPending ? 'Uploading...' : 'Upload Backup'}
           </Button>
         </div>
       </DialogContent>

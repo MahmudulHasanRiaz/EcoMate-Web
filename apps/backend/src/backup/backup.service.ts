@@ -383,7 +383,7 @@ export class BackupService implements OnModuleInit {
   }
 
   async restoreFromUpload(fileBuffer: Buffer, filename: string): Promise<{ id: string }> {
-    // Create a temporary backup record
+    // Create a backup record in restoring status
     const job = await this.prisma.backupJob.create({
       data: {
         type: 'manual',
@@ -406,6 +406,49 @@ export class BackupService implements OnModuleInit {
         data: { status: 'failed', errorMessage: err.message },
       }).catch(() => {});
     });
+
+    return { id: job.id };
+  }
+
+  async uploadOnly(fileBuffer: Buffer, filename: string): Promise<{ id: string }> {
+    const tmpDir = join(tmpdir(), `backup-upload-only-${randomUUID()}`);
+    if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true });
+
+    // Store file to temp
+    const tmpPath = join(tmpDir, filename);
+    await writeFile(tmpPath, fileBuffer);
+
+    // Compute checksum
+    const checksum = createHash('sha256');
+    checksum.update(fileBuffer);
+    const checksumHex = checksum.digest('hex');
+
+    const job = await this.prisma.backupJob.create({
+      data: {
+        type: 'manual',
+        scope: filename.endsWith('.tar.gz') ? 'db_files' : 'db_only',
+        status: 'pending',
+        fileSize: BigInt(fileBuffer.length),
+        checksum: checksumHex,
+      },
+    });
+
+    // Upload to storage
+    const storageKey = `backups/${job.id}/${filename}`;
+    await this.storage.store(storageKey, fileBuffer, filename.endsWith('.tar.gz') ? 'application/gzip' : 'application/gzip');
+
+    // Mark completed
+    await this.prisma.backupJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'completed',
+        fileKey: storageKey,
+        completedAt: new Date(),
+      },
+    });
+
+    // Cleanup
+    rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 
     return { id: job.id };
   }

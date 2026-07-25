@@ -33,6 +33,14 @@ export function useRestoreBackup() {
   })
 }
 
+export function useUploadBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => backupApi.uploadOnly(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['backups'] }),
+  })
+}
+
 export function useRestoreUpload() {
   const qc = useQueryClient()
   return useMutation({

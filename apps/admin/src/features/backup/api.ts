@@ -19,6 +19,14 @@ export const backupApi = {
   restore: (id: string) =>
     apiClient.post<{ id: string }>(`/admin/backup/${id}/restore`).then((r) => r.data),
 
+  uploadOnly: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient
+      .post<{ id: string }>('/admin/backup/upload', form)
+      .then((r) => r.data)
+  },
+
   uploadRestore: (file: File) => {
     const form = new FormData()
     form.append('file', file)
