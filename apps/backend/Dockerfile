@@ -35,7 +35,7 @@ RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-RUN apk add --no-cache unzip && \
+RUN apk add --no-cache unzip postgresql-client && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
