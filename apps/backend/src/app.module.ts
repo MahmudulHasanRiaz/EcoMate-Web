@@ -81,6 +81,7 @@ import { DispatchModule } from './dispatch/dispatch.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthSettingsModule } from './auth-settings/auth-settings.module';
+import { BackupModule } from './backup/backup.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { SecurityDashboardModule } from './security-dashboard/security-dashboard.module';
 
@@ -159,6 +160,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     WarehousesModule,
     PosModule,
     BetterAuthModule,
+    BackupModule,
     AuthSettingsModule,
   ],
 

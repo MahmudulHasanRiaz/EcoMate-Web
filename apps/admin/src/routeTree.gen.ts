@@ -69,6 +69,8 @@ import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
+import { Route as AuthenticatedMonBackupIndexRouteImport } from './routes/_authenticated/mon/backup/index'
+import { Route as AuthenticatedMonBackupSettingsRouteImport } from './routes/_authenticated/mon/backup/settings'
 import { Route as AuthenticatedMonSecurityIndexRouteImport } from './routes/_authenticated/mon/security/index'
 import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
 import { Route as AuthenticatedMonNotificationsIndexRouteImport } from './routes/_authenticated/mon/notifications/index'
@@ -474,6 +476,18 @@ const AuthenticatedMonSecurityIndexRoute =
     path: '/mon/security/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonBackupIndexRoute =
+  AuthenticatedMonBackupIndexRouteImport.update({
+    id: '/mon/backup/',
+    path: '/mon/backup/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonBackupSettingsRoute =
+  AuthenticatedMonBackupSettingsRouteImport.update({
+    id: '/mon/backup/settings',
+    path: '/mon/backup/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonPagesIndexRoute =
   AuthenticatedMonPagesIndexRouteImport.update({
     id: '/mon/pages/',
@@ -849,6 +863,8 @@ export interface FileRoutesByFullPath {
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
+  '/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
+  '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
@@ -966,6 +982,8 @@ export interface FileRoutesByTo {
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
+  '/mon/backup': typeof AuthenticatedMonBackupIndexRoute
+  '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
@@ -1085,6 +1103,8 @@ export interface FileRoutesById {
   '/_authenticated/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
+  '/_authenticated/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
+  '/_authenticated/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/_authenticated/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
@@ -1984,6 +2004,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonAnalyticsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/backup/': {
+      id: '/_authenticated/mon/backup/'
+      path: '/mon/backup'
+      fullPath: '/mon/backup/'
+      preLoaderRoute: typeof AuthenticatedMonBackupIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/backup/settings': {
+      id: '/_authenticated/mon/backup/settings'
+      path: '/mon/backup/settings'
+      fullPath: '/mon/backup/settings'
+      preLoaderRoute: typeof AuthenticatedMonBackupSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/activity-logs/': {
       id: '/_authenticated/mon/activity-logs/'
       path: '/mon/activity-logs'
@@ -2480,6 +2514,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpProductsIdRoute: typeof AuthenticatedOpProductsIdRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
+  AuthenticatedMonBackupIndexRoute: typeof AuthenticatedMonBackupIndexRoute
+  AuthenticatedMonBackupSettingsRoute: typeof AuthenticatedMonBackupSettingsRoute
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
   AuthenticatedMonNotificationsIndexRoute: typeof AuthenticatedMonNotificationsIndexRoute
   AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
@@ -2574,6 +2610,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonActivityLogsIndexRoute:
     AuthenticatedMonActivityLogsIndexRoute,
   AuthenticatedMonAnalyticsIndexRoute: AuthenticatedMonAnalyticsIndexRoute,
+  AuthenticatedMonBackupIndexRoute: AuthenticatedMonBackupIndexRoute,
+  AuthenticatedMonBackupSettingsRoute: AuthenticatedMonBackupSettingsRoute,
   AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
   AuthenticatedMonNotificationsIndexRoute:
     AuthenticatedMonNotificationsIndexRoute,
