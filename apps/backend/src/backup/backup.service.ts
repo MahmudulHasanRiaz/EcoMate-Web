@@ -114,9 +114,20 @@ export class BackupService implements OnModuleInit {
         await this.createTarArchive(tmpDir, dumpPath, includePaths, finalPath, checksum);
         const fStat = await stat(finalPath);
         totalSize = BigInt(fStat.size);
-        // Calculate files size separately
-        const rawDumpStat = await stat(dumpPath);
-        filesSize = totalSize - BigInt(rawDumpStat.size);
+        // Compute content files size by summing include paths
+        const uploadsDir = join(process.cwd(), 'uploads');
+        let contentSize = BigInt(0);
+        for (const relPath of includePaths) {
+          const absPath = join(uploadsDir, relPath);
+          if (existsSync(absPath)) {
+            try {
+              const { stdout } = await execFileAsync('du', ['-sb', absPath]);
+              const size = stdout.split('\t')[0];
+              contentSize += BigInt(size);
+            } catch {}
+          }
+        }
+        filesSize = contentSize > BigInt(0) ? contentSize : null;
       } else {
         // Compress dump with gzip
         finalName = `backup-${backupId}.sql.gz`;
