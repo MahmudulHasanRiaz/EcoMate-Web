@@ -50,7 +50,7 @@ RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds && \
     chmod +x startup.sh
 COPY mobile-builds /app/mobile-builds/
 RUN chown -R nestjs:nodejs /app/mobile-builds
-USER nestjs
+USER root
 EXPOSE 4000
 ENV NODE_ENV=production
 HEALTHCHECK --interval=30s --timeout=3s --start-period=600s --retries=3 \
