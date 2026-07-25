@@ -221,15 +221,28 @@ export class MobileBuilderController {
     }
 
     try {
-      const erpUrl = `https://${process.env.CLIENT_DOMAIN}`;
-      await this.prisma.mobileBuild.update({ where: { id: builds[0].id }, data: { status: 'running' } });
+      // Inline all compile-time metadata in dispatch so builder doesn't need callback
+      const allSettings = await this.prisma.systemSetting.findMany({ where: { key: { in: COMPILE_KEYS as unknown as string[] } } });
+      const sMap: Record<string, string> = {};
+      for (const s of allSettings) sMap[s.key] = s.value;
+      const meta = {
+        clientDomain: process.env.CLIENT_DOMAIN || '',
+        appName: sMap['store_name'] || 'EcoMate',
+        packageId: builds[0].packageId || computePackageId(sMap['store_name'] || ''),
+        bundleId: builds[0].packageId || computePackageId(sMap['store_name'] || ''),
+        versionName: '1.0.0',
+        versionCode: builds[0].versionCode,
+        iconUrl: sMap['storefront_favicon'] || '',
+        splashColor: sMap['brand_primary'] || '#0089CD',
+      };
 
+      const erpUrl = process.env.BETTER_AUTH_URL || '';
       const response = await fetch(`https://api.github.com/repos/${githubOwner}/${builderRepo}/dispatches`, {
         method: 'POST',
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${githubToken}`, 'User-Agent': 'EcoMate-Backend' },
         body: JSON.stringify({
           event_type: 'mobile-build',
-          client_payload: { buildId: builds[0].id, app: appInput, platform, erpUrl, callbackToken: process.env.MOBILE_BUILDER_CALLBACK_TOKEN || '' },
+          client_payload: { buildId: builds[0].id, app: appInput, platform, erpUrl, callbackToken: process.env.MOBILE_BUILDER_CALLBACK_TOKEN || '', ...meta },
         }),
       });
 
