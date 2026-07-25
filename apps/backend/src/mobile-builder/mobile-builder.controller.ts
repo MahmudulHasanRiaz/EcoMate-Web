@@ -239,6 +239,12 @@ export class MobileBuilderController {
         throw new Error(`GitHub API responded ${response.status}`);
       }
 
+      // Mark first build as running, start background poll
+      if (builds.length > 0) {
+        await this.prisma.mobileBuild.update({ where: { id: builds[0].id }, data: { status: 'running' } });
+        this.pollForArtifact(builds[0].id, appInput, platform || 'android', githubToken, githubOwner, builderRepo);
+      }
+
       return {
         published: true,
         builds: builds.map(b => ({ buildId: b.id, app: b.app, platform, status: b.id === builds[0].id ? 'running' : 'queued' })),
@@ -402,5 +408,68 @@ export class MobileBuilderController {
       }
     }
     return null;
+  }
+
+  // ── Poll GitHub for completed workflow run, then pull artifact ──
+  private pollForArtifact(
+    buildId: string, app: string, platform: string,
+    token: string, owner: string, repo: string,
+  ): void {
+    const dispatchTime = new Date();
+    let attempts = 0;
+    const maxAttempts = 12; // 12 * 30s = 6 min timeout
+    const pollInterval = 30_000;
+
+    const check = async () => {
+      attempts++;
+      try {
+        // Query workflow runs created after our dispatch
+        const since = dispatchTime.toISOString();
+        const runsUrl = `https://api.github.com/repos/${owner}/${repo}/actions/runs?event=repository_dispatch&created=>=${since}&per_page=5&status=completed`;
+        const res = await fetch(runsUrl, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'EcoMate-Backend' },
+        });
+        if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+
+        const data: any = await res.json();
+        const successfulRun = data.workflow_runs?.find(
+          (r: any) => r.conclusion === 'success',
+        );
+
+        if (successfulRun) {
+          // Found completed run — pull artifact
+          const artifactPath = await this.pullArtifactFromGitHub(
+            String(successfulRun.id), app, platform, buildId, token, owner, repo,
+          );
+          await this.prisma.mobileBuild.update({
+            where: { id: buildId },
+            data: { status: 'completed', artifactPath },
+          });
+          return; // Done
+        }
+
+        // No completed run yet — retry if under limit
+        if (attempts < maxAttempts) {
+          setTimeout(check, pollInterval);
+        } else {
+          await this.prisma.mobileBuild.update({
+            where: { id: buildId },
+            data: { status: 'failed', errorMessage: 'Build timed out — no completed run found within 6 minutes' },
+          });
+        }
+      } catch (err: any) {
+        if (attempts < maxAttempts) {
+          setTimeout(check, pollInterval);
+        } else {
+          await this.prisma.mobileBuild.update({
+            where: { id: buildId },
+            data: { status: 'failed', errorMessage: `Poll error: ${err.message}` },
+          }).catch(() => {});
+        }
+      }
+    };
+
+    // Start first check after 30s delay
+    setTimeout(check, pollInterval);
   }
 }
