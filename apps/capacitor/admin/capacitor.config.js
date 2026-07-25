@@ -1,12 +1,11 @@
-import type { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
-  appId: process.env.CAP_APP_ID || 'com.ecomate.pos',
-  appName: process.env.CAP_APP_NAME || 'EcoMate POS',
-  webDir: process.env.CAP_WEB_DIR || '../../pos/dist',
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
+  appId: process.env.CAP_APP_ID || 'com.ecomate.admin',
+  appName: process.env.CAP_APP_NAME || 'EcoMate Admin',
+  webDir: process.env.CAP_WEB_DIR || '../../admin/dist',
   bundledWebRuntime: false,
   server: {
-    url: process.env.CAP_SERVER_URL || 'http://localhost:5174',
+    url: process.env.CAP_SERVER_URL || 'http://localhost:5173',
     cleartext: true,
   },
   android: { allowMixedContent: true },

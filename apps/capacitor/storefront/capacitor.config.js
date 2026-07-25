@@ -1,17 +1,13 @@
-import type { CapacitorConfig } from '@capacitor/cli';
-
-const appName = process.env.CAP_APP_NAME || 'EcoMate';
-const serverUrl = process.env.CAP_SERVER_URL || 'http://localhost:3000';
-
-const config: CapacitorConfig = {
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
   appId: process.env.CAP_APP_ID || 'com.ecomate.storefront',
-  appName,
+  appName: process.env.CAP_APP_NAME || 'EcoMate',
   webDir: process.env.CAP_WEB_DIR || '../../storefront/.next',
   bundledWebRuntime: false,
   server: {
-    url: serverUrl,
+    url: process.env.CAP_SERVER_URL || 'http://localhost:3000',
     cleartext: true,
-    allowNavigation: [serverUrl.replace(/https?:\/\//, '')],
+    allowNavigation: [(process.env.CAP_SERVER_URL || 'http://localhost:3000').replace(/https?:\/\//, '')],
   },
   android: {
     allowMixedContent: true,
