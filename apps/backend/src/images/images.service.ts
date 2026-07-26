@@ -193,7 +193,7 @@ export class ImagesService {
     }
 
     const allowedExtensions = [
-      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif',
+      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg',
     ];
     const ext = extname(relativePath).toLowerCase();
     if (!allowedExtensions.includes(ext)) {
@@ -207,6 +207,7 @@ export class ImagesService {
       '.webp': 'image/webp',
       '.gif': 'image/gif',
       '.avif': 'image/avif',
+      '.svg': 'image/svg+xml',
     };
 
     return { buffer: readFileSync(sourcePath), ext, mime: mimeMap[ext] };
