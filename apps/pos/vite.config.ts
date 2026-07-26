@@ -31,7 +31,14 @@ export default defineConfig(({ mode }) => {
       {
         name: "pos-api-base-html",
         transformIndexHtml(html) {
-          return html.replaceAll("__POS_API_BASE__", JSON.stringify(apiBase));
+          const withApi = html.replaceAll("__POS_API_BASE__", JSON.stringify(apiBase));
+          // Vite strips data-cfasync from the script tag it injects, so add
+          // it back here. This prevents Cloudflare Rocket Loader from breaking
+          // the module script execution.
+          return withApi.replace(
+            '<script type="module" crossorigin src=',
+            '<script type="module" data-cfasync="false" crossorigin src=',
+          );
         },
       },
       react(),
