@@ -596,8 +596,8 @@ export class BackupService implements OnModuleInit {
   ): Promise<T> {
     return this.prisma.$transaction(
       async (tx) => {
-        await tx.$queryRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(${BACKUP_LIFECYCLE_ADVISORY_LOCK})`,
+        await tx.$executeRawUnsafe(
+          `SELECT pg_advisory_xact_lock(${BACKUP_LIFECYCLE_ADVISORY_LOCK.toString()})`,
         );
         return action(tx);
       },
