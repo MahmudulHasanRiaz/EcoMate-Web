@@ -57,6 +57,7 @@ services:
 
   backend:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
+    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -138,6 +139,7 @@ services:
 
   storefront:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-storefront:latest
+    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -168,6 +170,7 @@ services:
 
   admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
+    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
