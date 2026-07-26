@@ -84,3 +84,15 @@ jobs:
             ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-admin:${{ steps.meta.outputs.sha_short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and push pos image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/pos/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-pos:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-pos:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
