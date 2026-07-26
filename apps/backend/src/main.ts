@@ -157,14 +157,19 @@ async function bootstrap() {
                     WHERE datname = current_database()
                       AND application_name = 'ecomate-backup-restore'
                   )
-                  OR EXISTS (
-                    SELECT 1
-                    FROM "ecomate_control"."backup_restore_operation"
-                    WHERE "phase" IN (
-                      'preparing',
-                      'database_committed',
-                      'failed_after_commit'
+                  OR (
+                    CASE WHEN to_regclass('ecomate_control.backup_restore_operation') IS NOT NULL
+                    THEN EXISTS (
+                      SELECT 1
+                      FROM "ecomate_control"."backup_restore_operation"
+                      WHERE "phase" IN (
+                        'preparing',
+                        'database_committed',
+                        'failed_after_commit'
+                      )
                     )
+                    ELSE false
+                    END
                   )
                 ) AS "active"
               `,
