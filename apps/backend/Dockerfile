@@ -39,6 +39,7 @@ RUN apk add --no-cache unzip postgresql-client && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=obfuscator /app/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
 COPY --from=builder /app/apps/backend/prisma.config.ts ./
