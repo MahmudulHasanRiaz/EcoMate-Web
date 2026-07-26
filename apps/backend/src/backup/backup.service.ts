@@ -3513,12 +3513,9 @@ export class BackupService implements OnModuleInit {
     const uploadRoot = join(process.cwd(), 'uploads');
     let controlOperations: RestoreControlOperation[] = [];
     try {
-      const hasTable = await this.prisma.$queryRaw<
-        Array<{ exists: boolean }>
-      >(Prisma.sql`
-        SELECT to_regclass('ecomate_control.backup_restore_operation')
-          IS NOT NULL AS "exists"
-      `);
+      const hasTable = await this.prisma.rawQuery<{ exists: boolean }>(
+        `SELECT to_regclass('ecomate_control.backup_restore_operation') IS NOT NULL AS "exists"`,
+      );
       if (hasTable[0]?.exists === true) {
         controlOperations = await this.listRestoreControlOperations();
       }

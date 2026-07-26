@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Prisma } from '@prisma/client';
 import { CacheService } from '../../cache/cache.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
@@ -29,51 +28,30 @@ export class MediaQueueService implements OnModuleInit {
     const maintenance = await this.cache.get(BACKUP_MAINTENANCE_CACHE_KEY);
     let durableOwner = true;
     try {
-      const hasControlTable = await this.prisma.$queryRaw<
-        Array<{ exists: boolean }>
-      >(
-        Prisma.sql`
-          SELECT to_regclass('ecomate_control.backup_restore_operation')
-            IS NOT NULL AS "exists"
-        `,
+      const hasControlTable = await this.prisma.rawQuery<{ exists: boolean }>(
+        `SELECT to_regclass('ecomate_control.backup_restore_operation') IS NOT NULL AS "exists"`,
       );
       let durableRestoring = false;
       if (hasControlTable[0]?.exists === true) {
-        try {
-          const restoreSignals = await this.prisma.$queryRaw<
-            Array<{ active: boolean }>
-          >(
-            Prisma.sql`
-              SELECT EXISTS (
-                SELECT 1
-                FROM "ecomate_control"."backup_restore_operation"
-                WHERE "phase" IN (
-                  'preparing',
-                  'database_committed',
-                  'failed_after_commit'
-                )
-              ) AS "active"
-            `,
-          );
-          durableRestoring = restoreSignals[0]?.active === true;
-        } catch {
-          durableRestoring = true;
-        }
-      }
-      const sessionRestoring = await this.prisma.$queryRaw<
-        Array<{ active: boolean }>
-      >(
-        Prisma.sql`
-          SELECT EXISTS (
+        const restoreRows = await this.prisma.rawQuery<{ active: boolean }>(
+          `SELECT EXISTS (
             SELECT 1
-            FROM pg_stat_activity
-            WHERE datname = current_database()
-              AND application_name = 'ecomate-backup-restore'
-          ) AS "active"
-        `,
+            FROM "ecomate_control"."backup_restore_operation"
+            WHERE "phase" IN ('preparing','database_committed','failed_after_commit')
+          ) AS "active"`,
+        );
+        durableRestoring = restoreRows[0]?.active === true;
+      }
+      const sessionRows = await this.prisma.rawQuery<{ active: boolean }>(
+        `SELECT EXISTS (
+          SELECT 1
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND application_name = 'ecomate-backup-restore'
+        ) AS "active"`,
       );
       durableOwner =
-        sessionRestoring[0]?.active === true || durableRestoring ||
+        sessionRows[0]?.active === true || durableRestoring ||
         Boolean(
           await this.prisma.backupJob.findFirst({
             where: {
