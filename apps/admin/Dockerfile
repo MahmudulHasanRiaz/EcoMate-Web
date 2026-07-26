@@ -5,8 +5,17 @@ ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_BASE=${VITE_BASE}
 WORKDIR /app
 COPY package*.json ./
+COPY packages/shared-types packages/shared-types
 COPY apps/admin/package.json apps/admin/package.json
 RUN --mount=type=cache,target=/root/.npm npm install
+RUN npx tsc -p packages/shared-types/tsconfig.json
+# Dereference workspace symlinks so build tooling resolves types correctly
+RUN for pkg in shared-types; do \
+      target="node_modules/@ecomate/$pkg"; \
+      [ -L "$target" ] && rm -rf "$target" && mkdir -p "$target" && \
+      cp "packages/$pkg/package.json" "$target/" && \
+      cp -r "packages/$pkg/dist" "$target/"; \
+    done
 COPY apps/admin apps/admin
 WORKDIR /app/apps/admin
 RUN npm run build
