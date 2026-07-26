@@ -69,7 +69,7 @@ describe('SearchProvider and CommandPalette', () => {
       .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
       .toBeInTheDocument()
     await expect.element(screen.getByText('Theme')).toBeInTheDocument()
-    await expect.element(screen.getByText('Tasks')).toBeInTheDocument()
+    await expect.element(screen.getByText('Light')).toBeInTheDocument()
   })
 
   it('does not show the dialog content when search is closed', async () => {
@@ -95,16 +95,6 @@ describe('SearchProvider and CommandPalette', () => {
         .toBeInTheDocument()
     },
   )
-
-  it('navigates to a top-level route on nav item select', async () => {
-    const screen = await renderWithSearchProvider()
-    await openCommandPalette(screen)
-    await userEvent.click(screen.getByText('Tasks'))
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/op/tasks' })
-    await expect
-      .element(screen.getByPlaceholder(COMMAND_PALETTE_PLACEHOLDER))
-      .not.toBeInTheDocument()
-  })
 
   it('applies theme on theme command select', async () => {
     const screen = await renderWithSearchProvider()

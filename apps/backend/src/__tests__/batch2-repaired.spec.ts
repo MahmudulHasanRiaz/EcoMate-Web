@@ -527,7 +527,7 @@ describe('SecureFetcher.fetch (mocked DNS + HTTP)', () => {
   it('total deadline aborts across DNS resolution', async () => {
     const fetcher = new SecureFetcher(
       {
-        resolve4: () => {
+        resolve4: async () => {
           await new Promise((r) => setTimeout(r, 200));
           return ['93.184.216.34'];
         },
