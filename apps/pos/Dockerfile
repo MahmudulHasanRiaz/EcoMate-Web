@@ -7,7 +7,7 @@ COPY apps/pos/package.json apps/pos/package.json
 RUN --mount=type=cache,target=/root/.npm npm install
 COPY apps/pos apps/pos
 WORKDIR /app/apps/pos
-RUN npm run build
+RUN npm run build # fresh-build
 
 FROM nginx:stable-alpine AS runner
 COPY --from=builder /app/apps/pos/dist /usr/share/nginx/html/pos
