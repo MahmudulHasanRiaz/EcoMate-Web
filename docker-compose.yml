@@ -194,6 +194,7 @@ services:
 
   pos:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-pos:latest
+    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
