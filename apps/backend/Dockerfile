@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/ packages/
 COPY apps/backend/package.json apps/backend/package.json
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm install
 RUN npx tsc -p packages/shared-types/tsconfig.json && \
     npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json
@@ -21,7 +21,7 @@ RUN npm run build
 
 FROM node:22-alpine AS obfuscator
 WORKDIR /app
-RUN npm install -g javascript-obfuscator@^4.1.1
+RUN --mount=type=cache,target=/root/.npm npm install -g javascript-obfuscator@^4.1.1
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY apps/backend/obfuscator.config.json ./
 RUN javascript-obfuscator dist/ \

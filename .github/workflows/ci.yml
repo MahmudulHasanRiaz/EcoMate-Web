@@ -3,6 +3,14 @@ name: Build Images
 on:
   push:
     branches: [main]
+    paths:
+      - 'package*.json'
+      - 'packages/**'
+      - 'apps/backend/**'
+      - 'apps/storefront/**'
+      - 'apps/admin/**'
+      - 'apps/pos/**'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
@@ -10,89 +18,41 @@ permissions:
 
 jobs:
   build:
-    name: Build and push Docker images
+    name: ${{ matrix.service }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, storefront, admin, pos]
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Normalize owner name
-        id: meta
-        run: |
-          OWNER="${{ github.repository_owner }}"
-          SHA="${{ github.sha }}"
-          echo "owner_lower=${OWNER,,}" >> $GITHUB_OUTPUT
-          echo "sha_short=${SHA:0:7}" >> $GITHUB_OUTPUT
-
-      - name: Build packages
-        run: npx tsc -p packages/shared-types/tsconfig.json && npx tsc -p packages/license-engine/tsconfig.json && npx tsc -p packages/feature-flags/tsconfig.json
-
-      - name: Generate Prisma client
-        run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
-
-      - name: Build apps
-        run: npm run build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ steps.meta.outputs.owner_lower }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ecomate-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=
 
-      - name: Build and push backend image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/backend/Dockerfile
+          context: ${{ matrix.service == 'storefront' && 'apps/storefront' || '.' }}
+          file: apps/${{ matrix.service }}/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-backend:latest
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-backend:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push storefront image
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/storefront
-          file: apps/storefront/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-storefront:latest
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-storefront:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push admin image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/admin/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-admin:latest
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-admin:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push pos image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/pos/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-pos:latest
-            ghcr.io/${{ steps.meta.outputs.owner_lower }}/ecomate-pos:${{ steps.meta.outputs.sha_short }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
