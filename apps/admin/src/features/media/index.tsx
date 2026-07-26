@@ -58,17 +58,18 @@ export function Media() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['media', page, search, typeFilter, attachFilter],
-    queryFn: () => mediaApi.list({ page, perPage: 24, search: search || undefined, type: typeFilter || undefined, attached: attachFilter || undefined }).then(r => r.data),
+    queryFn: () => mediaApi.list({ page, perPage: 48, search: search || undefined, type: typeFilter || undefined, attached: attachFilter || undefined }).then(r => r.data),
   })
 
-  const columns = gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : 8
+  const columns = gridWidth < 480 ? 2 : gridWidth < 640 ? 3 : gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : gridWidth < 1536 ? 8 : 10
   const items = data?.data ?? []
   const rowCount = items.length ? Math.ceil(items.length / columns) : 0
+  const estimatedItemSize = columns > 0 ? Math.floor((gridWidth - (columns - 1) * gridGapPx) / columns) : 80
 
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => gridContainerRef.current,
-    estimateSize: () => 80 + gridGapPx,
+    estimateSize: () => estimatedItemSize + gridGapPx,
     overscan: 2,
   })
 
@@ -267,40 +268,40 @@ export function Media() {
   return (
     <>
       <Header fixed>
-        <div className='me-auto flex items-center gap-2 w-80'>
+        <div className='me-auto flex items-center gap-2 min-w-0 w-full max-w-sm md:w-80 lg:w-96'>
           <Search className='h-4 w-4 text-muted-foreground shrink-0' />
           <Input
             placeholder='Search files...'
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); setLastClickedIndex(null); }}
-            className='border-0 shadow-none bg-transparent'
+            className='border-0 shadow-none bg-transparent min-w-0'
           />
         </div>
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
       <Main className='flex flex-1 flex-col gap-4'>
-        <div className='flex items-end justify-between gap-2 flex-wrap'>
+        <div className='flex flex-col md:flex-row md:items-end justify-between gap-3'>
           <div>
             <h2 className='text-2xl font-bold tracking-tight'>Media Gallery</h2>
             <p className='text-muted-foreground'>{data?.meta?.total || 0} files</p>
           </div>
-          <div className='flex items-center gap-2 flex-wrap'>
-            <div className='flex gap-1 border rounded-md p-0.5'>
+          <div className='flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin'>
+            <div className='flex gap-1 border rounded-md p-0.5 shrink-0'>
               {[{ label: 'All', value: '' }, { label: 'Images', value: 'image' }, { label: 'Videos', value: 'video' }].map(f => (
                 <Button key={f.value} variant={typeFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => { setTypeFilter(f.value); setLastClickedIndex(null); }}>
                   {f.label}
                 </Button>
               ))}
             </div>
-            <div className='flex gap-1 border rounded-md p-0.5'>
+            <div className='flex gap-1 border rounded-md p-0.5 shrink-0'>
               {[{ label: 'All', value: '' }, { label: 'Attached', value: 'yes' }, { label: 'Unattached', value: 'no' }].map(f => (
                 <Button key={f.value} variant={attachFilter === f.value ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => { setAttachFilter(f.value); setLastClickedIndex(null); }}>
                   {f.label}
                 </Button>
               ))}
             </div>
-            <div className='flex items-center gap-1'>
+            <div className='flex items-center gap-1 shrink-0'>
               <div className='relative'>
                 <Link2 className='absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground' />
                 <Input
@@ -313,7 +314,7 @@ export function Media() {
                       handleUrlImport()
                     }
                   }}
-                  className='pl-8 h-8 text-sm w-52'
+                  className='pl-8 h-8 text-sm w-40 md:w-52'
                   disabled={urlBusy}
                 />
               </div>
@@ -324,13 +325,15 @@ export function Media() {
             <Button
               variant='outline'
               size='sm'
+              className='shrink-0'
               onClick={() => migrateMut.mutate()}
               disabled={migrateMut.isPending}
             >
               {migrateMut.isPending ? <Loader2 className='h-3.5 w-3.5 mr-1 animate-spin' /> : <RefreshCw className='h-3.5 w-3.5 mr-1' />}
-              Migrate Orphans
+              <span className='hidden sm:inline'>Migrate Orphans</span>
+              <span className='sm:hidden'>Migrate</span>
             </Button>
-            <label htmlFor={fileInputId.current} className='cursor-pointer'>
+            <label htmlFor={fileInputId.current} className='cursor-pointer shrink-0'>
               <Button asChild size='sm'>
                 <span>
                   <Upload className='h-4 w-4 mr-1' />
@@ -350,7 +353,7 @@ export function Media() {
         </div>
 
         {selectedIds.size > 0 && (
-          <div className='flex items-center justify-between bg-primary/5 rounded-lg border px-4 py-2.5'>
+          <div className='flex items-center justify-between bg-primary/5 rounded-lg border px-3 sm:px-4 py-2 sm:py-2.5'>
             <span className='text-sm font-medium'>{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected</span>
             <div className='flex items-center gap-2'>
               <Button variant='ghost' size='sm' onClick={() => { setSelectedIds(new Set()); setLastClickedIndex(null); }}>
@@ -358,7 +361,7 @@ export function Media() {
               </Button>
               <Button variant='destructive' size='sm' onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleteMut.isPending}>
                 <Trash2 className='h-3.5 w-3.5 mr-1' />
-                {bulkDeleteMut.isPending ? 'Deleting...' : 'Delete Selected'}
+                {bulkDeleteMut.isPending ? 'Deleting...' : 'Delete'}
               </Button>
             </div>
           </div>
@@ -409,18 +412,18 @@ export function Media() {
                     }}
                     className='h-4 w-4 rounded cursor-pointer accent-primary'
                   />
-                  <span className='text-xs text-muted-foreground'>
+                  <span className='text-xs text-muted-foreground truncate'>
                     {allSelected
                       ? `${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'} selected`
                       : someSelected
-                        ? `${selectedIds.size} selected — click to select all ${pageItemIds.length} on this page`
-                        : `Select all ${pageItemIds.length} item${pageItemIds.length === 1 ? '' : 's'} on this page`
+                        ? `${selectedIds.size} selected — click to select all ${pageItemIds.length}`
+                        : `Select all ${pageItemIds.length} item${pageItemIds.length === 1 ? '' : 's'}`
                     }
                   </span>
                 </div>
               )}
               {pending.length > 0 && (
-                <div className='grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
+                <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-1'>
                   {pending.map((p) => (
                     <div
                       key={p.id}
@@ -531,9 +534,12 @@ export function Media() {
 
               {(data?.meta?.totalPages ?? 0) > 1 && (
                 <div className='flex items-center justify-between pt-2 px-1'>
-                  <span className='text-sm text-muted-foreground'>Page {page} of {data?.meta?.totalPages ?? 1}</span>
+                  <span className='text-xs sm:text-sm text-muted-foreground'>Page {page} of {data?.meta?.totalPages ?? 1}</span>
                   <div className='flex gap-2'>
-                    <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => { setPage(p => p - 1); setLastClickedIndex(null); }}>Previous</Button>
+                    <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => { setPage(p => p - 1); setLastClickedIndex(null); }}>
+                      <span className='hidden sm:inline'>Previous</span>
+                      <span className='sm:hidden'>Prev</span>
+                    </Button>
                     <Button variant='outline' size='sm' disabled={page >= (data?.meta?.totalPages ?? 1)} onClick={() => { setPage(p => p + 1); setLastClickedIndex(null); }}>Next</Button>
                   </div>
                 </div>
@@ -559,34 +565,34 @@ export function Media() {
             {detailOpen && (
               <div className='fixed inset-0 z-40 bg-black/40' onClick={() => { setDetailOpen(false); setSelected(null); }} />
             )}
-            <div className={`fixed bottom-0 left-0 right-0 z-50 bg-background border-t shadow-2xl transition-all duration-300 ${detailOpen ? 'h-80' : 'h-auto'}`}>
-              <div className='max-w-7xl mx-auto px-6 py-3 flex items-start gap-6'>
-                <button className='absolute top-2 right-4 text-muted-foreground hover:text-foreground' onClick={() => { setDetailOpen(false); setSelected(null); }}>
+            <div className={`fixed bottom-0 left-0 right-0 z-50 bg-background border-t shadow-2xl transition-all duration-300 ${detailOpen ? 'h-64 sm:h-80' : 'h-auto'}`}>
+              <div className='max-w-7xl mx-auto px-3 sm:px-6 py-3 flex items-start gap-3 sm:gap-6'>
+                <button className='absolute top-2 right-3 sm:right-4 text-muted-foreground hover:text-foreground' onClick={() => { setDetailOpen(false); setSelected(null); }}>
                   <X className='h-5 w-5' />
                 </button>
 
                 <div className='shrink-0'>
                   {selected.mimeType.startsWith('image/') ? (
-                    <SafeImage src={mediaUrl(selected.url)} variant='small' derivativeManifest={selected.derivativeManifest} blurUrl={selected.blurUrl} alt={selected.alt || selected.filename} className='h-20 w-20 rounded-lg object-cover border' />
+                    <SafeImage src={mediaUrl(selected.url)} variant='small' derivativeManifest={selected.derivativeManifest} blurUrl={selected.blurUrl} alt={selected.alt || selected.filename} className='h-14 w-14 sm:h-20 sm:w-20 rounded-lg object-cover border' />
                   ) : (
-                    <div className='h-20 w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-8 w-8 text-muted-foreground' /></div>
+                    <div className='h-14 w-14 sm:h-20 sm:w-20 rounded-lg border bg-muted flex items-center justify-center'><Film className='h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground' /></div>
                   )}
                 </div>
 
                 <div className='flex-1 min-w-0'>
-                  <div className='flex items-center gap-3 mb-3'>
-                    <div>
+                  <div className='flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2 sm:mb-3'>
+                    <div className='min-w-0'>
                       <h3 className='font-medium truncate'>{selected.filename}</h3>
                       <p className='text-xs text-muted-foreground'>{formatSize(selected.size)} · {selected.mimeType} · {selected.createdAt ? new Date(selected.createdAt).toLocaleDateString() : ''}</p>
                     </div>
-                    <div className='flex gap-1.5 ml-auto'>
+                    <div className='flex gap-1.5 sm:ml-auto flex-wrap'>
                       <Button variant='outline' size='sm' className='h-7 text-xs' onClick={() => copyUrl(selected.url, selected.id)}>
                         {copied === selected.id ? <Check className='h-3 w-3 mr-1 text-green-600' /> : <Copy className='h-3 w-3 mr-1' />}
                         {copied === selected.id ? 'Copied' : 'Copy URL'}
                       </Button>
                       <Button variant='outline' size='sm' className='h-7 text-xs' onClick={() => { setDetailOpen(!detailOpen); }}>
                         <Link2 className='h-3 w-3 mr-1' />
-                        Attachments ({attachDetails?.length || selected._count?.attachments || 0})
+                        <span className='hidden xs:inline'>Attachments</span> ({attachDetails?.length || selected._count?.attachments || 0})
                       </Button>
                       <Button variant='ghost' size='sm' className='h-7 text-xs text-destructive hover:text-destructive' onClick={() => { setDeleteTarget(selected); setSelected(null); setDetailOpen(false); }}>
                         <Trash2 className='h-3 w-3 mr-1' /> Delete
@@ -595,7 +601,7 @@ export function Media() {
                   </div>
 
                   {detailOpen && (
-                    <div className='overflow-y-auto max-h-52'>
+                    <div className='overflow-y-auto max-h-32 sm:max-h-52'>
                       <h4 className='text-xs font-medium text-muted-foreground mb-2'>ATTACHED TO</h4>
                       {!attachDetails || attachDetails.length === 0 ? (
                         <p className='text-sm text-muted-foreground py-4'>Not attached anywhere. This media can be safely deleted.</p>
@@ -603,7 +609,7 @@ export function Media() {
                         <div className='space-y-1'>
                           {attachDetails.map((att, i) => (
                             <div key={i} className='flex items-center gap-2 text-sm py-1 px-2 rounded hover:bg-muted/50'>
-                              <Badge variant='outline' className='text-xs capitalize'>{att.entityType}</Badge>
+                              <Badge variant='outline' className='text-xs capitalize shrink-0'>{att.entityType}</Badge>
                               <span className='flex-1 truncate'>{att.entityName}</span>
                               {att.entityType === 'product' && (
                                 <Link to='/op/products' className='text-xs text-primary hover:underline flex items-center gap-1 shrink-0'>
