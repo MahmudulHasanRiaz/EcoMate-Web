@@ -147,6 +147,7 @@ services:
       - "${STOREFRONT_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
+      API_URL: ${API_URL:-http://backend:4000/api}
       NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api}
       NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
