@@ -177,6 +177,21 @@ export class PrismaService
   private readonly nativePool: Pool;
   private lastRestoreGuardWarningAt = 0;
 
+  /**
+   * Run a raw SQL query using the native pg pool, bypassing Prisma's
+   * $queryRaw deserialization. Use for queries that Prisma's type mapper
+   * cannot handle (e.g. to_regclass, EXISTS with boolean columns).
+   */
+  async rawQuery<T = any>(sql: string): Promise<T[]> {
+    const client = await this.nativePool.connect();
+    try {
+      const res = await client.query(sql);
+      return res.rows as T[];
+    } finally {
+      client.release();
+    }
+  }
+
   constructor() {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {

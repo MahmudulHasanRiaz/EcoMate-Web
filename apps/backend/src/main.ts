@@ -21,7 +21,6 @@ import { auth } from './better-auth/auth.config';
 import { baPrisma } from './better-auth/prisma';
 import { CacheService } from './cache/cache.service';
 import { PrismaService } from './prisma/prisma.service';
-import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 async function bootstrap() {
@@ -146,50 +145,29 @@ async function bootstrap() {
           request.method === 'GET' || request.method === 'HEAD';
         if (!requestIsRead || durableMaintenanceMemo.expiresAt <= Date.now()) {
           try {
-            const hasControlTable = await prismaService.$queryRaw<
-              Array<{ exists: boolean }>
-            >(
-              Prisma.sql`
-                SELECT to_regclass('ecomate_control.backup_restore_operation')
-                  IS NOT NULL AS "exists"
-              `,
+            const tableRows = await prismaService.rawQuery<{ exists: boolean }>(
+              `SELECT to_regclass('ecomate_control.backup_restore_operation') IS NOT NULL AS "exists"`,
             );
             let durableRestoring = false;
-            if (hasControlTable[0]?.exists === true) {
-              try {
-                const restoreSignals = await prismaService.$queryRaw<
-                  Array<{ active: boolean }>
-                >(
-                  Prisma.sql`
-                    SELECT EXISTS (
-                      SELECT 1
-                      FROM "ecomate_control"."backup_restore_operation"
-                      WHERE "phase" IN (
-                        'preparing',
-                        'database_committed',
-                        'failed_after_commit'
-                      )
-                    ) AS "active"
-                  `,
-                );
-                durableRestoring = restoreSignals[0]?.active === true;
-              } catch {
-                durableRestoring = true;
-              }
-            }
-            const sessionRestoring = await prismaService.$queryRaw<
-              Array<{ active: boolean }>
-            >(
-              Prisma.sql`
-                SELECT EXISTS (
+            if (tableRows[0]?.exists === true) {
+              const restoreRows = await prismaService.rawQuery<{ active: boolean }>(
+                `SELECT EXISTS (
                   SELECT 1
-                  FROM pg_stat_activity
-                  WHERE datname = current_database()
-                    AND application_name = 'ecomate-backup-restore'
-                ) AS "active"
-              `,
+                  FROM "ecomate_control"."backup_restore_operation"
+                  WHERE "phase" IN ('preparing','database_committed','failed_after_commit')
+                ) AS "active"`,
+              );
+              durableRestoring = restoreRows[0]?.active === true;
+            }
+            const sessionRows = await prismaService.rawQuery<{ active: boolean }>(
+              `SELECT EXISTS (
+                SELECT 1
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND application_name = 'ecomate-backup-restore'
+              ) AS "active"`,
             );
-            const restoreActive = sessionRestoring[0]?.active === true || durableRestoring;
+            const restoreActive = sessionRows[0]?.active === true || durableRestoring;
             const durableOwner = restoreActive
               ? { status: 'restoring' }
               : await prismaService.backupJob.findFirst({

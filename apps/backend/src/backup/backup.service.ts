@@ -3511,9 +3511,17 @@ export class BackupService implements OnModuleInit {
     }
 
     const uploadRoot = join(process.cwd(), 'uploads');
-    let controlOperations: RestoreControlOperation[];
+    let controlOperations: RestoreControlOperation[] = [];
     try {
-      controlOperations = await this.listRestoreControlOperations();
+      const hasTable = await this.prisma.$queryRaw<
+        Array<{ exists: boolean }>
+      >(Prisma.sql`
+        SELECT to_regclass('ecomate_control.backup_restore_operation')
+          IS NOT NULL AS "exists"
+      `);
+      if (hasTable[0]?.exists === true) {
+        controlOperations = await this.listRestoreControlOperations();
+      }
     } catch (error) {
       // The control plane is the authority for the DB/media commit boundary.
       // Never guess and roll files backward while it cannot be read.
@@ -3606,7 +3614,7 @@ export class BackupService implements OnModuleInit {
             .map((data) => data.backupId!),
         );
         const durableRestoreControl =
-          (await this.listRestoreControlOperations())[0] ?? null;
+          controlOperations[0] ?? null;
         const maintenanceOwner =
           freshRestoreIds.size > 0 || durableRestoreControl
             ? { id: freshRestoreIds.values().next().value ?? 'restore-control' }
