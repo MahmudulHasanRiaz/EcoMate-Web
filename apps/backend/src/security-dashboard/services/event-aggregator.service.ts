@@ -88,6 +88,10 @@ export class EventAggregatorService {
    * Uses batched DELETE with SKIP LOCKED to avoid long table locks.
    */
   async cleanExpiredEvents(): Promise<{ deleted: number }> {
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      return { deleted: 0 };
+    }
+
     const policies = await this.prisma.securityRetentionPolicy.findMany();
     let totalDeleted = 0;
 
@@ -144,6 +148,10 @@ export class EventAggregatorService {
       // Batch delete non-override events
       let batch: number;
       do {
+        if (await this.prisma.isRestoreWriteBlocked()) {
+          return { deleted: totalDeleted };
+        }
+
         batch = await this.prisma.$executeRaw`
           DELETE FROM "SecurityEvent"
           WHERE "id" IN (
@@ -166,6 +174,10 @@ export class EventAggregatorService {
       if (policy.criticalDays) {
         const criticalCutoff = new Date(Date.now() - policy.criticalDays * 86400000);
         do {
+          if (await this.prisma.isRestoreWriteBlocked()) {
+            return { deleted: totalDeleted };
+          }
+
           batch = await this.prisma.$executeRaw`
             DELETE FROM "SecurityEvent"
             WHERE "id" IN (
@@ -187,13 +199,27 @@ export class EventAggregatorService {
     }
 
     // Clean stale aggregates older than 365 days
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      return { deleted: totalDeleted };
+    }
+
     const aggCutoff = new Date(Date.now() - 365 * 86400000);
     await this.prisma.securityEventHourly.deleteMany({
       where: { bucket: { lt: aggCutoff } },
     });
+
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      return { deleted: totalDeleted };
+    }
+
     await this.prisma.securityEventDaily.deleteMany({
       where: { date: { lt: aggCutoff } },
     });
+
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      return { deleted: totalDeleted };
+    }
+
     await this.prisma.securityBlockDaily.deleteMany({
       where: { date: { lt: aggCutoff } },
     });

@@ -84,7 +84,14 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
             <div key={i} className="group flex items-center justify-between gap-2.5 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5 hover:border-slate-200 hover:bg-slate-50 transition-all">
               {/* Product Thumbnail */}
               <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <SafeImage src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                <SafeImage
+                  src={item.image}
+                  alt={item.name}
+                  className="h-full w-full object-cover"
+                  resizeWidth={96}
+                  resizeHeight={96}
+                  version={item.imageVersion}
+                />
               </div>
 
               <div className="min-w-0 flex-1">

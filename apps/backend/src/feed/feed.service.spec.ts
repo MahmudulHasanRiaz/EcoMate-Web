@@ -27,6 +27,7 @@ describe('FeedService', () => {
   };
 
   const mockPrisma = {
+    isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
     productFeedConfig: {
       findFirst: jest.fn(),
       findMany: jest.fn(),

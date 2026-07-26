@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { EventAggregatorService } from './event-aggregator.service';
 
 /**
@@ -12,7 +13,10 @@ export class RetentionCleanupService implements OnModuleInit {
   private readonly logger = new Logger(RetentionCleanupService.name);
   private readonly CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
-  constructor(private readonly aggregator: EventAggregatorService) {}
+  constructor(
+    private readonly aggregator: EventAggregatorService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   onModuleInit() {
     // Run first cleanup after 1 hour (gives system time to start)
@@ -25,6 +29,13 @@ export class RetentionCleanupService implements OnModuleInit {
   private async runCleanup() {
     this.logger.log('Starting periodic retention cleanup...');
     try {
+      if (await this.prisma.isRestoreWriteBlocked()) {
+        this.logger.debug(
+          'Retention cleanup deferred while a restore owns the database',
+        );
+        return;
+      }
+
       const result = await this.aggregator.cleanExpiredEvents();
       if (result.deleted > 0) {
         this.logger.log(`Retention cleanup: ${result.deleted} events removed`);

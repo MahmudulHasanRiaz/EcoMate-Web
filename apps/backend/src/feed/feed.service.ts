@@ -279,10 +279,12 @@ export class FeedService {
 
     const durationMs = Date.now() - startTime;
     await this.logAccess(tenantId, platform, durationMs, ipAddress, userAgent);
-    await this.prisma.productFeedConfig.update({
-      where: { id: config.id },
-      data: { lastFetchedAt: new Date() },
-    });
+    if (!(await this.prisma.isRestoreWriteBlocked())) {
+      await this.prisma.productFeedConfig.update({
+        where: { id: config.id },
+        data: { lastFetchedAt: new Date() },
+      });
+    }
   }
 
   private async enrichProductsWithStock(products: any[]): Promise<void> {
@@ -530,6 +532,8 @@ export class FeedService {
     ipAddress: string,
     userAgent: string,
   ) {
+    if (await this.prisma.isRestoreWriteBlocked()) return;
+
     await this.prisma.productFeedLog
       .create({
         data: {

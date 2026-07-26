@@ -1,6 +1,6 @@
 FROM node:22-alpine AS builder
-ARG VITE_BASE=/pos/
-ENV VITE_BASE=${VITE_BASE}
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
 WORKDIR /app
 COPY package*.json ./
 COPY apps/pos/package.json apps/pos/package.json
@@ -19,12 +19,11 @@ RUN javascript-obfuscator dist/ \
     --config obfuscator.config.json && \
     rm -rf dist && \
     mv dist-obfuscated dist
-# Restore files that obfuscation may have corrupted (service worker, manifest, images)
+# Restore files that obfuscation may have corrupted (service worker and images)
 COPY --from=builder /app/apps/pos/dist ./dist-base
 RUN cp dist-base/index.html dist/index.html 2>/dev/null; \
     cp -r dist-base/sw.js dist/sw.js 2>/dev/null; \
     cp -r dist-base/workbox-*.js dist/ 2>/dev/null; \
-    cp dist-base/manifest.webmanifest dist/manifest.webmanifest 2>/dev/null; \
     cp -r dist-base/images dist/ 2>/dev/null; \
     rm -rf dist-base
 

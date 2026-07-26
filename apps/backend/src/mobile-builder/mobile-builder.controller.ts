@@ -489,6 +489,14 @@ export class MobileBuilderController {
     const pollInterval = 30_000;
 
     const check = async () => {
+      // This poll outlives the POST request that created it, so the global
+      // request maintenance hook cannot fence its later writes.  Do not
+      // consume an attempt while restore owns the database.
+      if (await this.prisma.isRestoreWriteBlocked()) {
+        setTimeout(check, pollInterval);
+        return;
+      }
+
       attempts++;
       try {
         // Query workflow runs created after our dispatch
@@ -509,6 +517,13 @@ export class MobileBuilderController {
           const artifactPath = await this.pullArtifactFromGitHub(
             String(successfulRun.id), app, platform, buildId, token, owner, repo,
           );
+
+          if (await this.prisma.isRestoreWriteBlocked()) {
+            attempts = Math.max(0, attempts - 1);
+            setTimeout(check, pollInterval);
+            return;
+          }
+
           await this.prisma.mobileBuild.update({
             where: { id: buildId },
             data: { status: 'completed', artifactPath },
@@ -520,6 +535,12 @@ export class MobileBuilderController {
         if (attempts < maxAttempts) {
           setTimeout(check, pollInterval);
         } else {
+          if (await this.prisma.isRestoreWriteBlocked()) {
+            attempts = Math.max(0, attempts - 1);
+            setTimeout(check, pollInterval);
+            return;
+          }
+
           await this.prisma.mobileBuild.update({
             where: { id: buildId },
             data: { status: 'failed', errorMessage: 'Build timed out — no completed run found within 6 minutes' },
@@ -529,6 +550,12 @@ export class MobileBuilderController {
         if (attempts < maxAttempts) {
           setTimeout(check, pollInterval);
         } else {
+          if (await this.prisma.isRestoreWriteBlocked()) {
+            attempts = Math.max(0, attempts - 1);
+            setTimeout(check, pollInterval);
+            return;
+          }
+
           await this.prisma.mobileBuild.update({
             where: { id: buildId },
             data: { status: 'failed', errorMessage: `Poll error: ${err.message}` },

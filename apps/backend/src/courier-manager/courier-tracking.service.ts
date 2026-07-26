@@ -233,6 +233,20 @@ export class CourierTrackingService {
     const now = new Date();
     const effectiveTtl = ttl ?? CACHE_TTL_ACTIVE;
     const expiresAt = new Date(now.getTime() + effectiveTtl);
+    const writeVolatileCache = () =>
+      this.cache.set(
+        redisKey,
+        result,
+        Math.min(effectiveTtl, TWO_MINUTES_MS),
+      );
+
+    // Tracking is often refreshed asynchronously from a GET.  Redis remains
+    // safe and useful during maintenance, but the durable cache row must not
+    // race the replacement of the restored database.
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      await writeVolatileCache();
+      return;
+    }
 
     await Promise.all([
       this.prisma.courierReportCache.upsert({
@@ -252,8 +266,8 @@ export class CourierTrackingService {
           expiresAt,
         },
       }),
-      // Redis: shorter TTL to avoid stale reads when DB expiresAt differs
-      this.cache.set(redisKey, result, Math.min(effectiveTtl, TWO_MINUTES_MS)),
+      // Redis: shorter TTL to avoid stale reads when DB expiresAt differs.
+      writeVolatileCache(),
     ]);
   }
 

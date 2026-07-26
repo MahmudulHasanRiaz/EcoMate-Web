@@ -63,6 +63,7 @@ describe('AuthService', () => {
         {
           provide: PrismaService,
           useValue: {
+            isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
             userProfile: {
               findFirst: jest.fn(),
               findUnique: jest.fn(),

@@ -6,7 +6,8 @@ import { BackupTable } from './components/BackupTable'
 import { BackupStats } from './components/BackupStats'
 import { RunBackupDialog } from './components/RunBackupDialog'
 import { UploadRestoreDialog } from './components/UploadRestoreDialog'
-import { apiClient } from '@/lib/api-client'
+import { backupApi } from './api'
+import { API_BASE } from '@/lib/utils'
 
 export function BackupPage() {
   const [page, setPage] = useState(1)
@@ -19,18 +20,14 @@ export function BackupPage() {
 
   const handleDownload = useCallback(async (id: string) => {
     try {
-      const response = await apiClient.get(`/admin/backup/${id}/download`, {
-        responseType: 'blob',
-      })
-      const disposition = response.headers['content-disposition'] || ''
-      const match = disposition.match(/filename="?(.+?)"?$/)
-      const filename = match?.[1] || `backup-${id}.sql.gz`
-      const url = URL.createObjectURL(new Blob([response.data]))
+      await backupApi.createDownloadTicket(id)
+      const apiBase = API_BASE.replace(/\/+$/, '')
       const a = document.createElement('a')
-      a.href = url
-      a.download = filename
+      a.href = `${apiBase}/admin/backup-download/${encodeURIComponent(id)}`
+      a.rel = 'noopener'
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      a.remove()
     } catch {
       toast.error('Download failed')
     }
@@ -89,6 +86,7 @@ export function BackupPage() {
         onPageChange={setPage}
         onDownload={handleDownload}
         onRestore={handleRestore}
+        restorePending={restore.isPending}
         onToggleLock={handleToggleLock}
         onDelete={handleDelete}
       />

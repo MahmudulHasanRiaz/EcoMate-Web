@@ -341,6 +341,8 @@ export class SecurityService implements OnModuleInit, OnModuleDestroy {
 
   private async cleanup() {
     try {
+      if (await this.prisma.isRestoreWriteBlocked()) return;
+
       const settings = await this.blockSettings.getSettings();
       const now = Date.now();
 

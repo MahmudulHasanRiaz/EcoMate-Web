@@ -10,6 +10,7 @@ import { getPosProducts } from '../api/client'
 import { VariantModal } from '../components/variant-modal'
 import { toast } from 'sonner'
 import { LogOut, ShoppingCart, User, Wifi, Menu, X, BarChart3, ChevronRight, Store } from 'lucide-react'
+import { productImageUrl, variantImageUrl } from '../lib/media'
 
 interface Props { onCloseSession: () => void }
 
@@ -66,9 +67,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
             
             const price = Number(matchingVariant.salePrice || matchingVariant.price || 0)
             if (price) {
-              const parentImages = Array.isArray(product.images) ? product.images : []
-              const parentImgUrl = parentImages[0]?.url || parentImages[0] || null
-              const imgUrl = matchingVariant.image || parentImgUrl || null
+              const imgUrl = variantImageUrl(matchingVariant, product)
               
               useCartStore.getState().addItem({
                 productId: product.id,
@@ -77,7 +76,8 @@ export function PosTerminalPage({ onCloseSession }: Props) {
                 sku: matchingVariant.sku,
                 price,
                 quantity: 1,
-                image: imgUrl || undefined,
+                image: imgUrl,
+                imageVersion: matchingVariant.updatedAt || product.updatedAt,
               })
               setSearchQuery('')
               toast.success(`Added ${product.name} (${variantName})`)
@@ -95,8 +95,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
         // 2. Simple product add directly
         const price = Number(product.salePrice || product.basePrice || 0)
         if (price) {
-          const images = Array.isArray(product.images) ? product.images : []
-          const imgUrl = images[0]?.url || images[0] || null
+          const imgUrl = productImageUrl(product)
           
           useCartStore.getState().addItem({
             productId: product.id,
@@ -104,7 +103,8 @@ export function PosTerminalPage({ onCloseSession }: Props) {
             sku: product.sku || undefined,
             price,
             quantity: 1,
-            image: imgUrl || undefined,
+            image: imgUrl,
+            imageVersion: product.updatedAt,
           })
           setSearchQuery('')
           toast.success(`Added ${product.name}`)
@@ -120,9 +120,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   const handleAddVariant = (variant: any, variantName: string) => {
     const price = Number(variant.salePrice || variant.price || 0)
     if (!price || !selectedProduct) return
-    const parentImages = Array.isArray(selectedProduct.images) ? selectedProduct.images : []
-    const parentImgUrl = parentImages[0]?.url || parentImages[0] || null
-    const imgUrl = variant.image || parentImgUrl || null
+    const imgUrl = variantImageUrl(variant, selectedProduct)
     
     useCartStore.getState().addItem({
       productId: selectedProduct.id,
@@ -131,7 +129,8 @@ export function PosTerminalPage({ onCloseSession }: Props) {
       sku: variant.sku || selectedProduct.sku || undefined,
       price,
       quantity: 1,
-      image: imgUrl || undefined,
+      image: imgUrl,
+      imageVersion: variant.updatedAt || selectedProduct.updatedAt,
     })
     toast.success(`Added ${selectedProduct.name} (${variantName})`)
   }

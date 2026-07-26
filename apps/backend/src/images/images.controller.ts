@@ -7,9 +7,12 @@ import {
   BadRequestException,
   NotFoundException,
   InternalServerErrorException,
+  BadGatewayException,
+  Headers,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import { ImagesService } from './images.service';
+import { createHash } from 'crypto';
+import { ExternalImageFetchError, ImagesService } from './images.service';
 import { Public } from '../common/decorators/public.decorator';
 
 @Public()
@@ -30,8 +33,26 @@ export class ImagesController {
     h?: string,
     q?: string,
     fit?: string,
+    version?: string,
   ): string {
-    return `${path}:${w || ''}:${h || ''}:${q || ''}:${fit || ''}`;
+    return `${path}:${w || ''}:${h || ''}:${q || ''}:${fit || ''}:${version || ''}`;
+  }
+
+  private isNotModified(
+    ifNoneMatch: string | string[] | undefined,
+    etag: string,
+  ): boolean {
+    if (!ifNoneMatch) return false;
+    const value = Array.isArray(ifNoneMatch)
+      ? ifNoneMatch.join(',')
+      : ifNoneMatch;
+    return value
+      .split(',')
+      .map((candidate) => candidate.trim())
+      .some(
+        (candidate) =>
+          candidate === '*' || candidate === etag || candidate === `W/${etag}`,
+      );
   }
 
   @Get('resize')
@@ -42,6 +63,8 @@ export class ImagesController {
     @Query('h') h?: string,
     @Query('q') q?: string,
     @Query('fit') fit?: string,
+    @Query('v') version?: string,
+    @Headers('if-none-match') ifNoneMatch?: string | string[],
   ) {
     if (!path) {
       throw new BadRequestException('path parameter is required');
@@ -80,8 +103,11 @@ export class ImagesController {
     if (fit && !validFits.includes(fit as any)) {
       throw new BadRequestException('Invalid fit parameter');
     }
+    if (version && version.length > 200) {
+      throw new BadRequestException('Invalid version parameter');
+    }
 
-    const key = this.cacheKey(path, w, h, q, fit);
+    const key = this.cacheKey(path, w, h, q, fit, version);
 
     try {
       let promise = this.inflight.get(key);
@@ -92,26 +118,44 @@ export class ImagesController {
           h: height,
           q: quality,
           fit: fit as any,
+          version,
         });
         this.inflight.set(key, promise);
-        // Clean up after resolve so next request goes through fresh
-        promise.finally(() => this.inflight.delete(key));
+        // Avoid creating an unhandled rejecting promise while still cleaning
+        // up both successful and failed in-flight requests.
+        void promise.then(
+          () => this.inflight.delete(key),
+          () => this.inflight.delete(key),
+        );
       }
 
       const result = await promise;
+      const etag = `"${createHash('sha256')
+        .update(result.buffer)
+        .digest('base64url')}"`;
 
       res.header('Content-Type', result.mime);
-      res.header('Content-Length', String(result.buffer.length));
-      res.header('Cache-Control', 'public, max-age=31536000, immutable');
+      res.header('Cache-Control', 'public, max-age=3600, must-revalidate');
+      res.header('ETag', etag);
       res.header('Vary', 'Accept-Encoding');
+      if (this.isNotModified(ifNoneMatch, etag)) {
+        res.status(304).send();
+        return;
+      }
+
+      res.header('Content-Length', String(result.buffer.length));
       res.status(200).send(result.buffer);
     } catch (err: any) {
+      res.header('Cache-Control', 'no-store');
       this.logger.error(`Image resize failed: ${path}`, err.message);
       if (err instanceof NotFoundException) {
         throw err;
       }
       if (err.message?.startsWith('Image not found')) {
         throw new NotFoundException('Image not found');
+      }
+      if (err instanceof ExternalImageFetchError) {
+        throw new BadGatewayException('Image source could not be fetched');
       }
       throw new InternalServerErrorException('Image processing failed');
     }

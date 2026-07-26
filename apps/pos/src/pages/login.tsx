@@ -1,7 +1,8 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { loginApi } from '../api/client'
 import { Store, KeyRound, Mail, Loader2 } from 'lucide-react'
-import { safeImageUrl } from '../components/safe-image'
+import { SafeImage } from '../components/safe-image'
+import { apiUrl } from '../lib/api-base'
 
 interface Props { onSuccess: () => void }
 
@@ -13,8 +14,8 @@ export function LoginPage({ onSuccess }: Props) {
   const [storeLogo, setStoreLogo] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/system-settings/branding')
-      .then(r => r.json())
+    fetch(apiUrl('/system-settings/branding'), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.storeLogo) setStoreLogo(d.storeLogo) })
       .catch(() => {}) // silently fall back
   }, [])
@@ -51,7 +52,14 @@ export function LoginPage({ onSuccess }: Props) {
       >
         <div className="mb-8 flex flex-col items-center">
           {storeLogo ? (
-            <img src={safeImageUrl(storeLogo)} alt="Store" className="h-16 w-16 rounded-2xl object-cover ring-1 ring-emerald-500/30" />
+            <SafeImage
+              src={storeLogo}
+              alt="Store"
+              className="h-16 w-16 rounded-2xl object-cover ring-1 ring-emerald-500/30"
+              resizeWidth={128}
+              resizeHeight={128}
+              loading="eager"
+            />
           ) : (
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">
               <Store size={28} />

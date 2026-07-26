@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { useSessionStore } from '../stores/session-store';
+import { API_BASE_URL } from '../lib/api-base';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });

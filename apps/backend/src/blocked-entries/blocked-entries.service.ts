@@ -332,11 +332,16 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async lazyExpire() {
+    if (await this.prisma.isRestoreWriteBlocked()) return;
+
     const now = new Date();
     await this.prisma.blockedIp.updateMany({
       where: { isActive: true, expiresAt: { lte: now } },
       data: { isActive: false },
     });
+
+    if (await this.prisma.isRestoreWriteBlocked()) return;
+
     await this.prisma.blockedPhone.updateMany({
       where: { isActive: true, expiresAt: { lte: now } },
       data: { isActive: false },

@@ -64,12 +64,15 @@ export class MediaQueueProcessor extends WorkerHost {
 
     await this.prisma.media.update({
       where: { id: mediaId },
-      data: { processingStatus: 'PROCESSING' },
+      data: { processingStatus: 'PROCESSING', updatedAt: new Date() },
     });
 
     try {
       const sharp = await this.loadSharp();
-      const original = await this.storage.read(media.filename);
+      const original = await this.storage.readMediaOriginal(
+        media.filename,
+        media.url,
+      );
       const metadata = await sharp(original).metadata();
       const needsJpegFallback = NON_NATIVE_FORMATS.has(media.mimeType);
 
@@ -91,7 +94,11 @@ export class MediaQueueProcessor extends WorkerHost {
             .jpeg({ quality: 85, mozjpeg: true })
             .toBuffer();
           const jpegKey = `derivatives/${mediaId}/${size.name}.jpg`;
-          const jpegUrl = await this.storage.store(jpegKey, jpegBuf, 'image/jpeg');
+          const jpegUrl = await this.storage.store(
+            jpegKey,
+            jpegBuf,
+            'image/jpeg',
+          );
           manifest[`${size.name}_jpg`] = jpegUrl;
         }
       }
@@ -111,7 +118,6 @@ export class MediaQueueProcessor extends WorkerHost {
           updatedAt: new Date(),
         },
       });
-
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.error(`Failed to process media ${mediaId}: ${msg}`);

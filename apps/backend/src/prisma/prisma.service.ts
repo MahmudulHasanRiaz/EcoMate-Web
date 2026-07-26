@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -175,6 +175,7 @@ export class PrismaService
 {
   private readonly logger = new Logger(PrismaService.name);
   private readonly nativePool: Pool;
+  private lastRestoreGuardWarningAt = 0;
 
   constructor() {
     const connectionString = process.env.DATABASE_URL;
@@ -201,6 +202,78 @@ export class PrismaService
     this.nativePool = pool;
   }
 
+  /**
+   * Return whether application-owned background writes must stop for a
+   * database restore.
+   *
+   * This deliberately uses the native pool instead of a generated Prisma
+   * model: an exact restore drops/recreates `public`, while the durable
+   * control table lives in `ecomate_control`.  The restore worker's dedicated
+   * PostgreSQL application name is a second signal that also covers the
+   * narrow windows before/after a control-row transition.
+   *
+   * A database/permission error is treated as blocked by default.  Silently
+   * writing when the guard cannot be inspected is more dangerous than
+   * postponing a cleanup/cache write until the next timer tick.
+   */
+  async isRestoreWriteBlocked(
+    options: { failClosed?: boolean } = {},
+  ): Promise<boolean> {
+    const failClosed = options.failClosed !== false;
+    let client: PoolClient | null = null;
+
+    try {
+      client = await this.nativePool.connect();
+      const signal = await client.query<{
+        restore_session: boolean;
+        control_table: string | null;
+      }>(`
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND application_name LIKE 'ecomate-backup-restore%'
+          ) AS restore_session,
+          to_regclass(
+            'ecomate_control.backup_restore_operation'
+          )::text AS control_table
+      `);
+
+      if (signal.rows[0]?.restore_session) return true;
+
+      // Backwards-compatible before the control-plane migration is deployed.
+      // A running restore is still detected by the session signal above.
+      if (!signal.rows[0]?.control_table) return false;
+
+      const durableOwner = await client.query<{ active: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM "ecomate_control"."backup_restore_operation"
+          WHERE "phase" IN (
+            'preparing',
+            'database_committed',
+            'failed_after_commit'
+          )
+        ) AS active
+      `);
+      return Boolean(durableOwner.rows[0]?.active);
+    } catch (error) {
+      const now = Date.now();
+      if (now - this.lastRestoreGuardWarningAt >= 60_000) {
+        this.lastRestoreGuardWarningAt = now;
+        const message =
+          error instanceof Error ? error.message : 'unknown database error';
+        this.logger.warn(
+          `Could not inspect the restore write guard; background writes are ${failClosed ? 'blocked' : 'allowed'}: ${message}`,
+        );
+      }
+      return failClosed;
+    } finally {
+      client?.release();
+    }
+  }
+
   private async runRaw<T = void>(sql: string): Promise<T> {
     const client = await this.nativePool.connect();
     try {
@@ -224,6 +297,14 @@ export class PrismaService
       this.logger.warn(`Prisma warning: ${e.message || e.target}`);
     });
     await this.$connect();
+
+    if (await this.isRestoreWriteBlocked()) {
+      this.logger.warn(
+        'Active database restore detected; startup schema repair and seed writes are deferred',
+      );
+      return;
+    }
+
     await this.dropStaleColumns();
     await this.ensureSchemaColumns();
     await this.logDatabaseColumns();

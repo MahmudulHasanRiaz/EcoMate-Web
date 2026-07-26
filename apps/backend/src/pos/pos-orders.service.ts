@@ -10,6 +10,7 @@ import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
+import { MediaResolverService } from '../media/media-resolver.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -20,7 +21,58 @@ export class PosOrdersService {
     private readonly stock: StockService,
     private readonly stockRouter: StockRouterService,
     @Inject(ConfigService) private config: ConfigService,
+    private readonly mediaResolver: MediaResolverService,
   ) {}
+
+  private mediaUrls(value: unknown): string[] {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed ? [trimmed] : [];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.mediaUrls(entry));
+    }
+    if (!value || typeof value !== 'object') return [];
+
+    const record = value as Record<string, unknown>;
+    for (const candidate of [record.url, record.src, record.path]) {
+      const resolved = this.mediaUrls(candidate);
+      if (resolved.length > 0) return resolved;
+    }
+    return [];
+  }
+
+  private async enrichProductMedia(products: any[]): Promise<void> {
+    const urls = new Set<string>();
+    for (const product of products) {
+      this.mediaUrls(product.images).forEach((url) => urls.add(url));
+      this.mediaUrls(product.image).forEach((url) => urls.add(url));
+      for (const variant of product.variants || []) {
+        this.mediaUrls(variant.images).forEach((url) => urls.add(url));
+        this.mediaUrls(variant.image).forEach((url) => urls.add(url));
+      }
+    }
+    if (urls.size === 0) return;
+
+    const resolved = await this.mediaResolver.resolve([...urls]);
+    for (const product of products) {
+      const metadata: Record<string, unknown> = {};
+      const productUrls = [
+        ...this.mediaUrls(product.images),
+        ...this.mediaUrls(product.image),
+      ];
+      for (const variant of product.variants || []) {
+        productUrls.push(
+          ...this.mediaUrls(variant.images),
+          ...this.mediaUrls(variant.image),
+        );
+      }
+      for (const url of productUrls) {
+        if (resolved[url]) metadata[url] = resolved[url];
+      }
+      product._mediaMeta = metadata;
+    }
+  }
 
   private getEmailDomain(): string {
     const appUrl = this.config.get<string>('APP_URL') || '';
@@ -669,6 +721,7 @@ export class PosOrdersService {
       this.prisma.product.count({ where }),
     ]);
 
+    await this.enrichProductMedia(data);
     return { data, total, page, perPage };
   }
 }

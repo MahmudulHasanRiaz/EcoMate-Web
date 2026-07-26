@@ -19,13 +19,17 @@ import multipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { auth } from './better-auth/auth.config';
 import { baPrisma } from './better-auth/prisma';
+import { CacheService } from './cache/cache.service';
+import { PrismaService } from './prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 async function bootstrap() {
   // Load .env — try project root, backend root, then cwd
   const { config } = await import('dotenv');
   config({ path: join(__dirname, '..', '..', '..', '..', '.env') }); // monorepo root
-  config({ path: join(__dirname, '..', '..', '.env') });             // apps/backend/
-  config();                                                          // cwd fallback
+  config({ path: join(__dirname, '..', '..', '.env') }); // apps/backend/
+  config(); // cwd fallback
 
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
     if (process.env.NODE_ENV === 'production') {
@@ -33,9 +37,15 @@ async function bootstrap() {
         'JWT_SECRET and JWT_REFRESH_SECRET are required in production. Set them via environment variables.',
       );
     }
-    console.warn('[bootstrap] JWT_SECRET/JWT_REFRESH_SECRET not set — using dev defaults');
-    process.env['JWT_SECRET'] = process.env['JWT_SECRET'] || 'eco-mate-jwt-secret-change-in-production-2026';
-    process.env['JWT_REFRESH_SECRET'] = process.env['JWT_REFRESH_SECRET'] || 'eco-mate-refresh-secret-change-in-production-2026';
+    console.warn(
+      '[bootstrap] JWT_SECRET/JWT_REFRESH_SECRET not set — using dev defaults',
+    );
+    process.env['JWT_SECRET'] =
+      process.env['JWT_SECRET'] ||
+      'eco-mate-jwt-secret-change-in-production-2026';
+    process.env['JWT_REFRESH_SECRET'] =
+      process.env['JWT_REFRESH_SECRET'] ||
+      'eco-mate-refresh-secret-change-in-production-2026';
   }
 
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -43,6 +53,19 @@ async function bootstrap() {
     new FastifyAdapter({ trustProxy: true }),
   );
   app.enableShutdownHooks();
+  const cacheService = app.get(CacheService);
+  const prismaService = app.get(PrismaService);
+  let durableMaintenanceMemo: {
+    expiresAt: number;
+    value?: { mode: 'full_backup' | 'restore' };
+  } = { expiresAt: 0 };
+  const activeWriteMarkers = new Map<string, string>();
+  const clearActiveWriteMarker = async (requestId: string) => {
+    const marker = activeWriteMarkers.get(requestId);
+    if (!marker) return;
+    activeWriteMarkers.delete(requestId);
+    await cacheService.delete(marker);
+  };
 
   await app.register(helmet, {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -58,7 +81,13 @@ async function bootstrap() {
           'https://*.r2.dev',
           'https://images.unsplash.com',
         ],
-        connectSrc: ["'self'", 'https://*.r2.dev', ...(process.env['CSP_CONNECT_SRC'] ? [process.env['CSP_CONNECT_SRC']] : [])],
+        connectSrc: [
+          "'self'",
+          'https://*.r2.dev',
+          ...(process.env['CSP_CONNECT_SRC']
+            ? [process.env['CSP_CONNECT_SRC']]
+            : []),
+        ],
         fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
@@ -72,8 +101,132 @@ async function bootstrap() {
     .getHttpAdapter()
     .getInstance()
     .addHook('onRequest', async (request, reply) => {
+      let pathname = request.url.split('?', 1)[0];
+      try {
+        pathname = decodeURIComponent(pathname);
+      } catch {
+        return reply.code(400).send({ message: 'Malformed request path' });
+      }
+      // Legacy local backups were written beneath uploads before private
+      // backup storage existed. Never expose them through the public static
+      // media route; authenticated backup streaming remains available.
       if (
-        request.url.startsWith('/uploads/') &&
+        pathname === '/uploads/backups' ||
+        pathname.startsWith('/uploads/backups/')
+      ) {
+        return reply.code(404).send({ message: 'Not found' });
+      }
+
+      const isHealthRead =
+        (request.method === 'GET' || request.method === 'HEAD') &&
+        pathname.startsWith('/api/health');
+      const isTrackedWrite =
+        !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+        (pathname.startsWith('/api/') || pathname.startsWith('/uploads/'));
+      if (isTrackedWrite) {
+        const marker =
+          `system:backup-active-write:${process.pid}:` +
+          `${request.id}:${randomUUID()}`;
+        activeWriteMarkers.set(String(request.id), marker);
+        await cacheService.set(
+          marker,
+          { startedAt: new Date().toISOString() },
+          24 * 60 * 60 * 1000,
+        );
+      }
+      let maintenance = await cacheService.get<{
+        mode?: 'full_backup' | 'restore';
+      }>('system:backup-maintenance');
+      if (
+        !maintenance &&
+        !isHealthRead &&
+        (pathname.startsWith('/api/') || pathname.startsWith('/uploads/'))
+      ) {
+        const requestIsRead =
+          request.method === 'GET' || request.method === 'HEAD';
+        if (!requestIsRead || durableMaintenanceMemo.expiresAt <= Date.now()) {
+          try {
+            const restoreSignals = await prismaService.$queryRaw<
+              Array<{ active: boolean }>
+            >(
+              Prisma.sql`
+                SELECT (
+                  EXISTS (
+                    SELECT 1
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND application_name = 'ecomate-backup-restore'
+                  )
+                  OR EXISTS (
+                    SELECT 1
+                    FROM "ecomate_control"."backup_restore_operation"
+                    WHERE "phase" IN (
+                      'preparing',
+                      'database_committed',
+                      'failed_after_commit'
+                    )
+                  )
+                ) AS "active"
+              `,
+            );
+            const durableOwner = restoreSignals[0]?.active
+              ? { status: 'restoring' }
+              : await prismaService.backupJob.findFirst({
+                  where: {
+                    OR: [
+                      { status: 'restoring' },
+                      { status: 'running', scope: 'db_files' },
+                    ],
+                  },
+                  select: { status: true },
+                });
+            durableMaintenanceMemo = {
+              expiresAt: Date.now() + 1000,
+              value: durableOwner
+                ? {
+                    mode:
+                      durableOwner.status === 'restoring'
+                        ? 'restore'
+                        : 'full_backup',
+                  }
+                : undefined,
+            };
+          } catch {
+            // During psql DDL phases the catalog itself can be momentarily
+            // unavailable. Fail closed for API/media traffic, but health checks
+            // were excluded above so the container is not restarted mid-restore.
+            durableMaintenanceMemo = {
+              expiresAt: Date.now() + 1000,
+              value: { mode: 'restore' },
+            };
+          }
+        }
+        maintenance = durableMaintenanceMemo.value;
+      }
+      if (maintenance?.mode && request.method !== 'OPTIONS') {
+        const isRead = request.method === 'GET' || request.method === 'HEAD';
+        const isBackupRead = isRead && pathname.startsWith('/api/admin/backup');
+        const apiOrMediaRequest =
+          pathname.startsWith('/api/') || pathname.startsWith('/uploads/');
+        const shouldBlock =
+          apiOrMediaRequest &&
+          !isBackupRead &&
+          !isHealthRead &&
+          (maintenance.mode === 'restore' || !isRead);
+
+        if (shouldBlock) {
+          reply.header('Retry-After', '30');
+          return reply.code(503).send({
+            statusCode: 503,
+            message:
+              maintenance.mode === 'restore'
+                ? 'Restore in progress; retry shortly'
+                : 'Full backup snapshot in progress; writes are temporarily paused',
+          });
+        }
+      }
+      if (
+        pathname.startsWith('/uploads/') &&
         (request.method === 'POST' || request.method === 'PUT')
       ) {
         const contentType = request.headers['content-type'];
@@ -88,8 +241,10 @@ async function bootstrap() {
   await app.register(fastifyStatic, {
     root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
-    maxAge: 365 * 24 * 60 * 60 * 1000,
-    immutable: true,
+    // Local restore can atomically replace bytes at the same media URL. Do not
+    // instruct browsers/CDNs to pin that path for a year.
+    maxAge: 60 * 60 * 1000,
+    immutable: false,
   });
   await app.register(fastifyStatic, {
     root: join(process.cwd(), 'public'),
@@ -123,10 +278,18 @@ async function bootstrap() {
     .getHttpAdapter()
     .getInstance()
     .addHook('onResponse', async (request, reply) => {
+      await clearActiveWriteMarker(String(request.id));
       const duration = reply.elapsedTime.toFixed(0);
+      const requestPath = request.url.split(/[?#]/, 1)[0];
       console.log(
-        `${request.method} ${request.url} ${reply.statusCode} ${duration}ms`,
+        `${request.method} ${requestPath} ${reply.statusCode} ${duration}ms`,
       );
+    });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequestAbort', async (request) => {
+      await clearActiveWriteMarker(String(request.id));
     });
 
   app.useGlobalFilters(new GlobalExceptionFilter());
@@ -286,7 +449,10 @@ bootstrap();
 
 // Global error handlers to prevent process crash on unhandled rejections
 process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled Rejection:', reason instanceof Error ? reason.message : reason);
+  console.error(
+    '[FATAL] Unhandled Rejection:',
+    reason instanceof Error ? reason.message : reason,
+  );
 });
 process.on('uncaughtException', (error) => {
   console.error('[FATAL] Uncaught Exception:', error.message);

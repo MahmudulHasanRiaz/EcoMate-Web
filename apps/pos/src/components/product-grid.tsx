@@ -4,6 +4,7 @@ import { useCartStore } from '../stores/cart-store'
 import { Search, Plus, Layers, RefreshCw, WifiOff } from 'lucide-react'
 import { VariantModal } from './variant-modal'
 import { SafeImage } from './safe-image'
+import { productImageUrl, variantImageUrl } from '../lib/media'
 
 interface Props {
   categoryId: string | null
@@ -49,24 +50,22 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
 
     const price = Number(product.salePrice || product.basePrice || 0)
     if (!price) return
-    const images = Array.isArray(product.images) ? product.images : []
-    const imgUrl = images[0]?.url || images[0] || null
+    const imgUrl = productImageUrl(product)
     addItem({
       productId: product.id,
       name: product.name,
       sku: product.sku || undefined,
       price,
       quantity: 1,
-      image: imgUrl || undefined,
+      image: imgUrl,
+      imageVersion: product.updatedAt,
     })
   }
 
   const handleAddVariant = (variant: any, variantName: string) => {
     const price = Number(variant.salePrice || variant.price || 0)
     if (!price || !selectedProduct) return
-    const parentImages = Array.isArray(selectedProduct.images) ? selectedProduct.images : []
-    const parentImgUrl = parentImages[0]?.url || parentImages[0] || null
-    const imgUrl = variant.image || parentImgUrl || null
+    const imgUrl = variantImageUrl(variant, selectedProduct)
     addItem({
       productId: selectedProduct.id,
       variantId: variant.id,
@@ -74,7 +73,8 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       sku: variant.sku || selectedProduct.sku || undefined,
       price,
       quantity: 1,
-      image: imgUrl || undefined,
+      image: imgUrl,
+      imageVersion: variant.updatedAt || selectedProduct.updatedAt,
     })
   }
 
@@ -175,8 +175,7 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       )}
       <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {products.map((p: any) => {
-          const images = Array.isArray(p.images) ? p.images : []
-          const imgUrl = images[0]?.url || images[0] || null
+          const imgUrl = productImageUrl(p)
           const isVariable = p.type === 'variable' && p.variants && p.variants.length > 0
           
           return (
@@ -200,7 +199,14 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
 
               {/* Product Image or Fallback - Edge-to-edge full width */}
               <div className="w-full aspect-square bg-slate-50 overflow-hidden relative flex items-center justify-center border-b border-slate-100">
-                <SafeImage src={imgUrl} alt={p.name} className="h-full w-full object-cover" />
+                <SafeImage
+                  src={imgUrl}
+                  alt={p.name}
+                  className="h-full w-full object-cover"
+                  resizeWidth={320}
+                  resizeHeight={320}
+                  version={p.updatedAt}
+                />
               </div>
 
               {/* Product Meta padding */}

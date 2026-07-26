@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDistanceToNow, format } from 'date-fns'
 import { Download, Lock, Unlock, Trash2, RotateCcw, FileDown } from 'lucide-react'
 import type { BackupJob } from '../types'
+import { RestoreConfirmDialog } from './RestoreConfirmDialog'
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500',
@@ -30,13 +31,14 @@ interface Props {
   onPageChange: (p: number) => void
   onDownload: (id: string) => void
   onRestore: (id: string) => void
+  restorePending: boolean
   onToggleLock: (id: string, locked: boolean) => void
   onDelete: (id: string) => void
 }
 
 export function BackupTable({
   backups, isLoading, totalPages, page, onPageChange,
-  onDownload, onRestore, onToggleLock, onDelete,
+  onDownload, onRestore, restorePending, onToggleLock, onDelete,
 }: Props) {
   if (isLoading) return <div className="p-4 text-muted-foreground">Loading...</div>
 
@@ -76,25 +78,37 @@ export function BackupTable({
                   <TableCell className="capitalize">{b.type}</TableCell>
                   <TableCell>{SCOPE_LABELS[b.scope] || b.scope}</TableCell>
                   <TableCell>
-                    <Badge className={`${STATUS_COLORS[b.status]} text-white`}>
-                      {b.status}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge className={`${STATUS_COLORS[b.status]} text-white`}>
+                        {b.status}
+                      </Badge>
+                      {b.errorMessage && (
+                        <p className="max-w-48 truncate text-[10px] text-red-600" title={b.errorMessage}>
+                          {b.errorMessage}
+                        </p>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs">
                     {b.fileSize ? `${(Number(b.fileSize) / 1024 / 1024).toFixed(1)} MB` : '-'}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      {b.status === 'completed' && (
+                      {b.status === 'completed' && b.fileKey && (
                         <>
                           <Button size="icon" variant="ghost" onClick={() => onDownload(b.id)}
                             title="Download">
                             <Download className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => onRestore(b.id)}
-                            title="Restore">
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
+                          <RestoreConfirmDialog
+                            onConfirm={() => onRestore(b.id)}
+                            isPending={restorePending}
+                            trigger={
+                              <Button size="icon" variant="ghost" title="Restore">
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
                         </>
                       )}
                       <Button size="icon" variant="ghost" onClick={() => onToggleLock(b.id, !b.locked)}

@@ -108,9 +108,9 @@ export function StorageSettings() {
                 </div>
               </div>
               <div className='space-y-2'>
-                <Label htmlFor='r2-public'>Custom Public URL (Recommended)</Label>
+                <Label htmlFor='r2-public'>Public URL (Required)</Label>
                 <Input id='r2-public' value={r2PublicUrl} onChange={e => setR2PublicUrl(e.target.value)} placeholder='https://assets.ecomate.com or R2.dev URL' className='bg-background/50' />
-                <p className='text-[11px] text-muted-foreground italic px-1'>If provided, this URL will be used to serve your images.</p>
+                <p className='text-[11px] text-muted-foreground italic px-1'>Use an R2.dev or custom-domain URL that can publicly serve media. The private S3 API endpoint is not a browser image URL.</p>
               </div>
             </TabsContent>
           </Tabs>

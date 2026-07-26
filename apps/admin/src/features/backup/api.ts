@@ -16,6 +16,13 @@ export const backupApi = {
       .get(`/admin/backup/${id}/download`, { responseType: 'blob' })
       .then((r) => r.data),
 
+  createDownloadTicket: (id: string) =>
+    apiClient
+      .post<{ expiresAt: string }>(
+        `/admin/backup/${id}/download-ticket`,
+      )
+      .then((r) => r.data),
+
   restore: (id: string) =>
     apiClient.post<{ id: string }>(`/admin/backup/${id}/restore`).then((r) => r.data),
 
@@ -23,7 +30,10 @@ export const backupApi = {
     const form = new FormData()
     form.append('file', file)
     return apiClient
-      .post<{ id: string }>('/admin/backup/upload', form)
+      .post<{ id: string }>('/admin/backup/upload', form, {
+        timeout: 0,
+        maxBodyLength: Infinity,
+      })
       .then((r) => r.data)
   },
 
@@ -31,7 +41,10 @@ export const backupApi = {
     const form = new FormData()
     form.append('file', file)
     return apiClient
-      .post<{ id: string }>('/admin/backup/restore/upload', form)
+      .post<{ id: string }>('/admin/backup/restore/upload', form, {
+        timeout: 0,
+        maxBodyLength: Infinity,
+      })
       .then((r) => r.data)
   },
 

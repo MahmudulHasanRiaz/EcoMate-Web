@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const PLACEHOLDER_DATA_URI =
-  "data:image/svg+xml;charset=UTF-8," +
+  'data:image/svg+xml;charset=UTF-8,' +
   encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
       <rect width="400" height="400" fill="#f0f4ff"/>
@@ -13,10 +13,13 @@ const PLACEHOLDER_DATA_URI =
       <text x="200" y="230" font-family="system-ui,sans-serif" font-size="14" fill="#3b82f6" text-anchor="middle" font-weight="500">
         No Image
       </text>
-    </svg>`,
+    </svg>`
   )
 
-interface SafeImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
+interface SafeImageProps extends Omit<
+  React.ImgHTMLAttributes<HTMLImageElement>,
+  'src'
+> {
   src?: string | null
   thumbWidth?: number
   thumbHeight?: number
@@ -25,9 +28,20 @@ interface SafeImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>,
   blurUrl?: string | null
 }
 
-export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, variant, derivativeManifest, blurUrl, ...props }: SafeImageProps) {
+export function SafeImage({
+  src,
+  alt,
+  className,
+  thumbWidth,
+  thumbHeight,
+  variant,
+  derivativeManifest,
+  blurUrl,
+  onError,
+  ...props
+}: SafeImageProps) {
   const [failed, setFailed] = useState(false)
-  const showPlaceholder = !src || failed
+  const [useOriginal, setUseOriginal] = useState(false)
 
   const finalSrc = useMemo(() => {
     if (!src) return src
@@ -52,6 +66,14 @@ export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, varian
     return `${base}?${params.toString()}`
   }, [src, thumbWidth, thumbHeight, variant, derivativeManifest])
 
+  useEffect(() => {
+    setFailed(false)
+    setUseOriginal(false)
+  }, [finalSrc, src])
+
+  const activeSrc = useOriginal ? src : finalSrc
+  const showPlaceholder = !activeSrc || failed
+
   if (showPlaceholder) {
     return (
       <img
@@ -65,11 +87,18 @@ export function SafeImage({ src, alt, className, thumbWidth, thumbHeight, varian
 
   return (
     <img
-      src={finalSrc || undefined}
+      src={activeSrc || undefined}
       alt={alt || ''}
       className={className}
-      onError={() => setFailed(true)}
-      loading="lazy"
+      onError={(event) => {
+        onError?.(event)
+        if (!useOriginal && src && finalSrc !== src) {
+          setUseOriginal(true)
+          return
+        }
+        setFailed(true)
+      }}
+      loading='lazy'
       {...props}
     />
   )

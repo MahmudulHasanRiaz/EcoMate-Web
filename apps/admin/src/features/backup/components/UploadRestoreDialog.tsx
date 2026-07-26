@@ -58,7 +58,9 @@ export function UploadRestoreDialog({ onUpload, isPending }: Props) {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Upload a backup file to the server. Then click <strong>Restore</strong> on the backup row to restore it. Max 5GB.
+            Uploads stream directly to disk instead of browser memory. The default server limit is 100GB
+            and can be changed with <code>BACKUP_MAX_UPLOAD_BYTES</code>. Then click <strong>Restore</strong>{' '}
+            on the backup row.
           </p>
           <Button onClick={handleUpload} disabled={!file || isPending} className="w-full">
             {isPending ? 'Uploading...' : 'Upload Backup'}

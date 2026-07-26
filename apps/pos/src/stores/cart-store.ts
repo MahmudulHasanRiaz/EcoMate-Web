@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { MediaSource } from '../lib/media';
 
 interface CartItem {
   productId?: string;
@@ -10,7 +11,8 @@ interface CartItem {
   quantity: number;
   discount?: number;
   discountType?: 'flat' | 'percentage';
-  image?: string;
+  image?: MediaSource;
+  imageVersion?: string;
 }
 
 interface CartState {
@@ -57,7 +59,13 @@ export const useCartStore = create<CartState>()(
           );
           if (existing >= 0) {
             const items = [...state.items];
-            items[existing] = { ...items[existing], quantity: items[existing].quantity + item.quantity };
+            // Refresh mutable product/media fields when an existing cart line
+            // is added again after a restore or media reprocess.
+            items[existing] = {
+              ...items[existing],
+              ...item,
+              quantity: items[existing].quantity + item.quantity,
+            };
             return { items };
           }
           return { items: [...state.items, item] };

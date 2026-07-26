@@ -43,6 +43,15 @@ export class LicenseService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (await this.prisma.isRestoreWriteBlocked()) {
+      this.logger.warn(
+        '[License] Initialization deferred while a database restore is active',
+      );
+      const retry = setTimeout(() => void this.onModuleInit(), 60_000);
+      retry.unref();
+      return;
+    }
+
     try {
       const activation = await this.licenseActivation.find();
       if (!activation || activation.status !== 'active') {
@@ -61,7 +70,10 @@ export class LicenseService implements OnModuleInit {
         this.logger.warn(
           '[License] Failed to decrypt stored credentials — encryption key may have changed',
         );
-        if (process.env.SKIP_LICENSE_CHECK !== 'true') {
+        if (
+          process.env.SKIP_LICENSE_CHECK !== 'true' &&
+          !(await this.prisma.isRestoreWriteBlocked())
+        ) {
           await this.licenseActivation.deactivate('decryption_failed');
         }
         return;
@@ -80,11 +92,15 @@ export class LicenseService implements OnModuleInit {
         this.logger.log(
           `[License] Validated — plan: ${lic.plan?.name || 'custom'}`,
         );
-        await this.licenseActivation.updateLicenseInfo(lic);
+        if (!(await this.prisma.isRestoreWriteBlocked())) {
+          await this.licenseActivation.updateLicenseInfo(lic);
+        }
       } else if (process.env.SKIP_LICENSE_CHECK !== 'true') {
         const code = lic?.code || 'unknown';
         this.logger.warn(`[License] ${friendlyError(code)}`);
-        await this.licenseActivation.deactivate(code);
+        if (!(await this.prisma.isRestoreWriteBlocked())) {
+          await this.licenseActivation.deactivate(code);
+        }
       }
     } catch (err: any) {
       if (

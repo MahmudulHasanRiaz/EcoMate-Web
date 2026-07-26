@@ -42,6 +42,8 @@ export class AuthService implements OnModuleInit {
   }
 
   private async cleanupExpiredTokens() {
+    if (await this.prisma.isRestoreWriteBlocked()) return;
+
     const { count } = await this.prisma.refreshToken.deleteMany({
       where: { expiresAt: { lt: new Date() } },
     });

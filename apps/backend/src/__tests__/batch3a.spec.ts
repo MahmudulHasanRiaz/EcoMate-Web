@@ -13,7 +13,10 @@ import { Job } from 'bullmq';
 describe('PageViewBufferService', () => {
   let svc: PageViewBufferService;
   let createMany: jest.Mock;
-  let prisma: { pageView: { createMany: jest.Mock } };
+  let prisma: {
+    pageView: { createMany: jest.Mock };
+    isRestoreWriteBlocked: jest.Mock;
+  };
 
   function makeEntry(overrides?: Partial<Record<string, unknown>>) {
     return {
@@ -30,7 +33,10 @@ describe('PageViewBufferService', () => {
 
   beforeEach(async () => {
     createMany = jest.fn().mockResolvedValue({ count: 1 });
-    prisma = { pageView: { createMany } };
+    prisma = {
+      pageView: { createMany },
+      isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
+    };
     svc = new PageViewBufferService(prisma as unknown as PrismaService);
     clearInterval((svc as any).flushTimer);
     (svc as any).flushTimer = null as any;
@@ -60,6 +66,20 @@ describe('PageViewBufferService', () => {
   });
 
   /* ── 2. Failure requeues, retry sends correct order ── */
+
+  it('keeps buffered entries untouched while restore owns the database', async () => {
+    prisma.isRestoreWriteBlocked.mockResolvedValue(true);
+    svc.push(makeEntry({ url: '/during-restore' }));
+
+    await (svc as any).flush();
+
+    expect(createMany).not.toHaveBeenCalled();
+    expect((svc as any).buffer.map((entry: any) => entry.url)).toEqual([
+      '/during-restore',
+    ]);
+  });
+
+  /* ── 3. Failure requeues, retry sends correct order ── */
 
   it('failed flush requeues batch at front ahead of newer entries; retry sends [a,b,c]', async () => {
     createMany.mockRejectedValueOnce(new Error('DB down'));
@@ -95,6 +115,7 @@ describe('PageViewBufferService', () => {
     const flush1 = (svc as any).flush();
     const flush2 = (svc as any).flush();
 
+    await Promise.resolve();
     resolveFlush!({ count: 1 });
     await flush1;
     await flush2;
@@ -112,6 +133,7 @@ describe('PageViewBufferService', () => {
 
     svc.push(makeEntry({ url: '/a' }));
     const flushPromise = (svc as any).flush();
+    await Promise.resolve();
 
     svc.push(makeEntry({ url: '/b' }));
     expect((svc as any).buffer.length).toBe(1);
@@ -154,6 +176,7 @@ describe('PageViewBufferService', () => {
 
     svc.push(makeEntry({ url: '/a' }));
     (svc as any).flush();
+    await Promise.resolve();
     svc.push(makeEntry({ url: '/b' }));
 
     const destroyPromise = svc.onModuleDestroy();
@@ -199,7 +222,7 @@ function createMockSharp() {
 describe('MediaQueueProcessor', () => {
   let processor: MediaQueueProcessor;
   let prisma: { media: { findUnique: jest.Mock; update: jest.Mock } };
-  let storage: { read: jest.Mock; store: jest.Mock };
+  let storage: { readMediaOriginal: jest.Mock; store: jest.Mock };
   let mediaQueue: { recoverStuck: jest.Mock };
   let mockSharpFn: jest.Mock;
 
@@ -220,7 +243,9 @@ describe('MediaQueueProcessor', () => {
       },
     };
     storage = {
-      read: jest.fn().mockResolvedValue(Buffer.from('image-data')),
+      readMediaOriginal: jest
+        .fn()
+        .mockResolvedValue(Buffer.from('image-data')),
       store: jest.fn().mockResolvedValue('https://cdn.test/url'),
     };
     mediaQueue = { recoverStuck: jest.fn() };
@@ -239,7 +264,7 @@ describe('MediaQueueProcessor', () => {
 
   it('processing failure updates FAILED status and rethrows original Error by identity', async () => {
     const originalError = new Error('disk full');
-    storage.read.mockRejectedValue(originalError);
+    storage.readMediaOriginal.mockRejectedValue(originalError);
 
     await expect(processor.process(makeJob())).rejects.toBe(originalError);
 
@@ -258,7 +283,7 @@ describe('MediaQueueProcessor', () => {
   it('secondary FAILED-update failure logs error but still rethrows original', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     const originalError = new Error('disk full');
-    storage.read.mockRejectedValue(originalError);
+    storage.readMediaOriginal.mockRejectedValue(originalError);
     prisma.media.update
       .mockResolvedValueOnce({})                         // PROCESSING
       .mockRejectedValueOnce(new Error('DB write failed')); // FAILED

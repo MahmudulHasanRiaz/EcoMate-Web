@@ -1,15 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { join, extname, resolve } from 'path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  unlinkSync,
+  statSync,
+} from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { SecureFetcher, validateImageBuffer } from './secure-fetcher';
 import { defaultDns } from './ip-classifier';
 import { defaultHttpTransport } from './secure-fetcher';
 
-const FALLBACK_1x1_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64',
-);
+const UNVERSIONED_CACHE_TTL_MS = 60 * 60 * 1000;
+
+export class ExternalImageFetchError extends Error {
+  constructor(cause: unknown) {
+    super('External image source could not be fetched', { cause });
+    this.name = ExternalImageFetchError.name;
+  }
+}
 
 function extForMime(mime: string): string {
   const map: Record<string, string> = {
@@ -27,7 +39,10 @@ export class ImagesService {
   private readonly logger = new Logger(ImagesService.name);
   private readonly uploadRoot = join(process.cwd(), 'uploads');
   private readonly cacheRoot = join(process.cwd(), '.cache', 'images');
-  private readonly fetcher = new SecureFetcher(defaultDns, defaultHttpTransport);
+  private readonly fetcher = new SecureFetcher(
+    defaultDns,
+    defaultHttpTransport,
+  );
 
   async resize(params: {
     path: string;
@@ -35,6 +50,7 @@ export class ImagesService {
     h?: number;
     q?: number;
     fit?: 'cover' | 'contain' | 'fill' | 'inside' | 'outside';
+    version?: string;
   }): Promise<{ buffer: Buffer; ext: string; mime: string }> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const sharp = require('sharp');
@@ -48,8 +64,12 @@ export class ImagesService {
     if (!params.w && !params.h) {
       // No resize — return as-is with MIME from detection
       if (isExternal) {
-        const result = await this.downloadExternalWithFallback(params.path);
-        return { buffer: result.buffer, ext: extForMime(result.mimeType), mime: result.mimeType };
+        const result = await this.downloadExternal(params.path, params.version);
+        return {
+          buffer: result.buffer,
+          ext: extForMime(result.mimeType),
+          mime: result.mimeType,
+        };
       }
       const { buffer, ext, mime } = this.readLocalFile(params.path);
       return { buffer, ext, mime };
@@ -57,23 +77,46 @@ export class ImagesService {
 
     const cacheKey = createHash('md5')
       .update(
-        `${params.path}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}`,
+        `${params.path}:${params.w || ''}:${params.h || ''}:${params.q || 80}:${params.fit || 'cover'}${params.version ? `:${params.version}` : ''}`,
       )
       .digest('hex');
     const cacheExt = '.webp';
     const cachePath = join(this.cacheRoot, `${cacheKey}${cacheExt}`);
 
     if (existsSync(cachePath)) {
-      const cached = readFileSync(cachePath);
       try {
+        if (
+          !params.version &&
+          Date.now() - statSync(cachePath).mtimeMs >= UNVERSIONED_CACHE_TTL_MS
+        ) {
+          throw new Error('Unversioned resized cache entry is stale');
+        }
+        const cached = readFileSync(cachePath);
         const validated = await validateImageBuffer(cached, 16_777_216);
         if (validated.mimeType !== 'image/webp') {
           throw new Error('Cached image is not WebP format');
         }
+        const metadata = await sharp(cached).metadata();
+        if (metadata.width === 1 && metadata.height === 1) {
+          const pixel = await sharp(cached).ensureAlpha().raw().toBuffer();
+          const matchesRetiredFallback =
+            pixel[0] <= 16 &&
+            pixel[1] >= 239 &&
+            pixel[2] <= 16 &&
+            pixel[3] >= 110 &&
+            pixel[3] <= 145;
+          if (matchesRetiredFallback) {
+            throw new Error('Cached image matches the retired 1x1 fallback');
+          }
+        }
         return { buffer: validated.buffer, ext: cacheExt, mime: 'image/webp' };
       } catch {
         // Corrupt/wrong-format cache — delete and regenerate
-        try { unlinkSync(cachePath); } catch { /* ignore */ }
+        try {
+          unlinkSync(cachePath);
+        } catch {
+          /* ignore */
+        }
         this.logger.warn('Deleted corrupt resized cache entry, regenerating');
       }
     }
@@ -81,7 +124,7 @@ export class ImagesService {
     let sourceBuffer: Buffer;
     let sourceMime: string | null = null;
     if (isExternal) {
-      const result = await this.downloadExternalWithFallback(params.path);
+      const result = await this.downloadExternal(params.path, params.version);
       sourceBuffer = result.buffer;
       sourceMime = result.mimeType;
     } else {
@@ -109,7 +152,11 @@ export class ImagesService {
           renameSync(tmpPath, cachePath);
         } finally {
           // Best-effort cleanup of leftover temp file
-          try { unlinkSync(tmpPath); } catch { /* temp already renamed or gone */ }
+          try {
+            unlinkSync(tmpPath);
+          } catch {
+            /* temp already renamed or gone */
+          }
         }
       } catch (e) {
         this.logger.warn('Failed to cache resized image', e);
@@ -128,21 +175,35 @@ export class ImagesService {
     }
   }
 
-  private async downloadExternalWithFallback(
+  private async downloadExternal(
     url: string,
+    version?: string,
   ): Promise<{ buffer: Buffer; mimeType: string }> {
     // Check disk cache first
-    const cacheKey = createHash('md5').update(url).digest('hex');
+    const cacheKey = createHash('md5')
+      .update(`${url}${version ? `:${version}` : ''}`)
+      .digest('hex');
     const originalCache = join(this.cacheRoot, `${cacheKey}_orig`);
 
     if (existsSync(originalCache)) {
-      const buf = readFileSync(originalCache);
       try {
+        if (
+          !version &&
+          Date.now() - statSync(originalCache).mtimeMs >=
+            UNVERSIONED_CACHE_TTL_MS
+        ) {
+          throw new Error('Unversioned original cache entry is stale');
+        }
+        const buf = readFileSync(originalCache);
         const validated = await validateImageBuffer(buf);
         return { buffer: validated.buffer, mimeType: validated.mimeType };
       } catch {
         // Corrupt cache — delete and refetch
-        try { unlinkSync(originalCache); } catch { /* ignore */ }
+        try {
+          unlinkSync(originalCache);
+        } catch {
+          /* ignore */
+        }
         this.logger.warn('Deleted corrupt cache entry, refetching');
       }
     }
@@ -158,7 +219,11 @@ export class ImagesService {
           writeFileSync(tmpPath, result.buffer);
           renameSync(tmpPath, originalCache);
         } finally {
-          try { unlinkSync(tmpPath); } catch { /* temp already renamed or gone */ }
+          try {
+            unlinkSync(tmpPath);
+          } catch {
+            /* temp already renamed or gone */
+          }
         }
       } catch (e) {
         this.logger.warn('Failed to cache external image', e);
@@ -166,13 +231,14 @@ export class ImagesService {
 
       return { buffer: result.buffer, mimeType: result.mimeType };
     } catch (err) {
-      // Preserve legacy behavior: fallback transparent 1x1 PNG on remote failure
       try {
-        this.logger.warn(`Image fetch failed: ${new URL(url).hostname} — ${(err as Error).message}`);
+        this.logger.warn(
+          `Image fetch failed: ${new URL(url).hostname} — ${(err as Error).message}`,
+        );
       } catch {
         this.logger.warn(`Image fetch failed: invalid URL`);
       }
-      return { buffer: FALLBACK_1x1_PNG, mimeType: 'image/png' };
+      throw new ExternalImageFetchError(err);
     }
   }
 
@@ -193,7 +259,13 @@ export class ImagesService {
     }
 
     const allowedExtensions = [
-      '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.gif',
+      '.avif',
+      '.svg',
     ];
     const ext = extname(relativePath).toLowerCase();
     if (!allowedExtensions.includes(ext)) {

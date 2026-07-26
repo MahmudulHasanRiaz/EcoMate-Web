@@ -5,10 +5,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
 import { ConfigService } from '@nestjs/config';
+import { MediaResolverService } from '../../media/media-resolver.service';
 
 describe('PosOrdersService', () => {
   let service: PosOrdersService;
   let prisma: PrismaService;
+  let mediaResolver: MediaResolverService;
   let module: TestingModule;
 
   const mockSession = {
@@ -77,6 +79,7 @@ describe('PosOrdersService', () => {
             product: {
               findMany: jest.fn(),
               findUnique: jest.fn(),
+              count: jest.fn(),
             },
             productVariant: {
               findMany: jest.fn(),
@@ -124,11 +127,18 @@ describe('PosOrdersService', () => {
             get: jest.fn().mockReturnValue('http://localhost:3000'),
           },
         },
+        {
+          provide: MediaResolverService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({}),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<PosOrdersService>(PosOrdersService);
     prisma = module.get<PrismaService>(PrismaService);
+    mediaResolver = module.get<MediaResolverService>(MediaResolverService);
 
     (prisma.$transaction as jest.Mock).mockImplementation(
       async (cb: (tx: any) => Promise<any>) => cb(prisma),
@@ -143,6 +153,53 @@ describe('PosOrdersService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('findProducts', () => {
+    it('preserves gallery precedence and attaches media metadata for POS', async () => {
+      const product = {
+        id: 'prod-media',
+        name: 'Media Product',
+        image: '/uploads/legacy-product.jpg',
+        images: ['/uploads/product-original.jpg'],
+        variants: [
+          {
+            id: 'variant-media',
+            image: null,
+            images: [{ url: '/uploads/variant-original.jpg' }],
+          },
+        ],
+      };
+      const resolved = {
+        '/uploads/product-original.jpg': {
+          derivativeManifest: {
+            small: '/uploads/derivatives/product-small.webp',
+          },
+          blurUrl: 'data:image/webp;base64,product',
+        },
+        '/uploads/variant-original.jpg': {
+          derivativeManifest: {
+            small: '/uploads/derivatives/variant-small.webp',
+          },
+          blurUrl: 'data:image/webp;base64,variant',
+        },
+      };
+
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([product]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+      (mediaResolver.resolve as jest.Mock).mockResolvedValue(resolved);
+
+      const result = await service.findProducts({});
+
+      expect(mediaResolver.resolve).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          '/uploads/product-original.jpg',
+          '/uploads/legacy-product.jpg',
+          '/uploads/variant-original.jpg',
+        ]),
+      );
+      expect(result.data[0]._mediaMeta).toEqual(resolved);
+    });
   });
 
   describe('create', () => {

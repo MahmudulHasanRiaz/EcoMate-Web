@@ -11,6 +11,8 @@ env-backup
 # Runtime uploads (never commit generated files)
 uploads/
 **/uploads/
+backup-storage/
+**/backup-storage/
 
 # TypeScript build info
 *.tsbuildinfo

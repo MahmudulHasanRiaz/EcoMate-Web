@@ -45,8 +45,8 @@ COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
 COPY apps/backend/startup.sh ./startup.sh
-RUN mkdir -p /app/uploads /app/.cache /app/mobile-builds && \
-    chown -R nestjs:nodejs /app/uploads /app/.cache /app/mobile-builds && \
+RUN mkdir -p /app/uploads /app/backup-storage/work /app/.cache /app/mobile-builds && \
+    chown -R nestjs:nodejs /app/uploads /app/backup-storage /app/.cache /app/mobile-builds && \
     chmod +x startup.sh
 COPY mobile-builds /app/mobile-builds/
 RUN chown -R nestjs:nodejs /app/mobile-builds

@@ -5,6 +5,8 @@ networks:
 volumes:
   postgres-data:
   uploads-data:
+  backup-data:
+  redis-data:
   mobile-builds-data:
 
 services:
@@ -35,8 +37,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     networks:
       - ecomate-network
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -59,6 +64,7 @@ services:
       - "${BACKEND_PORT:-4000}:4000"
     volumes:
       - uploads-data:/app/uploads
+      - backup-data:/app/backup-storage
       - mobile-builds-data:/app/mobile-builds
     environment:
       NODE_ENV: production
@@ -75,6 +81,21 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       APP_URL: ${APP_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       STOREFRONT_URL: ${STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      BACKUP_MAX_UPLOAD_BYTES: ${BACKUP_MAX_UPLOAD_BYTES:-107374182400}
+      BACKUP_MAX_RESTORE_BYTES: ${BACKUP_MAX_RESTORE_BYTES:-107374182400}
+      BACKUP_STORAGE_DIR: ${BACKUP_STORAGE_DIR:-/app/backup-storage}
+      BACKUP_WORK_DIR: ${BACKUP_WORK_DIR:-/app/backup-storage/work}
+      BACKUP_R2_ENDPOINT: ${BACKUP_R2_ENDPOINT:-}
+      BACKUP_R2_ACCESS_KEY: ${BACKUP_R2_ACCESS_KEY:-}
+      BACKUP_R2_SECRET_KEY: ${BACKUP_R2_SECRET_KEY:-}
+      BACKUP_R2_BUCKET: ${BACKUP_R2_BUCKET:-}
+      BACKUP_DUMP_TIMEOUT: ${BACKUP_DUMP_TIMEOUT:-1800000}
+      BACKUP_ARCHIVE_TIMEOUT: ${BACKUP_ARCHIVE_TIMEOUT:-7200000}
+      BACKUP_RESTORE_TIMEOUT: ${BACKUP_RESTORE_TIMEOUT:-86400000}
+      BACKUP_WRITE_DRAIN_TIMEOUT: ${BACKUP_WRITE_DRAIN_TIMEOUT:-7200000}
+      BACKUP_QUEUE_DRAIN_TIMEOUT: ${BACKUP_QUEUE_DRAIN_TIMEOUT:-7200000}
+      BACKUP_DOWNLOAD_TTL_MS: ${BACKUP_DOWNLOAD_TTL_MS:-3600000}
+      BACKUP_RESTORE_DATABASE_URL: ${BACKUP_RESTORE_DATABASE_URL:-}
       CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-}
       META_PIXEL_ID: ${META_PIXEL_ID:-}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
@@ -178,12 +199,10 @@ services:
       - ecomate-network
     ports:
       - "${POS_PORT:-8081}:80"
-    environment:
-      VITE_BASE: ${POS_VITE_BASE:-/pos/}
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80${POS_VITE_BASE:-/pos/}"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/pos/"]
       interval: 30s
       timeout: 5s
       retries: 3

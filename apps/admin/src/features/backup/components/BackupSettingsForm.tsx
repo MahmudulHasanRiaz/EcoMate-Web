@@ -109,7 +109,7 @@ export function BackupSettingsForm({ settings, onSave, isPending }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="include_paths">Include Paths (comma-separated)</Label>
+          <Label htmlFor="include_paths">Local upload paths (comma-separated)</Label>
           <Input
             id="include_paths"
             value={(() => {
@@ -121,6 +121,10 @@ export function BackupSettingsForm({ settings, onSave, isPending }: Props) {
             onChange={(e) => handleChange('backup_include_paths',
               JSON.stringify(e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean)))}
           />
+          <p className="text-xs text-muted-foreground">
+            Use <code>uploads</code> for all original media and derivatives. Stored backup files under
+            <code> uploads/backups</code> are always excluded to prevent recursive growth.
+          </p>
         </div>
 
         <Button onClick={handleSave} disabled={isPending}>

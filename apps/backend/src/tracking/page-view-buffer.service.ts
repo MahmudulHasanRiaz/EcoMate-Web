@@ -41,24 +41,7 @@ export class PageViewBufferService implements OnModuleDestroy {
     if (this.activeFlush) return this.activeFlush;
     if (this.buffer.length === 0) return;
 
-    const batch = this.buffer.splice(0);
-    const promise = this.prisma.pageView
-      .createMany({
-        data: batch,
-        skipDuplicates: true,
-      })
-      .then(() => {
-        this.logger.debug(`Flushed ${batch.length} page views`);
-      })
-      .catch((err: unknown) => {
-        // Requeue failed batch at front, preserving original order
-        this.buffer.unshift(...batch);
-        this.logger.error(
-          `Batch insert failed (${batch.length} entries requeued): ${(err as Error).message}`,
-        );
-        throw err;
-      });
-
+    const promise = this.flushBufferedEntries();
     this.activeFlush = promise;
 
     try {
@@ -67,6 +50,30 @@ export class PageViewBufferService implements OnModuleDestroy {
       if (this.activeFlush === promise) {
         this.activeFlush = null;
       }
+    }
+  }
+
+  private async flushBufferedEntries(): Promise<void> {
+    // Keep the batch in memory while `public` is being replaced.  Splicing
+    // only after the durable restore guard passes also makes the skipped
+    // flush lossless; the next timer tick will retry it.
+    if (await this.prisma.isRestoreWriteBlocked()) return;
+    if (this.buffer.length === 0) return;
+
+    const batch = this.buffer.splice(0);
+    try {
+      await this.prisma.pageView.createMany({
+        data: batch,
+        skipDuplicates: true,
+      });
+      this.logger.debug(`Flushed ${batch.length} page views`);
+    } catch (err: unknown) {
+      // Requeue failed batch at front, preserving original order
+      this.buffer.unshift(...batch);
+      this.logger.error(
+        `Batch insert failed (${batch.length} entries requeued): ${(err as Error).message}`,
+      );
+      throw err;
     }
   }
 

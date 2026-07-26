@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, type UploadFile } from '../storage/storage.service';
 import { createHash } from 'crypto';
@@ -481,11 +482,13 @@ export class MediaService {
         processingStatus: 'UPLOADED',
       },
     });
-    this.mediaQueue.schedule(created.id).catch((err) =>
-      this.logger.error(
-        `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
-      ),
-    );
+    this.mediaQueue
+      .schedule(created.id)
+      .catch((err) =>
+        this.logger.error(
+          `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
+        ),
+      );
     return {
       id: created.id,
       url: created.url,
@@ -565,11 +568,13 @@ export class MediaService {
         processingStatus: 'UPLOADED',
       },
     });
-    this.mediaQueue.schedule(created.id).catch((err) =>
-      this.logger.error(
-        `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
-      ),
-    );
+    this.mediaQueue
+      .schedule(created.id)
+      .catch((err) =>
+        this.logger.error(
+          `Failed to queue media processing for ${created.id}: ${(err as Error).message}`,
+        ),
+      );
     return {
       id: created.id,
       url: created.url,
@@ -952,7 +957,10 @@ export class MediaService {
     return { scanned, migrated, failed };
   }
 
-  async backfill(opts?: { batchSize?: number; max?: number }): Promise<{ queued: number }> {
+  async backfill(opts?: {
+    batchSize?: number;
+    max?: number;
+  }): Promise<{ queued: number }> {
     return this.mediaQueue.backfill(opts);
   }
 
@@ -963,44 +971,45 @@ export class MediaService {
   async reprocess(mediaId: string): Promise<void> {
     const media = await this.prisma.media.findUnique({
       where: { id: mediaId },
-      select: { id: true },
+      select: { id: true, derivativeManifest: true },
     });
     if (!media) throw new NotFoundException('Media not found');
-    await this.mediaQueue.deleteDerivatives(mediaId);
     await this.prisma.media.update({
       where: { id: mediaId },
       data: {
         processingStatus: 'UPLOADED',
         processingError: null,
-        derivativeManifest: undefined,
+        derivativeManifest: Prisma.DbNull,
         blurUrl: null,
         updatedAt: new Date(),
       },
     });
+    await this.mediaQueue.deleteDerivatives(mediaId, media.derivativeManifest);
     await this.mediaQueue.schedule(mediaId);
     this.logger.log(`Queued reprocess for media ${mediaId}`);
   }
 
-  async reprocessFailed(
-    batchSize = 50,
-  ): Promise<{ queued: number }> {
+  async reprocessFailed(batchSize = 50): Promise<{ queued: number }> {
     const failed = await this.prisma.media.findMany({
       where: { processingStatus: 'FAILED' },
       take: batchSize,
-      select: { id: true },
+      select: { id: true, derivativeManifest: true },
     });
     for (const media of failed) {
-      await this.mediaQueue.deleteDerivatives(media.id);
       await this.prisma.media.update({
         where: { id: media.id },
         data: {
           processingStatus: 'UPLOADED',
           processingError: null,
-          derivativeManifest: undefined,
+          derivativeManifest: Prisma.DbNull,
           blurUrl: null,
           updatedAt: new Date(),
         },
       });
+      await this.mediaQueue.deleteDerivatives(
+        media.id,
+        media.derivativeManifest,
+      );
       await this.mediaQueue.schedule(media.id);
     }
     this.logger.log(`Queued reprocess for ${failed.length} failed media`);

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export interface MediaDerivatives {
   derivativeManifest: Record<string, string> | null;
   blurUrl: string | null;
+  updatedAt: Date;
 }
 
 export type DerivativeMap = Record<string, MediaDerivatives>;
@@ -18,7 +19,12 @@ export class MediaResolverService {
 
     const media = await this.prisma.media.findMany({
       where: { url: { in: unique } },
-      select: { url: true, derivativeManifest: true, blurUrl: true },
+      select: {
+        url: true,
+        derivativeManifest: true,
+        blurUrl: true,
+        updatedAt: true,
+      },
     });
 
     const map: DerivativeMap = {};
@@ -26,6 +32,7 @@ export class MediaResolverService {
       map[m.url] = {
         derivativeManifest: m.derivativeManifest as Record<string, string> | null,
         blurUrl: m.blurUrl,
+        updatedAt: m.updatedAt,
       };
     }
     return map;
