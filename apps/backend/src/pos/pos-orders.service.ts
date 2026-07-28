@@ -984,6 +984,7 @@ export class PosOrdersService {
   async initiateTransfer(
     dto: CreatePosTransferRequestDto,
     cashierId: string,
+    showroomId: string,
   ) {
     const transfers: Array<{
     id: string;
@@ -1001,7 +1002,7 @@ export class PosOrdersService {
         data: {
           idempotencyKey,
           sourceWarehouseId: item.sourceWarehouseId,
-          destWarehouseId: '', // set by admin when approving
+          destWarehouseId: showroomId,
           status: 'REQUESTED',
           notes: dto.notes || `Transfer requested from POS for order ${dto.orderId || 'N/A'}`,
           performedBy: cashierId,

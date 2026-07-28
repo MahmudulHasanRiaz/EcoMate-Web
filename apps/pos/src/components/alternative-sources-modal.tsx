@@ -70,10 +70,10 @@ export function AlternativeSourcesModal({
 
         try {
           const res = await getProductAvailability(item.productId, showroomId, item.variantId)
-          const data = res.data as { warehouses?: WarehouseStock[] }
+          const data = res.data as { network?: WarehouseStock[] }
           return {
             itemIndex: item.index,
-            alternatives: data.warehouses ?? [],
+            alternatives: data.network ?? [],
             loaded: true,
           }
         } catch {

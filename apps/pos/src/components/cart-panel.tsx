@@ -96,7 +96,7 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
       }
     } catch (err: any) {
       // If validation endpoint fails, fall through to payment
-      console.warn('Stock validation failed, proceeding directly:', err?.message)
+      toast.warning('Stock check unavailable. Proceeding to payment.')
       setPaymentOpen(true)
     } finally {
       setValidating(false)

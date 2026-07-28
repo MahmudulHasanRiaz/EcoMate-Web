@@ -100,7 +100,10 @@ export class PosOrdersController {
   async createTransferRequest(
     @Body() dto: CreatePosTransferRequestDto,
     @CurrentUser() user: { userId: string },
+    @Headers('x-pos-session-id') sessionId?: string,
   ) {
-    return this.svc.initiateTransfer(dto, user.userId);
+    if (!sessionId) throw new BadRequestException('POS session required (x-pos-session-id header)');
+    const session = await this.svc.getSessionShowroom(sessionId);
+    return this.svc.initiateTransfer(dto, user.userId, session.showroomId);
   }
 }
