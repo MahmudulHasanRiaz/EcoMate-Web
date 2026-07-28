@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useCartStore } from '../stores/cart-store'
+import { useSessionStore } from '../stores/session-store'
 import { CustomerQuickAdd } from './customer-quick-add'
 import { DiscountModal } from './discount-modal'
 import { PaymentModal } from './payment-modal'
-import { Trash2, Percent, ShoppingCart, X, CreditCard, ChevronDown, Award, FileText } from 'lucide-react'
+import { AlternativeSourcesModal } from './alternative-sources-modal'
+import { validateStock } from '../api/client'
+import { toast } from 'sonner'
+import { Trash2, Percent, ShoppingCart, X, CreditCard, ChevronDown, Award, FileText, AlertTriangle, Loader2 } from 'lucide-react'
 import { SafeImage } from './safe-image'
 
 interface Props {
@@ -47,6 +51,69 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
   const [showNoteInput, setShowNoteInput] = useState(!!notes)
   const [discountOpen, setDiscountOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
+  const [oosModalOpen, setOosModalOpen] = useState(false)
+  const [oosItems, setOosItems] = useState<any[]>([])
+  const [validating, setValidating] = useState(false)
+  const { showroomId, showroomName } = useSessionStore()
+
+  // Validate stock before opening payment modal
+  const handleCheckout = useCallback(async () => {
+    if (items.length === 0 || !showroomId) {
+      setPaymentOpen(true)
+      return
+    }
+
+    setValidating(true)
+    try {
+      const res = await validateStock({
+        items: items.map((i) => ({
+          productId: i.productId,
+          variantId: i.variantId,
+          quantity: i.quantity,
+        })),
+      })
+      const validation = res.data
+
+      if (validation.allAvailable) {
+        setPaymentOpen(true)
+      } else {
+        const failedItems = validation.items
+          .filter((r: any) => !r.available)
+          .map((r: any) => {
+            const idx = items.findIndex(
+              (i) => i.productId === r.productId && i.variantId === r.variantId,
+            )
+            return {
+              index: idx >= 0 ? idx : 0,
+              productId: r.productId,
+              variantId: r.variantId,
+              name: items[idx]?.name || 'Unknown item',
+              requestedQty: r.requested,
+            }
+          })
+        setOosItems(failedItems)
+        setOosModalOpen(true)
+      }
+    } catch (err: any) {
+      // If validation endpoint fails, fall through to payment
+      console.warn('Stock validation failed, proceeding directly:', err?.message)
+      setPaymentOpen(true)
+    } finally {
+      setValidating(false)
+    }
+  }, [items, showroomId])
+
+  const handleRemoveOosItem = (index: number) => {
+    removeItem(index)
+    setOosItems((prev) => prev.filter((item) => item.index !== index))
+  }
+
+  const handleContinueAfterOos = () => {
+    setOosModalOpen(false)
+    if (items.length > 0) {
+      setPaymentOpen(true)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -243,17 +310,29 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
           </button>
           
           <button
-            onClick={() => setPaymentOpen(true)}
-            disabled={items.length === 0}
+            onClick={handleCheckout}
+            disabled={items.length === 0 || validating}
             className="col-span-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 font-extrabold text-slate-950 shadow-md border border-emerald-400 hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
           >
-            <CreditCard size={16} />
-            <span className="truncate text-xs sm:text-sm">Pay ৳{total().toLocaleString()}</span>
+            {validating ? (
+              <><Loader2 size={16} className="animate-spin" /><span>Checking stock...</span></>
+            ) : (
+              <><CreditCard size={16} /><span className="truncate text-xs sm:text-sm">Pay ৳{total().toLocaleString()}</span></>
+            )}
           </button>
         </div>
       </div>
 
       <DiscountModal open={discountOpen} onOpenChange={setDiscountOpen} currentDiscount={orderDiscount} currentType={orderDiscountType} onApply={setOrderDiscount} />
+      <AlternativeSourcesModal
+        open={oosModalOpen}
+        onOpenChange={setOosModalOpen}
+        items={oosItems}
+        showroomId={showroomId || ''}
+        showroomName={showroomName || 'current showroom'}
+        onRemoveItem={handleRemoveOosItem}
+        onContinue={handleContinueAfterOos}
+      />
       <PaymentModal open={paymentOpen} onOpenChange={setPaymentOpen} onSuccess={() => {}} />
     </div>
   )
