@@ -743,7 +743,6 @@ export class PosOrdersService {
       );
 
       let physicalMap = new Map<string, { stock: number; reserved: number }>();
-      let variantPhysicalMap = new Map<string, { stock: number; reserved: number }>();
 
       if (imEnabled) {
         // Query physical inventory for current showroom (aggregate: for simple products, productId only; for variable, variantId)
