@@ -657,12 +657,24 @@ export class PosOrdersService {
     });
   }
 
+  async getSessionShowroom(sessionId: string): Promise<{ showroomId: string }> {
+    const session = await this.prisma.posSession.findUnique({
+      where: { id: sessionId },
+      select: { showroomId: true },
+    });
+    if (!session) {
+      throw new BadRequestException('POS session not found');
+    }
+    return session;
+  }
+
   async findProducts(query: {
     search?: string;
     categoryId?: string;
     barcode?: string;
     page?: number;
     perPage?: number;
+    showroomId?: string;
   }) {
     const where: any = { isActive: true };
 
@@ -721,6 +733,78 @@ export class PosOrdersService {
       }),
       this.prisma.product.count({ where }),
     ]);
+
+    // Compute per-showroom stock availability when showroomId is provided
+    if (query.showroomId) {
+      const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+      const productIds = data.map((p: any) => p.id);
+      const variantIds = data.flatMap((p: any) =>
+        (p.variants || []).map((v: any) => v.id),
+      );
+
+      let physicalMap = new Map<string, { stock: number; reserved: number }>();
+      let variantPhysicalMap = new Map<string, { stock: number; reserved: number }>();
+
+      if (imEnabled) {
+        // Query physical inventory for current showroom (aggregate: for simple products, productId only; for variable, variantId)
+        const physicalRecords = await this.prisma.physicalInventory.findMany({
+          where: {
+            warehouseId: query.showroomId,
+            OR: [
+              { productId: { in: productIds }, variantId: null },
+              { variantId: { in: variantIds } },
+            ],
+          },
+        });
+
+        for (const rec of physicalRecords) {
+          const key = rec.variantId || rec.productId;
+          const existing = physicalMap.get(key);
+          if (existing) {
+            existing.stock += rec.quantity;
+            existing.reserved += rec.reservedQuantity;
+          } else {
+            physicalMap.set(key, {
+              stock: rec.quantity,
+              reserved: rec.reservedQuantity,
+            });
+          }
+        }
+      }
+
+      for (const product of data as any[]) {
+        if (product.type === 'variable' && product.variants?.length) {
+          for (const variant of product.variants) {
+            let currentStock: number;
+            let currentAvailable: number;
+            if (imEnabled) {
+              const entry = physicalMap.get(variant.id);
+              currentStock = entry?.stock ?? 0;
+              currentAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+            } else {
+              currentStock = variant.managedStockQuantity ?? 0;
+              currentAvailable = (variant.managedStockQuantity ?? 0) - (variant.reservedStock ?? 0);
+            }
+            variant._showroomStock = currentStock;
+            variant._showroomAvailable = currentAvailable;
+          }
+          // For variable products, overall stock = sum of variant stocks
+          const totalStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
+          const totalAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
+          product._showroomStock = totalStock;
+          product._showroomAvailable = totalAvailable;
+        } else {
+          if (imEnabled) {
+            const entry = physicalMap.get(product.id);
+            product._showroomStock = entry?.stock ?? 0;
+            product._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+          } else {
+            product._showroomStock = product.managedStockQuantity ?? 0;
+            product._showroomAvailable = (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
+          }
+        }
+      }
+    }
 
     await this.enrichProductMedia(data);
     return { data, total, page, perPage };

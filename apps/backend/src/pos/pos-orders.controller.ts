@@ -11,6 +11,7 @@ import {
 import { PosOrdersService } from './pos-orders.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
+import { ValidateStockDto } from './dto/validate-stock.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -57,6 +58,7 @@ export class PosOrdersController {
     @Query('barcode') barcode?: string,
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
+    @Query('showroomId') showroomId?: string,
   ) {
     return this.svc.findProducts({
       search,
@@ -64,6 +66,31 @@ export class PosOrdersController {
       barcode,
       page: page ? parseInt(page, 10) : undefined,
       perPage: perPage ? parseInt(perPage, 10) : undefined,
+      showroomId,
     });
+  }
+
+  @Post('orders/validate-stock')
+  @Roles('cashier', 'admin')
+  async validateStock(
+    @Body() dto: ValidateStockDto,
+    @Headers('x-pos-session-id') sessionId?: string,
+  ) {
+    if (!sessionId) {
+      throw new BadRequestException('POS session required (x-pos-session-id header)');
+    }
+    const session = await this.svc.getSessionShowroom(sessionId);
+    return this.svc.validateStock(dto, session.showroomId);
+  }
+
+  @Get('products/:id/availability')
+  @Roles('cashier', 'admin')
+  async productAvailability(
+    @Param('id') id: string,
+    @Query('variantId') variantId?: string,
+    @Query('showroomId') showroomId?: string,
+  ) {
+    if (!showroomId) throw new BadRequestException('showroomId required');
+    return this.svc.getProductAvailability(id, showroomId, variantId);
   }
 }
