@@ -131,3 +131,6 @@ export const getPaymentGateways = () =>
 
 export const getSessionOrders = (sessionId: string) =>
   api.get(`/pos/sessions/${sessionId}/orders`);
+
+export const getProductAvailability = (productId: string, showroomId: string, variantId?: string) =>
+  api.get(`/pos/products/${productId}/availability`, { params: { showroomId, variantId } });
