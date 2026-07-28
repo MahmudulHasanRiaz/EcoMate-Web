@@ -19,6 +19,7 @@ export class PosOrderItemDto {
   @IsOptional() @IsString() variantId?: string;
   @IsOptional() @IsString() comboId?: string;
   @IsOptional() @IsObject() comboSelection?: Record<string, string>;
+  @IsOptional() @IsString() sourceWarehouseId?: string;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
   @IsOptional() @IsNumber() discount?: number;

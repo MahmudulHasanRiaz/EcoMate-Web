@@ -116,6 +116,7 @@ export class PosOrdersService {
       variantId?: string;
       comboId?: string;
       comboSelection?: Record<string, string>;
+      sourceWarehouseId?: string;
       quantity: number;
       price: number;
       discount?: number;
@@ -280,6 +281,7 @@ export class PosOrdersService {
         variantId: item.variantId,
         comboId: item.comboId,
         comboSelection: item.comboSelection,
+        sourceWarehouseId: item.sourceWarehouseId,
         quantity: item.quantity,
         price: effectivePrice,
         discount: item.discount,
@@ -560,6 +562,7 @@ export class PosOrdersService {
             variantId: item.variantId,
             comboId: item.comboId,
             comboSelection: item.comboSelection as any,
+            sourceWarehouseId: item.sourceWarehouseId || null,
             quantity: item.quantity,
             price: item.price,
           },
@@ -570,7 +573,13 @@ export class PosOrdersService {
         await this.stockRouter.isInventoryManagementEnabled();
 
       for (const item of authItems) {
-        if (imEnabled) {
+        // When sourceWarehouseId is set and differs from current showroom,
+        // skip stock deduction — Order Management handles fulfillment later.
+        const isCrossWarehouse =
+          item.sourceWarehouseId &&
+          item.sourceWarehouseId !== session.showroom.id;
+
+        if (imEnabled && !isCrossWarehouse) {
           // POS has no reservation flow — use addPhysical with negative qty
           // to decrement quantity only (skips reservedQuantity decrement)
           await this.stock.addPhysical({
@@ -585,7 +594,7 @@ export class PosOrdersService {
             ledgerType: 'POS_SALE',
             tx,
           });
-        } else {
+        } else if (!isCrossWarehouse) {
           const product = item.productId
             ? await tx.product.findUnique({
                 where: { id: item.productId },
