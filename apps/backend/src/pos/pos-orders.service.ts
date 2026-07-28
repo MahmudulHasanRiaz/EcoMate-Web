@@ -11,6 +11,7 @@ import { StockRouterService } from '../stock/stock-router.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
 import { ValidateStockDto, StockValidationResult, StockValidationItemResult, AlternativeSourceDto } from './dto/validate-stock.dto';
+import { CreatePosTransferRequestDto } from './dto/create-transfer-request.dto';
 import { MediaResolverService } from '../media/media-resolver.service';
 
 @Injectable()
@@ -978,5 +979,47 @@ export class PosOrdersService {
       },
       network: Array.from(warehouseMap.values()).filter((w) => w.available > 0),
     };
+  }
+
+  async initiateTransfer(
+    dto: CreatePosTransferRequestDto,
+    cashierId: string,
+  ) {
+    const transfers: Array<{
+    id: string;
+    productId: string;
+    variantId?: string;
+    quantity: number;
+    sourceWarehouseId: string;
+    status: string;
+  }> = [];
+
+    for (const item of dto.items) {
+      const idempotencyKey = `POS_TRF_${cashierId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const transfer = await this.prisma.stockTransfer.create({
+        data: {
+          idempotencyKey,
+          sourceWarehouseId: item.sourceWarehouseId,
+          destWarehouseId: '', // set by admin when approving
+          status: 'REQUESTED',
+          notes: dto.notes || `Transfer requested from POS for order ${dto.orderId || 'N/A'}`,
+          performedBy: cashierId,
+          requestedBy: cashierId,
+          orderId: dto.orderId || null,
+        },
+      });
+
+      transfers.push({
+        id: transfer.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        sourceWarehouseId: item.sourceWarehouseId,
+        status: 'REQUESTED',
+      });
+    }
+
+    return { transfers, count: transfers.length };
   }
 }

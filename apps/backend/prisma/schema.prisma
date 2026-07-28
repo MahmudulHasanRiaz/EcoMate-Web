@@ -651,6 +651,7 @@ model Order {
   couponUsages  CouponUsage[]
   referralLeads ReferralLead[]
   stockCycles   OrderStockCycle[]
+  stockTransfers StockTransfer[]
 
   @@index([customerId])
   @@index([statusId])
@@ -2161,9 +2162,12 @@ model StockTransfer {
   idempotencyKey    String    @unique
   sourceWarehouseId String
   destWarehouseId   String
-  status            String    @default("PENDING")
+  status            String    @default("REQUESTED")
   notes             String?   @db.Text
   performedBy       String?
+  requestedBy       String?
+  orderId           String?
+  order             Order?    @relation(fields: [orderId], references: [id])
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
 
@@ -2174,6 +2178,7 @@ model StockTransfer {
   @@index([sourceWarehouseId])
   @@index([destWarehouseId])
   @@index([status])
+  @@index([orderId])
 }
 
 model GoodsReceiptNote {

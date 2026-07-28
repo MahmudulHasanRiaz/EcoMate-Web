@@ -12,6 +12,7 @@ import { PosOrdersService } from './pos-orders.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
 import { ValidateStockDto } from './dto/validate-stock.dto';
+import { CreatePosTransferRequestDto } from './dto/create-transfer-request.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -92,5 +93,14 @@ export class PosOrdersController {
   ) {
     if (!showroomId) throw new BadRequestException('showroomId required');
     return this.svc.getProductAvailability(id, showroomId, variantId);
+  }
+
+  @Post('transfer-requests')
+  @Roles('cashier', 'admin')
+  async createTransferRequest(
+    @Body() dto: CreatePosTransferRequestDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.svc.initiateTransfer(dto, user.userId);
   }
 }
