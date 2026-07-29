@@ -20,6 +20,8 @@ interface LedgerEntry {
   type: string
   stockBefore: number
   stockAfter: number
+  reservedBefore: number | null
+  reservedAfter: number | null
   referenceType: string | null
   referenceId: string | null
   note: string | null
@@ -118,24 +120,26 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
               <TableHead>Type</TableHead>
               <TableHead>User / Audit</TableHead>
               <TableHead className="text-right">Qty Change</TableHead>
+              <TableHead className="text-right">Reserved</TableHead>
+              <TableHead className="text-right">Available</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={8} className="text-center py-8">
                   <Loader2 className="animate-spin h-6 w-6 mx-auto" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-destructive">
+                <TableCell colSpan={8} className="text-center py-8 text-destructive">
                   Failed to load ledger entries.
                 </TableCell>
               </TableRow>
             ) : entries.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                   No ledger entries found.
                 </TableCell>
               </TableRow>
@@ -170,6 +174,14 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                   >
                     {entry.direction === 'IN' ? '+' : '-'}
                     {entry.quantity}
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">
+                    {entry.reservedBefore != null ? `${entry.reservedBefore} → ${entry.reservedAfter}` : '—'}
+                  </TableCell>
+                  <TableCell className="text-right text-xs font-medium">
+                    {entry.reservedAfter != null
+                      ? (entry.stockAfter - entry.reservedAfter).toString()
+                      : '—'}
                   </TableCell>
                 </TableRow>
               ))

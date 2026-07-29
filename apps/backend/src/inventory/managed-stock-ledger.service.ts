@@ -21,6 +21,8 @@ export class ManagedStockLedgerService {
       type: ManagedStockMovementType;
       stockBefore?: number;
       stockAfter?: number;
+      reservedBefore?: number;
+      reservedAfter?: number;
       referenceType?: ReferenceEntity;
       referenceId?: string;
       note?: string;
@@ -40,6 +42,8 @@ export class ManagedStockLedgerService {
         type: params.type,
         stockBefore: params.stockBefore ?? null,
         stockAfter: params.stockAfter ?? null,
+        reservedBefore: params.reservedBefore ?? null,
+        reservedAfter: params.reservedAfter ?? null,
         referenceType: params.referenceType ?? null,
         referenceId: params.referenceId ?? null,
         note: params.note ?? null,
