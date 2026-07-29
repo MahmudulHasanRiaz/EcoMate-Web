@@ -64,7 +64,7 @@ export function Media() {
   const columns = gridWidth < 480 ? 2 : gridWidth < 640 ? 3 : gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : gridWidth < 1536 ? 8 : 10
   const items = data?.data ?? []
   const rowCount = items.length ? Math.ceil(items.length / columns) : 0
-  const estimatedItemSize = columns > 0 ? Math.floor((gridWidth - (columns - 1) * gridGapPx) / columns) : 80
+  const estimatedItemSize = Math.max(80, columns > 0 ? Math.floor((gridWidth - (columns - 1) * gridGapPx) / columns) : 80)
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -467,7 +467,7 @@ export function Media() {
                           return (
                             <div
                               key={m.id}
-                              className={`flex-1 aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
+                              className={`flex-1 aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all relative group ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
                               onClick={(e) => {
                                 if (e.shiftKey) {
                                   e.preventDefault()

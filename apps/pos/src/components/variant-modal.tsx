@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X, ShoppingCart, Layers } from 'lucide-react'
 import { SafeImage } from './safe-image'
+import { StockIndicator } from './stock-indicator'
 import { variantImageUrl } from '../lib/media'
 
 interface Props {
@@ -45,7 +46,6 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                 .join(' / ') || v.sku || 'Default Variant'
 
               const price = Number(v.salePrice || v.price || 0)
-              const hasStock = (v.managedStockQuantity ?? 0) > 0
 
               const variantImgUrl = variantImageUrl(v, product)
 
@@ -70,11 +70,14 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                     <p className="text-xs font-bold text-slate-800 truncate">{variantName}</p>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[10px] font-semibold">
                       <span className="text-slate-400">SKU: {v.sku}</span>
-                      <span className="h-1 w-1 rounded-full bg-slate-200" />
-                      <span className={hasStock ? 'text-emerald-600' : 'text-rose-500'}>
-                        {hasStock ? `${v.managedStockQuantity ?? 0} in stock` : 'Out of stock'}
-                      </span>
                     </div>
+                    <div className="mt-1">
+                      <StockIndicator
+                        stock={v._showroomStock ?? v.managedStockQuantity ?? 0}
+                        available={v._showroomAvailable ?? (v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0)}
+                        showCount={true}
+                      />
+                  </div>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">

@@ -10,6 +10,8 @@ import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
 import { HoldCartDto } from './dto/hold-cart.dto';
+import { ValidateStockDto, StockValidationResult, StockValidationItemResult, AlternativeSourceDto } from './dto/validate-stock.dto';
+import { CreatePosTransferRequestDto } from './dto/create-transfer-request.dto';
 import { MediaResolverService } from '../media/media-resolver.service';
 
 @Injectable()
@@ -115,6 +117,7 @@ export class PosOrdersService {
       variantId?: string;
       comboId?: string;
       comboSelection?: Record<string, string>;
+      sourceWarehouseId?: string;
       quantity: number;
       price: number;
       discount?: number;
@@ -279,6 +282,7 @@ export class PosOrdersService {
         variantId: item.variantId,
         comboId: item.comboId,
         comboSelection: item.comboSelection,
+        sourceWarehouseId: item.sourceWarehouseId,
         quantity: item.quantity,
         price: effectivePrice,
         discount: item.discount,
@@ -559,6 +563,7 @@ export class PosOrdersService {
             variantId: item.variantId,
             comboId: item.comboId,
             comboSelection: item.comboSelection as any,
+            sourceWarehouseId: item.sourceWarehouseId || null,
             quantity: item.quantity,
             price: item.price,
           },
@@ -569,7 +574,13 @@ export class PosOrdersService {
         await this.stockRouter.isInventoryManagementEnabled();
 
       for (const item of authItems) {
-        if (imEnabled) {
+        // When sourceWarehouseId is set and differs from current showroom,
+        // skip stock deduction — Order Management handles fulfillment later.
+        const isCrossWarehouse =
+          item.sourceWarehouseId &&
+          item.sourceWarehouseId !== session.showroom.id;
+
+        if (imEnabled && !isCrossWarehouse) {
           // POS has no reservation flow — use addPhysical with negative qty
           // to decrement quantity only (skips reservedQuantity decrement)
           await this.stock.addPhysical({
@@ -584,7 +595,7 @@ export class PosOrdersService {
             ledgerType: 'POS_SALE',
             tx,
           });
-        } else {
+        } else if (!isCrossWarehouse) {
           const product = item.productId
             ? await tx.product.findUnique({
                 where: { id: item.productId },
@@ -656,12 +667,24 @@ export class PosOrdersService {
     });
   }
 
+  async getSessionShowroom(sessionId: string): Promise<{ showroomId: string }> {
+    const session = await this.prisma.posSession.findUnique({
+      where: { id: sessionId },
+      select: { showroomId: true },
+    });
+    if (!session) {
+      throw new BadRequestException('POS session not found');
+    }
+    return session;
+  }
+
   async findProducts(query: {
     search?: string;
     categoryId?: string;
     barcode?: string;
     page?: number;
     perPage?: number;
+    showroomId?: string;
   }) {
     const where: any = { isActive: true };
 
@@ -721,7 +744,283 @@ export class PosOrdersService {
       this.prisma.product.count({ where }),
     ]);
 
+    // Compute per-showroom stock availability when showroomId is provided
+    if (query.showroomId) {
+      const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+      const productIds = data.map((p: any) => p.id);
+      const variantIds = data.flatMap((p: any) =>
+        (p.variants || []).map((v: any) => v.id),
+      );
+
+      let physicalMap = new Map<string, { stock: number; reserved: number }>();
+
+      if (imEnabled) {
+        // Query physical inventory for current showroom (aggregate: for simple products, productId only; for variable, variantId)
+        const physicalRecords = await this.prisma.physicalInventory.findMany({
+          where: {
+            warehouseId: query.showroomId,
+            OR: [
+              { productId: { in: productIds }, variantId: null },
+              { variantId: { in: variantIds } },
+            ],
+          },
+        });
+
+        for (const rec of physicalRecords) {
+          const key = rec.variantId || rec.productId;
+          const existing = physicalMap.get(key);
+          if (existing) {
+            existing.stock += rec.quantity;
+            existing.reserved += rec.reservedQuantity;
+          } else {
+            physicalMap.set(key, {
+              stock: rec.quantity,
+              reserved: rec.reservedQuantity,
+            });
+          }
+        }
+      }
+
+      for (const product of data as any[]) {
+        if (product.type === 'variable' && product.variants?.length) {
+          for (const variant of product.variants) {
+            let currentStock: number;
+            let currentAvailable: number;
+            if (imEnabled) {
+              const entry = physicalMap.get(variant.id);
+              currentStock = entry?.stock ?? 0;
+              currentAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+            } else {
+              currentStock = variant.managedStockQuantity ?? 0;
+              currentAvailable = (variant.managedStockQuantity ?? 0) - (variant.reservedStock ?? 0);
+            }
+            variant._showroomStock = currentStock;
+            variant._showroomAvailable = currentAvailable;
+          }
+          // For variable products, overall stock = sum of variant stocks
+          const totalStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
+          const totalAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
+          product._showroomStock = totalStock;
+          product._showroomAvailable = totalAvailable;
+        } else {
+          if (imEnabled) {
+            const entry = physicalMap.get(product.id);
+            product._showroomStock = entry?.stock ?? 0;
+            product._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+          } else {
+            product._showroomStock = product.managedStockQuantity ?? 0;
+            product._showroomAvailable = (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
+          }
+        }
+      }
+    }
+
     await this.enrichProductMedia(data);
     return { data, total, page, perPage };
+  }
+
+  async validateStock(
+    dto: ValidateStockDto,
+    showroomId: string,
+  ): Promise<StockValidationResult> {
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
+    const results: StockValidationItemResult[] = [];
+
+    for (const item of dto.items) {
+      let currentStock = 0;
+      let currentAvailable = 0;
+
+      if (imEnabled) {
+        const availability = await this.stock.checkPhysicalAvailability(
+          item.productId!,
+          showroomId,
+          item.variantId,
+        );
+        currentStock = availability.currentStock;
+        currentAvailable = availability.availableStock;
+      } else {
+        const availability = await this.stock.getAvailableStock(
+          item.productId!,
+          item.variantId,
+        );
+        currentStock = availability.stock;
+        currentAvailable = availability.available;
+      }
+
+      const available = currentAvailable >= item.quantity;
+
+      // Query alternatives: other warehouses/showrooms with stock
+      let alternatives: AlternativeSourceDto[] = [];
+      if (!available) {
+        const wherePhysical: any = {
+          productId: item.productId,
+          warehouseId: { not: showroomId },
+          quantity: { gt: 0 },
+        };
+        if (item.variantId) wherePhysical.variantId = item.variantId;
+
+        const otherLocations = await this.prisma.physicalInventory.findMany({
+          where: wherePhysical,
+          include: {
+            warehouse: { select: { id: true, name: true, type: true } },
+          },
+          orderBy: { quantity: 'desc' },
+        });
+
+        // Deduplicate by warehouse
+        const warehouseMap = new Map<string, AlternativeSourceDto>();
+        for (const loc of otherLocations) {
+          const key = loc.warehouse.id;
+          const existing = warehouseMap.get(key);
+          const avail = loc.quantity - loc.reservedQuantity;
+          if (existing) {
+            existing.stock += loc.quantity;
+            existing.available += avail;
+          } else {
+            warehouseMap.set(key, {
+              warehouseId: loc.warehouse.id,
+              warehouseName: loc.warehouse.name,
+              warehouseType: loc.warehouse.type,
+              stock: loc.quantity,
+              reserved: loc.reservedQuantity,
+              available: avail,
+            });
+          }
+        }
+        alternatives = Array.from(warehouseMap.values())
+          .filter((a) => a.available > 0)
+          .sort((a, b) => b.available - a.available);
+      }
+
+      results.push({
+        productId: item.productId,
+        variantId: item.variantId,
+        requested: item.quantity,
+        available,
+        currentStock,
+        currentAvailable,
+        alternatives,
+      });
+    }
+
+    return {
+      allAvailable: results.every((r) => r.available),
+      items: results,
+    };
+  }
+
+  async getProductAvailability(
+    productId: string,
+    showroomId: string,
+    variantId?: string,
+  ) {
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
+    let currentShowroom: any = {};
+    if (imEnabled) {
+      currentShowroom = await this.stock.checkPhysicalAvailability(
+        productId,
+        showroomId,
+        variantId,
+      );
+    } else {
+      const global = await this.stock.getAvailableStock(productId, variantId);
+      currentShowroom = {
+        currentStock: global.stock,
+        reserved: global.reserved,
+        availableStock: global.available,
+      };
+    }
+
+    const wherePhysical: any = {
+      productId,
+      warehouseId: { not: showroomId },
+      quantity: { gt: 0 },
+    };
+    if (variantId) wherePhysical.variantId = variantId;
+
+    const networkRecords = await this.prisma.physicalInventory.findMany({
+      where: wherePhysical,
+      include: {
+        warehouse: { select: { id: true, name: true, type: true } },
+      },
+      orderBy: { quantity: 'desc' },
+    });
+
+    const warehouseMap = new Map<string, any>();
+    for (const rec of networkRecords) {
+      const key = rec.warehouse.id;
+      const existing = warehouseMap.get(key);
+      const avail = rec.quantity - rec.reservedQuantity;
+      if (existing) {
+        existing.stock += rec.quantity;
+        existing.available += avail;
+      } else {
+        warehouseMap.set(key, {
+          warehouseId: rec.warehouse.id,
+          warehouseName: rec.warehouse.name,
+          warehouseType: rec.warehouse.type,
+          stock: rec.quantity,
+          reserved: rec.reservedQuantity,
+          available: avail,
+        });
+      }
+    }
+
+    return {
+      productId,
+      variantId: variantId || null,
+      currentShowroom: {
+        warehouseId: showroomId,
+        stock: currentShowroom.currentStock ?? currentShowroom.stock ?? 0,
+        reserved: currentShowroom.reserved ?? 0,
+        available: currentShowroom.availableStock ?? currentShowroom.available ?? 0,
+      },
+      network: Array.from(warehouseMap.values()).filter((w) => w.available > 0),
+    };
+  }
+
+  async initiateTransfer(
+    dto: CreatePosTransferRequestDto,
+    cashierId: string,
+    showroomId: string,
+  ) {
+    const transfers: Array<{
+    id: string;
+    productId: string;
+    variantId?: string;
+    quantity: number;
+    sourceWarehouseId: string;
+    status: string;
+  }> = [];
+
+    for (const item of dto.items) {
+      const idempotencyKey = `POS_TRF_${cashierId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const transfer = await this.prisma.stockTransfer.create({
+        data: {
+          idempotencyKey,
+          sourceWarehouseId: item.sourceWarehouseId,
+          destWarehouseId: showroomId,
+          status: 'REQUESTED',
+          notes: dto.notes || `Transfer requested from POS for order ${dto.orderId || 'N/A'}`,
+          performedBy: cashierId,
+          requestedBy: cashierId,
+          orderId: dto.orderId || null,
+        },
+      });
+
+      transfers.push({
+        id: transfer.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        sourceWarehouseId: item.sourceWarehouseId,
+        status: 'REQUESTED',
+      });
+    }
+
+    return { transfers, count: transfers.length };
   }
 }

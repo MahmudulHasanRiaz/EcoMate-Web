@@ -5,15 +5,17 @@ import { Search, Plus, Layers, RefreshCw, WifiOff } from 'lucide-react'
 import { VariantModal } from './variant-modal'
 import { SafeImage } from './safe-image'
 import { productImageUrl, variantImageUrl } from '../lib/media'
+import { StockIndicator } from './stock-indicator'
 
 interface Props {
   categoryId: string | null
   searchQuery: string
   barcodeInput: string
   onBarcodeSubmit: () => void
+  showroomId?: string | null
 }
 
-export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSubmit }: Props) {
+export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSubmit, showroomId }: Props) {
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +31,7 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       if (categoryId) params.categoryId = categoryId
       if (searchQuery) params.search = searchQuery
       if (barcodeInput) params.barcode = barcodeInput
+      if (showroomId) params.showroomId = showroomId
       const res = await getPosProducts(params)
       setProducts(res.data.data || [])
     } catch (err: any) {
@@ -218,6 +221,17 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
                   {getProductPriceNode(p)}
                 </div>
               </div>
+
+              {showroomId && (
+                <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                  <StockIndicator
+                    stock={p._showroomStock ?? 0}
+                    available={p._showroomAvailable ?? 0}
+                    lowStockQty={p.lowStockQty}
+                    showCount={true}
+                  />
+                </div>
+              )}
             </button>
           )
         })}

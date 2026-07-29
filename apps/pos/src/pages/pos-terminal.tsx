@@ -28,7 +28,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [variantModalOpen, setVariantModalOpen] = useState(false)
   
-  const { showroomName, cashierName } = useSessionStore()
+  const { showroomName, showroomId, cashierName } = useSessionStore()
   const { items } = useCartStore()
 
   // Close profile popover on outside click
@@ -285,6 +285,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
               searchQuery={searchQuery}
               barcodeInput=""
               onBarcodeSubmit={() => {}}
+              showroomId={showroomId}
             />
           </div>
         </main>

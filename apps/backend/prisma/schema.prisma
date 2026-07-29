@@ -651,6 +651,7 @@ model Order {
   couponUsages  CouponUsage[]
   referralLeads ReferralLead[]
   stockCycles   OrderStockCycle[]
+  stockTransfers StockTransfer[]
 
   @@index([customerId])
   @@index([statusId])
@@ -680,18 +681,21 @@ model OrderItem {
   costType             String? // 'estimated' | 'actual'
   managedStockReserved Boolean  @default(false)
   managedStockDeducted Boolean  @default(false)
+  sourceWarehouseId    String?
   createdAt            DateTime @default(now())
 
   order           Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product         Product?                  @relation(fields: [productId], references: [id])
   variant         ProductVariant?           @relation(fields: [variantId], references: [id])
   combo           Combo?                    @relation(fields: [comboId], references: [id])
+  sourceWarehouse  Warehouse?               @relation(fields: [sourceWarehouseId], references: [id])
   comboComponents OrderItemComboComponent[]
 
   @@index([orderId])
   @@index([productId])
   @@index([variantId])
   @@index([comboId])
+  @@index([sourceWarehouseId])
 }
 
 model Payment {
@@ -2000,6 +2004,7 @@ model Warehouse {
   transfersSource                    StockTransfer[]                     @relation("TransferSource")
   transfersDest                      StockTransfer[]                     @relation("TransferDest")
   comboComponentPhysicalReservations ComboComponentPhysicalReservation[]
+  orderItems                         OrderItem[]
 
   @@index([isActive])
 }
@@ -2157,9 +2162,12 @@ model StockTransfer {
   idempotencyKey    String    @unique
   sourceWarehouseId String
   destWarehouseId   String
-  status            String    @default("PENDING")
+  status            String    @default("REQUESTED")
   notes             String?   @db.Text
   performedBy       String?
+  requestedBy       String?
+  orderId           String?
+  order             Order?    @relation(fields: [orderId], references: [id])
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
 
@@ -2170,6 +2178,7 @@ model StockTransfer {
   @@index([sourceWarehouseId])
   @@index([destWarehouseId])
   @@index([status])
+  @@index([orderId])
 }
 
 model GoodsReceiptNote {

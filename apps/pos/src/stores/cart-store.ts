@@ -13,6 +13,8 @@ interface CartItem {
   discountType?: 'flat' | 'percentage';
   image?: MediaSource;
   imageVersion?: string;
+  stockCheckStatus?: 'ok' | 'low' | 'out';
+  warehouseId?: string;
 }
 
 interface CartState {
