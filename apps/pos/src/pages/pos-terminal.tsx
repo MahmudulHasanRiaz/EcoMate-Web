@@ -64,7 +64,16 @@ export function PosTerminalPage({ onCloseSession }: Props) {
             const variantName = matchingVariant.attributeValues
               ?.map((av: any) => av.attributeValue?.value)
               .join(' / ') || matchingVariant.sku
-            
+
+            // Block if completely out of stock everywhere
+            const vAvail = matchingVariant._showroomAvailable ?? matchingVariant.managedStockQuantity ?? 0
+            const vNetAvail = matchingVariant._networkAvailable ?? matchingVariant.managedStockQuantity ?? 0
+            if (vAvail <= 0 && vNetAvail <= 0) {
+              toast.error(`"${product.name} (${variantName})" is completely out of stock`)
+              setSearchQuery('')
+              return
+            }
+
             const price = Number(matchingVariant.salePrice || matchingVariant.price || 0)
             if (price) {
               const imgUrl = variantImageUrl(matchingVariant, product)
@@ -93,6 +102,14 @@ export function PosTerminalPage({ onCloseSession }: Props) {
         }
 
         // 2. Simple product add directly
+        const avail = product._showroomAvailable ?? product.managedStockQuantity ?? 0
+        const netAvail = product._networkAvailable ?? product.managedStockQuantity ?? 0
+        if (avail <= 0 && netAvail <= 0) {
+          toast.error(`"${product.name}" is completely out of stock`)
+          setSearchQuery('')
+          return
+        }
+
         const price = Number(product.salePrice || product.basePrice || 0)
         if (price) {
           const imgUrl = productImageUrl(product)

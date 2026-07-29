@@ -812,6 +812,50 @@ export class PosOrdersService {
             product._showroomAvailable = (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
           }
         }
+
+        // Compute total network stock across ALL warehouses
+        if (imEnabled) {
+          const networkRecords = await this.prisma.physicalInventory.findMany({
+            where: {
+              OR: [
+                { productId: { in: productIds }, variantId: null },
+                { variantId: { in: variantIds } },
+              ],
+            },
+          });
+
+          const networkMap = new Map<string, { stock: number; reserved: number }>();
+          for (const rec of networkRecords) {
+            const key = rec.variantId || rec.productId;
+            const existing = networkMap.get(key);
+            if (existing) {
+              existing.stock += rec.quantity;
+              existing.reserved += rec.reservedQuantity;
+            } else {
+              networkMap.set(key, { stock: rec.quantity, reserved: rec.reservedQuantity });
+            }
+          }
+
+          for (const product of data as any[]) {
+            if (product.type === 'variable' && product.variants?.length) {
+              for (const variant of product.variants) {
+                const entry = networkMap.get(variant.id);
+                variant._networkAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+              }
+              product._networkAvailable = product.variants.reduce(
+                (s: number, v: any) => s + (v._networkAvailable ?? 0), 0,
+              );
+            } else {
+              const entry = networkMap.get(product.id);
+              product._networkAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+            }
+          }
+        } else {
+          // IM OFF: managedStockQuantity is the global total
+          for (const product of data as any[]) {
+            product._networkAvailable = product.managedStockQuantity ?? 0;
+          }
+        }
       }
     }
 
