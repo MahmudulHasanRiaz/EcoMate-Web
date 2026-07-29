@@ -6,6 +6,7 @@ import { VariantModal } from './variant-modal'
 import { SafeImage } from './safe-image'
 import { productImageUrl, variantImageUrl } from '../lib/media'
 import { StockIndicator } from './stock-indicator'
+import { toast } from 'sonner'
 
 interface Props {
   categoryId: string | null
@@ -51,6 +52,14 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       return
     }
 
+    // Block adding if completely out of stock everywhere
+    const available = product._showroomAvailable ?? product.managedStockQuantity ?? 0
+    const networkAvailable = product._networkAvailable ?? product.managedStockQuantity ?? 0
+    if (available <= 0 && networkAvailable <= 0) {
+      toast.error(`"${product.name}" is completely out of stock`)
+      return
+    }
+
     const price = Number(product.salePrice || product.basePrice || 0)
     if (!price) return
     const imgUrl = productImageUrl(product)
@@ -66,6 +75,14 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
   }
 
   const handleAddVariant = (variant: any, variantName: string) => {
+    // Block adding variant if completely out of stock everywhere
+    const available = variant._showroomAvailable ?? variant.managedStockQuantity ?? 0
+    const networkAvailable = variant._networkAvailable ?? variant.managedStockQuantity ?? 0
+    if (available <= 0 && networkAvailable <= 0) {
+      toast.error(`"${variantName}" is completely out of stock`)
+      return
+    }
+
     const price = Number(variant.salePrice || variant.price || 0)
     if (!price || !selectedProduct) return
     const imgUrl = variantImageUrl(variant, selectedProduct)
