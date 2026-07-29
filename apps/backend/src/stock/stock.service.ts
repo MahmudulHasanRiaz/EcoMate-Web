@@ -303,6 +303,8 @@ export class StockService {
     binLocationId?: string,
     _referenceType?: ReferenceEntity,
     _referenceId?: string,
+    reservedBefore?: number,
+    reservedAfter?: number,
   ) {
     for (const t of targets) {
       const whereClause: any = {
@@ -333,6 +335,8 @@ export class StockService {
           direction,
           stockBefore,
           stockAfter,
+          reservedBefore: reservedBefore ?? null,
+          reservedAfter: reservedAfter ?? null,
           type,
           reason: reference,
           performedBy,
@@ -354,23 +358,34 @@ export class StockService {
   ) {
     for (const t of targets) {
       let currentStock = 0;
+      let currentReserved = 0;
       if (t.variantId) {
         const v = await tx.productVariant.findUnique({
           where: { id: t.variantId },
-          select: { managedStockQuantity: true },
+          select: { managedStockQuantity: true, reservedStock: true },
         });
         currentStock = v?.managedStockQuantity ?? 0;
+        currentReserved = v?.reservedStock ?? 0;
       } else {
         const p = await tx.product.findUnique({
           where: { id: t.productId },
-          select: { managedStockQuantity: true },
+          select: { managedStockQuantity: true, reservedStock: true },
         });
         currentStock = p?.managedStockQuantity ?? 0;
+        currentReserved = p?.reservedStock ?? 0;
       }
 
       const stockAfter = currentStock;
       const stockBefore =
         direction === 'IN' ? currentStock - t.qty : currentStock + t.qty;
+
+      // Capture reserved state transition only for ORDER_DEDUCTION (reservedStock was decremented)
+      let reservedBefore: number | null = null;
+      let reservedAfter: number | null = null;
+      if (type === 'ORDER_DEDUCTION') {
+        reservedAfter = currentReserved;
+        reservedBefore = currentReserved + t.qty;
+      }
 
       await tx.managedStockLedger.create({
         data: {
@@ -382,6 +397,8 @@ export class StockService {
           type,
           stockBefore,
           stockAfter,
+          reservedBefore,
+          reservedAfter,
           referenceType,
           referenceId,
           reason: note,
@@ -548,6 +565,25 @@ export class StockService {
             tx,
           );
         }
+        // Capture reserved state after decrement (for DEDUCTION type)
+        let physReservedBefore = 0;
+        let physReservedAfter = 0;
+        if (targets.length > 0 && !isNegative) {
+          const firstTarget = targets[0];
+          const wc: any = {
+            productId: firstTarget.productId,
+            variantId: firstTarget.variantId || null,
+            warehouseId: params.warehouseId!,
+          };
+          if (params.binLocationId) wc.binLocationId = params.binLocationId;
+          else wc.binLocationId = null;
+          const pi = await tx.physicalInventory.findFirst({
+            where: wc,
+            select: { reservedQuantity: true },
+          });
+          physReservedAfter = pi?.reservedQuantity ?? 0;
+          physReservedBefore = physReservedAfter + targets[0].qty;
+        }
         await this.logPhysicalInventoryLedger(
           targets,
           params.warehouseId!,
@@ -560,6 +596,8 @@ export class StockService {
           params.binLocationId,
           params.referenceType,
           params.referenceId,
+          physReservedBefore,
+          physReservedAfter,
         );
       } else if (effectiveOperation === 'add') {
         await this.applyPhysicalChange(
@@ -642,18 +680,21 @@ export class StockService {
         for (const t of targets) {
           const p = await tx.product.findUnique({
             where: { id: t.productId },
-            select: { availabilityMode: true, managedStockQuantity: true },
+            select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
           if (p?.availabilityMode === 'MANAGED_STOCK') {
             let currentStock = 0;
+            let currentReserved = 0;
             if (t.variantId) {
               const v = await tx.productVariant.findUnique({
                 where: { id: t.variantId },
-                select: { managedStockQuantity: true },
+                select: { managedStockQuantity: true, reservedStock: true },
               });
               currentStock = v?.managedStockQuantity ?? 0;
+              currentReserved = v?.reservedStock ?? 0;
             } else {
               currentStock = p.managedStockQuantity ?? 0;
+              currentReserved = p.reservedStock ?? 0;
             }
             let orderId: string | null = null;
             const displayIdMatch = params.reference.match(/ORD-\d{6}-\d{4}/);
@@ -674,6 +715,8 @@ export class StockService {
                 type: (params.ledgerType as any) || 'RESERVE',
                 stockBefore: currentStock,
                 stockAfter: currentStock,
+                reservedBefore: currentReserved - t.qty,
+                reservedAfter: currentReserved,
                 referenceType: 'ORDER',
                 referenceId: orderId,
                 performedById: params.performedBy || 'system',
@@ -694,18 +737,21 @@ export class StockService {
         for (const t of targets) {
           const p = await tx.product.findUnique({
             where: { id: t.productId },
-            select: { availabilityMode: true, managedStockQuantity: true },
+            select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
           if (p?.availabilityMode === 'MANAGED_STOCK') {
             let currentStock = 0;
+            let currentReserved = 0;
             if (t.variantId) {
               const v = await tx.productVariant.findUnique({
                 where: { id: t.variantId },
-                select: { managedStockQuantity: true },
+                select: { managedStockQuantity: true, reservedStock: true },
               });
               currentStock = v?.managedStockQuantity ?? 0;
+              currentReserved = v?.reservedStock ?? 0;
             } else {
               currentStock = p.managedStockQuantity ?? 0;
+              currentReserved = p.reservedStock ?? 0;
             }
             let orderId: string | null = null;
             const displayIdMatch = params.reference.match(/ORD-\d{6}-\d{4}/);
@@ -726,6 +772,8 @@ export class StockService {
                 type: (params.ledgerType as any) || 'RELEASE',
                 stockBefore: currentStock,
                 stockAfter: currentStock,
+                reservedBefore: currentReserved + t.qty,
+                reservedAfter: currentReserved,
                 referenceType: 'ORDER',
                 referenceId: orderId,
                 performedById: params.performedBy || 'system',
@@ -1232,8 +1280,9 @@ export class StockService {
       // Write ledger entry
       const pi = await client.physicalInventory.findUnique({
         where: { id: alloc.physicalInventoryId },
-        select: { quantity: true },
+        select: { quantity: true, reservedQuantity: true },
       });
+      const reservedQty = pi?.reservedQuantity ?? 0;
       await client.physicalInventoryLedger.create({
         data: {
           productId: parent.productId,
@@ -1243,6 +1292,8 @@ export class StockService {
           direction: 'OUT',
           stockBefore: (pi?.quantity ?? 0) + deductQty,
           stockAfter: pi?.quantity ?? 0,
+          reservedBefore: reservedQty + deductQty,
+          reservedAfter: reservedQty,
           type: 'DEDUCTION',
           reason: params.reference,
           performedBy: params.performedBy,

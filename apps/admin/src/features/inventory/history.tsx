@@ -37,6 +37,8 @@ interface LogEntry {
   type: string
   stockBefore: number
   stockAfter: number
+  reservedBefore?: number | null
+  reservedAfter?: number | null
   reason?: string
   note?: string
   performedBy: string
@@ -325,6 +327,8 @@ export function MovementHistory() {
                   {ledgerMode === 'PHYSICAL' && <TableHead className="text-right">Unit Cost</TableHead>}
                   <TableHead className="text-right">Before</TableHead>
                   <TableHead className="text-right">After</TableHead>
+                  <TableHead className="text-right">Reserved</TableHead>
+                  <TableHead className="text-right">Available</TableHead>
                   <TableHead>Performed By</TableHead>
                   <TableHead>Note / Reason</TableHead>
                 </TableRow>
@@ -332,7 +336,7 @@ export function MovementHistory() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={ledgerMode === 'PHYSICAL' ? 10 : 8} className="text-center py-12">
+                    <TableCell colSpan={ledgerMode === 'PHYSICAL' ? 12 : 10} className="text-center py-12">
                       <div className="flex items-center justify-center gap-2 text-muted-foreground">
                         <Loader2 className="h-5 w-5 animate-spin" />
                         <span>Loading movement history...</span>
@@ -342,7 +346,7 @@ export function MovementHistory() {
                 ) : isError ? (
                   <TableRow>
                     <TableCell
-                      colSpan={ledgerMode === 'PHYSICAL' ? 10 : 8}
+                      colSpan={ledgerMode === 'PHYSICAL' ? 12 : 10}
                       className="text-center py-12 text-destructive font-medium"
                     >
                       Failed to load logs. Please try again.
@@ -351,7 +355,7 @@ export function MovementHistory() {
                 ) : logs.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={ledgerMode === 'PHYSICAL' ? 10 : 8}
+                      colSpan={ledgerMode === 'PHYSICAL' ? 12 : 10}
                       className="text-center py-12 text-muted-foreground"
                     >
                       No stock movements found matching filters.
@@ -407,6 +411,14 @@ export function MovementHistory() {
                       </TableCell>
                       <TableCell className="text-right text-xs font-medium">
                         {log.stockAfter}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {log.reservedBefore != null ? `${log.reservedBefore} → ${log.reservedAfter}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right text-xs font-medium">
+                        {log.reservedAfter != null
+                          ? (log.stockAfter - log.reservedAfter).toString()
+                          : '—'}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (

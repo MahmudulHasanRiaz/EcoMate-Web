@@ -1147,9 +1147,11 @@ model PhysicalInventoryLedger {
   warehouseId String
   quantity    Int
   direction   MovementDirection
-  stockBefore Int
-  stockAfter  Int
-  type        String
+  stockBefore    Int
+  stockAfter     Int
+  reservedBefore Int?
+  reservedAfter  Int?
+  type           String
   reason      String?
   performedBy String?
   unitCost    Decimal?          @db.Decimal(12, 2)
@@ -1239,8 +1241,10 @@ model ManagedStockLedger {
   direction MovementDirection
   type      ManagedStockMovementType
 
-  stockBefore Int?
-  stockAfter  Int?
+  stockBefore    Int?
+  stockAfter     Int?
+  reservedBefore Int?
+  reservedAfter  Int?
 
   referenceType ReferenceEntity?
   referenceId   String?

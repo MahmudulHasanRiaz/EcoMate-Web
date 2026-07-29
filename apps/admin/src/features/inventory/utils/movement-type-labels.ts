@@ -17,6 +17,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ADJUSTMENT: 'Adjustment',
   RETURN: 'Return',
   CANCEL_RELEASE: 'Cancel Release',
+  RESERVE: 'Reserve',
+  RELEASE: 'Release',
 
   // Inventory Log types (legacy)
   manual_adjustment: 'Adjustment',
@@ -39,8 +41,11 @@ export function getMovementTypeBadgeVariant(
   if (type.includes('IN') || type === 'MANUAL_ADD' || type === 'INITIAL' || type === 'RETURN') {
     return 'default'
   }
-  if (type === 'TRANSFER' || type === 'transfer') {
+  if (type === 'TRANSFER' || type === 'transfer' || type === 'RELEASE') {
     return 'secondary'
+  }
+  if (type === 'RESERVE') {
+    return 'outline'
   }
   return 'outline'
 }
