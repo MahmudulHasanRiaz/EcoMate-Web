@@ -38,6 +38,8 @@ export const productsApi = {
     apiClient.put<ProductResponse>(`/products/${id}/variants/reorder`, { orderedIds }),
   removeAllVariants: (id: string) =>
     apiClient.delete<{ message: string }>(`/products/${id}/variants`),
+  removeVariant: (id: string, variantId: string) =>
+    apiClient.delete<{ message: string }>(`/products/${id}/variants/${variantId}`),
 }
 
 export const uploadApi = {
