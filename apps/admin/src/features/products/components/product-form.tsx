@@ -712,6 +712,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const variantIds = variantList.map((v: any) => v.id || v._tempId)
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
       <DialogContent className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'>
         <DialogHeader className='px-6 pt-6 pb-2'>
@@ -1534,6 +1535,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       </div>,
       document.body
     )}
+  </>
   )
 }
 
