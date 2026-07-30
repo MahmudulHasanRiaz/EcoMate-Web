@@ -154,11 +154,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [bulkPrice, setBulkPrice] = useState('')
   const [bulkSalePrice, setBulkSalePrice] = useState('')
   const [bulkStandardCost, setBulkStandardCost] = useState('')
-  const [bulkStock, setBulkStock] = useState('')
   const [bulkOverridePrice, setBulkOverridePrice] = useState(false)
   const [bulkOverrideSalePrice, setBulkOverrideSalePrice] = useState(false)
   const [bulkOverrideStandardCost, setBulkOverrideStandardCost] = useState(false)
-  const [bulkOverrideStock, setBulkOverrideStock] = useState(false)
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false)
   const [overrideFormState, setOverrideFormState] = useState<Record<string, { enabled: boolean; partialFixedAmount: string; partialPercentage: string }>>({
     FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -639,9 +638,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const handleBulkUpdate = async () => {
     const patch: Record<string, any> = {}
     if (bulkOverridePrice && bulkPrice) patch.price = parseFloat(bulkPrice)
-    if (bulkOverrideSalePrice) patch.salePrice = bulkSalePrice ? parseFloat(bulkSalePrice) : null
-    if (bulkOverrideStandardCost) patch.standardCost = bulkStandardCost ? parseFloat(bulkStandardCost) : null
-    if (bulkOverrideStock && bulkStock) patch.managedStockQuantity = parseInt(bulkStock) || 0
+    if (bulkOverrideSalePrice && bulkSalePrice) patch.salePrice = parseFloat(bulkSalePrice)
+    if (bulkOverrideStandardCost && bulkStandardCost) patch.standardCost = parseFloat(bulkStandardCost)
     if (Object.keys(patch).length === 0) { toast.error('Select at least one field to update'); return }
 
     if (isLocalMode || isDuplicate) {
@@ -650,11 +648,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     } else {
       const rowId = currentRow?.id || createdProductId
       if (!rowId) return
+      setIsBulkUpdating(true)
       const results = await Promise.allSettled(
         variantList.map(v =>
           productsApi.updateVariant(rowId, v.id, patch)
         )
       )
+      setIsBulkUpdating(false)
       const succeeded = results.filter(r => r.status === 'fulfilled').length
       const failed = results.filter(r => r.status === 'rejected').length
       if (failed === 0) {
@@ -666,8 +666,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['product', rowId] })
     }
     setBulkUpdateOpen(false)
-    setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost(''); setBulkStock('')
-    setBulkOverridePrice(false); setBulkOverrideSalePrice(false); setBulkOverrideStandardCost(false); setBulkOverrideStock(false)
+    setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost('')
+    setBulkOverridePrice(false); setBulkOverrideSalePrice(false); setBulkOverrideStandardCost(false)
   }
 
   const validateForSave = (): string[] => {
@@ -1497,14 +1497,15 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       handleConfirm={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}
     />
 
-    {bulkUpdateOpen && createPortal(
-      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
-        <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-          <h3 className='font-semibold text-lg'>Bulk Update All Variants</h3>
-          <p className='text-sm text-muted-foreground'>
-            Check the fields you want to update. Only checked fields will be applied to all {variantList.length} variant(s).
-          </p>
-          <div className='space-y-3'>
+    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen}>
+      <DialogContent className='max-w-md'>
+        <DialogHeader>
+          <DialogTitle>Bulk Update All Variants</DialogTitle>
+        </DialogHeader>
+        <p className='text-sm text-muted-foreground'>
+          Check the fields you want to update. Only checked fields will be applied to all {variantList.length} variant(s).
+        </p>
+        <div className='space-y-3'>
             <label className='flex items-center gap-3 cursor-pointer'>
               <input type='checkbox' checked={bulkOverridePrice} onChange={e => setBulkOverridePrice(e.target.checked)} className='rounded' />
               <span className='text-sm w-24'>Price</span>
@@ -1520,23 +1521,16 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               <span className='text-sm w-24'>Std Cost</span>
               <Input type='number' step='0.01' value={bulkStandardCost} onChange={e => setBulkStandardCost(e.target.value)} placeholder='0.00' disabled={!bulkOverrideStandardCost} className='flex-1' />
             </label>
-            <label className='flex items-center gap-3 cursor-pointer'>
-              <input type='checkbox' checked={bulkOverrideStock} onChange={e => setBulkOverrideStock(e.target.checked)} className='rounded' />
-              <span className='text-sm w-24'>Stock Qty</span>
-              <Input type='number' value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder='0' disabled={!bulkOverrideStock} className='flex-1' />
-            </label>
           </div>
           <div className='flex justify-end gap-3 pt-2'>
-            <Button variant='outline' onClick={() => setBulkUpdateOpen(false)} disabled={clearVariantMut.isPending}>Cancel</Button>
-            <Button onClick={handleBulkUpdate} disabled={clearVariantMut.isPending}>
-              {clearVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            <Button variant='outline' onClick={() => setBulkUpdateOpen(false)} disabled={isBulkUpdating}>Cancel</Button>
+            <Button onClick={handleBulkUpdate} disabled={isBulkUpdating}>
+              {isBulkUpdating && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               Apply to All
             </Button>
           </div>
-        </div>
-      </div>,
-      document.body
-    )}
+      </DialogContent>
+    </Dialog>
   </>
   )
 }
