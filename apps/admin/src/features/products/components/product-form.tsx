@@ -19,6 +19,7 @@ import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -387,9 +388,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   const clearVariantMut = useMutation({
     mutationFn: (id: string) => productsApi.removeAllVariants(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
-      queryClient.invalidateQueries({ queryKey: ['product', currentRow?.id || createdProductId] })
+      queryClient.invalidateQueries({ queryKey: ['product', id] })
       setClearVariantConfirm(false)
       toast.success('All variants removed')
     },
@@ -1494,26 +1495,16 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       document.body
     )}
 
-    {clearVariantConfirm && createPortal(
-      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setClearVariantConfirm(false)}>
-        <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-          <h3 className='font-semibold text-lg'>Remove All Variants?</h3>
-          <p className='text-sm text-muted-foreground'>
-            This will delete all <strong>{variantList.length} variant(s)</strong> and convert the product to Simple type.
-          </p>
-          <div className='flex justify-end gap-2'>
-            <Button variant='outline' onClick={() => setClearVariantConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}>
-              {clearVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-              Remove All
-            </Button>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
+    <ConfirmDialog
+      open={clearVariantConfirm}
+      onOpenChange={setClearVariantConfirm}
+      title='Remove All Variants?'
+      desc={`This will delete all ${variantList.length} variant(s) and convert the product to Simple type.`}
+      confirmText={clearVariantMut.isPending ? 'Removing...' : 'Remove All'}
+      destructive
+      isLoading={clearVariantMut.isPending}
+      handleConfirm={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}
+    />
 
     {bulkUpdateOpen && createPortal(
       <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
