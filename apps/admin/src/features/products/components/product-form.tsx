@@ -373,7 +373,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
       toast.success('Variant updated')
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
   })
 
   const reorderVariantsMut = useMutation({
@@ -510,7 +510,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const handleGenerateVariants = () => {
     if (selectedAttrs.length === 0) return
 
-    const productId = currentRow?.id || createdProductId
+    const productId = (isEdit || !!createdProductId) ? (currentRow?.id || createdProductId) : null
     if (productId) {
       // Existing product — call API
       if (variantList.length > 0 && !regenerateConfirm) {
@@ -601,7 +601,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const saveVariantImgMgr = () => {
     if (!variantImgMgr) return
     const { variantId, images: mgrImages } = variantImgMgr
-    if (isLocalMode) {
+    if (isLocalMode || isDuplicate) {
       setLocalVariants(prev => prev.map(lv =>
         (lv.id || lv._tempId) === variantId
           ? { ...lv, images: mgrImages, image: mgrImages[0] || null }
@@ -644,7 +644,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     if (bulkOverrideStock && bulkStock) patch.managedStockQuantity = parseInt(bulkStock) || 0
     if (Object.keys(patch).length === 0) { toast.error('Select at least one field to update'); return }
 
-    if (isLocalMode) {
+    if (isLocalMode || isDuplicate) {
       setLocalVariants(prev => prev.map(lv => ({ ...lv, ...patch })))
       toast.success(`Updated ${variantList.length} variants`)
     } else {
@@ -701,7 +701,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
-  const variantList = isLocalMode ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
+  const variantList = (isLocalMode || isDuplicate) ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
 
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -712,7 +712,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     const newIndex = variantList.findIndex((v: any) => (v.id || v._tempId) === over.id)
     if (oldIndex === -1 || newIndex === -1) return
     const reordered = arrayMove(variantList, oldIndex, newIndex)
-    if (isLocalMode) {
+    if (isLocalMode || isDuplicate) {
       setLocalVariants(reordered)
     } else {
       const rowId = currentRow?.id || createdProductId!
@@ -779,7 +779,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-2 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Product Name *</Label>
-                    <Input value={name} onChange={e => { setName(e.target.value); if (!isEdit) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' />
+                    <Input value={name} onChange={e => { setName(e.target.value); if (!isEdit && !isDuplicate) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' />
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Slug</Label>
@@ -1199,7 +1199,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                               const vid = v.id || v._tempId
                               return (
                                 <SortableVariantRow key={vid} id={vid}>
-                                  {isLocalMode ? (
+                                  {isLocalMode || isDuplicate ? (
                                     <VariantRow
                                       variant={v}
                                       productId=''
@@ -1475,25 +1475,16 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       document.body
     )}
 
-    {regenerateConfirm && createPortal(
-      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setRegenerateConfirm(false)}>
-        <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-          <h3 className='font-semibold text-lg'>Regenerate Variants?</h3>
-          <p className='text-sm text-muted-foreground'>
-            This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.
-          </p>
-          <div className='flex justify-end gap-2'>
-            <Button variant='outline' onClick={() => setRegenerateConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant='destructive' onClick={handleGenerateVariants}>
-              Delete & Regenerate
-            </Button>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
+    <ConfirmDialog
+      open={regenerateConfirm}
+      onOpenChange={setRegenerateConfirm}
+      title='Regenerate Variants?'
+      desc={<span>This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.</span>}
+      confirmText='Delete &amp; Regenerate'
+      destructive
+      isLoading={genVariantMut.isPending}
+      handleConfirm={handleGenerateVariants}
+    />
 
     <ConfirmDialog
       open={clearVariantConfirm}
