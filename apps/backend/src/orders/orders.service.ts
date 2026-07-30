@@ -867,7 +867,7 @@ export class OrdersService {
               orderBy: { amount: 'desc' },
               select: { id: true },
             });
-            optionId = highest?.id ?? null;
+            optionId = highest?.id;
           }
           if (!optionId) {
             throw new BadRequestException('A shipping option is required');
