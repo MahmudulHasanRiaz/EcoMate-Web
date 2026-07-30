@@ -106,6 +106,18 @@ export class ProductsController {
   }
 
   @Public()
+  @Get('check-slug/:slug')
+  checkSlug(@Param('slug') slug: string) {
+    return this.svc.checkSlugAvailability(slug);
+  }
+
+  @Public()
+  @Get('check-sku/:sku')
+  checkSku(@Param('sku') sku: string, @Query('excludeId') excludeId?: string) {
+    return this.svc.checkSkuAvailability(sku, excludeId);
+  }
+
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -168,5 +180,11 @@ export class ProductsController {
     @Body() body: { orderedIds: string[] },
   ) {
     return this.svc.reorderVariants(id, body.orderedIds);
+  }
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Delete(':id/variants')
+  removeAllVariants(@Param('id') id: string) {
+    return this.svc.removeAllVariants(id);
   }
 }

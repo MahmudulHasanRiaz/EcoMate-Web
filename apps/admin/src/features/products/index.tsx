@@ -25,7 +25,7 @@ export function Products() {
   const queryClient = useQueryClient()
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
   const [formOpen, setFormOpen] = useState(false)
-  const [formMode, setFormMode] = useState<'add' | 'edit'>('add')
+  const [formMode, setFormMode] = useState<'add' | 'edit' | 'duplicate'>('add')
   const [editRow, setEditRow] = useState<ProductResponse | undefined>()
   const [deleteTarget, setDeleteTarget] = useState<ProductResponse | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -149,12 +149,19 @@ export function Products() {
     try {
       const res = await productsApi.get(row.id)
       const source = res.data
+      const cleanName = source.name.replace(/^(Copy of\s*)+/, '')
+      const copyMatch = source.name.match(/\(copy (\d+)\)$/)
+      const copyIndex = copyMatch ? parseInt(copyMatch[1]) + 1 : 2
+      const newName = copyIndex > 1 ? `${cleanName} (copy ${copyIndex})` : `Copy of ${cleanName}`
+      const newSku = source.sku ? `${source.sku}-CP${Date.now().toString(36).toUpperCase()}` : ''
       setDuplicateSourceRow({
         ...source,
-        name: `Copy of ${source.name}`,
-        slug: `${source.slug}-copy-${Date.now()}`,
+        name: newName,
+        slug: `${source.slug}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        sku: newSku,
+        managedStockQuantity: 0,
       })
-      setFormMode('add')
+      setFormMode('duplicate')
       setFormOpen(true)
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Failed to fetch product for duplication')
