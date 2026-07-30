@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star, Trash2 } from 'lucide-react'
@@ -1349,179 +1350,190 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           initialVariantId={activeVariantId || undefined}
         />
       )}
-
-      {showReviewGuard && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setShowReviewGuard(false)}>
-          <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <h3 className='font-semibold text-lg'>Review before creating</h3>
-            <p className='text-sm text-muted-foreground'>
-              The following configuration areas may need attention:
-            </p>
-            <div className='space-y-2'>
-              {reviewGuardItems.map((item, i) => (
-                <div key={i} className='flex items-center gap-2 text-sm border rounded-lg p-3'>
-                  <span className='text-amber-500 font-bold'>⚠</span>
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-            <div className='flex justify-end gap-3 pt-2'>
-              <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
-              <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
-                {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-                Create Anyway
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {variantImgMgr && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setVariantImgMgr(null)}>
-          <div className='bg-background rounded-lg shadow-lg max-w-lg w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <div className='flex items-center justify-between'>
-              <h3 className='font-semibold text-lg'>Variant Images</h3>
-              <Button variant='outline' size='sm' onClick={() => { setVariantImgGalleryOpen(true) }}>
-                <ImageIcon className='h-4 w-4 mr-1' /> Add Images
-              </Button>
-            </div>
-            {variantImgMgr.images.length === 0 ? (
-              <div className='flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg'>
-                <Package className='h-8 w-8 mb-2' />
-                <p className='text-sm'>No images for this variant</p>
-                <Button variant='outline' size='sm' className='mt-2' onClick={() => setVariantImgGalleryOpen(true)}>Browse Library</Button>
-              </div>
-            ) : (
-              <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
-                const { active, over } = event
-                if (!over || active.id === over.id) return
-                const imgs = variantImgMgr.images
-                const idToUrl = (id: string) => imgs.find(u => `vimg-${variantImgMgr.variantId}-${u}` === id)
-                const oldUrl = idToUrl(active.id as string)
-                const newUrl = idToUrl(over.id as string)
-                if (!oldUrl || !newUrl) return
-                const oldIdx = imgs.indexOf(oldUrl)
-                const newIdx = imgs.indexOf(newUrl)
-                if (oldIdx === -1 || newIdx === -1) return
-                reorderVariantImg(variantImgMgr.variantId, oldIdx, newIdx)
-              }}>
-                <SortableContext items={variantImgMgr.images.map(u => `vimg-${variantImgMgr.variantId}-${u}`)} strategy={rectSortingStrategy}>
-                  <div className='grid grid-cols-4 gap-3'>
-                    {variantImgMgr.images.map((url) => {
-                      const idx = variantImgMgr.images.indexOf(url)
-                      return (
-                        <SortableImageCard
-                          key={`vimg-${variantImgMgr.variantId}-${url}`}
-                          url={url}
-                          isPrimary={idx === 0}
-                          onSetPrimary={(u) => setPrimaryVariantImg(variantImgMgr.variantId, u)}
-                          onRemove={(u) => removeVariantImg(variantImgMgr.variantId, u)}
-                        />
-                      )
-                    })}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
-            <div className='flex justify-end gap-3 pt-2 border-t'>
-              <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
-              <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
-                {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-                Save Images
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {variantImgGalleryOpen && variantImgMgr && (
-        <MediaPicker
-          open={variantImgGalleryOpen}
-          onOpenChange={setVariantImgGalleryOpen}
-          selected={variantImgMgr.images}
-          multiple={true}
-          onSelect={(urls) => {
-            setVariantImgMgr(prev => prev ? { ...prev, images: dedupUrls(urls) } : null)
-            setVariantImgGalleryOpen(false)
-          }}
-        />
-      )}
-
-      {regenerateConfirm && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setRegenerateConfirm(false)}>
-          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <h3 className='font-semibold text-lg'>Regenerate Variants?</h3>
-            <p className='text-sm text-muted-foreground'>
-              This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.
-            </p>
-            <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={() => setRegenerateConfirm(false)}>
-                Cancel
-              </Button>
-              <Button variant='destructive' onClick={handleGenerateVariants}>
-                Delete & Regenerate
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {clearVariantConfirm && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setClearVariantConfirm(false)}>
-          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <h3 className='font-semibold text-lg'>Remove All Variants?</h3>
-            <p className='text-sm text-muted-foreground'>
-              This will delete all <strong>{variantList.length} variant(s)</strong> and convert the product to Simple type.
-            </p>
-            <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={() => setClearVariantConfirm(false)}>
-                Cancel
-              </Button>
-              <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => clearVariantMut.mutate(currentRow?.id || createdProductId!)}>
-                Remove All
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {bulkUpdateOpen && (
-        <div className='fixed inset-0 z-[60] flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
-          <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-            <h3 className='font-semibold text-lg'>Bulk Update All Variants</h3>
-            <p className='text-sm text-muted-foreground'>
-              Check the fields you want to update. Only checked fields will be applied to all {variantList.length} variant(s).
-            </p>
-            <div className='space-y-3'>
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input type='checkbox' checked={bulkOverridePrice} onChange={e => setBulkOverridePrice(e.target.checked)} className='rounded' />
-                <span className='text-sm w-24'>Price</span>
-                <Input type='number' step='0.01' value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder='0.00' disabled={!bulkOverridePrice} className='flex-1' />
-              </label>
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input type='checkbox' checked={bulkOverrideSalePrice} onChange={e => setBulkOverrideSalePrice(e.target.checked)} className='rounded' />
-                <span className='text-sm w-24'>Sale Price</span>
-                <Input type='number' step='0.01' value={bulkSalePrice} onChange={e => setBulkSalePrice(e.target.value)} placeholder='0.00' disabled={!bulkOverrideSalePrice} className='flex-1' />
-              </label>
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input type='checkbox' checked={bulkOverrideStandardCost} onChange={e => setBulkOverrideStandardCost(e.target.checked)} className='rounded' />
-                <span className='text-sm w-24'>Std Cost</span>
-                <Input type='number' step='0.01' value={bulkStandardCost} onChange={e => setBulkStandardCost(e.target.value)} placeholder='0.00' disabled={!bulkOverrideStandardCost} className='flex-1' />
-              </label>
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input type='checkbox' checked={bulkOverrideStock} onChange={e => setBulkOverrideStock(e.target.checked)} className='rounded' />
-                <span className='text-sm w-24'>Stock Qty</span>
-                <Input type='number' value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder='0' disabled={!bulkOverrideStock} className='flex-1' />
-              </label>
-            </div>
-            <div className='flex justify-end gap-3 pt-2'>
-              <Button variant='outline' onClick={() => setBulkUpdateOpen(false)}>Cancel</Button>
-              <Button onClick={handleBulkUpdate}>Apply to All</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </Dialog>
+
+    {/* Portal overrides — rendered at document.body to avoid DialogContent transform stacking */}
+    {showReviewGuard && createPortal(
+      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setShowReviewGuard(false)}>
+        <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+          <h3 className='font-semibold text-lg'>Review before creating</h3>
+          <p className='text-sm text-muted-foreground'>
+            The following configuration areas may need attention:
+          </p>
+          <div className='space-y-2'>
+            {reviewGuardItems.map((item, i) => (
+              <div key={i} className='flex items-center gap-2 text-sm border rounded-lg p-3'>
+                <span className='text-amber-500 font-bold'>⚠</span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+          <div className='flex justify-end gap-3 pt-2'>
+            <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
+            <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
+              {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Create Anyway
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {variantImgMgr && createPortal(
+      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setVariantImgMgr(null)}>
+        <div className='bg-background rounded-lg shadow-lg max-w-lg w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+          <div className='flex items-center justify-between'>
+            <h3 className='font-semibold text-lg'>Variant Images</h3>
+            <Button variant='outline' size='sm' onClick={() => { setVariantImgGalleryOpen(true) }}>
+              <ImageIcon className='h-4 w-4 mr-1' /> Add Images
+            </Button>
+          </div>
+          {variantImgMgr.images.length === 0 ? (
+            <div className='flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg'>
+              <Package className='h-8 w-8 mb-2' />
+              <p className='text-sm'>No images for this variant</p>
+              <Button variant='outline' size='sm' className='mt-2' onClick={() => setVariantImgGalleryOpen(true)}>Browse Library</Button>
+            </div>
+          ) : (
+            <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
+              const { active, over } = event
+              if (!over || active.id === over.id) return
+              const imgs = variantImgMgr.images
+              const idToUrl = (id: string) => imgs.find(u => `vimg-${variantImgMgr.variantId}-${u}` === id)
+              const oldUrl = idToUrl(active.id as string)
+              const newUrl = idToUrl(over.id as string)
+              if (!oldUrl || !newUrl) return
+              const oldIdx = imgs.indexOf(oldUrl)
+              const newIdx = imgs.indexOf(newUrl)
+              if (oldIdx === -1 || newIdx === -1) return
+              reorderVariantImg(variantImgMgr.variantId, oldIdx, newIdx)
+            }}>
+              <SortableContext items={variantImgMgr.images.map(u => `vimg-${variantImgMgr.variantId}-${u}`)} strategy={rectSortingStrategy}>
+                <div className='grid grid-cols-4 gap-3'>
+                  {variantImgMgr.images.map((url) => {
+                    const idx = variantImgMgr.images.indexOf(url)
+                    return (
+                      <SortableImageCard
+                        key={`vimg-${variantImgMgr.variantId}-${url}`}
+                        url={url}
+                        isPrimary={idx === 0}
+                        onSetPrimary={(u) => setPrimaryVariantImg(variantImgMgr.variantId, u)}
+                        onRemove={(u) => removeVariantImg(variantImgMgr.variantId, u)}
+                      />
+                    )
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+          <div className='flex justify-end gap-3 pt-2 border-t'>
+            <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
+            <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
+              {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Save Images
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {variantImgGalleryOpen && variantImgMgr && createPortal(
+      <MediaPicker
+        open={variantImgGalleryOpen}
+        onOpenChange={setVariantImgGalleryOpen}
+        selected={variantImgMgr.images}
+        multiple={true}
+        onSelect={(urls) => {
+          setVariantImgMgr(prev => prev ? { ...prev, images: dedupUrls(urls) } : null)
+          setVariantImgGalleryOpen(false)
+        }}
+      />,
+      document.body
+    )}
+
+    {regenerateConfirm && createPortal(
+      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setRegenerateConfirm(false)}>
+        <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+          <h3 className='font-semibold text-lg'>Regenerate Variants?</h3>
+          <p className='text-sm text-muted-foreground'>
+            This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.
+          </p>
+          <div className='flex justify-end gap-2'>
+            <Button variant='outline' onClick={() => setRegenerateConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant='destructive' onClick={handleGenerateVariants}>
+              Delete & Regenerate
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {clearVariantConfirm && createPortal(
+      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setClearVariantConfirm(false)}>
+        <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+          <h3 className='font-semibold text-lg'>Remove All Variants?</h3>
+          <p className='text-sm text-muted-foreground'>
+            This will delete all <strong>{variantList.length} variant(s)</strong> and convert the product to Simple type.
+          </p>
+          <div className='flex justify-end gap-2'>
+            <Button variant='outline' onClick={() => setClearVariantConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => clearVariantMut.mutate(currentRow?.id || createdProductId!)}>
+              {clearVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Remove All
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {bulkUpdateOpen && createPortal(
+      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setBulkUpdateOpen(false)}>
+        <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+          <h3 className='font-semibold text-lg'>Bulk Update All Variants</h3>
+          <p className='text-sm text-muted-foreground'>
+            Check the fields you want to update. Only checked fields will be applied to all {variantList.length} variant(s).
+          </p>
+          <div className='space-y-3'>
+            <label className='flex items-center gap-3 cursor-pointer'>
+              <input type='checkbox' checked={bulkOverridePrice} onChange={e => setBulkOverridePrice(e.target.checked)} className='rounded' />
+              <span className='text-sm w-24'>Price</span>
+              <Input type='number' step='0.01' value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder='0.00' disabled={!bulkOverridePrice} className='flex-1' />
+            </label>
+            <label className='flex items-center gap-3 cursor-pointer'>
+              <input type='checkbox' checked={bulkOverrideSalePrice} onChange={e => setBulkOverrideSalePrice(e.target.checked)} className='rounded' />
+              <span className='text-sm w-24'>Sale Price</span>
+              <Input type='number' step='0.01' value={bulkSalePrice} onChange={e => setBulkSalePrice(e.target.value)} placeholder='0.00' disabled={!bulkOverrideSalePrice} className='flex-1' />
+            </label>
+            <label className='flex items-center gap-3 cursor-pointer'>
+              <input type='checkbox' checked={bulkOverrideStandardCost} onChange={e => setBulkOverrideStandardCost(e.target.checked)} className='rounded' />
+              <span className='text-sm w-24'>Std Cost</span>
+              <Input type='number' step='0.01' value={bulkStandardCost} onChange={e => setBulkStandardCost(e.target.value)} placeholder='0.00' disabled={!bulkOverrideStandardCost} className='flex-1' />
+            </label>
+            <label className='flex items-center gap-3 cursor-pointer'>
+              <input type='checkbox' checked={bulkOverrideStock} onChange={e => setBulkOverrideStock(e.target.checked)} className='rounded' />
+              <span className='text-sm w-24'>Stock Qty</span>
+              <Input type='number' value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder='0' disabled={!bulkOverrideStock} className='flex-1' />
+            </label>
+          </div>
+          <div className='flex justify-end gap-3 pt-2'>
+            <Button variant='outline' onClick={() => setBulkUpdateOpen(false)} disabled={clearVariantMut.isPending}>Cancel</Button>
+            <Button onClick={handleBulkUpdate} disabled={clearVariantMut.isPending}>
+              {clearVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Apply to All
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
   )
 }
 
