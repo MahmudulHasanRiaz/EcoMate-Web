@@ -1225,4 +1225,41 @@ export class ProductsService {
       p._mediaMeta = meta;
     }
   }
+
+  async checkSlugAvailability(slug: string) {
+    const existing = await this.prisma.product.findUnique({ where: { slug }, select: { id: true } });
+    return { available: !existing };
+  }
+
+  async checkSkuAvailability(sku: string, excludeId?: string) {
+    const productWithSku = await this.prisma.product.findFirst({
+      where: { sku, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true },
+    });
+    if (productWithSku) return { available: false };
+    const variantWithSku = await this.prisma.productVariant.findUnique({
+      where: { sku },
+      select: { id: true },
+    });
+    return { available: !variantWithSku };
+  }
+
+  async removeAllVariants(productId: string) {
+    const existingOrderItems = await this.prisma.orderItem.findFirst({
+      where: { variant: { productId } },
+      select: { id: true },
+    });
+    if (existingOrderItems) {
+      throw new BadRequestException(
+        'Cannot remove variants — product has existing orders linked to current variants.',
+      );
+    }
+    await this.prisma.productVariant.deleteMany({ where: { productId } });
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { type: 'simple', managedStockQuantity: 0, manageStock: true },
+    });
+    await this.cache.invalidateByPrefix('product:');
+    return { message: 'All variants removed. Product reset to simple type.' };
+  }
 }

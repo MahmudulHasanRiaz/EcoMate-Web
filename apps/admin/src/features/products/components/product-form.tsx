@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star } from 'lucide-react'
+import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star, Trash2 } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
@@ -32,11 +32,12 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' }
+type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' | 'duplicate' }
 
 export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const queryClient = useQueryClient()
   const isEdit = mode === 'edit'
+  const isDuplicate = mode === 'duplicate'
   const [tab, setTab] = useState('general')
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
 
@@ -93,6 +94,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
+  const [slugError, setSlugError] = useState('')
+  const [slugChecking, setSlugChecking] = useState(false)
+  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
+  const [skuChecking, setSkuChecking] = useState(false)
+  const [skuAvailable, setSkuAvailable] = useState<boolean | null>(null)
   const [type, setType] = useState<string>('simple')
   const [desc, setDesc] = useState('')
   const [shortDesc, setShortDesc] = useState('')
@@ -135,6 +141,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [variantPickerOpen, setVariantPickerOpen] = useState(false)
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null)
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
+  const [clearVariantConfirm, setClearVariantConfirm] = useState(false)
   const [localVariants, setLocalVariants] = useState<any[]>([])
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [showReviewGuard, setShowReviewGuard] = useState(false)
@@ -157,6 +164,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   })
 
   const prevRowId = useRef<string | undefined>(undefined)
+  const prevSku = useRef(sku)
 
   useEffect(() => {
     if (!open) return
@@ -166,7 +174,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     prevRowId.current = currentRow?.id
 
     if (currentRow) {
-      const isClone = !isEdit
+      const isClone = isDuplicate
       setName(currentRow.name || '')
       setSlug(currentRow.slug || '')
       setType(currentRow.type || 'simple')
@@ -190,11 +198,12 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSeoDesc((currentRow.seoMeta as any)?.description || '')
       setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
       if (isClone) {
+        const dupSuffix = `-CP${Date.now().toString(36).toUpperCase()}`
         setLocalVariants(currentRow.variants?.map((v: any) => ({
           ...v,
           id: undefined,
           productId: undefined,
-          sku: v.sku ? `${v.sku}-copy-${Date.now()}` : '',
+          sku: v.sku ? `${v.sku}${dupSuffix}` : '',
         })) || [])
       }
     } else {
@@ -212,6 +221,45 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       setStock('0')
     }
   }, [type])
+
+  useEffect(() => {
+    if (isLocalMode && sku !== prevSku.current && localVariants.length > 0) {
+      setLocalVariants(prev => prev.map(v => ({
+        ...v,
+        sku: v.sku.replace(prevSku.current, sku),
+      })))
+    }
+    prevSku.current = sku
+  }, [sku])
+
+  // Debounced slug availability check
+  useEffect(() => {
+    if (!slug || slug.length < 2 || isEdit) { setSlugAvailable(null); return }
+    const timer = setTimeout(async () => {
+      setSlugChecking(true)
+      try {
+        const res = await apiClient.get(`/products/check-slug/${encodeURIComponent(slug)}`)
+        setSlugAvailable(res.data.available)
+      } catch { setSlugAvailable(null) }
+      setSlugChecking(false)
+    }, 500)
+    return () => { clearTimeout(timer); setSlugChecking(false) }
+  }, [slug, isEdit])
+
+  // Debounced SKU availability check
+  useEffect(() => {
+    if (!sku || sku.length < 2) { setSkuAvailable(null); return }
+    const timer = setTimeout(async () => {
+      setSkuChecking(true)
+      try {
+        const excludeId = isEdit ? currentRow?.id : undefined
+        const res = await apiClient.get(`/products/check-sku/${encodeURIComponent(sku)}`, { params: { excludeId } })
+        setSkuAvailable(res.data.available)
+      } catch { setSkuAvailable(null) }
+      setSkuChecking(false)
+    }, 500)
+    return () => { clearTimeout(timer); setSkuChecking(false) }
+  }, [sku, isEdit, currentRow?.id])
 
   useEffect(() => {
     if (categoryIds.length > 0 && categoryIds[0]) {
@@ -250,7 +298,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }, [overrideData])
 
   const reset = () => {
-    setName(''); setSlug(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
+    setName(''); setSlug(''); setSlugError(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
@@ -264,12 +312,14 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const handleBackendError = (e: any) => {
-    const msg = e.response?.data?.message || 'Error'
-    const code = e.response?.data?.code
-    if (code === 'ConflictException' || (typeof msg === 'string' && msg.toLowerCase().includes('slug'))) {
+    const raw = e.response?.data?.message
+    const msg = Array.isArray(raw) ? raw.join('. ') : raw || 'Error'
+    const code = e.response?.data?.statusCode
+    if (code === 409 || (typeof raw === 'string' && raw.toLowerCase().includes('slug'))) {
+      setSlugError(typeof raw === 'string' ? raw : 'This slug is already taken')
       setTab('general')
     }
-    toast.error(typeof msg === 'string' ? msg : 'An error occurred')
+    toast.error(msg)
   }
 
   const createMut = useMutation({
@@ -310,7 +360,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       if (freshId) queryClient.invalidateQueries({ queryKey: ['product', freshId] })
       toast.success('Variants generated')
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
   })
 
   const updateVariantMut = useMutation({
@@ -331,7 +381,18 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
+  })
+
+  const clearVariantMut = useMutation({
+    mutationFn: (id: string) => productsApi.removeAllVariants(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', currentRow?.id || createdProductId] })
+      setClearVariantConfirm(false)
+      toast.success('All variants removed')
+    },
+    onError: handleBackendError,
   })
 
   const addAttrValueMut = useMutation({
@@ -342,13 +403,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       toast.success('Value added')
       setNewValueInput(prev => ({ ...prev, [vars.attributeId]: '' }))
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
+    onError: handleBackendError,
   })
 
   const upsertOverrideMut = useMutation({
     mutationFn: ({ type, data }: { type: string; data: any }) => productOverrideApi.upsert(currentRow!.id, type, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['product-overrides', currentRow?.id] }) },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error saving payment override'),
+    onError: handleBackendError,
   })
 
   const handleOverrideToggle = (type: string, enabled: boolean) => {
@@ -600,6 +661,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     const errors: string[] = []
     if (!name.trim()) errors.push('Product name is required')
     if (!basePrice || parseFloat(basePrice) <= 0) errors.push('Regular price is required')
+    if (salePrice && basePrice && parseFloat(salePrice) > parseFloat(basePrice)) {
+      errors.push('Sale price cannot be higher than regular price')
+    }
     return errors
   }
 
@@ -650,7 +714,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
       <DialogContent className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'>
         <DialogHeader className='px-6 pt-6 pb-2'>
-          <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
@@ -705,7 +769,17 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Slug</Label>
-                    <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder='product-slug' />
+                    <div className='relative'>
+                      <Input value={slug} onChange={e => { setSlug(e.target.value); setSlugError(''); setSlugAvailable(null) }} placeholder='product-slug' className={slugError ? 'border-destructive' : ''} />
+                      <div className='absolute right-2 top-1/2 -translate-y-1/2'>
+                        {slugChecking && <Loader2 className='h-3.5 w-3.5 animate-spin text-muted-foreground' />}
+                        {!slugChecking && slugAvailable === false && !slugError && <X className='h-3.5 w-3.5 text-destructive' />}
+                        {!slugChecking && slugAvailable === true && <Check className='h-3.5 w-3.5 text-green-500' />}
+                      </div>
+                    </div>
+                    {slugError && <p className='text-xs text-destructive'>{slugError}</p>}
+                    {!slugError && slugAvailable === false && <p className='text-xs text-destructive'>Slug already taken</p>}
+                    {!slugError && slugAvailable === true && <p className='text-xs text-green-600'>Available</p>}
                   </div>
                 </div>
                 <div className='grid grid-cols-4 gap-6'>
@@ -731,7 +805,16 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   </div>
                   <div className='space-y-1.5'>
                     <Label>SKU</Label>
-                    <Input value={sku} onChange={e => setSku(e.target.value)} placeholder='PRD-001' />
+                    <div className='relative'>
+                      <Input value={sku} onChange={e => setSku(e.target.value)} placeholder='PRD-001' />
+                      <div className='absolute right-2 top-1/2 -translate-y-1/2'>
+                        {skuChecking && <Loader2 className='h-3.5 w-3.5 animate-spin text-muted-foreground' />}
+                        {!skuChecking && skuAvailable === false && <X className='h-3.5 w-3.5 text-destructive' />}
+                        {!skuChecking && skuAvailable === true && <Check className='h-3.5 w-3.5 text-green-500' />}
+                      </div>
+                    </div>
+                    {skuAvailable === false && <p className='text-xs text-destructive'>SKU already in use</p>}
+                    {skuAvailable === true && <p className='text-xs text-green-600'>Available</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Tags</Label>
@@ -825,6 +908,18 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                         <Button type="button" variant="outline" size="sm" onClick={() => { setActiveVariantId(null); setAdjustmentModalOpen(true); }}>
                           Adjust Stock
                         </Button>
+                      </div>
+                    </div>
+                  ) : isDuplicate ? (
+                    <div className='flex flex-col sm:flex-row items-start sm:items-center gap-6'>
+                      <div className='space-y-1.5 w-full sm:w-40'>
+                        <Label>Low Stock Alert</Label>
+                        <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' />
+                      </div>
+                      <div className='flex-1 bg-muted/30 border rounded-md px-3 py-2'>
+                        <p className='text-xs text-muted-foreground'>
+                          Stock starts at 0. Use <strong>Inventory &gt; Stock</strong> to add stock after creation.
+                        </p>
                       </div>
                     </div>
                   ) : (
@@ -1065,6 +1160,18 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                       <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
                         <h3 className='font-medium'>Variants ({variantList.length})</h3>
                         <div className='flex items-center gap-2'>
+                          {isLocalMode && localVariants.length > 0 && (
+                            <Button variant='outline' size='sm' className='text-destructive' onClick={() => { setLocalVariants([]); toast.success('All variants cleared') }}>
+                              <Trash2 className='h-4 w-4 mr-1.5' />
+                              Clear All
+                            </Button>
+                          )}
+                          {!isLocalMode && variantList.length > 0 && (currentRow?.id || createdProductId) && (
+                            <Button variant='outline' size='sm' className='text-destructive' onClick={() => setClearVariantConfirm(true)}>
+                              <Trash2 className='h-4 w-4 mr-1.5' />
+                              Clear All
+                            </Button>
+                          )}
                           <Button variant='outline' size='sm' onClick={() => setBulkUpdateOpen(true)} disabled={variantList.length === 0}>
                             Bulk Update
                           </Button>
@@ -1353,6 +1460,25 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               </Button>
               <Button variant='destructive' onClick={handleGenerateVariants}>
                 Delete & Regenerate
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clearVariantConfirm && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50' onClick={() => setClearVariantConfirm(false)}>
+          <div className='bg-background rounded-lg shadow-lg max-w-sm w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
+            <h3 className='font-semibold text-lg'>Remove All Variants?</h3>
+            <p className='text-sm text-muted-foreground'>
+              This will delete all <strong>{variantList.length} variant(s)</strong> and convert the product to Simple type.
+            </p>
+            <div className='flex justify-end gap-2'>
+              <Button variant='outline' onClick={() => setClearVariantConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => clearVariantMut.mutate(currentRow?.id || createdProductId!)}>
+                Remove All
               </Button>
             </div>
           </div>
