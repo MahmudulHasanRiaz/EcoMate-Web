@@ -1174,13 +1174,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                       <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
                         <h3 className='font-medium'>Variants ({variantList.length})</h3>
                         <div className='flex items-center gap-2'>
-                          {isLocalMode && localVariants.length > 0 && (
+                          {(isLocalMode || isDuplicate) && localVariants.length > 0 && (
                             <Button variant='outline' size='sm' className='text-destructive' onClick={() => { setLocalVariants([]); toast.success('All variants cleared') }}>
                               <Trash2 className='h-4 w-4 mr-1.5' />
                               Clear All
                             </Button>
                           )}
-                          {!isLocalMode && variantList.length > 0 && (currentRow?.id || createdProductId) && (
+                          {!isLocalMode && !isDuplicate && variantList.length > 0 && (currentRow?.id || createdProductId) && (
                             <Button variant='outline' size='sm' className='text-destructive' onClick={() => setClearVariantConfirm(true)}>
                               <Trash2 className='h-4 w-4 mr-1.5' />
                               Clear All
