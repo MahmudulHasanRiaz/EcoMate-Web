@@ -857,14 +857,23 @@ export class OrdersService {
       let derivedShippingCharge = 0;
 
       if (shippingMode === 'options') {
-        // Options mode: require a selected active shipping option, use its DB amount
+        // Options mode: use selected option or auto-fallback to highest amount
         const hasOptions = await tx.shippingOption.findFirst({ where: { isActive: true }, select: { id: true } });
         if (hasOptions) {
-          if (!dto.selectedShippingOptionId) {
+          let optionId = dto.selectedShippingOptionId;
+          if (!optionId) {
+            const highest = await tx.shippingOption.findFirst({
+              where: { isActive: true },
+              orderBy: { amount: 'desc' },
+              select: { id: true },
+            });
+            optionId = highest?.id ?? null;
+          }
+          if (!optionId) {
             throw new BadRequestException('A shipping option is required');
           }
           const shippingOption = await tx.shippingOption.findUnique({
-            where: { id: dto.selectedShippingOptionId },
+            where: { id: optionId },
           });
           if (!shippingOption || !shippingOption.isActive) {
             throw new BadRequestException('Selected shipping option is not available');

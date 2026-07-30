@@ -537,6 +537,10 @@ export default function CheckoutPage() {
     if (selectedShippingOptionId) {
       const opt = config.shippingOptions?.find(o => o.id === selectedShippingOptionId);
       deliveryCharge = opt?.amount ?? 0;
+    } else if (config.shippingOptions?.length > 0) {
+      // Auto-fallback: use highest amount option when none selected
+      const highest = [...config.shippingOptions].sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+      deliveryCharge = Number(highest.amount);
     }
   } else {
     deliveryCharge = config.delivery.charge;
@@ -750,7 +754,7 @@ export default function CheckoutPage() {
     if (!addressLine.trim() || addressLine.trim().length < 5) {
       errors.addressLine = 'Address must be at least 5 characters';
     }
-    if (config.shippingMode === 'options' && !selectedShippingOptionId) {
+    if (config.shippingMode === 'options' && !selectedShippingOptionId && (!config.shippingOptions || config.shippingOptions.length === 0)) {
       errors.shippingOption = 'Please select a delivery option';
     }
     if (!user) {
