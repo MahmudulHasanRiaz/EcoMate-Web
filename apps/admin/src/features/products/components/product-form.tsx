@@ -303,7 +303,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
-    setCreatedProductId(null); setRegenerateConfirm(false); setLocalVariants([]);
+    setCreatedProductId(null); setRegenerateConfirm(false); setClearVariantConfirm(false); setLocalVariants([]);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -392,6 +392,17 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['product', currentRow?.id || createdProductId] })
       setClearVariantConfirm(false)
       toast.success('All variants removed')
+    },
+    onError: handleBackendError,
+  })
+
+  const removeVariantMut = useMutation({
+    mutationFn: ({ id, variantId }: { id: string; variantId: string }) =>
+      productsApi.removeVariant(id, variantId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+      toast.success('Variant removed')
     },
     onError: handleBackendError,
   })
@@ -1198,6 +1209,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                                       }}
                                       onImagePick={() => openVariantImgMgr(v)}
                                       currencySymbol='৳'
+                                      onDelete={() => {
+                                        setLocalVariants(prev => prev.filter(lv => (lv.id || lv._tempId) !== (v.id || v._tempId)))
+                                        toast.success('Variant removed')
+                                      }}
                                     />
                                   ) : (
                                     <VariantRow
@@ -1207,6 +1222,11 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                                       onImagePick={() => openVariantImgMgr(v)}
                                       currencySymbol='৳'
                                       onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
+                                      onDelete={() => {
+                                        const pid = currentRow?.id || createdProductId
+                                        if (!pid || !v.id) return
+                                        removeVariantMut.mutate({ id: pid, variantId: v.id })
+                                      }}
                                     />
                                   )}
                                 </SortableVariantRow>
@@ -1485,7 +1505,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
             <Button variant='outline' onClick={() => setClearVariantConfirm(false)}>
               Cancel
             </Button>
-            <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => clearVariantMut.mutate(currentRow?.id || createdProductId!)}>
+            <Button variant='destructive' disabled={clearVariantMut.isPending} onClick={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}>
               {clearVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               Remove All
             </Button>
@@ -1614,6 +1634,7 @@ function VariantRow({
   onImagePick,
   currencySymbol,
   onAdjustStock,
+  onDelete,
 }: {
   variant: ProductResponse['variants'][number]
   productId: string
@@ -1621,6 +1642,7 @@ function VariantRow({
   onImagePick: () => void
   currencySymbol: string
   onAdjustStock?: () => void
+  onDelete?: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -1700,7 +1722,7 @@ function VariantRow({
           </div>
         )}
       </div>
-      <div className='flex-1 min-w-0 grid grid-cols-6 gap-3 items-center'>
+      <div className='flex-1 min-w-0 grid grid-cols-7 gap-3 items-center'>
         <div className='min-w-0'>
           <p className='font-medium text-xs text-muted-foreground mb-0.5'>Attribute</p>
           <p className='truncate'>{variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>
@@ -1796,6 +1818,21 @@ function VariantRow({
               )}
               <Pencil className='h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100' />
             </button>
+          )}
+        </div>
+
+        {/* Delete */}
+        <div className='min-w-0 flex items-center justify-end'>
+          {onDelete && (
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7 text-destructive hover:text-destructive'
+              onClick={onDelete}
+              title='Remove variant'
+            >
+              <Trash2 className='h-3.5 w-3.5' />
+            </Button>
           )}
         </div>
       </div>

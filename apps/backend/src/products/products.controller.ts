@@ -187,4 +187,10 @@ export class ProductsController {
   removeAllVariants(@Param('id') id: string) {
     return this.svc.removeAllVariants(id);
   }
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Delete(':id/variants/:variantId')
+  removeVariant(@Param('id') id: string, @Param('variantId') variantId: string) {
+    return this.svc.removeVariant(id, variantId);
+  }
 }

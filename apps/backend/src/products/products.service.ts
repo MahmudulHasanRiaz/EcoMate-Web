@@ -1262,4 +1262,26 @@ export class ProductsService {
     await this.cache.invalidateByPrefix('product:');
     return { message: 'All variants removed. Product reset to simple type.' };
   }
+
+  async removeVariant(productId: string, variantId: string) {
+    const variant = await this.prisma.productVariant.findUnique({
+      where: { id: variantId },
+    });
+    if (!variant || variant.productId !== productId) {
+      throw new NotFoundException('Variant not found');
+    }
+    const existingOrderItem = await this.prisma.orderItem.findFirst({
+      where: { variantId },
+      select: { id: true },
+    });
+    if (existingOrderItem) {
+      throw new BadRequestException(
+        'Cannot delete variant — it has existing orders.',
+      );
+    }
+    await this.media.detachAll('variant', variantId);
+    await this.prisma.productVariant.delete({ where: { id: variantId } });
+    await this.cache.invalidateByPrefix('product:');
+    return { message: 'Variant deleted' };
+  }
 }
