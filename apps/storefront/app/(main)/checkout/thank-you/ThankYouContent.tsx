@@ -112,7 +112,7 @@ export default function ThankYouContent({
 
     const fbp = getCookie('_fbp');
     const fbc = getCookie('_fbc');
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
       fetch(`${apiUrl}/tracking/context`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

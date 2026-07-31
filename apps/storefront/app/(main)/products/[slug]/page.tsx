@@ -30,7 +30,7 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
     const ogImage = product.image
       ? product.image.startsWith('http')
         ? product.image
-        : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/api$/, '')}${product.image.startsWith('/') ? '' : '/'}${product.image}`
+        : `${(process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api$/, '')}${product.image.startsWith('/') ? '' : '/'}${product.image}`
       : undefined;
     return {
       title: `${product.name} — ${storeName}`,
