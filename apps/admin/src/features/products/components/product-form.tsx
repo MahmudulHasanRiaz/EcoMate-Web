@@ -304,6 +304,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setCreatedProductId(null); setRegenerateConfirm(false); setClearVariantConfirm(false); setLocalVariants([]);
+    setBulkUpdateOpen(false); setIsBulkUpdating(false);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -703,6 +704,11 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
   const variantList = (isLocalMode || isDuplicate) ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
 
+  // Any nested overlay/dialog open — main dialog must NOT close from outside clicks.
+  // Radix Dialog (modal) fires main onOpenChange(false) on any pointerdown outside its
+  // content, which includes clicks inside nested dialogs (bulk update, confirmations).
+  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr
+
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const handleVariantDragEnd = (event: DragEndEvent) => {
@@ -725,7 +731,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { onOpenChange(false); reset(); } }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v && hasSubOverlay) return; if (!v) { onOpenChange(false); reset(); } }}>
       <DialogContent className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'>
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
