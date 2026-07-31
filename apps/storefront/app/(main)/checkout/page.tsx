@@ -743,18 +743,18 @@ export default function CheckoutPage() {
 
   const validateShipping = (): boolean => {
     const errors: Record<string, string> = {};
-    const districtReq = checkoutCfg?.districtRequired !== false;
+    const districtReq = checkoutCfg?.districtRequired === true;
     if (districtReq && !district.trim()) {
       errors.district = 'Please select a district';
     }
-    const thanaReq = checkoutCfg?.thanaRequired !== false;
+    const thanaReq = checkoutCfg?.thanaRequired === true;
     if (thanaReq && district.trim() && !thana.trim()) {
       errors.thana = 'Please select a thana/upazila';
     }
     if (!addressLine.trim() || addressLine.trim().length < 5) {
       errors.addressLine = 'Address must be at least 5 characters';
     }
-    if (config.shippingMode === 'options' && !selectedShippingOptionId && (!config.shippingOptions || config.shippingOptions.length === 0)) {
+    if (config.shippingMode === 'options' && config.shippingOptions?.length > 0 && !selectedShippingOptionId) {
       errors.shippingOption = 'Please select a delivery option';
     }
     if (!user) {
