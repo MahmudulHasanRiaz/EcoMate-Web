@@ -60,7 +60,11 @@ function getStorefrontApiBase(): string {
   ) {
     return "/api";
   }
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+  return (
+    process.env.API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:4000/api"
+  );
 }
 
 function isInvalidToken(t: string | undefined | null): boolean {
