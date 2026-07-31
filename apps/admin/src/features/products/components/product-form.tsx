@@ -1497,7 +1497,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       handleConfirm={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}
     />
 
-    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen}>
+    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen} modal={false}>
       <DialogContent className='max-w-md'>
         <DialogHeader>
           <DialogTitle>Bulk Update All Variants</DialogTitle>
