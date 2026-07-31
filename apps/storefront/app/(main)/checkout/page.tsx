@@ -274,7 +274,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
 
   const initiateBkashPgw = async () => {
     try {
-      const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+      const api = process.env.NEXT_PUBLIC_API_URL || '/api';
       const res = await fetch(`${api}/payments/bkash/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -663,7 +663,7 @@ export default function CheckoutPage() {
   }, [captureLead]);
 
   useEffect(() => {
-    const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/checkout-leads`;
+    const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || '/api'}/checkout-leads`;
     const sendLead = () => {
       const data = leadDataRef.current;
       if (!data || wasSubmitted.current) return;
