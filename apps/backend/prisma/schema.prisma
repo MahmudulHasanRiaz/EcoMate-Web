@@ -1393,7 +1393,7 @@ model SecurityEvent {
   source          String                   // from SecurityEventSource registry (e.g. "adaptive_rate_limiter")
 
   // When it happened
-  timestamp       DateTime                 @default(now())
+  timestamp       DateTime                 @default(now()) @db.Timestamptz(6)
 
   // Actor identity — normalized, nullable, independently queryable
   actorType       SecurityActorType
@@ -1407,7 +1407,7 @@ model SecurityEvent {
   // Context
   riskScore       Int?
   metadataVersion Int                      @default(1)
-  metadata        Json                     // versioned — metadataVersion tells the parser how to interpret this
+  metadata        Json                     @default("{}") // versioned — metadataVersion tells the parser how to interpret this
 
   // Correlation — chains related events into incidents
   correlationId       String?              // UUID — groups this batch of related events
@@ -1423,7 +1423,7 @@ model SecurityEvent {
   // Emitter generates a unique UUID per event emission
   dedupKey        String                   @unique
 
-  createdAt       DateTime                 @default(now())
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
 
   @@index([tenant, timestamp])
   @@index([tenant, eventType, timestamp])
@@ -1442,14 +1442,15 @@ model SecurityEvent {
 model SecurityEventHourly {
   id          String                  @id @default(uuid())
   tenant      String                  @default("default")
-  bucket      DateTime                // truncated to hour boundary
+  bucket      DateTime                @db.Timestamptz(6) // truncated to hour boundary
   eventType   String
   severity    SecurityEventSeverity
   category    SecurityEventCategory
   count       Int                     @default(0)
-  updatedAt   DateTime                @updatedAt
+  updatedAt   DateTime                @updatedAt @db.Timestamptz(6)
 
-  @@unique([tenant, bucket, eventType, severity, category])
+  @@unique([tenant, bucket, eventType, severity, category], map: "SecurityEventHourly_tenant_bucket_eventType_severity_cate_key")
+  @@index([tenant, bucket])
   @@index([tenant, bucket, severity])
 }
 
@@ -1457,14 +1458,15 @@ model SecurityEventHourly {
 model SecurityEventDaily {
   id          String                  @id @default(uuid())
   tenant      String                  @default("default")
-  date        DateTime                // date only (time truncated)
+  date        DateTime                @db.Date // date only (time truncated)
   eventType   String
   severity    SecurityEventSeverity
   category    SecurityEventCategory
   count       Int                     @default(0)
-  updatedAt   DateTime                @updatedAt
+  updatedAt   DateTime                @updatedAt @db.Timestamptz(6)
 
-  @@unique([tenant, date, eventType, severity, category])
+  @@unique([tenant, date, eventType, severity, category], map: "SecurityEventDaily_tenant_date_eventType_severity_categor_key")
+  @@index([tenant, date])
   @@index([tenant, date, severity])
 }
 
@@ -1472,11 +1474,11 @@ model SecurityEventDaily {
 model SecurityBlockDaily {
   id          String   @id @default(uuid())
   tenant      String   @default("default")
-  date        DateTime                 // date only
+  date        DateTime                 @db.Date // date only
   blockSource String                   // 'auto' | 'manual'
   targetType  String                   // 'ip' | 'phone'
   count       Int      @default(0)
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
   @@unique([tenant, date, blockSource, targetType])
   @@index([tenant, date])
