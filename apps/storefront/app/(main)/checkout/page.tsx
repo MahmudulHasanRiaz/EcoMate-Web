@@ -17,6 +17,7 @@ import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent, getCookie } from '@/lib/tracking';
+import { getOrCreateCtxId } from '@/lib/tracking-client';
 
 function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
@@ -687,6 +688,7 @@ export default function CheckoutPage() {
 
     const payload: any = {
       customerId: user?.id,
+      trackingSessionId: getOrCreateCtxId(),
       items: orderItems,
       shippingCharge: deliveryCharge,
       shippingAddress: { district, thana, addressLine },

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { setPixelIds, setTrackingConfig } from "@/lib/tracking";
+import { syncContext } from "@/lib/tracking-client";
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ export default function TrackingScripts() {
   useEffect(() => {
     setPixelIds(metaId, tiktokCode);
     setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
+    syncContext(); // begin tracking-context capture on mount (ctxId + identifiers + url + referrer)
   }, [metaId, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
 
   useEffect(() => {

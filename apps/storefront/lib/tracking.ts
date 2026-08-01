@@ -1,3 +1,5 @@
+import { getOrCreateCtxId } from './tracking-client';
+
 function getTrackingApiUrl(): string {
   if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
     return '/api';
@@ -162,6 +164,7 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ctxId: getOrCreateCtxId(),
         eventId,
         eventName: eventNameToSnake(event),
         customData: data,

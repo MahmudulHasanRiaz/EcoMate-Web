@@ -8,6 +8,7 @@ import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTria
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { trackEvent } from '@/lib/tracking';
+import { syncContext } from '@/lib/tracking-client';
 import { ResumePaymentButton } from '@/components/ThankYou/ResumePaymentButton';
 import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { submitPayment } from '@/lib/api/payments';
@@ -23,14 +24,6 @@ export interface ThankYouContentProps {
   token: string | null;
   paymentStatus: PaymentStatus;
   errorMessage?: string;
-}
-
-function getCookie(name: string): string {
-  if (typeof document === 'undefined') return '';
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(';').shift() || '';
-  return '';
 }
 
 const nn = (v: number | string | undefined | null) => {
@@ -110,23 +103,7 @@ export default function ThankYouContent({
       trackEvent('Purchase', sharedData, sharedUserData);
     }
 
-    const fbp = getCookie('_fbp');
-    const fbc = getCookie('_fbc');
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-      fetch(`${apiUrl}/tracking/context`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.id,
-          fbp: fbp || '',
-          fbc: fbc || '',
-          url: window.location.href,
-          referrer: document.referrer,
-        }),
-        keepalive: true,
-      }).catch((err) => {
-        console.error('[TRACKING] Failed to save tracking context:', err);
-      });
+    syncContext(); // capture ctxId + identifiers (fbp/fbc) + url + referrer on the backend
 
     sessionStorage.setItem(sessionKey, 'true');
   }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);
