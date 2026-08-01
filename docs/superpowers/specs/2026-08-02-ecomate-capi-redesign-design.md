@@ -615,7 +615,7 @@ model TrackingReplayArchive {
 Notes:
 - **FKs are intentionally omitted** (append-only log tables; orphan prevention enforced in application code — capture writes snapshot+outbox atomically, dispatch writes reference an existing snapshot). If a future migration wants referential integrity, add `@relation` on `TrackingOutbox.snapshotId`/`TrackingDispatch.snapshotId`.
 - Context→order linkage is via `Order.trackingSessionId` (== `ctxId`); `TrackingContext` has no `orderId` column by default.
-- The existing `TrackingEvent` table is **retired**: Phase 0 **stops writing** it (table stays so `getContext`/`saveContext` keep building during transition); Phase 3 **data-migrates + DROP**s it.
+- The existing `TrackingEvent` table is **retired**: Phase 0 keeps it untouched (schema-only); Phase 1 **switches** context reads/writes to `TrackingContext` and **stops writing** it (table stays so no regression); Phase 3 **data-migrates + DROP**s it.
 - All status enums are stored as strings for forward compatibility; validated with a shared constant/enum in code.
 
 ---
@@ -733,8 +733,8 @@ No schema, outbox, queue, dispatcher, or monitoring changes. The same Purchase/R
 
 | Phase | Scope | Apps | Exit criteria |
 |---|---|---|---|
-| 0 | Prisma schema (`TrackingContext`/`Snapshot`/`Outbox`/`Dispatch`/`DispatchEvent`/`ReplayArchive`), `Order.trackingSessionId`, settings config; **stop writing `TrackingEvent` (table stays)** | backend | migration + build green |
-| 1 | `TrackingContext` capture: `TrackingClient` (ctxId, cookies, URL params), `/tracking/context` serialized upsert + enrichment, order linkage | storefront, backend | context persisted before order; delayed events read it |
+| 0 | Prisma schema (`TrackingContext`/`Snapshot`/`Outbox`/`Dispatch`/`DispatchEvent`/`ReplayArchive`), `Order.trackingSessionId`, settings config. **Schema only — no behavior change** (keeps `getContext`/`saveContext` on `TrackingEvent` intact so there is no regression) | backend | migration + build green |
+| 1 | `TrackingContext` capture: `TrackingClient` (ctxId, cookies, URL params), `/tracking/context` serialized upsert + enrichment, order linkage; **switch `saveContext`/`getContext` → `TrackingContext` and stop writing `TrackingEvent` (table stays)** | storefront, backend | context persisted before order; delayed events read it |
 | 2 | `TrackingNormalizer` + `TrackingProviderAdapter` interface + Meta/TikTok/GA4/GoogleAds adapters + registry (incl. dispatch policies + refund mappings) | backend | single hashing path; per-provider dispatch rows |
 | 3 | Snapshot+Outbox capture inside orders/leads transactions (idempotent `ON CONFLICT`); `OutboxRelayService` (SKIP LOCKED) + queue wiring; **data-migrate + DROP `TrackingEvent`** | backend | Purchase/Refund/Lead transactionally captured; dedup never fails a business txn |
 | 4 | `TrackingDispatcher` (work-set rule, provider independence, success policy, priority) + `TrackingDispatchEvent` log + browser `/tracking/events` capture path (dedup-safe) | backend | provider independence + no-re-send verified |
