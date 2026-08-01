@@ -36,6 +36,58 @@ import { CSS } from '@dnd-kit/utilities'
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' | 'duplicate' }
 
+// ---- Unsaved-draft persistence (localStorage) ----
+// A half-finished product creation/duplication is saved locally so closing
+// the dialog doesn't lose the user's work. Resume is offered on next open.
+const PRODUCT_FORM_DRAFT_KEY = 'ecomate-product-form-draft'
+
+interface ProductFormDraft {
+  mode: 'add' | 'duplicate'
+  name: string
+  slug: string
+  type: string
+  desc: string
+  shortDesc: string
+  basePrice: string
+  salePrice: string
+  sku: string
+  stock: string
+  lowStockQty: string
+  categoryIds: string[]
+  brandId: string
+  isActive: boolean
+  isFeatured: boolean
+  availabilityMode: string
+  standardCost: string
+  images: string[]
+  tags: string
+  sizeChartId: string
+  seoTitle: string
+  seoDesc: string
+  seoKeywords: string
+  selectedAttrs: string[]
+  selectedValues: Record<string, string[]>
+  localVariants: any[]
+  savedAt: number
+}
+
+function loadDraft(): ProductFormDraft | null {
+  try {
+    const raw = localStorage.getItem(PRODUCT_FORM_DRAFT_KEY)
+    return raw ? (JSON.parse(raw) as ProductFormDraft) : null
+  } catch {
+    return null
+  }
+}
+
+function clearDraft(): void {
+  try {
+    localStorage.removeItem(PRODUCT_FORM_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const queryClient = useQueryClient()
   const isEdit = mode === 'edit'
@@ -166,6 +218,74 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const prevRowId = useRef<string | undefined>(undefined)
   const prevSku = useRef(sku)
+  const hasSavedRef = useRef(false)
+  const [draftAvailable, setDraftAvailable] = useState(false)
+
+  const resumeDraft = (draft: ProductFormDraft) => {
+    setName(draft.name || '')
+    setSlug(draft.slug || '')
+    setType(draft.type || 'simple')
+    setDesc(draft.desc || '')
+    setShortDesc(draft.shortDesc || '')
+    setBasePrice(draft.basePrice || '')
+    setSalePrice(draft.salePrice || '')
+    setSku(draft.sku || '')
+    setStock(draft.stock ?? '0')
+    setLowStockQty(draft.lowStockQty || '')
+    setCategoryIds(draft.categoryIds || [])
+    setBrandId(draft.brandId || '')
+    setIsActive(draft.isActive ?? true)
+    setIsFeatured(draft.isFeatured ?? false)
+    setAvailabilityMode(draft.availabilityMode || 'MANAGED_STOCK')
+    setStandardCost(draft.standardCost || '')
+    setImages(Array.isArray(draft.images) ? draft.images : [])
+    setTags(draft.tags || '')
+    setSizeChartId(draft.sizeChartId || '')
+    setSeoTitle(draft.seoTitle || '')
+    setSeoDesc(draft.seoDesc || '')
+    setSeoKeywords(draft.seoKeywords || '')
+    setSelectedAttrs(draft.selectedAttrs || [])
+    setSelectedValues(draft.selectedValues || {})
+    setLocalVariants(Array.isArray(draft.localVariants) ? draft.localVariants : [])
+    setDraftAvailable(false)
+    toast.success('Draft restored')
+  }
+
+  const discardDraft = () => {
+    clearDraft()
+    setDraftAvailable(false)
+  }
+
+  // Offer to resume an unsaved draft when opening in add/duplicate mode
+  useEffect(() => {
+    if (!open || isEdit) { setDraftAvailable(false); return }
+    hasSavedRef.current = false
+    const draft = loadDraft()
+    setDraftAvailable(!!draft && draft.savedAt > Date.now() - 7 * 24 * 60 * 60 * 1000)
+  }, [open, isEdit])
+
+  // Debounced auto-save of form state (creation/duplication only)
+  useEffect(() => {
+    if (!open || isEdit || hasSavedRef.current) return
+    const timer = setTimeout(() => {
+      try {
+        const draft: ProductFormDraft = {
+          mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+          stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+          availabilityMode, standardCost, images, tags, sizeChartId,
+          seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues,
+          localVariants, savedAt: Date.now(),
+        }
+        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify(draft))
+      } catch {
+        /* storage full/unavailable — ignore */
+      }
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [open, isEdit, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    availabilityMode, standardCost, images, tags, sizeChartId,
+    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants, mode])
 
   useEffect(() => {
     if (!open) return
@@ -329,6 +449,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
+      clearDraft();
+      hasSavedRef.current = true;
       setLocalVariants([]);
       if (type === 'variable' && selectedAttrs.length > 0 && createdId) {
         setCreatedProductId(createdId);
@@ -732,10 +854,30 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   return (
     <>
     <Dialog open={open} onOpenChange={(v) => { if (!v && hasSubOverlay) return; if (!v) { onOpenChange(false); reset(); } }}>
-      <DialogContent className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'>
+      <DialogContent
+        className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'
+        onInteractOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
+        onPointerDownOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
+      >
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
+
+        {draftAvailable && !isEdit && (
+          <div className='mx-6 mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5'>
+            <p className='text-xs text-amber-700 dark:text-amber-300 font-medium'>
+              Unsaved draft found from a previous session.
+            </p>
+            <div className='flex items-center gap-2 shrink-0'>
+              <Button variant='outline' size='sm' onClick={discardDraft}>
+                Discard
+              </Button>
+              <Button size='sm' onClick={() => { const d = loadDraft(); if (d) resumeDraft(d); }}>
+                Resume Draft
+              </Button>
+            </div>
+          </div>
+        )}
 
         <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
           <TabsList className='px-6 justify-start rounded-none border-b'>
