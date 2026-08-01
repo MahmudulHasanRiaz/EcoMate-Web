@@ -28,7 +28,7 @@ export function mergeContext(
   incoming: ContextInput,
 ): ContextMerged {
   const out: ContextMerged = {
-    identifiers: existing?.identifiers ?? {},
+    identifiers: structuredClone(existing?.identifiers) ?? {},
     url: existing?.url,
     referrer: existing?.referrer,
   };
@@ -37,7 +37,7 @@ export function mergeContext(
   for (const [provider, keys] of Object.entries(incoming.identifiers ?? {})) {
     out.identifiers[provider] = out.identifiers[provider] ?? {};
     for (const [key, value] of Object.entries(keys)) {
-      if (!value) continue; // empty never clears
+      if (typeof value !== 'string' || !value) continue; // empty never clears
       const prev = out.identifiers[provider][key];
       if (!prev) {
         out.identifiers[provider][key] = { value, firstSeenAt: now, lastSeenAt: now };

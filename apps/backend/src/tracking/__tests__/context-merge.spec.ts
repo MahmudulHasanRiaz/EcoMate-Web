@@ -36,4 +36,17 @@ describe('mergeContext (design §4.1 enrichment rules)', () => {
     expect(r2.url).toBe('/b');
     expect(r2.referrer).toBe('/r1');
   });
+
+  it('purity: second merge does not mutate first result', () => {
+    const r1 = mergeContext(null, { identifiers: { meta: { fbp: 'fbp.1' } } });
+    const r1Copy = { identifiers: { meta: { fbp: r1.identifiers.meta.fbp } }, url: r1.url, referrer: r1.referrer };
+    const r2 = mergeContext(r1, { identifiers: { meta: { fbp: 'fbp.2' } } });
+    expect(r2.identifiers.meta.fbp.value).toBe('fbp.2');
+    expect(r1Copy.identifiers.meta.fbp.value).toBe('fbp.1');
+  });
+
+  it('input guard: non-string values are skipped', () => {
+    const r = mergeContext(null, { identifiers: { meta: { fbp: { value: 'x' } as any } } });
+    expect(r.identifiers.meta.fbp).toBeUndefined();
+  });
 });
