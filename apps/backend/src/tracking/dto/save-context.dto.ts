@@ -1,17 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
 
 export class SaveContextDto {
   @IsString()
   @IsNotEmpty()
-  orderId: string;
+  ctxId: string;
 
-  @IsString()
+  @IsObject()
   @IsOptional()
-  fbp?: string;
-
-  @IsString()
-  @IsOptional()
-  fbc?: string;
+  identifiers?: Record<string, Record<string, string | undefined>>;
 
   @IsString()
   @IsOptional()

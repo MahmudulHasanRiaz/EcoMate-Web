@@ -2,6 +2,7 @@ import { Controller, Post, Body, Req, Ip } from '@nestjs/common';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import * as fastify from 'fastify';
 import { TrackingService } from './tracking.service';
+import { TrackingContextService } from './tracking-context.service';
 import { Public } from '../common/decorators/public.decorator';
 import { TrackEventDto } from './dto/track-event.dto';
 import { SaveContextDto } from './dto/save-context.dto';
@@ -12,6 +13,7 @@ import { PageViewBufferService } from './page-view-buffer.service';
 export class TrackingController {
   constructor(
     private readonly tracking: TrackingService,
+    private readonly trackingContext: TrackingContextService,
     private readonly pageViewBuffer: PageViewBufferService,
   ) {}
 
@@ -38,13 +40,20 @@ export class TrackingController {
   @Public()
   @RateLimitPolicy('storefront')
   @Post('context')
-  async saveContext(@Body() body: SaveContextDto) {
-    await this.tracking.saveContext(body.orderId, {
-      fbp: body.fbp,
-      fbc: body.fbc,
-      url: body.url,
-      referrer: body.referrer,
-    });
+  async saveContext(
+    @Body() body: SaveContextDto,
+    @Req() req: fastify.FastifyRequest,
+  ) {
+    await this.trackingContext.upsertContext(
+      body.ctxId,
+      {
+        identifiers: body.identifiers,
+        url: body.url,
+        referrer: body.referrer,
+      },
+      req.ip,
+      (req.headers['user-agent'] as string) || '',
+    );
     return { success: true };
   }
 

@@ -220,7 +220,6 @@ describe('OrdersService', () => {
         {
           provide: TrackingService,
           useValue: {
-            getContext: jest.fn().mockResolvedValue(undefined),
             track: jest.fn().mockResolvedValue(undefined),
           },
         },
@@ -847,7 +846,6 @@ describe('OrdersService', () => {
       );
 
       expect(trackingContext().getByCtxId).toHaveBeenCalledWith('ctx-123');
-      expect(trackingService().getContext).not.toHaveBeenCalled();
 
       const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
       expect(trackCall.userData).toEqual(
@@ -864,13 +862,71 @@ describe('OrdersService', () => {
       await (service as any).buildAndSendPurchaseEvent(baseOrder, 'instant');
 
       expect(trackingContext().getByCtxId).not.toHaveBeenCalled();
-      expect(trackingService().getContext).not.toHaveBeenCalled();
 
       const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
       expect(trackCall.userData.fbp).toBeUndefined();
       expect(trackCall.userData.fbc).toBeUndefined();
       expect(trackCall.userData.url).toBeUndefined();
       expect(trackCall.userData.referrer).toBeUndefined();
+    });
+  });
+
+  describe('fireRefundEvent', () => {
+    const trackingContext = () =>
+      module.get<TrackingContextService>(TrackingContextService);
+    const trackingService = () => module.get<TrackingService>(TrackingService);
+
+    const refundOrder = {
+      id: 'order-id-1',
+      trackingSessionId: 'ctx-123',
+      total: 2050,
+      salesChannel: 'WEBSITE',
+      customer: {
+        firstName: 'John Doe',
+        phoneNumber: '+1234567890',
+      },
+      items: [
+        { id: 'item-id-1', productId: 'prod-1', quantity: 2, price: 1000 },
+      ],
+    };
+
+    it('should read context from TrackingContext via trackingSessionId', async () => {
+      (trackingContext().getByCtxId as jest.Mock).mockResolvedValue({
+        identifiers: {
+          meta: {
+            fbp: { value: 'fb.1.1.1' },
+            fbc: { value: 'fb.1.2.3' },
+          },
+        },
+        url: 'https://x',
+        referrer: 'https://r',
+      });
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(trackingContext().getByCtxId).toHaveBeenCalledWith('ctx-123');
+
+      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
+      expect(trackCall.eventId).toBe('refund_order-id-1');
+      expect(trackCall.userData).toEqual(
+        expect.objectContaining({
+          fbp: 'fb.1.1.1',
+          fbc: 'fb.1.2.3',
+        }),
+      );
+    });
+
+    it('should degrade gracefully when order has no trackingSessionId', async () => {
+      await (service as any).fireRefundEvent({
+        ...refundOrder,
+        trackingSessionId: null,
+      });
+
+      expect(trackingContext().getByCtxId).not.toHaveBeenCalled();
+
+      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
+      expect(trackCall.userData.fbp).toBeUndefined();
+      expect(trackCall.userData.fbc).toBeUndefined();
     });
   });
 });

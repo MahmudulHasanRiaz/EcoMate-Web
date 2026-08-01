@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { TrackingQueueService } from './tracking-queue.service';
 import { v4 as uuid } from 'uuid';
 
@@ -34,10 +33,7 @@ export interface TrackingEvent {
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
 
-  constructor(
-    private readonly queue: TrackingQueueService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly queue: TrackingQueueService) {}
 
   async track(event: TrackingEvent) {
     const eventId = event.eventId || uuid();
@@ -53,55 +49,5 @@ export class TrackingService {
       userData: { ...userData },
       customData: event.customData,
     });
-  }
-
-  async saveContext(
-    orderId: string,
-    context: { fbp?: string; fbc?: string; url?: string; referrer?: string },
-  ) {
-    try {
-      await this.prisma.trackingEvent.upsert({
-        where: { eventId: `ctx_${orderId}` },
-        create: {
-          eventId: `ctx_${orderId}`,
-          orderId,
-          eventType: 'context',
-          fbp: context.fbp,
-          fbc: context.fbc,
-          url: context.url,
-          referrer: context.referrer,
-        },
-        update: {
-          fbp: context.fbp,
-          fbc: context.fbc,
-          url: context.url,
-          referrer: context.referrer,
-        },
-      });
-    } catch (err) {
-      this.logger.error('Failed to save tracking context:', err);
-    }
-  }
-
-  async getContext(orderId: string): Promise<{
-    fbp?: string;
-    fbc?: string;
-    url?: string;
-    referrer?: string;
-  } | null> {
-    try {
-      const record = await this.prisma.trackingEvent.findUnique({
-        where: { eventId: `ctx_${orderId}` },
-      });
-      if (!record) return null;
-      return {
-        fbp: record.fbp || undefined,
-        fbc: record.fbc || undefined,
-        url: record.url || undefined,
-        referrer: record.referrer || undefined,
-      };
-    } catch {
-      return null;
-    }
   }
 }

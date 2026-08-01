@@ -3128,7 +3128,24 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       const totalValue = Number(order.total || 0);
       if (totalValue <= 0) return;
 
-      const savedCtx = await this.tracking.getContext(order.id);
+      let savedCtx: any = null;
+      if (order.trackingSessionId) {
+        try {
+          const row = await this.trackingContext.getByCtxId(
+            order.trackingSessionId,
+          );
+          if (row) {
+            savedCtx = {
+              fbp: (row.identifiers as any)?.meta?.fbp?.value,
+              fbc: (row.identifiers as any)?.meta?.fbc?.value,
+              url: row.url || undefined,
+              referrer: row.referrer || undefined,
+            };
+          }
+        } catch {
+          savedCtx = null; // context read failure degrades gracefully (legacy getContext had try/catch)
+        }
+      }
 
       let phone = '';
       let firstName = '';
