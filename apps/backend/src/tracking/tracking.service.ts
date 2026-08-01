@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { TrackingQueueService } from './tracking-queue.service';
 import { v4 as uuid } from 'uuid';
 
@@ -31,8 +31,6 @@ export interface TrackingEvent {
 
 @Injectable()
 export class TrackingService {
-  private readonly logger = new Logger(TrackingService.name);
-
   constructor(private readonly queue: TrackingQueueService) {}
 
   async track(event: TrackingEvent) {
