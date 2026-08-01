@@ -16,6 +16,13 @@ const TIKTOK_TRACK_API_URL =
 const REQUEST_TIMEOUT_MS = 1500;
 const MAX_RAW_RESPONSE_CHARS = 500;
 
+/**
+ * TikTok Business API error codes that reflect transient conditions worth a
+ * retry (e.g. rate limits). All other non-zero `code` values are permanent
+ * config or data errors (e.g. 10005 invalid token) and must not be retried.
+ */
+const TRANSIENT_ERROR_CODES = new Set([40011, 40012]);
+
 /** TikTok's standard web events are exactly the canonical TRACKING_EVENT_TYPES. */
 const SUPPORTED_EVENT_TYPES = TRACKING_EVENT_TYPES as readonly string[];
 
@@ -28,6 +35,9 @@ const SUPPORTED_EVENT_TYPES = TRACKING_EVENT_TYPES as readonly string[];
  * (design §4.6 refund table). send() POSTs to business-api.tiktok.com with the
  * `Access-Token` header and classifies the outcome for the dispatch retry
  * policy (4xx non-429 → not retryable; 429/5xx/network/timeout → retryable).
+ * HTTP 200 bodies carrying a non-zero business `code` (bad token, invalid
+ * event) are failures, never SENT — not retryable unless the code is a known
+ * transient rate limit.
  *
  * build() cannot know the pixel code or access token — they are config-resolved
  * at dispatch time (mirroring how Meta reads pixelId/accessToken from cfg) — so
@@ -147,9 +157,24 @@ export class TikTokAdapter implements TrackingProviderAdapter {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      const rawResponse = (await response.text()).slice(0, MAX_RAW_RESPONSE_CHARS);
+      // TikTok Business API returns HTTP 200 with a non-zero body `code` for
+      // business errors (bad token, invalid event). Those must be classified as
+      // failures, never SENT — so the JSON body is parsed to detect them. When
+      // the body can't be parsed we fall back to HTTP-status classification
+      // (4xx non-429 → not retryable; 429/5xx → retryable).
+      const parsedBody = (await response.json().catch(() => null)) as
+        | { code?: unknown; message?: unknown }
+        | null;
+      const rawResponse = parsedBody
+        ? `code:${parsedBody.code ?? '?'}${
+            parsedBody.message ? ` message:${parsedBody.message}` : ''
+          }`
+        : (await response.text().catch(() => '')).slice(
+            0,
+            MAX_RAW_RESPONSE_CHARS,
+          );
 
-      if (response.ok) {
+      if (response.ok && (!parsedBody || parsedBody.code === 0)) {
         return {
           ok: true,
           retryable: false,
@@ -158,6 +183,24 @@ export class TikTokAdapter implements TrackingProviderAdapter {
           rawResponse,
         };
       }
+
+      // A non-zero business `code` is a failure. Most are permanent config or
+      // data errors (e.g. 10005 invalid token) → not retryable; only known
+      // transient codes (rate limits) warrant a retry.
+      if (
+        parsedBody &&
+        typeof parsedBody.code === 'number' &&
+        parsedBody.code !== 0
+      ) {
+        return {
+          ok: false,
+          retryable: TRANSIENT_ERROR_CODES.has(parsedBody.code),
+          providerEventId: payload.eventId,
+          httpStatus: response.status,
+          rawResponse,
+        };
+      }
+
       const retryable = response.status === 429 || response.status >= 500;
       return {
         ok: false,

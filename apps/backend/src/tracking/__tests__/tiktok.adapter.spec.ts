@@ -44,6 +44,9 @@ const mockResponse = (status: number, body: string) => ({
   ok: status >= 200 && status < 300,
   status,
   text: async () => body,
+  // Model a real fetch Response: json() parses the same body. Invalid JSON
+  // (e.g. the 2000-char truncation fixture) rejects, as a real Response would.
+  json: async () => JSON.parse(body),
 });
 
 const wirePayload = (over: Partial<ProviderPayload> = {}): ProviderPayload => ({
@@ -276,6 +279,49 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(body.context.page.url).toBe('https://ecomate.example/checkout');
       expect(body.context.user.email).toBe('abc123');
       expect(body.properties.value).toBe(2500);
+    });
+
+    it('returns ok:false when TikTok returns HTTP 200 with a non-zero business-error body code', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 10005, message: 'invalid' }),
+      });
+
+      const result = await adapter.send(wirePayload(), cfg);
+
+      expect(result).toEqual(
+        expect.objectContaining({ ok: false, retryable: false, httpStatus: 200 }),
+      );
+      expect(result.rawResponse).toContain('10005');
+      expect(result.rawResponse).toContain('invalid');
+    });
+
+    it('returns ok:true when TikTok returns HTTP 200 with body code 0', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ code: 0 }),
+      });
+
+      const result = await adapter.send(wirePayload(), cfg);
+
+      expect(result).toEqual(
+        expect.objectContaining({ ok: true, retryable: false }),
+      );
+    });
+
+    it('marks known-transient business-error codes (40011) retryable', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 40011, message: 'rate limit' }),
+      });
+
+      const result = await adapter.send(wirePayload(), cfg);
+
+      expect(result).toEqual(
+        expect.objectContaining({ ok: false, retryable: true, httpStatus: 200 }),
+      );
     });
 
     it('returns retryable:false on a 4xx (non-429) response', async () => {
