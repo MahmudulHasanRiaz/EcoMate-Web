@@ -301,7 +301,7 @@ Create `apps/backend/src/tracking/tracking.constants.ts`:
 
 ```ts
 /** Canonical snapshot event types. PageView is deliberately excluded (Pixel + analytics only). */
-export const TRACKING_EVENT_TYPES = [
+export const TRACKING_EVENT_TYPES = Object.freeze([
   'Purchase',
   'Refund',
   'AddToCart',
@@ -311,15 +311,15 @@ export const TRACKING_EVENT_TYPES = [
   'Search',
   'CompleteRegistration',
   'Lead',
-] as const;
+] as const);
 export type TrackingEventType = (typeof TRACKING_EVENT_TYPES)[number];
 
 /** TrackingOutbox.status — DB is source of truth. DEAD->PENDING only via ReplayService. */
-export const OUTBOX_STATUS = ['PENDING', 'CLAIMED', 'SENT', 'FAILED', 'DEAD'] as const;
+export const OUTBOX_STATUS = Object.freeze(['PENDING', 'CLAIMED', 'SENT', 'FAILED', 'DEAD'] as const);
 export type OutboxStatus = (typeof OUTBOX_STATUS)[number];
 
 /** TrackingDispatch.status — per-provider state. Version columns are null for SKIPPED/DEDUPED. */
-export const DISPATCH_STATUS = [
+export const DISPATCH_STATUS = Object.freeze([
   'PENDING',
   'SENDING',
   'SENT',
@@ -328,11 +328,11 @@ export const DISPATCH_STATUS = [
   'DEDUPED',
   'SKIPPED',
   'DEAD',
-] as const;
+] as const);
 export type DispatchStatus = (typeof DISPATCH_STATUS)[number];
 
 /** TrackingOutbox.configSnapshot.successPolicy */
-export const SUCCESS_POLICIES = ['ALL_SENT', 'ANY_SENT', 'N_SENT'] as const;
+export const SUCCESS_POLICIES = Object.freeze(['ALL_SENT', 'ANY_SENT', 'N_SENT'] as const);
 export type SuccessPolicy = (typeof SUCCESS_POLICIES)[number];
 
 /** Canonical snapshot payload schema version — bump only on breaking shape changes. */
@@ -361,7 +361,7 @@ git commit -m "feat(tracking): add shared tracking status/event-type constants"
 
 **Interfaces:**
 - Consumes: `PrismaService`, NestJS `ConfigService` (both already provided by `TrackingModule`'s imports — `PrismaModule`).
-- Produces: `TrackingSettingsService.get(key, envKey): Promise<string | null>`; `isEnabled(provider, enabledKey): Promise<boolean>`; `getTestEventCode(provider, enabledKey): Promise<string | null>` (gated by the provider's test-mode flag). Later phases (adapters) consume these.
+- Produces: `TrackingSettingsService.get(systemKey: string, envKey: string | null): Promise<string | null>`; `isEnabled(enabledKey: string): Promise<boolean>`; `getTestEventCode(provider: string): Promise<string | null>` (gated by the provider's test-mode flag; DB-only, no env fallback per design §4.11/D10). Later phases (adapters) consume these.
 
 - [ ] **Step 1: Write the failing test**
 
