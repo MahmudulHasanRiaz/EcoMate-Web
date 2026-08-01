@@ -18,6 +18,12 @@ import { apiClient } from '@/lib/api-client'
 import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 import { UserBadge } from '@/components/user-badge'
 
+function normalizeNewlines(html: string): string {
+  const isHTML = /<[a-z][\s\S]*>/i.test(html)
+  let p = html.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n')
+  return isHTML ? p : p.replace(/\n/g, '<br>')
+}
+
 export function ProductDetail() {
   const { id } = useParams({ from: '/_authenticated/op/products/$id' })
   const navigate = useNavigate()
@@ -137,7 +143,7 @@ export function ProductDetail() {
                 {product.description ? (
                   <div
                     className='text-sm text-muted-foreground [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_strong]:font-semibold [&_a]:text-primary [&_a]:underline'
-                    dangerouslySetInnerHTML={{ __html: product.description }}
+                    dangerouslySetInnerHTML={{ __html: normalizeNewlines(product.description) }}
                   />
                 ) : (
                   <p className='text-sm text-muted-foreground'>No description.</p>

@@ -356,7 +356,9 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
         {combo.description && (
           <div className="mb-8">
             <h3 className="text-lg font-bold text-gray-800 mb-3">Description</h3>
-            <p className="text-gray-600 leading-relaxed">{combo.description}</p>
+            <p className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {combo.description.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n')}
+            </p>
           </div>
         )}
 
