@@ -284,7 +284,40 @@ export class TrackingContextService {
 - [ ] **Step 6: Commit** `feat(tracking): add TrackingContextService with serialized upsert`
 
 ---
-### Task 3: `/tracking/context` ctxId-based endpoint + switch saveContext/getContext
+### Task 3: Order linkage (`Order.trackingSessionId`)
+
+> Ordering note: this runs BEFORE the `/tracking/context` switch so the backend keeps compiling — `orders.service` stops calling the legacy `getContext` before Task 4 removes it.
+
+**Files:**
+- Modify: `apps/backend/src/orders/dto/create-order.dto.ts`
+- Modify: `apps/backend/src/orders/orders.service.ts`
+
+**Interfaces:**
+- Consumes: `TrackingContextService.getByCtxId` (Task 2).
+- Produces: `CreateOrderDto.trackingSessionId?: string`; orders created with it store `Order.trackingSessionId`; `buildAndSendPurchaseEvent` reads context via the order's `trackingSessionId`.
+
+- [ ] **Step 1: Add to `CreateOrderDto`:**
+
+```ts
+@IsString()
+@IsOptional()
+trackingSessionId?: string;
+```
+
+- [ ] **Step 2: In `orders.service.create`**, set `trackingSessionId: dto.trackingSessionId` when the order is inserted (an unknown/missing ctxId is tolerated — the dispatcher degrades gracefully).
+- [ ] **Step 3: In `buildAndSendPurchaseEvent`**, replace `const savedCtx = await this.tracking.getContext(order.id);` with context lookup via the order's `trackingSessionId`:
+
+```ts
+let savedCtx: any = null;
+if (order.trackingSessionId) {
+  savedCtx = await this.trackingContext.getByCtxId(order.trackingSessionId);
+}
+```
+Inject `TrackingContextService` into `OrdersService`. Keep the same `fbp/fbc/url/referrer` extraction from `savedCtx`. (Old orders with no `trackingSessionId` degrade gracefully — no context.)
+- [ ] **Step 4: Update/extend `orders.service.spec.ts`** for the linkage + context lookup path. Run backend tests + build. **Commit** `feat(orders): link orders to tracking context via trackingSessionId`
+
+---
+### Task 4: `/tracking/context` ctxId-based endpoint + switch saveContext/getContext
 
 **Files:**
 - Modify: `apps/backend/src/tracking/dto/save-context.dto.ts`
@@ -292,8 +325,8 @@ export class TrackingContextService {
 - Modify: `apps/backend/src/tracking/tracking.service.ts`
 
 **Interfaces:**
-- Consumes: `TrackingContextService` (Task 2).
-- Produces: `POST /tracking/context` body `{ ctxId, identifiers?, email?, phone?, url?, referrer? }` (ip/UA added server-side). `TrackingService` no longer reads/writes `TrackingEvent` for context.
+- Consumes: `TrackingContextService` (Task 2), the order linkage from Task 3.
+- Produces: `POST /tracking/context` body `{ ctxId, identifiers?, url?, referrer? }` (ip/UA added server-side). `TrackingService` no longer reads/writes `TrackingEvent` for context (`getContext` is safe to remove now — `orders.service` already reads via `trackingSessionId`).
 
 - [ ] **Step 1: Replace `SaveContextDto`** with:
 
@@ -320,40 +353,9 @@ export class SaveContextDto {
 ```
 
 - [ ] **Step 2: Update `tracking.controller.ts`** — `saveContext(body, req)` calls `trackingContext.upsertContext(body.ctxId, { identifiers, url, referrer }, req.ip, req.headers['user-agent'])` (inject `TrackingContextService`). Remove the old `tracking.saveContext(orderId, …)` path.
-- [ ] **Step 3: Update `tracking.service.ts`** — keep `tracking.track` (queue enqueue) unchanged; **remove** `saveContext`/`getContext` (context now lives in `TrackingContext`); add a thin `getContextByCtxId` passthrough if `orders.service` needs it.
+- [ ] **Step 3: Update `tracking.service.ts`** — keep `tracking.track` (queue enqueue) unchanged; **remove** `saveContext`/`getContext` (context now lives in `TrackingContext`; no caller remains after Task 3).
 - [ ] **Step 4: Update the tracking controller spec** (`__tests__/tracking.controller.spec.ts`) — method list unchanged (`trackEvent`, `saveContext` still exist).
 - [ ] **Step 5: Run backend tests + build** → PASS. **Commit** `feat(tracking): switch /tracking/context to ctxId-based TrackingContext`
-
----
-### Task 4: Order linkage (`Order.trackingSessionId`)
-
-**Files:**
-- Modify: `apps/backend/src/orders/dto/create-order.dto.ts`
-- Modify: `apps/backend/src/orders/orders.service.ts`
-
-**Interfaces:**
-- Consumes: `TrackingContextService.getByCtxId` (Task 2).
-- Produces: `CreateOrderDto.trackingSessionId?: string`; orders created with it store `Order.trackingSessionId`; `buildAndSendPurchaseEvent` reads context via the order's `trackingSessionId`.
-
-- [ ] **Step 1: Add to `CreateOrderDto`:**
-
-```ts
-@IsString()
-@IsOptional()
-trackingSessionId?: string;
-```
-
-- [ ] **Step 2: In `orders.service.create`** (after the order is created, before/with the tracking fire), persist the linkage: inside the create transaction set `trackingSessionId: dto.trackingSessionId` (validate it against a real context: if provided but unknown, store as-is — the dispatcher tolerates missing context).
-- [ ] **Step 3: In `buildAndSendPurchaseEvent`**, replace `const savedCtx = await this.tracking.getContext(order.id);` with context lookup via the order's `trackingSessionId`:
-
-```ts
-let savedCtx: any = null;
-if (order.trackingSessionId) {
-  savedCtx = await this.trackingContext.getByCtxId(order.trackingSessionId);
-}
-```
-Inject `TrackingContextService` into `OrdersService`. Keep the same `fbp/fbc/url/referrer` extraction from `savedCtx`.
-- [ ] **Step 4: Update/extend `orders.service.spec.ts`** for the linkage + context lookup path. Run backend tests + build. **Commit** `feat(orders): link orders to tracking context via trackingSessionId`
 
 ---
 ### Task 5: Storefront TrackingClient
