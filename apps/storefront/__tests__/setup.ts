@@ -1,6 +1,19 @@
 import '@testing-library/jest-dom/vitest';
 import { vi, beforeEach, afterEach } from 'vitest';
 
+// Node >=22 exposes an experimental global `localStorage` that is unavailable
+// unless `--localstorage-file` is provided. Because the key already exists on
+// globalThis, vitest skips populating jsdom's Storage, so tests saw `undefined`.
+// Restore jsdom's in-memory Storage for the test environment.
+const jsdomWindow = (globalThis as { jsdom?: { window: { localStorage?: Storage } } }).jsdom?.window;
+if (jsdomWindow?.localStorage) {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: jsdomWindow.localStorage,
+    configurable: true,
+    writable: true,
+  });
+}
+
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
