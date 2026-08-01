@@ -1,10 +1,9 @@
 import { TrackingContextService } from '../tracking-context.service';
-import { mergeContext } from '../context-merge';
 
 describe('TrackingContextService', () => {
   const upsertMock = jest.fn();
-  const findUniqueMock = jest.fn();
-  const tx = { trackingContext: { upsert: upsertMock, findUnique: findUniqueMock } };
+  const queryRawMock = jest.fn();
+  const tx = { $queryRaw: queryRawMock, trackingContext: { upsert: upsertMock } };
   const transactionMock = jest.fn((cb) => cb(tx));
   const prisma = { $transaction: transactionMock } as any;
   const service = new TrackingContextService(prisma);
@@ -12,12 +11,12 @@ describe('TrackingContextService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     upsertMock.mockClear();
-    findUniqueMock.mockClear();
+    queryRawMock.mockClear();
     transactionMock.mockClear();
   });
 
   it('upserts via a transaction with server-set ip/userAgent and serialized merge', async () => {
-    findUniqueMock.mockResolvedValue(null);
+    queryRawMock.mockResolvedValue([]); // no existing row
     await service.upsertContext('ctx-1', { identifiers: { meta: { fbp: 'x' } } }, '1.2.3.4', 'UA');
     expect(transactionMock).toHaveBeenCalled();
     expect(upsertMock).toHaveBeenCalled();
@@ -29,12 +28,13 @@ describe('TrackingContextService', () => {
   });
 
   it('merges into the existing row and never trusts browser ip/ua', async () => {
+    // Raw DB row from SELECT *: identifiers is the parsed JSON value, url/referrer are columns.
     const existing = {
       id: 'id-1', ctxId: 'ctx-1', externalId: 'ext-1', ip: '9.9.9.9', userAgent: 'UA-old',
       url: null, referrer: null, identifiers: { meta: { fbp: { value: 'old', firstSeenAt: 't' } } },
       firstSeenAt: new Date(), lastSeenAt: new Date(), createdAt: new Date(), updatedAt: new Date(),
     };
-    findUniqueMock.mockResolvedValue(existing);
+    queryRawMock.mockResolvedValue([existing]);
     await service.upsertContext('ctx-1', { identifiers: { meta: { fbp: 'new' } } }, '5.5.5.5', 'UA-new');
     expect(upsertMock).toHaveBeenCalled();
     const call = upsertMock.mock.calls[0][0];

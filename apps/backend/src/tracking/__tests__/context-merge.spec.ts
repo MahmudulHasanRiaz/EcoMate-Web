@@ -49,4 +49,19 @@ describe('mergeContext (design §4.1 enrichment rules)', () => {
     const r = mergeContext(null, { identifiers: { meta: { fbp: { value: 'x' } as any } } });
     expect(r.identifiers.meta.fbp).toBeUndefined();
   });
+
+  it('rotating: gaClientId replaces when a newer value arrives, firstSeenAt kept', () => {
+    const r1 = mergeContext(null, { identifiers: { google: { gaClientId: 'GA1.2.1' } } });
+    const r2 = mergeContext(r1, { identifiers: { google: { gaClientId: 'GA1.2.2' } } });
+    expect(r2.identifiers.google.gaClientId.value).toBe('GA1.2.2');
+    expect(r2.identifiers.google.gaClientId.firstSeenAt).toBe(r1.identifiers.google.gaClientId.firstSeenAt);
+  });
+
+  it('input guard: non-object provider value is skipped (does not iterate as chars)', () => {
+    const r = mergeContext(null, {
+      identifiers: { meta: 'fbp=bad' as any, google: { gaClientId: 'G-1' } },
+    });
+    expect(r.identifiers.meta).toBeUndefined();
+    expect(r.identifiers.google.gaClientId.value).toBe('G-1');
+  });
 });

@@ -21,7 +21,7 @@ export interface ContextMerged {
 }
 
 /** Cookie-based identifiers rotate across sessions: replace-when-newer, never clear. */
-const ROTATING = new Set(['fbp', 'fbc', 'gclid', 'ttclid', '_ga', 'fbclid', '_ttp']);
+const ROTATING = new Set(['fbp', 'fbc', 'gclid', 'ttclid', '_ga', 'gaClientId', 'fbclid', '_ttp']);
 
 export function mergeContext(
   existing: ContextMerged | null,
@@ -35,6 +35,7 @@ export function mergeContext(
   const now = new Date().toISOString();
 
   for (const [provider, keys] of Object.entries(incoming.identifiers ?? {})) {
+    if (typeof keys !== 'object' || keys === null) continue; // guard: non-object iterates as chars
     out.identifiers[provider] = out.identifiers[provider] ?? {};
     for (const [key, value] of Object.entries(keys)) {
       if (typeof value !== 'string' || !value) continue; // empty never clears

@@ -1,5 +1,16 @@
 const CTX_KEY = 'ecomate_ctx_id';
 
+export function getTrackingApiUrl(): string {
+  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    return '/api';
+  }
+  return (
+    process.env.API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    'http://localhost:4000/api'
+  );
+}
+
 export function getOrCreateCtxId(): string {
   if (typeof window === 'undefined') return '';
   let id = localStorage.getItem(CTX_KEY);
@@ -54,8 +65,8 @@ export async function syncContext(payload?: {
   if (inflight) return inflight; // throttle: one at a time
   inflight = (async () => {
     try {
-      const base = (location.hostname.includes('localhost') ? (process.env.API_URL || 'http://localhost:4000') : '') + '/api';
-      await fetch(`${base}/tracking/context`, {
+      const url = `${getTrackingApiUrl()}/tracking/context`;
+      await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

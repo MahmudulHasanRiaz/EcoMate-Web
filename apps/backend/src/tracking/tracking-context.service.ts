@@ -16,8 +16,13 @@ export class TrackingContextService {
   ): Promise<void> {
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Serialize per ctxId: read current row, merge, then upsert (no lost updates).
-        const row = await tx.trackingContext.findUnique({ where: { ctxId } });
+        // Serialize per ctxId: row-lock the current row (FOR UPDATE) so a second
+        // concurrent same-ctxId write blocks until the first commits, then merge
+        // and upsert — no lost updates. Parameterized so ctxId can't inject SQL.
+        const rows = await tx.$queryRaw<any[]>(
+          Prisma.sql`SELECT * FROM "TrackingContext" WHERE "ctxId" = ${ctxId} FOR UPDATE`,
+        );
+        const row = rows[0] ?? null;
 
         // Convert row to appropriate format for mergeContext
         const existing = row

@@ -1,15 +1,4 @@
-import { getOrCreateCtxId } from './tracking-client';
-
-function getTrackingApiUrl(): string {
-  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
-    return '/api';
-  }
-  return (
-    process.env.API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:4000/api'
-  );
-}
+import { getOrCreateCtxId, getTrackingApiUrl } from './tracking-client';
 
 declare global {
   interface Window {
