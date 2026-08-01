@@ -12,6 +12,10 @@ export interface SnapshotContentItem {
 
 /** Canonical business data captured at event time (raw, unhashed). */
 export interface TrackingSnapshotPayload {
+  /** Canonical event type (see TRACKING_EVENT_TYPES); the dispatcher populates it. */
+  eventType?: string;
+  /** Caller-provided dedup id; adapters override for order events (purchase_/refund_). */
+  eventId?: string;
   orderId?: string;
   value?: number;
   currency?: string;
