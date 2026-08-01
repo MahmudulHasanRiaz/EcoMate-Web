@@ -28,6 +28,21 @@ export interface ProviderConfig {
 }
 
 /**
+ * Optional per-dispatch gate hints (design §4.6). Passed to supports() by the
+ * dispatcher when it knows the event's provenance beyond the snapshot type.
+ */
+export interface AdapterSupportsOptions {
+  /**
+   * GA4: the event is validated/offline with no browser-fired counterpart
+   * (driven by the provider's `ga4Server` config flag). Allows server
+   * Measurement Protocol dispatch even for event types the browser fires via
+   * gtag in instant mode (e.g. Purchase) — otherwise suppressed to avoid the
+   * double-count a duplicate client_id would cause.
+   */
+  serverOnly?: boolean;
+}
+
+/**
  * Versioned provider adapter contract (design §4.2). Each provider ships one
  * adapter per supported API version; dispatch routes to the newest registered
  * version unless an older one is explicitly requested (replay).
@@ -36,7 +51,7 @@ export interface TrackingProviderAdapter {
   readonly provider: string;
   readonly version: number;
   readonly providerApiVersion: string;
-  supports(eventType: string): boolean;
+  supports(eventType: string, opts?: AdapterSupportsOptions): boolean;
   build(
     snapshot: TrackingSnapshotPayload,
     ctx: TrackingContextView,
