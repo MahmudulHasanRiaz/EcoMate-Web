@@ -831,10 +831,14 @@ describe('OrdersService', () => {
 
     it('should read context from TrackingContext via trackingSessionId', async () => {
       (trackingContext().getByCtxId as jest.Mock).mockResolvedValue({
-        fbp: 'fb.1.111',
-        fbc: 'fb.1.222',
-        url: 'https://example.com/product',
-        referrer: 'https://google.com',
+        identifiers: {
+          meta: {
+            fbp: { value: 'fb.1.1.1' },
+            fbc: { value: 'fb.1.2.3' },
+          },
+        },
+        url: 'https://x',
+        referrer: 'https://r',
       });
 
       await (service as any).buildAndSendPurchaseEvent(
@@ -848,10 +852,10 @@ describe('OrdersService', () => {
       const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
       expect(trackCall.userData).toEqual(
         expect.objectContaining({
-          fbp: 'fb.1.111',
-          fbc: 'fb.1.222',
-          url: 'https://example.com/product',
-          referrer: 'https://google.com',
+          fbp: 'fb.1.1.1',
+          fbc: 'fb.1.2.3',
+          url: 'https://x',
+          referrer: 'https://r',
         }),
       );
     });

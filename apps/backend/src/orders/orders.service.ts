@@ -3052,7 +3052,19 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
     let savedCtx: any = null;
     if (order.trackingSessionId) {
-      savedCtx = await this.trackingContext.getByCtxId(order.trackingSessionId);
+      try {
+        const row = await this.trackingContext.getByCtxId(order.trackingSessionId);
+        if (row) {
+          savedCtx = {
+            fbp: (row.identifiers as any)?.meta?.fbp?.value,
+            fbc: (row.identifiers as any)?.meta?.fbc?.value,
+            url: row.url || undefined,
+            referrer: row.referrer || undefined,
+          };
+        }
+      } catch {
+        savedCtx = null; // context read failure degrades gracefully (legacy getContext had try/catch)
+      }
     }
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || 0);
