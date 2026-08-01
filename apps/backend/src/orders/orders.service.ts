@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { TrackingContextService } from '../tracking/tracking-context.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { StockService } from '../stock/stock.service';
@@ -110,6 +111,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tracking: TrackingService,
+    private readonly trackingContext: TrackingContextService,
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
@@ -1045,6 +1047,7 @@ export class OrdersService {
           customerNotes: dto.customerNotes,
           officeNotes: resolvedOfficeNotes,
           salesChannel: dto.salesChannel || 'WEBSITE',
+          trackingSessionId: dto.trackingSessionId ?? null,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
           paymentOptionType: dto.paymentOptionType,
@@ -3047,7 +3050,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       if (shippingAddr.country) country = shippingAddr.country;
     }
 
-    const savedCtx = await this.tracking.getContext(order.id);
+    let savedCtx: any = null;
+    if (order.trackingSessionId) {
+      savedCtx = await this.trackingContext.getByCtxId(order.trackingSessionId);
+    }
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || 0);
 

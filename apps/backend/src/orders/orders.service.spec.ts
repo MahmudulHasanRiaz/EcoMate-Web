@@ -4,6 +4,7 @@ import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { TrackingContextService } from '../tracking/tracking-context.service';
 import { CustomersService } from '../customers/customers.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -221,6 +222,12 @@ describe('OrdersService', () => {
           useValue: {
             getContext: jest.fn().mockResolvedValue(undefined),
             track: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: TrackingContextService,
+          useValue: {
+            getByCtxId: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -531,6 +538,34 @@ describe('OrdersService', () => {
 
       expect(prisma.productVariant.update).not.toHaveBeenCalled();
     });
+
+    it('should store trackingSessionId on the created order when provided', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trackingSessionId: 'ctx-123',
+      });
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        trackingSessionId: 'ctx-123',
+      });
+
+      const createCall = (prisma.order.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.trackingSessionId).toBe('ctx-123');
+    });
   });
 
   describe('updateStatus', () => {
@@ -762,6 +797,76 @@ describe('OrdersService', () => {
         performedBy: undefined,
         tx: prisma,
       });
+    });
+  });
+
+  describe('buildAndSendPurchaseEvent', () => {
+    const trackingContext = () =>
+      module.get<TrackingContextService>(TrackingContextService);
+    const trackingService = () => module.get<TrackingService>(TrackingService);
+
+    const baseOrder = {
+      id: 'order-id-1',
+      customerId: 'customer-id-1',
+      total: 2050,
+      createdAt: new Date('2025-01-15'),
+      salesChannel: 'WEBSITE',
+      customer: {
+        id: 'customer-id-1',
+        name: 'John Doe',
+        firstName: 'John Doe',
+        lastName: '',
+        email: 'john@example.com',
+        phoneNumber: '+1234567890',
+      },
+      items: [
+        {
+          id: 'item-id-1',
+          productId: 'prod-1',
+          quantity: 2,
+          price: 1000,
+        },
+      ],
+    };
+
+    it('should read context from TrackingContext via trackingSessionId', async () => {
+      (trackingContext().getByCtxId as jest.Mock).mockResolvedValue({
+        fbp: 'fb.1.111',
+        fbc: 'fb.1.222',
+        url: 'https://example.com/product',
+        referrer: 'https://google.com',
+      });
+
+      await (service as any).buildAndSendPurchaseEvent(
+        { ...baseOrder, trackingSessionId: 'ctx-123' },
+        'instant',
+      );
+
+      expect(trackingContext().getByCtxId).toHaveBeenCalledWith('ctx-123');
+      expect(trackingService().getContext).not.toHaveBeenCalled();
+
+      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
+      expect(trackCall.userData).toEqual(
+        expect.objectContaining({
+          fbp: 'fb.1.111',
+          fbc: 'fb.1.222',
+          url: 'https://example.com/product',
+          referrer: 'https://google.com',
+        }),
+      );
+    });
+
+    it('should degrade gracefully when order has no trackingSessionId', async () => {
+      await (service as any).buildAndSendPurchaseEvent(baseOrder, 'instant');
+
+      expect(trackingContext().getByCtxId).not.toHaveBeenCalled();
+      expect(trackingService().getContext).not.toHaveBeenCalled();
+
+      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
+      expect(trackCall.userData.fbp).toBeUndefined();
+      expect(trackCall.userData.fbc).toBeUndefined();
+      expect(trackCall.userData.url).toBeUndefined();
+      expect(trackCall.userData.referrer).toBeUndefined();
     });
   });
 });

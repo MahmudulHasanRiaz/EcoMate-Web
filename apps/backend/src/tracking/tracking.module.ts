@@ -28,6 +28,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     PageViewBufferService,
     TrackingSettingsService,
   ],
-  exports: [TrackingService, PageViewBufferService],
+  exports: [TrackingService, TrackingContextService, PageViewBufferService],
 })
 export class TrackingModule {}

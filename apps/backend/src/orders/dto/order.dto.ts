@@ -52,6 +52,7 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(SalesChannel)
   salesChannel?: SalesChannel;
+  @IsOptional() @IsString() trackingSessionId?: string;
 }
 
 export class UpdateOrderStatusDto {
