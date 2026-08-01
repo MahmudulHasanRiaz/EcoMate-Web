@@ -26,6 +26,7 @@ interface ParsedModel {
   idFields: string[]; // column names for PRIMARY KEY
   compositeId: boolean; // whether PK is composite (from @@id)
   compositeIdCols: string[]; // column names from @@id
+  hasEnumFields: boolean; // model has enum-typed columns (needs migration)
 }
 
 const SCALAR_TYPES = new Set([
@@ -417,6 +418,13 @@ export class PrismaService
       const tbl = model.tableName;
       tableCount++;
 
+      if (model.hasEnumFields) {
+        this.logger.warn(
+          `Auto-heal: skip "${tbl}" (enum-typed fields — requires a migration)`,
+        );
+        continue;
+      }
+
       if (!existingTables.has(tbl)) {
         // Table missing — create it with all columns
         const createSQL = this.generateCreateTableSQL(model);
@@ -523,6 +531,7 @@ export class PrismaService
           idFields: [],
           compositeId: false,
           compositeIdCols: [],
+          hasEnumFields: false,
         };
         inModel = true;
         continue;
@@ -563,13 +572,20 @@ export class PrismaService
       const fieldName = fieldParts[0];
       const fieldType = fieldParts[1];
 
-      const baseType = fieldType.replace(/\[\]$/, '');
+      const baseType = fieldType.replace(/\[\]$/, '').replace(/\?$/, '');
       const isRelation =
         trimmed.includes('@relation') ||
         (modelNames.has(baseType) && !isScalarType(baseType));
 
       if (isRelation) {
         currentModel.relationFieldNames.push(fieldName);
+        continue;
+      }
+
+      // Enum-typed field (capitalized, not a scalar, not a model): auto-heal
+      // can't recreate the enum type safely, so flag the model to be skipped.
+      if (!isScalarType(baseType) && !modelNames.has(baseType)) {
+        currentModel.hasEnumFields = true;
         continue;
       }
 
@@ -994,89 +1010,22 @@ export class PrismaService
       );
       const existing = new Set(rows.map((r) => r.table_name));
 
-      const allModels = [
-        'Account',
-        'Address',
-        'Attribute',
-        'AttributeValue',
-        'BinLocation',
-        'BlockedIp',
-        'BlockedPhone',
-        'BlockSettings',
-        'Brand',
-        'Category',
-        'CmsPage',
-        'Combo',
-        'ComboItem',
-        'CostingLot',
-        'Coupon',
-        'CouponUsage',
-        'CourierCredentials',
-        'CourierDispatchLog',
-        'Department',
-        'Designation',
-        'EmailCampaign',
-        'EmailTemplate',
-        'Employee',
-        'Expense',
-        'expense_categories',
-        'FinancialPeriod',
-        'GoodsReceiptNote',
-        'GoodsReceiptNoteItem',
-        'InventoryLog',
-        'JournalEntry',
-        'JournalEntryLine',
-        'LandingPage',
-        'LicenseActivation',
-        'Media',
-        'MediaAttachment',
-        'NotificationLog',
-        'NotificationSetting',
-        'OpeningBalance',
-        'Order',
-        'OrderCounter',
-        'OrderItem',
-        'OrderStatus',
-        'Payment',
-        'PaymentGateway',
-        'PaymentOption',
-        'Payslip',
-        'PayslipItem',
-        'Product',
-        'ProductCategory',
-        'ProductPaymentOption',
-        'ProductTag',
-        'ProductVariant',
-        'ProductVariantAttributeValue',
-        'Purchase',
-        'PurchaseItem',
-        'Referral',
-        'ReferralLead',
-        'ReferralReward',
-        'Refund',
-        'RefreshToken',
-        'Review',
-        'SalaryStructure',
-        'Shipment',
-        'ShippingOption',
-        'ShippingZoneGroup',
-        'SizeChart',
-        'Supplier',
-        'SupplierPayment',
-        'SupplierPaymentInvoice',
-        'SystemSetting',
-        'Tag',
-        'Task',
-        'UserProfile',
-        'UserSettings',
-        'VerificationToken',
-        'Warehouse',
-      ];
+      const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
+      if (!fs.existsSync(schemaPath)) {
+        this.logger.warn(
+          'Schema file not found — schema completeness check skipped',
+        );
+        return;
+      }
+      const content = fs.readFileSync(schemaPath, 'utf-8');
+      const models = this.parsePrismaModels(content);
+      // Real table names (honors @@map, e.g. UserProfile -> User, Review -> reviews)
+      const allTables = models.map((m) => m.tableName);
 
       const missing: string[] = [];
-      for (const model of allModels) {
-        if (!existing.has(model)) {
-          missing.push(model);
+      for (const tbl of allTables) {
+        if (!existing.has(tbl)) {
+          missing.push(tbl);
         }
       }
 
@@ -1089,7 +1038,7 @@ export class PrismaService
         );
       } else {
         this.logger.log(
-          `Schema validation: all ${allModels.length} tables present ✓`,
+          `Schema validation: all ${allTables.length} tables present ✓`,
         );
       }
     } catch (err: any) {
