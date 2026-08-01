@@ -66,8 +66,13 @@ const registry = new Map<string, TrackingProviderAdapter[]>();
 /** Append an adapter to its provider's version list (newest last). */
 export function registerAdapter(adapter: TrackingProviderAdapter): void {
   const versions = registry.get(adapter.provider) ?? [];
-  // One adapter per provider+version keeps the list invariant sound.
-  if (!versions.some((a) => a.version === adapter.version)) {
+  // One adapter per provider+version keeps the list invariant sound. A second
+  // registration at the same provider+version OVERWRITES (later registration
+  // wins) so a stale/partial adapter is never silently kept.
+  const existing = versions.findIndex((a) => a.version === adapter.version);
+  if (existing >= 0) {
+    versions[existing] = adapter;
+  } else {
     versions.push(adapter);
   }
   versions.sort((a, b) => a.version - b.version);
