@@ -68,12 +68,28 @@ function sanitizeHTML(html: string): string {
   // Detect if content is already HTML (from TipTap rich editor)
   const isHTML = /<[a-z][\s\S]*>/i.test(html);
   let processed = html.replace(/##/g, '');
-  if (!isHTML) {
-    // Plain text: convert literal escaped newlines and actual newlines to <br>
+  // Normalize all newline encodings first — WordPress imports often contain
+  // literal "\n" (backslash-n) sequences that must become real line breaks.
+  processed = processed
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n');
+  if (isHTML) {
+    // HTML content: convert remaining newlines to <br>, but skip ones that
+    // directly follow a block-close or existing <br> to avoid empty breaks.
+    processed = processed.replace(/\n/g, (_m, offset, str) => {
+      const before = str.slice(0, offset);
+      if (
+        /<\/?(p|div|h[1-6]|ul|ol|li|table|blockquote|pre)[^>]*>\s*$/.test(before) ||
+        /<br\s*\/?>\s*$/.test(before)
+      ) {
+        return '\n';
+      }
+      return '<br>';
+    });
+  } else {
+    // Plain text: collapse excessive blank lines, then convert to <br>
     processed = processed
-      .replace(/\\r\\n/g, '\n')
-      .replace(/\\n/g, '\n')
-      .replace(/\r\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .replace(/\n/g, '<br>');
   }

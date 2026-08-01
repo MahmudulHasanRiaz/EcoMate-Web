@@ -36,6 +36,17 @@ const MenuButton = ({ onClick, active, children, title }: { onClick: () => void;
 
 const Divider = () => <div className='w-px h-5 bg-border mx-0.5' />
 
+// WordPress-imported descriptions often store line breaks as literal "\n"
+// (backslash-n) or raw newlines. Convert them to <br> so TipTap renders
+// actual line breaks instead of showing "\n" or collapsing them.
+function normalizeNewlines(html: string): string {
+  if (!html) return html
+  const isHTML = /<[a-z][\s\S]*>/i.test(html)
+  let p = html.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n')
+  if (!isHTML) return p.replace(/\n/g, '<br>')
+  return p
+}
+
 export function RichTextEditor({ value, onChange, placeholder = 'Start writing...', minHeight = 250, disabled = false, className }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -46,7 +57,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing..
       LinkExtension.configure({ openOnClick: false }),
       PlaceholderExtension.configure({ placeholder }),
     ],
-    content: value || '',
+    content: normalizeNewlines(value) || '',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML()
       onChange(html === '<p></p>' ? '' : html)
