@@ -635,6 +635,7 @@ model Order {
   paymentProof             Json?              @default("{}")
   partialAmount            Decimal?           @db.Decimal(10, 2)
   viewToken                String?            @unique
+  trackingSessionId        String?
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean            @default(false)
   trashedAt                DateTime?
@@ -665,6 +666,7 @@ model Order {
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])
+  @@index([trackingSessionId])
   @@index([trashedAt])
 }
 
@@ -2446,4 +2448,127 @@ model BackupJob {
   @@index([status])
   @@index([createdAt])
   @@index([type])
+}
+
+// ── Tracking pipeline (Phase 0, design v2 §15) ──────────────────────────────
+// FKs are intentionally omitted: append-only log tables; orphan prevention is
+// enforced in application code (capture writes snapshot+outbox atomically).
+
+model TrackingContext {
+  id           String   @id @default(uuid())
+  ctxId        String   @unique
+  externalId   String   @default(uuid()) // customer-keyed when auth known; journey-uuid fallback for guests
+  ip           String?
+  userAgent    String?
+  url          String?
+  referrer     String?
+  identifiers  Json     @default("{}") // per-key {value, firstSeenAt, lastSeenAt}; serialized merge
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([externalId])
+  @@index([lastSeenAt]) // retention/anonymization
+}
+
+model TrackingSnapshot {
+  id            String   @id @default(uuid())
+  eventId       String   @unique
+  eventType     String
+  orderId       String?
+  ctxId         String?
+  eventTime     BigInt // Unix seconds; BigInt avoids INT4 2038 overflow
+  actionSource  String?
+  schemaVersion Int      @default(1)
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  @@index([orderId])
+  @@index([eventType, createdAt])
+}
+
+model TrackingOutbox {
+  id             String   @id @default(uuid())
+  snapshotId     String   @unique
+  configSnapshot Json     @default("{}")
+  status         String   @default("PENDING") // PENDING | CLAIMED | SENT | FAILED | DEAD
+  attemptCount   Int      @default(0)
+  nextAttemptAt  DateTime @default(now())
+  priority       Int      @default(0) // higher = claimed first (Purchase/Refund high)
+  lockedAt       DateTime?
+  lockedBy       String?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  publishedAt    DateTime?
+  dispatchedAt   DateTime?
+
+  @@index([status, priority, nextAttemptAt]) // claim query
+  @@index([createdAt]) // retention
+}
+
+model TrackingDispatch {
+  id                 String   @id @default(uuid())
+  snapshotId         String
+  eventId            String
+  orderId            String?
+  ctxId              String?
+  queueJobId         String?
+  provider           String
+  status             String   @default("PENDING") // PENDING|SENDING|SENT|RETRY|FAILED|DEDUPED|SKIPPED|DEAD
+  providerEventId    String?
+  httpStatus         Int?
+  responseBody       String?
+  errorMsg           String?
+  attemptCount       Int      @default(0)
+  adapterVersion     Int? // null for SKIPPED/DEDUPED (no send)
+  providerApiVersion String? // null for SKIPPED/DEDUPED
+  payloadVersion     Int? // null for SKIPPED/DEDUPED
+  normalizerVersion  Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([snapshotId, provider])
+  @@index([provider, status, createdAt])
+  @@index([eventId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([ctxId])
+  @@index([createdAt]) // retention
+}
+
+model TrackingDispatchEvent {
+  id           String   @id @default(uuid())
+  snapshotId   String
+  eventId      String
+  orderId      String?
+  ctxId        String?
+  provider     String?
+  queueJobId   String?
+  fromStatus   String?
+  toStatus     String
+  attempt      Int?
+  message      String?
+  createdAt    DateTime @default(now())
+
+  @@index([snapshotId, createdAt])
+  @@index([provider, toStatus, createdAt])
+  @@index([eventId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([ctxId])
+  @@index([createdAt]) // retention
+}
+
+model TrackingReplayArchive {
+  id              String   @id @default(uuid())
+  snapshotId      String   @unique
+  eventId         String
+  eventType       String
+  eventTime       BigInt
+  archivedPayload Json     @default("{}") // canonical payload, PII-stripped (hashed keys only)
+  configSnapshot  Json     @default("{}")
+  versions        Json     @default("{}") // {schemaVersion, adapterVersion, providerApiVersion, payloadVersion, normalizerVersion}
+  archivedAt      DateTime @default(now())
+
+  @@index([eventId])
+  @@index([eventType, archivedAt])
 }
