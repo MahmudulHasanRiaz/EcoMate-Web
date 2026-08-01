@@ -46,18 +46,17 @@ export class CourierManagerService {
     timeoutMs = 15000,
   ): Promise<Record<string, unknown>> {
     const res = await this.fetchWithTimeout(url, options, timeoutMs);
+    const rawBody = await res.text().catch(() => '');
     if (!res.ok) {
-      const text = await res.text().catch(() => 'Unknown error');
       throw new BadRequestException(
-        `HTTP ${res.status} from courier API: ${text.slice(0, 200)}`,
+        `HTTP ${res.status} from courier API: ${(rawBody || '(empty response body)').slice(0, 200)}`,
       );
     }
     try {
-      return (await res.json()) as Record<string, unknown>;
+      return JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
-      const text = await res.text().catch(() => '');
       throw new BadRequestException(
-        `Courier API returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`,
+        `Courier API returned non-JSON (HTTP ${res.status}): ${(rawBody || '(empty response body)').slice(0, 200)}`,
       );
     }
   }
@@ -77,6 +76,14 @@ export class CourierManagerService {
     if (!c || !c.enabled)
       throw new BadRequestException(`${courier} is not configured or disabled`);
     return c;
+  }
+
+  private describeSteadfastError(status: number, rawBody: string): string {
+    const body = (rawBody || '').trim();
+    if (body) {
+      return `Steadfast API rejected the request (HTTP ${status}): ${body.slice(0, 200)}`;
+    }
+    return `Steadfast API rejected the request (HTTP ${status}) — empty response body`;
   }
 
   private normalizePhone(raw?: string | null): string {
@@ -217,6 +224,7 @@ export class CourierManagerService {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let permanent = false;
       try {
         const res = await this.fetchWithTimeout(`${base}/create_order`, {
           method: 'POST',
@@ -228,13 +236,22 @@ export class CourierManagerService {
           body: JSON.stringify(payload),
         });
 
-        let data: Record<string, unknown>;
+        if (res.status >= 400) permanent = true;
+
+        // Read the body once as text: a failed res.json() consumes the body,
+        // so a plain-text error (e.g. "Account is not active!") must be
+        // captured before attempting to parse.
+        const rawBody = await res.text().catch(() => '');
+        let data: Record<string, unknown> | null = null;
         try {
-          data = (await res.json()) as Record<string, unknown>;
+          data = JSON.parse(rawBody) as Record<string, unknown>;
         } catch {
-          const text = await res.text().catch(() => '');
+          data = null;
+        }
+
+        if (data === null) {
           throw new BadRequestException(
-            `Steadfast API returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+            this.describeSteadfastError(res.status, rawBody),
           );
         }
 
@@ -315,6 +332,7 @@ export class CourierManagerService {
         this.logger.warn(
           `Steadfast dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
         );
+        if (permanent) break;
         if (attempt < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
