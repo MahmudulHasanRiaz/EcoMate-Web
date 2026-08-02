@@ -618,8 +618,8 @@ export default function CheckoutPage() {
       trackEvent('InitiateCheckout', {
         value,
         currency: config.currency.code,
-        content_ids: items.map(i => i.id),
         content_type: 'product',
+        content_ids: items.map(i => i.id),
         num_items: items.reduce((s, i) => s + i.quantity, 0),
         contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
       }, {

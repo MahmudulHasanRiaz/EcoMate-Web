@@ -159,6 +159,23 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(c.order_id).toBe('ord-1001');
     });
 
+    it('passes content_type, content_name, and content_category through to custom_data', () => {
+      const c = adapter.build(
+        {
+          ...snapshot,
+          content_type: 'product',
+          content_name: 'Organic Rice',
+          content_category: 'Groceries',
+        },
+        ctx,
+        normalizer,
+      )!.custom_data;
+
+      expect(c.content_type).toBe('product');
+      expect(c.content_name).toBe('Organic Rice');
+      expect(c.content_category).toBe('Groceries');
+    });
+
     it('omits unset customer fields instead of hashing garbage', () => {
       const payload = adapter.build(
         {

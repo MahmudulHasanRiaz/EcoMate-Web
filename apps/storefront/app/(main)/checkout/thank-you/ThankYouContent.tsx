@@ -81,8 +81,8 @@ export default function ThankYouContent({
       const sharedData = {
         value: totalValue,
         currency: config.currency.code,
-        content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
         content_type: 'product',
+        content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
         num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
         order_id: order.id,
         contents: itemsList.map((i: any) => ({
