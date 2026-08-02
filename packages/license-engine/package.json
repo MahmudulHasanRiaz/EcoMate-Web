@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "build:native": "node-gyp rebuild",
-    "test": "node test/index.test.js"
+    "test": "vitest run"
   },
   "dependencies": {
     "@ecomate/shared-types": "*"

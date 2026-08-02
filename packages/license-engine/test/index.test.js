@@ -40,6 +40,16 @@ describe('LicenseEngine', () => {
     expect(engine.canUseFeature(license, 'anything')).toBe(true);
   });
 
+  test('admin_tracking is granted by the all-features (*) flag', () => {
+    const engine = new LicenseEngine();
+    const wildcard = { valid: true, features: ['*'] };
+    expect(engine.canUseFeature(wildcard, 'admin_tracking')).toBe(true);
+    const explicit = { valid: true, features: ['admin_tracking'] };
+    expect(engine.canUseFeature(explicit, 'admin_tracking')).toBe(true);
+    const without = { valid: true, features: ['storefront'] };
+    expect(engine.canUseFeature(without, 'admin_tracking')).toBe(false);
+  });
+
   test('canUseFeature returns false for invalid license', () => {
     const engine = new LicenseEngine();
     const license = { valid: false };

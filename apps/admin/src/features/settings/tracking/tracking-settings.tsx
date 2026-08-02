@@ -37,6 +37,7 @@ export function TrackingSettings() {
   const [metaValidatedStatus, setMetaValidatedStatus] = useState('')
   const [tiktokPurchaseMode, setTiktokPurchaseMode] = useState('instant')
   const [tiktokValidatedStatus, setTiktokValidatedStatus] = useState('')
+  const [relayEnabled, setRelayEnabled] = useState(false)
 
   useEffect(() => {
     if (settings) {
@@ -51,6 +52,7 @@ export function TrackingSettings() {
       setTiktokAccessToken(settings.tracking_tiktok_access_token || '')
       setTiktokPurchaseMode(settings.tracking_tiktok_purchase_mode || 'instant')
       setTiktokValidatedStatus(settings.tracking_tiktok_validated_status || '')
+      setRelayEnabled(settings.tracking_relay_enabled === 'true')
     }
   }, [settings])
 
@@ -80,6 +82,7 @@ export function TrackingSettings() {
       { key: 'tracking_tiktok_access_token', value: tiktokAccessToken },
       { key: 'tracking_tiktok_purchase_mode', value: tiktokPurchaseMode },
       { key: 'tracking_tiktok_validated_status', value: tiktokValidatedStatus },
+      { key: 'tracking_relay_enabled', value: String(relayEnabled) },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -98,6 +101,25 @@ export function TrackingSettings() {
         </p>
       </div>
       <TrackingTabs />
+      <Separator className='my-6' />
+
+      {/* Tracking pipeline relay */}
+      <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+        <CardHeader className='pb-4'>
+          <div className='flex items-center justify-between'>
+            <div className='flex items-center gap-2 mb-1'>
+              <Radio className='h-5 w-5 text-primary' />
+              <CardTitle className='text-xl'>Tracking Pipeline (Relay)</CardTitle>
+            </div>
+            <Switch checked={relayEnabled} onCheckedChange={setRelayEnabled} />
+          </div>
+          <CardDescription>
+            When ON, captured events (Purchase, AddToCart, …) are dispatched to the enabled providers
+            (Meta, TikTok, GA4, Google Ads) through the outbox relay. When OFF, events are captured to the
+            outbox but <span className='font-medium'>not sent</span> to any provider.
+          </CardDescription>
+        </CardHeader>
+      </Card>
       <Separator className='my-6' />
 
       {/* Meta Card */}
