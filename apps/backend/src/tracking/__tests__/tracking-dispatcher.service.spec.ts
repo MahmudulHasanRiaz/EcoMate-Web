@@ -44,9 +44,11 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const configGet = jest.fn();
   const dlqMirror = jest.fn();
   const replayArchive = jest.fn();
+  const archiveFindUnique = jest.fn();
 
   const prisma = {
     trackingSnapshot: { findUnique: snapshotFindUnique },
+    trackingReplayArchive: { findUnique: archiveFindUnique },
     trackingOutbox: { findUnique: outboxFindUnique, update: outboxUpdate },
     trackingDispatch: {
       findUnique: dispatchFindUnique,
@@ -584,6 +586,45 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       expect.objectContaining({
         where: { id: 'outbox-1' },
         data: expect.objectContaining({ status: 'DEAD' }),
+      }),
+    );
+  });
+
+  it('rejects when the snapshot is gone and there is no replay archive', async () => {
+    snapshotFindUnique.mockResolvedValue(null);
+    archiveFindUnique.mockResolvedValue(null);
+    outboxFindUnique.mockResolvedValue(outbox);
+    await expect(service.process(job)).rejects.toThrow(
+      /snapshot snap-1 not found/,
+    );
+  });
+
+  it('dispatches the archived payload when the snapshot was purged (replay fallback)', async () => {
+    mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+    snapshotFindUnique.mockResolvedValue(null);
+    archiveFindUnique.mockResolvedValue({
+      id: 'arch-1',
+      snapshotId: 'snap-1',
+      eventId: 'purchase_ord-1',
+      eventType: 'Purchase',
+      eventTime: BigInt(1722585600),
+      archivedPayload: { value: 100, currency: 'BDT', orderId: 'ord-1' },
+      configSnapshot: {},
+      versions: {},
+    });
+    outboxFindUnique.mockResolvedValue(outbox);
+    contextGetByCtxId.mockResolvedValue(null);
+    dispatchFindUnique.mockResolvedValue(null);
+    metaSend.mockResolvedValue({ ok: true });
+
+    await expect(service.process(job)).resolves.toBeUndefined();
+
+    // The archived payload drove a dispatch (the purge fallback works end-to-end).
+    expect(metaSend).toHaveBeenCalled();
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'outbox-1' },
+        data: expect.objectContaining({ status: 'SENT' }),
       }),
     );
   });

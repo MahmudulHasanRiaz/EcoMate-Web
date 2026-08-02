@@ -110,6 +110,7 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_barcode_search: { key: 'admin_barcode_search', enabled: true, dependencies: ['admin_products'] },
   admin_incomplete_orders: { key: 'admin_incomplete_orders', enabled: true, dependencies: ['admin_orders'] },
   admin_global_search: { key: 'admin_global_search', enabled: true },
+  admin_tracking: { key: 'admin_tracking', enabled: true },
 
   // ── L: Courier Services (4) ──
   courier_steadfast: { key: 'courier_steadfast', enabled: true, dependencies: ['admin_products', 'admin_orders'] },

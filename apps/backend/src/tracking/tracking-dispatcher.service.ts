@@ -109,7 +109,42 @@ export class TrackingDispatcherService {
     const snapshot = await this.prisma.trackingSnapshot.findUnique({
       where: { id: job.snapshotId },
     });
-    if (!snapshot) throw new Error(`Tracking snapshot ${job.snapshotId} not found`);
+
+    // Resolve the canonical dispatch source: the live snapshot, or — after the
+    // 90-day retention purge (Phase 7) — the PII-stripped replay archive, so a
+    // replayed event stays dispatchable instead of failing on a missing snapshot.
+    let eventId: string;
+    let eventType: string;
+    let eventTime: number | undefined;
+    let orderId: string | undefined;
+    let ctxId: string | undefined;
+    let actionSource: string | undefined;
+    let basePayload: TrackingSnapshotPayload;
+    if (snapshot) {
+      eventId = snapshot.eventId;
+      eventType = snapshot.eventType;
+      eventTime = snapshot.eventTime != null ? Number(snapshot.eventTime) : undefined;
+      orderId = snapshot.orderId ?? undefined;
+      ctxId = snapshot.ctxId ?? undefined;
+      actionSource = snapshot.actionSource ?? undefined;
+      basePayload = (snapshot.payload ?? {}) as unknown as TrackingSnapshotPayload;
+    } else {
+      const archive = await this.prisma.trackingReplayArchive.findUnique({
+        where: { snapshotId: job.snapshotId },
+      });
+      if (!archive) {
+        throw new Error(
+          `Tracking snapshot ${job.snapshotId} not found (and no replay archive)`,
+        );
+      }
+      this.logger.warn(
+        `replay: snapshot ${job.snapshotId} purged; dispatching archived payload`,
+      );
+      eventId = archive.eventId;
+      eventType = archive.eventType;
+      eventTime = archive.eventTime != null ? Number(archive.eventTime) : undefined;
+      basePayload = (archive.archivedPayload ?? {}) as unknown as TrackingSnapshotPayload;
+    }
 
     const outbox = await this.prisma.trackingOutbox.findUnique({
       where: { id: job.outboxId },
@@ -121,28 +156,23 @@ export class TrackingDispatcherService {
 
     const qj = queueJobId ?? job.outboxId;
     const source: DispatchSource = {
-      snapshotId: snapshot.id,
-      eventId: snapshot.eventId,
-      orderId: snapshot.orderId,
-      ctxId: snapshot.ctxId,
+      snapshotId: job.snapshotId,
+      eventId,
+      orderId,
+      ctxId,
     };
 
-    const contextRow = snapshot.ctxId
-      ? await this.context.getByCtxId(snapshot.ctxId)
-      : null;
+    const contextRow = ctxId ? await this.context.getByCtxId(ctxId) : null;
     const contextView = this.buildContextView(contextRow);
 
-    // Enrich the immutable snapshot payload with the canonical event type + dedup id
-    // (the adapters' build() contract; the DB row is never mutated). The business
-    // event time is a BigInt column — it must reach adapters as a number or they fall
-    // back to dispatch time (up to 24h wrong after backoff), reverting the Phase 2 fix.
+    // Enrich the canonical payload (live or archived) with the event type + dedup id.
+    // The business event time is a BigInt column — it must reach adapters as a number
+    // or they fall back to dispatch time (up to 24h wrong after backoff).
     const payload: TrackingSnapshotPayload = {
-      ...((snapshot.payload ?? {}) as unknown as TrackingSnapshotPayload),
-      eventType: snapshot.eventType,
-      eventId: snapshot.eventId,
-      ...(snapshot.eventTime != null
-        ? { eventTime: Number(snapshot.eventTime) }
-        : {}),
+      ...basePayload,
+      eventType,
+      eventId,
+      ...(eventTime != null ? { eventTime } : {}),
     };
 
     const config = (outbox.configSnapshot ?? {}) as ConfigSnapshot;
@@ -156,7 +186,7 @@ export class TrackingDispatcherService {
     // GA4: validated/offline events have no browser-fired counterpart (design §4.6),
     // so server Measurement Protocol dispatch is allowed even in instant mode. The
     // offline signal is `actionSource = physical_store` at capture time.
-    const serverOnly = snapshot.actionSource === 'physical_store';
+    const serverOnly = actionSource === 'physical_store';
 
     // Build the work set: enabled providers whose adapter supports the event type.
     const eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }> =
@@ -165,11 +195,11 @@ export class TrackingDispatcherService {
       const adapter = adapterByProvider.get(provider);
       if (!adapter) {
         this.logger.warn(
-          `No adapter registered for enabled provider '${provider}' (snapshot ${snapshot.id})`,
+          `No adapter registered for enabled provider '${provider}' (snapshot ${job.snapshotId})`,
         );
         continue;
       }
-      if (!adapter.supports(snapshot.eventType, { serverOnly })) {
+      if (!adapter.supports(eventType, { serverOnly })) {
         await this.recordSkipped(source, provider, qj);
         continue;
       }
