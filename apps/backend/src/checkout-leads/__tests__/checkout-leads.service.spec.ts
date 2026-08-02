@@ -62,6 +62,9 @@ describe('CheckoutLeadsService', () => {
               updateMany: jest.fn(),
               count: jest.fn(),
             },
+            systemSetting: {
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
             },
@@ -311,6 +314,58 @@ describe('CheckoutLeadsService', () => {
       );
       expect(capture).toHaveBeenCalledTimes(1);
       expect(capture.mock.calls[0][0].ctxId).toBeUndefined();
+    });
+
+    it('supersedes (NOT converts) the customer’s other pending leads on manual recovery', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-3' });
+      (prisma.payment.create as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-3',
+        total: 1000,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 2, price: 500 }],
+      });
+
+      await service.convertToOrder('lead-1', 'admin-1');
+
+      const updateManyCall = (
+        prisma.checkoutLead.updateMany as jest.Mock
+      ).mock.calls[0][0];
+      expect(updateManyCall.data.status).toBe('SUPERSEDED');
+      expect(updateManyCall.where.status).toBe('PENDING');
+      expect(updateManyCall.where.id).toEqual({ not: 'lead-1' });
+      expect(updateManyCall.where.OR).toEqual(
+        expect.arrayContaining([
+          { ctxId: 'ctx-lead' },
+          {
+            phone: '+8801812345678',
+            lastSeenAt: { gte: expect.any(Date) },
+          },
+        ]),
+      );
+      // The converted lead itself is CONVERTED (manual), never SUPERSEDED.
+      expect(prisma.checkoutLead.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'lead-1' },
+          data: expect.objectContaining({ status: 'CONVERTED' }),
+        }),
+      );
     });
   });
 

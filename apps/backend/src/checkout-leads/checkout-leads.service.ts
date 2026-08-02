@@ -412,14 +412,37 @@ export class CheckoutLeadsService {
         },
       });
 
-      if (guestPhone) {
+      // DECISION #1 (customer-level): this customer now has an order (manual
+      // recovery). Their OTHER pending leads also close so no Active Order +
+      // Active Pending Lead coexist — but as SUPERSEDED, NOT CONVERTED (only the
+      // lead actually recovered manually is a conversion; conversion metrics stay
+      // manual-only). DECISION #2: the phone fallback is time-bounded
+      // (configurable window, default 7 days).
+      if (guestPhone || lead.ctxId) {
+        const windowSetting = await tx.systemSetting.findUnique({
+          where: { key: 'checkout_lead_supersede_phone_window_days' },
+        });
+        const phoneWindowDays = Number(windowSetting?.value || 7);
+        const phoneCutoff = new Date(
+          Date.now() - Math.max(0, phoneWindowDays) * 86400000,
+        );
         await tx.checkoutLead.updateMany({
-          where: { phone: guestPhone, status: 'PENDING', id: { not: id } },
-          data: {
-            status: 'CONVERTED',
-            convertedOrderId: order.id,
-            convertedAt: new Date(),
+          where: {
+            status: 'PENDING',
+            id: { not: id },
+            OR: [
+              ...(lead.ctxId ? [{ ctxId: lead.ctxId }] : []),
+              ...(guestPhone
+                ? [
+                    {
+                      phone: guestPhone,
+                      lastSeenAt: { gte: phoneCutoff },
+                    },
+                  ]
+                : []),
+            ],
           },
+          data: { status: 'SUPERSEDED' },
         });
       }
 
