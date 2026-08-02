@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, Radio, Save, ExternalLink } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { TrackingTabs } from './tracking-nav'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -96,6 +97,7 @@ export function TrackingSettings() {
           Configure Meta (Facebook) Conversions API and TikTok Events API for server-side event tracking.
         </p>
       </div>
+      <TrackingTabs />
       <Separator className='my-6' />
 
       {/* Meta Card */}

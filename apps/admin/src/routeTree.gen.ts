@@ -126,6 +126,7 @@ import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './rou
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
 import { Route as AuthenticatedOpInventoryPhysicalReservationsRouteImport } from './routes/_authenticated/op/inventory/physical/reservations'
+import { Route as AuthenticatedMonSettingsTrackingMonitoringRouteImport } from './routes/_authenticated/mon/settings/tracking/monitoring'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/$id/convert'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -810,6 +811,12 @@ const AuthenticatedOpInventoryPhysicalReservationsRoute =
     path: '/op/inventory/physical/reservations',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonSettingsTrackingMonitoringRoute =
+  AuthenticatedMonSettingsTrackingMonitoringRouteImport.update({
+    id: '/tracking/monitoring',
+    path: '/tracking/monitoring',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute =
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport.update({
     id: '/op/orders/incomplete-leads/$id/convert',
@@ -906,6 +913,7 @@ export interface FileRoutesByFullPath {
   '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
+  '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
@@ -1025,6 +1033,7 @@ export interface FileRoutesByTo {
   '/op/tags': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
+  '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
@@ -1146,6 +1155,7 @@ export interface FileRoutesById {
   '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
+  '/_authenticated/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/_authenticated/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
@@ -1267,6 +1277,7 @@ export interface FileRouteTypes {
     | '/op/tags/'
     | '/op/tasks/'
     | '/op/transactions/'
+    | '/mon/settings/tracking/monitoring'
     | '/op/inventory/physical/reservations'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
@@ -1386,6 +1397,7 @@ export interface FileRouteTypes {
     | '/op/tags'
     | '/op/tasks'
     | '/op/transactions'
+    | '/mon/settings/tracking/monitoring'
     | '/op/inventory/physical/reservations'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
@@ -1506,6 +1518,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/tags/'
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
+    | '/_authenticated/mon/settings/tracking/monitoring'
     | '/_authenticated/op/inventory/physical/reservations'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
@@ -2374,6 +2387,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/settings/tracking/monitoring': {
+      id: '/_authenticated/mon/settings/tracking/monitoring'
+      path: '/tracking/monitoring'
+      fullPath: '/mon/settings/tracking/monitoring'
+      preLoaderRoute: typeof AuthenticatedMonSettingsTrackingMonitoringRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/op/orders/incomplete-leads/$id/convert': {
       id: '/_authenticated/op/orders/incomplete-leads/$id/convert'
       path: '/op/orders/incomplete-leads/$id/convert'
@@ -2385,6 +2405,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedMonSettingsRouteRouteChildren {
+  AuthenticatedMonSettingsTrackingMonitoringRoute: typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   AuthenticatedMonSettingsAuthIndexRoute: typeof AuthenticatedMonSettingsAuthIndexRoute
   AuthenticatedMonSettingsBrandingIndexRoute: typeof AuthenticatedMonSettingsBrandingIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
@@ -2407,6 +2428,8 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
 
 const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteRouteChildren =
   {
+    AuthenticatedMonSettingsTrackingMonitoringRoute:
+      AuthenticatedMonSettingsTrackingMonitoringRoute,
     AuthenticatedMonSettingsAuthIndexRoute:
       AuthenticatedMonSettingsAuthIndexRoute,
     AuthenticatedMonSettingsBrandingIndexRoute:
