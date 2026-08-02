@@ -23,11 +23,17 @@ export interface DeletionResult {
  *    JSON of every `TrackingSnapshot` whose `ctxId` belonged to a deleted
  *    context. Snapshots are retained (with eventId/orderId/eventTime intact) so
  *    the 48h Pixel/CAPI dedup and the replay archive keep working — only the
- *    personal data is erased.
- *  - `deleteByCustomerId(customerId)`: resolves the customer's orders, deletes
- *    the contexts linked via `Order.trackingSessionId` (the checkout ctxId), and
- *    anonymizes snapshots for those orders (by `orderId`) and/or their sessions
- *    (by `ctxId`).
+ *    personal data is erased. Known limitation: snapshots whose `ctxId` is null
+ *    carry no context link, and `TrackingContext` stores only cookie
+ *    identifiers (no customer email/phone), so the externalId path cannot
+ *    resolve the customer identity needed to anonymize them by payload match.
+ *  - `deleteByCustomerId(customerId)`: resolves the customer's orders — those
+ *    linked by `customerId` and, when the customer has a phone, guest orders
+ *    (`customerId` null) linked by `guestPhone` — then discovers the
+ *    customer-keyed `externalId` from the checkout session contexts and deletes
+ *    EVERY context sharing it, so pre-order/abandoned journeys with no order
+ *    yet are erased too. Snapshots for those orders (by `orderId`) and/or their
+ *    sessions (by `ctxId`) are anonymized.
  *
  * Both paths are batched (1000 rows/loop) and short-circuit to zero work when
  * nothing resolves. Counts are returned to the admin caller.
@@ -40,22 +46,11 @@ export class DeletionService {
 
   /** Delete contexts by externalId, then anonymize snapshots linked to them. */
   async deleteByExternalId(externalId: string): Promise<DeletionResult> {
-    const contexts = await this.prisma.trackingContext.findMany({
-      where: { externalId },
-      select: { id: true, ctxId: true },
-    });
-    if (contexts.length === 0) {
+    const { contextsDeleted, ctxIds } = await this.deleteContextsByExternalIds([
+      externalId,
+    ]);
+    if (contextsDeleted === 0) {
       return { contextsDeleted: 0, snapshotsAnonymized: 0 };
-    }
-
-    const ctxIds = [...new Set(contexts.map((c) => c.ctxId))];
-    let contextsDeleted = 0;
-    for (let i = 0; i < contexts.length; i += BATCH_SIZE) {
-      const batchIds = contexts.slice(i, i + BATCH_SIZE).map((c) => c.id);
-      const res = await this.prisma.trackingContext.deleteMany({
-        where: { id: { in: batchIds } },
-      });
-      contextsDeleted += res.count;
     }
 
     const snapshotsAnonymized = await this.anonymizeSnapshots({
@@ -67,10 +62,28 @@ export class DeletionService {
     return { contextsDeleted, snapshotsAnonymized };
   }
 
-  /** Resolve the customer's orders/sessions, delete contexts, anonymize snapshots. */
+  /**
+   * Resolve the customer's orders (by customerId and, when a phone is on file,
+   * by guestPhone), discover the customer-keyed externalId from the checkout
+   * session contexts, delete every context sharing it (so pre-order/abandoned
+   * contexts with no order yet are erased too), then anonymize snapshots for
+   * those orders and sessions.
+   */
   async deleteByCustomerId(customerId: string): Promise<DeletionResult> {
+    // Guest orders carry customerId=null and are matched by the customer's
+    // phone (CustomerProfile.phone is unique); resolve it up front.
+    const customer = await this.prisma.customerProfile.findUnique({
+      where: { id: customerId },
+      select: { phone: true },
+    });
+
     const orders = await this.prisma.order.findMany({
-      where: { customerId },
+      where: {
+        OR: [
+          { customerId },
+          ...(customer?.phone ? [{ guestPhone: customer.phone }] : []),
+        ],
+      },
       select: { id: true, trackingSessionId: true },
     });
     if (orders.length === 0) {
@@ -78,7 +91,7 @@ export class DeletionService {
     }
 
     const orderIds = orders.map((o) => o.id);
-    const ctxIds = [
+    const orderCtxIds = [
       ...new Set(
         orders
           .map((o) => o.trackingSessionId)
@@ -86,21 +99,59 @@ export class DeletionService {
       ),
     ];
 
-    let contextsDeleted = 0;
-    for (let i = 0; i < ctxIds.length; i += BATCH_SIZE) {
-      const batch = ctxIds.slice(i, i + BATCH_SIZE);
-      const res = await this.prisma.trackingContext.deleteMany({
-        where: { ctxId: { in: batch } },
-      });
-      contextsDeleted += res.count;
-    }
+    // The customer-keyed externalId lives on the context rows; recover it from
+    // the checkout sessions so abandoned pre-order contexts that share it (no
+    // order yet) are deleted by the delegate path below too.
+    const linkedContexts = await this.prisma.trackingContext.findMany({
+      where: { ctxId: { in: orderCtxIds } },
+      select: { externalId: true },
+    });
+    const externalIds = [...new Set(linkedContexts.map((c) => c.externalId))];
 
-    const where = this.snapshotWhereForOrders(orderIds, ctxIds);
+    const { contextsDeleted, ctxIds } =
+      await this.deleteContextsByExternalIds(externalIds);
+
+    const where = this.snapshotWhereForOrders(
+      orderIds,
+      [...new Set([...orderCtxIds, ...ctxIds])],
+    );
     const snapshotsAnonymized = where ? await this.anonymizeSnapshots(where) : 0;
     this.logger.log(
       `Deletion by customerId=${customerId}: ${contextsDeleted} contexts deleted, ${snapshotsAnonymized} snapshots anonymized`,
     );
     return { contextsDeleted, snapshotsAnonymized };
+  }
+
+  /**
+   * Hard-delete every context sharing one of the given externalIds (batched),
+   * returning how many were deleted plus every ctxId erased, so the caller can
+   * anonymize the snapshots that referenced them. Short-circuits when there is
+   * nothing to delete.
+   */
+  private async deleteContextsByExternalIds(
+    externalIds: string[],
+  ): Promise<{ contextsDeleted: number; ctxIds: string[] }> {
+    if (externalIds.length === 0) {
+      return { contextsDeleted: 0, ctxIds: [] };
+    }
+    const contexts = await this.prisma.trackingContext.findMany({
+      where: { externalId: { in: externalIds } },
+      select: { id: true, ctxId: true },
+    });
+    if (contexts.length === 0) {
+      return { contextsDeleted: 0, ctxIds: [] };
+    }
+
+    const ctxIds = [...new Set(contexts.map((c) => c.ctxId))];
+    let contextsDeleted = 0;
+    for (let i = 0; i < contexts.length; i += BATCH_SIZE) {
+      const batchIds = contexts.slice(i, i + BATCH_SIZE).map((c) => c.id);
+      const res = await this.prisma.trackingContext.deleteMany({
+        where: { id: { in: batchIds } },
+      });
+      contextsDeleted += res.count;
+    }
+    return { contextsDeleted, ctxIds };
   }
 
   /**

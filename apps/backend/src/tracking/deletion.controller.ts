@@ -23,6 +23,10 @@ export class DeletionController {
   @Roles('admin')
   @Post('delete')
   async delete(@Body() body: DeletionDto): Promise<DeletionResult> {
+    // A null/absent body (no JSON, empty request) must 400, not 500.
+    if (!body) {
+      throw new BadRequestException('externalId or customerId required');
+    }
     // The DTO requires one of the two, but guard here too so a malformed
     // request can never hit the service without a selector.
     if (body.externalId) {

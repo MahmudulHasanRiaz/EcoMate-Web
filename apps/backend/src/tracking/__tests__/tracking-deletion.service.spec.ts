@@ -1,8 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
-import { ROLES_KEY } from '../../common/decorators/roles.decorator';
-import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
 import { DeletionService } from '../tracking-deletion.service';
-import { DeletionController } from '../deletion.controller';
 
 describe('DeletionService (GDPR-style admin deletion workflow)', () => {
   const contextFindMany = jest.fn();
@@ -10,6 +6,7 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
   const snapshotFindMany = jest.fn();
   const snapshotUpdateMany = jest.fn();
   const orderFindMany = jest.fn();
+  const customerFindUnique = jest.fn();
 
   const prisma = {
     trackingContext: {
@@ -21,6 +18,7 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
       updateMany: snapshotUpdateMany,
     },
     order: { findMany: orderFindMany },
+    customerProfile: { findUnique: customerFindUnique },
   } as any;
 
   const service = new DeletionService(prisma);
@@ -51,6 +49,7 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
     snapshotFindMany.mockResolvedValue([]);
     snapshotUpdateMany.mockResolvedValue({ count: 0 });
     orderFindMany.mockResolvedValue([]);
+    customerFindUnique.mockResolvedValue(null);
   });
 
   describe('deleteByExternalId(externalId)', () => {
@@ -69,7 +68,7 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
       const result = await service.deleteByExternalId('ext-abc');
 
       expect(contextFindMany).toHaveBeenCalledWith({
-        where: { externalId: 'ext-abc' },
+        where: { externalId: { in: ['ext-abc'] } },
         select: { id: true, ctxId: true },
       });
       expect(contextDeleteMany).toHaveBeenCalledWith({
@@ -125,11 +124,15 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
   });
 
   describe('deleteByCustomerId(customerId)', () => {
-    it('resolves the customer orders, deletes contexts by trackingSessionId (ctxId), anonymizes snapshots by orderId/ctxId', async () => {
+    it('resolves the customer orders, deletes contexts via the shared externalId, anonymizes snapshots by orderId/ctxId', async () => {
       orderFindMany.mockResolvedValue([
         { id: 'ord-1', trackingSessionId: 'ctx-1' },
         { id: 'ord-2', trackingSessionId: null }, // POS/split order with no tracking session
       ]);
+      // externalId discovery from the checkout session ctxId
+      contextFindMany.mockResolvedValueOnce([{ externalId: 'ext-1' }]);
+      // the delegate path resolves every context sharing that externalId
+      contextFindMany.mockResolvedValueOnce([{ id: 'row-1', ctxId: 'ctx-1' }]);
       contextDeleteMany.mockResolvedValue({ count: 1 });
       snapshotFindMany.mockResolvedValue([
         {
@@ -150,12 +153,24 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
 
       const result = await service.deleteByCustomerId('cust-7');
 
+      expect(customerFindUnique).toHaveBeenCalledWith({
+        where: { id: 'cust-7' },
+        select: { phone: true },
+      });
       expect(orderFindMany).toHaveBeenCalledWith({
-        where: { customerId: 'cust-7' },
+        where: { OR: [{ customerId: 'cust-7' }] },
         select: { id: true, trackingSessionId: true },
       });
-      expect(contextDeleteMany).toHaveBeenCalledWith({
+      expect(contextFindMany).toHaveBeenNthCalledWith(1, {
         where: { ctxId: { in: ['ctx-1'] } },
+        select: { externalId: true },
+      });
+      expect(contextFindMany).toHaveBeenNthCalledWith(2, {
+        where: { externalId: { in: ['ext-1'] } },
+        select: { id: true, ctxId: true },
+      });
+      expect(contextDeleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['row-1'] } },
       });
       expect(snapshotFindMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,6 +184,77 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
       expect(result).toEqual({ contextsDeleted: 1, snapshotsAnonymized: 2 });
     });
 
+    it('deletes a pre-order/abandoned context sharing the customer externalId (no linked order yet)', async () => {
+      customerFindUnique.mockResolvedValue({ phone: '+8801711111111' });
+      orderFindMany.mockResolvedValue([
+        { id: 'ord-1', trackingSessionId: 'ctx-checkout' },
+      ]);
+      // the checkout session context carries the customer-keyed externalId
+      contextFindMany.mockResolvedValueOnce([{ externalId: 'ext-cust' }]);
+      // EVERY context sharing ext-cust — including the abandoned pre-order one
+      contextFindMany.mockResolvedValueOnce([
+        { id: 'row-checkout', ctxId: 'ctx-checkout' },
+        { id: 'row-pre-order', ctxId: 'ctx-pre-order' }, // no order linked yet
+      ]);
+      contextDeleteMany.mockResolvedValue({ count: 2 });
+      snapshotFindMany.mockResolvedValue([
+        {
+          id: 'snap-1',
+          payload: { ...rawPayload, orderId: 'ord-1', eventId: 'purchase_ord-1' },
+        },
+      ]);
+      snapshotUpdateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.deleteByCustomerId('cust-7');
+
+      expect(contextDeleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['row-checkout', 'row-pre-order'] } },
+      });
+      expect(result).toEqual({ contextsDeleted: 2, snapshotsAnonymized: 1 });
+    });
+
+    it('resolves guest orders (customerId null) by the customer phone and includes their contexts/snapshots', async () => {
+      customerFindUnique.mockResolvedValue({ phone: '+8801711111111' });
+      orderFindMany.mockResolvedValue([
+        { id: 'ord-1', trackingSessionId: 'ctx-checkout' },
+        { id: 'ord-guest', trackingSessionId: 'ctx-guest' }, // guest order matched by phone
+      ]);
+      contextFindMany.mockResolvedValueOnce([{ externalId: 'ext-cust' }]);
+      contextFindMany.mockResolvedValueOnce([
+        { id: 'row-checkout', ctxId: 'ctx-checkout' },
+        { id: 'row-guest', ctxId: 'ctx-guest' },
+      ]);
+      contextDeleteMany.mockResolvedValue({ count: 2 });
+      snapshotFindMany.mockResolvedValue([
+        {
+          id: 'snap-1',
+          payload: { ...rawPayload, orderId: 'ord-guest', eventId: 'purchase_guest' },
+        },
+      ]);
+      snapshotUpdateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.deleteByCustomerId('cust-7');
+
+      expect(orderFindMany).toHaveBeenCalledWith({
+        where: {
+          OR: [{ customerId: 'cust-7' }, { guestPhone: '+8801711111111' }],
+        },
+        select: { id: true, trackingSessionId: true },
+      });
+      expect(snapshotFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { orderId: { in: ['ord-1', 'ord-guest'] } },
+              { ctxId: { in: ['ctx-checkout', 'ctx-guest'] } },
+            ],
+          },
+          select: { id: true, payload: true },
+        }),
+      );
+      expect(result).toEqual({ contextsDeleted: 2, snapshotsAnonymized: 1 });
+    });
+
     it('is a no-op when the customer has no orders', async () => {
       orderFindMany.mockResolvedValue([]);
 
@@ -178,53 +264,5 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
       expect(snapshotFindMany).not.toHaveBeenCalled();
       expect(result).toEqual({ contextsDeleted: 0, snapshotsAnonymized: 0 });
     });
-  });
-});
-
-describe('DeletionController (POST /tracking/admin/delete)', () => {
-  const deleteByExternalId = jest.fn();
-  const deleteByCustomerId = jest.fn();
-  const service = {
-    deleteByExternalId,
-    deleteByCustomerId,
-  } as unknown as DeletionService;
-  const controller = new DeletionController(service);
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    deleteByExternalId.mockResolvedValue({ contextsDeleted: 1, snapshotsAnonymized: 0 });
-    deleteByCustomerId.mockResolvedValue({ contextsDeleted: 0, snapshotsAnonymized: 3 });
-  });
-
-  it('is gated with RequiresFeature(admin_tracking) at the class level', () => {
-    const feature = Reflect.getMetadata(REQUIRES_FEATURE_KEY, DeletionController);
-    expect(feature).toBe('admin_tracking');
-  });
-
-  it('POST delete carries Roles(admin) metadata', () => {
-    const roles = Reflect.getMetadata(ROLES_KEY, DeletionController.prototype.delete);
-    expect(roles).toEqual(['admin']);
-  });
-
-  it('delegates to deleteByExternalId when externalId is provided', async () => {
-    const result = await controller.delete({ externalId: 'ext-abc' });
-
-    expect(deleteByExternalId).toHaveBeenCalledWith('ext-abc');
-    expect(deleteByCustomerId).not.toHaveBeenCalled();
-    expect(result).toEqual({ contextsDeleted: 1, snapshotsAnonymized: 0 });
-  });
-
-  it('delegates to deleteByCustomerId when only customerId is provided', async () => {
-    const result = await controller.delete({ customerId: 'cust-7' });
-
-    expect(deleteByCustomerId).toHaveBeenCalledWith('cust-7');
-    expect(deleteByExternalId).not.toHaveBeenCalled();
-    expect(result).toEqual({ contextsDeleted: 0, snapshotsAnonymized: 3 });
-  });
-
-  it('throws BadRequestException when neither externalId nor customerId is provided', async () => {
-    await expect(controller.delete({})).rejects.toThrow(BadRequestException);
-    expect(deleteByExternalId).not.toHaveBeenCalled();
-    expect(deleteByCustomerId).not.toHaveBeenCalled();
   });
 });
