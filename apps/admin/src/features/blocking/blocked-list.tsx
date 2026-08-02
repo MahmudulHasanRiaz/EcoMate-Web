@@ -17,6 +17,7 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { toast } from 'sonner'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 type FilterType = 'all' | 'ip' | 'phone' | 'active' | 'whitelisted'
 
@@ -223,26 +224,38 @@ export function BlockedListPage() {
                     </TableCell>
                     <TableCell>
                       <div className='flex items-center gap-1'>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='h-7 w-7'
-                          onClick={() => handleUnblock(entry.entryType, entry.id)}
-                          disabled={!entry.isActive || mut.unblock.isPending}
-                          title='Unblock'
-                        >
-                          <ShieldOff className='h-3.5 w-3.5' />
-                        </Button>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='h-7 w-7'
-                          onClick={() => handleWhitelist(entry.entryType, entry.id)}
-                          disabled={mut.whitelist.isPending}
-                          title={entry.whitelisted ? 'Remove whitelist' : 'Add to whitelist'}
-                        >
-                          <Shield className={`h-3.5 w-3.5 ${entry.whitelisted ? 'text-green-500' : 'text-muted-foreground'}`} />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='h-7 w-7'
+                              onClick={() => handleUnblock(entry.entryType, entry.id)}
+                              disabled={!entry.isActive || mut.unblock.isPending}
+                              aria-label='Unblock'
+                            >
+                              <ShieldOff className='h-3.5 w-3.5' />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Unblock</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='h-7 w-7'
+                              onClick={() => handleWhitelist(entry.entryType, entry.id)}
+                              disabled={mut.whitelist.isPending}
+                              aria-label={entry.whitelisted ? 'Remove from whitelist' : 'Add to whitelist'}
+                            >
+                              <Shield className={`h-3.5 w-3.5 ${entry.whitelisted ? 'text-green-500' : 'text-muted-foreground'}`} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {entry.whitelisted ? 'Remove from whitelist' : 'Add to whitelist'}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>
