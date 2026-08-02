@@ -76,7 +76,7 @@ function OrderDetailPage() {
   // ── Items edit state ──────────────────────────────────────────────
   const [editingItems, setEditingItems] = useState(false)
   const [orderItems, setOrderItems] = useState<any[]>([])
-  const [allProducts, setAllProducts] = useState<any[]>([])
+  const [productSearchResults, setProductSearchResults] = useState<any[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
 
@@ -121,11 +121,18 @@ function OrderDetailPage() {
     if (order) setOrderItems(order.items || [])
   }, [order])
 
+  // Product search hits the backend so ANY product (not just the first page) is
+  // findable by name, product SKU, or variant SKU.
   useEffect(() => {
-    if (editingItems) {
-      apiClient.get('/products').then(r => setAllProducts(r.data?.data || r.data || [])).catch(() => toast.error('Failed to load products'))
-    }
-  }, [editingItems])
+    const q = productSearchQuery.trim()
+    if (!q || !editingItems) { setProductSearchResults([]); return }
+    const t = setTimeout(() => {
+      apiClient.get('/products', { params: { search: q, perPage: 20 } })
+        .then(r => setProductSearchResults(r.data?.data || r.data || []))
+        .catch(() => setProductSearchResults([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [productSearchQuery, editingItems])
 
   // ── Mutations ─────────────────────────────────────────────────────
   const updateMut = useMutation({
@@ -512,7 +519,7 @@ function OrderDetailPage() {
                                 onValueChange={setProductSearchQuery}
                                 onKeyDown={e => {
                                   if (e.key === 'Enter') {
-                                    const exact = allProducts.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
+                                    const exact = productSearchResults.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
                                     if (exact) {
                                       const variant = exact.variants?.find((v: any) => v.sku === productSearchQuery)
                                       setOrderItems([...orderItems, { productId: exact.id, variantId: variant?.id, product: exact, quantity: 1, price: variant?.salePrice ?? variant?.price ?? exact.salePrice ?? exact.basePrice ?? 0 }])
@@ -528,8 +535,8 @@ function OrderDetailPage() {
                                 <CommandList className='max-h-48 overflow-y-auto'>
                                   <CommandEmpty>No results found.</CommandEmpty>
                                   <CommandGroup>
-                                    {allProducts
-                                      .filter((p: any) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                                    {productSearchResults
+                                      .filter((p: any) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.variants?.some((v: any) => v.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())))
                                       .map((p: any) => (
                                         <CommandItem key={p.id} value={p.name} onSelect={() => {
                                           if (p.type === 'variable' || p.variants?.length > 0) {

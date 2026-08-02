@@ -216,10 +216,47 @@ describe('ProductsService', () => {
               { name: { contains: 'test', mode: 'insensitive' } },
               { slug: { contains: 'test', mode: 'insensitive' } },
               { sku: { contains: 'test', mode: 'insensitive' } },
+              {
+                variants: {
+                  some: {
+                    sku: { contains: 'test', mode: 'insensitive' },
+                  },
+                },
+              },
             ],
           },
         }),
       );
+    });
+
+    it('should find a product by its VARIANT SKU (Product.sku is nullable)', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { id: 'p1', name: 'T-Shirt', sku: null },
+      ]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findAll({
+        search: 'TSH-001',
+        page: 1,
+        perPage: 10,
+      });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: expect.arrayContaining([
+              {
+                variants: {
+                  some: {
+                    sku: { contains: 'TSH-001', mode: 'insensitive' },
+                  },
+                },
+              },
+            ]),
+          },
+        }),
+      );
+      expect(result.data).toHaveLength(1);
     });
 
     it('should filter by categoryId, type, and isActive', async () => {

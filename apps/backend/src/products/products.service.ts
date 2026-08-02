@@ -82,6 +82,13 @@ export class ProductsService {
         { name: { contains: query.search, mode: 'insensitive' } },
         { slug: { contains: query.search, mode: 'insensitive' } },
         { sku: { contains: query.search, mode: 'insensitive' } },
+        // Variant-level SKUs: many products carry their SKU on the variant
+        // (Product.sku is nullable), so searching must also match those.
+        {
+          variants: {
+            some: { sku: { contains: query.search, mode: 'insensitive' } },
+          },
+        },
       ];
     }
     if (query.categoryIds && query.categoryIds.length > 0) {
