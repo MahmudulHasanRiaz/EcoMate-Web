@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -989,7 +989,7 @@ describe('OrdersService', () => {
       expect(prisma.orderItem.createMany).toHaveBeenCalled();
     });
 
-    it('skips the customer email when another profile already owns it (no 409)', async () => {
+    it('throws a friendly ConflictException when another profile already owns the email', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
       (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'other-customer',
@@ -999,16 +999,29 @@ describe('OrdersService', () => {
         .mockResolvedValue({ id: 'customer-id-1' });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
 
+      await expect(
+        service.updateOrder('order-id-1', {
+          customerInfo: { firstName: 'Jane', email: 'taken@x.com' },
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prisma.userProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('omits an empty email so a customer without one can still be saved', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
       await service.updateOrder('order-id-1', {
-        customerInfo: { firstName: 'Jane', lastName: 'Doe', email: 'taken@x.com' },
+        customerInfo: { firstName: 'Jane', email: '' },
       });
 
-      // Email ownership was checked against a DIFFERENT profile.
-      expect(prisma.userProfile.findFirst).toHaveBeenCalledWith({
-        where: { email: 'taken@x.com', id: { not: 'customer-id-1' } },
-        select: { id: true },
-      });
-      // Email is excluded from the write so the save does not 409 on the unique key.
+      // Empty email never reaches the unique-key write (no P2002/409).
+      expect(prisma.userProfile.findFirst).not.toHaveBeenCalled();
       const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data).not.toHaveProperty('email');
       expect(updateCall.data.firstName).toBe('Jane');

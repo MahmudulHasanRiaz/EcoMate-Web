@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -1761,25 +1762,35 @@ export class OrdersService {
             throw new BadRequestException('Invalid phone number');
           safeData.phoneNumber = normalized;
         }
-        if (Object.keys(safeData).length > 0) {
-          // UserProfile.email is a unique key — don't clobber another
-          // profile's identity (mirrors the create-path phone rule above).
-          // A conflicting email is skipped so the rest of the save applies
-          // instead of failing the whole request with a 409.
-          if (safeData.email) {
-            const emailOwner = await tx.userProfile.findFirst({
-              where: { email: safeData.email, id: { not: order.customerId } },
-              select: { id: true },
-            });
-            if (emailOwner) delete safeData.email;
-          }
           if (Object.keys(safeData).length > 0) {
-            await tx.userProfile.update({
-              where: { id: order.customerId },
-              data: safeData,
-            });
+            // Email is optional: customers without one send "" — never write an
+            // empty string to the unique UserProfile.email, and never clobber
+            // another profile's identity (phone stays the master key). Empty →
+            // omit; a real conflict → a clear error instead of a raw 409.
+            if (Object.prototype.hasOwnProperty.call(safeData, 'email')) {
+              const email = String(safeData.email).trim();
+              if (!email) {
+                delete safeData.email;
+              } else {
+                const emailOwner = await tx.userProfile.findFirst({
+                  where: { email, id: { not: order.customerId } },
+                  select: { id: true },
+                });
+                if (emailOwner) {
+                  throw new ConflictException(
+                    'This email is already registered to another customer.',
+                  );
+                }
+                safeData.email = email;
+              }
+            }
+            if (Object.keys(safeData).length > 0) {
+              await tx.userProfile.update({
+                where: { id: order.customerId },
+                data: safeData,
+              });
+            }
           }
-        }
       }
 
       return tx.order.update({
