@@ -1096,12 +1096,27 @@ export class OrdersService {
       });
 
       // Incomplete-leads supersede (business rule): a customer who successfully
-      // placed an order is no longer an "incomplete lead". Close any PENDING
-      // checkout lead for the same session (ctxId) or phone — atomically with the
-      // order. This is a SILENT close (status SUPERSEDED): NOT a conversion (no
-      // convertedOrderId/convertedAt, no conversion tracking), so self-ordering
-      // never appears as "Converted from Incomplete". Manual recovery via
-      // convertToOrder remains the only path that marks a lead CONVERTED.
+      // placed an order is no longer an "incomplete lead".
+      //
+      // CUSTOMER-LEVEL FOLLOW-UP RULE (intentional): because the customer has now
+      // purchased, NO follow-up is needed on ANY of their previous pending leads,
+      // regardless of which checkout session they abandoned. We therefore close
+      // every PENDING lead matching:
+      //   (1) ctxId  — the same checkout session (precise, primary).
+      //   (2) phone  — the order's guest phone / customer-profile phone (fallback
+      //                for abandoned sessions that share the same customer phone,
+      //                e.g. the 10am + 12pm abandon → 3pm order scenario: BOTH
+      //                leads close, because the customer is now a customer).
+      // Edge cases: leads already CONVERTED / NOT_CONVERTED / DELETED are never
+      // touched; an order with neither ctxId nor a phone closes nothing. The phone
+      // fallback is a SILENT supersede (not a conversion) and carries the known
+      // shared-phone tradeoff (a different family member's pending lead with the
+      // same phone is also closed) — acceptable because it is not counted as a
+      // conversion anywhere.
+      //
+      // This is a SILENT close (status SUPERSEDED): NOT a conversion — no
+      // convertedOrderId/convertedAt, no conversion tracking event. Manual recovery
+      // via convertToOrder remains the ONLY path that marks a lead CONVERTED.
       if (created.trackingSessionId || created.guestPhone || created.customerId) {
         const phones: string[] = [];
         if (created.guestPhone) phones.push(created.guestPhone);

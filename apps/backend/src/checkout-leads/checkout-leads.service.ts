@@ -11,6 +11,7 @@ import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { ConvertOrderDto } from './dto/convert-order.dto';
+import { LEAD_STATUS } from './checkout-lead.constants';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -546,18 +547,34 @@ export class CheckoutLeadsService {
   }
 
   async getSummary() {
-    const [pending, converted, notConverted, deleted] = await Promise.all([
-      this.prisma.checkoutLead.count({ where: { status: 'PENDING' } }),
-      this.prisma.checkoutLead.count({ where: { status: 'CONVERTED' } }),
-      this.prisma.checkoutLead.count({ where: { status: 'NOT_CONVERTED' } }),
-      this.prisma.checkoutLead.count({ where: { status: 'DELETED' } }),
-    ]);
+    const [pending, converted, superseded, dismissed, deleted] =
+      await Promise.all([
+        this.prisma.checkoutLead.count({
+          where: { status: LEAD_STATUS.PENDING },
+        }),
+        this.prisma.checkoutLead.count({
+          where: { status: LEAD_STATUS.CONVERTED },
+        }),
+        this.prisma.checkoutLead.count({
+          where: { status: LEAD_STATUS.SUPERSEDED },
+        }),
+        this.prisma.checkoutLead.count({
+          where: { status: LEAD_STATUS.NOT_CONVERTED },
+        }),
+        this.prisma.checkoutLead.count({
+          where: { status: LEAD_STATUS.DELETED },
+        }),
+      ]);
     return {
       pending,
       converted,
-      notConverted,
+      superseded,
+      // "Dismissed / Expired" — no follow-up (reported separately from converted).
+      dismissed,
+      notConverted: dismissed, // backward-compatible alias
       deleted,
-      total: pending + converted + notConverted + deleted,
+      total:
+        pending + converted + superseded + dismissed + deleted,
     };
   }
 

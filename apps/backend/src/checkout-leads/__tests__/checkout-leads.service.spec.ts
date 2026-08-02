@@ -313,4 +313,26 @@ describe('CheckoutLeadsService', () => {
       expect(capture.mock.calls[0][0].ctxId).toBeUndefined();
     });
   });
+
+  describe('getSummary', () => {
+    it('reports superseded and dismissed separately from converted', async () => {
+      const counts = [3, 4, 5, 6, 1]; // pending, converted, superseded, dismissed, deleted
+      (prisma.checkoutLead.count as jest.Mock)
+        .mockResolvedValueOnce(counts[0])
+        .mockResolvedValueOnce(counts[1])
+        .mockResolvedValueOnce(counts[2])
+        .mockResolvedValueOnce(counts[3])
+        .mockResolvedValueOnce(counts[4]);
+
+      const summary = await service.getSummary();
+
+      expect(summary.pending).toBe(3);
+      expect(summary.converted).toBe(4);
+      expect(summary.superseded).toBe(5);
+      expect(summary.dismissed).toBe(6);
+      expect(summary.notConverted).toBe(6);
+      expect(summary.deleted).toBe(1);
+      expect(summary.total).toBe(3 + 4 + 5 + 6 + 1);
+    });
+  });
 });

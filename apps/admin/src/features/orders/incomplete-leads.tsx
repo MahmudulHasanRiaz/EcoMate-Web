@@ -31,6 +31,7 @@ import {
 const statusColors: Record<string, string> = {
   PENDING: '#F59E0B',
   CONVERTED: '#22C55E',
+  SUPERSEDED: '#8B5CF6',
   NOT_CONVERTED: '#6B7280',
   DELETED: '#EF4444',
 }
@@ -186,8 +187,9 @@ export function IncompleteLeads() {
           <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
             {[
               { key: 'PENDING', label: 'Pending', count: summary.pending, color: statusColors.PENDING },
-              { key: 'CONVERTED', label: 'Converted', count: summary.converted, color: statusColors.CONVERTED },
-              { key: 'NOT_CONVERTED', label: 'Not Converted', count: summary.notConverted, color: statusColors.NOT_CONVERTED },
+              { key: 'CONVERTED', label: 'Converted (Manual)', count: summary.converted, color: statusColors.CONVERTED },
+              { key: 'SUPERSEDED', label: 'Superseded (Self Purchase)', count: summary.superseded, color: statusColors.SUPERSEDED },
+              { key: 'NOT_CONVERTED', label: 'Dismissed', count: summary.dismissed ?? summary.notConverted, color: statusColors.NOT_CONVERTED },
               { key: 'DELETED', label: 'Deleted', count: summary.deleted, color: statusColors.DELETED },
             ].map(s => (
               <button key={s.key} onClick={() => { setStatusFilter(statusFilter === s.key ? 'all' : s.key); setPage(1) }}
