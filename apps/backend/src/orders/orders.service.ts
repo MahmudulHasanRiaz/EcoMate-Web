@@ -1762,10 +1762,23 @@ export class OrdersService {
           safeData.phoneNumber = normalized;
         }
         if (Object.keys(safeData).length > 0) {
-          await tx.userProfile.update({
-            where: { id: order.customerId },
-            data: safeData,
-          });
+          // UserProfile.email is a unique key — don't clobber another
+          // profile's identity (mirrors the create-path phone rule above).
+          // A conflicting email is skipped so the rest of the save applies
+          // instead of failing the whole request with a 409.
+          if (safeData.email) {
+            const emailOwner = await tx.userProfile.findFirst({
+              where: { email: safeData.email, id: { not: order.customerId } },
+              select: { id: true },
+            });
+            if (emailOwner) delete safeData.email;
+          }
+          if (Object.keys(safeData).length > 0) {
+            await tx.userProfile.update({
+              where: { id: order.customerId },
+              data: safeData,
+            });
+          }
         }
       }
 

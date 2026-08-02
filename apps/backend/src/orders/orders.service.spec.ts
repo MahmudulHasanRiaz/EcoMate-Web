@@ -988,6 +988,48 @@ describe('OrdersService', () => {
       });
       expect(prisma.orderItem.createMany).toHaveBeenCalled();
     });
+
+    it('skips the customer email when another profile already owns it (no 409)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
+        id: 'other-customer',
+      });
+      (prisma.userProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane', lastName: 'Doe', email: 'taken@x.com' },
+      });
+
+      // Email ownership was checked against a DIFFERENT profile.
+      expect(prisma.userProfile.findFirst).toHaveBeenCalledWith({
+        where: { email: 'taken@x.com', id: { not: 'customer-id-1' } },
+        select: { id: true },
+      });
+      // Email is excluded from the write so the save does not 409 on the unique key.
+      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data).not.toHaveProperty('email');
+      expect(updateCall.data.firstName).toBe('Jane');
+      expect(prisma.order.update).toHaveBeenCalled();
+    });
+
+    it('updates the customer email when no other profile owns it', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+      });
+
+      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.email).toBe('free@x.com');
+    });
   });
 
   describe('addNote', () => {
