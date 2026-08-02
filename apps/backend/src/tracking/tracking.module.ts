@@ -12,6 +12,7 @@ import { ReconcilerService } from './reconciler.service';
 import { DlqService } from './dlq.service';
 import { ReplayService } from './replay.service';
 import { ReplayController } from './replay.controller';
+import { MonitoringService } from './monitoring.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     ReconcilerService,
     DlqService,
     ReplayService,
+    MonitoringService,
   ],
   exports: [
     TrackingContextService,
@@ -46,6 +48,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingDispatcherService,
     DlqService,
     ReplayService,
+    MonitoringService,
   ],
 })
 export class TrackingModule {}
