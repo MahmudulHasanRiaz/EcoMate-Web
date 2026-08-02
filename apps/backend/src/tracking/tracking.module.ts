@@ -8,10 +8,11 @@ import { Ga4MeasurementService } from './ga4-measurement.service';
 import { GoogleAdsService } from './google-ads.service';
 import { TrackingController } from './tracking.controller';
 import { TrackingQueueService } from './tracking-queue.service';
-import { TrackingQueueProcessor } from './tracking-queue.processor';
 import { PageViewBufferService } from './page-view-buffer.service';
 import { TrackingSettingsService } from './tracking-settings.service';
 import { TrackingCaptureService } from './tracking-capture.service';
+import { TrackingDispatcherService } from './tracking-dispatcher.service';
+import { TrackingDispatcherProcessor } from './tracking-dispatcher.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -25,10 +26,11 @@ import { PrismaModule } from '../prisma/prisma.module';
     Ga4MeasurementService,
     GoogleAdsService,
     TrackingQueueService,
-    TrackingQueueProcessor,
     PageViewBufferService,
     TrackingSettingsService,
     TrackingCaptureService,
+    TrackingDispatcherService,
+    TrackingDispatcherProcessor,
   ],
   exports: [
     TrackingService,
@@ -36,6 +38,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PageViewBufferService,
     TrackingSettingsService,
     TrackingCaptureService,
+    TrackingDispatcherService,
   ],
 })
 export class TrackingModule {}
