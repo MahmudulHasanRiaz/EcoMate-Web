@@ -14,6 +14,9 @@ export interface CmsPage {
   isActive: boolean;
   showInFooter: boolean;
   sortOrder: number;
+  type?: string;
+  templateKey?: string | null;
+  config?: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
 }

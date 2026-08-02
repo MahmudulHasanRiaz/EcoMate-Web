@@ -1,20 +1,11 @@
-import type { Metadata } from "next";
-import { pageMetadata } from "@/lib/metadata";
-import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
-import DownloadContent from "./DownloadContent";
+import { renderPreFormattedPage, preFormattedPageMetadata } from "@/lib/templates/render-page";
 
-export async function generateMetadata(): Promise<Metadata> {
-  try {
-    const config = await getStorefrontConfigServer();
-    return pageMetadata(
-      `Download ${config.store.name} App`,
-      `Get the official ${config.store.name} mobile app. Experience faster checkout, order tracking, and exclusive offers on your phone.`
-    );
-  } catch {
-    return pageMetadata("Download App", "Get the official mobile app.");
-  }
+export const revalidate = 300;
+
+export async function generateMetadata() {
+  return preFormattedPageMetadata("download");
 }
 
-export default function DownloadPage() {
-  return <DownloadContent />;
+export default async function DownloadPage() {
+  return renderPreFormattedPage("download");
 }

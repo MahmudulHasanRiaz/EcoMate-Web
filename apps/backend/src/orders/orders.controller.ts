@@ -98,8 +98,8 @@ export class OrdersController {
   @Public()
   @RateLimitPolicy('api')
   @Post()
-  create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: { userId: string }) {
-    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '', user?.userId);
+  create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: any) {
+    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '', user);
   }
 
   @Roles('superadmin', 'admin')

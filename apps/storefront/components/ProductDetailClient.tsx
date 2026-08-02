@@ -69,11 +69,15 @@ function sanitizeHTML(html: string): string {
   const isHTML = /<[a-z][\s\S]*>/i.test(html);
   let processed = html.replace(/##/g, '');
   // Normalize all newline encodings first — WordPress imports often contain
-  // literal "\n" (backslash-n) sequences that must become real line breaks.
+  // literal "\n" (backslash-n) sequences, lone \r, or &#10;/&#xA; entities
+  // that must become real line breaks.
   processed = processed
     .replace(/\\r\\n/g, '\n')
     .replace(/\\n/g, '\n')
-    .replace(/\r\n/g, '\n');
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/&#x0?A;/gi, '\n')
+    .replace(/&#0?10;/gi, '\n');
   if (isHTML) {
     // HTML content: convert remaining newlines to <br>, but skip ones that
     // directly follow a block-close or existing <br> to avoid empty breaks.
@@ -980,7 +984,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
               {descExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
             {descExpanded && (
-              <div className="prose prose-sm max-w-none text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline" dangerouslySetInnerHTML={{
+              <div className="prose prose-sm max-w-none text-[14px] text-gray-600 leading-relaxed pt-3 animate-fadeIn whitespace-pre-line [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline" dangerouslySetInnerHTML={{
                 __html: sanitizeHTML(product.description)
               }} />
             )}

@@ -1,6 +1,5 @@
 import {
-  Store, Palette, ImageIcon, Layout, List, HelpCircle, Clock, Info,
-  Search, Share2, ShoppingCart, Phone, Settings,
+  Store, Palette, ImageIcon, Layout, List, Search, Share2, ShoppingCart, Phone, Settings,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -10,9 +9,6 @@ export type SectionId =
   | 'identity-brands'
   | 'visuals-hero'
   | 'visuals-footer'
-  | 'content-faq'
-  | 'content-hours'
-  | 'content-about'
   | 'discovery-seo'
   | 'discovery-social'
   | 'commerce-checkout'
@@ -33,7 +29,6 @@ export interface SectionMeta {
 export type CategoryId =
   | 'identity'
   | 'visuals'
-  | 'content'
   | 'discovery'
   | 'commerce'
 
@@ -56,12 +51,6 @@ export const CATEGORIES: CategoryMeta[] = [
     label: 'Visuals',
     description: 'Hero banner, footer appearance',
     sections: ['visuals-hero', 'visuals-footer'],
-  },
-  {
-    id: 'content',
-    label: 'Content',
-    description: 'FAQ, hours, and about page content settings',
-    sections: ['content-faq', 'content-hours', 'content-about'],
   },
   {
     id: 'discovery',
@@ -123,34 +112,6 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     description: 'Text and copyright shown in the storefront footer.',
     icon: Layout,
     fields: ['footer_description', 'footer_copyright'],
-  },
-  'content-faq': {
-    id: 'content-faq',
-    categoryId: 'content',
-    title: 'FAQ Items',
-    description: 'Frequently asked questions on the FAQ page.',
-    icon: HelpCircle,
-    fields: ['faq_items'],
-  },
-  'content-hours': {
-    id: 'content-hours',
-    categoryId: 'content',
-    title: 'Operating Hours',
-    description: 'Store hours displayed on support and stores pages.',
-    icon: Clock,
-    fields: ['hours_label', 'hours_details'],
-  },
-  'content-about': {
-    id: 'content-about',
-    categoryId: 'content',
-    title: 'About & Company',
-    description: 'About-us text, payment & shipping policy, company information.',
-    icon: Info,
-    fields: [
-      'about_us_text', 'payment_info', 'shipping_info',
-      'company_name', 'company_registration', 'company_certifications',
-      'company_team_size', 'company_ceo_name',
-    ],
   },
   'discovery-seo': {
     id: 'discovery-seo',

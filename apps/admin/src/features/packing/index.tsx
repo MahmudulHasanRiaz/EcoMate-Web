@@ -988,7 +988,7 @@ export function PackingWorkspace() {
               <div className="flex gap-2">
                 {/* Print */}
                 <button
-                  onClick={() => window.open(`/op/print/sticker/${activeOrder.id}`, '_blank')}
+                  onClick={() => window.open(`/admin/op/print/sticker/${activeOrder.id}`, '_blank')}
                   className="p-4 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-350 hover:text-white cursor-pointer"
                   title="Print sticker label"
                 >

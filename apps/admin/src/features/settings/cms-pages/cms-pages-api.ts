@@ -8,6 +8,9 @@ export interface CmsPage {
   isActive: boolean
   showInFooter: boolean
   sortOrder: number
+  type: 'content' | 'template'
+  templateKey: string | null
+  config: Record<string, any> | null
   createdAt: string
   updatedAt: string
 }
@@ -19,6 +22,9 @@ export interface CreateCmsPageInput {
   isActive?: boolean
   showInFooter?: boolean
   sortOrder?: number
+  type?: 'content' | 'template'
+  templateKey?: string
+  config?: Record<string, any>
 }
 
 export const cmsPagesApi = {

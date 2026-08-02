@@ -54,7 +54,7 @@ export function CommandPalette({ open, onOpenChange, onNavigateToSection }: Comm
       <CommandInput placeholder='Search settings and fields...' />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
-        {(['identity', 'visuals', 'content', 'discovery', 'commerce'] as const).map(catId => {
+        {(['identity', 'visuals', 'discovery', 'commerce'] as const).map(catId => {
           const catResults = results.filter(r => r.categoryLabel === getCategoryById(catId).label)
           if (catResults.length === 0) return null
           return (

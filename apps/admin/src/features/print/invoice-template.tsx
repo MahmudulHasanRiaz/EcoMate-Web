@@ -1,6 +1,7 @@
 import Barcode from 'react-barcode'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { mediaUrl } from '@/lib/utils'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(2)
@@ -10,17 +11,33 @@ export function InvoiceTemplate({ order }: { order: any }) {
     queryKey: ['storefront-config'],
     queryFn: () => apiClient.get('/system-settings/storefront').then(r => r.data)
   })
-  const storeName = settings?.store?.name || 'Store'
-  const storePhone = settings?.store?.phone || '01800000000'
-  const storeAddress = settings?.store?.address || 'Dhaka, Bangladesh'
+  const storeName = settings?.store?.name || ''
+  const storePhone = settings?.store?.phone || ''
+  const storeAddress = settings?.store?.address || ''
+  const storeLogo = settings?.branding?.storeLogo || ''
+  const currencySymbol = settings?.currency?.symbol || '৳'
   if (!order) return null
 
   const subtotal = order.items?.reduce((s: number, i: any) => s + nm(i.price) * i.quantity, 0) || 0
+  const sa = order.shippingAddress && typeof order.shippingAddress === 'object' ? order.shippingAddress : {}
+  const customerName =
+    order.customer?.firstName ||
+    order.guestName ||
+    order.shippingAddress?.name ||
+    ''
+  const customerPhone =
+    order.customer?.phoneNumber ||
+    order.guestPhone ||
+    order.shippingAddress?.phone ||
+    ''
+  const customerAddress =
+    sa.address || sa.addressLine || (typeof order.shippingAddress === 'string' ? order.shippingAddress : sa.district) || ''
 
   return (
     <div className="invoice-container">
       <style>{`
         .invoice-container { font-family: 'Inter', sans-serif; color: #111; max-width: 210mm; }
+        .invoice-logo { max-height: 9mm; max-width: 34mm; object-fit: contain; }
         @page { margin: 12mm; }
         @media print {
           .invoice-container { page-break-after: avoid; overflow: hidden; }
@@ -30,10 +47,14 @@ export function InvoiceTemplate({ order }: { order: any }) {
 
       <div className="flex items-start justify-between border-b-2 border-black pb-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{storeName}</h1>
-          <p className="text-xs text-muted-foreground">{storePhone}</p>
-          <p className="text-xs text-muted-foreground">{storeAddress}</p>
-          <p className="text-xs text-muted-foreground mt-1">TRN: 123456789</p>
+          <div className="flex items-center gap-3">
+            {storeLogo && (
+              <img src={mediaUrl(storeLogo)} alt={storeName || 'store'} className="invoice-logo" />
+            )}
+            {storeName && <h1 className="text-2xl font-bold tracking-tight">{storeName}</h1>}
+          </div>
+          {storePhone && <p className="text-xs text-muted-foreground mt-0.5">{storePhone}</p>}
+          {storeAddress && <p className="text-xs text-muted-foreground">{storeAddress}</p>}
         </div>
         <div className="text-right">
           <h2 className="text-xl font-bold uppercase tracking-wider">Invoice</h2>
@@ -46,10 +67,10 @@ export function InvoiceTemplate({ order }: { order: any }) {
       <div className="grid grid-cols-2 gap-8 mb-6">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Bill To</p>
-          <p className="font-semibold text-sm">{order.customer?.firstName} {order.customer?.lastName}</p>
-          <p className="text-sm text-muted-foreground">{order.customer?.phoneNumber}</p>
+          <p className="font-semibold text-sm">{customerName || '—'}</p>
+          {customerPhone && <p className="text-sm text-muted-foreground">{customerPhone}</p>}
           {order.customer?.email && <p className="text-sm text-muted-foreground">{order.customer?.email}</p>}
-          <p className="text-sm text-muted-foreground mt-1">{typeof order.shippingAddress === 'string' ? order.shippingAddress : order.shippingAddress?.address || order.shippingAddress?.district || ''}</p>
+          {customerAddress && <p className="text-sm text-muted-foreground mt-1">{customerAddress}</p>}
         </div>
         <div className="text-right">
           <div className="space-y-1.5 text-sm">
@@ -77,8 +98,8 @@ export function InvoiceTemplate({ order }: { order: any }) {
               <td className="py-2 px-2 text-muted-foreground">{i + 1}</td>
               <td className="py-2">{item.product?.name || 'Product'}</td>
               <td className="text-right py-2">{item.quantity}</td>
-              <td className="text-right py-2">৳{fmt(item.price)}</td>
-              <td className="text-right py-2 font-medium">৳{fmt(nm(item.price) * item.quantity)}</td>
+              <td className="text-right py-2">{currencySymbol}{fmt(item.price)}</td>
+              <td className="text-right py-2 font-medium">{currencySymbol}{fmt(nm(item.price) * item.quantity)}</td>
             </tr>
           ))}
         </tbody>
@@ -86,18 +107,18 @@ export function InvoiceTemplate({ order }: { order: any }) {
 
       <div className="flex justify-end mb-6">
         <div className="w-72 space-y-2 text-sm border-t-2 border-black pt-3">
-          <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>৳{fmt(subtotal)}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Delivery Charge</span><span>৳{fmt(order.shippingCharge)}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{currencySymbol}{fmt(subtotal)}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Delivery Charge</span><span>{currencySymbol}{fmt(order.shippingCharge)}</span></div>
           {nm(order.discount) > 0 && (
             <div className="flex justify-between text-green-600">
               <span className="text-muted-foreground">
                 Discount ({order.discountType === 'percentage' ? `${nm(order.discount)}%` : 'flat'})
               </span>
-              <span>-৳{fmt(order.discountType === 'percentage' ? subtotal * (nm(order.discount) / 100) : nm(order.discount))}</span>
+              <span>-{currencySymbol}{fmt(order.discountType === 'percentage' ? subtotal * (nm(order.discount) / 100) : nm(order.discount))}</span>
             </div>
           )}
           <div className="flex justify-between font-bold text-base border-t border-double pt-2 mt-1">
-            <span>Total</span><span className="text-lg">৳{fmt(order.total)}</span>
+            <span>Total</span><span className="text-lg">{currencySymbol}{fmt(order.total)}</span>
           </div>
         </div>
       </div>
@@ -114,7 +135,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
           <div className="flex flex-wrap gap-2">
             {order.payments.map((p: any) => (
               <span key={p.id} className="text-xs bg-muted/30 rounded px-2 py-0.5">
-                {p.method?.toUpperCase()}: ৳{fmt(p.amount)} ({p.status})
+                {p.method?.toUpperCase()}: {currencySymbol}{fmt(p.amount)} ({p.status})
               </span>
             ))}
           </div>
@@ -122,7 +143,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
       )}
 
       <div className="text-center text-[10px] text-muted-foreground mt-8 pt-4 border-t">
-        <p className="font-medium text-black mb-0.5">{storeName} — Thank You for Shopping</p>
+        <p className="font-medium text-black mb-0.5">{storeName}{storeName ? ' — ' : ''}Thank You for Shopping</p>
         <p>This is a computer-generated invoice. No signature required.</p>
       </div>
     </div>

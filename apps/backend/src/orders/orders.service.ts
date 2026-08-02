@@ -45,7 +45,7 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  Shipping: ['Delivered', 'Partial'],
+  Shipping: ['Delivered', 'Partial', 'Return Pending'],
   Delivered: ['Return Pending'],
   Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
@@ -585,7 +585,10 @@ export class OrdersService {
     return this.transformOrder(order);
   }
 
-  async create(dto: CreateOrderDto, clientIp?: string, userId?: string) {
+  async create(dto: CreateOrderDto, clientIp?: string, user?: any) {
+    const userId = user?.userId;
+    const isCustomer = Boolean(user && user.role === 'customer');
+
     const displayId = await this.generateDisplayId();
     const initialStatus = await this.prisma.orderStatus.findFirst({
       where: { isInitial: true },
@@ -594,11 +597,14 @@ export class OrdersService {
       throw new BadRequestException('No initial order status configured');
 
     // ── Authenticated identity override ──
-    if (userId) {
+    // Only a logged-in customer placing their own storefront order is locked to
+    // their own identity. Staff (admin/manager/cashier/...) creating orders on
+    // behalf of customers must keep the client-supplied customer/guest data.
+    if (userId && isCustomer) {
       dto.customerId = userId;
       dto.guestPhone = undefined;
       dto.guestName = undefined;
-    } else {
+    } else if (!userId) {
       // Guest checkout: ignore any client-supplied customerId
       dto.customerId = undefined;
     }
@@ -648,6 +654,7 @@ export class OrdersService {
         dto.guestPhone,
         dto.guestName,
         clientIp,
+        dto.guestEmail,
       );
       dto.customerId = customer.id;
     }
@@ -655,21 +662,47 @@ export class OrdersService {
     if (dto.customerId) {
       const user = await this.prisma.userProfile.findUnique({
         where: { id: dto.customerId },
-        select: { status: true, phoneNumber: true, firstName: true, lastName: true },
+        select: {
+          status: true,
+          phoneNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
       });
       if (user?.status === 'suspended') {
         throw new BadRequestException(
           'This account has been blocked. Please contact support.',
         );
       }
-      // Ensure CustomerProfile exists (order FK now references CustomerProfile)
-      const phone = dto.guestPhone || user?.phoneNumber;
+      // Ensure CustomerProfile exists (order FK now references CustomerProfile).
+      // Staff-created orders may update the customer's name/email/phone.
+      const desiredPhone = dto.guestPhone || user?.phoneNumber;
       const name = dto.guestName || (user ? `${user.firstName} ${user.lastName}`.trim() : 'Customer');
-      if (phone) {
+      const email = dto.guestEmail || user?.email || undefined;
+      if (desiredPhone) {
+        // Phone is a unique key — don't clobber another customer's number.
+        let phone: string | undefined = desiredPhone;
+        if (dto.guestPhone) {
+          const phoneOwner = await this.prisma.customerProfile.findFirst({
+            where: { phone: dto.guestPhone, id: { not: dto.customerId } },
+            select: { id: true },
+          });
+          if (phoneOwner) phone = undefined; // conflict → keep existing profile phone
+        }
         await this.prisma.customerProfile.upsert({
           where: { id: dto.customerId },
-          create: { id: dto.customerId, phone, name },
-          update: { phone, name },
+          create: {
+            id: dto.customerId,
+            phone: phone || desiredPhone,
+            name,
+            ...(email ? { email } : {}),
+          },
+          update: {
+            name,
+            ...(phone ? { phone } : {}),
+            ...(email ? { email } : {}),
+          },
         });
       }
     }
@@ -2167,7 +2200,7 @@ export class OrdersService {
 
   async bulkOrders(ids: string[]) {
     if (!ids?.length || ids.length > 500) return [];
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { id: { in: ids } },
       include: {
         customer: {
@@ -2187,6 +2220,7 @@ export class OrdersService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return orders.map((o: any) => this.transformOrder(o));
   }
 
   async bulkStatusChange(ids: string[], statusId: string, userId = 'system') {

@@ -16,7 +16,7 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
   'Packed': ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  'Shipping': ['Delivered', 'Partial'],
+  'Shipping': ['Delivered', 'Partial', 'Return Pending'],
   'Delivered': ['Return Pending'],
   'Partial': ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
