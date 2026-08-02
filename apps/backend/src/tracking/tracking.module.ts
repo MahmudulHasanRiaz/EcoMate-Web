@@ -14,6 +14,7 @@ import { ReplayService } from './replay.service';
 import { ReplayController } from './replay.controller';
 import { MonitoringService } from './monitoring.service';
 import { MonitoringController } from './monitoring.controller';
+import { RetentionCleanupService } from './retention-cleanup.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -40,6 +41,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     DlqService,
     ReplayService,
     MonitoringService,
+    RetentionCleanupService,
   ],
   exports: [
     TrackingContextService,
