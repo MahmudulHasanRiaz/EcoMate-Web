@@ -2467,6 +2467,7 @@ model TrackingSnapshot {
 
   @@index([orderId])
   @@index([eventType, createdAt])
+  @@index([createdAt]) // retention/replay scans
 }
 
 model TrackingOutbox {
