@@ -139,6 +139,8 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       content_ids: [matchingVariant.id || product.id],
       value: matchingVariant.price,
       currency: config.currency.code,
+      content_type: 'product',
+      content_name: product.name,
       contents: [{ id: matchingVariant.id || product.id, quantity: 1, item_price: matchingVariant.price, variant: variantLabel }],
     });
 

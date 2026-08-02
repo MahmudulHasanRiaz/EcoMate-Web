@@ -8,6 +8,8 @@ export interface SnapshotContentItem {
   id: string;
   quantity: number;
   item_price?: number;
+  name?: string;
+  category?: string;
 }
 
 /** Canonical business data captured at event time (raw, unhashed). */
@@ -22,6 +24,9 @@ export interface TrackingSnapshotPayload {
   value?: number;
   currency?: string;
   content_ids?: string[];
+  content_type?: 'product' | 'product_group';
+  content_name?: string;
+  content_category?: string;
   contents?: SnapshotContentItem[];
   num_items?: number;
   search_string?: string;

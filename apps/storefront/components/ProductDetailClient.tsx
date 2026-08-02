@@ -564,6 +564,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         content_ids: [product.id],
         value: displayPrice,
         currency: config.currency.code,
+        content_type: 'product',
         content_name: product.name,
         contents: [{ id: product.id, quantity: 1, item_price: displayPrice }],
       });

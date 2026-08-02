@@ -3105,6 +3105,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
           content_ids: itemsList
             .map((i: any) => i.productId || i.comboId || '')
             .filter(Boolean),
+          content_type: 'product',
           contents,
           num_items: itemsList.reduce(
             (s: number, i: any) => s + (i.quantity || 0),

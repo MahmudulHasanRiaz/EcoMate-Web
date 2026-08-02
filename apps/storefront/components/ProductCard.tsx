@@ -107,6 +107,8 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
       content_ids: [product.id],
       value: product.price,
       currency: config.currency.code,
+      content_type: 'product',
+      content_name: product.name,
       contents: [{ id: product.id, quantity: 1, item_price: product.price }]
     });
     addToCart({

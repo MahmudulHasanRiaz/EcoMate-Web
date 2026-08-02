@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getProducts } from '@/lib/api/products';
 import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
+import { trackEvent } from '@/lib/tracking';
 import type { Product, Category } from '@/lib/types';
 
 export interface ArchivePageClientProps {
@@ -197,6 +198,20 @@ export default function ArchivePageClient({
   const [navigating, setNavigating] = React.useState(false);
 
   useEffect(() => { setNavigating(false); }, [filters]);
+
+  // Category-view ViewContent (Meta content_type=product_group): fires when the
+  // listing is a category (or brand/tag/search) view — one per category change.
+  useEffect(() => {
+    const category = filters.category;
+    if (!category) return;
+    trackEvent('ViewContent', {
+      content_ids: [],
+      content_type: 'product_group',
+      content_category: category,
+      currency: config?.currency?.code,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.category]);
 
   const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
     useInfiniteScroll<Product>({

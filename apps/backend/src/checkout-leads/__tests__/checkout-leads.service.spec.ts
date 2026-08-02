@@ -160,11 +160,13 @@ describe('CheckoutLeadsService', () => {
       expect(input.actionSource).toBe('website');
       expect(input.payload).toEqual(
         expect.objectContaining({
-          value: 1000,
           currency: 'BDT',
           customer: { phone: '+8801812345678', firstName: 'Jane Doe' },
         }),
       );
+      // A Lead carries no monetary value (design §10) so it can never be
+      // misread as a purchase — only a converted lead produces an offline Purchase.
+      expect((input.payload as any).value).toBeUndefined();
       expect(input.configSnapshot).toEqual(configSnapshotMock);
     });
 

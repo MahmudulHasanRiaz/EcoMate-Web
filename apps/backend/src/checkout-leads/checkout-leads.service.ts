@@ -210,15 +210,11 @@ export class CheckoutLeadsService {
     });
     if (recent) return;
 
-    const items = Array.isArray(lead.items) ? (lead.items as any[]) : [];
-    const estimatedTotal = items.reduce(
-      (s: number, i: any) => s + (i.price || 0) * (i.quantity || 1),
-      0,
-    );
-
     const leadName = lead.name || dto.name || undefined;
     const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
+    // A Lead carries no monetary value (design §10): a value here could be misread
+    // as a conversion. Only a converted lead produces an offline Purchase.
     await this.trackingCapture.capture({
       eventId: `lead_${lead.id}`,
       eventType: 'Lead',
@@ -226,7 +222,6 @@ export class CheckoutLeadsService {
       eventTime: Math.floor(Date.now() / 1000),
       actionSource: 'website',
       payload: {
-        value: estimatedTotal || undefined,
         currency: 'BDT',
         customer: {
           phone: phone || undefined,

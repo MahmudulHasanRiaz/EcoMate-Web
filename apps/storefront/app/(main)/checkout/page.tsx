@@ -11,7 +11,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
 import { getDistricts, getThanas, getGateways } from '@/lib/api/delivery-areas';
-import { saveCheckoutLead } from '@/lib/api/checkout-leads';
 import { submitPayment } from '@/lib/api/payments';
 import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
@@ -494,7 +493,6 @@ export default function CheckoutPage() {
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
-  const leadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasSubmitted = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = useCallback((field: string) => {
@@ -621,6 +619,7 @@ export default function CheckoutPage() {
         value,
         currency: config.currency.code,
         content_ids: items.map(i => i.id),
+        content_type: 'product',
         num_items: items.reduce((s, i) => s + i.quantity, 0),
         contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
       }, {
@@ -653,16 +652,6 @@ export default function CheckoutPage() {
   const leadDataRef = useRef(getLeadData());
   leadDataRef.current = getLeadData();
 
-  const captureLead = useCallback(() => {
-    const data = getLeadData();
-    if (data) saveCheckoutLead(data);
-  }, [getLeadData]);
-
-  const scheduleLeadCapture = useCallback(() => {
-    if (leadTimer.current) clearTimeout(leadTimer.current);
-    leadTimer.current = setTimeout(captureLead, 2000);
-  }, [captureLead]);
-
   useEffect(() => {
     const beaconUrl = `${process.env.NEXT_PUBLIC_API_URL || '/api'}/checkout-leads`;
     const sendLead = () => {
@@ -673,7 +662,6 @@ export default function CheckoutPage() {
     window.addEventListener('beforeunload', sendLead);
     return () => {
       window.removeEventListener('beforeunload', sendLead);
-      if (leadTimer.current) clearTimeout(leadTimer.current);
       sendLead();
     };
   }, []);
@@ -1229,7 +1217,7 @@ export default function CheckoutPage() {
                       id="checkout-guestName"
                       type="text"
                       value={guestName}
-                      onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); scheduleLeadCapture(); }}
+                      onChange={e => { setGuestName(e.target.value); clearFieldError('guestName'); }}
                       placeholder="আপনার পূর্ণ নাম লিখুন *"
                       className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 transition-all bg-white ${fieldErrors.guestName ? 'border-red-400' : 'border-gray-250'}`}
                     />
@@ -1244,7 +1232,7 @@ export default function CheckoutPage() {
                         id="checkout-guestPhone"
                         type="tel"
                         value={guestPhone}
-                        onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); scheduleLeadCapture(); }}
+                        onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); }}
                         placeholder="মোবাইল নম্বর দিন *"
                         className="w-full px-3.5 py-2 text-xs outline-none bg-transparent text-gray-800 font-medium placeholder-gray-400"
                       />
@@ -1278,7 +1266,7 @@ export default function CheckoutPage() {
                       placeholder={checkoutCfg?.districtRequired ? 'জেলা সিলেক্ট করুন *' : 'জেলা সিলেক্ট করুন (ঐচ্ছিক)'}
                       options={districts}
                       value={district}
-                      onChange={(val) => { setDistrict(val); setThana(''); clearFieldError('district'); scheduleLeadCapture(); }}
+                      onChange={(val) => { setDistrict(val); setThana(''); clearFieldError('district'); }}
                       error={!!fieldErrors.district}
                     />
                     {fieldErrors.district && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.district}</p>}
@@ -1292,7 +1280,7 @@ export default function CheckoutPage() {
                       placeholder={checkoutCfg?.thanaRequired ? 'থানা/উপজেলা সিলেক্ট করুন *' : 'থানা/উপজেলা সিলেক্ট করুন (ঐচ্ছিক)'}
                       options={thanas}
                       value={thana}
-                      onChange={(val) => { setThana(val); clearFieldError('thana'); scheduleLeadCapture(); }}
+                      onChange={(val) => { setThana(val); clearFieldError('thana'); }}
                       error={!!fieldErrors.thana}
                     />
                     {fieldErrors.thana && <p className="text-red-500 text-[10px] mt-0.5 font-semibold">{fieldErrors.thana}</p>}

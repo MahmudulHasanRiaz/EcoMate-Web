@@ -81,6 +81,9 @@ export class MetaAdapter implements TrackingProviderAdapter {
     if (value !== undefined) custom_data.value = value;
     if (snapshot.currency) custom_data.currency = snapshot.currency;
     if (snapshot.content_ids?.length) custom_data.content_ids = snapshot.content_ids;
+    if (snapshot.content_type) custom_data.content_type = snapshot.content_type;
+    if (snapshot.content_name) custom_data.content_name = snapshot.content_name;
+    if (snapshot.content_category) custom_data.content_category = snapshot.content_category;
     if (snapshot.contents?.length) custom_data.contents = snapshot.contents;
     if (snapshot.num_items !== undefined) custom_data.num_items = snapshot.num_items;
     if (snapshot.search_string) custom_data.search_string = snapshot.search_string;
