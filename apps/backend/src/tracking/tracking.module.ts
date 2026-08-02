@@ -8,6 +8,7 @@ import { TrackingCaptureService } from './tracking-capture.service';
 import { TrackingDispatcherService } from './tracking-dispatcher.service';
 import { TrackingDispatcherProcessor } from './tracking-dispatcher.processor';
 import { OutboxRelayService } from './outbox-relay.service';
+import { ReconcilerService } from './reconciler.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingDispatcherService,
     TrackingDispatcherProcessor,
     OutboxRelayService,
+    ReconcilerService,
   ],
   exports: [
     TrackingContextService,

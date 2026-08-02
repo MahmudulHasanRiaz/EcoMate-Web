@@ -9,6 +9,7 @@ import {
   TrackingProviderAdapter,
 } from './adapters';
 import { TrackingContextService } from './tracking-context.service';
+import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
 import { TrackingSettingsService } from './tracking-settings.service';
 import {
@@ -31,17 +32,10 @@ interface ConfigSnapshot {
 }
 
 /**
- * Outbox retry schedule (design §4.9): 1m -> 10m -> 1h -> 6h -> 24h. Index 0
- * applies to the 1st retry (outbox.attemptCount becomes 1). Past MAX_OUTBOX_ATTEMPTS
+ * Outbox retry schedule (design §4.9/§7.2): 1m -> 10m -> 1h -> 6h -> 24h — see
+ * getRetryBackoffMs (shared with the relay/reconciler). Past MAX_OUTBOX_ATTEMPTS
  * the outbox is DEAD (replay is the only way back to PENDING).
  */
-const RETRY_BACKOFF_MS = [
-  1 * 60_000,
-  10 * 60_000,
-  60 * 60_000,
-  6 * 60 * 60_000,
-  24 * 60 * 60_000,
-];
 const MAX_OUTBOX_ATTEMPTS = 5;
 
 /** Dispatch rows in these statuses are eligible for (re)processing — never SENT/DEAD/SKIPPED/DEDUPED. */
@@ -214,10 +208,11 @@ export class TrackingDispatcherService {
    * Crash-safety: if run() threw, the relay's CLAIM on the outbox would otherwise
    * leave the row permanently unclaimable (the relay claims only PENDING rows, and
    * the Phase 5 reconciler isn't wired yet). Best-effort reset a stuck CLAIMED row
-   * to PENDING with attemptCount++ and a short backoff so the next relay sweep can
-   * re-pick it. Already-advanced rows (PENDING from the retry path, or terminal
-   * SENT/DEAD) are left untouched so attempts are not double-counted and terminal
-   * decisions are never unwound. The caller rethrows so BullMQ retries too.
+   * to PENDING with attemptCount++ and the schedule's next backoff so the next
+   * relay sweep can re-pick it. Already-advanced rows (PENDING from the retry
+   * path, or terminal SENT/DEAD) are left untouched so attempts are not
+   * double-counted and terminal decisions are never unwound. The caller rethrows
+   * so BullMQ retries too.
    */
   private async releaseStuckOutbox(job: DispatchJob): Promise<void> {
     try {
@@ -230,7 +225,7 @@ export class TrackingDispatcherService {
         data: {
           status: 'PENDING',
           attemptCount: outbox.attemptCount + 1,
-          nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MS[0]),
+          nextAttemptAt: new Date(Date.now() + getRetryBackoffMs(outbox.attemptCount + 1)),
           lockedAt: null,
           lockedBy: null,
         },
@@ -530,7 +525,7 @@ export class TrackingDispatcherService {
       data: {
         status: 'PENDING',
         attemptCount: nextAttempt,
-        nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MS[nextAttempt - 1]),
+        nextAttemptAt: new Date(Date.now() + getRetryBackoffMs(nextAttempt)),
         lockedAt: null,
         lockedBy: null,
         lastError: firstError,

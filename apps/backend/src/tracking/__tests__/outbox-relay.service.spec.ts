@@ -1,11 +1,12 @@
-import { OutboxRelayService } from '../outbox-relay.service';
+import { getRetryBackoffMs, OutboxRelayService } from '../outbox-relay.service';
 
 describe('OutboxRelayService', () => {
   const queryRaw = jest.fn();
+  const outboxFindUnique = jest.fn();
   const outboxUpdate = jest.fn();
   const prisma = {
     $queryRaw: queryRaw,
-    trackingOutbox: { update: outboxUpdate },
+    trackingOutbox: { findUnique: outboxFindUnique, update: outboxUpdate },
   } as any;
   const trackingQueue = { add: jest.fn() } as any;
   const settings = { get: jest.fn() } as any;
@@ -51,7 +52,7 @@ describe('OutboxRelayService', () => {
     expect(queryRaw.mock.calls[0][0].strings.join('')).toContain('"TrackingOutbox"');
   });
 
-  it('releases the lock and excludes the row from the count when enqueue fails', async () => {
+  it('releases the lock with attemptCount++ and backoff, excluding the row from the count when enqueue fails', async () => {
     queryRaw.mockResolvedValue([
       { id: 'outbox-1', snapshotId: 'snap-1', attemptCount: 1 },
       { id: 'outbox-2', snapshotId: 'snap-2', attemptCount: 2 },
@@ -59,19 +60,57 @@ describe('OutboxRelayService', () => {
     trackingQueue.add
       .mockRejectedValueOnce(new Error('redis down'))
       .mockResolvedValueOnce({ id: 'job' });
+    // releaseLock reads the current row to compute the next attempt + backoff.
+    outboxFindUnique.mockResolvedValue({ id: 'outbox-1', attemptCount: 1 });
 
     const enqueued = await service.poll();
 
     expect(enqueued).toBe(1);
+    expect(outboxFindUnique).toHaveBeenCalledWith({
+      where: { id: 'outbox-1' },
+      select: { attemptCount: true },
+    });
     expect(outboxUpdate).toHaveBeenCalledTimes(1);
     expect(outboxUpdate).toHaveBeenCalledWith({
       where: { id: 'outbox-1' },
-      data: { status: 'PENDING', lockedAt: null, lockedBy: null },
+      data: {
+        status: 'PENDING',
+        attemptCount: 2,
+        nextAttemptAt: expect.any(Date),
+        lockedAt: null,
+        lockedBy: null,
+      },
     });
+    // nextAttemptAt follows the 1m/10m/1h/6h/24h schedule for the next attempt.
+    const [{ data }] = outboxUpdate.mock.calls[0];
+    const expected = Date.now() + getRetryBackoffMs(2);
+    expect(data.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(expected - 1000);
+    expect(data.nextAttemptAt.getTime()).toBeLessThanOrEqual(expected + 1000);
     // The successfully enqueued row keeps its CLAIMED lock.
     expect(outboxUpdate).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'outbox-2' } }),
     );
+  });
+
+  it('releaseLock resets a PENDING row to the next backoff step and clears the lock directly', async () => {
+    outboxFindUnique.mockResolvedValue({ id: 'outbox-1', attemptCount: 4 });
+
+    await (service as any).releaseLock('outbox-1');
+
+    expect(outboxUpdate).toHaveBeenCalledWith({
+      where: { id: 'outbox-1' },
+      data: {
+        status: 'PENDING',
+        attemptCount: 5,
+        nextAttemptAt: expect.any(Date),
+        lockedAt: null,
+        lockedBy: null,
+      },
+    });
+    const [{ data }] = outboxUpdate.mock.calls[0];
+    const expected = Date.now() + getRetryBackoffMs(5); // 5th retry -> 24h
+    expect(data.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(expected - 1000);
+    expect(data.nextAttemptAt.getTime()).toBeLessThanOrEqual(expected + 1000);
   });
 
   it('returns 0 without claiming or enqueueing when the relay is disabled', async () => {
@@ -104,5 +143,15 @@ describe('OutboxRelayService', () => {
       startSpy.mockRestore();
       jest.useRealTimers();
     }
+  });
+
+  it('getRetryBackoffMs follows the 1m/10m/1h/6h/24h schedule and caps at 24h', () => {
+    expect(getRetryBackoffMs(1)).toBe(60_000);
+    expect(getRetryBackoffMs(2)).toBe(600_000);
+    expect(getRetryBackoffMs(3)).toBe(3_600_000);
+    expect(getRetryBackoffMs(4)).toBe(21_600_000);
+    expect(getRetryBackoffMs(5)).toBe(86_400_000);
+    expect(getRetryBackoffMs(6)).toBe(86_400_000); // capped
+    expect(getRetryBackoffMs(0)).toBe(60_000); // defensive: treat as 1st retry
   });
 });
