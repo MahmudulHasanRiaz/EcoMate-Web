@@ -4,6 +4,7 @@ import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorato
 import * as fastify from 'fastify';
 import { TrackingCaptureService } from './tracking-capture.service';
 import { TrackingContextService } from './tracking-context.service';
+import { TrackingSettingsService } from './tracking-settings.service';
 import { Public } from '../common/decorators/public.decorator';
 import { TrackEventDto } from './dto/track-event.dto';
 import { SaveContextDto } from './dto/save-context.dto';
@@ -19,6 +20,7 @@ export class TrackingController {
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingContext: TrackingContextService,
     private readonly pageViewBuffer: PageViewBufferService,
+    private readonly trackingSettings: TrackingSettingsService,
   ) {}
 
   @RateLimitPolicy('storefront')
@@ -30,7 +32,9 @@ export class TrackingController {
   ) {
     try {
       const eventType = this.mapEventType(body.eventName);
-      // page_view and unknown event names are not CAPI types — skip (best-effort).
+      // page_view is deliberately excluded from CAPI (Pixel/analytics only, design §5);
+      // any other unmapped name is unknown/typo'd and skipped best-effort, but logged
+      // so silently-dropped events are visible.
       if (eventType) {
         await this.trackingCapture.capture(
           {
@@ -60,6 +64,9 @@ export class TrackingController {
               },
             },
             configSnapshot: {
+              // Capture-time config so the dispatcher's work set (enabledProviders)
+              // is populated for browser events — without it they'd never dispatch.
+              ...(await this.trackingSettings.buildConfigSnapshot()),
               source: 'browser',
               capturedAt: new Date().toISOString(),
               ip: req.ip,
@@ -67,6 +74,10 @@ export class TrackingController {
             },
           },
           undefined,
+        );
+      } else if (body.eventName !== 'page_view') {
+        this.logger.warn(
+          `Unknown tracking event dropped (no CAPI mapping): ${body.eventName}`,
         );
       }
     } catch {
@@ -126,6 +137,7 @@ export class TrackingController {
     const map: Record<string, TrackingEventType> = {
       view_content: 'ViewContent',
       add_to_cart: 'AddToCart',
+      add_to_wishlist: 'AddToWishlist',
       initiate_checkout: 'InitiateCheckout',
       add_payment_info: 'AddPaymentInfo',
       purchase: 'Purchase',

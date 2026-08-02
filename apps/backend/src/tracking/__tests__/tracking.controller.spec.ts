@@ -1,22 +1,31 @@
 import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
 import { TrackingController } from '../tracking.controller';
 import { TrackingCaptureService } from '../tracking-capture.service';
+import { TrackingSettingsService } from '../tracking-settings.service';
 
 describe('TrackingController', () => {
   const allPublicMethods = ['trackEvent', 'saveContext'];
   let trackingCapture: { capture: jest.Mock };
   let trackingContext: { upsertContext: jest.Mock };
   let pageViewBuffer: { push: jest.Mock };
+  let trackingSettings: { buildConfigSnapshot: jest.Mock };
   let controller: TrackingController;
 
   beforeEach(() => {
     trackingCapture = { capture: jest.fn() };
     trackingContext = { upsertContext: jest.fn() };
     pageViewBuffer = { push: jest.fn() };
+    trackingSettings = {
+      buildConfigSnapshot: jest.fn().mockResolvedValue({
+        enabledProviders: ['meta'],
+        normalizerVersion: 1,
+      }),
+    };
     controller = new TrackingController(
       trackingCapture as unknown as TrackingCaptureService,
       trackingContext as never,
       pageViewBuffer as never,
+      trackingSettings as unknown as TrackingSettingsService,
     );
   });
 
@@ -101,6 +110,10 @@ describe('TrackingController', () => {
         userAgent: 'storefront-ua',
       });
       expect(typeof input.configSnapshot.capturedAt).toBe('string');
+      // Capture-time settings populate the dispatcher's work set; without this the
+      // browser event would be captured with zero eligible providers and never dispatch.
+      expect(input.configSnapshot.enabledProviders).toEqual(['meta']);
+      expect(input.configSnapshot.normalizerVersion).toBe(1);
       expect(trackingCapture.capture.mock.calls[0][1]).toBeUndefined();
       expect(result).toEqual({ success: true });
     });
@@ -109,6 +122,7 @@ describe('TrackingController', () => {
       const cases: Array<[string, string]> = [
         ['view_content', 'ViewContent'],
         ['add_to_cart', 'AddToCart'],
+        ['add_to_wishlist', 'AddToWishlist'],
         ['initiate_checkout', 'InitiateCheckout'],
         ['add_payment_info', 'AddPaymentInfo'],
         ['search', 'Search'],

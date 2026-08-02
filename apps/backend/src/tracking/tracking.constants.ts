@@ -3,6 +3,7 @@ export const TRACKING_EVENT_TYPES = Object.freeze([
   'Purchase',
   'Refund',
   'AddToCart',
+  'AddToWishlist',
   'InitiateCheckout',
   'AddPaymentInfo',
   'ViewContent',

@@ -12,6 +12,7 @@ describe('tracking.constants', () => {
       'Purchase',
       'Refund',
       'AddToCart',
+      'AddToWishlist',
       'InitiateCheckout',
       'AddPaymentInfo',
       'ViewContent',
