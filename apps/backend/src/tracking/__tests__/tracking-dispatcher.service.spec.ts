@@ -43,6 +43,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const getTestEventCode = jest.fn();
   const configGet = jest.fn();
   const dlqMirror = jest.fn();
+  const replayArchive = jest.fn();
 
   const prisma = {
     trackingSnapshot: { findUnique: snapshotFindUnique },
@@ -58,7 +59,8 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const settings = { get: settingsGet, getTestEventCode } as any;
   const config = { get: configGet } as any;
   const dlq = { mirror: dlqMirror } as any;
-  const service = new TrackingDispatcherService(prisma, context, settings, config, dlq);
+  const replay = { archive: replayArchive } as any;
+  const service = new TrackingDispatcherService(prisma, context, settings, config, dlq, replay);
 
   const snapshot = {
     id: 'snap-1',
@@ -140,6 +142,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     getTestEventCode.mockResolvedValue(null);
     configGet.mockReturnValue(undefined);
     dlqMirror.mockResolvedValue(undefined);
+    replayArchive.mockResolvedValue(undefined);
     mockBuildAdapterRegistry.mockReturnValue([fakeMeta, fakeTiktok]);
     metaSend.mockResolvedValue(okResult());
     tiktokSend.mockResolvedValue(okResult());
@@ -515,6 +518,65 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       rawResponse: 'invalid token',
     });
     dlqMirror.mockRejectedValue(new Error('redis down'));
+
+    await expect(service.process(job, 'job-1')).resolves.toBeUndefined();
+
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'outbox-1' },
+        data: expect.objectContaining({ status: 'DEAD' }),
+      }),
+    );
+  });
+
+  it('archives the DEAD outbox (snapshot + payload + configSnapshot + pinned versions) for replay', async () => {
+    tiktokSend.mockResolvedValue({
+      ok: false,
+      retryable: false,
+      httpStatus: 400,
+      rawResponse: 'invalid token',
+    });
+
+    await service.process(job, 'job-1');
+
+    expect(replayArchive).toHaveBeenCalledTimes(1);
+    const arg = replayArchive.mock.calls[0][0];
+    expect(arg).toMatchObject({
+      snapshotId: 'snap-1',
+      eventId: 'purchase_ord-1',
+      eventType: 'Purchase',
+      eventTime: BigInt(1722585600),
+      configSnapshot: outbox.configSnapshot,
+    });
+    // The archived payload is the enriched canonical payload (eventType/eventId/eventTime present).
+    expect(arg.payload).toMatchObject({
+      eventType: 'Purchase',
+      eventId: 'purchase_ord-1',
+      eventTime: Number(snapshot.eventTime),
+      value: 100,
+    });
+    // Versions pinned from the dispatched adapters.
+    expect(arg.versions).toMatchObject({
+      schemaVersion: 1,
+      payloadVersion: 1,
+      normalizerVersion: 1,
+      adapterVersion: 1,
+      providerApiVersion: 'v22.0',
+      providers: {
+        meta: { adapterVersion: 1, providerApiVersion: 'v22.0' },
+        tiktok: { adapterVersion: 1, providerApiVersion: 'v1.3' },
+      },
+    });
+  });
+
+  it('a replay archive write failure does not affect the dispatch result (best-effort)', async () => {
+    tiktokSend.mockResolvedValue({
+      ok: false,
+      retryable: false,
+      httpStatus: 400,
+      rawResponse: 'invalid token',
+    });
+    replayArchive.mockRejectedValue(new Error('archive write failed'));
 
     await expect(service.process(job, 'job-1')).resolves.toBeUndefined();
 

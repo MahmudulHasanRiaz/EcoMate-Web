@@ -13,6 +13,7 @@ import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
 import { TrackingSettingsService } from './tracking-settings.service';
 import { DlqService } from './dlq.service';
+import { ReplayService } from './replay.service';
 import {
   TrackingContextView,
   TrackingSnapshotPayload,
@@ -85,6 +86,7 @@ export class TrackingDispatcherService {
     private readonly settings: TrackingSettingsService,
     private readonly config: ConfigService,
     private readonly dlq: DlqService,
+    private readonly replay: ReplayService,
   ) {}
 
   /**
@@ -203,7 +205,16 @@ export class TrackingDispatcherService {
       }
     });
 
-    await this.advanceOutbox(source, outbox, config, statusByProvider, qj, firstError);
+    await this.advanceOutbox(
+      source,
+      outbox,
+      config,
+      statusByProvider,
+      qj,
+      firstError,
+      payload,
+      eligible,
+    );
   }
 
   /**
@@ -464,6 +475,8 @@ export class TrackingDispatcherService {
     statusByProvider: Map<string, string>,
     queueJobId: string,
     firstError: string | null,
+    payload?: TrackingSnapshotPayload,
+    eligible?: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
   ): Promise<void> {
     const statuses = [...statusByProvider.values()];
     const successPolicy = config.successPolicy ?? 'ALL_SENT';
@@ -504,6 +517,8 @@ export class TrackingDispatcherService {
         queueJobId,
         firstError,
         `ALL_SENT policy unmet: ${firstError ?? 'provider permanently failed'}`,
+        payload,
+        eligible,
       );
       return;
     }
@@ -518,6 +533,8 @@ export class TrackingDispatcherService {
         queueJobId,
         firstError,
         `max attempts (${MAX_OUTBOX_ATTEMPTS}) exceeded: ${firstError ?? ''}`,
+        payload,
+        eligible,
       );
       return;
     }
@@ -552,6 +569,8 @@ export class TrackingDispatcherService {
     queueJobId: string,
     lastError: string | null,
     message: string,
+    payload?: TrackingSnapshotPayload,
+    eligible?: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
   ): Promise<void> {
     await this.prisma.trackingOutbox.update({
       where: { id: outbox.id },
@@ -572,7 +591,68 @@ export class TrackingDispatcherService {
     );
     if (status === 'DEAD') {
       await this.mirrorDeadOutbox(source, outbox, message);
+      if (payload && eligible) {
+        await this.archiveDeadOutbox(source, outbox, payload, eligible);
+      }
     }
+  }
+
+  /**
+   * Best-effort PII-stripped replay archive write for a DEAD outbox (design
+   * §4.10). `ReplayService.archive` does the hashing + upsert; a write failure
+   * is swallowed — the DB DEAD row is the durable record and replay still works
+   * off the live snapshot until retention purges it.
+   */
+  private async archiveDeadOutbox(
+    source: DispatchSource,
+    outbox: any,
+    payload: TrackingSnapshotPayload,
+    eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+  ): Promise<void> {
+    try {
+      await this.replay.archive({
+        snapshotId: source.snapshotId,
+        eventId: source.eventId,
+        eventType: (payload.eventType as string) ?? '',
+        eventTime: BigInt(payload.eventTime as number),
+        payload,
+        configSnapshot: (outbox.configSnapshot ?? {}) as Record<string, unknown>,
+        versions: this.buildVersions(eligible),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Replay archive write failed for outbox ${outbox.id}: ${err}`,
+      );
+    }
+  }
+
+  /**
+   * Pinned versions recorded at DEAD time (replay's version-pinning substrate,
+   * design §4.10). Flat fields carry the schema/payload/normalizer versions and
+   * the first eligible adapter as the representative; `providers` records every
+   * dispatched provider's adapter + provider-API version so replay can resolve
+   * each provider against the version it actually ran under.
+   */
+  private buildVersions(
+    eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+  ): Record<string, unknown> {
+    const providers: Record<string, { adapterVersion: number; providerApiVersion: string }> =
+      {};
+    for (const { provider, adapter } of eligible) {
+      providers[provider] = {
+        adapterVersion: adapter.version,
+        providerApiVersion: adapter.providerApiVersion,
+      };
+    }
+    const adapter = eligible[0]?.adapter;
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      payloadVersion: SCHEMA_VERSION,
+      normalizerVersion: this.normalizer.version,
+      adapterVersion: adapter?.version ?? null,
+      providerApiVersion: adapter?.providerApiVersion ?? null,
+      providers,
+    };
   }
 
   /**

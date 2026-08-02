@@ -10,6 +10,8 @@ import { TrackingDispatcherProcessor } from './tracking-dispatcher.processor';
 import { OutboxRelayService } from './outbox-relay.service';
 import { ReconcilerService } from './reconciler.service';
 import { DlqService } from './dlq.service';
+import { ReplayService } from './replay.service';
+import { ReplayController } from './replay.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -23,7 +25,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       defaultJobOptions: { removeOnComplete: 0, removeOnFail: 100 },
     }),
   ],
-  controllers: [TrackingController],
+  controllers: [TrackingController, ReplayController],
   providers: [
     TrackingContextService,
     PageViewBufferService,
@@ -34,6 +36,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     OutboxRelayService,
     ReconcilerService,
     DlqService,
+    ReplayService,
   ],
   exports: [
     TrackingContextService,
@@ -42,6 +45,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingCaptureService,
     TrackingDispatcherService,
     DlqService,
+    ReplayService,
   ],
 })
 export class TrackingModule {}
