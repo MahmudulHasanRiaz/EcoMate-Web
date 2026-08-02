@@ -12,6 +12,7 @@ import { TrackingContextService } from './tracking-context.service';
 import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
 import { TrackingSettingsService } from './tracking-settings.service';
+import { DlqService } from './dlq.service';
 import {
   TrackingContextView,
   TrackingSnapshotPayload,
@@ -83,6 +84,7 @@ export class TrackingDispatcherService {
     private readonly context: TrackingContextService,
     private readonly settings: TrackingSettingsService,
     private readonly config: ConfigService,
+    private readonly dlq: DlqService,
   ) {}
 
   /**
@@ -568,6 +570,33 @@ export class TrackingDispatcherService {
       outbox.attemptCount,
       message,
     );
+    if (status === 'DEAD') {
+      await this.mirrorDeadOutbox(source, outbox, message);
+    }
+  }
+
+  /**
+   * Best-effort mirror of a DEAD outbox onto the `tracking-dlq` queue (design
+   * §7.3) for ops visibility. The DB DEAD row is the durable record, so a
+   * mirror failure is swallowed and must never affect the dispatch result —
+   * which has already been committed by the time the mirror runs.
+   */
+  private async mirrorDeadOutbox(
+    source: DispatchSource,
+    outbox: any,
+    message: string,
+  ): Promise<void> {
+    try {
+      await this.dlq.mirror(
+        outbox.id,
+        source.snapshotId,
+        null,
+        message ?? null,
+        outbox.attemptCount,
+      );
+    } catch (err) {
+      this.logger.warn(`DLQ mirror failed for outbox ${outbox.id}: ${err}`);
+    }
   }
 
   /** Resolve the per-provider cfg the adapter's send() reads, incl. test codes. */

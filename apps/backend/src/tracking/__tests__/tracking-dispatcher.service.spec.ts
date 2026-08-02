@@ -42,6 +42,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const settingsGet = jest.fn();
   const getTestEventCode = jest.fn();
   const configGet = jest.fn();
+  const dlqMirror = jest.fn();
 
   const prisma = {
     trackingSnapshot: { findUnique: snapshotFindUnique },
@@ -56,7 +57,8 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const context = { getByCtxId: contextGetByCtxId } as any;
   const settings = { get: settingsGet, getTestEventCode } as any;
   const config = { get: configGet } as any;
-  const service = new TrackingDispatcherService(prisma, context, settings, config);
+  const dlq = { mirror: dlqMirror } as any;
+  const service = new TrackingDispatcherService(prisma, context, settings, config, dlq);
 
   const snapshot = {
     id: 'snap-1',
@@ -137,6 +139,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     settingsGet.mockResolvedValue(null);
     getTestEventCode.mockResolvedValue(null);
     configGet.mockReturnValue(undefined);
+    dlqMirror.mockResolvedValue(undefined);
     mockBuildAdapterRegistry.mockReturnValue([fakeMeta, fakeTiktok]);
     metaSend.mockResolvedValue(okResult());
     tiktokSend.mockResolvedValue(okResult());
@@ -450,6 +453,75 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
           lockedBy: null,
           nextAttemptAt: expect.any(Date),
         }),
+      }),
+    );
+  });
+
+  it('mirrors the DEAD outbox to the DLQ (deterministic job identity) on a permanent provider failure', async () => {
+    tiktokSend.mockResolvedValue({
+      ok: false,
+      retryable: false,
+      httpStatus: 400,
+      rawResponse: 'invalid token',
+    });
+
+    await service.process(job, 'job-1');
+
+    expect(dlqMirror).toHaveBeenCalledWith(
+      'outbox-1',
+      'snap-1',
+      null,
+      expect.stringContaining('invalid token'),
+      outbox.attemptCount,
+    );
+  });
+
+  it('mirrors the DEAD outbox to the DLQ once retry attempts exceed the max', async () => {
+    tiktokSend.mockResolvedValue({
+      ok: false,
+      retryable: true,
+      httpStatus: 500,
+      rawResponse: 'still down',
+    });
+    outboxFindUnique.mockResolvedValue({ ...outbox, attemptCount: 5 });
+
+    await service.process(job, 'job-1');
+
+    expect(dlqMirror).toHaveBeenCalledWith(
+      'outbox-1',
+      'snap-1',
+      null,
+      expect.stringContaining('max attempts'),
+      5,
+    );
+  });
+
+  it('never mirrors a terminal SENT outbox', async () => {
+    await service.process(job, 'job-1');
+
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'SENT' }),
+      }),
+    );
+    expect(dlqMirror).not.toHaveBeenCalled();
+  });
+
+  it('a DLQ mirror failure does not affect the dispatch result (best-effort)', async () => {
+    tiktokSend.mockResolvedValue({
+      ok: false,
+      retryable: false,
+      httpStatus: 400,
+      rawResponse: 'invalid token',
+    });
+    dlqMirror.mockRejectedValue(new Error('redis down'));
+
+    await expect(service.process(job, 'job-1')).resolves.toBeUndefined();
+
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'outbox-1' },
+        data: expect.objectContaining({ status: 'DEAD' }),
       }),
     );
   });
