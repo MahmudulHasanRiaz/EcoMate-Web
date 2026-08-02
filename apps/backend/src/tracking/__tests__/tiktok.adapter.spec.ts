@@ -291,6 +291,30 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(body.properties.value).toBe(2500);
     });
 
+    it('includes test_event_code in the wire body when cfg.testEventCode is provided', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(mockResponse(200, '{"code":0}'));
+
+      await adapter.send(wirePayload(), { ...cfg, testEventCode: 'TEST-UUID' });
+
+      const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.test_event_code).toBe('TEST-UUID');
+    });
+
+    it('omits test_event_code when not provided', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(mockResponse(200, '{"code":0}'));
+
+      await adapter.send(wirePayload(), cfg);
+
+      const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.test_event_code).toBeUndefined();
+    });
+
     it('returns ok:false when TikTok returns HTTP 200 with a non-zero business-error body code', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,

@@ -131,7 +131,7 @@ export class TikTokAdapter implements TrackingProviderAdapter {
   }
 
   async send(payload: ProviderPayload, cfg: ProviderConfig): Promise<DispatchResult> {
-    const { pixelCode, accessToken } = cfg;
+    const { pixelCode, accessToken, testEventCode } = cfg;
     if (!pixelCode || !accessToken) {
       return {
         ok: false,
@@ -141,13 +141,14 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       };
     }
 
-    const body = {
+    const body: Record<string, unknown> = {
       pixel_code: pixelCode,
       event: payload.eventName,
       event_id: payload.eventId,
       timestamp: payload.eventTime,
       context: payload.context,
       properties: payload.properties,
+      ...(testEventCode ? { test_event_code: testEventCode } : {}),
     };
 
     // Version comes from this.providerApiVersion so the URL can never drift

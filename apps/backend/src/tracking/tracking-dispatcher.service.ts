@@ -730,6 +730,8 @@ export class TrackingDispatcherService {
           accessToken:
             (await this.settings.get('tracking_tiktok_access_token', 'TIKTOK_ACCESS_TOKEN')) ??
             undefined,
+          testEventCode:
+            (await this.settings.getTestEventCode('tiktok')) ?? undefined,
         };
       case 'ga4':
         // env-only: GA4 has no DB flag (configSnapshot.enabledProviders used env presence).

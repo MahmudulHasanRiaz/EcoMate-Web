@@ -30,9 +30,12 @@ export function TrackingSettings() {
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaAccessToken, setMetaAccessToken] = useState('')
   const [metaTestCode, setMetaTestCode] = useState('')
+  const [metaTestMode, setMetaTestMode] = useState(false)
   const [tiktokEnabled, setTiktokEnabled] = useState(false)
   const [tiktokPixelCode, setTiktokPixelCode] = useState('')
   const [tiktokAccessToken, setTiktokAccessToken] = useState('')
+  const [tiktokTestCode, setTiktokTestCode] = useState('')
+  const [tiktokTestMode, setTiktokTestMode] = useState(false)
   const [metaPurchaseMode, setMetaPurchaseMode] = useState('instant')
   const [metaValidatedStatus, setMetaValidatedStatus] = useState('')
   const [tiktokPurchaseMode, setTiktokPurchaseMode] = useState('instant')
@@ -45,11 +48,14 @@ export function TrackingSettings() {
       setMetaPixelId(settings.tracking_meta_pixel_id || '')
       setMetaAccessToken(settings.tracking_meta_access_token || '')
       setMetaTestCode(settings.tracking_meta_test_code || '')
+      setMetaTestMode(settings.tracking_meta_test_mode === 'true')
       setMetaPurchaseMode(settings.tracking_meta_purchase_mode || 'instant')
       setMetaValidatedStatus(settings.tracking_meta_validated_status || '')
       setTiktokEnabled(settings.tracking_tiktok_enabled === 'true')
       setTiktokPixelCode(settings.tracking_tiktok_pixel_code || '')
       setTiktokAccessToken(settings.tracking_tiktok_access_token || '')
+      setTiktokTestCode(settings.tracking_tiktok_test_code || '')
+      setTiktokTestMode(settings.tracking_tiktok_test_mode === 'true')
       setTiktokPurchaseMode(settings.tracking_tiktok_purchase_mode || 'instant')
       setTiktokValidatedStatus(settings.tracking_tiktok_validated_status || '')
       setRelayEnabled(settings.tracking_relay_enabled === 'true')
@@ -75,11 +81,14 @@ export function TrackingSettings() {
       { key: 'tracking_meta_pixel_id', value: metaPixelId },
       { key: 'tracking_meta_access_token', value: metaAccessToken },
       { key: 'tracking_meta_test_code', value: metaTestCode },
+      { key: 'tracking_meta_test_mode', value: String(metaTestMode) },
       { key: 'tracking_meta_purchase_mode', value: metaPurchaseMode },
       { key: 'tracking_meta_validated_status', value: metaValidatedStatus },
       { key: 'tracking_tiktok_enabled', value: String(tiktokEnabled) },
       { key: 'tracking_tiktok_pixel_code', value: tiktokPixelCode },
       { key: 'tracking_tiktok_access_token', value: tiktokAccessToken },
+      { key: 'tracking_tiktok_test_code', value: tiktokTestCode },
+      { key: 'tracking_tiktok_test_mode', value: String(tiktokTestMode) },
       { key: 'tracking_tiktok_purchase_mode', value: tiktokPurchaseMode },
       { key: 'tracking_tiktok_validated_status', value: tiktokValidatedStatus },
       { key: 'tracking_relay_enabled', value: String(relayEnabled) },
@@ -175,6 +184,15 @@ export function TrackingSettings() {
                 Use this to test server-side events in Meta Events Manager. Leave empty for production.
               </p>
             </div>
+            <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
+              <div className='space-y-0.5'>
+                <Label htmlFor='meta-test-mode'>Enable Test Mode</Label>
+                <p className='text-xs text-muted-foreground'>
+                  Route events to the Meta Test Events tool (must be on with a test code to see server events).
+                </p>
+              </div>
+              <Switch id='meta-test-mode' checked={metaTestMode} onCheckedChange={setMetaTestMode} />
+            </div>
           </div>
 
           <div className='space-y-2 sm:col-span-2 mt-4'>
@@ -263,7 +281,31 @@ export function TrackingSettings() {
               />
             </div>
           </div>
-          <div className='space-y-2 sm:col-span-2'>
+          <div className='grid gap-6 sm:grid-cols-2 mt-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='tiktok-test-code'>Test Event Code (Optional)</Label>
+              <Input
+                id='tiktok-test-code'
+                value={tiktokTestCode}
+                onChange={e => setTiktokTestCode(e.target.value)}
+                placeholder='Test event UUID from TikTok'
+                className='bg-background/50'
+              />
+              <p className='text-xs text-muted-foreground'>
+                TikTok Events Manager → Test Events gives a test code UUID. Leave empty for production.
+              </p>
+            </div>
+            <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
+              <div className='space-y-0.5'>
+                <Label htmlFor='tiktok-test-mode'>Enable Test Mode</Label>
+                <p className='text-xs text-muted-foreground'>
+                  Route events to the TikTok Test Events tool.
+                </p>
+              </div>
+              <Switch id='tiktok-test-mode' checked={tiktokTestMode} onCheckedChange={setTiktokTestMode} />
+            </div>
+          </div>
+          <div className='space-y-2 sm:col-span-2 mt-4'>
             <Label htmlFor='tiktok-purchase-mode'>Purchase Event Mode</Label>
             <Select value={tiktokPurchaseMode} onValueChange={(v) => { setTiktokPurchaseMode(v); if (v === 'instant') setTiktokValidatedStatus(''); }}>
               <SelectTrigger id='tiktok-purchase-mode' className='bg-background/50 w-full sm:w-72'>
