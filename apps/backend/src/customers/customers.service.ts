@@ -61,13 +61,34 @@ export class CustomersService {
           email: true,
           phoneNumber: true,
           createdAt: true,
+          addresses: {
+            where: { isDefault: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            select: { street: true, city: true, state: true, zipCode: true },
+          },
         },
       }),
       this.prisma.userProfile.count({ where }),
     ]);
 
+    const rows = data.map((u: any) => {
+      const a = u.addresses?.[0];
+      return {
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        phoneNumber: u.phoneNumber,
+        createdAt: u.createdAt,
+        address: a
+          ? [a.street, a.city, a.state, a.zipCode].filter(Boolean).join(', ')
+          : '',
+      };
+    });
+
     return {
-      data,
+      data: rows,
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
     };
   }
@@ -167,6 +188,7 @@ export class CustomersService {
     phone: string,
     name: string,
     clientIp?: string,
+    email?: string,
   ): Promise<{ id: string }> {
     let normalized = normalizePhone(phone);
     if (!normalized) {
@@ -188,7 +210,7 @@ export class CustomersService {
     });
 
     if (existingProfile) {
-      // Ensure UserProfile exists too (update name if needed)
+      // Ensure UserProfile exists too (update name/email if needed)
       const existingUser = await this.prisma.userProfile.findFirst({
         where: { phoneNumber: normalized, role: 'customer' },
       });
@@ -197,6 +219,9 @@ export class CustomersService {
         if (existingUser.firstName !== firstName || existingUser.lastName !== lastName) {
           updateData.firstName = firstName;
           updateData.lastName = lastName;
+        }
+        if (email && existingUser.email !== email) {
+          updateData.email = email;
         }
         if (clientIp && existingUser.lastIp !== clientIp) {
           updateData.lastIp = clientIp;
@@ -207,6 +232,12 @@ export class CustomersService {
             data: updateData,
           });
         }
+      }
+      if (email && existingProfile.email !== email) {
+        await this.prisma.customerProfile.update({
+          where: { id: existingProfile.id },
+          data: { email },
+        });
       }
       return { id: existingProfile.id };
     }
@@ -222,6 +253,9 @@ export class CustomersService {
         updateData.firstName = firstName;
         updateData.lastName = lastName;
       }
+      if (email && existingUser.email !== email) {
+        updateData.email = email;
+      }
       if (clientIp && existingUser.lastIp !== clientIp) {
         updateData.lastIp = clientIp;
       }
@@ -234,8 +268,8 @@ export class CustomersService {
       // Create CustomerProfile with same id as UserProfile
       await this.prisma.customerProfile.upsert({
         where: { id: existingUser.id },
-        create: { id: existingUser.id, phone: normalized, name },
-        update: { name, phone: normalized },
+        create: { id: existingUser.id, phone: normalized, name, ...(email ? { email } : {}) },
+        update: { name, phone: normalized, ...(email ? { email } : {}) },
       });
       return { id: existingUser.id };
     }
@@ -250,7 +284,7 @@ export class CustomersService {
         firstName,
         lastName,
         username: `cust_${phoneKey}`,
-        email: `cust_${phoneKey}@${domain}`,
+        email: email || `cust_${phoneKey}@${domain}`,
         phoneNumber: normalized,
         password: hashedPassword,
         role: 'customer',
@@ -264,7 +298,12 @@ export class CustomersService {
 
     // Create CustomerProfile with same id
     await this.prisma.customerProfile.create({
-      data: { id: user.id, phone: normalized, name },
+      data: {
+        id: user.id,
+        phone: normalized,
+        name,
+        ...(email ? { email } : {}),
+      },
     });
 
     return { id: user.id };

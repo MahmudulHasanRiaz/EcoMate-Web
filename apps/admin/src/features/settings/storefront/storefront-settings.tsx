@@ -10,9 +10,6 @@ import { IdentityStoreSection } from '@/features/settings/storefront/components/
 import { IdentityBrandsSection } from '@/features/settings/storefront/components/sections/identity-brands'
 import { VisualsHeroSection } from '@/features/settings/storefront/components/sections/visuals-hero'
 import { VisualsFooterSection } from '@/features/settings/storefront/components/sections/visuals-footer'
-import { ContentFaqSection } from '@/features/settings/storefront/components/sections/content-faq'
-import { ContentHoursSection } from '@/features/settings/storefront/components/sections/content-hours'
-import { ContentAboutSection } from '@/features/settings/storefront/components/sections/content-about'
 import { DiscoverySeoSection } from '@/features/settings/storefront/components/sections/discovery-seo'
 import { DiscoverySocialSection } from '@/features/settings/storefront/components/sections/discovery-social'
 import { CommerceCheckoutSection } from '@/features/settings/storefront/components/sections/commerce-checkout'
@@ -137,9 +134,6 @@ export function StorefrontSettings() {
           <IdentityBrandsSection hook={hook} />
           <VisualsHeroSection hook={hook} />
           <VisualsFooterSection hook={hook} />
-          <ContentFaqSection hook={hook} />
-          <ContentHoursSection hook={hook} />
-          <ContentAboutSection hook={hook} />
 
           <DiscoverySeoSection hook={hook} />
           <DiscoverySocialSection hook={hook} />

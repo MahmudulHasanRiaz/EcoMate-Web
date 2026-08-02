@@ -43,6 +43,8 @@ export function CreateOrder() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [customerMatched, setCustomerMatched] = useState(false)
   const [searchingCustomer, setSearchingCustomer] = useState(false)
+  const [customerResults, setCustomerResults] = useState<any[]>([])
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
 
   const [cities, setCities] = useState<any[]>([])
   const [zones, setZones] = useState<any[]>([])
@@ -93,9 +95,9 @@ export function CreateOrder() {
   const [officeNotes, setOfficeNotes] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
 
-  const customerSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productDropdownRef = useRef<HTMLDivElement>(null)
+  const customerDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
@@ -123,36 +125,44 @@ export function CreateOrder() {
       setSearchingCustomer(false)
       setCustomerMatched(false)
       setSelectedCustomerId(null)
+      setCustomerResults([])
+      setCustomerDropdownOpen(false)
       return
     }
     setSearchingCustomer(true)
     const timer = setTimeout(async () => {
       try {
-        const res = await apiClient.get('/customers', { params: { search: normalized, perPage: 5 } })
+        const res = await apiClient.get('/customers', { params: { search: normalized, perPage: 8 } })
         const customers = (res.data as any)?.data || []
-        const match = customers.find((c: any) => {
+        const matches = customers.filter((c: any) => {
           const cNormalized = normalizePhone(c.phoneNumber || '')
           return cNormalized === normalized
-        }) || null
-        if (match) {
-          setSelectedCustomerId(match.id)
-          setCustomerName(`${match.firstName || ''} ${match.lastName || ''}`.trim())
-          setCustomerEmail(match.email || '')
-          setCustomerAddress(match.address || '')
-          setCustomerMatched(true)
-        } else {
-          setSelectedCustomerId(null)
-          setCustomerMatched(false)
-        }
-      } catch {
-        setCustomerMatched(false)
+        })
+        setCustomerResults(matches)
+        setCustomerDropdownOpen(matches.length > 0)
+        // Changing the phone invalidates any previously selected customer.
         setSelectedCustomerId(null)
+        setCustomerMatched(false)
+      } catch {
+        setCustomerResults([])
+        setCustomerDropdownOpen(false)
+        setSelectedCustomerId(null)
+        setCustomerMatched(false)
       } finally {
         setSearchingCustomer(false)
       }
     }, 500)
     return () => clearTimeout(timer)
   }, [customerPhone])
+
+  const selectCustomer = (c: any) => {
+    setSelectedCustomerId(c.id)
+    setCustomerName(`${c.firstName || ''} ${c.lastName || ''}`.trim())
+    setCustomerEmail(c.email || '')
+    setCustomerAddress(c.address || '')
+    setCustomerMatched(true)
+    setCustomerDropdownOpen(false)
+  }
 
   useEffect(() => {
     if (!productSearch || productSearch.length < 1) { setProductResults([]); setShowProductDropdown(false); return }
@@ -172,6 +182,9 @@ export function CreateOrder() {
     const handleClickOutside = (e: MouseEvent) => {
       if (productDropdownRef.current && !productDropdownRef.current.contains(e.target as Node)) {
         setShowProductDropdown(false)
+      }
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(e.target as Node)) {
+        setCustomerDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -288,13 +301,12 @@ export function CreateOrder() {
       payload.partialAmount = parseFloat(partialAmount)
     }
 
+    const normalizedPhone = normalizePhone(customerPhone)
+    if (customerName) payload.guestName = customerName
+    if (normalizedPhone) payload.guestPhone = normalizedPhone
+    if (customerEmail) payload.guestEmail = customerEmail
     if (selectedCustomerId) {
       payload.customerId = selectedCustomerId
-    } else {
-      const normalizedPhone = normalizePhone(customerPhone)
-      if (customerName) payload.guestName = customerName
-      if (normalizedPhone) payload.guestPhone = normalizedPhone
-      if (customerEmail) payload.guestEmail = customerEmail
     }
 
     const shipAddr = useDiffShipping ? shipAddress : customerAddress
@@ -370,20 +382,41 @@ export function CreateOrder() {
                 </CardTitle>
               </CardHeader>
               <CardContent className='space-y-3'>
-                <div className='relative'>
+                <div className='relative' ref={customerDropdownRef}>
                   <Phone className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
                   <Input
                     value={customerPhone}
                     onChange={e => setCustomerPhone(e.target.value)}
+                    onFocus={() => { if (customerResults.length > 0) setCustomerDropdownOpen(true) }}
                     placeholder='Phone number (e.g. 01712345678)'
                     className='pl-9'
                   />
                   {searchingCustomer && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
+                  {customerDropdownOpen && customerResults.length > 0 && (
+                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg overflow-hidden'>
+                      <div className='max-h-56 overflow-y-auto'>
+                        {customerResults.map(c => (
+                          <button
+                            key={c.id}
+                            type='button'
+                            className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 border-b last:border-0'
+                            onClick={() => selectCustomer(c)}
+                          >
+                            <div className='min-w-0 flex-1'>
+                              <p className='text-sm font-medium truncate'>{(c.firstName || c.lastName) ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : 'Customer'}</p>
+                              <p className='text-xs text-muted-foreground truncate'>{c.phoneNumber}{c.address ? ` · ${c.address}` : ''}</p>
+                            </div>
+                            <User className='h-4 w-4 text-muted-foreground shrink-0' />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {customerMatched && (
                   <Badge variant='default' className='bg-green-500'>Customer found: {customerName}</Badge>
                 )}
-                {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && (
+                {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && !customerDropdownOpen && (
                   <p className='text-xs text-muted-foreground'>No existing customer found. A new customer will be created with this phone number.</p>
                 )}
                 <div className='grid grid-cols-2 gap-3'>

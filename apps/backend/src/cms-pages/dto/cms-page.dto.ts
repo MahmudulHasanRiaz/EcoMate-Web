@@ -3,6 +3,8 @@ import {
   IsOptional,
   IsBoolean,
   IsInt,
+  IsObject,
+  IsIn,
   MinLength,
 } from 'class-validator';
 
@@ -29,6 +31,18 @@ export class CreateCmsPageDto {
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsIn(['content', 'template'])
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  templateKey?: string;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, any>;
 }
 
 export class UpdateCmsPageDto {
@@ -57,4 +71,16 @@ export class UpdateCmsPageDto {
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsIn(['content', 'template'])
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  templateKey?: string;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, any>;
 }

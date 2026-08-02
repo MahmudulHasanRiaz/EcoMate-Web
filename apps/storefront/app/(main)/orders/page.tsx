@@ -6,6 +6,7 @@ import Image from 'next/image';
 import apiClient from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 
 interface OrderItem {
   id: string;
@@ -71,6 +72,8 @@ function isPhoneNumber(input: string): boolean {
 
 export default function OrdersPage() {
   const router = useRouter();
+  const { config } = useStorefrontConfig();
+  const supportPhone = config?.order?.callNumber || config?.store?.phone || '';
   const [orderNumber, setOrderNumber] = useState('');
   const [order, setOrder] = useState<OrderData | null>(null);
   const [ordersList, setOrdersList] = useState<OrderData[] | null>(null);
@@ -335,7 +338,9 @@ export default function OrdersPage() {
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-800 text-[14px]">Support Agent</h4>
-                    <p className="text-[12px] text-brand-blue font-medium">+880 09642 922922</p>
+                    {supportPhone && (
+                      <a href={`tel:${supportPhone.replace(/[^0-9]/g, '')}`} className="text-[12px] text-brand-blue font-medium">{supportPhone}</a>
+                    )}
                   </div>
                 </div>
               </div>

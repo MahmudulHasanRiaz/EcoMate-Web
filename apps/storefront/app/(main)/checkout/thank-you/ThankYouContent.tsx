@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTriangle, Clock, XCircle, Ban, Loader2, CheckCircle, ExternalLink, CreditCard, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, ChevronRight, Package, Home, Truck, ShoppingBag, AlertTriangle, Clock, XCircle, Ban, Loader2, CheckCircle, ExternalLink, CreditCard, ArrowLeft, Phone, Mail, MessageCircle } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { trackEvent } from '@/lib/tracking';
@@ -174,6 +174,10 @@ export default function ThankYouContent({
     p.gatewayCode && p.gatewayCode !== 'cash' && p.gatewayCode !== 'bkash_pgw'
   );
 
+  const supportCall = config.order?.callNumber || config.store?.phone || '';
+  const supportWhatsapp = config.order?.whatsapp || config.social?.whatsapp || '';
+  const supportEmail = config.store?.email || '';
+
   const handleSubmitPayment = async () => {
     if (!trxId.trim()) return;
     setSubmittingPayment(true);
@@ -274,6 +278,9 @@ export default function ThankYouContent({
               <HeaderIcon size={40} className={headerIconColor} />
             </motion.div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">{headerTitle}</h1>
+            {thanksConfig.subtitle && (
+              <p className="text-sm font-medium text-brand-blue mb-3 -mt-1">{thanksConfig.subtitle}</p>
+            )}
             <p className="text-gray-500 mb-6">{headerMessage}</p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-gray-600 mb-6">
@@ -649,6 +656,34 @@ export default function ThankYouContent({
               </p>
             </div>
           </motion.div>
+
+          {(supportCall || supportWhatsapp || supportEmail) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.55 }}
+              className="bg-white rounded-2xl shadow-sm p-6"
+            >
+              <h2 className="text-base font-bold text-gray-800 mb-3 border-b pb-2">Need Help?</h2>
+              <div className="space-y-2.5 text-[13px] text-gray-600">
+                {supportCall && (
+                  <a href={`tel:${supportCall.replace(/[^0-9]/g, '')}`} className="flex items-center gap-2 hover:text-brand-blue transition-colors">
+                    <Phone size={14} className="text-gray-400 shrink-0" /> Call us: <span className="font-medium">{supportCall}</span>
+                  </a>
+                )}
+                {supportWhatsapp && (
+                  <a href={`https://wa.me/${supportWhatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-brand-blue transition-colors">
+                    <MessageCircle size={14} className="text-gray-400 shrink-0" /> WhatsApp us
+                  </a>
+                )}
+                {supportEmail && (
+                  <a href={`mailto:${supportEmail}`} className="flex items-center gap-2 hover:text-brand-blue transition-colors break-all">
+                    <Mail size={14} className="text-gray-400 shrink-0" /> {supportEmail}
+                  </a>
+                )}
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
     </div>

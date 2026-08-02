@@ -209,6 +209,10 @@ describe('OrdersService', () => {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
             },
+            customerProfile: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+            },
           },
         },
         {
@@ -616,6 +620,90 @@ describe('OrdersService', () => {
       expect(txArg).toBeDefined();
       expect((txArg as any).orderCounter).toBeDefined();
     });
+
+    it('staff creates an order with the selected customer and edited info, not their own identity', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        status: 'active',
+        phoneNumber: '01712345678',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@example.com',
+      });
+
+      await service.create(
+        {
+          ...createOrderDto,
+          customerId: 'customer-id-1',
+          guestName: 'Edited Name',
+          guestPhone: '01712345678',
+          guestEmail: 'edited@example.com',
+        },
+        '127.0.0.1',
+        { userId: 'staff-1', role: 'admin' },
+      );
+
+      // Order must link to the selected customer, never the staff account.
+      const createCall = (prisma.order.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.customerId).toBe('customer-id-1');
+      expect(createCall.data.guestName).toBe('Edited Name');
+      expect(createCall.data.guestPhone).toBe('+8801712345678');
+      // The edited customer info is persisted back onto the customer profile.
+      expect(prisma.customerProfile.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'customer-id-1' },
+          update: expect.objectContaining({
+            name: 'Edited Name',
+            phone: '+8801712345678',
+            email: 'edited@example.com',
+          }),
+        }),
+      );
+    });
+
+    it('authenticated customer order is locked to their own identity', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create(
+        {
+          ...createOrderDto,
+          customerId: 'someone-else',
+          guestName: 'Spoofed',
+          guestPhone: '01712345678',
+        },
+        '127.0.0.1',
+        { userId: 'cust-1', role: 'customer' },
+      );
+
+      const createCall = (prisma.order.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.customerId).toBe('cust-1');
+      expect(createCall.data.guestName).toBeUndefined();
+      expect(createCall.data.guestPhone).toBeUndefined();
+    });
   });
 
   describe('updateStatus', () => {
@@ -683,6 +771,40 @@ describe('OrdersService', () => {
       await expect(
         service.updateStatus('order-id-1', invalidStatusDto, userId),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows a return to be started from Shipping without requiring delivery', async () => {
+      const shippingOrder = {
+        ...mockOrder,
+        status: { ...mockInitialStatus, name: 'Shipping' },
+      };
+      const returnPendingStatus = {
+        id: 'status-return-pending',
+        name: 'Return Pending',
+        isInitial: false,
+        nextStatuses: [],
+      };
+
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(shippingOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnPendingStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...shippingOrder,
+        statusId: 'status-return-pending',
+        status: returnPendingStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-return-pending', note: 'Courier return before delivery' },
+        userId,
+      );
+
+      expect(prisma.order.update).toHaveBeenCalled();
     });
 
     it('captures a validated purchase snapshot inside the status transaction', async () => {
@@ -1080,6 +1202,58 @@ describe('OrdersService', () => {
       await (service as any).fireRefundEvent(refundOrder);
 
       expect(captureService().capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bulkOrders', () => {
+    it('normalizes customer name/phone and shipping address via transformOrder', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'order-1',
+          displayId: 'ORD-250115-0001',
+          createdAt: new Date('2025-01-15'),
+          total: 2050,
+          shippingCharge: 100,
+          guestName: 'Guest Buyer',
+          guestPhone: '+8801712345678',
+          shippingAddress: {
+            district: 'Dhaka',
+            thana: 'Mirpur',
+            addressLine: 'House 12, Road 5',
+          },
+          customer: {
+            id: 'cust-1',
+            name: 'John Doe',
+            email: 'john@example.com',
+            phone: '+8801711111111',
+          },
+          status: { name: 'Pending' },
+          items: [
+            {
+              id: 'item-1',
+              productId: 'prod-1',
+              quantity: 1,
+              price: 1000,
+              product: { id: 'prod-1', name: 'Test Product', images: [] },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.bulkOrders(['order-1']);
+
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['order-1'] } } }),
+      );
+      const order = result[0] as any;
+      // transformOrder maps single-name customer to firstName/phoneNumber
+      expect(order.customer.firstName).toBe('John Doe');
+      expect(order.customer.phoneNumber).toBe('+8801711111111');
+      // shippingAddress gains an address key derived from addressLine
+      expect(order.shippingAddress.address).toBe('House 12, Road 5');
+      // guest fields remain for template fallback
+      expect(order.guestName).toBe('Guest Buyer');
+      expect(order.guestPhone).toBe('+8801712345678');
     });
   });
 });

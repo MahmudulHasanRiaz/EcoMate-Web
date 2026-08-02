@@ -9,6 +9,7 @@ import {
   IsObject,
   IsIn,
   IsEnum,
+  IsEmail,
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -39,6 +40,7 @@ export class CreateOrderDto {
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
+  @IsOptional() @IsEmail() guestEmail?: string;
   @IsOptional() @IsString() couponCode?: string;
 
   // Checkout enhancements
