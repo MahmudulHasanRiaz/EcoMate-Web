@@ -41,6 +41,7 @@ export class SecurityEventEmitterService {
       ...input,
       id: eventId,
       dedupKey,
+      timestamp: new Date().toISOString(), // detection time; processor defaults when absent
       metadata: input.metadata ?? {},
       metadataVersion: 1,
     };

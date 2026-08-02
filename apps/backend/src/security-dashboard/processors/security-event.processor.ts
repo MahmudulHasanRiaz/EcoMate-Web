@@ -12,7 +12,7 @@ interface EventJobData {
   severity: SecurityEventSeverity;
   category: SecurityEventCategory;
   source: string;
-  timestamp: string;
+  timestamp?: string;
   actorType: string;
   ipAddress?: string | null;
   userId?: string | null;
@@ -39,6 +39,11 @@ export class SecurityEventProcessor extends WorkerHost {
 
   async process(job: Job<EventJobData>): Promise<void> {
     const data = job.data;
+    // Timestamp is set by the emitter, but tolerate jobs that omit it (e.g.
+    // ones enqueued before this default existed) instead of hard-failing.
+    const eventTimestamp = data.timestamp
+      ? new Date(data.timestamp)
+      : new Date();
 
     try {
       // ── Step 1: Insert raw event (dedupKey constraint handles retry duplicates) ──
@@ -52,7 +57,7 @@ export class SecurityEventProcessor extends WorkerHost {
             severity: data.severity,
             category: data.category,
             source: data.source,
-            timestamp: new Date(data.timestamp),
+            timestamp: eventTimestamp,
             actorType: data.actorType as any,
             ipAddress: data.ipAddress ?? null,
             userId: data.userId ?? null,
@@ -79,7 +84,7 @@ export class SecurityEventProcessor extends WorkerHost {
         });
 
       // ── Step 2: Update hourly aggregate ──
-      const hour = new Date(data.timestamp);
+      const hour = new Date(eventTimestamp);
       hour.setMinutes(0, 0, 0);
 
       await this.prisma.securityEventHourly.upsert({
@@ -104,7 +109,7 @@ export class SecurityEventProcessor extends WorkerHost {
       });
 
       // ── Step 3: Update daily aggregate ──
-      const day = new Date(data.timestamp);
+      const day = new Date(eventTimestamp);
       day.setHours(0, 0, 0, 0);
 
       await this.prisma.securityEventDaily.upsert({
