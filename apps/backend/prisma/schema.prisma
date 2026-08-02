@@ -735,6 +735,7 @@ model CheckoutLead {
   paymentMethod    String?
   status           String    @default("PENDING")
   fingerprint      String?
+  ctxId            String?
   occurrences      Int       @default(1)
   firstSeenAt      DateTime  @default(now())
   lastSeenAt       DateTime  @default(now())
@@ -756,6 +757,7 @@ model CheckoutLead {
   @@index([assignedToId])
   @@index([lastSeenAt])
   @@index([fingerprint])
+  @@index([ctxId])
 }
 
 model Shipment {

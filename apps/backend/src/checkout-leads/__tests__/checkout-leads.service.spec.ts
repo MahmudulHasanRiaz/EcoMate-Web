@@ -37,6 +37,7 @@ describe('CheckoutLeadsService', () => {
     ],
     payload: null,
     paymentMethod: null,
+    ctxId: 'ctx-lead',
     convertedOrderId: null,
     convertedById: null,
     convertedAt: null,
@@ -142,7 +143,10 @@ describe('CheckoutLeadsService', () => {
       expect(result).toEqual(mockLead);
       expect(prisma.checkoutLead.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ phone: '+8801812345678' }),
+          data: expect.objectContaining({
+            phone: '+8801812345678',
+            ctxId: 'ctx-abc',
+          }),
         }),
       );
 
@@ -208,6 +212,7 @@ describe('CheckoutLeadsService', () => {
         total: 1000,
         createdAt: new Date('2025-01-15'),
         salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
         guestPhone: '+8801812345678',
         customer: { name: 'Jane Doe', phone: '+8801812345678' },
         items: [
@@ -218,11 +223,20 @@ describe('CheckoutLeadsService', () => {
 
       await service.convertToOrder('lead-1', 'admin-1');
 
+      expect(prisma.order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            trackingSessionId: 'ctx-lead',
+          }),
+        }),
+      );
+
       expect(capture).toHaveBeenCalledTimes(1);
       const [input, txArg] = capture.mock.calls[0];
       expect(input.eventId).toBe('purchase_order-1');
       expect(input.eventType).toBe('Purchase');
       expect(input.orderId).toBe('order-1');
+      expect(input.ctxId).toBe('ctx-lead');
       expect(input.actionSource).toBe('physical_store');
       expect(input.payload).toEqual(
         expect.objectContaining({
@@ -235,6 +249,49 @@ describe('CheckoutLeadsService', () => {
       );
       // capture runs inside the business transaction client
       expect(txArg).toBeDefined();
+    });
+
+    it('degrades when the lead has no ctxId (order trackingSessionId and capture ctxId undefined)', async () => {
+      const leadWithoutCtx = { ...mockLead, ctxId: null };
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(
+        leadWithoutCtx,
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        id: 'order-2',
+      });
+      (prisma.payment.create as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const fullOrder = {
+        id: 'order-2',
+        total: 500,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: null,
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 1, price: 500 }],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(fullOrder);
+
+      await service.convertToOrder('lead-2', 'admin-1');
+
+      expect(prisma.order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ trackingSessionId: undefined }),
+        }),
+      );
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0][0].ctxId).toBeUndefined();
     });
   });
 });

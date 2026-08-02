@@ -151,6 +151,7 @@ export class CheckoutLeadsService {
             items: dto.items,
             payload: dto.payload,
             paymentMethod: dto.paymentMethod,
+            ctxId: dto.ctxId,
             lastSeenAt: new Date(),
             occurrences: { increment: 1 },
           },
@@ -169,6 +170,7 @@ export class CheckoutLeadsService {
         payload: dto.payload,
         paymentMethod: dto.paymentMethod,
         fingerprint: dto.fingerprint,
+        ctxId: dto.ctxId,
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
       },
@@ -375,6 +377,7 @@ export class CheckoutLeadsService {
             })),
           },
           salesChannel: (overrides?.salesChannel || 'CALL') as any,
+          trackingSessionId: lead.ctxId ?? undefined,
           paymentOptionType:
             overrides?.paymentMode === 'cod'
               ? 'CASH_ON_DELIVERY'
@@ -490,6 +493,7 @@ export class CheckoutLeadsService {
           eventId: `purchase_${order.id}`,
           eventType: 'Purchase',
           orderId: order.id,
+          ctxId: order.trackingSessionId || undefined,
           eventTime: Math.floor(
             new Date(order.createdAt).getTime() / 1000,
           ),
