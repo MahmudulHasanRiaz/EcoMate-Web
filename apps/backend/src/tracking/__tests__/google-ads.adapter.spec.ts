@@ -65,7 +65,7 @@ const wirePayload = (over: Partial<ProviderPayload> = {}): ProviderPayload => ({
   conversionAction: 'Purchase',
   gclid: 'GCLID-ABC-123',
   gbraid: 'GBRAID-XYZ-789',
-  conversionDateTime: new Date(1722600000 * 1000).toISOString(),
+  conversionDateTime: '2024-08-02 12:00:00+00:00',
   conversionValue: 2500,
   currencyCode: 'BDT',
   orderId: 'ord-1001',
@@ -112,9 +112,11 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
       // click identifiers pass through raw — never hashed
       expect(payload.gclid).toBe('GCLID-ABC-123');
       expect(payload.gbraid).toBe('GBRAID-XYZ-789');
-      expect(payload.conversionDateTime).toBe(
-        new Date(payload.eventTime * 1000).toISOString(),
+      // Google offline conversions use "yyyy-MM-dd HH:mm:ss+00:00" (space, no T).
+      expect(payload.conversionDateTime).toMatch(
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\+00:00$/,
       );
+      expect(payload.conversionDateTime).not.toContain('T');
       expect(payload.conversionValue).toBe(2500);
       expect(payload.currencyCode).toBe('BDT');
       expect(payload.orderId).toBe('ord-1001');
@@ -222,7 +224,9 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
 
       const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
       expect(url).toBe(
-        'https://www.googleadservices.com/pagead/conversion/CONV-123/?label=purchase-label&value=2500&currency_code=BDT',
+        'https://www.googleadservices.com/pagead/conversion/CONV-123/?label=purchase-label&value=2500&currency_code=BDT' +
+          `&em=${normalizer.hashEmail('John.Doe@Example.com')}` +
+          `&ph=${normalizer.hashPhone('01712345678', 'BD')}`,
       );
       const body = JSON.parse(init.body);
       expect(body.gclid).toBe('GCLID-ABC-123');
@@ -291,6 +295,45 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
       const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
       expect(body.gclid).toBeUndefined();
       expect(body.gbraid).toBe('GBRAID-XYZ-789');
+    });
+
+    it('omits em/ph params when the payload carries no hashed user identifiers', async () => {
+      global.fetch = jest.fn().mockResolvedValue(mockResponse(200, 'OK'));
+
+      await adapter.send(wirePayload({ userIdentifiers: [] }), cfg);
+
+      const [url] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).not.toContain('&em=');
+      expect(url).not.toContain('&ph=');
+    });
+
+    it('falls back to the legacy GA_ADS_CONVERSION_ID / GA_ADS_CONVERSION_LABEL keys', async () => {
+      global.fetch = jest.fn().mockResolvedValue(mockResponse(200, 'OK'));
+
+      const result = await adapter.send(wirePayload(), {
+        GA_ADS_CONVERSION_ID: 'LEGACY-CONV-456',
+        GA_ADS_CONVERSION_LABEL: 'legacy-label',
+      });
+
+      expect(result.ok).toBe(true);
+      const [url] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toContain(
+        'https://www.googleadservices.com/pagead/conversion/LEGACY-CONV-456/?label=legacy-label',
+      );
+    });
+
+    it('reads the SCREAMING_CASE GOOGLE_ADS_CONVERSION_ID key when present', async () => {
+      global.fetch = jest.fn().mockResolvedValue(mockResponse(200, 'OK'));
+
+      const result = await adapter.send(wirePayload(), {
+        GOOGLE_ADS_CONVERSION_ID: 'CONV-789',
+      });
+
+      expect(result.ok).toBe(true);
+      const [url] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toContain(
+        'https://www.googleadservices.com/pagead/conversion/CONV-789/',
+      );
     });
 
     it('returns retryable:false without calling fetch when config lacks conversionId', async () => {
