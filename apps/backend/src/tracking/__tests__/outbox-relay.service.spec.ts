@@ -33,7 +33,7 @@ describe('OutboxRelayService', () => {
       'send',
       { snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 },
       {
-        jobId: 'outbox-1:0',
+        jobId: 'outbox-1-0',
         removeOnComplete: 100,
         removeOnFail: 50,
         attempts: 3,
@@ -44,7 +44,7 @@ describe('OutboxRelayService', () => {
       2,
       'send',
       { snapshotId: 'snap-2', outboxId: 'outbox-2', attemptCount: 0 },
-      expect.objectContaining({ jobId: 'outbox-2:0' }),
+      expect.objectContaining({ jobId: 'outbox-2-0' }),
     );
     // Rows were claimed via raw SQL with the instance id and batch size.
     expect(queryRaw).toHaveBeenCalledTimes(1);

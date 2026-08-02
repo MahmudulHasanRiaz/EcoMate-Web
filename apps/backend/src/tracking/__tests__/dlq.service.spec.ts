@@ -25,7 +25,7 @@ describe('DlqService (tracking-dlq mirror + DEAD stats)', () => {
     expect(queueCount).toHaveBeenCalledTimes(1);
   });
 
-  it('mirror enqueues a tracking-dlq job with the deterministic <outboxId>:<attemptCount>:dlq jobId', async () => {
+  it('mirror enqueues a tracking-dlq job with the deterministic <outboxId>-<attemptCount>-dlq jobId', async () => {
     await service.mirror('outbox-1', 'snap-1', 'meta', 'invalid token', 3);
 
     expect(queueAdd).toHaveBeenCalledWith(
@@ -36,7 +36,7 @@ describe('DlqService (tracking-dlq mirror + DEAD stats)', () => {
         provider: 'meta',
         errorMsg: 'invalid token',
       },
-      { jobId: 'outbox-1:3:dlq', removeOnComplete: 0 },
+      { jobId: 'outbox-1-3-dlq', removeOnComplete: 0 },
     );
   });
 
@@ -46,7 +46,7 @@ describe('DlqService (tracking-dlq mirror + DEAD stats)', () => {
     expect(queueAdd).toHaveBeenCalledWith(
       'dlq',
       { outboxId: 'outbox-1', snapshotId: 'snap-1', provider: null, errorMsg: null },
-      { jobId: 'outbox-1:0:dlq', removeOnComplete: 0 },
+      { jobId: 'outbox-1-0-dlq', removeOnComplete: 0 },
     );
   });
 

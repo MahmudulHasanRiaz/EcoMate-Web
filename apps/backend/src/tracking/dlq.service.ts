@@ -18,7 +18,7 @@ export interface DlqStats {
  * the TrackingOutbox row itself.
  *
  * Retention is bounded: each mirror uses a deterministic jobId
- * (`<outboxId>:<attemptCount>:dlq`) so re-mirrors of the same terminal attempt
+ * (`<outboxId>-<attemptCount>-dlq`) so re-mirrors of the same terminal attempt
  * never accumulate, and the job is registered with capped retention
  * (`removeOnComplete: 0`, `removeOnFail: 100` — the queue trims to a bounded
  * set instead of growing unboundedly).
@@ -54,7 +54,7 @@ export class DlqService {
       await this.dlqQueue.add(
         'dlq',
         { outboxId, snapshotId, provider: provider ?? null, errorMsg: errorMsg ?? null },
-        { jobId: `${outboxId}:${attemptCount}:dlq`, removeOnComplete: 0 },
+        { jobId: `${outboxId}-${attemptCount}-dlq`, removeOnComplete: 0 },
       );
     } catch (err) {
       this.logger.warn(`DLQ mirror failed for outbox ${outboxId}: ${err}`);

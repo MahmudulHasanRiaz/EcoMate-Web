@@ -107,7 +107,7 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
           'send',
           { snapshotId: row.snapshotId, outboxId: row.id, attemptCount: row.attemptCount },
           {
-            jobId: `${row.id}:${row.attemptCount}`,
+            jobId: `${row.id}-${row.attemptCount}`,
             removeOnComplete: 100,
             removeOnFail: 50,
             attempts: 3,
