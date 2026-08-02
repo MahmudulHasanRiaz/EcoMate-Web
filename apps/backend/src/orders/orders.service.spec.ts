@@ -187,6 +187,8 @@ describe('OrdersService', () => {
             },
             customerProfile: {
               findUnique: jest.fn().mockResolvedValue(null),
+              findFirst: jest.fn().mockResolvedValue(null),
+              upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
             },
             checkoutLead: {
               updateMany: jest.fn(),
@@ -211,10 +213,6 @@ describe('OrdersService', () => {
             userProfile: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
-            },
-            customerProfile: {
-              findFirst: jest.fn().mockResolvedValue(null),
-              upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
             },
           },
         },
