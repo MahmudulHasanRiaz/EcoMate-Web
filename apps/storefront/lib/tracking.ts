@@ -88,8 +88,8 @@ function isSyntheticEmail(email?: string): boolean {
   return localPart.startsWith('cust_') || /^\d+$/.test(localPart);
 }
 
-export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string; zip?: string; state?: string; address?: string }) {
-  debug('trackEvent called:', { event, data, userData });
+export function trackEvent(event: EventName, data?: Record<string, any>, userData?: { email?: string; phone?: string; name?: string; city?: string; country?: string; zip?: string; state?: string; address?: string }, eventId?: string) {
+  debug('trackEvent called:', { event, data, userData, eventId });
   if (typeof window === 'undefined') return;
 
   if (isSyntheticEmail(userData?.email)) {
@@ -106,7 +106,9 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     }
   }
 
-  const eventId = generateEventId();
+  // Caller-provided dedup key (e.g. purchase_{orderId}) matches the server-side
+  // capture so Meta dedups Pixel + CAPI. Fall back to a random id otherwise.
+  const resolvedEventId = eventId ?? generateEventId();
   const fbq = window.fbq;
   const ttq = window.ttq;
 
@@ -114,19 +116,19 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
 
   if (!_metaId && !_tiktokCode) {
     debug('Queuing event (no IDs yet):', event);
-    _eventQueue.push({ event, data, eventId });
+    _eventQueue.push({ event, data, eventId: resolvedEventId });
   } else if ((_metaId && !fbq) || (_tiktokCode && !ttq)) {
     debug('Queuing event (scripts not fully loaded yet):', event);
-    _eventQueue.push({ event, data, eventId });
+    _eventQueue.push({ event, data, eventId: resolvedEventId });
   } else {
     if (fbq && _metaId) {
-      debug('Firing Meta Pixel event:', event, data, { eventID: eventId });
-      fbq('track', event, data, { eventID: eventId });
+      debug('Firing Meta Pixel event:', event, data, { eventID: resolvedEventId });
+      fbq('track', event, data, { eventID: resolvedEventId });
     }
     if (ttq && _tiktokCode) {
       const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
-      debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: eventId });
-      ttq.track(tiktokEvent, data, { event_id: eventId });
+      debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: resolvedEventId });
+      ttq.track(tiktokEvent, data, { event_id: resolvedEventId });
     }
     if (window.gtag) {
       const ga4Event = event === 'Purchase' ? 'purchase'
@@ -154,7 +156,7 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ctxId: getOrCreateCtxId(),
-        eventId,
+        eventId: resolvedEventId,
         eventName: eventNameToSnake(event),
         customData: data,
         userData: {

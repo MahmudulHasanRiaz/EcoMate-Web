@@ -100,7 +100,7 @@ export default function ThankYouContent({
         zip: order.shippingAddress?.zip || '',
         address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),
       };
-      trackEvent('Purchase', sharedData, sharedUserData);
+      trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
     }
 
     syncContext(); // capture ctxId + identifiers (fbp/fbc) + url + referrer on the backend
