@@ -11,7 +11,6 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
   const outboxUpdate = jest.fn();
   const snapshotFindUnique = jest.fn();
   const dispatchEventCreate = jest.fn();
-  const queueAdd = jest.fn();
 
   const prisma = {
     trackingReplayArchive: { upsert: archiveUpsert, findUnique: archiveFindUnique },
@@ -19,8 +18,7 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
     trackingSnapshot: { findUnique: snapshotFindUnique },
     trackingDispatchEvent: { create: dispatchEventCreate },
   } as any;
-  const queue = { add: queueAdd } as any;
-  const service = new ReplayService(prisma, queue);
+  const service = new ReplayService(prisma);
 
   const versions = {
     schemaVersion: 1,
@@ -38,7 +36,6 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
     outboxUpdate.mockResolvedValue({});
     snapshotFindUnique.mockResolvedValue(null);
     dispatchEventCreate.mockResolvedValue({});
-    queueAdd.mockResolvedValue({ id: 'job-1' });
   });
 
   describe('archive() — PII-stripped TrackingReplayArchive write at DEAD', () => {
@@ -138,7 +135,7 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       versions,
     };
 
-    it('pins versions, resolves the recorded adapters, resets the outbox, re-enqueues with a nonce, appends a replay event', async () => {
+    it('pins versions, resolves the recorded adapters, resets the outbox to PENDING (relay is the sole enqueuer), appends a replay event', async () => {
       archiveFindUnique.mockResolvedValue(archive);
       outboxFindUnique.mockResolvedValue(deadOutbox);
 
@@ -155,13 +152,6 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
           lockedBy: null,
         }),
       });
-
-      // Re-enqueued with the replay nonce job id (distinct from the relay's outboxId:attempt).
-      expect(queueAdd).toHaveBeenCalledWith(
-        'send',
-        { snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 },
-        expect.objectContaining({ jobId: 'outbox-1:replay:0' }),
-      );
 
       // DEAD -> PENDING transition event, message 'replay'.
       expect(dispatchEventCreate).toHaveBeenCalledWith({
@@ -209,7 +199,6 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       await service.replay('snap-1');
 
       expect(outboxUpdate).toHaveBeenCalled();
-      expect(queueAdd).toHaveBeenCalled();
       // orderId/ctxId come from the live snapshot when they are not in the archive.
       expect(dispatchEventCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -220,14 +209,13 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       });
     });
 
-    it('is a no-op (no reset, no enqueue) when the outbox is not DEAD', async () => {
+    it('is a no-op (no reset) when the outbox is not DEAD', async () => {
       archiveFindUnique.mockResolvedValue(archive);
       outboxFindUnique.mockResolvedValue({ ...deadOutbox, status: 'SENT' });
 
       await service.replay('snap-1');
 
       expect(outboxUpdate).not.toHaveBeenCalled();
-      expect(queueAdd).not.toHaveBeenCalled();
       expect(dispatchEventCreate).not.toHaveBeenCalled();
     });
 
@@ -262,14 +250,11 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       const archiveFindMany = jest.fn().mockResolvedValue([
         { snapshotId: 's-1', versions },
       ]);
-      const svc = new ReplayService(
-        {
-          trackingOutbox: { findMany: outboxFindMany },
-          trackingSnapshot: { findMany: snapshotFindMany },
-          trackingReplayArchive: { findMany: archiveFindMany },
-        } as any,
-        queue,
-      );
+      const svc = new ReplayService({
+        trackingOutbox: { findMany: outboxFindMany },
+        trackingSnapshot: { findMany: snapshotFindMany },
+        trackingReplayArchive: { findMany: archiveFindMany },
+      } as any);
 
       const rows = await svc.listDead();
 

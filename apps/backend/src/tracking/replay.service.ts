@@ -1,6 +1,4 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getAdapter, buildAdapterRegistry } from './adapters';
@@ -63,10 +61,7 @@ export class ReplayService {
   private readonly logger = new Logger(ReplayService.name);
   private readonly normalizer = new TrackingNormalizer();
 
-  constructor(
-    private readonly prisma: PrismaService,
-    @InjectQueue('tracking') private readonly trackingQueue: Queue,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Upsert the PII-stripped replay archive for a DEAD outbox (best-effort at the
@@ -148,17 +143,10 @@ export class ReplayService {
         lockedBy: null,
       },
     });
-    await this.trackingQueue.add(
-      'send',
-      { snapshotId, outboxId: outbox.id, attemptCount: 0 },
-      {
-        jobId: queueJobId,
-        removeOnComplete: 100,
-        removeOnFail: 50,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-      },
-    );
+    // NOTE: replay does NOT self-enqueue — the relay is the sole enqueuer. The
+    // reset PENDING row is claimed by the relay on its next poll, so there is
+    // exactly one dispatch job per replay (a self-enqueue would race the relay
+    // with a duplicate job). queueJobId above is a replay marker for audit only.
     await this.prisma.trackingDispatchEvent.create({
       data: {
         snapshotId,
