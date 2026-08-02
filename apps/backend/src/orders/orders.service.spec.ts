@@ -185,6 +185,9 @@ describe('OrdersService', () => {
             payment: {
               create: jest.fn(),
             },
+            customerProfile: {
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
             checkoutLead: {
               updateMany: jest.fn(),
             },
@@ -571,6 +574,48 @@ describe('OrdersService', () => {
 
       const createCall = (prisma.order.create as jest.Mock).mock.calls[0][0];
       expect(createCall.data.trackingSessionId).toBe('ctx-123');
+    });
+
+    it('supersedes pending checkout leads for the order session (ctxId) and phone', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            customerProfile: {
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ phone: '01700000000' }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trackingSessionId: 'ctx-123',
+        guestPhone: '01700000000',
+      });
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        trackingSessionId: 'ctx-123',
+      });
+
+      const updateCall = (prisma.checkoutLead.updateMany as jest.Mock).mock
+        .calls[0][0];
+      expect(updateCall.where.status).toBe('PENDING');
+      expect(updateCall.where.OR).toEqual(
+        expect.arrayContaining([
+          { ctxId: 'ctx-123' },
+          { phone: { in: ['01700000000'] } },
+        ]),
+      );
+      expect(updateCall.data.status).toBe('SUPERSEDED');
     });
 
     it('captures an instant purchase snapshot inside the order transaction', async () => {

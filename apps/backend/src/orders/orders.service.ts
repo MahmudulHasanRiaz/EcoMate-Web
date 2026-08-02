@@ -1095,6 +1095,39 @@ export class OrdersService {
         },
       });
 
+      // Incomplete-leads supersede (business rule): a customer who successfully
+      // placed an order is no longer an "incomplete lead". Close any PENDING
+      // checkout lead for the same session (ctxId) or phone — atomically with the
+      // order. This is a SILENT close (status SUPERSEDED): NOT a conversion (no
+      // convertedOrderId/convertedAt, no conversion tracking), so self-ordering
+      // never appears as "Converted from Incomplete". Manual recovery via
+      // convertToOrder remains the only path that marks a lead CONVERTED.
+      if (created.trackingSessionId || created.guestPhone || created.customerId) {
+        const phones: string[] = [];
+        if (created.guestPhone) phones.push(created.guestPhone);
+        if (created.customerId) {
+          const profile = await tx.customerProfile.findUnique({
+            where: { id: created.customerId },
+            select: { phone: true },
+          });
+          if (profile?.phone) phones.push(profile.phone);
+        }
+        const uniquePhones = Array.from(new Set(phones));
+        const leadWhere = {
+          status: 'PENDING',
+          OR: [
+            ...(created.trackingSessionId
+              ? [{ ctxId: created.trackingSessionId }]
+              : []),
+            ...(uniquePhones.length ? [{ phone: { in: uniquePhones } }] : []),
+          ],
+        };
+        await tx.checkoutLead.updateMany({
+          where: leadWhere,
+          data: { status: 'SUPERSEDED' },
+        });
+      }
+
       if (dto.paymentOptionType) {
         const paymentAmount =
           dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount

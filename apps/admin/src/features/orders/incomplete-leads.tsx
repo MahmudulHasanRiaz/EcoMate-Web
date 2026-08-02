@@ -78,7 +78,7 @@ export function IncompleteLeads() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('PENDING')
   const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [selected, setSelected] = useState<string[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
