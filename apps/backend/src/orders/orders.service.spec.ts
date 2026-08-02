@@ -612,7 +612,10 @@ describe('OrdersService', () => {
       expect(updateCall.where.OR).toEqual(
         expect.arrayContaining([
           { ctxId: 'ctx-123' },
-          { phone: { in: ['01700000000'] } },
+          {
+            phone: { in: ['01700000000'] },
+            lastSeenAt: { gte: expect.any(Date) },
+          },
         ]),
       );
       expect(updateCall.data.status).toBe('SUPERSEDED');

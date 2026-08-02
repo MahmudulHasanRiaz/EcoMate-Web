@@ -1098,21 +1098,22 @@ export class OrdersService {
       // Incomplete-leads supersede (business rule): a customer who successfully
       // placed an order is no longer an "incomplete lead".
       //
-      // CUSTOMER-LEVEL FOLLOW-UP RULE (intentional): because the customer has now
-      // purchased, NO follow-up is needed on ANY of their previous pending leads,
-      // regardless of which checkout session they abandoned. We therefore close
-      // every PENDING lead matching:
-      //   (1) ctxId  — the same checkout session (precise, primary).
-      //   (2) phone  — the order's guest phone / customer-profile phone (fallback
-      //                for abandoned sessions that share the same customer phone,
-      //                e.g. the 10am + 12pm abandon → 3pm order scenario: BOTH
-      //                leads close, because the customer is now a customer).
-      // Edge cases: leads already CONVERTED / NOT_CONVERTED / DELETED are never
-      // touched; an order with neither ctxId nor a phone closes nothing. The phone
-      // fallback is a SILENT supersede (not a conversion) and carries the known
-      // shared-phone tradeoff (a different family member's pending lead with the
-      // same phone is also closed) — acceptable because it is not counted as a
-      // conversion anywhere.
+      // DECISION #1 — CUSTOMER-LEVEL FOLLOW-UP (intentional, not a bug):
+      // Incomplete Leads exist to convert an abandoned customer into a customer —
+      // they are NOT a product-specific sales-opportunity tracker. So once the
+      // customer has successfully ordered, the follow-up objective is fulfilled and
+      // EVERY prior PENDING lead closes (SUPERSEDED), even if it was for a different
+      // product (the 10am abandon + 12pm abandon + 3pm order scenario: both close).
+      // Matching:
+      //   (1) ctxId  — same checkout session (precise, primary, UNLIMITED window:
+      //                a session is recent by definition).
+      //   (2) phone  — order guest/customer phone (fallback). DECISION #2: this is
+      //                TIME-BOUNDED to a configurable window (default 7 days,
+      //                setting `checkout_lead_supersede_phone_window_days`) so a
+      //                very old lead is never accidentally superseded by a new order.
+      // Edge cases: CONVERTED / NOT_CONVERTED / DELETED leads are never touched; an
+      // order with neither ctxId nor a phone closes nothing. The phone fallback is a
+      // SILENT supersede (not a conversion) and carries the shared-phone tradeoff.
       //
       // This is a SILENT close (status SUPERSEDED): NOT a conversion — no
       // convertedOrderId/convertedAt, no conversion tracking event. Manual recovery
@@ -1128,13 +1129,30 @@ export class OrdersService {
           if (profile?.phone) phones.push(profile.phone);
         }
         const uniquePhones = Array.from(new Set(phones));
+
+        // DECISION #2 — phone-fallback window (configurable, default 7 days).
+        const windowSetting = await tx.systemSetting.findUnique({
+          where: { key: 'checkout_lead_supersede_phone_window_days' },
+        });
+        const phoneWindowDays = Number(windowSetting?.value || 7);
+        const phoneCutoff = new Date(
+          Date.now() - Math.max(0, phoneWindowDays) * 86400000,
+        );
+
         const leadWhere = {
           status: 'PENDING',
           OR: [
             ...(created.trackingSessionId
               ? [{ ctxId: created.trackingSessionId }]
               : []),
-            ...(uniquePhones.length ? [{ phone: { in: uniquePhones } }] : []),
+            ...(uniquePhones.length
+              ? [
+                  {
+                    phone: { in: uniquePhones },
+                    lastSeenAt: { gte: phoneCutoff },
+                  },
+                ]
+              : []),
           ],
         };
         await tx.checkoutLead.updateMany({
