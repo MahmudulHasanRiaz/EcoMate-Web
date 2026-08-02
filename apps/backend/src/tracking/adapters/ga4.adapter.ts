@@ -161,8 +161,9 @@ export class Ga4Adapter implements TrackingProviderAdapter {
     eventTime: number,
   ): Record<string, unknown> {
     const params: Record<string, unknown> = {
-      // GA4 Measurement Protocol expects event timestamps in microseconds.
-      timestamp_micros: eventTime * 1000,
+      // GA4 Measurement Protocol expects event timestamps in microseconds
+      // (eventTime is epoch seconds; *1_000_000, not *1000).
+      timestamp_micros: eventTime * 1_000_000,
     };
     if (snapshot.value !== undefined) params.value = snapshot.value;
     if (snapshot.currency) params.currency = snapshot.currency;

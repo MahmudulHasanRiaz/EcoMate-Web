@@ -60,7 +60,7 @@ const wirePayload = (over: Partial<ProviderPayload> = {}): ProviderPayload => ({
         value: 2500,
         currency: 'BDT',
         transaction_id: 'ord-1001',
-        timestamp_micros: 1722600000000,
+        timestamp_micros: 1722600000000000,
       },
     },
   ],
@@ -205,7 +205,7 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
       const payload = adapter.build(snapshot, ctx, normalizer)!;
 
       expect(payload.events[0].params.timestamp_micros).toBe(
-        payload.eventTime * 1000,
+        payload.eventTime * 1_000_000,
       );
     });
 
@@ -217,7 +217,7 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
       )!;
 
       expect(payload.eventTime).toBe(1700000000);
-      expect(payload.events[0].params.timestamp_micros).toBe(1700000000000);
+      expect(payload.events[0].params.timestamp_micros).toBe(1700000000000000);
     });
 
     it('maps Refund to the refund event with a positive value and refund_ event_id', () => {
