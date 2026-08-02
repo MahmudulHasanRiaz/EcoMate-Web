@@ -16,4 +16,8 @@ export class TrackEventDto {
   @IsObject()
   @IsOptional()
   userData?: Record<string, any>;
+
+  @IsString()
+  @IsOptional()
+  ctxId?: string;
 }

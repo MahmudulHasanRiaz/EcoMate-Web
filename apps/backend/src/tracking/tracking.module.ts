@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { TrackingContextService } from './tracking-context.service';
-import { TrackingService } from './tracking.service';
 import { MetaConversionsService } from './meta-conversions.service';
 import { TikTokEventsService } from './tiktok-events.service';
 import { Ga4MeasurementService } from './ga4-measurement.service';
@@ -19,7 +18,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule, BullModule.registerQueue({ name: 'tracking' })],
   controllers: [TrackingController],
   providers: [
-    TrackingService,
     TrackingContextService,
     MetaConversionsService,
     TikTokEventsService,
@@ -33,7 +31,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingDispatcherProcessor,
   ],
   exports: [
-    TrackingService,
     TrackingContextService,
     PageViewBufferService,
     TrackingSettingsService,
