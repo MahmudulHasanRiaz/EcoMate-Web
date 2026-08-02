@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
@@ -31,7 +36,7 @@ const POLL_INTERVAL_MS = 1000;
  * `tracking_relay_enabled` setting/env is exactly 'true'.
  */
 @Injectable()
-export class OutboxRelayService implements OnModuleDestroy {
+export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxRelayService.name);
   private timer: NodeJS.Timeout | null = null;
 
@@ -97,7 +102,7 @@ export class OutboxRelayService implements OnModuleDestroy {
 
   /**
    * Start the poll loop. No-op when the relay is disabled or already running.
-   * The dispatcher (later task) is expected to call start() once per instance.
+   * Wired to module bootstrap via onModuleInit(), and testable directly.
    */
   async start(): Promise<void> {
     if (!(await this.isRelayEnabled())) {
@@ -118,6 +123,16 @@ export class OutboxRelayService implements OnModuleDestroy {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  /**
+   * Module bootstrap: start the poll loop when the relay is enabled. `start()`
+   * gates on the `tracking_relay_enabled` setting/env itself, so this is a safe
+   * no-op when the pipeline is switched off — a single TrackingModule instance
+   * means exactly one relay timer per app.
+   */
+  async onModuleInit(): Promise<void> {
+    await this.start();
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -92,4 +92,17 @@ describe('OutboxRelayService', () => {
     expect(queryRaw).not.toHaveBeenCalled();
     await service.stop(); // no-op, no timer
   });
+
+  it('onModuleInit starts the poll loop when the relay is enabled', async () => {
+    jest.useFakeTimers();
+    const startSpy = jest.spyOn(service, 'start').mockResolvedValue(undefined);
+
+    try {
+      await service.onModuleInit();
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      startSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
 });

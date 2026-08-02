@@ -197,11 +197,14 @@ export class CheckoutLeadsService {
     const phone = lead.phone || dto.phone;
     if (!phone) return;
 
-    // 1hr cooldown: skip if same phone had Lead event in last 60 min
-    const recent = await this.prisma.trackingEvent.findFirst({
+    // 1hr cooldown: skip if the same phone captured a Lead snapshot in the last 60
+    // min. The lead capture stores the phone canonically in payload.customer.phone
+    // (TrackingSnapshot.orderId is null for leads), so the dedup lookup uses the
+    // JSON path — the snapshot row the capture itself writes is the cooldown marker.
+    const recent = await this.prisma.trackingSnapshot.findFirst({
       where: {
-        eventType: 'lead',
-        orderId: phone,
+        eventType: 'Lead',
+        payload: { path: ['customer', 'phone'], equals: phone },
         createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
       },
     });
@@ -234,22 +237,6 @@ export class CheckoutLeadsService {
       },
       configSnapshot,
     });
-
-    // Track event in DB for cooldown tracking
-    try {
-      await this.prisma.trackingEvent.create({
-        data: {
-          eventId: `lead_${lead.id}`,
-          orderId: phone,
-          eventType: 'lead',
-          fbp: dto.fbp,
-          fbc: dto.fbc,
-          status: 'sent',
-        },
-      });
-    } catch {
-      // non-critical
-    }
   }
 
   async updateStatus(id: string, status: string, userId?: string) {

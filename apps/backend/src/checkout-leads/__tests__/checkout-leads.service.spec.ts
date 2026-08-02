@@ -79,9 +79,8 @@ describe('CheckoutLeadsService', () => {
             userProfile: {
               findUnique: jest.fn(),
             },
-            trackingEvent: {
+            trackingSnapshot: {
               findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue({}),
             },
           },
         },
@@ -169,17 +168,35 @@ describe('CheckoutLeadsService', () => {
       expect(input.configSnapshot).toEqual(configSnapshotMock);
     });
 
-    it('skips the Lead capture when a recent lead event exists (cooldown)', async () => {
+    it('skips the Lead capture when a recent lead snapshot exists (cooldown)', async () => {
       (prisma.checkoutLead.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.checkoutLead.create as jest.Mock).mockResolvedValue(mockLead);
-      (prisma.trackingEvent.findFirst as jest.Mock).mockResolvedValue({
-        id: 'evt-1',
+      (prisma.trackingSnapshot.findFirst as jest.Mock).mockResolvedValue({
+        id: 'snap-1',
       });
 
       await service.upsert({ phone: '01812345678', name: 'Jane Doe' });
       await new Promise((r) => setTimeout(r, 0));
 
       expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('checks the cooldown via a TrackingSnapshot payload-path lookup for the phone', async () => {
+      (prisma.checkoutLead.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.checkoutLead.create as jest.Mock).mockResolvedValue(mockLead);
+
+      await service.upsert({ phone: '01812345678', name: 'Jane Doe' });
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(prisma.trackingSnapshot.findFirst).toHaveBeenCalledWith({
+        where: {
+          eventType: 'Lead',
+          payload: { path: ['customer', 'phone'], equals: '+8801812345678' },
+          createdAt: { gte: expect.any(Date) },
+        },
+      });
+      // No legacy TrackingEvent reads or writes on the lead path.
+      expect((prisma as any).trackingEvent).toBeUndefined();
     });
 
     it('rejects an invalid Bangladeshi phone', async () => {

@@ -6,9 +6,8 @@ import {
 } from './tracking-dispatcher.service';
 
 /**
- * BullMQ worker for the `tracking` queue (replaces the legacy TrackingQueueProcessor,
- * whose job shape was the pre-capture `TrackingJob`). Each job is an outbox relay
- * claim — `{ snapshotId, outboxId, attemptCount }` — handed to the dispatcher, which
+ * BullMQ worker for the `tracking` queue. Each job is an outbox relay claim —
+ * `{ snapshotId, outboxId, attemptCount }` — handed to the dispatcher, which
  * resolves the snapshot + context and drives every provider adapter independently.
  */
 @Processor('tracking')
