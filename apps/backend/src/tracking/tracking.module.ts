@@ -15,6 +15,8 @@ import { ReplayController } from './replay.controller';
 import { MonitoringService } from './monitoring.service';
 import { MonitoringController } from './monitoring.controller';
 import { RetentionCleanupService } from './retention-cleanup.service';
+import { DeletionService } from './tracking-deletion.service';
+import { DeletionController } from './deletion.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -28,7 +30,12 @@ import { PrismaModule } from '../prisma/prisma.module';
       defaultJobOptions: { removeOnComplete: 0, removeOnFail: 100 },
     }),
   ],
-  controllers: [TrackingController, ReplayController, MonitoringController],
+  controllers: [
+    TrackingController,
+    ReplayController,
+    MonitoringController,
+    DeletionController,
+  ],
   providers: [
     TrackingContextService,
     PageViewBufferService,
@@ -42,6 +49,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     ReplayService,
     MonitoringService,
     RetentionCleanupService,
+    DeletionService,
   ],
   exports: [
     TrackingContextService,
