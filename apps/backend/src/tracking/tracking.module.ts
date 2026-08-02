@@ -13,6 +13,7 @@ import { DlqService } from './dlq.service';
 import { ReplayService } from './replay.service';
 import { ReplayController } from './replay.controller';
 import { MonitoringService } from './monitoring.service';
+import { MonitoringController } from './monitoring.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -26,7 +27,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       defaultJobOptions: { removeOnComplete: 0, removeOnFail: 100 },
     }),
   ],
-  controllers: [TrackingController, ReplayController],
+  controllers: [TrackingController, ReplayController, MonitoringController],
   providers: [
     TrackingContextService,
     PageViewBufferService,
