@@ -69,9 +69,20 @@ describe('ReconcilerService', () => {
 
     expect(summary).toEqual({ released: 1, retried: 0 });
 
-    // Bulk release touches only rows still inside the stale CLAIMED window.
+    // The dispatch cross-check found nothing live (no fresh SENDING/RETRY row),
+    // so the stale claim is eligible for release.
+    expect(dispatchFindMany).toHaveBeenCalledWith({
+      where: {
+        snapshotId: { in: ['snap-1'] },
+        status: { in: ['SENDING', 'RETRY'] },
+        updatedAt: { gte: expect.any(Date) },
+      },
+      select: { snapshotId: true },
+    });
+    // Bulk release touches only cross-checked rows still inside the stale
+    // CLAIMED window.
     expect(outboxUpdateMany).toHaveBeenCalledWith({
-      where: { status: 'CLAIMED', lockedAt: { lt: expect.any(Date) } },
+      where: { id: { in: ['outbox-1'] }, status: 'CLAIMED', lockedAt: { lt: expect.any(Date) } },
       data: {
         status: 'PENDING',
         attemptCount: { increment: 1 },
@@ -108,6 +119,109 @@ describe('ReconcilerService', () => {
     });
     // No SENDING rows were touched.
     expect(dispatchUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('does NOT release a stale CLAIMED outbox row while a SENDING dispatch is still live', async () => {
+    const liveDispatch = {
+      id: 'dispatch-live',
+      snapshotId: 'snap-1',
+      eventId: 'purchase_ord-1',
+      orderId: 'ord-1',
+      ctxId: 'ctx-1',
+      provider: 'meta',
+      queueJobId: 'job-1',
+      attemptCount: 1,
+    };
+    outboxFindMany.mockResolvedValue([staleClaimedOutbox]);
+    snapshotFindMany.mockResolvedValue([snapshot]);
+    outboxUpdateMany.mockResolvedValue({ count: 1 });
+    // The cross-check (has snapshotId) sees a fresh SENDING dispatch; the
+    // hung-SENDING scan (no snapshotId) finds nothing stale to retry.
+    dispatchFindMany.mockImplementation(({ where }) =>
+      where.snapshotId ? Promise.resolve([liveDispatch]) : Promise.resolve([]),
+    );
+
+    const summary = await service.reconcile(now);
+
+    expect(summary).toEqual({ released: 0, retried: 0 });
+    expect(dispatchFindMany).toHaveBeenCalledWith({
+      where: {
+        snapshotId: { in: ['snap-1'] },
+        status: { in: ['SENDING', 'RETRY'] },
+        updatedAt: { gte: expect.any(Date) },
+      },
+      select: { snapshotId: true },
+    });
+    // The claim stays CLAIMED — no release, no backoff, no audit event.
+    expect(outboxUpdateMany).not.toHaveBeenCalled();
+    expect(dispatchEventCreate).not.toHaveBeenCalled();
+    expect(dispatchUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('releases a stale CLAIMED outbox row when its dispatches are all stale themselves', async () => {
+    const staleDispatch = {
+      id: 'dispatch-stale',
+      snapshotId: 'snap-1',
+      eventId: 'purchase_ord-1',
+      orderId: 'ord-1',
+      ctxId: 'ctx-1',
+      provider: 'meta',
+      queueJobId: 'job-1',
+      attemptCount: 1,
+    };
+    outboxFindMany.mockResolvedValue([staleClaimedOutbox]);
+    snapshotFindMany.mockResolvedValue([snapshot]);
+    outboxUpdateMany.mockResolvedValue({ count: 1 });
+    // The cross-check (has snapshotId) finds no live dispatch; the hung-SENDING
+    // scan (no snapshotId) picks the stale dispatch up for RETRY.
+    dispatchFindMany.mockImplementation(({ where }) =>
+      where.snapshotId ? Promise.resolve([]) : Promise.resolve([staleDispatch]),
+    );
+
+    const summary = await service.reconcile(now);
+
+    expect(summary).toEqual({ released: 1, retried: 1 });
+    expect(outboxUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['outbox-1'] }, status: 'CLAIMED', lockedAt: { lt: expect.any(Date) } },
+      data: {
+        status: 'PENDING',
+        attemptCount: { increment: 1 },
+        lockedAt: null,
+        lockedBy: null,
+      },
+    });
+    expect(dispatchEventCreate).toHaveBeenCalledWith({
+      data: {
+        snapshotId: 'snap-1',
+        eventId: 'purchase_ord-1',
+        orderId: 'ord-1',
+        ctxId: 'ctx-1',
+        provider: null,
+        queueJobId: null,
+        fromStatus: 'CLAIMED',
+        toStatus: 'PENDING',
+        attempt: 3,
+        message: 'reconciler: stale claim released',
+      },
+    });
+  });
+
+  it('skips the audit event when the released row was already re-claimed', async () => {
+    outboxFindMany.mockResolvedValue([staleClaimedOutbox]);
+    snapshotFindMany.mockResolvedValue([snapshot]);
+    // Bulk release (where.id is an object) succeeds, but the per-row backoff
+    // (where.id is a string) matches 0 rows — the relay re-claimed it first.
+    outboxUpdateMany.mockImplementation(({ where }) =>
+      where.id === 'outbox-1'
+        ? Promise.resolve({ count: 0 })
+        : Promise.resolve({ count: 1 }),
+    );
+
+    const summary = await service.reconcile(now);
+
+    expect(summary).toEqual({ released: 0, retried: 0 });
+    // No audit event for a release that did not stick.
+    expect(dispatchEventCreate).not.toHaveBeenCalled();
   });
 
   it('marks a hung SENDING dispatch row RETRY (retryable) and appends a dispatch event', async () => {

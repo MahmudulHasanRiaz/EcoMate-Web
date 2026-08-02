@@ -32,13 +32,18 @@ export interface ReconcileSummary {
  *     job — audit-log only, never mutated.
  *  2. CLAIMED rows with no dispatch progress (`lockedAt < now - 10m`) — a crashed
  *     relay/dispatcher left them unclaimable — are released back to PENDING with
- *     attemptCount++ and the schedule's next backoff, plus a dispatch event.
+ *     attemptCount++ and the schedule's next backoff, plus a dispatch event. The
+ *     release is cross-checked against the snapshot's dispatch rows: a claim is
+ *     only released when NO dispatch is SENDING/RETRY and recently active
+ *     (`updatedAt >= now - 10m`) — a slow-but-live send must not be released,
+ *     or a re-claimed job would send it concurrently.
  *  3. SENDING dispatch rows hung (`updatedAt < now - 10m`) are marked RETRY so the
  *     dispatcher work set re-processes them (work-set rule prevents re-sending
  *     already-SENT providers).
  *
- * The bulk release uses an updateMany whose WHERE matches the stale window, so a
- * row that recovered between the read and the write is never double-released.
+ * The bulk release uses an updateMany whose WHERE matches the stale window and
+ * restricts to the cross-checked row ids, so a row that recovered between the
+ * read and the write is never double-released.
  */
 @Injectable()
 export class ReconcilerService implements OnModuleInit, OnModuleDestroy {
@@ -62,57 +67,85 @@ export class ReconcilerService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // 2. Stale CLAIMED outbox rows — release with backoff + audit event.
+    // 2. Stale CLAIMED outbox rows — release with backoff + audit event. A claim
+    // is only released when no dispatch for its snapshot is actively progressing
+    // (SENDING/RETRY updated within the hang window); otherwise the send is simply
+    // slow, and releasing would let a second relay double-send it.
     const stuck = await this.prisma.trackingOutbox.findMany({
       where: { status: 'CLAIMED', lockedAt: { lt: claimedCutoff } },
       select: { id: true, snapshotId: true, attemptCount: true },
     });
     let released = 0;
     if (stuck.length) {
-      const snapshots = await this.prisma.trackingSnapshot.findMany({
-        where: { id: { in: [...new Set(stuck.map((r) => r.snapshotId))] } },
-      });
-      const snapshotById = new Map(snapshots.map((s) => [s.id, s]));
+      const snapshotIds = [...new Set(stuck.map((r) => r.snapshotId))];
 
-      // Bulk release: only rows still inside the stale window are touched.
-      await this.prisma.trackingOutbox.updateMany({
-        where: { status: 'CLAIMED', lockedAt: { lt: claimedCutoff } },
-        data: {
-          status: 'PENDING',
-          attemptCount: { increment: 1 },
-          lockedAt: null,
-          lockedBy: null,
+      // Cross-check dispatch progress for every candidate snapshot in one read.
+      const liveDispatches = await this.prisma.trackingDispatch.findMany({
+        where: {
+          snapshotId: { in: snapshotIds },
+          status: { in: ['SENDING', 'RETRY'] },
+          updatedAt: { gte: sendingCutoff },
         },
+        select: { snapshotId: true },
       });
+      const liveSnapshotIds = new Set(liveDispatches.map((d) => d.snapshotId));
+      // Only rows whose non-terminal dispatch rows are all stale themselves may
+      // be released; a snapshot with a live dispatch stays CLAIMED.
+      const releaseable = stuck.filter((r) => !liveSnapshotIds.has(r.snapshotId));
 
-      for (const row of stuck) {
-        const nextAttempt = row.attemptCount + 1;
-        // updateMany can't express per-row backoff — apply nextAttemptAt per row
-        // from the pre-read attemptCount. The guard skips a row that was already
-        // re-claimed between the bulk release and this write.
+      if (releaseable.length) {
+        const snapshots = await this.prisma.trackingSnapshot.findMany({
+          where: { id: { in: [...new Set(releaseable.map((r) => r.snapshotId))] } },
+        });
+        const snapshotById = new Map(snapshots.map((s) => [s.id, s]));
+
+        // Bulk release: only cross-checked rows still inside the stale window are
+        // touched (a row that recovered between read and write is never released).
         await this.prisma.trackingOutbox.updateMany({
-          where: { id: row.id, status: 'PENDING', lockedAt: null },
+          where: {
+            id: { in: releaseable.map((r) => r.id) },
+            status: 'CLAIMED',
+            lockedAt: { lt: claimedCutoff },
+          },
           data: {
-            nextAttemptAt: new Date(now.getTime() + getRetryBackoffMs(nextAttempt)),
+            status: 'PENDING',
+            attemptCount: { increment: 1 },
+            lockedAt: null,
+            lockedBy: null,
           },
         });
-        const snap = snapshotById.get(row.snapshotId);
-        await this.prisma.trackingDispatchEvent.create({
-          data: {
-            snapshotId: row.snapshotId,
-            eventId: snap?.eventId ?? row.snapshotId,
-            orderId: snap?.orderId ?? null,
-            ctxId: snap?.ctxId ?? null,
-            provider: null,
-            queueJobId: null,
-            fromStatus: 'CLAIMED',
-            toStatus: 'PENDING',
-            attempt: nextAttempt,
-            message: 'reconciler: stale claim released',
-          },
-        });
+
+        for (const row of releaseable) {
+          const nextAttempt = row.attemptCount + 1;
+          // updateMany can't express per-row backoff — apply nextAttemptAt per row
+          // from the pre-read attemptCount. The guard skips a row already
+          // re-claimed between the bulk release and this write; a release that
+          // did not stick earns no audit event.
+          const backoff = await this.prisma.trackingOutbox.updateMany({
+            where: { id: row.id, status: 'PENDING', lockedAt: null },
+            data: {
+              nextAttemptAt: new Date(now.getTime() + getRetryBackoffMs(nextAttempt)),
+            },
+          });
+          if (backoff.count === 0) continue;
+          released++;
+          const snap = snapshotById.get(row.snapshotId);
+          await this.prisma.trackingDispatchEvent.create({
+            data: {
+              snapshotId: row.snapshotId,
+              eventId: snap?.eventId ?? row.snapshotId,
+              orderId: snap?.orderId ?? null,
+              ctxId: snap?.ctxId ?? null,
+              provider: null,
+              queueJobId: null,
+              fromStatus: 'CLAIMED',
+              toStatus: 'PENDING',
+              attempt: nextAttempt,
+              message: 'reconciler: stale claim released',
+            },
+          });
+        }
       }
-      released = stuck.length;
     }
 
     // 3. Hung SENDING dispatch rows — mark RETRY so the dispatcher re-processes them.
