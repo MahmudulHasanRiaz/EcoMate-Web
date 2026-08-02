@@ -134,6 +134,16 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(payload.event_source_url).toBe(ctx.url);
     });
 
+    it('uses snapshot.eventTime as the business event time when provided', () => {
+      const payload = adapter.build(
+        { ...snapshot, eventTime: 1700000000 },
+        ctx,
+        normalizer,
+      )!;
+
+      expect(payload.eventTime).toBe(1700000000);
+    });
+
     it('maps custom_data (value, currency, content_ids, contents, num_items, search_string, order_id)', () => {
       const c = adapter.build(snapshot, ctx, normalizer)!.custom_data;
 

@@ -139,6 +139,16 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       );
     });
 
+    it('uses snapshot.eventTime as the business event time when provided', () => {
+      const payload = adapter.build(
+        { ...snapshot, eventTime: 1700000000 },
+        ctx,
+        normalizer,
+      )!;
+
+      expect(payload.eventTime).toBe(1700000000);
+    });
+
     it('maps properties (value, currency, content_ids, contents, num_items, search_string, order_id)', () => {
       const p = adapter.build(snapshot, ctx, normalizer)!.properties;
 
@@ -369,6 +379,19 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       const result = await adapter.send(wirePayload(), cfg);
 
       expect(result.rawResponse!.length).toBeLessThanOrEqual(500);
+    });
+
+    it('truncates a long business-error message in the composed rawResponse', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 10005, message: 'x'.repeat(2000) }),
+      });
+
+      const result = await adapter.send(wirePayload(), cfg);
+
+      expect(result.rawResponse!.length).toBeLessThanOrEqual(500);
+      expect(result.rawResponse).toContain('code:10005');
     });
 
     it('returns retryable:true on a network error / timeout', async () => {

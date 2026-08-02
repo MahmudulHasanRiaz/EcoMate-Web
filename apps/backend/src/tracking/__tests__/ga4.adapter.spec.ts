@@ -209,6 +209,17 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
       );
     });
 
+    it('uses snapshot.eventTime as the business event time when provided', () => {
+      const payload = adapter.build(
+        { ...snapshot, eventTime: 1700000000 },
+        ctx,
+        normalizer,
+      )!;
+
+      expect(payload.eventTime).toBe(1700000000);
+      expect(payload.events[0].params.timestamp_micros).toBe(1700000000000);
+    });
+
     it('maps Refund to the refund event with a positive value and refund_ event_id', () => {
       const payload = adapter.build(
         { ...snapshot, eventType: 'Refund', value: 2500 },

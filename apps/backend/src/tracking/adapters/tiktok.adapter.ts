@@ -11,8 +11,7 @@ import {
   TrackingProviderAdapter,
 } from './tracking-provider.adapter';
 
-const TIKTOK_TRACK_API_URL =
-  'https://business-api.tiktok.com/open_api/v1.3/pixel/track/';
+const TIKTOK_TRACK_API_URL = 'https://business-api.tiktok.com/open_api';
 const REQUEST_TIMEOUT_MS = 1500;
 const MAX_RAW_RESPONSE_CHARS = 500;
 
@@ -109,10 +108,14 @@ export class TikTokAdapter implements TrackingProviderAdapter {
     if (snapshot.search_string) properties.search_string = snapshot.search_string;
     if (snapshot.orderId) properties.order_id = snapshot.orderId;
 
+    // Business event time (design §4.2) — snapshot.eventTime when captured;
+    // fall back to dispatch time only when the snapshot carries none.
+    const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
+
     return {
       eventName,
       eventId,
-      eventTime: Math.floor(Date.now() / 1000),
+      eventTime,
       eventType,
       context: {
         ip: ctx.ip,
@@ -147,8 +150,12 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       properties: payload.properties,
     };
 
+    // Version comes from this.providerApiVersion so the URL can never drift
+    // from the adapter's declared API version.
+    const url = `${TIKTOK_TRACK_API_URL}/${this.providerApiVersion}/pixel/track/`;
+
     try {
-      const response = await fetch(TIKTOK_TRACK_API_URL, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,18 +168,19 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       // business errors (bad token, invalid event). Those must be classified as
       // failures, never SENT — so the JSON body is parsed to detect them. When
       // the body can't be parsed we fall back to HTTP-status classification
-      // (4xx non-429 → not retryable; 429/5xx → retryable).
+      // (4xx non-429 → not retryable; 429/5xx → retryable). Either way the
+      // composed rawResponse is capped at MAX_RAW_RESPONSE_CHARS, matching the
+      // other adapters.
       const parsedBody = (await response.json().catch(() => null)) as
         | { code?: unknown; message?: unknown }
         | null;
-      const rawResponse = parsedBody
-        ? `code:${parsedBody.code ?? '?'}${
-            parsedBody.message ? ` message:${parsedBody.message}` : ''
-          }`
-        : (await response.text().catch(() => '')).slice(
-            0,
-            MAX_RAW_RESPONSE_CHARS,
-          );
+      const rawResponse = (
+        parsedBody
+          ? `code:${parsedBody.code ?? '?'}${
+              parsedBody.message ? ` message:${parsedBody.message}` : ''
+            }`
+          : (await response.text().catch(() => ''))
+      ).slice(0, MAX_RAW_RESPONSE_CHARS);
 
       if (response.ok && (!parsedBody || parsedBody.code === 0)) {
         return {

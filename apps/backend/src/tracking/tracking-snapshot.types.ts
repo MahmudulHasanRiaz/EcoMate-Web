@@ -16,6 +16,8 @@ export interface TrackingSnapshotPayload {
   eventType?: string;
   /** Caller-provided dedup id; adapters override for order events (purchase_/refund_). */
   eventId?: string;
+  /** Business event time (unix seconds). Adapters fall back to dispatch time when absent. */
+  eventTime?: number;
   orderId?: string;
   value?: number;
   currency?: string;

@@ -128,6 +128,18 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
       });
     });
 
+    it('uses snapshot.eventTime as the business event time and derives conversionDateTime from it', () => {
+      const payload = adapter.build(
+        { ...snapshot, eventTime: 1700000000 },
+        ctx,
+        normalizer,
+      )!;
+
+      // 1700000000 = 2023-11-14 22:13:20 UTC → Google's space-separated format.
+      expect(payload.eventTime).toBe(1700000000);
+      expect(payload.conversionDateTime).toBe('2023-11-14 22:13:20+00:00');
+    });
+
     it('defaults to Purchase when value is present and eventType is absent', () => {
       const { eventType: _dropped, ...noType } = snapshot;
       const payload = adapter.build(

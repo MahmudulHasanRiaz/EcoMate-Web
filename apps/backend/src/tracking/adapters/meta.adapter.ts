@@ -86,10 +86,14 @@ export class MetaAdapter implements TrackingProviderAdapter {
     if (snapshot.search_string) custom_data.search_string = snapshot.search_string;
     if (snapshot.orderId) custom_data.order_id = snapshot.orderId;
 
+    // Business event time (design §4.2) — snapshot.eventTime when captured;
+    // fall back to dispatch time only when the snapshot carries none.
+    const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
+
     return {
       eventName,
       eventId,
-      eventTime: Math.floor(Date.now() / 1000),
+      eventTime,
       eventType,
       action_source: 'website',
       event_source_url: ctx.url,
@@ -109,8 +113,10 @@ export class MetaAdapter implements TrackingProviderAdapter {
       };
     }
 
+    // Version comes from this.providerApiVersion so the URL can never drift
+    // from the adapter's declared API version.
     const url =
-      `${META_GRAPH_BASE_URL}/v22.0/${pixelId}/events` +
+      `${META_GRAPH_BASE_URL}/${this.providerApiVersion}/${pixelId}/events` +
       `?access_token=${encodeURIComponent(accessToken)}`;
     const body: Record<string, unknown> = {
       data: [

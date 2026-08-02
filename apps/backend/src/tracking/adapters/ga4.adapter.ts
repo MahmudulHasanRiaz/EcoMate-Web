@@ -85,7 +85,9 @@ export class Ga4Adapter implements TrackingProviderAdapter {
     const eventId = this.resolveEventId(eventType, snapshot);
     if (!eventId) return null; // no dedup id → refuse to build
 
-    const eventTime = Math.floor(Date.now() / 1000);
+    // Business event time (design §4.2) — snapshot.eventTime when captured;
+    // fall back to dispatch time only when the snapshot carries none.
+    const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
     const params = this.buildParams(snapshot, eventTime);
 
     return {
