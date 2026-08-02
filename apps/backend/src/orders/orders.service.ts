@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { TrackingService } from '../tracking/tracking.service';
-import { TrackingContextService } from '../tracking/tracking-context.service';
+import { TrackingCaptureService } from '../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { StockService } from '../stock/stock.service';
@@ -110,8 +110,8 @@ export class OrdersService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly tracking: TrackingService,
-    private readonly trackingContext: TrackingContextService,
+    private readonly trackingCapture: TrackingCaptureService,
+    private readonly trackingSettings: TrackingSettingsService,
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
@@ -1261,6 +1261,29 @@ export class OrdersService {
         }
       }
 
+      // Capture the purchase snapshot inside the same transaction as the order
+      // insert (idempotent). Wrapped so a capture-side failure can never roll
+      // back the order.
+      try {
+        const orderWithItems = await tx.order.findUnique({
+          where: { id: created.id },
+          include: {
+            items: {
+              include: { product: { select: { id: true, name: true } } },
+            },
+            payments: true,
+          },
+        });
+        if (orderWithItems) {
+          await this.firePurchaseInstant(orderWithItems as any, tx);
+        }
+      } catch (err) {
+        this.logger.error(
+          `Failed to capture purchase snapshot for order ${created.id}:`,
+          err,
+        );
+      }
+
       return created;
     });
 
@@ -1279,24 +1302,6 @@ export class OrdersService {
       type: 'order.created',
       data: { id: order.id, displayId: order.displayId },
     });
-
-    // Fire server-side Purchase for "instant" mode — queue for reliability
-    if (initialStatus) {
-      const orderWithItems = await this.prisma.order.findUnique({
-        where: { id: order.id },
-        include: {
-          items: {
-            include: { product: { select: { id: true, name: true } } },
-          },
-          payments: true,
-        },
-      });
-      if (orderWithItems) {
-        this.firePurchaseInstant(orderWithItems as any).catch((err) => {
-          this.logger.error('Failed to fire instant purchase event:', err);
-        });
-      }
-    }
 
     return order;
   }
@@ -1802,6 +1807,42 @@ export class OrdersService {
         await this.handleReturnedSideEffects(tx, id, performedBy);
       }
 
+      // Capture purchase/refund snapshots inside the same transaction as the
+      // status update. firePurchaseValidated/fireRefundEvent self-gate on
+      // settings; the block is wrapped so a capture-side failure can never roll
+      // back the status change.
+      try {
+        const withItems = await tx.order.findUnique({
+          where: { id },
+          include: {
+            items: {
+              include: { product: { select: { id: true, name: true } } },
+            },
+            customer: true,
+            payments: true,
+          },
+        });
+        if (withItems) {
+          await this.firePurchaseValidated(
+            newStatus.name,
+            withItems as any,
+            tx,
+          );
+          if (
+            ['Cancelled', 'Returned', 'Return Pending'].includes(
+              newStatus.name,
+            )
+          ) {
+            await this.fireRefundEvent(withItems as any, tx);
+          }
+        }
+      } catch (err) {
+        this.logger.error(
+          `Failed to capture tracking snapshot for order ${id}:`,
+          err,
+        );
+      }
+
       return u;
     });
 
@@ -1814,35 +1855,6 @@ export class OrdersService {
         statusName: newStatus.name,
       },
     });
-
-    // Re-fetch with full relations for tracking payload
-    const updatedWithItems = await this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        items: {
-          include: { product: { select: { id: true, name: true } } },
-        },
-        customer: true,
-        payments: true,
-      },
-    });
-    if (updatedWithItems) {
-      await this.firePurchaseValidated(
-        newStatus.name,
-        updatedWithItems as any,
-      ).catch((err) => {
-        this.logger.error('Failed to fire validated purchase event:', err);
-      });
-
-      // Fire refund for cancelled/returned orders
-      if (
-        ['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)
-      ) {
-        this.fireRefundEvent(updatedWithItems as any).catch((err) => {
-          this.logger.error('Failed to fire refund event:', err);
-        });
-      }
-    }
 
     return updated;
   }
@@ -2374,6 +2386,29 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
       await this.handleCancelledSideEffects(tx, orderId, 'customer');
 
+      // Capture the refund snapshot inside the same transaction as the cancel.
+      // fireRefundEvent self-gates on settings; the block is wrapped so a
+      // capture-side failure can never roll back the cancellation.
+      try {
+        const refundOrder = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            items: {
+              include: { product: { select: { id: true, name: true } } },
+            },
+            customer: true,
+          },
+        });
+        if (refundOrder) {
+          await this.fireRefundEvent(refundOrder as any, tx);
+        }
+      } catch (err) {
+        this.logger.error(
+          `Failed to capture refund snapshot for order ${orderId}:`,
+          err,
+        );
+      }
+
       return u;
     });
 
@@ -2386,26 +2421,6 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
         statusName: cancelled.name,
       },
     });
-
-    // Fire refund for customer-cancelled orders
-    this.prisma.order
-      .findUnique({
-        where: { id: orderId },
-        include: {
-          items: { include: { product: { select: { id: true, name: true } } } },
-          customer: true,
-        },
-      })
-      .then((refundOrder) => {
-        if (refundOrder) {
-          this.fireRefundEvent(refundOrder as any).catch((err) => {
-            this.logger.error(
-              'Failed to fire refund for customer cancel:',
-              err,
-            );
-          });
-        }
-      });
 
     return updated;
   }
@@ -2968,7 +2983,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
 
 
-  private async firePurchaseInstant(order: any) {
+  private async firePurchaseInstant(
+    order: any,
+    tx?: Prisma.TransactionClient,
+  ) {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
@@ -2991,13 +3009,17 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
       if (!metaInstant && !tiktokInstant) return;
 
-      await this.buildAndSendPurchaseEvent(order, 'instant');
+      await this.buildAndSendPurchaseEvent(order, 'instant', tx);
     } catch (err) {
       this.logger.error('Failed to fire instant purchase event:', err);
     }
   }
 
-  private async firePurchaseValidated(statusName: string, order: any) {
+  private async firePurchaseValidated(
+    statusName: string,
+    order: any,
+    tx?: Prisma.TransactionClient,
+  ) {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {
@@ -3017,7 +3039,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
       if (metaStatus !== statusName && tiktokStatus !== statusName) return;
 
-      await this.buildAndSendPurchaseEvent(order, 'validated');
+      await this.buildAndSendPurchaseEvent(order, 'validated', tx);
     } catch (err) {
       this.logger.error('Failed to fire validated purchase event:', err);
     }
@@ -3026,6 +3048,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
   private async buildAndSendPurchaseEvent(
     order: any,
     mode: 'instant' | 'validated',
+    tx?: Prisma.TransactionClient,
   ) {
     let email = '';
     let phone = '';
@@ -3050,42 +3073,14 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       if (shippingAddr.country) country = shippingAddr.country;
     }
 
-    let savedCtx: any = null;
-    if (order.trackingSessionId) {
-      try {
-        const row = await this.trackingContext.getByCtxId(order.trackingSessionId);
-        if (row) {
-          savedCtx = {
-            fbp: (row.identifiers as any)?.meta?.fbp?.value,
-            fbc: (row.identifiers as any)?.meta?.fbc?.value,
-            url: row.url || undefined,
-            referrer: row.referrer || undefined,
-          };
-        }
-      } catch {
-        savedCtx = null; // context read failure degrades gracefully (legacy getContext had try/catch)
-      }
-    }
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || 0);
 
-    const customData = {
-      value: totalValue,
-      currency: 'BDT',
-      content_ids: itemsList
-        .map((i: any) => i.productId || i.comboId || '')
-        .filter(Boolean),
-      num_items: itemsList.reduce(
-        (s: number, i: any) => s + (i.quantity || 0),
-        0,
-      ),
-      order_id: order.id,
-      contents: itemsList.map((i: any) => ({
-        id: i.productId || i.comboId || '',
-        quantity: i.quantity,
-        item_price: Number(i.price),
-      })),
-    };
+    const contents = itemsList.map((i: any) => ({
+      id: i.productId || i.comboId || '',
+      quantity: i.quantity,
+      item_price: Number(i.price),
+    }));
 
     const createdAt = order.createdAt
       ? Math.floor(new Date(order.createdAt).getTime() / 1000)
@@ -3094,30 +3089,44 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     const actionSource =
       order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
 
-    await this.tracking.track({
-      eventName: 'purchase',
-      eventTime: createdAt,
-      eventId: `purchase_${order.id}`,
-      actionSource,
-      userId: order.customerId || undefined,
-      userData: {
-        email,
-        phone,
-        name: firstName || undefined,
-        city,
-        country,
-        ip: '',
-        userAgent: '',
-        fbp: savedCtx?.fbp || undefined,
-        fbc: savedCtx?.fbc || undefined,
-        url: savedCtx?.url || undefined,
-        referrer: savedCtx?.referrer || undefined,
+    const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
+
+    await this.trackingCapture.capture(
+      {
+        eventId: `purchase_${order.id}`,
+        eventType: 'Purchase',
+        orderId: order.id,
+        ctxId: order.trackingSessionId || undefined,
+        eventTime: createdAt,
+        actionSource,
+        payload: {
+          value: totalValue,
+          currency: 'BDT',
+          content_ids: itemsList
+            .map((i: any) => i.productId || i.comboId || '')
+            .filter(Boolean),
+          contents,
+          num_items: itemsList.reduce(
+            (s: number, i: any) => s + (i.quantity || 0),
+            0,
+          ),
+          orderId: order.id,
+          customer: {
+            email: email || undefined,
+            phone: phone || undefined,
+            firstName: firstName || undefined,
+            lastName: lastName || undefined,
+            city: city || undefined,
+            country: country || undefined,
+          },
+        },
+        configSnapshot,
       },
-      customData,
-    });
+      tx,
+    );
   }
 
-  private async fireRefundEvent(order: any) {
+  private async fireRefundEvent(order: any, tx?: Prisma.TransactionClient) {
     try {
       const setting = await this.prisma.systemSetting.findUnique({
         where: { key: 'tracking_refund_enabled' },
@@ -3127,25 +3136,6 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       const itemsList = (order.items as any[]) || [];
       const totalValue = Number(order.total || 0);
       if (totalValue <= 0) return;
-
-      let savedCtx: any = null;
-      if (order.trackingSessionId) {
-        try {
-          const row = await this.trackingContext.getByCtxId(
-            order.trackingSessionId,
-          );
-          if (row) {
-            savedCtx = {
-              fbp: (row.identifiers as any)?.meta?.fbp?.value,
-              fbc: (row.identifiers as any)?.meta?.fbc?.value,
-              url: row.url || undefined,
-              referrer: row.referrer || undefined,
-            };
-          }
-        } catch {
-          savedCtx = null; // context read failure degrades gracefully (legacy getContext had try/catch)
-        }
-      }
 
       let phone = '';
       let firstName = '';
@@ -3160,33 +3150,42 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       const actionSource =
         order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
 
-      await this.tracking.track({
-        eventName: 'purchase',
-        eventTime: Math.floor(Date.now() / 1000),
-        eventId: `refund_${order.id}`,
-        actionSource,
-        userData: {
-          phone,
-          name: firstName || undefined,
-          country,
-          ip: '',
-          userAgent: '',
-          fbp: savedCtx?.fbp || undefined,
-          fbc: savedCtx?.fbc || undefined,
+      const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
+
+      await this.trackingCapture.capture(
+        {
+          eventId: `refund_${order.id}`,
+          eventType: 'Refund',
+          orderId: order.id,
+          ctxId: order.trackingSessionId || undefined,
+          eventTime: Math.floor(Date.now() / 1000),
+          actionSource,
+          payload: {
+            value: -totalValue,
+            currency: 'BDT',
+            content_ids: itemsList
+              .map((i: any) => i.productId || i.comboId || '')
+              .filter(Boolean),
+            contents: itemsList.map((i: any) => ({
+              id: i.productId || i.comboId || '',
+              quantity: i.quantity,
+              item_price: Number(i.price),
+            })),
+            num_items: itemsList.reduce(
+              (s: number, i: any) => s + (i.quantity || 0),
+              0,
+            ),
+            orderId: order.id,
+            customer: {
+              phone: phone || undefined,
+              firstName: firstName || undefined,
+              country,
+            },
+          },
+          configSnapshot,
         },
-        customData: {
-          value: -totalValue,
-          currency: 'BDT',
-          content_ids: itemsList
-            .map((i: any) => i.productId || i.comboId || '')
-            .filter(Boolean),
-          order_id: order.id,
-          num_items: itemsList.reduce(
-            (s: number, i: any) => s + (i.quantity || 0),
-            0,
-          ),
-        },
-      });
+        tx,
+      );
     } catch (err) {
       this.logger.error('Failed to fire refund event:', err);
     }

@@ -74,6 +74,7 @@ export class CheckoutLeadsController {
       fingerprint: dto.fingerprint,
       fbp: dto.fbp,
       fbc: dto.fbc,
+      ctxId: dto.ctxId,
     });
   }
 

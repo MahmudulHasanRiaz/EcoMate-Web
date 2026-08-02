@@ -4,10 +4,11 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
-import { TrackingService } from '../tracking/tracking.service';
+import { TrackingCaptureService } from '../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 
@@ -18,7 +19,8 @@ export class CheckoutLeadsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly customersService: CustomersService,
-    private readonly tracking: TrackingService,
+    private readonly trackingCapture: TrackingCaptureService,
+    private readonly trackingSettings: TrackingSettingsService,
   ) {}
 
   async findAll(query: {
@@ -123,6 +125,7 @@ export class CheckoutLeadsService {
     fingerprint?: string;
     fbp?: string;
     fbc?: string;
+    ctxId?: string;
   }) {
     if (dto.phone) {
       const normalized = normalizePhone(dto.phone);
@@ -181,7 +184,13 @@ export class CheckoutLeadsService {
 
   private async fireLeadEvent(
     lead: any,
-    dto: { phone?: string; name?: string; fbp?: string; fbc?: string },
+    dto: {
+      phone?: string;
+      name?: string;
+      fbp?: string;
+      fbc?: string;
+      ctxId?: string;
+    },
   ) {
     const phone = lead.phone || dto.phone;
     if (!phone) return;
@@ -202,22 +211,26 @@ export class CheckoutLeadsService {
       0,
     );
 
-    await this.tracking.track({
-      eventName: 'lead',
+    const leadName = lead.name || dto.name || undefined;
+    const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
+
+    await this.trackingCapture.capture({
       eventId: `lead_${lead.id}`,
+      eventType: 'Lead',
+      ctxId: dto.ctxId || undefined,
+      eventTime: Math.floor(Date.now() / 1000),
       actionSource: 'website',
-      userData: {
-        phone,
-        name: lead.name || dto.name || undefined,
-        fbp: dto.fbp || undefined,
-        fbc: dto.fbc || undefined,
-        country: 'BD',
-      },
-      customData: {
+      payload: {
         value: estimatedTotal || undefined,
         currency: 'BDT',
-        lead_id: lead.id,
+        customer: {
+          phone: phone || undefined,
+          // Canonical customer has firstName/lastName (adapter contract);
+          // a lead only carries a single display name.
+          firstName: leadName,
+        },
       },
+      configSnapshot,
     });
 
     // Track event in DB for cooldown tracking
@@ -434,65 +447,84 @@ export class CheckoutLeadsService {
           },
         },
       });
-    });
 
-    // Fire offline Purchase for lead-converted order
-    if (fullOrder) {
-      this.fireOfflinePurchase(fullOrder, lead).catch((err) => {
-        this.logger.error('Failed to fire offline purchase:', err);
-      });
-    }
+      // Capture the offline Purchase snapshot inside the same transaction as
+      // the order creation. fireOfflinePurchase swallows errors so a capture
+      // failure never rolls back the conversion.
+      if (fullOrder) {
+        await this.fireOfflinePurchase(fullOrder, tx);
+      }
+    });
 
     return fullOrder;
   }
 
-  private async fireOfflinePurchase(order: any, lead: any) {
-    let email = '';
-    let phone = '';
-    let firstName = '';
-    let lastName = '';
+  private async fireOfflinePurchase(
+    order: any,
+    tx?: Prisma.TransactionClient,
+  ) {
+    try {
+      let email = '';
+      let phone = '';
+      let firstName = '';
+      let lastName = '';
 
-    if (order.customer) {
-      email = order.customer.email || '';
-      firstName = order.customer.name || '';
-      lastName = '';
-      phone = order.customer.phone || '';
+      if (order.customer) {
+        email = order.customer.email || '';
+        firstName = order.customer.name || '';
+        lastName = '';
+        phone = order.customer.phone || '';
+      }
+      if (!phone) phone = order.guestPhone || '';
+      if (!firstName) firstName = order.guestName || '';
+
+      const itemsList = (order.items as any[]) || [];
+      const totalValue = Number(order.total || 0);
+
+      const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
+
+      // Same eventId pattern as the main purchase flow so Meta dedups
+      // if firePurchaseValidated fires later for the same order
+      await this.trackingCapture.capture(
+        {
+          eventId: `purchase_${order.id}`,
+          eventType: 'Purchase',
+          orderId: order.id,
+          eventTime: Math.floor(
+            new Date(order.createdAt).getTime() / 1000,
+          ),
+          actionSource: 'physical_store',
+          payload: {
+            value: totalValue,
+            currency: 'BDT',
+            content_ids: itemsList
+              .map((i: any) => i.productId || i.comboId || '')
+              .filter(Boolean),
+            contents: itemsList.map((i: any) => ({
+              id: i.productId || i.comboId || '',
+              quantity: i.quantity,
+              item_price: Number(i.price),
+            })),
+            num_items: itemsList.reduce(
+              (s: number, i: any) => s + (i.quantity || 0),
+              0,
+            ),
+            orderId: order.id,
+            customer: {
+              email: email || undefined,
+              phone: phone || undefined,
+              firstName: firstName || undefined,
+              lastName: lastName || undefined,
+              country: 'BD',
+            },
+          },
+          configSnapshot,
+        },
+        tx,
+      );
+    } catch (err) {
+      this.logger.error('Failed to fire offline purchase:', err);
     }
-    if (!phone) phone = order.guestPhone || '';
-    if (!firstName) firstName = order.guestName || '';
-
-    const itemsList = (order.items as any[]) || [];
-    const totalValue = Number(order.total || 0);
-
-    // Use same eventId pattern as main purchase flow so Meta dedups
-    // if firePurchaseValidated fires later for the same order
-    await this.tracking.track({
-      eventName: 'purchase',
-      eventId: `purchase_${order.id}`,
-      eventTime: Math.floor(new Date(order.createdAt).getTime() / 1000),
-      actionSource: 'physical_store',
-      userData: {
-        email,
-        phone,
-        name: firstName || undefined,
-        lastName: lastName || undefined,
-        country: 'BD',
-      },
-      customData: {
-        value: totalValue,
-        currency: 'BDT',
-        content_ids: itemsList
-          .map((i: any) => i.productId || i.comboId || '')
-          .filter(Boolean),
-        order_id: order.id,
-        lead_id: lead.id,
-        source: 'lead_conversion',
-        num_items: itemsList.reduce(
-          (s: number, i: any) => s + (i.quantity || 0),
-          0,
-        ),
-      },
-    });
   }
 
   async assign(id: string, assignedToId: string | null, userId: string) {

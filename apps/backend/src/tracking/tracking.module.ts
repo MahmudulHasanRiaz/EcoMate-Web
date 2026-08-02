@@ -11,6 +11,7 @@ import { TrackingQueueService } from './tracking-queue.service';
 import { TrackingQueueProcessor } from './tracking-queue.processor';
 import { PageViewBufferService } from './page-view-buffer.service';
 import { TrackingSettingsService } from './tracking-settings.service';
+import { TrackingCaptureService } from './tracking-capture.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -27,7 +28,14 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingQueueProcessor,
     PageViewBufferService,
     TrackingSettingsService,
+    TrackingCaptureService,
   ],
-  exports: [TrackingService, TrackingContextService, PageViewBufferService],
+  exports: [
+    TrackingService,
+    TrackingContextService,
+    PageViewBufferService,
+    TrackingSettingsService,
+    TrackingCaptureService,
+  ],
 })
 export class TrackingModule {}

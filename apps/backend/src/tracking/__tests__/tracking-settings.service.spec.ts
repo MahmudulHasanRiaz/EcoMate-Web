@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { TrackingSettingsService } from '../tracking-settings.service';
+import { TrackingNormalizer } from '../tracking.normalizer';
 
 describe('TrackingSettingsService', () => {
   const findUnique = jest.fn();
@@ -59,5 +60,43 @@ describe('TrackingSettingsService', () => {
         : Promise.resolve({ key: where.key, value: 'TEST123' }),
     );
     await expect(service.getTestEventCode('meta')).resolves.toBe('TEST123');
+  });
+
+  it('buildConfigSnapshot lists settings-enabled providers and normalizer version', async () => {
+    findUnique.mockImplementation(({ where }) =>
+      where.key === 'tracking_meta_enabled'
+        ? Promise.resolve({ key: where.key, value: 'true' })
+        : Promise.resolve(null),
+    );
+    config.set('GA_MEASUREMENT_ID', '');
+    config.set('GA_API_SECRET', '');
+    config.set('GA_ADS_CONVERSION_ID', '');
+
+    const snap = await service.buildConfigSnapshot();
+
+    expect(snap.enabledProviders).toEqual(['meta']);
+    expect(snap.normalizerVersion).toBe(new TrackingNormalizer().version);
+    expect(snap.capturedAt).toEqual(expect.any(String));
+    // absent settings fall back to defaults
+    expect(snap.purchaseModes).toEqual({ meta: 'instant', tiktok: 'instant' });
+    expect(snap.validatedStatuses).toEqual({ meta: '', tiktok: '' });
+  });
+
+  it('buildConfigSnapshot records env-configured ga4/google_ads and resolved policy', async () => {
+    findUnique.mockImplementation(({ where }) =>
+      where.key === 'tracking_meta_validated_status'
+        ? Promise.resolve({ key: where.key, value: 'Confirmed' })
+        : Promise.resolve(null),
+    );
+    config.set('GA_MEASUREMENT_ID', 'G-XXXX');
+    config.set('GA_API_SECRET', 'SECRET');
+    config.set('GA_ADS_CONVERSION_ID', 'AW-123');
+
+    const snap = await service.buildConfigSnapshot();
+
+    expect(snap.enabledProviders).toContain('ga4');
+    expect(snap.enabledProviders).toContain('google_ads');
+    expect((snap.validatedStatuses as any).meta).toBe('Confirmed');
+    expect(snap.enabledProviders).not.toContain('meta');
   });
 });

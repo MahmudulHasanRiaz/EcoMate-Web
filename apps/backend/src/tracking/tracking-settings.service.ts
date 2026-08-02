@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { TrackingNormalizer } from './tracking.normalizer';
 
 @Injectable()
 export class TrackingSettingsService {
@@ -37,5 +38,52 @@ export class TrackingSettingsService {
     const testMode = await this.get(`tracking_${provider}_test_mode`, null);
     if (testMode !== 'true') return null;
     return this.get(`tracking_${provider}_test_code`, null);
+  }
+
+  /**
+   * Capture-time snapshot of the tracking configuration. Stored on the outbox
+   * row (`TrackingOutbox.configSnapshot`) so a later relay/dispatch (or replay)
+   * can reproduce the providers + policy the business event was captured under.
+   *
+   * `enabledProviders` lists providers that were enabled at capture time: meta +
+   * tiktok from their system-setting flags, ga4/google_ads from env config
+   * presence (they have no DB flag). The dispatcher still re-checks provider
+   * capability (`supports()`) at dispatch time — this is an audit/replay record,
+   * not a lock.
+   */
+  async buildConfigSnapshot(): Promise<Record<string, unknown>> {
+    const keys = [
+      'tracking_meta_enabled',
+      'tracking_tiktok_enabled',
+      'tracking_meta_purchase_mode',
+      'tracking_meta_validated_status',
+      'tracking_tiktok_purchase_mode',
+      'tracking_tiktok_validated_status',
+    ];
+    const values = await Promise.all(keys.map((key) => this.get(key, null)));
+    const map = Object.fromEntries(keys.map((key, i) => [key, values[i]]));
+
+    const enabledProviders: string[] = [];
+    if (map['tracking_meta_enabled'] === 'true') enabledProviders.push('meta');
+    if (map['tracking_tiktok_enabled'] === 'true')
+      enabledProviders.push('tiktok');
+    if (this.config.get('GA_MEASUREMENT_ID') && this.config.get('GA_API_SECRET'))
+      enabledProviders.push('ga4');
+    if (this.config.get('GA_ADS_CONVERSION_ID'))
+      enabledProviders.push('google_ads');
+
+    return {
+      enabledProviders,
+      normalizerVersion: new TrackingNormalizer().version,
+      capturedAt: new Date().toISOString(),
+      purchaseModes: {
+        meta: map['tracking_meta_purchase_mode'] || 'instant',
+        tiktok: map['tracking_tiktok_purchase_mode'] || 'instant',
+      },
+      validatedStatuses: {
+        meta: map['tracking_meta_validated_status'] || '',
+        tiktok: map['tracking_tiktok_validated_status'] || '',
+      },
+    };
   }
 }

@@ -3,8 +3,8 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { TrackingService } from '../tracking/tracking.service';
-import { TrackingContextService } from '../tracking/tracking-context.service';
+import { TrackingCaptureService } from '../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { CustomersService } from '../customers/customers.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -218,15 +218,22 @@ describe('OrdersService', () => {
           },
         },
         {
-          provide: TrackingService,
+          provide: TrackingCaptureService,
           useValue: {
-            track: jest.fn().mockResolvedValue(undefined),
+            capture: jest
+              .fn()
+              .mockResolvedValue({ status: 'CAPTURED', snapshotId: 'snap-1' }),
           },
         },
         {
-          provide: TrackingContextService,
+          provide: TrackingSettingsService,
           useValue: {
-            getByCtxId: jest.fn().mockResolvedValue(undefined),
+            buildConfigSnapshot: jest.fn().mockResolvedValue({
+              enabledProviders: ['meta'],
+              normalizerVersion: 1,
+              capturedAt: '2025-01-15T00:00:00.000Z',
+            }),
+            get: jest.fn().mockResolvedValue(null),
           },
         },
         {
@@ -565,6 +572,50 @@ describe('OrdersService', () => {
       const createCall = (prisma.order.create as jest.Mock).mock.calls[0][0];
       expect(createCall.data.trackingSessionId).toBe('ctx-123');
     });
+
+    it('captures an instant purchase snapshot inside the order transaction', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        trackingSessionId: 'ctx-123',
+      });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        trackingSessionId: 'ctx-123',
+      });
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.create({
+        ...createOrderDto,
+        trackingSessionId: 'ctx-123',
+      });
+
+      const capture = trackingCapture.capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input, txArg] = capture.mock.calls[0];
+      expect(input.eventId).toBe('purchase_order-id-1');
+      expect(input.eventType).toBe('Purchase');
+      expect(input.ctxId).toBe('ctx-123');
+      expect(input.payload.value).toBe(2050);
+      // capture runs inside the business transaction client
+      expect(txArg).toBeDefined();
+      expect((txArg as any).orderCounter).toBeDefined();
+    });
   });
 
   describe('updateStatus', () => {
@@ -632,6 +683,74 @@ describe('OrdersService', () => {
       await expect(
         service.updateStatus('order-id-1', invalidStatusDto, userId),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('captures a validated purchase snapshot inside the status transaction', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.updateStatus('order-id-1', updateStatusDto, userId);
+
+      const capture = trackingCapture.capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input, txArg] = capture.mock.calls[0];
+      expect(input.eventId).toBe('purchase_order-id-1');
+      expect(input.eventType).toBe('Purchase');
+      expect(input.ctxId).toBeUndefined(); // mockOrder has no trackingSessionId
+      // capture runs inside the business transaction client
+      expect(txArg).toBeDefined();
+    });
+
+    it('captures a refund snapshot inside the transaction for cancelled orders', async () => {
+      const cancelledStatus = {
+        id: 'status-cancelled',
+        name: 'Cancelled',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        cancelledStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-cancelled',
+        status: cancelledStatus,
+      });
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'tracking_refund_enabled',
+        value: 'true',
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-cancelled', note: 'x' },
+        userId,
+      );
+
+      const capture = trackingCapture.capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0][0].eventId).toBe('refund_order-id-1');
+      expect(capture.mock.calls[0][0].eventType).toBe('Refund');
+      expect(capture.mock.calls[0][0].payload.value).toBe(-2050);
     });
   });
 
@@ -800,9 +919,8 @@ describe('OrdersService', () => {
   });
 
   describe('buildAndSendPurchaseEvent', () => {
-    const trackingContext = () =>
-      module.get<TrackingContextService>(TrackingContextService);
-    const trackingService = () => module.get<TrackingService>(TrackingService);
+    const captureService = () =>
+      module.get<TrackingCaptureService>(TrackingCaptureService);
 
     const baseOrder = {
       id: 'order-id-1',
@@ -828,53 +946,77 @@ describe('OrdersService', () => {
       ],
     };
 
-    it('should read context from TrackingContext via trackingSessionId', async () => {
-      (trackingContext().getByCtxId as jest.Mock).mockResolvedValue({
-        identifiers: {
-          meta: {
-            fbp: { value: 'fb.1.1.1' },
-            fbc: { value: 'fb.1.2.3' },
-          },
-        },
-        url: 'https://x',
-        referrer: 'https://r',
-      });
-
+    it('captures a Purchase snapshot with eventId/payload/ctxId and no legacy track', async () => {
       await (service as any).buildAndSendPurchaseEvent(
         { ...baseOrder, trackingSessionId: 'ctx-123' },
         'instant',
       );
 
-      expect(trackingContext().getByCtxId).toHaveBeenCalledWith('ctx-123');
-
-      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
-      expect(trackCall.userData).toEqual(
+      const capture = captureService().capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input] = capture.mock.calls[0];
+      expect(input.eventId).toBe('purchase_order-id-1');
+      expect(input.eventType).toBe('Purchase');
+      expect(input.orderId).toBe('order-id-1');
+      expect(input.ctxId).toBe('ctx-123');
+      expect(input.actionSource).toBe('website');
+      expect(input.eventTime).toBe(
+        Math.floor(new Date('2025-01-15').getTime() / 1000),
+      );
+      expect(input.payload).toEqual(
         expect.objectContaining({
-          fbp: 'fb.1.1.1',
-          fbc: 'fb.1.2.3',
-          url: 'https://x',
-          referrer: 'https://r',
+          value: 2050,
+          currency: 'BDT',
+          content_ids: ['prod-1'],
+          num_items: 2,
+          orderId: 'order-id-1',
+          contents: [
+            { id: 'prod-1', quantity: 2, item_price: 1000 },
+          ],
+          customer: {
+            email: 'john@example.com',
+            phone: '+1234567890',
+            firstName: 'John Doe',
+            lastName: undefined,
+            city: undefined,
+            country: 'BD',
+          },
         }),
       );
+      expect(input.configSnapshot).toEqual(
+        expect.objectContaining({
+          enabledProviders: ['meta'],
+          normalizerVersion: 1,
+        }),
+      );
+      expect((capture.mock.calls[0] as any[])[1]).toBeUndefined();
     });
 
-    it('should degrade gracefully when order has no trackingSessionId', async () => {
+    it('degrades gracefully when order has no trackingSessionId (ctxId undefined)', async () => {
       await (service as any).buildAndSendPurchaseEvent(baseOrder, 'instant');
 
-      expect(trackingContext().getByCtxId).not.toHaveBeenCalled();
+      const capture = captureService().capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0][0].ctxId).toBeUndefined();
+    });
 
-      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
-      expect(trackCall.userData.fbp).toBeUndefined();
-      expect(trackCall.userData.fbc).toBeUndefined();
-      expect(trackCall.userData.url).toBeUndefined();
-      expect(trackCall.userData.referrer).toBeUndefined();
+    it('passes a supplied transaction client through to capture', async () => {
+      const tx = { order: {} } as any;
+      await (service as any).buildAndSendPurchaseEvent(
+        { ...baseOrder, trackingSessionId: 'ctx-123' },
+        'validated',
+        tx,
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect((capture.mock.calls[0] as any[])[1]).toBe(tx);
     });
   });
 
   describe('fireRefundEvent', () => {
-    const trackingContext = () =>
-      module.get<TrackingContextService>(TrackingContextService);
-    const trackingService = () => module.get<TrackingService>(TrackingService);
+    const captureService = () =>
+      module.get<TrackingCaptureService>(TrackingCaptureService);
 
     const refundOrder = {
       id: 'order-id-1',
@@ -890,43 +1032,54 @@ describe('OrdersService', () => {
       ],
     };
 
-    it('should read context from TrackingContext via trackingSessionId', async () => {
-      (trackingContext().getByCtxId as jest.Mock).mockResolvedValue({
-        identifiers: {
-          meta: {
-            fbp: { value: 'fb.1.1.1' },
-            fbc: { value: 'fb.1.2.3' },
-          },
-        },
-        url: 'https://x',
-        referrer: 'https://r',
-      });
-
+    it('captures a Refund snapshot with negative value and no legacy track', async () => {
       await (service as any).fireRefundEvent(refundOrder);
 
-      expect(trackingContext().getByCtxId).toHaveBeenCalledWith('ctx-123');
-
-      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
-      expect(trackCall.eventId).toBe('refund_order-id-1');
-      expect(trackCall.userData).toEqual(
+      const capture = captureService().capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input] = capture.mock.calls[0];
+      expect(input.eventId).toBe('refund_order-id-1');
+      expect(input.eventType).toBe('Refund');
+      expect(input.orderId).toBe('order-id-1');
+      expect(input.ctxId).toBe('ctx-123');
+      expect(input.actionSource).toBe('website');
+      expect(input.payload).toEqual(
         expect.objectContaining({
-          fbp: 'fb.1.1.1',
-          fbc: 'fb.1.2.3',
+          value: -2050,
+          currency: 'BDT',
+          content_ids: ['prod-1'],
+          num_items: 2,
+          orderId: 'order-id-1',
+          contents: [{ id: 'prod-1', quantity: 2, item_price: 1000 }],
+          customer: {
+            phone: '+1234567890',
+            firstName: 'John Doe',
+            country: 'BD',
+          },
         }),
       );
     });
 
-    it('should degrade gracefully when order has no trackingSessionId', async () => {
+    it('degrades gracefully when order has no trackingSessionId', async () => {
       await (service as any).fireRefundEvent({
         ...refundOrder,
         trackingSessionId: null,
       });
 
-      expect(trackingContext().getByCtxId).not.toHaveBeenCalled();
+      const capture = captureService().capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0][0].ctxId).toBeUndefined();
+    });
 
-      const trackCall = (trackingService().track as jest.Mock).mock.calls[0][0];
-      expect(trackCall.userData.fbp).toBeUndefined();
-      expect(trackCall.userData.fbc).toBeUndefined();
+    it('skips capture when refunds are disabled', async () => {
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'tracking_refund_enabled',
+        value: 'false',
+      });
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).not.toHaveBeenCalled();
     });
   });
 });

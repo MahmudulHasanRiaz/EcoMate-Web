@@ -32,4 +32,5 @@ export class UpsertLeadDto {
   @IsOptional() @IsString() fingerprint?: string;
   @IsOptional() @IsString() fbp?: string;
   @IsOptional() @IsString() fbc?: string;
+  @IsOptional() @IsString() ctxId?: string;
 }
