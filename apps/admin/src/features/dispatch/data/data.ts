@@ -1,7 +1,7 @@
 export const DISPATCH_STATUSES = [
   { value: 'DISPATCHED', label: 'Dispatched', color: 'bg-gray-500' },
   { value: 'HANDED_OVER', label: 'Handed Over', color: 'bg-blue-500' },
-  { value: 'PICKED_UP', label: 'icked Up', color: 'bg-cyan-500' },
+  { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-cyan-500' },
   { value: 'IN_TRANSIT', label: 'In Transit', color: 'bg-indigo-500' },
   { value: 'ASSIGNED_TO_RIDER', label: 'Assigned to Rider', color: 'bg-purple-500' },
   { value: 'HOLD', label: 'Hold', color: 'bg-amber-500' },
