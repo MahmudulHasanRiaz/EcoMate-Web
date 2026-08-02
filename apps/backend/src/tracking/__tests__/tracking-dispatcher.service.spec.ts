@@ -420,4 +420,37 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     expect(dispatchCreate).not.toHaveBeenCalled();
     expect(outboxUpdate).not.toHaveBeenCalled();
   });
+
+  it('propagates the business eventTime (BigInt column) into the adapter payload as a number', async () => {
+    let captured: any;
+    fakeMeta.build = (snapshot) => {
+      captured = snapshot;
+      return buildPayload(snapshot.eventType);
+    };
+
+    await service.process(job, 'job-1');
+
+    expect(captured.eventTime).toBe(Number(snapshot.eventTime)); // Number(BigInt(1722585600))
+    expect(typeof captured.eventTime).toBe('number');
+  });
+
+  it('releases a stuck CLAIMED outbox (PENDING, lock cleared) when process() throws', async () => {
+    snapshotFindUnique.mockRejectedValueOnce(new Error('boom'));
+
+    await expect(service.process(job, 'job-1')).rejects.toThrow('boom');
+
+    // Best-effort release fired: row re-claimable — PENDING, attempts++, lock cleared.
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'outbox-1' },
+        data: expect.objectContaining({
+          status: 'PENDING',
+          attemptCount: 1,
+          lockedAt: null,
+          lockedBy: null,
+          nextAttemptAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
 });

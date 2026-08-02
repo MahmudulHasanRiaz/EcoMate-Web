@@ -91,7 +91,23 @@ export class TrackingDispatcherService {
     private readonly config: ConfigService,
   ) {}
 
+  /**
+   * Entry point. Runs the dispatch pipeline and, on any unexpected throw, does a
+   * best-effort release of a relay-claimed outbox (stuck CLAIMED -> PENDING with
+   * attemptCount++ and a short backoff) before rethrowing — so both the outbox row
+   * stays re-claimable and BullMQ retries the job.
+   */
   async process(job: DispatchJob, queueJobId?: string): Promise<void> {
+    try {
+      await this.run(job, queueJobId);
+    } catch (err) {
+      await this.releaseStuckOutbox(job);
+      throw err;
+    }
+  }
+
+  /** The actual dispatch pipeline (see class docstring); process() wraps it with crash-safety. */
+  private async run(job: DispatchJob, queueJobId?: string): Promise<void> {
     const snapshot = await this.prisma.trackingSnapshot.findUnique({
       where: { id: job.snapshotId },
     });
@@ -119,11 +135,16 @@ export class TrackingDispatcherService {
     const contextView = this.buildContextView(contextRow);
 
     // Enrich the immutable snapshot payload with the canonical event type + dedup id
-    // (the adapters' build() contract; the DB row is never mutated).
+    // (the adapters' build() contract; the DB row is never mutated). The business
+    // event time is a BigInt column — it must reach adapters as a number or they fall
+    // back to dispatch time (up to 24h wrong after backoff), reverting the Phase 2 fix.
     const payload: TrackingSnapshotPayload = {
       ...((snapshot.payload ?? {}) as unknown as TrackingSnapshotPayload),
       eventType: snapshot.eventType,
       eventId: snapshot.eventId,
+      ...(snapshot.eventTime != null
+        ? { eventTime: Number(snapshot.eventTime) }
+        : {}),
     };
 
     const config = (outbox.configSnapshot ?? {}) as ConfigSnapshot;
@@ -187,6 +208,36 @@ export class TrackingDispatcherService {
     });
 
     await this.advanceOutbox(source, outbox, config, statusByProvider, qj, firstError);
+  }
+
+  /**
+   * Crash-safety: if run() threw, the relay's CLAIM on the outbox would otherwise
+   * leave the row permanently unclaimable (the relay claims only PENDING rows, and
+   * the Phase 5 reconciler isn't wired yet). Best-effort reset a stuck CLAIMED row
+   * to PENDING with attemptCount++ and a short backoff so the next relay sweep can
+   * re-pick it. Already-advanced rows (PENDING from the retry path, or terminal
+   * SENT/DEAD) are left untouched so attempts are not double-counted and terminal
+   * decisions are never unwound. The caller rethrows so BullMQ retries too.
+   */
+  private async releaseStuckOutbox(job: DispatchJob): Promise<void> {
+    try {
+      const outbox = await this.prisma.trackingOutbox.findUnique({
+        where: { id: job.outboxId },
+      });
+      if (!outbox || outbox.status !== 'CLAIMED') return;
+      await this.prisma.trackingOutbox.update({
+        where: { id: outbox.id },
+        data: {
+          status: 'PENDING',
+          attemptCount: outbox.attemptCount + 1,
+          nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MS[0]),
+          lockedAt: null,
+          lockedBy: null,
+        },
+      });
+    } catch {
+      // DB itself may be down — the BullMQ job retry remains the backstop.
+    }
   }
 
   /**
