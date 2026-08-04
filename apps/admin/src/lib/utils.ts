@@ -24,7 +24,7 @@ export const API_BASE = import.meta.env.VITE_API_URL || '/api'
  * Resolves a relative URL (e.g. /uploads/foo.jpg) to an absolute URL using
  * the API base. If the url is already absolute it is returned as-is.
  */
-export function appUrl(url: string): string {
+export function appUrl(url: string | null | undefined): string {
   if (!url) return ''
   if (url.startsWith('http')) return url
   if (!url.startsWith('/')) url = `/${url}`
