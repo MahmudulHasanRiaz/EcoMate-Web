@@ -3,6 +3,7 @@ import { DispatchService } from './dispatch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 
 describe('DispatchService', () => {
   let service: DispatchService;
@@ -42,6 +43,12 @@ describe('DispatchService', () => {
           useValue: {
             isInventoryManagementEnabled: jest.fn().mockResolvedValue(false),
             resolve: jest.fn().mockReturnValue({ ms: 'skip', pi: 'skip' }),
+          },
+        },
+        {
+          provide: OrderStockDeductService,
+          useValue: {
+            deductForOrder: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

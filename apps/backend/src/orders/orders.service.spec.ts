@@ -14,6 +14,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -314,6 +315,12 @@ describe('OrdersService', () => {
           provide: CancelReturnStockService,
           useValue: {
             restoreForOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: OrderStockDeductService,
+          useValue: {
+            deductForOrder: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

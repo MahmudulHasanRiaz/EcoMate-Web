@@ -4,8 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StockService } from '../stock/stock.service';
-import { StockRouterService } from '../stock/stock-router.service';
+import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
@@ -28,8 +27,7 @@ const DISPATCH_TRANSITIONS: Record<string, string[]> = {
 export class DispatchService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly stockService: StockService,
-    private readonly stockRouter: StockRouterService,
+    private readonly orderStockDeduct: OrderStockDeductService,
   ) {}
 
   async findAll(query: DispatchQueryDto) {
@@ -219,319 +217,31 @@ export class DispatchService {
           return { claimed: true, dispatch };
         }
 
-        // HANDED_OVER: deduct stock.
+        // HANDED_OVER: deduct stock (managed + physical) via shared idempotent service.
         // Reads the ACTIVE OrderStockCycle to find the correct reservation to fulfill.
         // Combo children are processed via OrderItemComboComponent snapshots (independent stock targets).
         const reference = `Dispatch DEDUCT: ${dispatch.consignmentId}`;
-        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-
-        // Find the active cycle for this order
-        const activeCycle = await tx.orderStockCycle.findFirst({
-          where: { orderId: dispatch.orderId, status: 'ACTIVE' },
+        await this.orderStockDeduct.deductForOrder({
+          orderId: dispatch.orderId,
+          reference,
+          performedBy,
+          tx,
+          strict: true,
         });
-
-        const fullOrderItems = await tx.orderItem.findMany({
-          where: { orderId: dispatch.orderId },
-          include: {
-            product: {
-              select: { id: true, availabilityMode: true, manageStock: true, syncManagedStock: true, warehouseId: true, name: true },
-            },
-          },
-        });
-
-        for (const oi of fullOrderItems) {
-          if (!oi.productId && !oi.comboId) continue;
-
-          // ── Combo Item: process each child snapshot independently ─────────────
-          if (oi.comboId) {
-            const snapshots = await tx.orderItemComboComponent.findMany({
-              where: { orderItemId: oi.id },
-              include: { product: true },
-            });
-
-            for (const snap of snapshots) {
-              const compProduct = snap.product;
-              const decision = this.stockRouter.resolve(
-                compProduct.availabilityMode, 'deduct', imEnabled, compProduct.syncManagedStock ?? undefined,
-              );
-
-
-              // A. Managed Stock deduct (per-component flag)
-              if (decision.ms === 'deduct' && !snap.managedStockDeducted) {
-                if (snap.variantId) {
-                  await this.stockService.deduct({
-                    variantId: snap.variantId, quantity: snap.totalQuantity, reference,
-                    performedBy: performedBy || 'system', tx,
-                    skipCostingLotDeduct: decision.pi === 'fulfill',
-                  });
-                } else {
-                  await this.stockService.deduct({
-                    productId: snap.productId, quantity: snap.totalQuantity, reference,
-                    performedBy: performedBy || 'system', tx,
-                    skipCostingLotDeduct: decision.pi === 'fulfill',
-                  });
-                }
-                await tx.orderItemComboComponent.update({
-                  where: { id: snap.id },
-                  data: { managedStockDeducted: true },
-                });
-              }
-
-              // B. Physical reservation fulfill
-              if (decision.pi === 'fulfill' && activeCycle) {
-                const compRes = await tx.comboComponentPhysicalReservation.findUnique({
-                  where: {
-                    componentId_cycleId: { componentId: snap.id, cycleId: activeCycle.id },
-                  },
-                  select: { id: true, status: true },
-                });
-
-                if (compRes?.status === 'CONSUMED') continue;
-                if (compRes?.status === 'ACTIVE') {
-                  await this.stockService.fulfillPhysicalReservation({
-                    orderId: dispatch.orderId,
-                    cycleId: activeCycle.id,
-                    comboComponentId: snap.id,
-                    quantity: snap.totalQuantity,
-                    reference,
-                    performedBy: performedBy || 'system',
-                    tx,
-                  });
-                } else if (!compRes) {
-                  const hasPhysicalInventory = await tx.physicalInventory.findFirst({
-                    where: { productId: snap.productId, variantId: snap.variantId || null },
-                    select: { id: true },
-                  });
-                  if (!hasPhysicalInventory) {
-                    throw new BadRequestException(
-                      `"${compProduct.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই।`,
-                    );
-                  }
-                  throw new BadRequestException(
-                    `"${compProduct.name}" এর Combo Component Physical Reservation পাওয়া যায়নি। ` +
-                    `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
-                  );
-                }
-              }
-            }
-            continue;
-          }
-
-          // ── Standalone Item ──────────────────────────────────────────────────
-          const product = oi.product;
-          if (!product || !oi.productId) continue;
-
-          const decision = this.stockRouter.resolve(
-            product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
-          );
-
-          // A. Managed Stock deduct
-          if (decision.ms === 'deduct' && !oi.managedStockDeducted) {
-            if (oi.variantId) {
-              await this.stockService.deduct({
-                variantId: oi.variantId, quantity: oi.quantity, reference,
-                performedBy: performedBy || 'system', tx,
-                skipCostingLotDeduct: decision.pi === 'fulfill',
-              });
-            } else {
-              await this.stockService.deduct({
-                productId: oi.productId, quantity: oi.quantity, reference,
-                performedBy: performedBy || 'system', tx,
-                skipCostingLotDeduct: decision.pi === 'fulfill',
-              });
-            }
-            await tx.orderItem.update({
-              where: { id: oi.id },
-              data: { managedStockDeducted: true },
-            });
-          }
-
-          // B. Physical reservation fulfill
-          if (decision.pi === 'fulfill' && activeCycle) {
-            const reservation = await tx.physicalReservation.findUnique({
-              where: {
-                orderItemId_cycleId: { orderItemId: oi.id, cycleId: activeCycle.id },
-              },
-              select: { id: true, status: true },
-            });
-
-            if (reservation?.status === 'CONSUMED') continue;
-
-            if (reservation?.status === 'ACTIVE') {
-              await this.stockService.fulfillPhysicalReservation({
-                orderId: dispatch.orderId,
-                cycleId: activeCycle.id,
-                orderItemId: oi.id,
-                quantity: oi.quantity,
-                reference,
-                performedBy: performedBy || 'system',
-                tx,
-              });
-
-              // Upgrade costType from 'estimated' to 'actual' using FIFO consumption records
-              const consumptions = await tx.costingLotConsumption.findMany({
-                where: {
-                  type: 'FULFILLMENT',
-                  referenceType: 'ORDER_ITEM',
-                  referenceId: oi.id,
-                  cycleId: activeCycle.id,
-                },
-              });
-              if (consumptions.length > 0) {
-                const totalCost = consumptions.reduce(
-                  (sum, c) => sum + Number(c.unitCost) * c.quantity, 0,
-                );
-                const totalQty = consumptions.reduce((sum, c) => sum + c.quantity, 0);
-                const actualCost = totalQty > 0 ? totalCost / totalQty : 0;
-                await tx.orderItem.update({
-                  where: { id: oi.id },
-                  data: { costSnapshot: actualCost, costType: 'actual' },
-                });
-              }
-              continue;
-            }
-
-            // No reservation at all — something went wrong at Confirm.
-            const hasPhysicalInventory = await tx.physicalInventory.findFirst({
-              where: { productId: oi.productId, variantId: oi.variantId || null },
-              select: { id: true },
-            });
-            if (!hasPhysicalInventory) {
-              throw new BadRequestException(
-                `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
-                `Inventory Management চালু থাকলে Physical Stock ছাড়া Dispatch করা যাবে না।`,
-              );
-            }
-            throw new BadRequestException(
-              `"${product.name}" এর Physical Reservation পাওয়া যায়নি। ` +
-              `Order Confirm স্ট্যাটাসে Physical Stock Reserve হয়নি — Dispatch করা যাবে না।`,
-            );
-          }
-        }
       }
 
 
       // IN_TRANSIT: recheck that deduction was applied (like Confirmed rechecks reservation).
-      // If any managed stock deduction was missed, retry it now.
+      // If any managed stock deduction was missed, retry it now via the shared service.
       if (status === 'IN_TRANSIT') {
-        const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
         const reference = `In Transit DEDUCT RECHECK: ${dispatch.consignmentId}`;
-
-        // Load active cycle for cycle-scoped reservation lookup
-        const activeCycleForTransit = await tx.orderStockCycle.findFirst({
-          where: { orderId: dispatch.orderId, status: 'ACTIVE' },
+        await this.orderStockDeduct.deductForOrder({
+          orderId: dispatch.orderId,
+          reference,
+          performedBy,
+          tx,
+          strict: false,
         });
-
-        const orderItems = await tx.orderItem.findMany({
-          where: { orderId: dispatch.orderId },
-          include: {
-            product: {
-              select: { id: true, availabilityMode: true, manageStock: true, syncManagedStock: true, warehouseId: true, name: true },
-            },
-          },
-        });
-
-        for (const oi of orderItems) {
-          if (!oi.productId && !oi.comboId) continue;
-
-          // ── Combo Item: recheck/repair each child snapshot independently ─────
-          if (oi.comboId) {
-            const snapshots = await tx.orderItemComboComponent.findMany({
-              where: { orderItemId: oi.id },
-              include: { product: true },
-            });
-
-            for (const snap of snapshots) {
-              const compProduct = snap.product;
-              const decision = this.stockRouter.resolve(
-                compProduct.availabilityMode, 'deduct', imEnabled, compProduct.syncManagedStock ?? undefined,
-              );
-
-              // If managed stock should have been deducted but wasn't, do it now
-              if (decision.ms === 'deduct' && !snap.managedStockDeducted) {
-                if (snap.variantId) {
-                  await this.stockService.deduct({
-                    variantId: snap.variantId, quantity: snap.totalQuantity, reference,
-                    performedBy: performedBy || 'system', tx,
-                    skipCostingLotDeduct: decision.pi === 'fulfill',
-                  });
-                } else {
-                  await this.stockService.deduct({
-                    productId: snap.productId, quantity: snap.totalQuantity, reference,
-                    performedBy: performedBy || 'system', tx,
-                    skipCostingLotDeduct: decision.pi === 'fulfill',
-                  });
-                }
-                await tx.orderItemComboComponent.update({
-                  where: { id: snap.id },
-                  data: { managedStockDeducted: true },
-                });
-              }
-
-              // Verify physical reservation was fulfilled (CONSUMED) if applicable
-              if (decision.pi === 'fulfill' && activeCycleForTransit) {
-                const compRes = await tx.comboComponentPhysicalReservation.findUnique({
-                  where: {
-                    componentId_cycleId: { componentId: snap.id, cycleId: activeCycleForTransit.id },
-                  },
-                  select: { status: true },
-                });
-                if (compRes && compRes.status !== 'CONSUMED') {
-                  throw new BadRequestException(
-                    `"${compProduct.name}" এর Physical Stock Deduction এখনও সম্পন্ন হয়নি। ` +
-                    `In Transit-এ যাওয়ার আগে Handed Over স্ট্যাটাসে Physical Stock ডিডাক্ট হওয়া প্রয়োজন।`,
-                  );
-                }
-              }
-            }
-            continue;
-          }
-
-          // ── Standalone Item ──────────────────────────────────────────────────
-          const product = oi.product;
-          if (!product || !oi.productId) continue;
-
-          const decision = this.stockRouter.resolve(
-            product.availabilityMode, 'deduct', imEnabled, product.syncManagedStock ?? undefined,
-          );
-
-          // If managed stock should have been deducted but wasn't, do it now
-          if (decision.ms === 'deduct' && !oi.managedStockDeducted) {
-            if (oi.variantId) {
-              await this.stockService.deduct({
-                variantId: oi.variantId, quantity: oi.quantity, reference,
-                performedBy: performedBy || 'system', tx,
-                skipCostingLotDeduct: decision.pi === 'fulfill',
-              });
-            } else {
-              await this.stockService.deduct({
-                productId: oi.productId, quantity: oi.quantity, reference,
-                performedBy: performedBy || 'system', tx,
-                skipCostingLotDeduct: decision.pi === 'fulfill',
-              });
-            }
-            await tx.orderItem.update({
-              where: { id: oi.id },
-              data: { managedStockDeducted: true },
-            });
-          }
-
-          // Verify physical reservation was fulfilled (CONSUMED) if applicable
-          if (decision.pi === 'fulfill' && activeCycleForTransit) {
-            const reservation = await tx.physicalReservation.findUnique({
-              where: {
-                orderItemId_cycleId: { orderItemId: oi.id, cycleId: activeCycleForTransit.id },
-              },
-              select: { status: true },
-            });
-            if (reservation && reservation.status !== 'CONSUMED') {
-              throw new BadRequestException(
-                `"${product.name}" এর Physical Stock Deduction এখনও সম্পন্ন হয়নি। ` +
-                `In Transit-এ যাওয়ার আগে Handed Over স্ট্যাটাসে Physical Stock ডিডাক্ট হওয়া প্রয়োজন।`,
-              );
-            }
-          }
-        }
       }
 
 

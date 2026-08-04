@@ -4,6 +4,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
+import { StockReconciliationService } from '../stock/stock-reconciliation.service';
 import {
   AdjustInventoryDto,
   BulkAdjustInventoryDto,
@@ -14,7 +15,10 @@ import { LedgerQueryDto } from './dto/ledger-query.dto';
 @Controller('inventory')
 @RequiresFeature('admin_inventory')
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly reconciliation: StockReconciliationService,
+  ) {}
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('low-stock')
@@ -120,5 +124,23 @@ export class InventoryController {
     @CurrentUser() user: { email: string },
   ) {
     return this.inventoryService.transfer(body, user.email);
+  }
+
+  /**
+   * On-demand stock reconciliation / healing.
+   * Heals orders whose stock state drifted from their status (delivered-but-not-
+   * deducted, cancelled-but-not-released, returned-but-not-restored).
+   * Idempotent. Optional ?orderId=... to heal a single order.
+   */
+  @Roles('superadmin', 'admin', 'manager')
+  @Post('reconcile')
+  async reconcile(
+    @Query('orderId') orderId?: string,
+  ) {
+    if (orderId) {
+      const outcome = await this.reconciliation.healOrder(orderId);
+      return { orderId, outcome };
+    }
+    return this.reconciliation.healAll();
   }
 }

@@ -372,6 +372,12 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
     function setupMocks() {
       (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
       (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        id: 'prod-1',
+        availabilityMode: 'INVENTORY_CONTROLLED',
+        manageStock: true,
+      });
+      (stockRouter.resolve as jest.Mock).mockReturnValue({ ms: 'skip', pi: 'fulfill' });
       (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.combo.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.orderCounter.upsert as jest.Mock).mockResolvedValue({ date: '250715', seq: 1 });
