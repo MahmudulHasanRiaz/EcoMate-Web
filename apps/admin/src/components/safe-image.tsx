@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 const PLACEHOLDER_DATA_URI =
   'data:image/svg+xml;charset=UTF-8,' +
@@ -26,6 +26,26 @@ interface SafeImageProps extends Omit<
   variant?: 'thumbnail' | 'small' | 'medium'
   derivativeManifest?: Record<string, string> | null
   blurUrl?: string | null
+  /** Used when the primary src fails to load (e.g. broken/404 variant image). */
+  fallbackSrc?: string | null
+}
+
+function resizeUrl(
+  src: string,
+  thumbWidth?: number,
+  thumbHeight?: number
+): string | null {
+  if (src.startsWith('http')) return src
+  if (!src.startsWith('/uploads/')) return src
+
+  const base = import.meta.env.DEV
+    ? 'http://localhost:4000/api/images/resize'
+    : '/api/images/resize'
+  const params = new URLSearchParams()
+  params.set('path', src)
+  if (thumbWidth) params.set('w', String(thumbWidth))
+  if (thumbHeight) params.set('h', String(thumbHeight))
+  return `${base}?${params.toString()}`
 }
 
 export function SafeImage({
@@ -37,42 +57,77 @@ export function SafeImage({
   variant,
   derivativeManifest,
   blurUrl,
+  fallbackSrc,
   onError,
   ...props
 }: SafeImageProps) {
-  const [failed, setFailed] = useState(false)
-  const [useOriginal, setUseOriginal] = useState(false)
-
-  const finalSrc = useMemo(() => {
-    if (!src) return src
-
-    if (variant && derivativeManifest?.[variant]) {
-      return derivativeManifest[variant]
+  // Ordered chain of URLs to try, from most-desired to least: resized primary
+  // -> original primary -> resized fallback -> original fallback -> placeholder.
+  const attempts = useMemo(() => {
+    const chain: string[] = []
+    const push = (
+      candidate: string | null | undefined,
+      applyManifest: boolean
+    ) => {
+      if (!candidate) return
+      if (applyManifest && variant && derivativeManifest?.[variant]) {
+        if (!chain.includes(derivativeManifest[variant])) {
+          chain.push(derivativeManifest[variant])
+        }
+        if (!chain.includes(candidate)) chain.push(candidate)
+        return
+      }
+      if (thumbWidth || thumbHeight) {
+        const resized = resizeUrl(candidate, thumbWidth, thumbHeight)
+        if (resized && !chain.includes(resized)) chain.push(resized)
+        if (!chain.includes(candidate)) chain.push(candidate)
+        return
+      }
+      if (!chain.includes(candidate)) chain.push(candidate)
     }
+    push(src, true)
+    push(fallbackSrc, false)
+    return chain
+  }, [src, fallbackSrc, thumbWidth, thumbHeight, variant, derivativeManifest])
 
-    if (!thumbWidth && !thumbHeight) return src
+  // Keying the stateful render on the attempt-chain signature makes React
+  // remount it whenever the source changes, resetting the fallback attempt.
+  return (
+    <SafeImageContent
+      key={attempts.join('\u0000')}
+      attempts={attempts}
+      alt={alt}
+      className={className}
+      blurUrl={blurUrl}
+      onError={onError}
+      {...props}
+    />
+  )
+}
 
-    if (src.startsWith('http')) return src
+interface SafeImageContentProps extends Omit<
+  React.ImgHTMLAttributes<HTMLImageElement>,
+  'src'
+> {
+  attempts: string[]
+  alt?: string
+  className?: string
+  blurUrl?: string | null
+  onError?: React.ReactEventHandler<HTMLImageElement>
+}
 
-    if (!src.startsWith('/uploads/')) return src
+function SafeImageContent({
+  attempts,
+  alt,
+  className,
+  blurUrl,
+  onError,
+  ...props
+}: SafeImageContentProps) {
+  const [attempt, setAttempt] = useState(0)
 
-    const base = import.meta.env.DEV
-      ? 'http://localhost:4000/api/images/resize'
-      : '/api/images/resize'
-    const params = new URLSearchParams()
-    params.set('path', src)
-    if (thumbWidth) params.set('w', String(thumbWidth))
-    if (thumbHeight) params.set('h', String(thumbHeight))
-    return `${base}?${params.toString()}`
-  }, [src, thumbWidth, thumbHeight, variant, derivativeManifest])
-
-  useEffect(() => {
-    setFailed(false)
-    setUseOriginal(false)
-  }, [finalSrc, src])
-
-  const activeSrc = useOriginal ? src : finalSrc
-  const showPlaceholder = !activeSrc || failed
+  const activeSrc = attempts[attempt] ?? null
+  const showPlaceholder = !activeSrc
 
   if (showPlaceholder) {
     return (
@@ -87,16 +142,16 @@ export function SafeImage({
 
   return (
     <img
-      src={activeSrc || undefined}
+      src={activeSrc}
       alt={alt || ''}
       className={className}
       onError={(event) => {
         onError?.(event)
-        if (!useOriginal && src && finalSrc !== src) {
-          setUseOriginal(true)
-          return
+        if (attempt < attempts.length - 1) {
+          setAttempt((a) => a + 1)
+        } else {
+          setAttempt(attempts.length)
         }
-        setFailed(true)
       }}
       loading='lazy'
       {...props}

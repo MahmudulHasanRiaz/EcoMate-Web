@@ -17,6 +17,8 @@ export interface QueueItemProduct {
   sku?: string
   quantity: number
   image: string | null
+  /** Parent product image, used when the variant image is missing/broken. */
+  fallbackImage: string | null
 }
 
 export interface PackingLockInfo {

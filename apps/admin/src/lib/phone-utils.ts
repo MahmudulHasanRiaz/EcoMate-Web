@@ -25,3 +25,19 @@ export function formatPhone(input: string, format: 'international' | 'national' 
   if (format === 'whatsapp') return normalized.slice(1);
   return normalized;
 }
+
+/**
+ * Builds a `https://wa.me/<digits>` deep link for a phone number.
+ * Digits are put in WhatsApp international format without a leading '+' (wa.me
+ * rejects '+'). Unrecognized international numbers pass through with non-digit
+ * characters stripped; Bangladesh mobile numbers get the 880 prefix applied.
+ * Returns '' when no usable digits exist.
+ */
+export function whatsappLink(input: string, text?: string): string {
+  const normalized = normalizePhone(input);
+  const raw = input.replace(/\D/g, '');
+  if (!normalized && !raw) return '';
+  const digits = normalized ? normalized.slice(1) : raw;
+  const query = text ? `?text=${encodeURIComponent(text)}` : '';
+  return `https://wa.me/${digits}${query}`;
+}

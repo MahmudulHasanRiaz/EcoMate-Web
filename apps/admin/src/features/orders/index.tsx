@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { ordersApi, mediaUrl } from './api'
 import type { OrderResponse } from './api'
 import { SafeImage } from '@/components/safe-image'
+import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
 import { Header } from '@/components/layout/header'
@@ -581,6 +582,7 @@ export function Orders() {
                             {(o.customer?.phoneNumber || o.guestPhone) && (
                               <button onClick={e => { e.stopPropagation(); copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone') }} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-2.5 w-2.5' /></button>
                             )}
+                            <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -763,6 +765,7 @@ export function Orders() {
                                           <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
                                           <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline'>{o.customer?.phoneNumber || o.guestPhone}</a>
                                           <button onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '')} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-3 w-3' /></button>
+                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
                                         </div>
                                       )}
                                       {o.customer?.email && (

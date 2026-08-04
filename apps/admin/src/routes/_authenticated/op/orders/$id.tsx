@@ -4,6 +4,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
+import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { CustomerViewCard } from '@/features/orders/customer-view-card'
@@ -733,14 +734,17 @@ function OrderDetailPage() {
                     <p className='font-medium'>
                       {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : (order.guestName || 'Guest')}
                     </p>
-                    {(order.customer?.email || order.guestPhone) && (
+                    {order.customer?.email && (
                       <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <Mail className='h-3 w-3' />{order.customer?.email || `${order.guestPhone}`}
+                        <Mail className='h-3 w-3' />{order.customer.email}
                       </p>
                     )}
-                    {(order.customer?.phoneNumber) && (
+                    {(order.customer?.phoneNumber || order.guestPhone) && (
                       <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <Phone className='h-3 w-3' />{order.customer.phoneNumber}
+                        <a href={`tel:${order.customer?.phoneNumber || order.guestPhone}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
+                          <Phone className='h-3 w-3' />{order.customer?.phoneNumber || order.guestPhone}
+                        </a>
+                        <CustomerContactActions phone={order.customer?.phoneNumber || order.guestPhone} />
                       </p>
                     )}
                   </div>

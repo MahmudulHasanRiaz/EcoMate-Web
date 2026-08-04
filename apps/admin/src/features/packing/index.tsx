@@ -7,6 +7,7 @@ import { HoldModal } from './HoldModal'
 import { Input } from '@/components/ui/input'
 import { Html5Qrcode } from 'html5-qrcode'
 import { SafeImage } from '@/components/safe-image'
+import { mediaUrl } from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
   Camera, 
@@ -817,22 +818,29 @@ export function PackingWorkspace() {
                   const currentVerifiedQty = verifiedQuantities[item.id] ?? 0
                   const isVerified = currentVerifiedQty === item.quantity
                   const isMultiple = item.quantity > 1
+                  // Resolve both the variant image and the parent-product
+                  // fallback so a broken/missing variant image never hides
+                  // which product the packer is looking at.
+                  const primaryImage = mediaUrl(item.image)
+                  const fallbackImage = mediaUrl(item.fallbackImage)
+                  const zoomSource = primaryImage || fallbackImage
 
                   return (
                     <div className="flex-1 flex flex-col justify-between space-y-4">
                       {/* Product Image Box */}
                       <div className="relative w-full h-56 md:h-72 shrink-0 rounded-2xl bg-zinc-900 border border-zinc-850 flex items-center justify-center overflow-hidden shadow-inner">
                         <SafeImage
-                          src={item.image}
+                          src={primaryImage}
+                          fallbackSrc={fallbackImage}
                           alt=""
                           className="h-full w-full object-contain cursor-zoom-in active:scale-95 transition-transform"
-                          onClick={() => item.image && setZoomImage(item.image)}
+                          onClick={() => zoomSource && setZoomImage(zoomSource)}
                         />
 
                         {/* Zoom magnifier indicator icon */}
-                        {item.image && (
+                        {zoomSource && (
                           <button 
-                            onClick={() => item.image && setZoomImage(item.image)}
+                            onClick={() => zoomSource && setZoomImage(zoomSource)}
                             className="absolute right-3.5 bottom-3.5 p-2 rounded-xl bg-black/60 text-zinc-300 border border-zinc-800 hover:text-white transition-colors cursor-pointer"
                           >
                             <Maximize2 className="h-3.5 w-3.5" />

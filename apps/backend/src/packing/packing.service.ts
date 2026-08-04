@@ -84,18 +84,41 @@ export class PackingService {
               .filter(Boolean)
               .join(' / ')
           : '';
+        // Resolve an image URL from either a plain string entry or an
+        // object form ({ url } / { path }), skipping empty entries.
+        const resolveImage = (img: any): string | null => {
+          if (typeof img === 'string') return img.trim() || null;
+          if (img && typeof img === 'object') {
+            return (
+              (typeof img.url === 'string' && img.url.trim()) ||
+              (typeof img.path === 'string' && img.path.trim()) ||
+              null
+            );
+          }
+          return null;
+        };
+        const firstOf = (list: any): string | null => {
+          if (!Array.isArray(list) || list.length === 0) return null;
+          for (const entry of list) {
+            const resolved = resolveImage(entry);
+            if (resolved) return resolved;
+          }
+          return null;
+        };
+        const variantImages = (i.variant as any)?.images as any;
+        const variantImage =
+          resolveImage(i.variant?.image) || firstOf(variantImages);
+        // Parent product image — used when the variant has no image of its
+        // own (e.g. size-only variations) or the variant image is broken.
+        const productImage = firstOf(productImages);
         return {
           id: i.id,
           productName: i.variant?.product?.name ?? 'Unknown',
           variantName: variantAttrs || '',
           sku: i.variant?.sku ?? '',
           quantity: i.quantity,
-          image:
-            i.variant?.image ||
-            (Array.isArray(productImages) &&
-            typeof productImages[0] === 'string'
-              ? productImages[0]
-              : null),
+          image: variantImage || productImage,
+          fallbackImage: productImage,
         };
       }),
       totalItems: o.items.reduce((sum, i) => sum + i.quantity, 0),

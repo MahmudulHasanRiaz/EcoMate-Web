@@ -1,5 +1,7 @@
 import { forwardRef } from 'react'
 import { Lock, Package } from 'lucide-react'
+import { SafeImage } from '@/components/safe-image'
+import { mediaUrl } from '@/lib/utils'
 import type { QueueItem } from './types'
 
 interface Props {
@@ -54,13 +56,12 @@ export const PackingCard = forwardRef<HTMLDivElement, Props>(
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 select-none">
           {item.items.slice(0, 4).map((p) => (
             <div key={p.id} className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
-              {p.image ? (
-                <img src={p.image} alt="" className="h-full w-full object-cover select-none" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-zinc-100 dark:bg-zinc-900 text-[8px] text-zinc-400 font-medium select-none">
-                  No Img
-                </div>
-              )}
+              <SafeImage
+                src={mediaUrl(p.image)}
+                fallbackSrc={mediaUrl(p.fallbackImage)}
+                alt=""
+                className="h-full w-full object-cover select-none"
+              />
             </div>
           ))}
           {item.items.length > 4 && (

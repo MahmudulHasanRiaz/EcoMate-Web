@@ -158,6 +158,7 @@ describe('PackingService', () => {
             sku: 'SKU-001',
             quantity: 2,
             image: '/img.jpg',
+            fallbackImage: '/img.jpg',
           },
         ],
         totalItems: 2,
@@ -244,6 +245,78 @@ describe('PackingService', () => {
       const result = await service.getQueue();
 
       expect(result[0].items[0].image).toBeNull();
+    });
+
+    it('should fall back to parent product image when variant has no image (size-only variation)', async () => {
+      const mockOrder = {
+        id: 'order-4b',
+        displayId: 'ORD-004B',
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15'),
+        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
+        items: [
+          {
+            id: 'item-2b',
+            quantity: 1,
+            variant: {
+              sku: 'SKU-002B',
+              image: null,
+              product: { name: 'Product B', images: ['/parent.jpg'] },
+              attributeValues: [{ attributeValue: { value: 'L' } }],
+            },
+          },
+        ],
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+
+      const result = await service.getQueue();
+
+      expect(result[0].items[0]).toMatchObject({
+        image: '/parent.jpg',
+        fallbackImage: '/parent.jpg',
+      });
+    });
+
+    it('should resolve object-form product images and variant images array', async () => {
+      const mockOrder = {
+        id: 'order-4c',
+        displayId: 'ORD-004C',
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15'),
+        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
+        items: [
+          {
+            id: 'item-2c',
+            quantity: 1,
+            variant: {
+              sku: 'SKU-002C',
+              image: null,
+              images: [],
+              product: {
+                name: 'Product C',
+                images: [{ url: '/object-form.jpg' }, '/ignored-second.jpg'],
+              },
+            },
+          },
+        ],
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+
+      const result = await service.getQueue();
+
+      expect(result[0].items[0].image).toBe('/object-form.jpg');
     });
 
     it('should include packing lock info when present', async () => {
