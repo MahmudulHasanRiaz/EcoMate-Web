@@ -38,6 +38,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
+      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any);
   });
@@ -111,5 +112,75 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
     mockFetch(new Response('Account is not active!', { status: 401 }));
 
     await expect(service.getSteadfastBalance()).rejects.toThrow(/Account is not active!/);
+  });
+
+  // --- Hotfix 1: full formatted shipping address ---
+
+  it('sends the full formatted shipping address to Steadfast (not just the district)', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      {
+        ...order,
+        shippingAddress: {
+          addressLine: 'House 12, Road 5',
+          thana: 'Dhanmondi',
+          district: 'Dhaka',
+          division: 'Dhaka Division',
+          postCode: '1205',
+        },
+      },
+    ]);
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.recipient_address).toBe(
+      'House 12, Road 5, Dhanmondi, Dhaka, Dhaka Division, 1205',
+    );
+  });
+
+  // --- Hotfix 2: effective courier office note ---
+
+  it('legacy order with NULL office note dispatches with NO note (no silent default inheritance)', async () => {
+    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+      key: 'default_office_note',
+      value: 'handle-with-care', // a LATER default must not leak into existing orders
+    });
+    prisma.order.findMany.mockResolvedValue([{ ...order, officeNotes: null }]);
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.note).toBeUndefined();
+    expect(body.note).not.toBe('handle-with-care');
+  });
+
+  it('sends the order override office note when set', async () => {
+    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+      key: 'default_office_note',
+      value: 'default',
+    });
+    prisma.order.findMany.mockResolvedValue([{ ...order, officeNotes: 'override' }]);
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.note).toBe('override');
+  });
+
+  it('an explicit empty office note is authoritative (default is NOT applied)', async () => {
+    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+      key: 'default_office_note',
+      value: 'default',
+    });
+    prisma.order.findMany.mockResolvedValue([{ ...order, officeNotes: '' }]);
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.note).toBeUndefined();
   });
 });

@@ -586,6 +586,17 @@ export class OrdersService {
     return this.transformOrder(order);
   }
 
+  private async getDefaultOfficeNote(): Promise<string | null> {
+    try {
+      const s = await this.prisma.systemSetting.findUnique({
+        where: { key: 'default_office_note' },
+      });
+      return s?.value || null;
+    } catch {
+      return null;
+    }
+  }
+
   async create(dto: CreateOrderDto, clientIp?: string, user?: any) {
     const userId = user?.userId;
     const isCustomer = Boolean(user && user.role === 'customer');
@@ -726,7 +737,14 @@ export class OrdersService {
       }
     }
 
-    const resolvedOfficeNotes = null; // Public checkout does not accept office notes
+    // Courier office note (Hotfix 2, business rule): at CREATE, an empty/blank nose
+    // is treated as "no value provided", so the current default office note is
+    // copied into the order. Only a non-empty dto.officeNotes overrides it.
+    // (Update/Edit is the authoritative path: an explicit '' there clears the note.)
+    const resolvedOfficeNotes =
+      dto.officeNotes && dto.officeNotes.trim().length > 0
+        ? dto.officeNotes
+        : await this.getDefaultOfficeNote();
 
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses

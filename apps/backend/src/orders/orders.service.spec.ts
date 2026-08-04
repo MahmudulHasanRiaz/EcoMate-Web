@@ -486,6 +486,60 @@ describe('OrdersService', () => {
       expect(result).toEqual(mockOrder);
     });
 
+    it('copies the current default office note on create when input is empty/blank (Hotfix 2 rule)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'default_office_note',
+        value: 'default-note',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({ ...createOrderDto, officeNotes: '' });
+
+      expect(
+        (prisma.order.create as jest.Mock).mock.calls[0][0].data.officeNotes,
+      ).toBe('default-note');
+    });
+
+    it('uses a non-empty provided office note on create (overrides the default)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'default_office_note',
+        value: 'default-note',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({ ...createOrderDto, officeNotes: 'Override' });
+
+      expect(
+        (prisma.order.create as jest.Mock).mock.calls[0][0].data.officeNotes,
+      ).toBe('Override');
+    });
+
     it('should throw BadRequestException if no initial status configured', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>

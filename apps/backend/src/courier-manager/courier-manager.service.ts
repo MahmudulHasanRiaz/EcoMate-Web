@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatCourierAddress } from './address-format';
 
 const BASE_URLS: Record<string, Record<string, string>> = {
   steadfast: {
@@ -94,6 +95,17 @@ export class CourierManagerService {
     }
     return digits.slice(-11);
   }
+
+  /**
+   * Courier office note policy (Hotfix 2, architect-clarified):
+   * - The default note is copied into the order AT CREATE TIME (orders.service).
+   * - An order's stored officeNotes is authoritative forever: dispatch sends the
+   *   stored value verbatim, never today's system default (so an existing order
+   *   never silently inherits a later-changed default; a cleared '' stays empty).
+   * - Legacy orders created before the hotfix with officeNotes = NULL dispatch
+   *   with no note (empty) — documented, not backfilled silently.
+   * No dispatch-time default lookup is performed here.
+   */
 
   private async logDispatch(params: {
     orderId: string;
@@ -203,9 +215,7 @@ export class CourierManagerService {
       recipient_name:
         recipient?.name || order.guestName || 'Customer',
       recipient_phone: phone,
-      recipient_address:
-        address?.address ||
-        (address?.district ? `${address.district}` : 'Dhaka'),
+      recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       cod_amount: total,
       note: order.officeNotes || undefined,
       item_description: itemDescription,
@@ -376,7 +386,7 @@ export class CourierManagerService {
       recipient_name:
         recipient?.name || order.guestName || 'Customer',
       recipient_phone: phone,
-      recipient_address: address?.address || 'Dhaka',
+      recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       delivery_type: 48,
       item_type: 2,
       item_quantity: order.items?.length || 1,
@@ -558,7 +568,7 @@ export class CourierManagerService {
       customer_phone: phone,
       delivery_area: district,
       delivery_area_id: Number(deliveryAreaId) || 1,
-      customer_address: address?.address || address?.district || 'N/A',
+      customer_address: formatCourierAddress(address) ?? 'N/A',
       merchant_order_amount: total,
       cash_collection_amount: total,
       parcel_weight_in_gram: 500,
@@ -680,7 +690,7 @@ export class CourierManagerService {
     const payload = {
       full_name: name || 'Customer',
       mobile: phone,
-      address: address?.address || 'Dhaka',
+      address: formatCourierAddress(address) ?? 'Dhaka',
       city: address?.district || 'Dhaka',
       area: address?.area || '',
       merchant_order_id: order.displayId,
@@ -895,9 +905,9 @@ export class CourierManagerService {
         order.customer?.name || order.guestName || 'Customer',
       recipient_phone: this.normalizePhone(order.customer?.phone || order.guestPhone),
       recipient_address:
-        order.shippingAddress?.address ||
-        order.shippingAddress?.district ||
-        'Dhaka',
+        formatCourierAddress(
+          order.shippingAddress as Record<string, unknown>,
+        ) ?? 'Dhaka',
       cod_amount: Number(order.total),
       note: order.officeNotes || null,
     }));
