@@ -9,6 +9,7 @@ import {
   TrackingProviderAdapter,
 } from './adapters';
 import { TrackingContextService } from './tracking-context.service';
+import { IdentityResolutionService } from './identity-resolution.service';
 import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
 import { TrackingSettingsService } from './tracking-settings.service';
@@ -39,6 +40,11 @@ interface ConfigSnapshot {
  * the outbox is DEAD (replay is the only way back to PENDING).
  */
 const MAX_OUTBOX_ATTEMPTS = 5;
+
+/** Meta hard-rejects a request whose web event_time is older than 7 days (Using the API). */
+const WEB_EVENT_AGE_DAYS = 7;
+/** Offline/physical_store events may be uploaded within 62 days. */
+const OFFLINE_EVENT_AGE_DAYS = 62;
 
 /** Dispatch rows in these statuses are eligible for (re)processing — never SENT/DEAD/SKIPPED/DEDUPED. */
 const WORK_SET_STATUSES = new Set(['PENDING', 'SENDING', 'RETRY']);
@@ -87,6 +93,7 @@ export class TrackingDispatcherService {
     private readonly config: ConfigService,
     private readonly dlq: DlqService,
     private readonly replay: ReplayService,
+    private readonly identity: IdentityResolutionService,
   ) {}
 
   /**
@@ -175,6 +182,20 @@ export class TrackingDispatcherService {
       ...(eventTime != null ? { eventTime } : {}),
     };
 
+    // Wave-2.1 identity-binding at dispatch (Candidate B): for an order-bound
+    // customer event, override the per-journey uuid with the stable customer
+    // external_id (flag-gated, centralized IdentityResolutionService). Guests,
+    // anonymous, and flag-off keep the journey uuid. No TrackingContext rows are
+    // rewritten — the binding is resolved per order at dispatch time, so replays
+    // reuse the same customer key (replay/dedup consistency preserved).
+    const resolvedExternalId = await this.identity.resolveForOrder(
+      payload.customerId,
+      contextView.externalId,
+    );
+    if (resolvedExternalId !== undefined) {
+      contextView.externalId = resolvedExternalId;
+    }
+
     const config = (outbox.configSnapshot ?? {}) as ConfigSnapshot;
     const enabledProviders = Array.isArray(config.enabledProviders)
       ? config.enabledProviders
@@ -204,6 +225,35 @@ export class TrackingDispatcherService {
         continue;
       }
       eligible.push({ provider, adapter });
+    }
+
+    // 7-day event-age guard (Decision B / R2): Meta's API rejects a whole
+    // request whose web event_time is older than 7 days. DEAD such events here —
+    // with the reason recorded — instead of sending a guaranteed-rejected
+    // request. Offline (physical_store) events may be uploaded within 62 days.
+    // Gated by tracking_event_age_guard (default ON; explicit 'false' disables).
+    if (await this.ageGuardEnabled()) {
+      const maxAgeDays =
+        actionSource === 'physical_store'
+          ? OFFLINE_EVENT_AGE_DAYS
+          : WEB_EVENT_AGE_DAYS;
+      if (eventTime != null) {
+        const ageSec = Math.floor(Date.now() / 1000) - eventTime;
+        if (ageSec > maxAgeDays * 86_400) {
+          const msg = `event-time guard: event_time ${eventTime} is ${Math.max(0, Math.floor(ageSec / 86_400))}d old (> ${maxAgeDays}d)`;
+          await this.terminalOutbox(
+            source,
+            outbox,
+            'DEAD',
+            qj,
+            msg,
+            msg,
+            payload,
+            eligible,
+          );
+          return;
+        }
+      }
     }
 
     // Provider-independence: one provider's throw/refusal never blocks the others.
@@ -377,6 +427,20 @@ export class TrackingDispatcherService {
         dispatch.attemptCount + 1,
         errorMsg,
       );
+
+      // Informational EMQ quality flag (Decision C): the event was accepted, but
+      // surfaced in the monitoring timeline so low-match-key events are visible.
+      if (result.ok && built.qualityFlags?.length) {
+        await this.appendDispatchEvent(
+          source,
+          provider,
+          queueJobId,
+          'SENDING',
+          'SENT',
+          dispatch.attemptCount + 1,
+          `match-key quality: ${built.qualityFlags.join(', ')}`,
+        );
+      }
 
       return { status, errorMsg: errorMsg ?? undefined };
     } catch (err) {
@@ -765,6 +829,15 @@ export class TrackingDispatcherService {
       gclid: identifiers.google?.gclid?.value,
       ttclid: identifiers.tiktok?.ttclid?.value,
     };
+  }
+
+  /** tracking_event_age_guard — default ON (safety guard); explicit 'false' disables per server. */
+  private async ageGuardEnabled(): Promise<boolean> {
+    return this.settings.isEnabledOrDefault(
+      'tracking_event_age_guard',
+      true,
+      'TRACKING_EVENT_AGE_GUARD',
+    );
   }
 
   private async appendDispatchEvent(

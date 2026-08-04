@@ -26,6 +26,9 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
     getRetryHistogram: jest.fn(),
     getFreshness: jest.fn(),
     getDedupKeyUsage: jest.fn(),
+    getRelayHealth: jest.fn(),
+    getRuntimeHealth: jest.fn(),
+    getMirrorCapture: jest.fn(),
   };
   const prisma = {
     trackingSnapshot: { findUnique: jest.fn() },
@@ -46,6 +49,24 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
       p95CaptureToDispatchSec: 0,
     });
     monitoring.getDedupKeyUsage.mockResolvedValue([]);
+    monitoring.getRelayHealth.mockResolvedValue({
+      relayEnabled: false,
+      pendingCount: 0,
+      claimedCount: 0,
+      oldestPendingAgeSec: null,
+    });
+    monitoring.getRuntimeHealth.mockResolvedValue({
+      relay: { relayEnabled: false, pendingCount: 0, claimedCount: 0, oldestPendingAgeSec: null },
+      redis: { connected: false },
+      queue: { waiting: -1, active: -1, delayed: -1, failed: -1, completed: -1, reachable: false },
+      dispatcher: { sending: 0 },
+    });
+    monitoring.getMirrorCapture.mockResolvedValue({
+      totalSnapshots: 0,
+      browserOrigin: 0,
+      serverOrigin: 0,
+      browserMirrorRatio: 0,
+    });
     controller = new MonitoringController(
       monitoring as unknown as MonitoringService,
       prisma as unknown as PrismaService,
@@ -169,6 +190,43 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         ],
       });
       expect(monitoring.getDedupKeyUsage).toHaveBeenCalledWith(24);
+    });
+  });
+
+  describe('GET /tracking/admin/monitoring/health + mirror-capture (Wave 1)', () => {
+    it('returns the expanded runtime health, delegating to getRuntimeHealth', async () => {
+      monitoring.getRuntimeHealth.mockResolvedValue({
+        relay: { relayEnabled: true, pendingCount: 3, claimedCount: 1, oldestPendingAgeSec: 60 },
+        redis: { connected: true },
+        queue: { waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5, reachable: true },
+        dispatcher: { sending: 1 },
+      });
+
+      await expect(controller.health()).resolves.toEqual({
+        relayHealth: { relayEnabled: true, pendingCount: 3, claimedCount: 1, oldestPendingAgeSec: 60 },
+        redisHealth: { connected: true },
+        queueHealth: { waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5, reachable: true },
+        dispatcherHealth: { sending: 1 },
+      });
+    });
+
+    it('returns the browser-mirror capture ratio, delegating to getMirrorCapture(hours)', async () => {
+      monitoring.getMirrorCapture.mockResolvedValue({
+        totalSnapshots: 59,
+        browserOrigin: 10,
+        serverOrigin: 49,
+        browserMirrorRatio: 10 / 59,
+      });
+
+      await expect(controller.mirrorCapture('24')).resolves.toEqual({
+        mirrorCapture: {
+          totalSnapshots: 59,
+          browserOrigin: 10,
+          serverOrigin: 49,
+          browserMirrorRatio: 10 / 59,
+        },
+      });
+      expect(monitoring.getMirrorCapture).toHaveBeenCalledWith(24);
     });
   });
 

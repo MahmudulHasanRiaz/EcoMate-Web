@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackEvent, setPixelIds } from '../tracking';
+import { trackEvent, setPixelIds, initMetaPixel } from '../tracking';
 
 describe('tracking', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
@@ -18,6 +18,7 @@ describe('tracking', () => {
     window.fbq = vi.fn();
     window.ttq = { track: vi.fn() };
     setPixelIds('TEST-META-ID', 'TEST-TIKTOK-CODE');
+    initMetaPixel(); // mark the Meta pixel as inited so trackEvent takes the live path
     vi.mocked(window.fbq).mockClear();
     vi.mocked(window.ttq.track).mockClear();
 

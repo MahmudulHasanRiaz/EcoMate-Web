@@ -31,6 +31,22 @@ export class TrackingSettingsService {
   }
 
   /**
+   * Read a boolean setting that defaults to `defaultValue` when absent (unlike
+   * isEnabled, which treats an absent key as false). Used for safety guards that
+   * are ON by default but can be disabled per server with an explicit 'false'
+   * (e.g. the 7-day event-age guard). An env fallback, when provided, is read
+   * only when the setting is absent (matching get()).
+   */
+  async isEnabledOrDefault(
+    key: string,
+    defaultValue: boolean,
+    envKey?: string,
+  ): Promise<boolean> {
+    const raw = await this.get(key, envKey ?? null);
+    return raw === null ? defaultValue : raw === 'true';
+  }
+
+  /**
    * test_event_code is honored only when the provider's explicit test-mode flag is set,
    * so a leftover value can never leak into production traffic (design v2 §4.11, fixes D10).
    */

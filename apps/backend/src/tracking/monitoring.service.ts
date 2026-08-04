@@ -1,8 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DlqService, DlqStats } from './dlq.service';
 import { DispatchStatus, DISPATCH_STATUS } from './tracking.constants';
+import { TrackingSettingsService } from './tracking-settings.service';
+import {
+  RELAY_ENABLED_ENV_KEY,
+  RELAY_ENABLED_SETTING_KEY,
+} from './outbox-relay.service';
 
 export interface VolumeByEventTypeRow {
   eventType: string;
@@ -37,8 +44,54 @@ export interface FreshnessStats {
 }
 
 export interface DedupKeyUsageRow {
-  key: 'event_id' | 'external_id' | 'fbp' | 'fbc';
+  key: 'event_id' | 'context_external_id' | 'fbp' | 'fbc';
   events: number;
+}
+
+/** Relay go-live health (Decision G / R1). ops alert on pending age. */
+export interface RelayHealth {
+  relayEnabled: boolean;
+  pendingCount: number;
+  claimedCount: number;
+  /** Seconds past due of the oldest PENDING outbox (0 / null when none is due). */
+  oldestPendingAgeSec: number | null;
+}
+
+/** Redis connectivity (BullMQ Queue liveness). */
+export interface RedisHealth {
+  connected: boolean;
+}
+
+/** BullMQ `tracking` queue + worker liveness (job counts). */
+export interface QueueHealth {
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+  /** true when job counts could be read (a live queue/worker). */
+  reachable: boolean;
+}
+
+/** Dispatcher liveness proxy: dispatch rows currently in SENDING. */
+export interface DispatcherHealth {
+  sending: number;
+}
+
+/** Expanded runtime health for the ops endpoint (Wave-1 correction #5). */
+export interface RuntimeHealth {
+  relay: RelayHealth;
+  redis: RedisHealth;
+  queue: QueueHealth;
+  dispatcher: DispatcherHealth;
+}
+
+/** Browser-mirror capture reliability (Wave-1) — NOT Meta coverage. */
+export interface MirrorCaptureStats {
+  totalSnapshots: number;
+  browserOrigin: number;
+  serverOrigin: number;
+  browserMirrorRatio: number;
 }
 
 /** Upper-case stored status -> lower-case funnel key. */
@@ -82,6 +135,8 @@ export class MonitoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dlq: DlqService,
+    private readonly settings: TrackingSettingsService,
+    @InjectQueue('tracking') private readonly trackingQueue: Queue,
   ) {}
 
   /** Snapshot event volume by eventType over the last `hours` hours. */
@@ -178,22 +233,22 @@ export class MonitoringService {
   /**
    * Dedup-relevant key usage over the window.
    *
-   * Approximation note: `event_id` and `external_id` count snapshots (every
-   * snapshot carries an event_id; external_id is counted when the raw payload
-   * stores one). `fbp`/`fbc` are journey-level Meta identifiers kept on
-   * TrackingContext (dispatchers read `identifiers.meta.fbp.value`), so those
-   * two rows count distinct context rows — an upper bound on events, not an
-   * exact event count, since a context covers many snapshots.
+   * Approximation note: `event_id` counts snapshots (every snapshot carries an
+   * event_id). `context_external_id`, `fbp`, and `fbc` are journey-level values
+   * kept on TrackingContext (`external_id` is generated on every context row;
+   * `fbp`/`fbc` are read from `identifiers.meta.*`), so those three rows count
+   * distinct context rows — an upper bound on events, not an exact event count,
+   * since a context covers many snapshots.
    */
   async getDedupKeyUsage(hours: number): Promise<DedupKeyUsageRow[]> {
     const cutoff = this.cutoff(hours);
     const [eventIdCount, externalIdCount, fbpCount, fbcCount] = await Promise.all([
       this.prisma.trackingSnapshot.count({ where: { createdAt: { gte: cutoff } } }),
-      this.prisma.trackingSnapshot.count({
-        where: {
-          createdAt: { gte: cutoff },
-          payload: { path: ['externalId'], not: Prisma.DbNull },
-        },
+      // external_id is server-generated on EVERY TrackingContext row (never in a
+      // snapshot payload), so the correct usage proxy is the context row count in
+      // the window — an upper bound on events, same approximation as fbp/fbc.
+      this.prisma.trackingContext.count({
+        where: { createdAt: { gte: cutoff } },
       }),
       this.prisma.trackingContext.count({
         where: {
@@ -210,10 +265,123 @@ export class MonitoringService {
     ]);
     return [
       { key: 'event_id', events: eventIdCount },
-      { key: 'external_id', events: externalIdCount },
+      // context_external_id reflects TrackingContext AVAILABILITY, not Meta
+      // external_id dedup (external_id is assigned to every context row). Label
+      // reflects the actual semantics (Wave-1 correction #4).
+      { key: 'context_external_id', events: externalIdCount },
       { key: 'fbp', events: fbpCount },
       { key: 'fbc', events: fbcCount },
     ];
+  }
+
+  /**
+   * Relay go-live health (Wave 1): is the relay enabled, and how far behind is
+   * the outbox? `oldestPendingAgeSec` is the age past-due of the most-overdue
+   * PENDING row (the claim predicate is nextAttemptAt <= now); ops should alert
+   * when it exceeds the freshness SLO while the relay is enabled.
+   */
+  async getRelayHealth(): Promise<RelayHealth> {
+    const relayRaw = await this.settings.get(
+      RELAY_ENABLED_SETTING_KEY,
+      RELAY_ENABLED_ENV_KEY,
+    );
+    const [pendingCount, oldestPending, claimedCount] = await Promise.all([
+      this.prisma.trackingOutbox.count({ where: { status: 'PENDING' } }),
+      this.prisma.trackingOutbox.findFirst({
+        where: { status: 'PENDING' },
+        orderBy: { nextAttemptAt: 'asc' },
+        select: { nextAttemptAt: true },
+      }),
+      this.prisma.trackingOutbox.count({ where: { status: 'CLAIMED' } }),
+    ]);
+    const oldestPendingAgeSec =
+      oldestPending?.nextAttemptAt &&
+      oldestPending.nextAttemptAt.getTime() < Date.now()
+        ? Math.max(
+            0,
+            Math.floor(
+              (Date.now() - oldestPending.nextAttemptAt.getTime()) / 1000,
+            ),
+          )
+        : null;
+    return {
+      relayEnabled: relayRaw === 'true',
+      pendingCount,
+      claimedCount,
+      oldestPendingAgeSec,
+    };
+  }
+
+  /**
+   * Browser-mirror capture reliability ratio (Wave-1 correction #3). Browser
+   * mirror captures carry configSnapshot.source === 'browser'; server-authoritative
+   * captures do not. The browser-mirror ratio is the share of captured events that
+   * arrived via the browser mirror — a proxy for mirror reliability, NOT Meta
+   * coverage (Meta's ≥75% target is measured in Events Manager, the authoritative view).
+   */
+  async getMirrorCapture(hours: number): Promise<MirrorCaptureStats> {
+    const cutoff = this.cutoff(hours);
+    const [browserOrigin, total] = await Promise.all([
+      this.prisma.trackingOutbox.count({
+        where: {
+          createdAt: { gte: cutoff },
+          configSnapshot: { path: ['source'], equals: 'browser' },
+        },
+      }),
+      this.prisma.trackingOutbox.count({ where: { createdAt: { gte: cutoff } } }),
+    ]);
+    return {
+      totalSnapshots: total,
+      browserOrigin,
+      serverOrigin: total - browserOrigin,
+      browserMirrorRatio: total > 0 ? browserOrigin / total : 0,
+    };
+  }
+
+  /**
+   * Expanded runtime health (Wave-1 correction #5) covering the four layers:
+   * relay (outbox backlog), Redis (queue connectivity), BullMQ worker (job
+   * counts), and dispatcher (sending rows). Every subsystem read is guarded so a
+   * single layer failure degrades just that field.
+   */
+  async getRuntimeHealth(): Promise<RuntimeHealth> {
+    const [relay, queue, dispatcher] = await Promise.all([
+      this.getRelayHealth(),
+      this.getQueueHealth(),
+      this.prisma.trackingDispatch.count({ where: { status: 'SENDING' } }),
+    ]);
+    return {
+      relay,
+      redis: { connected: await this.redisConnected() },
+      queue,
+      dispatcher: { sending: dispatcher },
+    };
+  }
+
+  private async getQueueHealth(): Promise<QueueHealth> {
+    try {
+      const c = await this.trackingQueue.getJobCounts();
+      return {
+        waiting: c.waiting ?? 0,
+        active: c.active ?? 0,
+        delayed: c.delayed ?? 0,
+        failed: c.failed ?? 0,
+        completed: c.completed ?? 0,
+        reachable: true,
+      };
+    } catch {
+      return { waiting: -1, active: -1, delayed: -1, failed: -1, completed: -1, reachable: false };
+    }
+  }
+
+  private async redisConnected(): Promise<boolean> {
+    try {
+      // BullMQ exposes the resolved Redis version as a synchronous getter; it
+      // throws when the queue's Redis connection is unavailable.
+      return typeof this.trackingQueue.redisVersion === 'string';
+    } catch {
+      return false;
+    }
   }
 
   private cutoff(hours: number): Date {

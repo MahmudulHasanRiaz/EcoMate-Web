@@ -21,10 +21,49 @@ export interface DlqStats {
   dlqDepth: number
 }
 
+export interface RelayHealth {
+  relayEnabled: boolean
+  pendingCount: number
+  claimedCount: number
+  oldestPendingAgeSec: number | null
+}
+
+export interface RedisHealth {
+  connected: boolean
+}
+
+export interface QueueHealth {
+  waiting: number
+  active: number
+  delayed: number
+  failed: number
+  completed: number
+  reachable: boolean
+}
+
+export interface DispatcherHealth {
+  sending: number
+}
+
+export interface HealthResponse {
+  relayHealth: RelayHealth
+  redisHealth: RedisHealth
+  queueHealth: QueueHealth
+  dispatcherHealth: DispatcherHealth
+}
+
+export interface MirrorCaptureStats {
+  totalSnapshots: number
+  browserOrigin: number
+  serverOrigin: number
+  browserMirrorRatio: number
+}
+
 export interface OverviewResponse {
   volumeByEventType: VolumeByEventTypeRow[]
   dispatchFunnel: Record<string, DispatchFunnel>
   deadStats: DlqStats
+  relayHealth?: RelayHealth
 }
 
 export interface RetryHistogramRow {
@@ -48,7 +87,7 @@ export interface FreshnessResponse {
 }
 
 export interface DedupKeyUsageRow {
-  key: 'event_id' | 'external_id' | 'fbp' | 'fbc'
+  key: 'event_id' | 'context_external_id' | 'fbp' | 'fbc'
   events: number
 }
 
@@ -86,6 +125,10 @@ export const monitoringApi = {
     apiClient.get<FreshnessResponse>(`/tracking/admin/monitoring/freshness?hours=${hours}`).then((r) => r.data),
   dedup: (hours = 24) =>
     apiClient.get<DedupResponse>(`/tracking/admin/monitoring/dedup?hours=${hours}`).then((r) => r.data),
+  health: () =>
+    apiClient.get<HealthResponse>(`/tracking/admin/monitoring/health`).then((r) => r.data),
+  mirrorCapture: (hours = 24) =>
+    apiClient.get<{ mirrorCapture: MirrorCaptureStats }>(`/tracking/admin/monitoring/mirror-capture?hours=${hours}`).then((r) => r.data),
   timeline: (eventId: string) =>
     apiClient
       .get<TimelineResponse>(`/tracking/admin/monitoring/timeline?eventId=${encodeURIComponent(eventId)}`)

@@ -41,6 +41,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const contextGetByCtxId = jest.fn();
   const settingsGet = jest.fn();
   const getTestEventCode = jest.fn();
+  const isEnabledOrDefault = jest.fn();
   const configGet = jest.fn();
   const dlqMirror = jest.fn();
   const replayArchive = jest.fn();
@@ -58,11 +59,12 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     trackingDispatchEvent: { create: dispatchEventCreate },
   } as any;
   const context = { getByCtxId: contextGetByCtxId } as any;
-  const settings = { get: settingsGet, getTestEventCode } as any;
+  const settings = { get: settingsGet, getTestEventCode, isEnabledOrDefault } as any;
   const config = { get: configGet } as any;
   const dlq = { mirror: dlqMirror } as any;
   const replay = { archive: replayArchive } as any;
-  const service = new TrackingDispatcherService(prisma, context, settings, config, dlq, replay);
+  const identity = { resolveForOrder: jest.fn() } as any;
+  const service = new TrackingDispatcherService(prisma, context, settings, config, dlq, replay, identity);
 
   const snapshot = {
     id: 'snap-1',
@@ -142,12 +144,20 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     outboxUpdate.mockResolvedValue({});
     settingsGet.mockResolvedValue(null);
     getTestEventCode.mockResolvedValue(null);
+    // Wave-1 safety guards default OFF in the harness so existing tests (whose
+    // snapshots carry old eventTimes) keep dispatching; guard tests override.
+    isEnabledOrDefault.mockResolvedValue(false);
     configGet.mockReturnValue(undefined);
     dlqMirror.mockResolvedValue(undefined);
     replayArchive.mockResolvedValue(undefined);
     mockBuildAdapterRegistry.mockReturnValue([fakeMeta, fakeTiktok]);
     metaSend.mockResolvedValue(okResult());
     tiktokSend.mockResolvedValue(okResult());
+    // Wave-2.1 identity default = flag-off passthrough (journey uuid unchanged).
+    identity.resolveForOrder.mockImplementation(
+      async (_customerId: string | undefined, ctxExternalId: string | undefined) =>
+        ctxExternalId ?? undefined,
+    );
   });
 
   it('dispatches every eligible provider independently and SENTs the outbox when all succeed', async () => {
@@ -627,5 +637,123 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
         data: expect.objectContaining({ status: 'SENT' }),
       }),
     );
+  });
+
+  describe('Wave-1 — 7-day event-age guard + EMQ quality flags', () => {
+    it('DEADs a website event older than 7 days when the guard is on (never sends)', async () => {
+      isEnabledOrDefault.mockResolvedValue(true);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        eventTime: BigInt(Math.floor(Date.now() / 1000) - 8 * 86_400),
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(metaSend).not.toHaveBeenCalled();
+      expect(tiktokSend).not.toHaveBeenCalled();
+      expect(outboxUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'outbox-1' },
+          data: expect.objectContaining({
+            status: 'DEAD',
+            lastError: expect.stringContaining('event-time guard'),
+          }),
+        }),
+      );
+    });
+
+    it('passes a physical_store event within 62 days when the guard is on', async () => {
+      isEnabledOrDefault.mockResolvedValue(true);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        actionSource: 'physical_store',
+        eventTime: BigInt(Math.floor(Date.now() / 1000) - 30 * 86_400),
+      });
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      expect(metaSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches an old event when the guard is disabled (backward compatible)', async () => {
+      isEnabledOrDefault.mockResolvedValue(false);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        eventTime: BigInt(Math.floor(Date.now() / 1000) - 30 * 86_400),
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(metaSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('appends a match-key quality dispatch event when an adapter flags NO_EM_PH', async () => {
+      const flaggingMeta: TrackingProviderAdapter = {
+        ...fakeMeta,
+        build: (snap) => ({
+          ...buildPayload(snap.eventType),
+          qualityFlags: ['NO_EM_PH'],
+        }),
+      };
+      mockBuildAdapterRegistry.mockReturnValue([flaggingMeta]);
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      expect(dispatchEventCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            provider: 'meta',
+            message: 'match-key quality: NO_EM_PH',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('Wave-2.1 — identity-binding at dispatch', () => {
+    it('resolves the customer external_id per order and overrides the journey uuid', async () => {
+      identity.resolveForOrder.mockResolvedValue('cust-ext');
+      let seenCtxExternalId: unknown;
+      const identityMeta: TrackingProviderAdapter = {
+        ...fakeMeta,
+        build: (snap, ctx) => {
+          seenCtxExternalId = ctx?.externalId;
+          return buildPayload(snap.eventType);
+        },
+      };
+      mockBuildAdapterRegistry.mockReturnValue([identityMeta]);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', orderId: 'ord-1', customerId: 'cust-1' },
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(identity.resolveForOrder).toHaveBeenCalledWith('cust-1', 'ext-1');
+      expect(seenCtxExternalId).toBe('cust-ext');
+    });
+
+    it('keeps the journey uuid when the resolver returns none (guest / flag off)', async () => {
+      identity.resolveForOrder.mockResolvedValue(undefined);
+      let seenCtxExternalId: unknown;
+      const identityMeta: TrackingProviderAdapter = {
+        ...fakeMeta,
+        build: (snap, ctx) => {
+          seenCtxExternalId = ctx?.externalId;
+          return buildPayload(snap.eventType);
+        },
+      };
+      mockBuildAdapterRegistry.mockReturnValue([identityMeta]);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', orderId: 'ord-1' },
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(seenCtxExternalId).toBe('ext-1');
+    });
   });
 });

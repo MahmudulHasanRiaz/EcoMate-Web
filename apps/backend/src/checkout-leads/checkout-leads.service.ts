@@ -519,6 +519,7 @@ export class CheckoutLeadsService {
               (s: number, i: any) => s + (i.quantity || 0),
               0,
             ),
+            customerId: order.customerId ?? undefined,
             orderId: order.id,
             customer: {
               email: email || undefined,

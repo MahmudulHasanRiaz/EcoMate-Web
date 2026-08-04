@@ -240,6 +240,7 @@ model AuthSettings {
 model CustomerProfile {
   id               String   @id @default(uuid())
   betterAuthUserId String?  @unique
+  externalId       String?  @unique
   phone            String   @unique
   email            String?
   name             String

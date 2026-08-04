@@ -5,19 +5,24 @@ import { DlqService } from '../dlq.service';
 describe('MonitoringService — Phase 6 aggregate queries', () => {
   const snapshotGroupBy = jest.fn();
   const dispatchGroupBy = jest.fn();
+  const dispatchCount = jest.fn();
   const snapshotCount = jest.fn();
   const contextCount = jest.fn();
   const outboxFindMany = jest.fn();
+  const outboxCount = jest.fn();
+  const outboxFindFirst = jest.fn();
 
   const prisma = {
     trackingSnapshot: { groupBy: snapshotGroupBy, count: snapshotCount },
-    trackingDispatch: { groupBy: dispatchGroupBy },
+    trackingDispatch: { groupBy: dispatchGroupBy, count: dispatchCount },
     trackingContext: { count: contextCount },
-    trackingOutbox: { findMany: outboxFindMany },
+    trackingOutbox: { findMany: outboxFindMany, count: outboxCount, findFirst: outboxFindFirst },
   } as any;
 
   const dlq = { getStats: jest.fn() } as unknown as DlqService;
-  const service = new MonitoringService(prisma, dlq);
+  const settings = { get: jest.fn() } as any;
+  const queue = { getJobCounts: jest.fn(), redisVersion: '7.2.0' } as any;
+  const service = new MonitoringService(prisma, dlq, settings, queue);
 
   const hours = 24;
   const cutoff = expect.any(Date);
@@ -29,6 +34,12 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     snapshotCount.mockResolvedValue(0);
     contextCount.mockResolvedValue(0);
     outboxFindMany.mockResolvedValue([]);
+    outboxCount.mockResolvedValue(0);
+    outboxFindFirst.mockResolvedValue(null);
+    dispatchCount.mockResolvedValue(0);
+    queue.getJobCounts.mockResolvedValue({
+      waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5,
+    });
     (dlq.getStats as jest.Mock).mockResolvedValue({ deadCount: 5, dlqDepth: 2 });
   });
 
@@ -170,36 +181,134 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     });
   });
 
-  it('getDedupKeyUsage counts event_id/external_id snapshots and meta fbp/fbc context rows', async () => {
-    snapshotCount.mockResolvedValueOnce(50).mockResolvedValueOnce(40);
-    contextCount.mockResolvedValueOnce(30).mockResolvedValueOnce(12);
+  it('getDedupKeyUsage counts event_id snapshots and external_id/fbp/fbc context rows', async () => {
+    snapshotCount.mockResolvedValueOnce(50);
+    contextCount
+      .mockResolvedValueOnce(40) // external_id — every TrackingContext row carries one
+      .mockResolvedValueOnce(30) // fbp
+      .mockResolvedValueOnce(12); // fbc
 
     await expect(service.getDedupKeyUsage(hours)).resolves.toEqual([
       { key: 'event_id', events: 50 },
-      { key: 'external_id', events: 40 },
+      { key: 'context_external_id', events: 40 },
       { key: 'fbp', events: 30 },
       { key: 'fbc', events: 12 },
     ]);
-    expect(snapshotCount).toHaveBeenNthCalledWith(1, {
+    expect(snapshotCount).toHaveBeenCalledTimes(1);
+    expect(contextCount).toHaveBeenNthCalledWith(1, {
       where: { createdAt: { gte: cutoff } },
     });
-    expect(snapshotCount).toHaveBeenNthCalledWith(2, {
-      where: {
-        createdAt: { gte: cutoff },
-        payload: { path: ['externalId'], not: Prisma.DbNull },
-      },
-    });
-    expect(contextCount).toHaveBeenNthCalledWith(1, {
+    expect(contextCount).toHaveBeenNthCalledWith(2, {
       where: {
         createdAt: { gte: cutoff },
         identifiers: { path: ['meta', 'fbp', 'value'], not: Prisma.DbNull },
       },
     });
-    expect(contextCount).toHaveBeenNthCalledWith(2, {
+    expect(contextCount).toHaveBeenNthCalledWith(3, {
       where: {
         createdAt: { gte: cutoff },
         identifiers: { path: ['meta', 'fbc', 'value'], not: Prisma.DbNull },
       },
     });
+  });
+
+  it('getRelayHealth reports relay on/off plus outbox backlog depth and oldest pending age', async () => {
+    (settings.get as jest.Mock).mockResolvedValue('true');
+    outboxCount.mockResolvedValueOnce(3).mockResolvedValueOnce(1); // pending, claimed
+    outboxFindFirst.mockResolvedValue({ nextAttemptAt: new Date(Date.now() - 60_000) });
+
+    await expect(service.getRelayHealth()).resolves.toEqual({
+      relayEnabled: true,
+      pendingCount: 3,
+      claimedCount: 1,
+      oldestPendingAgeSec: 60,
+    });
+    expect(settings.get).toHaveBeenCalledWith('tracking_relay_enabled', 'TRACKING_RELAY_ENABLED');
+  });
+
+  it('getRelayHealth returns null oldest age when nothing is due and relay off', async () => {
+    (settings.get as jest.Mock).mockResolvedValue(null);
+    outboxCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    outboxFindFirst.mockResolvedValue({ nextAttemptAt: new Date(Date.now() + 5_000) });
+
+    await expect(service.getRelayHealth()).resolves.toEqual({
+      relayEnabled: false,
+      pendingCount: 0,
+      claimedCount: 0,
+      oldestPendingAgeSec: null,
+    });
+  });
+
+  it('getMirrorCapture computes the browser-origin share of captures', async () => {
+    outboxCount.mockResolvedValueOnce(10).mockResolvedValueOnce(59); // browser, total
+
+    await expect(service.getMirrorCapture(hours)).resolves.toEqual({
+      totalSnapshots: 59,
+      browserOrigin: 10,
+      serverOrigin: 49,
+      browserMirrorRatio: 10 / 59,
+    });
+    expect(outboxCount).toHaveBeenNthCalledWith(1, {
+      where: {
+        createdAt: { gte: cutoff },
+        configSnapshot: { path: ['source'], equals: 'browser' },
+      },
+    });
+    expect(outboxCount).toHaveBeenNthCalledWith(2, {
+      where: { createdAt: { gte: cutoff } },
+    });
+  });
+
+  it('getMirrorCapture returns a zero ratio when there are no captures', async () => {
+    outboxCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    await expect(service.getMirrorCapture(hours)).resolves.toEqual({
+      totalSnapshots: 0,
+      browserOrigin: 0,
+      serverOrigin: 0,
+      browserMirrorRatio: 0,
+    });
+  });
+
+  it('getRuntimeHealth returns relay/redis/queue/dispatcher runtime health', async () => {
+    // relay off
+    (settings.get as jest.Mock).mockResolvedValue(null);
+    outboxCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    outboxFindFirst.mockResolvedValue({ nextAttemptAt: new Date(Date.now() + 1_000) });
+    // dispatcher sending rows
+    dispatchCount.mockResolvedValueOnce(2);
+    // queue + redis reachable via the mocks in beforeEach
+
+    await expect(service.getRuntimeHealth()).resolves.toEqual({
+      relay: {
+        relayEnabled: false,
+        pendingCount: 0,
+        claimedCount: 0,
+        oldestPendingAgeSec: null,
+      },
+      redis: { connected: true },
+      queue: {
+        waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5, reachable: true,
+      },
+      dispatcher: { sending: 2 },
+    });
+  });
+
+  it('getRuntimeHealth degrades redis/queue when the queue is unreachable', async () => {
+    // redisConnected() reads the queue.redisVersion getter, which throws when the
+    // Redis connection is down — simulate that, plus a failing job-count read.
+    Object.defineProperty(queue, 'redisVersion', {
+      configurable: true,
+      get: () => {
+        throw new Error('redis down');
+      },
+    });
+    queue.getJobCounts.mockRejectedValue(new Error('redis down'));
+    dispatchCount.mockResolvedValueOnce(0);
+
+    const health = await service.getRuntimeHealth();
+    expect(health.redis.connected).toBe(false);
+    expect(health.queue.reachable).toBe(false);
+    expect(health.queue.active).toBe(-1);
+    expect(health.dispatcher.sending).toBe(0);
   });
 });

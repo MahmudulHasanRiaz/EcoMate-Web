@@ -19,6 +19,14 @@ export interface ProviderPayload {
   eventId: string;
   eventTime: number;
   eventType: string;
+  /**
+   * Informational match-quality flags set by an adapter's build() (never
+   * persisted on the dispatch row; surfaced as a TrackingDispatchEvent message
+   * and visible in the monitoring timeline). Example: ['NO_EM_PH'] when the
+   * payload has no em/ph contact key but still carries other identity
+   * (external_id/fbp/fbc/ip/ua) — Meta accepts such events with lower EMQ.
+   */
+  qualityFlags?: string[];
   [key: string]: any;
 }
 

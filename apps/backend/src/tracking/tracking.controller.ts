@@ -1,11 +1,21 @@
-import { Controller, Post, Body, Req, Ip, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Req,
+  Ip,
+  Logger,
+} from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import * as fastify from 'fastify';
 import { TrackingCaptureService } from './tracking-capture.service';
 import { TrackingContextService } from './tracking-context.service';
 import { TrackingSettingsService } from './tracking-settings.service';
+import { IdentityResolutionService } from './identity-resolution.service';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { TrackEventDto } from './dto/track-event.dto';
 import { SaveContextDto } from './dto/save-context.dto';
 import { PageViewDto } from './dto/page-view.dto';
@@ -21,6 +31,7 @@ export class TrackingController {
     private readonly trackingContext: TrackingContextService,
     private readonly pageViewBuffer: PageViewBufferService,
     private readonly trackingSettings: TrackingSettingsService,
+    private readonly identityResolution: IdentityResolutionService,
   ) {}
 
   @RateLimitPolicy('storefront')
@@ -136,6 +147,27 @@ export class TrackingController {
    * page_view is deliberately excluded (Pixel/analytics only, design §5);
    * any other unmapped name yields undefined and is skipped.
    */
+  /**
+   * Wave-2.1 shopper identity for the browser Pixel (Candidate B). Authenticated
+   * via the global auth guard (NOT @Public). Returns the customer's stable
+   * external_id when `tracking_customer_external_id` is ON and the session is
+   * linked to a CustomerProfile; otherwise null (browser stays parameterless).
+   * The correct source is CustomerProfile via the Better Auth session — NOT
+   * /auth/me (which is the admin UserProfile). Null is returned whether the flag
+   * is off or the shopper has no profile, so the storefront call is always safe.
+   */
+  @Get('identity')
+  @RateLimitPolicy('storefront')
+  async identity(@CurrentUser() user: any) {
+    const baUserId =
+      user?.betterAuthSession?.user?.id ?? user?.betterAuthUserId ?? null;
+    if (!baUserId) {
+      return { externalId: null };
+    }
+    const externalId = await this.identityResolution.resolveForShopper(baUserId);
+    return { externalId };
+  }
+
   private mapEventType(name: string): TrackingEventType | undefined {
     const map: Record<string, TrackingEventType> = {
       view_content: 'ViewContent',

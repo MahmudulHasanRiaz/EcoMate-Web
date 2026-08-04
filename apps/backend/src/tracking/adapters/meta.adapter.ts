@@ -1,5 +1,6 @@
 import { TRACKING_EVENT_TYPES } from '../tracking.constants';
 import { TrackingNormalizer } from '../tracking.normalizer';
+import { sanitizeProviderText } from '../sanitize';
 import {
   TrackingContextView,
   TrackingSnapshotPayload,
@@ -93,6 +94,26 @@ export class MetaAdapter implements TrackingProviderAdapter {
     // fall back to dispatch time only when the snapshot carries none.
     const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
 
+    // EMQ DIAGNOSTICS ONLY (Wave-1, Decision C): Meta ACCEPTS an event with no
+    // em/ph (lower match quality) as long as it carries other identity keys, and
+    // an event with no identity at all is likewise still delivered. Wave-1 only
+    // EMITS quality flags and surfaces them in the monitoring timeline — it NEVER
+    // suppresses dispatch (no null, no SKIPPED). Skip/refuse policy belongs to the
+    // Wave-2 identity wave, after a stable external_id architecture exists.
+    const hasContact = Boolean(user_data.em || user_data.ph);
+    const hasOtherIdentity = Boolean(
+      user_data.external_id ||
+        user_data.fbp ||
+        user_data.fbc ||
+        user_data.client_ip_address ||
+        user_data.client_user_agent,
+    );
+    const qualityFlags: string[] | undefined = hasContact
+      ? undefined
+      : hasOtherIdentity
+        ? ['NO_EM_PH']
+        : ['NO_EM_PH', 'NO_IDENTITY'];
+
     return {
       eventName,
       eventId,
@@ -102,6 +123,7 @@ export class MetaAdapter implements TrackingProviderAdapter {
       event_source_url: ctx.url,
       user_data,
       custom_data,
+      ...(qualityFlags ? { qualityFlags } : {}),
     };
   }
 
@@ -144,7 +166,10 @@ export class MetaAdapter implements TrackingProviderAdapter {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      const rawResponse = (await response.text()).slice(0, MAX_RAW_RESPONSE_CHARS);
+      const rawResponse = sanitizeProviderText(await response.text()).slice(
+        0,
+        MAX_RAW_RESPONSE_CHARS,
+      );
 
       if (response.ok) {
         return {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { TrackingContextService } from './tracking-context.service';
+import { IdentityResolutionService } from './identity-resolution.service';
 import { TrackingController } from './tracking.controller';
 import { PageViewBufferService } from './page-view-buffer.service';
 import { TrackingSettingsService } from './tracking-settings.service';
@@ -38,6 +39,7 @@ import { PrismaModule } from '../prisma/prisma.module';
   ],
   providers: [
     TrackingContextService,
+    IdentityResolutionService,
     PageViewBufferService,
     TrackingSettingsService,
     TrackingCaptureService,
@@ -53,6 +55,7 @@ import { PrismaModule } from '../prisma/prisma.module';
   ],
   exports: [
     TrackingContextService,
+    IdentityResolutionService,
     PageViewBufferService,
     TrackingSettingsService,
     TrackingCaptureService,

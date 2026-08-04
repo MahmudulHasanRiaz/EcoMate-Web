@@ -384,3 +384,43 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
     });
   });
 });
+
+describe('MetaAdapter — EMQ diagnostics only (Wave-1 Decision C)', () => {
+  const adapter = new MetaAdapter();
+
+  const noIdentitySnapshot: TrackingSnapshotPayload = {
+    eventType: 'Purchase',
+    orderId: 'ord-9001',
+    value: 100,
+    currency: 'BDT',
+    customer: {},
+  };
+  const noContactCtx: TrackingContextView = {
+    externalId: 'CUST-42',
+    ip: '203.0.113.7',
+    userAgent: 'Mozilla/5.0',
+  };
+
+  it('NEVER suppresses an event with no identity — builds it and flags NO_EM_PH + NO_IDENTITY', () => {
+    const payload = adapter.build(noIdentitySnapshot, {}, normalizer);
+    // Decision C / Wave-1: accepted by Meta, dispatched (diagnostics only).
+    expect(payload).not.toBeNull();
+    expect(payload!.eventId).toBe('purchase_ord-9001');
+    expect(payload!.qualityFlags).toEqual(['NO_EM_PH', 'NO_IDENTITY']);
+  });
+
+  it('flags NO_EM_PH when no em/ph but other identity (external_id + ip) is present', () => {
+    const payload = adapter.build(noIdentitySnapshot, noContactCtx, normalizer);
+    expect(payload).not.toBeNull();
+    expect(payload!.qualityFlags).toEqual(['NO_EM_PH']);
+    expect(payload!.user_data.external_id).toBe(
+      normalizer.hashExternalId('CUST-42'),
+    );
+  });
+
+  it('sets no qualityFlags when em or ph is present', () => {
+    const payload = adapter.build(snapshot, ctx, normalizer);
+    expect(payload).not.toBeNull();
+    expect(payload!.qualityFlags).toBeUndefined();
+  });
+});

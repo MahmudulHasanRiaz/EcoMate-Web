@@ -11,6 +11,8 @@ vi.mock('@/features/settings/tracking/monitoring-api', () => ({
     failures: vi.fn(),
     freshness: vi.fn(),
     dedup: vi.fn(),
+    health: vi.fn(),
+    mirrorCapture: vi.fn(),
     timeline: vi.fn(),
   },
 }))
@@ -47,10 +49,21 @@ const MOCK_FRESHNESS = { avgCaptureToDispatchSec: 1.5, p95CaptureToDispatchSec: 
 const MOCK_DEDUP = {
   keyUsage: [
     { key: 'event_id', events: 40 },
-    { key: 'external_id', events: 10 },
+    { key: 'context_external_id', events: 10 },
     { key: 'fbp', events: 5 },
     { key: 'fbc', events: 2 },
   ],
+}
+
+const MOCK_HEALTH = {
+  relayHealth: { relayEnabled: true, pendingCount: 2, claimedCount: 0, oldestPendingAgeSec: 5 },
+  redisHealth: { connected: true },
+  queueHealth: { waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5, reachable: true },
+  dispatcherHealth: { sending: 1 },
+}
+
+const MOCK_MIRROR = {
+  mirrorCapture: { totalSnapshots: 59, browserOrigin: 10, serverOrigin: 49, browserMirrorRatio: 0.169 },
 }
 
 const MOCK_TIMELINE = {
@@ -106,6 +119,8 @@ describe('TrackingMonitoring page', () => {
     vi.mocked(monitoringApi.failures).mockResolvedValue(MOCK_FAILURES as any)
     vi.mocked(monitoringApi.freshness).mockResolvedValue(MOCK_FRESHNESS as any)
     vi.mocked(monitoringApi.dedup).mockResolvedValue(MOCK_DEDUP as any)
+    vi.mocked(monitoringApi.health).mockResolvedValue(MOCK_HEALTH as any)
+    vi.mocked(monitoringApi.mirrorCapture).mockResolvedValue(MOCK_MIRROR as any)
     vi.mocked(monitoringApi.timeline).mockResolvedValue(MOCK_TIMELINE as any)
   })
 
@@ -118,7 +133,9 @@ describe('TrackingMonitoring page', () => {
     await expect.element(screen.getByText('Top Failures')).toBeInTheDocument()
     await expect.element(screen.getByText('Retry Histogram')).toBeInTheDocument()
     await expect.element(screen.getByText('Freshness')).toBeInTheDocument()
-    await expect.element(screen.getByText('Dedup Keys')).toBeInTheDocument()
+    await expect.element(screen.getByText('Identifier Usage')).toBeInTheDocument()
+    await expect.element(screen.getByText('Pipeline Health')).toBeInTheDocument()
+    await expect.element(screen.getByText('Browser Mirror Capture')).toBeInTheDocument()
     await expect.element(screen.getByText('Event Timeline')).toBeInTheDocument()
   })
 
@@ -164,10 +181,10 @@ describe('TrackingMonitoring page', () => {
   it('renders dedup key usage counts', async () => {
     const screen = await renderPage()
 
-    await expect.element(screen.getByText('event_id')).toBeInTheDocument()
-    await expect.element(screen.getByText('external_id')).toBeInTheDocument()
-    await expect.element(screen.getByText('fbp')).toBeInTheDocument()
-    await expect.element(screen.getByText('fbc')).toBeInTheDocument()
+    await expect.element(screen.getByText('event_id', { exact: true })).toBeInTheDocument()
+    await expect.element(screen.getByText('context external_id (availability)')).toBeInTheDocument()
+    await expect.element(screen.getByText('fbp (contexts)')).toBeInTheDocument()
+    await expect.element(screen.getByText('fbc (contexts)')).toBeInTheDocument()
   })
 
   it('searches an eventId and renders the timeline rows', async () => {

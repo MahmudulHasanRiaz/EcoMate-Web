@@ -37,16 +37,48 @@ export class MonitoringController {
   async overview(@Query('hours') hours?: string) {
     const window = this.hoursParam(hours);
     const providers = buildAdapterRegistry().map((adapter) => adapter.provider);
-    const [volumeByEventType, deadStats, ...funnels] = await Promise.all([
-      this.monitoring.getVolumeByEventType(window),
-      this.monitoring.getDeadStats(),
-      ...providers.map((provider) => this.monitoring.getDispatchFunnel(provider, window)),
-    ]);
+    const [volumeByEventType, deadStats, relayHealth, ...funnels] =
+      await Promise.all([
+        this.monitoring.getVolumeByEventType(window),
+        this.monitoring.getDeadStats(),
+        this.monitoring.getRelayHealth(),
+        ...providers.map((provider) =>
+          this.monitoring.getDispatchFunnel(provider, window),
+        ),
+      ]);
     const dispatchFunnel: Record<string, DispatchFunnel> = {};
     providers.forEach((provider, i) => {
       dispatchFunnel[provider] = funnels[i];
     });
-    return { volumeByEventType, dispatchFunnel, deadStats };
+    return { volumeByEventType, dispatchFunnel, deadStats, relayHealth };
+  }
+
+  /**
+   * Runtime health across the four layers (Wave-1): relay (outbox backlog),
+   * Redis (queue connectivity), BullMQ worker (job counts), dispatcher (sending
+   * rows). This is the alert source for a stalled pipeline.
+   */
+  @Get('health')
+  async health() {
+    const {
+      relay: relayHealth,
+      redis: redisHealth,
+      queue: queueHealth,
+      dispatcher: dispatcherHealth,
+    } = await this.monitoring.getRuntimeHealth();
+    return { relayHealth, redisHealth, queueHealth, dispatcherHealth };
+  }
+
+  /**
+   * Browser-mirror capture ratio over the window (Wave-1 correction #3) — the
+   * share of captured events that arrived via the browser mirror. NOT Meta
+   * coverage (that metric lives in Events Manager).
+   */
+  @Get('mirror-capture')
+  async mirrorCapture(@Query('hours') hours?: string) {
+    return {
+      mirrorCapture: await this.monitoring.getMirrorCapture(this.hoursParam(hours)),
+    };
   }
 
   /** Most common terminal failure reasons + the attempt-count distribution. */

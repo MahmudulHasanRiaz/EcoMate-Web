@@ -20,6 +20,14 @@ const FUNNEL_COLUMNS: { key: keyof DispatchFunnel; label: string }[] = [
   { key: 'deduped', label: 'Deduped' },
 ]
 
+// Keys are context-availability counts (not event dedup) for the context_* rows.
+const DEDUP_KEY_LABELS: Record<string, string> = {
+  event_id: 'event_id',
+  context_external_id: 'context external_id (availability)',
+  fbp: 'fbp (contexts)',
+  fbc: 'fbc (contexts)',
+}
+
 /**
  * Tracking monitoring dashboard (Phase 6, design §14). Read-only aggregate views
  * over the CAPI tracking pipeline served by the backend monitoring endpoints.
@@ -42,6 +50,15 @@ export function TrackingMonitoring() {
   const dedup = useQuery({
     queryKey: ['tracking-monitoring', 'dedup'],
     queryFn: () => monitoringApi.dedup(),
+  })
+  const health = useQuery({
+    queryKey: ['tracking-monitoring', 'health'],
+    queryFn: () => monitoringApi.health(),
+    refetchInterval: 60_000,
+  })
+  const mirrorCapture = useQuery({
+    queryKey: ['tracking-monitoring', 'mirror-capture'],
+    queryFn: () => monitoringApi.mirrorCapture(),
   })
 
   const [eventIdInput, setEventIdInput] = useState('')
@@ -109,6 +126,101 @@ export function TrackingMonitoring() {
               <div>
                 <p className='text-sm text-muted-foreground'>DLQ depth</p>
                 <p className='text-3xl font-bold'>{overview.data?.deadStats.dlqDepth ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Relay health + coverage (Wave 1) */}
+      <div className='grid gap-4 md:grid-cols-2'>
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle>Pipeline Health</CardTitle>
+            <CardDescription>Relay, Redis, BullMQ worker, dispatcher</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className='grid grid-cols-2 gap-4'>
+              <div>
+                <p className='text-sm text-muted-foreground'>Relay</p>
+                <p
+                  className={`text-2xl font-bold ${
+                    health.data?.relayHealth?.relayEnabled ? 'text-emerald-600' : 'text-rose-500'
+                  }`}
+                >
+                  {health.data?.relayHealth?.relayEnabled ? 'ON' : 'OFF'}
+                </p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Pending</p>
+                <p className='text-2xl font-bold'>{health.data?.relayHealth?.pendingCount ?? 0}</p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Claimed</p>
+                <p className='text-2xl font-bold'>{health.data?.relayHealth?.claimedCount ?? 0}</p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Oldest pending</p>
+                <p className='text-2xl font-bold'>
+                  {health.data?.relayHealth?.oldestPendingAgeSec != null
+                    ? `${health.data.relayHealth.oldestPendingAgeSec}s`
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Redis</p>
+                <p
+                  className={`text-2xl font-bold ${
+                    health.data?.redisHealth?.connected ? 'text-emerald-600' : 'text-rose-500'
+                  }`}
+                >
+                  {health.data?.redisHealth?.connected ? 'OK' : 'DOWN'}
+                </p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Queue</p>
+                <p className='text-2xl font-bold'>
+                  {health.data?.queueHealth?.reachable
+                    ? `wait ${health.data.queueHealth.waiting} · act ${health.data.queueHealth.active}`
+                    : 'DOWN'}
+                </p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Queue failed</p>
+                <p className='text-2xl font-bold'>{health.data?.queueHealth?.failed ?? 0}</p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Dispatcher sending</p>
+                <p className='text-2xl font-bold'>{health.data?.dispatcherHealth?.sending ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle>Browser Mirror Capture</CardTitle>
+            <CardDescription>Share of captured events that arrived via the browser mirror (not Meta coverage)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className='grid grid-cols-2 gap-4'>
+              <div>
+                <p className='text-sm text-muted-foreground'>Browser-origin</p>
+                <p className='text-2xl font-bold'>{mirrorCapture.data?.mirrorCapture?.browserOrigin ?? 0}</p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Server-origin</p>
+                <p className='text-2xl font-bold'>{mirrorCapture.data?.mirrorCapture?.serverOrigin ?? 0}</p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Mirror ratio</p>
+                <p className='text-2xl font-bold'>
+                  {((mirrorCapture.data?.mirrorCapture?.browserMirrorRatio ?? 0) * 100).toFixed(1)}%
+                </p>
+              </div>
+              <div>
+                <p className='text-sm text-muted-foreground'>Total captures</p>
+                <p className='text-2xl font-bold'>{mirrorCapture.data?.mirrorCapture?.totalSnapshots ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -227,14 +339,14 @@ export function TrackingMonitoring() {
         {/* Dedup keys */}
         <Card>
           <CardHeader className='pb-3'>
-            <CardTitle>Dedup Keys</CardTitle>
-            <CardDescription>Dedup-relevant identifier usage in the window</CardDescription>
+            <CardTitle>Identifier Usage</CardTitle>
+            <CardDescription>event_id + TrackingContext availability (context counts, not Meta dedup)</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className='space-y-2'>
               {(dedup.data?.keyUsage ?? []).map((row) => (
                 <li key={row.key} className='flex items-center justify-between border-b pb-2 last:border-0'>
-                  <span className='text-sm font-mono'>{row.key}</span>
+                  <span className='text-sm font-mono'>{DEDUP_KEY_LABELS[row.key] ?? row.key}</span>
                   <span className='text-sm font-semibold'>{row.events}</span>
                 </li>
               ))}

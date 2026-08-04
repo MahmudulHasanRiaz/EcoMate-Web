@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { setPixelIds, setTrackingConfig } from "@/lib/tracking";
-import { syncContext } from "@/lib/tracking-client";
+import { useAuth } from "@/context/AuthContext";
+import { setPixelIds, setPixelIdentity, setTrackingConfig } from "@/lib/tracking";
+import { getTrackingApiUrl, syncContext } from "@/lib/tracking-client";
 
 declare global {
   interface Window {
@@ -15,17 +16,59 @@ declare global {
 
 export default function TrackingScripts() {
   const { config } = useStorefrontConfig();
+  const { user } = useAuth();
   const metaId = config.meta.pixelEnabled ? config.meta.pixelId : "";
   const tiktokCode = config.tiktok.pixelEnabled ? config.tiktok.pixelCode : "";
   const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || '';
   const gaAdsConversionId = process.env.NEXT_PUBLIC_GA_ADS_CONVERSION_ID || '';
   const hasAny = !!(metaId || tiktokCode || gaMeasurementId);
+  // Wave-2.1 — shopper external_id resolution state; gates the Meta pixel init
+  // so the external_id is present at fbq('init') (no re-init, no next-load dep).
+  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null }>({
+    ready: false,
+    externalId: null,
+  });
 
   useEffect(() => {
     setPixelIds(metaId, tiktokCode);
     setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
     syncContext(); // begin tracking-context capture on mount (ctxId + identifiers + url + referrer)
   }, [metaId, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
+
+  // Wave-2.1 — resolve the shopper's stable external_id for the Pixel. Endpoint
+  // returns null when the flag is off or there is no linked CustomerProfile, so
+  // the call is always safe. Guests resolve immediately to null.
+  useEffect(() => {
+    if (!user) {
+      setIdentity({ ready: true, externalId: null });
+      return;
+    }
+    let cancelled = false;
+    fetch(`${getTrackingApiUrl()}/tracking/identity`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+    })
+      .then((r) => r.json())
+      .then((d: { externalId?: string | null }) => {
+        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null });
+      })
+      .catch(() => {
+        if (!cancelled) setIdentity({ ready: true, externalId: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Wave-2.1 — once the pixel id and identity are both known, arm the data-driven
+  // Meta init. Meta events buffer in initMetaPixel until this runs (init-first).
+  useEffect(() => {
+    if (!metaId || !identity.ready) return;
+    setPixelIdentity(identity.externalId);
+    (window as any).__TRACKING_INIT_READY = true;
+    if (window.__initMetaPixel) window.__initMetaPixel();
+  }, [metaId, identity.ready, identity.externalId]);
 
   useEffect(() => {
     if (metaId) (window as any).__META_ID = metaId;
@@ -55,9 +98,8 @@ export default function TrackingScripts() {
               t.src=v;s=b.getElementsByTagName(e)[0];
               s.parentNode.insertBefore(t,s)}(window, document,'script',
               'https://connect.facebook.net/en_US/fbevents.js');
-              
-              fbq('init', metaId);
-              fbq('track', 'PageView');
+              // Wave-2.1 — Meta init is data-driven (initMetaPixel), deferred until
+              // identity is resolved so the external_id is present at init.
             }
 
             // টিকটক পিক্সেল
@@ -96,6 +138,10 @@ export default function TrackingScripts() {
               a.parentNode.insertBefore(s, a);
             }
 
+            // Wave-2.1 — data-driven Meta init (external_id resolved by TrackingScripts)
+            if (window.__TRACKING_INIT_READY && window.__initMetaPixel) {
+              window.__initMetaPixel();
+            }
             // আমাদের তৈরি কিউ ফ্লাশ করো
             if (window.__flushTrackingQueue) {
               window.__flushTrackingQueue();

@@ -9,6 +9,7 @@ describe('TrackingController', () => {
   let trackingContext: { upsertContext: jest.Mock };
   let pageViewBuffer: { push: jest.Mock };
   let trackingSettings: { buildConfigSnapshot: jest.Mock };
+  let identityResolution: { resolveForShopper: jest.Mock };
   let controller: TrackingController;
 
   beforeEach(() => {
@@ -21,11 +22,13 @@ describe('TrackingController', () => {
         normalizerVersion: 1,
       }),
     };
+    identityResolution = { resolveForShopper: jest.fn() };
     controller = new TrackingController(
       trackingCapture as unknown as TrackingCaptureService,
       trackingContext as never,
       pageViewBuffer as never,
       trackingSettings as unknown as TrackingSettingsService,
+      identityResolution as never,
     );
   });
 
@@ -158,6 +161,29 @@ describe('TrackingController', () => {
         req,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('GET /tracking/identity (Wave-2.1 shopper external_id)', () => {
+    it('resolves the shopper external_id from the Better Auth session', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-1');
+      const user = { betterAuthSession: { user: { id: 'ba-1' } } };
+      await expect(controller.identity(user)).resolves.toEqual({
+        externalId: 'cust-ext-1',
+      });
+      expect(identityResolution.resolveForShopper).toHaveBeenCalledWith('ba-1');
+    });
+
+    it('falls back to user.betterAuthUserId when no session payload is present', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-2');
+      await expect(controller.identity({ betterAuthUserId: 'ba-2' })).resolves.toEqual({
+        externalId: 'cust-ext-2',
+      });
+    });
+
+    it('returns null externalId for unauthenticated requests', async () => {
+      await expect(controller.identity({})).resolves.toEqual({ externalId: null });
+      expect(identityResolution.resolveForShopper).not.toHaveBeenCalled();
     });
   });
 });

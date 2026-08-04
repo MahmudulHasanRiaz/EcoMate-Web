@@ -3235,6 +3235,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
             (s: number, i: any) => s + (i.quantity || 0),
             0,
           ),
+          customerId: order.customerId ?? undefined,
           orderId: order.id,
           customer: {
             email: email || undefined,
@@ -3300,6 +3301,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
               (s: number, i: any) => s + (i.quantity || 0),
               0,
             ),
+            customerId: order.customerId ?? undefined,
             orderId: order.id,
             customer: {
               phone: phone || undefined,

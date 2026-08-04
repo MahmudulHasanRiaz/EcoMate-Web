@@ -1,4 +1,5 @@
 import { TrackingNormalizer } from '../tracking.normalizer';
+import { sanitizeProviderText } from '../sanitize';
 import {
   TrackingContextView,
   TrackingSnapshotPayload,
@@ -126,7 +127,10 @@ export class Ga4Adapter implements TrackingProviderAdapter {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      const rawResponse = (await response.text()).slice(0, MAX_RAW_RESPONSE_CHARS);
+      const rawResponse = sanitizeProviderText(await response.text()).slice(
+        0,
+        MAX_RAW_RESPONSE_CHARS,
+      );
 
       if (response.ok) {
         return {

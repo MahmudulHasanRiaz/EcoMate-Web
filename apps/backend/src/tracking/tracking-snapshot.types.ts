@@ -21,6 +21,8 @@ export interface TrackingSnapshotPayload {
   /** Business event time (unix seconds). Adapters fall back to dispatch time when absent. */
   eventTime?: number;
   orderId?: string;
+  /** Customer binding for identity resolution (Wave-2.1) — set on order events at capture. */
+  customerId?: string;
   value?: number;
   currency?: string;
   content_ids?: string[];

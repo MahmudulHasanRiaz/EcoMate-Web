@@ -44,6 +44,27 @@ describe('TrackingSettingsService', () => {
     await expect(service.isEnabled('tracking_meta_enabled')).resolves.toBe(false);
   });
 
+  it('isEnabledOrDefault uses the default when the key is absent (Wave-1 safety guards)', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect(service.isEnabledOrDefault('tracking_event_age_guard', true)).resolves.toBe(true);
+    await expect(service.isEnabledOrDefault('tracking_event_age_guard', false)).resolves.toBe(false);
+  });
+
+  it('isEnabledOrDefault honors an explicit value and env fallback', async () => {
+    findUnique.mockImplementation(({ where }) =>
+      where.key === 'tracking_event_age_guard'
+        ? Promise.resolve({ key: where.key, value: 'false' })
+        : Promise.resolve(null),
+    );
+    await expect(service.isEnabledOrDefault('tracking_event_age_guard', true)).resolves.toBe(false);
+
+    findUnique.mockResolvedValue(null);
+    config.set('TRACKING_EVENT_AGE_GUARD', 'true');
+    await expect(
+      service.isEnabledOrDefault('tracking_event_age_guard', false, 'TRACKING_EVENT_AGE_GUARD'),
+    ).resolves.toBe(true);
+  });
+
   it('gates test_event_code on the provider test-mode flag', async () => {
     // test mode off -> null even though a code exists
     findUnique.mockImplementation(({ where }) =>
