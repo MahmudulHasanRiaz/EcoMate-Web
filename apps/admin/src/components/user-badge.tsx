@@ -8,6 +8,15 @@ import { Card, CardContent } from '@/components/ui/card'
 import { usersApi, type UserResponse } from '@/features/users/api'
 import { Mail, Phone, Calendar, Shield, User } from 'lucide-react'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Some legacy log/history entries store a user ID (UUID) instead of an email in
+// fields like `performedBy`. Treat a UUID as an ID so we can still resolve + name it.
+function looksLikeId(value?: string): boolean {
+  if (!value) return false
+  return UUID_RE.test(value) || /^[0-9a-f]{24}$/i.test(value)
+}
+
 function getInitials(firstName?: string, lastName?: string, email?: string): string {
   if (firstName && lastName) return `${firstName[0]}${lastName[0]}`.toUpperCase()
   if (firstName) return firstName[0].toUpperCase()
@@ -35,6 +44,7 @@ export function UserBadge({ email, userId, user: propUser, showEmail = true, siz
     queryKey: ['user-badge', userId || email],
     queryFn: () => {
       if (userId) return usersApi.get(userId).then(r => r.data)
+      if (email && looksLikeId(email)) return usersApi.get(email).then(r => r.data)
       if (email) return usersApi.findByEmail(email).then(r => r.data)
       return Promise.reject(new Error('No identifier provided'))
     },
@@ -44,8 +54,8 @@ export function UserBadge({ email, userId, user: propUser, showEmail = true, siz
   })
 
   const u = propUser || fetchedUser
-  const initials = u ? getInitials(u.firstName, u.lastName, u.email) : email ? getInitials(undefined, undefined, email) : '?'
-  const displayName = u ? `${u.firstName} ${u.lastName}` : email || 'Unknown'
+  const initials = u ? getInitials(u.firstName, u.lastName, u.email) : email ? getInitials(undefined, undefined, looksLikeId(email) ? undefined : email) : '?'
+  const displayName = u ? `${u.firstName} ${u.lastName}` : email && !looksLikeId(email) ? email : 'User'
   const sizeClass = size === 'sm' ? 'h-6 w-6 text-[10px]' : size === 'md' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm'
   const roleColor: Record<string, string> = {
     superadmin: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -80,7 +90,7 @@ export function UserBadge({ email, userId, user: propUser, showEmail = true, siz
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="text-xs font-medium">{initials}</AvatarFallback>
               </Avatar>
-              <span>{u ? `${u.firstName} ${u.lastName}` : email || 'User'}</span>
+              <span>{u ? `${u.firstName} ${u.lastName}` : email && !looksLikeId(email) ? email : 'User'}</span>
             </DialogTitle>
           </DialogHeader>
           {isLoading && (
