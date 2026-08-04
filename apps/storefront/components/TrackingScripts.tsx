@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { useAuth } from "@/context/AuthContext";
-import { setPixelIds, setPixelIdentity, setTrackingConfig } from "@/lib/tracking";
+import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed } from "@/lib/tracking";
 import { getTrackingApiUrl, syncContext } from "@/lib/tracking-client";
 
 declare global {
@@ -24,10 +24,72 @@ export default function TrackingScripts() {
   const hasAny = !!(metaId || tiktokCode || gaMeasurementId);
   // Wave-2.1 — shopper external_id resolution state; gates the Meta pixel init
   // so the external_id is present at fbq('init') (no re-init, no next-load dep).
-  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null }>({
+  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null; em?: string; ph?: string }>({
     ready: false,
     externalId: null,
   });
+  // Wave-2.3 — whether /tracking/config has been resolved; all scripts stay
+  // suppressed until we know tracking is allowed.
+  const [consentChecked, setConsentChecked] = useState(false);
+  // Bumped by window.__ecomateSetConsent so a later grant/revoke re-renders and
+  // (un)mounts the scripts against the fresh module consent state.
+  const [consentVersion, setConsentVersion] = useState(0);
+
+  // Wave-2.3 — resolve consent config on mount. Not required → default granted
+  // (allowed). Required → grant only counts when localStorage says 'granted'.
+  // On failure degrade to the safe default (not required → allowed).
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    fetch(`${getTrackingApiUrl()}/tracking/config`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((d: { consentRequired?: boolean; advancedMatching?: boolean; externalIdEnabled?: boolean }) => {
+        if (cancelled) return;
+        const required = !!d.consentRequired;
+        let granted = true;
+        if (required) {
+          let stored: string | null = null;
+          try {
+            stored = localStorage.getItem('ecomate_tracking_consent');
+          } catch {
+            /* storage unavailable — treat as not granted */
+          }
+          granted = stored === 'granted';
+        }
+        setConsent(required, granted);
+        setConsentChecked(true);
+      })
+      .catch(() => {
+        // timeout / network / abort → no consent requirement, tracking allowed (safe default).
+        if (!cancelled) {
+          setConsent(false, true);
+          setConsentChecked(true);
+        }
+      })
+      .finally(() => clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
+
+  // Wave-2.3 — expose a global so a future consent banner can drive tracking state.
+  useEffect(() => {
+    (window as any).__ecomateSetConsent = (granted: boolean) => {
+      setTrackingConsent(granted);
+      setConsentVersion((v) => v + 1);
+    };
+    return () => {
+      delete (window as any).__ecomateSetConsent;
+    };
+  }, []);
 
   useEffect(() => {
     setPixelIds(metaId, tiktokCode);
@@ -44,20 +106,28 @@ export default function TrackingScripts() {
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
     fetch(`${getTrackingApiUrl()}/tracking/identity`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
+      signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((d: { externalId?: string | null }) => {
-        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null });
+      .then((d: { externalId?: string | null; em?: string; ph?: string }) => {
+        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null, em: d.em, ph: d.ph });
       })
       .catch(() => {
+        // timeout / network / abort → degrade to no external_id; the Meta init
+        // must NOT be blocked by a hung identity lookup (B5).
         if (!cancelled) setIdentity({ ready: true, externalId: null });
-      });
+      })
+      .finally(() => clearTimeout(timeout));
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [user]);
 
@@ -65,18 +135,19 @@ export default function TrackingScripts() {
   // Meta init. Meta events buffer in initMetaPixel until this runs (init-first).
   useEffect(() => {
     if (!metaId || !identity.ready) return;
-    setPixelIdentity(identity.externalId);
+    setPixelIdentity(identity.externalId, identity.em, identity.ph);
     (window as any).__TRACKING_INIT_READY = true;
     if (window.__initMetaPixel) window.__initMetaPixel();
-  }, [metaId, identity.ready, identity.externalId]);
+  }, [metaId, identity.ready, identity.externalId, identity.em, identity.ph]);
 
-  useEffect(() => {
-    if (metaId) (window as any).__META_ID = metaId;
-    if (tiktokCode) (window as any).__TIKTOK_CODE = tiktokCode;
-  }, [metaId, tiktokCode]);
+  // B12: the orphaned public/scripts/tracking.js (deleted) is the only consumer
+  // of __META_ID/__TIKTOK_CODE — dropped to close the latent double-fire hazard.
 
-  // যদি কোনো আইডি না থাকে, তবে কিছুই রেন্ডার করব না
   if (!hasAny) return null;
+  // Wave-2.3 — consent/opt-out: until /tracking/config resolves (or on revoke /
+  // opt-out) suppress ALL tracking tags; nothing must load for a non-consenting
+  // shopper. `consentVersion` re-evaluates this on later global consent flips.
+  if (!consentChecked || !isTrackingAllowed()) return null;
 
   return (
     <>

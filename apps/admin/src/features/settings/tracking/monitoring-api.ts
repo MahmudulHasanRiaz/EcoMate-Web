@@ -116,6 +116,50 @@ export interface TimelineResponse {
   events: DispatchEventRow[]
 }
 
+export interface EmqProxy {
+  windowedDispatches: number
+  qualityFlagged: number
+  noEmPhShare: number
+}
+
+export interface QualityRates {
+  windowedDispatches: number
+  sent: number
+  deduped: number
+  failed: number
+  dead: number
+  retried: number
+  replayed: number
+  dedupRate: number
+  retryRate: number
+  emq: EmqProxy
+  mirror: MirrorCaptureStats
+}
+
+export interface QualityResponse {
+  quality: QualityRates
+}
+
+export interface WatchdogViolation {
+  severity: 'critical' | 'warning' | 'info'
+  code: string
+  message: string
+}
+
+export interface WatchdogResponse {
+  violations: WatchdogViolation[]
+}
+
+export interface HealthScore {
+  score: number
+  grade: 'A' | 'B' | 'C' | 'D' | 'F'
+  penalties: { code: string; points: number; message: string }[]
+}
+
+export interface HealthScoreResponse {
+  healthScore: HealthScore
+}
+
 export const monitoringApi = {
   overview: (hours = 24) =>
     apiClient.get<OverviewResponse>(`/tracking/admin/monitoring/overview?hours=${hours}`).then((r) => r.data),
@@ -129,6 +173,14 @@ export const monitoringApi = {
     apiClient.get<HealthResponse>(`/tracking/admin/monitoring/health`).then((r) => r.data),
   mirrorCapture: (hours = 24) =>
     apiClient.get<{ mirrorCapture: MirrorCaptureStats }>(`/tracking/admin/monitoring/mirror-capture?hours=${hours}`).then((r) => r.data),
+  emq: (hours = 24) =>
+    apiClient.get<{ emq: EmqProxy }>(`/tracking/admin/monitoring/emq?hours=${hours}`).then((r) => r.data),
+  quality: (hours = 24) =>
+    apiClient.get<QualityResponse>(`/tracking/admin/monitoring/quality?hours=${hours}`).then((r) => r.data),
+  watchdog: (hours = 24) =>
+    apiClient.get<WatchdogResponse>(`/tracking/admin/monitoring/watchdog?hours=${hours}`).then((r) => r.data),
+  healthScore: (hours = 24) =>
+    apiClient.get<HealthScoreResponse>(`/tracking/admin/monitoring/health-score?hours=${hours}`).then((r) => r.data),
   timeline: (eventId: string) =>
     apiClient
       .get<TimelineResponse>(`/tracking/admin/monitoring/timeline?eventId=${encodeURIComponent(eventId)}`)

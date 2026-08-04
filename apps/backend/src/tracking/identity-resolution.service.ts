@@ -2,10 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingSettingsService } from './tracking-settings.service';
+import { TrackingNormalizer } from './tracking.normalizer';
 
 /** Settings/env gate (Wave-2.1, Candidate B). Default OFF → zero behavior change. */
 const EXTERNAL_ID_SETTING = 'tracking_customer_external_id';
 const EXTERNAL_ID_ENV = 'TRACKING_CUSTOMER_EXTERNAL_ID';
+
+/** Wave-2.3 Advanced Matching gate. Default OFF → browser init stays parameterless. */
+const ADVANCED_MATCHING_SETTING = 'tracking_advanced_matching';
+const ADVANCED_MATCHING_ENV = 'TRACKING_ADVANCED_MATCHING';
 
 /**
  * IdentityResolutionService (Wave-2.1, Candidate B) — the single authoritative
@@ -96,6 +101,37 @@ export class IdentityResolutionService {
     });
     if (!profile) return null;
     return this.ensureForCustomer(profile.id);
+  }
+
+  /**
+   * Wave-2.3 hashed contact keys for the browser Pixel's Advanced Matching.
+   * Returns the customer's hashed email/phone for the Pixel init — only when
+   * `tracking_advanced_matching` is ON and the session is linked to a
+   * CustomerProfile. The storefront calls this ONLY after the visitor granted
+   * consent (the `/tracking/config` contract), so the server flag is the
+   * default-off guard and client gating enforces consent. Hashing lives in
+   * TrackingNormalizer so browser hashes match server-side hashes exactly.
+   * No context rows are written; when off or unlinked → `{}` (parameterless).
+   */
+  async resolveAdvancedMatching(
+    betterAuthUserId: string,
+  ): Promise<{ em?: string; ph?: string }> {
+    const enabled = await this.settings.isEnabledOrDefault(
+      ADVANCED_MATCHING_SETTING,
+      false,
+      ADVANCED_MATCHING_ENV,
+    );
+    if (!enabled) return {};
+    const profile = await this.prisma.customerProfile.findFirst({
+      where: { betterAuthUserId },
+      select: { email: true, phone: true },
+    });
+    if (!profile) return {};
+    const normalizer = new TrackingNormalizer();
+    return {
+      ...(profile.email ? { em: normalizer.hashEmail(profile.email) } : {}),
+      ...(profile.phone ? { ph: normalizer.hashPhone(profile.phone, 'BD') } : {}),
+    };
   }
 
   /**

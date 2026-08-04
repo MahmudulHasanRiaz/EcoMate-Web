@@ -96,4 +96,41 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
       });
     });
   });
+
+  describe('resolveAdvancedMatching (Wave-2.3 — hashed em/ph for the Pixel)', () => {
+    it('returns {} when advanced matching is off (no lookup, no hashes)', async () => {
+      await expect(service.resolveAdvancedMatching('ba-1')).resolves.toEqual({});
+      expect(findFirst).not.toHaveBeenCalled();
+    });
+
+    it('returns {} when the shopper has no linked CustomerProfile', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
+      findFirst.mockResolvedValue(null);
+      await expect(service.resolveAdvancedMatching('ba-1')).resolves.toEqual({});
+    });
+
+    it('returns SHA-256 hashed em/ph for a linked profile (email + phone)', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
+      findFirst.mockResolvedValue({ email: ' Buyer@Example.com ', phone: '01712345678' });
+      const result = await service.resolveAdvancedMatching('ba-1');
+      expect(result.em).toBeDefined();
+      expect(result.ph).toBeDefined();
+      expect(result.em).toBe((result.em as string).toLowerCase());
+      // Phone hashed to E.164 (BD local → 880…) and SHA-256, matching the
+      // server/browser normalizer rules — never a bare local number.
+      expect(result.ph).not.toBe('01712345678');
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { betterAuthUserId: 'ba-1' },
+        select: { email: true, phone: true },
+      });
+    });
+
+    it('omits em when the profile has no email but keeps ph', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
+      findFirst.mockResolvedValue({ email: null, phone: '01712345678' });
+      const result = await service.resolveAdvancedMatching('ba-1');
+      expect(result.em).toBeUndefined();
+      expect(result.ph).toBeDefined();
+    });
+  });
 });

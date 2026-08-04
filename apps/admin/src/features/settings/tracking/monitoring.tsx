@@ -60,6 +60,20 @@ export function TrackingMonitoring() {
     queryKey: ['tracking-monitoring', 'mirror-capture'],
     queryFn: () => monitoringApi.mirrorCapture(),
   })
+  const quality = useQuery({
+    queryKey: ['tracking-monitoring', 'quality'],
+    queryFn: () => monitoringApi.quality(),
+  })
+  const watchdog = useQuery({
+    queryKey: ['tracking-monitoring', 'watchdog'],
+    queryFn: () => monitoringApi.watchdog(),
+    refetchInterval: 60_000,
+  })
+  const healthScore = useQuery({
+    queryKey: ['tracking-monitoring', 'health-score'],
+    queryFn: () => monitoringApi.healthScore(),
+    refetchInterval: 60_000,
+  })
 
   const [eventIdInput, setEventIdInput] = useState('')
   const [searchedEventId, setSearchedEventId] = useState<string | null>(null)
@@ -226,6 +240,140 @@ export function TrackingMonitoring() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Health score + watchdog (Wave-2.4) */}
+      <div className='grid gap-4 md:grid-cols-2'>
+        {/* Health score */}
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle>Health Score</CardTitle>
+            <CardDescription>Composite pipeline drift signal (0–100), refreshed every minute</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className='flex items-baseline gap-3'>
+              <p className='text-4xl font-bold'>{healthScore.data?.healthScore.score ?? '—'}</p>
+              <span className='text-lg font-semibold text-muted-foreground'>
+                {healthScore.data?.healthScore.grade ?? ''}
+              </span>
+            </div>
+            {healthScore.data?.healthScore.penalties.length ? (
+              <ul className='mt-4 space-y-2'>
+                {healthScore.data.healthScore.penalties.map((p) => (
+                  <li key={p.code} className='flex items-start justify-between gap-4 border-b pb-2 last:border-0'>
+                    <span className='text-sm break-words'>{p.message}</span>
+                    <span className='text-sm font-semibold text-destructive'>−{p.points}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className='mt-4 text-sm text-muted-foreground'>No active penalties. Pipeline is healthy.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Watchdog alerts */}
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle>Watchdog Alerts</CardTitle>
+            <CardDescription>Actionable pipeline violations, refreshed every minute</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(watchdog.data?.violations ?? []).length === 0 ? (
+              <p className='text-sm text-muted-foreground'>No violations. All quiet.</p>
+            ) : (
+              <ul className='space-y-2'>
+                {watchdog.data?.violations.map((v) => (
+                  <li
+                    key={v.code}
+                    className={`flex items-start gap-3 rounded-md border p-2.5 ${
+                      v.severity === 'critical'
+                        ? 'border-destructive/40 bg-destructive/5'
+                        : v.severity === 'warning'
+                          ? 'border-amber-400/50 bg-amber-50'
+                          : 'border-border bg-muted/30'
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        v.severity === 'critical'
+                          ? 'bg-destructive text-white'
+                          : v.severity === 'warning'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {v.severity}
+                    </span>
+                    <p className='text-sm'>{v.message}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* EMQ + dispatch quality (Wave-2.4) */}
+      <Card>
+        <CardHeader className='pb-3'>
+          <CardTitle>EMQ & Dispatch Quality</CardTitle>
+          <CardDescription>
+            Dispatch health over the window — dedup/retry rates, replays, and the EMQ match-key proxy
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className='grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4'>
+            <div>
+              <p className='text-sm text-muted-foreground'>Dedup rate</p>
+              <p className='text-2xl font-bold'>
+                {((quality.data?.quality.dedupRate ?? 0) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>Retry rate</p>
+              <p
+                className={`text-2xl font-bold ${
+                  (quality.data?.quality.retryRate ?? 0) > 0.2 ? 'text-amber-600' : ''
+                }`}
+              >
+                {((quality.data?.quality.retryRate ?? 0) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>Replayed</p>
+              <p className='text-2xl font-bold'>{quality.data?.quality.replayed ?? 0}</p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>FAILED / DEAD</p>
+              <p className='text-2xl font-bold'>
+                {quality.data?.quality.failed ?? 0} / {quality.data?.quality.dead ?? 0}
+              </p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>EMQ match-key gap</p>
+              <p
+                className={`text-2xl font-bold ${
+                  (quality.data?.quality.emq.noEmPhShare ?? 0) >= 0.5 ? 'text-amber-600' : ''
+                }`}
+              >
+                {((quality.data?.quality.emq.noEmPhShare ?? 0) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>EMQ-flagged dispatches</p>
+              <p className='text-2xl font-bold'>{quality.data?.quality.emq.qualityFlagged ?? 0}</p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>Sent</p>
+              <p className='text-2xl font-bold'>{quality.data?.quality.sent ?? 0}</p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>Windowed dispatches</p>
+              <p className='text-2xl font-bold'>{quality.data?.quality.windowedDispatches ?? 0}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Per-provider dispatch funnel */}
       <Card>

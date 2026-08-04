@@ -75,6 +75,10 @@ export default function ThankYouContent({
     const fireMeta = metaMode === 'instant';
     const fireTiktok = tiktokMode === 'instant';
 
+    // Wave-2.2 — sync the tracking context (ctxId + ids + url + referrer) FIRST so
+    // fbp/fbc are captured on the backend BEFORE the Purchase event is mirrored.
+    syncContext();
+
     if (fireMeta || fireTiktok) {
       const itemsList = (order.items as any[]) || [];
       const totalValue = Number(order.total || order.subtotal || 0);
@@ -103,8 +107,6 @@ export default function ThankYouContent({
       };
       trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
     }
-
-    syncContext(); // capture ctxId + identifiers (fbp/fbc) + url + referrer on the backend
 
     sessionStorage.setItem(sessionKey, 'true');
   }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);

@@ -1,3 +1,5 @@
+import { isTrackingAllowed } from './tracking';
+
 const CTX_KEY = 'ecomate_ctx_id';
 
 export function getTrackingApiUrl(): string {
@@ -62,6 +64,8 @@ export async function syncContext(payload?: {
   referrer?: string;
 }): Promise<void> {
   if (typeof window === 'undefined') return;
+  // Wave-2.3 — consent/opt-out gate: no context POST when tracking is blocked.
+  if (!isTrackingAllowed()) return;
   if (inflight) return inflight; // throttle: one at a time
   inflight = (async () => {
     try {

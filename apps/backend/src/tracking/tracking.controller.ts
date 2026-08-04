@@ -94,6 +94,28 @@ export class TrackingController {
           `Unknown tracking event dropped (no CAPI mapping): ${body.eventName}`,
         );
       }
+
+      // Wave-2.2 (C3/C6): the mirror event is the first write of a fresh journey's
+      // rotating cookies (fbp/fbc), racing the async context beacon. Fold them into
+      // the context here so a capture without a prior /context still yields one.
+      // Best-effort: a context failure must never fail the event.
+      if (body.ctxId && (body.userData?.fbp || body.userData?.fbc)) {
+        void this.trackingContext
+          .upsertContext(
+            body.ctxId,
+            {
+              identifiers: {
+                meta: {
+                  fbp: body.userData?.fbp,
+                  fbc: body.userData?.fbc,
+                },
+              },
+            },
+            req.ip,
+            (req.headers['user-agent'] as string) || '',
+          )
+          .catch(() => undefined);
+      }
     } catch {
       // Best-effort browser event: a capture failure must never 500 the storefront.
       this.logger.error(`Tracking capture failed for event: ${body.eventName}`);
@@ -164,8 +186,39 @@ export class TrackingController {
     if (!baUserId) {
       return { externalId: null };
     }
-    const externalId = await this.identityResolution.resolveForShopper(baUserId);
-    return { externalId };
+    const [externalId, am] = await Promise.all([
+      this.identityResolution.resolveForShopper(baUserId),
+      this.identityResolution.resolveAdvancedMatching(baUserId),
+    ]);
+    return { externalId, ...am };
+  }
+
+  /**
+   * Wave-2.3: public, read-only tracking configuration the storefront needs to
+   * behave correctly — whether consent is required (consent UI gating) and
+   * whether Advanced Matching is armed (server flag gate). No secrets, no
+   * provider ids; safe for unauthenticated exposure under the storefront
+   * rate-limit policy.
+   */
+  @Public()
+  @RateLimitPolicy('storefront')
+  @Get('config')
+  async trackingConfig() {
+    const [consentRequired, advancedMatching, externalIdEnabled] =
+      await Promise.all([
+        this.trackingSettings.isEnabledOrDefault(
+          'tracking_consent_required',
+          false,
+          'TRACKING_CONSENT_REQUIRED',
+        ),
+        this.trackingSettings.isEnabledOrDefault(
+          'tracking_advanced_matching',
+          false,
+          'TRACKING_ADVANCED_MATCHING',
+        ),
+        this.identityResolution.isEnabled(),
+      ]);
+    return { consentRequired, advancedMatching, externalIdEnabled };
   }
 
   private mapEventType(name: string): TrackingEventType | undefined {

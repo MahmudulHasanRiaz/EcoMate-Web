@@ -11,12 +11,14 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   const outboxFindMany = jest.fn();
   const outboxCount = jest.fn();
   const outboxFindFirst = jest.fn();
+  const dispatchEventCount = jest.fn();
 
   const prisma = {
     trackingSnapshot: { groupBy: snapshotGroupBy, count: snapshotCount },
     trackingDispatch: { groupBy: dispatchGroupBy, count: dispatchCount },
     trackingContext: { count: contextCount },
     trackingOutbox: { findMany: outboxFindMany, count: outboxCount, findFirst: outboxFindFirst },
+    trackingDispatchEvent: { count: dispatchEventCount },
   } as any;
 
   const dlq = { getStats: jest.fn() } as unknown as DlqService;
@@ -36,6 +38,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     outboxFindMany.mockResolvedValue([]);
     outboxCount.mockResolvedValue(0);
     outboxFindFirst.mockResolvedValue(null);
+    dispatchEventCount.mockResolvedValue(0);
     dispatchCount.mockResolvedValue(0);
     queue.getJobCounts.mockResolvedValue({
       waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5,
@@ -310,5 +313,263 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     expect(health.queue.reachable).toBe(false);
     expect(health.queue.active).toBe(-1);
     expect(health.dispatcher.sending).toBe(0);
+  });
+
+  it('getEmqProxy computes the flagged share of windowed dispatches', async () => {
+    dispatchEventCount.mockResolvedValueOnce(3).mockResolvedValueOnce(10); // flagged, total
+    await expect(service.getEmqProxy(hours)).resolves.toEqual({
+      windowedDispatches: 10,
+      qualityFlagged: 3,
+      noEmPhShare: 0.3,
+    });
+    expect(dispatchEventCount).toHaveBeenNthCalledWith(1, {
+      where: {
+        createdAt: { gte: cutoff },
+        message: { startsWith: 'match-key quality:' },
+      },
+    });
+    expect(dispatchEventCount).toHaveBeenNthCalledWith(2, {
+      where: { createdAt: { gte: cutoff }, provider: { not: null } },
+    });
+  });
+
+  it('getEmqProxy returns a zero share when there are no dispatches', async () => {
+    dispatchEventCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    await expect(service.getEmqProxy(hours)).resolves.toEqual({
+      windowedDispatches: 0,
+      qualityFlagged: 0,
+      noEmPhShare: 0,
+    });
+  });
+
+  describe('getQualityRates (Wave-2.4 MON-3)', () => {
+    it('combines the terminal funnel, replay volume, dedup/retry rates, and EMQ + mirror proxies', async () => {
+      dispatchGroupBy.mockResolvedValue([
+        { status: 'SENT', _count: 40 },
+        { status: 'DEDUPED', _count: 10 },
+        { status: 'FAILED', _count: 3 },
+        { status: 'DEAD', _count: 2 },
+        { status: 'RETRY', _count: 5 },
+      ]);
+      // getQualityRates' own dispatchEventCount reads: retry attempts, windowed, replay;
+      // then getEmqProxy adds: quality-flagged, windowed. getMirrorCapture adds outboxCount ×2.
+      dispatchEventCount
+        .mockResolvedValueOnce(8)
+        .mockResolvedValueOnce(120)
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(30)
+        .mockResolvedValueOnce(120);
+      outboxCount.mockResolvedValueOnce(60).mockResolvedValueOnce(120);
+
+      const quality = await service.getQualityRates(hours);
+      expect(quality).toMatchObject({
+        windowedDispatches: 120,
+        sent: 40,
+        deduped: 10,
+        failed: 3,
+        dead: 2,
+        retried: 5,
+        replayed: 2,
+        dedupRate: 0.2,
+        retryRate: 8 / 120,
+      });
+      expect(quality.emq).toEqual({
+        windowedDispatches: 120,
+        qualityFlagged: 30,
+        noEmPhShare: 0.25,
+      });
+      expect(quality.mirror).toMatchObject({
+        browserOrigin: 60,
+        totalSnapshots: 120,
+        browserMirrorRatio: 0.5,
+      });
+    });
+
+    it('zero-fills the rated fields when nothing dispatched in the window', async () => {
+      dispatchGroupBy.mockResolvedValue([]);
+      const quality = await service.getQualityRates(hours);
+      expect(quality).toMatchObject({
+        windowedDispatches: 0,
+        sent: 0,
+        deduped: 0,
+        failed: 0,
+        dead: 0,
+        retried: 0,
+        replayed: 0,
+        dedupRate: 0,
+        retryRate: 0,
+      });
+      expect(quality.emq.noEmPhShare).toBe(0);
+    });
+  });
+
+  describe('getWatchdog (Wave-2.4 MON-4)', () => {
+    // Persistent (non-OwOnce) mocks: getWatchdog fans out to getRuntimeHealth +
+    // getQualityRates concurrently, so a sequential mock queue would be order-racy.
+    // A prior getRuntimeHealth test replaces queue.redisVersion with a throwing
+    // accessor; restore it for the tests that need Redis up.
+    const restoreRedisUp = () => {
+      delete (queue as any).redisVersion;
+      (queue as any).redisVersion = '7.2.0';
+    };
+
+    it('reports no violations on a healthy pipeline', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true'); // relay enabled
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000), // relay current
+      });
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      await expect(service.getWatchdog(hours)).resolves.toEqual([]);
+    });
+
+    it('flags a critical relay backlog when the oldest pending outbox is stale', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() - 90_000), // 90s past due
+      });
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      const violations = await service.getWatchdog(hours);
+      expect(violations).toEqual([
+        expect.objectContaining({
+          severity: 'critical',
+          code: 'relay-backlog',
+        }),
+      ]);
+    });
+
+    it('flags critical redis + queue outages and info relay-disabled', async () => {
+      Object.defineProperty(queue, 'redisVersion', {
+        configurable: true,
+        get: () => {
+          throw new Error('redis down');
+        },
+      });
+      queue.getJobCounts.mockRejectedValue(new Error('redis down'));
+      (settings.get as jest.Mock).mockResolvedValue(null); // relay disabled
+      outboxCount.mockResolvedValue(0);
+      outboxFindFirst.mockResolvedValue(null);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      const codes = (await service.getWatchdog(hours)).map((v) => v.code);
+      expect(codes).toEqual(expect.arrayContaining(['redis-down', 'queue-down', 'relay-disabled']));
+      expect(
+        (await service.getWatchdog(hours)).filter((v) => v.severity === 'critical').map((v) => v.code),
+      ).toEqual(expect.arrayContaining(['redis-down', 'queue-down']));
+    });
+
+    it('flags elevated retry rate, terminal-failure spike, and EMQ match gap', async () => {
+      (settings.get as jest.Mock).mockResolvedValue(null); // relay disabled (info, benign)
+      outboxFindFirst.mockResolvedValue(null);
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([
+        { status: 'SENT', _count: 5 },
+        { status: 'FAILED', _count: 12 },
+        { status: 'DEAD', _count: 3 },
+      ]);
+      // retried attempts (30), windowed (100), replay (0) from getQualityRates;
+      // then getEmqProxy: flagged (60), windowed (100) — all persistent.
+      dispatchEventCount
+        .mockResolvedValueOnce(30)
+        .mockResolvedValueOnce(100)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValue(60);
+
+      const violations = await service.getWatchdog(hours);
+      const codes = violations.map((v) => v.code);
+      expect(codes).toEqual(
+        expect.arrayContaining(['dead-failure-spike', 'retry-rate-high', 'emq-match-gap']),
+      );
+      for (const code of ['dead-failure-spike', 'retry-rate-high', 'emq-match-gap']) {
+        expect(violations.find((v) => v.code === code)?.severity).toBe('warning');
+      }
+    });
+  });
+
+  describe('getHealthScore (Wave-2.4 MON-4)', () => {
+    // The getWatchdog redis-outage test replaces queue.redisVersion with a throwing
+    // accessor; restore the normal value for the health-score tests that need Redis up.
+    const restoreRedisUp = () => {
+      delete (queue as any).redisVersion;
+      (queue as any).redisVersion = '7.2.0';
+    };
+
+    it('scores 100 / grade A on a healthy pipeline with no penalties', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000),
+      });
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      await expect(service.getHealthScore(hours)).resolves.toEqual({
+        score: 100,
+        grade: 'A',
+        penalties: [],
+      });
+    });
+
+    it('penalizes a relay backlog (20) and queue outage (20) → 60 / D', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() - 90_000),
+      });
+      queue.getJobCounts.mockRejectedValue(new Error('queue down'));
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      const result = await service.getHealthScore(hours);
+      expect(result.score).toBe(60);
+      expect(result.grade).toBe('D');
+      expect(result.penalties).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'relay-backlog', points: 20 }),
+          expect.objectContaining({ code: 'queue-down', points: 20 }),
+        ]),
+      );
+    });
+
+    it('clamps the score at 0 when penalties exceed 100', async () => {
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() - 90_000), // relay-backlog -20
+      });
+      queue.getJobCounts.mockRejectedValue(new Error('redis down')); // queue-down -20
+      Object.defineProperty(queue, 'redisVersion', {
+        configurable: true,
+        get: () => {
+          throw new Error('redis down');
+        },
+      });
+      dispatchEventCount.mockResolvedValue(100); // retry-rate-high (-10) + emq-match-gap (-10)
+      dispatchGroupBy.mockResolvedValue([
+        { status: 'FAILED', _count: 100 }, // dead-failure-spike -20
+        { status: 'DEAD', _count: 100 },
+      ]);
+      outboxCount.mockResolvedValue(0);
+      dispatchCount.mockResolvedValue(0);
+
+      const result = await service.getHealthScore(hours);
+      expect(result.score).toBe(0);
+      expect(result.grade).toBe('F');
+    });
   });
 });

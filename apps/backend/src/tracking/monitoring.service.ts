@@ -94,6 +94,59 @@ export interface MirrorCaptureStats {
   browserMirrorRatio: number;
 }
 
+/**
+ * Schema-less EMQ quality proxy (Wave-2.4 MON-2). Counts `TrackingDispatchEvent`
+ * rows whose `message` begins with the dispatcher's `match-key quality:` prefix
+ * (produced by the Meta adapter when user_data lacks em/ph). `noEmPhShare` is the
+ * flagged fraction of windowed provider dispatches — an internal at-risk rate
+ * (NOT Meta's authoritative EMQ score, which lives in the Dataset Quality API).
+ */
+export interface EmqProxy {
+  windowedDispatches: number;
+  qualityFlagged: number;
+  noEmPhShare: number;
+}
+
+/** Wave-2.4 MON-3: consolidated dispatch-quality rates over the window. */
+export interface QualityRates {
+  /** Provider dispatch-attempt rows created in the window (all dispatchers). */
+  windowedDispatches: number;
+  sent: number;
+  deduped: number;
+  failed: number;
+  dead: number;
+  retried: number;
+  /** Dispatch events in the window whose message is the replay marker. */
+  replayed: number;
+  /** deduped / (sent + deduped) — event-id dedup share among accepted dispatches. */
+  dedupRate: number;
+  /** retry attempts / provider dispatch attempts — per-attempt retry intensity. */
+  retryRate: number;
+  emq: EmqProxy;
+  mirror: MirrorCaptureStats;
+}
+
+/** Wave-2.4 MON-4: a single actionable ops alert produced by getWatchdog. */
+export interface WatchdogViolation {
+  severity: 'critical' | 'warning' | 'info';
+  code: string;
+  message: string;
+}
+
+/** Wave-2.4 MON-4: 0-100 composite health score, grade, and the penalties behind it. */
+export interface HealthScore {
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  penalties: { code: string; points: number; message: string }[];
+}
+
+/** Ops alert thresholds (Wave-2.4 MON-4), aligned with the freshness SLO + DLQ cadence. */
+const RELAY_STALE_SEC = 60;
+const DEAD_FAILURE_SPIKE = 10;
+const RETRY_RATE_MAX = 0.2;
+const EMQ_GAP_MAX = 0.5;
+const DISPATCHER_IN_FLIGHT_MAX = 5;
+
 /** Upper-case stored status -> lower-case funnel key. */
 const STATUS_TO_FUNNEL_KEY: Record<DispatchStatus, keyof DispatchFunnel> = {
   PENDING: 'pending',
@@ -382,6 +435,229 @@ export class MonitoringService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * EMQ quality proxy (Wave-2.4 MON-2): share of windowed provider dispatches
+   * flagged by the adapter's `match-key quality:` event (NO_EM_PH / NO_IDENTITY).
+   * Schema-less (counts TrackingDispatchEvent), an internal at-risk rate — the
+   * authoritative EMQ score is Meta's Dataset Quality API (out-of-band reader).
+   */
+  async getEmqProxy(hours: number): Promise<EmqProxy> {
+    const cutoff = this.cutoff(hours);
+    const [qualityFlagged, windowedDispatches] = await Promise.all([
+      this.prisma.trackingDispatchEvent.count({
+        where: {
+          createdAt: { gte: cutoff },
+          message: { startsWith: 'match-key quality:' },
+        },
+      }),
+      this.prisma.trackingDispatchEvent.count({
+        where: { createdAt: { gte: cutoff }, provider: { not: null } },
+      }),
+    ]);
+    return {
+      windowedDispatches,
+      qualityFlagged,
+      noEmPhShare: windowedDispatches > 0 ? qualityFlagged / windowedDispatches : 0,
+    };
+  }
+
+  /**
+   * Wave-2.4 MON-3: one consolidated dispatch-quality view — the terminal-state
+   * funnel (sent/deduped/failed/dead/retried), replay volume, dedup + retry
+   * rates, and the EMQ/mirror proxies. Rates are fractions in [0,1]: dedupRate
+   * is the event-id dedup share (0 = nothing deduped), retryRate is the share of
+   * dispatch attempts that transitioned RETRY (0 = clean). Never throws; a
+   * window with no dispatches returns zero-filled rates with the proxies.
+   */
+  async getQualityRates(hours: number): Promise<QualityRates> {
+    const cutoff = this.cutoff(hours);
+    const [rows, retriedAttempts, windowedDispatches, replayed, emq, mirror] =
+      await Promise.all([
+        this.prisma.trackingDispatch.groupBy({
+          by: ['status'],
+          _count: true,
+          where: { createdAt: { gte: cutoff } },
+        }),
+        this.prisma.trackingDispatchEvent.count({
+          where: { createdAt: { gte: cutoff }, toStatus: 'RETRY' },
+        }),
+        this.prisma.trackingDispatchEvent.count({
+          where: { createdAt: { gte: cutoff }, provider: { not: null } },
+        }),
+        this.prisma.trackingDispatchEvent.count({
+          where: { createdAt: { gte: cutoff }, message: 'replay' },
+        }),
+        this.getEmqProxy(hours),
+        this.getMirrorCapture(hours),
+      ]);
+    const counts: Partial<Record<DispatchStatus, number>> = {};
+    for (const row of rows) counts[row.status as DispatchStatus] = row._count;
+    const sent = counts.SENT ?? 0;
+    const deduped = counts.DEDUPED ?? 0;
+    const failed = counts.FAILED ?? 0;
+    const dead = counts.DEAD ?? 0;
+    const retried = counts.RETRY ?? 0;
+    return {
+      windowedDispatches,
+      sent,
+      deduped,
+      failed,
+      dead,
+      retried,
+      replayed,
+      dedupRate: sent + deduped > 0 ? deduped / (sent + deduped) : 0,
+      retryRate: windowedDispatches > 0 ? retriedAttempts / windowedDispatches : 0,
+      emq,
+      mirror,
+    };
+  }
+
+  /**
+   * Wave-2.4 MON-4: actionable ops alerts. Each violation is the SDL (signal →
+   * detection → loop) of one pipeline failure mode: relay stall, Redis/queue
+   * down, dispatcher back-pressure, FAILED/DEAD spike, elevated retry rate, or a
+   * persistent EMQ match gap. `info` = configuration state (not an error),
+   * `warning` = elevated but self-healing, `critical` = pipeline at risk.
+   */
+  async getWatchdog(hours: number): Promise<WatchdogViolation[]> {
+    const [health, quality] = await Promise.all([
+      this.getRuntimeHealth(),
+      this.getQualityRates(hours),
+    ]);
+    const { relay, redis, queue, dispatcher } = health;
+    const violations: WatchdogViolation[] = [];
+
+    if (!relay.relayEnabled) {
+      violations.push({
+        severity: 'info',
+        code: 'relay-disabled',
+        message:
+          'Outbox relay is disabled — PENDING outbox rows are not being dispatched; enable it to go live.',
+      });
+    } else if (
+      relay.oldestPendingAgeSec !== null &&
+      relay.oldestPendingAgeSec > RELAY_STALE_SEC
+    ) {
+      violations.push({
+        severity: 'critical',
+        code: 'relay-backlog',
+        message: `Oldest pending outbox is ${relay.oldestPendingAgeSec}s past due — the relay is stalled; check worker liveness.`,
+      });
+    }
+
+    if (!redis.connected) {
+      violations.push({
+        severity: 'critical',
+        code: 'redis-down',
+        message:
+          'Redis (BullMQ) connection is unavailable — dispatch workers cannot process jobs.',
+      });
+    }
+    if (!queue.reachable) {
+      violations.push({
+        severity: 'critical',
+        code: 'queue-down',
+        message:
+          'The tracking queue is unreachable — job counts cannot be read; workers are likely down.',
+      });
+    } else if (queue.failed > 0) {
+      violations.push({
+        severity: 'warning',
+        code: 'queue-failed-jobs',
+        message: `${queue.failed} failed queue jobs waiting for retry — review the queue for poisoned jobs.`,
+      });
+    }
+
+    if (dispatcher.sending >= DISPATCHER_IN_FLIGHT_MAX) {
+      violations.push({
+        severity: 'info',
+        code: 'dispatcher-backed-up',
+        message: `${dispatcher.sending} dispatches are currently in flight — possible back-pressure from a provider API.`,
+      });
+    }
+
+    const terminalFailures = quality.failed + quality.dead;
+    if (terminalFailures > DEAD_FAILURE_SPIKE) {
+      violations.push({
+        severity: 'warning',
+        code: 'dead-failure-spike',
+        message: `${terminalFailures} dispatches ended FAILED/DEAD in the window — check the failures tab and DLQ for recovery.`,
+      });
+    }
+    if (quality.retryRate > RETRY_RATE_MAX) {
+      violations.push({
+        severity: 'warning',
+        code: 'retry-rate-high',
+        message: `Retry rate ${(quality.retryRate * 100).toFixed(0)}% exceeds ${RETRY_RATE_MAX * 100}% — provider rejections or transient errors are elevated.`,
+      });
+    }
+    if (quality.emq.windowedDispatches > 0 && quality.emq.noEmPhShare >= EMQ_GAP_MAX) {
+      violations.push({
+        severity: 'warning',
+        code: 'emq-match-gap',
+        message: `${(quality.emq.noEmPhShare * 100).toFixed(0)}% of dispatches lack EMQ contact keys (em/ph) — Meta match/attribution quality is at risk; enable tracking_advanced_matching.`,
+      });
+    }
+
+    return violations;
+  }
+
+  /**
+   * Wave-2.4 MON-4: 0-100 pipeline health score derived from the watchdog. Each
+   * signal maps to a penalty (critical plumbing = 20, degradation = ≤10, config
+   * = 5); the score is clamped to [0,100] with an A–F grade. Ops should treat
+   * the score as a single-page drift signal and the penalties as the drill-down.
+   */
+  async getHealthScore(hours: number): Promise<HealthScore> {
+    let score = 100;
+    const penalties: HealthScore['penalties'] = [];
+    const [violations, quality] = await Promise.all([
+      this.getWatchdog(hours),
+      this.getQualityRates(hours),
+    ]);
+    const penalize = (code: string, points: number, message: string) => {
+      score -= points;
+      penalties.push({ code, points, message });
+    };
+    for (const v of violations) {
+      switch (v.code) {
+        case 'relay-disabled':
+          penalize(v.code, 5, v.message);
+          break;
+        case 'relay-backlog':
+          penalize(v.code, 20, v.message);
+          break;
+        case 'redis-down':
+          penalize(v.code, 20, v.message);
+          break;
+        case 'queue-down':
+          penalize(v.code, 20, v.message);
+          break;
+        case 'queue-failed-jobs':
+          penalize(v.code, 5, v.message);
+          break;
+        case 'dispatcher-backed-up':
+          penalize(v.code, 5, v.message);
+          break;
+        case 'dead-failure-spike':
+          penalize(v.code, Math.min(20, quality.failed + quality.dead), v.message);
+          break;
+        case 'retry-rate-high':
+          penalize(v.code, 10, v.message);
+          break;
+        case 'emq-match-gap':
+          penalize(v.code, 10, v.message);
+          break;
+        default:
+          break;
+      }
+    }
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    const grade: HealthScore['grade'] =
+      score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+    return { score, grade, penalties };
   }
 
   private cutoff(hours: number): Date {

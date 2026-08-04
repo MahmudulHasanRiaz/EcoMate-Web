@@ -1289,6 +1289,42 @@ describe('OrdersService', () => {
       expect(capture).toHaveBeenCalledTimes(1);
       expect((capture.mock.calls[0] as any[])[1]).toBe(tx);
     });
+
+    it('includes shipping state/zip as EMQ match keys (Wave-2.5)', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          shippingAddress: { city: 'Dhaka', state: 'Dhaka Division', zipCode: '1212' },
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.customer).toMatchObject({
+        city: 'Dhaka',
+        state: 'Dhaka Division',
+        zip: '1212',
+        country: 'BD',
+      });
+    });
+
+    it('falls back to storefront aliases (division/postalCode) for state and zip', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          shippingAddress: { division: 'Chattogram', postalCode: '4000' },
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.customer).toMatchObject({
+        state: 'Chattogram',
+        zip: '4000',
+      });
+    });
   });
 
   describe('fireRefundEvent', () => {

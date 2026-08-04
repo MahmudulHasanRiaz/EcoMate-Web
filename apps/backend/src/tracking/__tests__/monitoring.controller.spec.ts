@@ -29,6 +29,10 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
     getRelayHealth: jest.fn(),
     getRuntimeHealth: jest.fn(),
     getMirrorCapture: jest.fn(),
+    getEmqProxy: jest.fn(),
+    getQualityRates: jest.fn(),
+    getWatchdog: jest.fn(),
+    getHealthScore: jest.fn(),
   };
   const prisma = {
     trackingSnapshot: { findUnique: jest.fn() },
@@ -66,6 +70,35 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
       browserOrigin: 0,
       serverOrigin: 0,
       browserMirrorRatio: 0,
+    });
+    monitoring.getEmqProxy.mockResolvedValue({
+      windowedDispatches: 0,
+      qualityFlagged: 0,
+      noEmPhShare: 0,
+    });
+    monitoring.getQualityRates.mockResolvedValue({
+      windowedDispatches: 0,
+      sent: 0,
+      deduped: 0,
+      failed: 0,
+      dead: 0,
+      retried: 0,
+      replayed: 0,
+      dedupRate: 0,
+      retryRate: 0,
+      emq: { windowedDispatches: 0, qualityFlagged: 0, noEmPhShare: 0 },
+      mirror: {
+        totalSnapshots: 0,
+        browserOrigin: 0,
+        serverOrigin: 0,
+        browserMirrorRatio: 0,
+      },
+    });
+    monitoring.getWatchdog.mockResolvedValue([]);
+    monitoring.getHealthScore.mockResolvedValue({
+      score: 100,
+      grade: 'A',
+      penalties: [],
     });
     controller = new MonitoringController(
       monitoring as unknown as MonitoringService,
@@ -293,6 +326,68 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
     it('rejects with 400 when eventId is missing', async () => {
       await expect(controller.timeline(undefined)).rejects.toThrow(BadRequestException);
       expect(prisma.trackingDispatchEvent.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /tracking/admin/monitoring/quality (Wave-2.4 MON-3)', () => {
+    it('returns the consolidated dispatch-quality rates for the window', async () => {
+      monitoring.getQualityRates.mockResolvedValue({
+        windowedDispatches: 120,
+        sent: 40,
+        deduped: 10,
+        failed: 3,
+        dead: 2,
+        retried: 5,
+        replayed: 2,
+        dedupRate: 0.2,
+        retryRate: 0.07,
+        emq: { windowedDispatches: 120, qualityFlagged: 30, noEmPhShare: 0.25 },
+        mirror: {
+          totalSnapshots: 120,
+          browserOrigin: 60,
+          serverOrigin: 60,
+          browserMirrorRatio: 0.5,
+        },
+      });
+
+      const result = await controller.quality('6');
+      expect(result.quality.windowedDispatches).toBe(120);
+      expect(result.quality.dedupRate).toBe(0.2);
+      expect(monitoring.getQualityRates).toHaveBeenCalledWith(6);
+    });
+
+    it('defaults the window to 24 hours', async () => {
+      await controller.quality(undefined);
+      expect(monitoring.getQualityRates).toHaveBeenCalledWith(24);
+    });
+  });
+
+  describe('GET /tracking/admin/monitoring/watchdog (Wave-2.4 MON-4)', () => {
+    it('returns actionable violations from the watchdog', async () => {
+      monitoring.getWatchdog.mockResolvedValue([
+        { severity: 'critical', code: 'relay-backlog', message: 'relay stalled' },
+        { severity: 'warning', code: 'emq-match-gap', message: 'no em/ph' },
+      ]);
+
+      const result = await controller.watchdog('6');
+      expect(result.violations).toHaveLength(2);
+      expect(result.violations[0].severity).toBe('critical');
+      expect(monitoring.getWatchdog).toHaveBeenCalledWith(6);
+    });
+  });
+
+  describe('GET /tracking/admin/monitoring/health-score (Wave-2.4 MON-4)', () => {
+    it('returns the composite health score and grade', async () => {
+      monitoring.getHealthScore.mockResolvedValue({
+        score: 82,
+        grade: 'B',
+        penalties: [{ code: 'retry-rate-high', points: 10, message: 'retry elevated' }],
+      });
+
+      const result = await controller.healthScore('24');
+      expect(result.healthScore.score).toBe(82);
+      expect(result.healthScore.grade).toBe('B');
+      expect(monitoring.getHealthScore).toHaveBeenCalledWith(24);
     });
   });
 });

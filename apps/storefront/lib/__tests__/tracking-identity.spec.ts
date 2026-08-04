@@ -63,7 +63,7 @@ describe('tracking identity init — production-validation scenarios', () => {
     t.initMetaPixel();
     expect(fbq).toHaveBeenCalledWith('init', 'META', { external_id: 'ext-1' });
     expect(fbq).toHaveBeenCalledWith('track', 'ViewContent', { value: 100 }, {
-      eventID: expect.stringMatching(/^\d+-[a-z0-9]{8}$/),
+      eventID: expect.stringMatching(/^view_content_.*_[0-9a-f]{8}_\d+$/),
     });
   });
 
@@ -99,5 +99,61 @@ describe('tracking identity init — production-validation scenarios', () => {
     t.setPixelIdentity(null);
     t.trackEvent('AddToCart', { value: 5 });
     expect(fbq).toHaveBeenCalledWith('track', 'AddToCart', { value: 5 }, expect.anything());
+  });
+
+  it('flushQueue holds events when a single provider is enabled but not ready (B4 fix)', async () => {
+    const t = await freshTracking();
+    (window as any).fbq = undefined; // Meta tag not loaded yet
+    t.setPixelIds('META', ''); // single provider
+    t.trackEvent('ViewContent', { value: 1 }); // buffered (fbq undefined / not inited)
+    t.trackEvent('AddToCart', { value: 2 });
+
+    const fbq = ((window as any).fbq = vi.fn()); // tag loads
+    t.setPixelIdentity(null);
+    t.initMetaPixel(); // init + flush
+
+    // Without the B4 fix the setPixelIds flush (fbq undefined, single provider)
+    // would have drained and dropped these; with it they are held and flushed.
+    expect(fbq).toHaveBeenCalledWith('track', 'ViewContent', { value: 1 }, expect.anything());
+    expect(fbq).toHaveBeenCalledWith('track', 'AddToCart', { value: 2 }, expect.anything());
+  });
+
+  it('Wave-2.3: setPixelIdentity with em/ph emits external_id + em + ph at init (Advanced Matching)', async () => {
+    const t = await freshTracking();
+    const fbq = window.fbq as ReturnType<typeof vi.fn>;
+
+    t.setPixelIdentity('ext-1', 'em-hash', 'ph-hash');
+    t.setPixelIds('META', '');
+    t.initMetaPixel();
+
+    expect(fbq).toHaveBeenCalledWith('init', 'META', { external_id: 'ext-1', em: 'em-hash', ph: 'ph-hash' });
+    expect(fbq).toHaveBeenCalledWith('track', 'PageView');
+  });
+
+  it('Wave-2.3: em/ph are optional — external_id alone keeps the legacy init shape', async () => {
+    const t = await freshTracking();
+    const fbq = window.fbq as ReturnType<typeof vi.fn>;
+
+    t.setPixelIdentity('ext-1');
+    t.setPixelIds('META', '');
+    t.initMetaPixel();
+
+    expect(fbq).toHaveBeenCalledWith('init', 'META', { external_id: 'ext-1' });
+  });
+
+  it('Wave-2.3: identity arriving after init is kept for the next load — no double init', async () => {
+    const t = await freshTracking();
+    const fbq = window.fbq as ReturnType<typeof vi.fn>;
+
+    t.setPixelIds('META', '');
+    t.initMetaPixel();
+    const initCount = () => fbq.mock.calls.filter((c) => c[0] === 'init').length;
+    expect(initCount()).toBe(1);
+
+    t.setPixelIdentity('ext-2', 'em-2', 'ph-2');
+    t.initMetaPixel();
+
+    // Graceful extension: state updated, but the init never re-fires mid-session.
+    expect(initCount()).toBe(1);
   });
 });

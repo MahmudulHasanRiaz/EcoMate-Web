@@ -3197,6 +3197,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     let firstName = '';
     let lastName = '';
     let city = '';
+    let state = '';
+    let zip = '';
     let country = 'BD';
 
     if (order.customer) {
@@ -3212,6 +3214,11 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     const shippingAddr = order.shippingAddress || {};
     if (typeof shippingAddr === 'object') {
       city = shippingAddr.city || shippingAddr.district || '';
+      // Meta/GA4 match keys (Wave-2.5): state/zip are anonymous match fields —
+      // they lift EMQ without PII. Read both the Address model names (state,
+      // zipCode) and storefront aliases (division, postalCode).
+      state = shippingAddr.state || shippingAddr.division || '';
+      zip = shippingAddr.zipCode || shippingAddr.postalCode || '';
       if (shippingAddr.country) country = shippingAddr.country;
     }
 
@@ -3261,6 +3268,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
             firstName: firstName || undefined,
             lastName: lastName || undefined,
             city: city || undefined,
+            state: state || undefined,
+            zip: zip || undefined,
             country: country || undefined,
           },
         },

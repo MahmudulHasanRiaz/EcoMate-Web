@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { syncContext } from "@/lib/tracking-client";
+import { isTrackingAllowed, trackPageView } from "@/lib/tracking";
 
 const API_URL = typeof window !== "undefined" && !window.location.hostname.includes("localhost")
   ? "/api"
@@ -12,6 +14,7 @@ function PageViewTrackerInner() {
   const searchParams = useSearchParams();
   const sidRef = useRef<string>("");
   const sentUrlRef = useRef<string>("");
+  const isFirstVisitRef = useRef(true);
 
   useEffect(() => {
     if (!sidRef.current) {
@@ -27,6 +30,21 @@ function PageViewTrackerInner() {
     // Only fire once per distinct URL — prevents double-fire from router transitions
     if (sentUrlRef.current === url) return;
     sentUrlRef.current = url;
+
+    // Wave-2.3 — drop the beacon, context sync, and the browser PageView for an
+    // opted-out / non-consenting shopper.
+    if (!isTrackingAllowed()) return;
+
+    const isFirstVisit = isFirstVisitRef.current;
+    isFirstVisitRef.current = false;
+
+    // Capture ctxId + identifiers (fbp/fbc) + url + referrer on the backend for
+    // every distinct URL first visit.
+    syncContext();
+    // Wave-2.3 — subsequent in-SPA route changes fire the browser PageView
+    // (fbq('track','PageView')) — the first load's PageView is handled by
+    // initMetaPixel / the inline tag setup.
+    if (!isFirstVisit) trackPageView();
 
     const referrer = document.referrer || "";
 

@@ -4,12 +4,19 @@ import { TrackingCaptureService } from '../tracking-capture.service';
 import { TrackingSettingsService } from '../tracking-settings.service';
 
 describe('TrackingController', () => {
-  const allPublicMethods = ['trackEvent', 'saveContext'];
+  const allPublicMethods = ['trackEvent', 'saveContext', 'trackPageView', 'trackingConfig'];
   let trackingCapture: { capture: jest.Mock };
   let trackingContext: { upsertContext: jest.Mock };
   let pageViewBuffer: { push: jest.Mock };
-  let trackingSettings: { buildConfigSnapshot: jest.Mock };
-  let identityResolution: { resolveForShopper: jest.Mock };
+  let trackingSettings: {
+    buildConfigSnapshot: jest.Mock;
+    isEnabledOrDefault: jest.Mock;
+  };
+  let identityResolution: {
+    resolveForShopper: jest.Mock;
+    resolveAdvancedMatching: jest.Mock;
+    isEnabled: jest.Mock;
+  };
   let controller: TrackingController;
 
   beforeEach(() => {
@@ -21,8 +28,13 @@ describe('TrackingController', () => {
         enabledProviders: ['meta'],
         normalizerVersion: 1,
       }),
+      isEnabledOrDefault: jest.fn().mockResolvedValue(false),
     };
-    identityResolution = { resolveForShopper: jest.fn() };
+    identityResolution = {
+      resolveForShopper: jest.fn(),
+      resolveAdvancedMatching: jest.fn().mockResolvedValue({}),
+      isEnabled: jest.fn().mockResolvedValue(false),
+    };
     controller = new TrackingController(
       trackingCapture as unknown as TrackingCaptureService,
       trackingContext as never,
@@ -184,6 +196,84 @@ describe('TrackingController', () => {
     it('returns null externalId for unauthenticated requests', async () => {
       await expect(controller.identity({})).resolves.toEqual({ externalId: null });
       expect(identityResolution.resolveForShopper).not.toHaveBeenCalled();
+    });
+
+    it('spreads Advanced Matching hashes (em/ph) when enabled (Wave-2.3)', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-3');
+      identityResolution.resolveAdvancedMatching.mockResolvedValue({
+        em: 'hash-em',
+        ph: 'hash-ph',
+      });
+      const user = { betterAuthSession: { user: { id: 'ba-3' } } };
+      await expect(controller.identity(user)).resolves.toEqual({
+        externalId: 'cust-ext-3',
+        em: 'hash-em',
+        ph: 'hash-ph',
+      });
+      expect(identityResolution.resolveAdvancedMatching).toHaveBeenCalledWith('ba-3');
+    });
+  });
+
+  describe('GET /tracking/config (Wave-2.3 public config)', () => {
+    it('reports consent + advanced-matching + external-id capability from settings', async () => {
+      trackingSettings.isEnabledOrDefault
+        .mockResolvedValueOnce(true) // tracking_consent_required
+        .mockResolvedValueOnce(true); // tracking_advanced_matching
+      identityResolution.isEnabled.mockResolvedValue(true);
+      await expect(controller.trackingConfig()).resolves.toEqual({
+        consentRequired: true,
+        advancedMatching: true,
+        externalIdEnabled: true,
+      });
+    });
+
+    it('defaults all flags to off when no settings/env are present', async () => {
+      await expect(controller.trackingConfig()).resolves.toEqual({
+        consentRequired: false,
+        advancedMatching: false,
+        externalIdEnabled: false,
+      });
+    });
+  });
+
+  describe('POST /tracking/events → mirror→context merge (Wave-2.2 C3/C6)', () => {
+    const req = {
+      ip: '203.0.113.7',
+      headers: { 'user-agent': 'storefront-ua' },
+    } as never;
+
+    it('folds fbp/fbc from the mirror body into the journey context', async () => {
+      const body = {
+        eventId: 'evt-fbp',
+        eventName: 'lead',
+        ctxId: 'ctx-fbp',
+        userData: { fbp: 'fb.1.999', fbc: 'fb.1.888' },
+      };
+      const result = await controller.trackEvent(body, req);
+      expect(result).toEqual({ success: true });
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-fbp',
+        {
+          identifiers: {
+            meta: { fbp: 'fb.1.999', fbc: 'fb.1.888' },
+          },
+        },
+        '203.0.113.7',
+        'storefront-ua',
+      );
+    });
+
+    it('skips the context merge when there is no ctxId or no rotating cookies', async () => {
+      trackingContext.upsertContext.mockClear();
+      await controller.trackEvent(
+        { eventId: 'e-x', eventName: 'lead', ctxId: 'ctx-none' },
+        req,
+      );
+      await controller.trackEvent(
+        { eventId: 'e-y', eventName: 'lead' },
+        req,
+      );
+      expect(trackingContext.upsertContext).not.toHaveBeenCalled();
     });
   });
 });

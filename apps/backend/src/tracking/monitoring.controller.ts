@@ -81,6 +81,50 @@ export class MonitoringController {
     };
   }
 
+  /**
+   * EMQ quality proxy (Wave-2.4 MON-2): share of dispatches flagged for a
+   * match-key gap (NO_EM_PH / NO_IDENTITY). Internal at-risk rate; the
+   * authoritative EMQ score is Meta's Dataset Quality API.
+   */
+  @Get('emq')
+  async emq(@Query('hours') hours?: string) {
+    return { emq: await this.monitoring.getEmqProxy(this.hoursParam(hours)) };
+  }
+
+  /**
+   * Consolidated dispatch-quality rates (Wave-2.4 MON-3): terminal funnel,
+   * replay volume, dedup/retry rates, EMQ + mirror proxies in one view.
+   */
+  @Get('quality')
+  async quality(@Query('hours') hours?: string) {
+    return {
+      quality: await this.monitoring.getQualityRates(this.hoursParam(hours)),
+    };
+  }
+
+  /**
+   * Watchdog alerts (Wave-2.4 MON-4): actionable violations with severity —
+   * critical (pipeline down/stalled), warning (elevated, self-healing), info
+   * (configuration state). The alert source for the ops dashboard.
+   */
+  @Get('watchdog')
+  async watchdog(@Query('hours') hours?: string) {
+    return {
+      violations: await this.monitoring.getWatchdog(this.hoursParam(hours)),
+    };
+  }
+
+  /**
+   * Composite 0-100 health score + grade (Wave-2.4 MON-4), derived from the
+   * watchdog penalties — a single-page drift signal with drill-down.
+   */
+  @Get('health-score')
+  async healthScore(@Query('hours') hours?: string) {
+    return {
+      healthScore: await this.monitoring.getHealthScore(this.hoursParam(hours)),
+    };
+  }
+
   /** Most common terminal failure reasons + the attempt-count distribution. */
   @Get('failures')
   async failures(@Query('limit') limit?: string) {
