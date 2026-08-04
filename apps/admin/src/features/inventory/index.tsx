@@ -18,6 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 import { AdjustStockModal } from './components/adjust-stock-modal'
+import { useInventoryManagement } from './hooks/use-inventory-management'
 import { Link } from '@tanstack/react-router'
 
 interface StockOverviewItem {
@@ -63,8 +64,18 @@ export function Inventory() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
-  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>('PHYSICAL')
+  const { data: imEnabled = true } = useInventoryManagement()
+  const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>(() =>
+    imEnabled ? 'PHYSICAL' : 'MANAGED',
+  )
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!imEnabled && viewMode === 'PHYSICAL') {
+      setViewMode('MANAGED')
+      setPage(1)
+    }
+  }, [imEnabled, viewMode])
 
   const toggleRow = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -370,14 +381,16 @@ export function Inventory() {
               >
                 Managed Stock
               </Button>
-              <Button
-                variant={viewMode === 'PHYSICAL' ? 'secondary' : 'ghost'}
-                size='sm'
-                className='h-7 text-xs px-2.5 rounded-md font-medium'
-                onClick={() => { setViewMode('PHYSICAL'); setPage(1) }}
-              >
-                Physical Inventory
-              </Button>
+              {imEnabled && (
+                <Button
+                  variant={viewMode === 'PHYSICAL' ? 'secondary' : 'ghost'}
+                  size='sm'
+                  className='h-7 text-xs px-2.5 rounded-md font-medium'
+                  onClick={() => { setViewMode('PHYSICAL'); setPage(1) }}
+                >
+                  Physical Inventory
+                </Button>
+              )}
             </div>
           </div>
         </div>

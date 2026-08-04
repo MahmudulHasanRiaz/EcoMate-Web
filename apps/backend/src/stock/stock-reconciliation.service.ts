@@ -136,37 +136,60 @@ export class StockReconciliationService implements OnApplicationBootstrap {
 
   /**
    * Orders that carry active stock state inconsistent with a terminal status.
+   *
+   * Flags an order if ANY of these hold:
+   *  - a managed reservation/deduction flag is still set on an item or combo, OR
+   *  - a physical reservation still has status ACTIVE (standalone or combo).
+   *
+   * The physical check is essential: physical-only products (INVENTORY_CONTROLLED,
+   * or MANAGED with syncManagedStock) never touch the managed flags, so a Delivered
+   * order whose physical reservation was never fulfilled would otherwise be skipped
+   * and its `reservedQuantity` would stay stuck.
    */
   private async findOrdersWithActiveStock(): Promise<
     { id: string; statusName: string }[]
   > {
     const statuses = ['Delivered', 'Partial', 'Cancelled', 'Return Pending', 'Returned', 'Damaged'];
-    const orders = await this.prisma.order.findMany({
-      where: {
-        trashedAt: null,
-        status: { name: { in: statuses } },
-      },
-      select: {
-        id: true,
-        status: { select: { name: true } },
-        items: {
-          select: {
-            managedStockReserved: true,
-            managedStockDeducted: true,
-            comboComponents: {
-              select: {
-                managedStockReserved: true,
-                managedStockDeducted: true,
+    const [orders, activePhysical, activeCombo] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          trashedAt: null,
+          status: { name: { in: statuses } },
+        },
+        select: {
+          id: true,
+          status: { select: { name: true } },
+          items: {
+            select: {
+              managedStockReserved: true,
+              managedStockDeducted: true,
+              comboComponents: {
+                select: {
+                  managedStockReserved: true,
+                  managedStockDeducted: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      this.prisma.physicalReservation.findMany({
+        where: { status: 'ACTIVE' },
+        select: { orderId: true },
+      }),
+      this.prisma.comboComponentPhysicalReservation.findMany({
+        where: { status: 'ACTIVE' },
+        select: { orderId: true },
+      }),
+    ]);
+
+    const physicalDirty = new Set<string>();
+    for (const r of activePhysical) physicalDirty.add(r.orderId);
+    for (const r of activeCombo) physicalDirty.add(r.orderId);
 
     const active = orders.filter((o) => {
       // Any managed reservation/deduction flag still lingering counts as dirty.
-      const flagged = o.items.some(
+      const flaggedManaged = o.items.some(
         (i) =>
           i.managedStockReserved ||
           i.managedStockDeducted ||
@@ -174,8 +197,8 @@ export class StockReconciliationService implements OnApplicationBootstrap {
             (c) => c.managedStockReserved || c.managedStockDeducted,
           ),
       );
-      if (flagged) return true;
-      return false;
+      if (flaggedManaged) return true;
+      return physicalDirty.has(o.id);
     });
 
     return active.map((o) => ({
