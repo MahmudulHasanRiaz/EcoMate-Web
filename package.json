@@ -26,11 +26,11 @@
       "multer": "2.2.0"
     },
     "@fastify/static": "^10.1.2",
-    "postcss": "8.5.18",
+    "postcss": "8.5.25",
     "vitest": "4.1.10",
     "vite": "^8.0.8",
     "esbuild": "0.25.0",
-    "hono": "4.12.31",
+    "hono": "4.13.0",
     "@istanbuljs/load-nyc-config": {
       "js-yaml": "4.3.0"
     },

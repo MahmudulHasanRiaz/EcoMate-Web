@@ -16,6 +16,7 @@ import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CouponsService } from '../coupons/coupons.service';
 import {
   CreateOrderDto,
@@ -123,6 +124,7 @@ export class OrdersService {
     private readonly managedStockLedger: ManagedStockLedgerService,
     private readonly costingLotService: CostingLotService,
     private readonly cancelReturnStock: CancelReturnStockService,
+    private readonly orderStockDeduct: OrderStockDeductService,
   ) {}
 
   private async resolveAndApplyStock(
@@ -1942,6 +1944,7 @@ export class OrdersService {
             },
           });
         }
+        await this.handleDeliveredSideEffects(tx, u, performedBy || userId);
       }
 
       if (newStatus.name === 'Returned') {
@@ -2764,7 +2767,24 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     order: any,
     performedBy?: string,
   ) {
-    this.logger.log(`Order ${order.id} delivered — payment confirmation stub`);
+    // Final stock deduction on delivery.
+    // Idempotent: managed stock only deducts when managedStockDeducted === false;
+    // physical reservation only when ACTIVE. Safe for courier auto-delivery.
+    try {
+      await this.orderStockDeduct.deductForOrder({
+        orderId: order.id,
+        reference: `Order Delivered: ${order.displayId || order.id}`,
+        performedBy,
+        tx,
+        strict: false,
+      });
+    } catch (err) {
+      // Never let a stock side-effect block the Delivered status from persisting.
+      this.logger.error(
+        `Failed to deduct stock on delivery for order ${order.id}:`,
+        err,
+      );
+    }
   }
 
   private async takeCostSnapshot(

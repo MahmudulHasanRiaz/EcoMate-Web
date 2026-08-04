@@ -580,14 +580,82 @@ export class PosOrdersService {
           item.sourceWarehouseId &&
           item.sourceWarehouseId !== session.showroom.id;
 
-        if (imEnabled && !isCrossWarehouse) {
-          // POS has no reservation flow — use addPhysical with negative qty
-          // to decrement quantity only (skips reservedQuantity decrement)
+        if (isCrossWarehouse) continue;
+
+        if (item.comboId) {
+          // Combos: resolve each component's availability mode independently,
+          // exactly like the order flow and shared delivery deduction service.
+          const combo = await tx.combo.findUnique({
+            where: { id: item.comboId },
+            include: { items: true },
+          });
+          if (!combo) continue;
+          for (const ci of combo.items) {
+            const compProduct = await tx.product.findUnique({
+              where: { id: ci.productId },
+              select: { availabilityMode: true, manageStock: true },
+            });
+            const compVariantId = ci.variantId || (item.comboSelection as any)?.[ci.productId] || null;
+            const compQty = ci.quantity * item.quantity;
+            const compDecision = this.stockRouter.resolve(
+              compProduct?.availabilityMode,
+              'deduct',
+              imEnabled,
+            );
+
+            if (imEnabled && compDecision.pi !== 'skip') {
+              await this.stock.addPhysical({
+                productId: ci.productId,
+                variantId: compVariantId,
+                quantity: -compQty,
+                reference: displayId,
+                performedBy: cashierId,
+                warehouseId: session.showroom.id,
+                ledgerType: 'POS_SALE',
+                tx,
+              });
+            }
+            if (compDecision.ms === 'deduct') {
+              await this.stock.reserve({
+                productId: ci.productId,
+                variantId: compVariantId || undefined,
+                quantity: compQty,
+                reference: displayId,
+                performedBy: cashierId,
+                tx,
+              });
+              await this.stock.deduct({
+                productId: ci.productId,
+                variantId: compVariantId || undefined,
+                quantity: compQty,
+                reference: displayId,
+                performedBy: cashierId,
+                tx,
+              });
+            }
+          }
+          continue;
+        }
+
+        // Resolve per-product availability mode with the REAL IM flag so POS
+        // honours both engines (managed stock + physical) just like the order flow.
+        const product = item.productId
+          ? await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { availabilityMode: true, manageStock: true },
+            })
+          : null;
+        const decision = this.stockRouter.resolve(
+          product?.availabilityMode,
+          'deduct',
+          imEnabled,
+        );
+
+        // Physical deduction (IM ON): decrement physical quantity at the showroom.
+        if (imEnabled && decision.pi !== 'skip') {
           await this.stock.addPhysical({
             productId: item.productId,
             variantId: item.variantId,
-            comboId: item.comboId,
-            comboSelection: item.comboSelection,
             quantity: -item.quantity,
             reference: displayId,
             performedBy: cashierId,
@@ -595,42 +663,28 @@ export class PosOrdersService {
             ledgerType: 'POS_SALE',
             tx,
           });
-        } else if (!isCrossWarehouse) {
-          const product = item.productId
-            ? await tx.product.findUnique({
-                where: { id: item.productId },
-                select: { availabilityMode: true },
-              })
-            : null;
-          const decision = this.stockRouter.resolve(
-            product?.availabilityMode,
-            'deduct',
-            false,
-          );
+        }
 
-          if (decision.ms === 'deduct') {
-            // POS skips reserve step; reserve then deduct so reservedStock ends at 0
-            await this.stock.reserve({
-              productId: item.productId,
-              variantId: item.variantId,
-              comboId: item.comboId,
-              comboSelection: item.comboSelection,
-              quantity: item.quantity,
-              reference: displayId,
-              performedBy: cashierId,
-              tx,
-            });
-            await this.stock.deduct({
-              productId: item.productId,
-              variantId: item.variantId,
-              comboId: item.comboId,
-              comboSelection: item.comboSelection,
-              quantity: item.quantity,
-              reference: displayId,
-              performedBy: cashierId,
-              tx,
-            });
-          }
+        // Managed deduction (per-mode): reserve then deduct so reservedStock
+        // ends at 0 — mirrors the IM-OFF branch, but also runs under IM ON for
+        // MANAGED_STOCK products.
+        if (decision.ms === 'deduct') {
+          await this.stock.reserve({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            reference: displayId,
+            performedBy: cashierId,
+            tx,
+          });
+          await this.stock.deduct({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            reference: displayId,
+            performedBy: cashierId,
+            tx,
+          });
         }
       }
 
