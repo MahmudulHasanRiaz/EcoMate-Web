@@ -325,10 +325,10 @@ export function MovementHistory() {
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right font-semibold">Qty</TableHead>
                   {ledgerMode === 'PHYSICAL' && <TableHead className="text-right">Unit Cost</TableHead>}
-                  <TableHead className="text-right">Before</TableHead>
-                  <TableHead className="text-right">After</TableHead>
-                  <TableHead className="text-right">Reserved</TableHead>
-                  <TableHead className="text-right">Available</TableHead>
+                  <TableHead className="text-right">On Hand Before</TableHead>
+                  <TableHead className="text-right">On Hand After</TableHead>
+                  <TableHead className="text-right">Reserved (Before → After)</TableHead>
+                  <TableHead className="text-right">Available (Before → After)</TableHead>
                   <TableHead>Performed By</TableHead>
                   <TableHead>Note / Reason</TableHead>
                 </TableRow>
@@ -413,11 +413,13 @@ export function MovementHistory() {
                         {log.stockAfter}
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">
-                        {log.reservedBefore != null ? `${log.reservedBefore} → ${log.reservedAfter}` : '—'}
+                        {log.reservedBefore != null && log.reservedAfter != null
+                          ? `${log.reservedBefore} → ${log.reservedAfter}`
+                          : '—'}
                       </TableCell>
                       <TableCell className="text-right text-xs font-medium">
-                        {log.reservedAfter != null
-                          ? (log.stockAfter - log.reservedAfter).toString()
+                        {log.reservedBefore != null && log.reservedAfter != null
+                          ? `${log.stockBefore - log.reservedBefore} → ${log.stockAfter - log.reservedAfter}`
                           : '—'}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">

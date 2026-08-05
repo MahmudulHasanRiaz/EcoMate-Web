@@ -318,13 +318,20 @@ export class StockService {
         whereClause.binLocationId = null;
       }
 
-      const currentQuantity = await tx.physicalInventory.findFirst({
+      const pi = await tx.physicalInventory.findFirst({
         where: whereClause,
-        select: { quantity: true },
-      }).then(r => r?.quantity ?? 0);
+        select: { quantity: true, reservedQuantity: true },
+      });
+      const currentQuantity = pi?.quantity ?? 0;
+      const currentReserved = pi?.reservedQuantity ?? 0;
       const stockAfter = currentQuantity;
       const stockBefore =
         direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
+
+      // Always capture reserved transition. Callers may pass explicit before/after
+      // (e.g. reservation-based deduction); otherwise reserved unchanged.
+      const resAfter = reservedAfter ?? currentReserved;
+      const resBefore = reservedBefore ?? currentReserved;
 
       await tx.physicalInventoryLedger.create({
         data: {
@@ -335,8 +342,8 @@ export class StockService {
           direction,
           stockBefore,
           stockAfter,
-          reservedBefore: reservedBefore ?? null,
-          reservedAfter: reservedAfter ?? null,
+          reservedBefore: resBefore,
+          reservedAfter: resAfter,
           type,
           reason: reference,
           performedBy,
@@ -379,12 +386,17 @@ export class StockService {
       const stockBefore =
         direction === 'IN' ? currentStock - t.qty : currentStock + t.qty;
 
-      // Capture reserved state transition only for ORDER_DEDUCTION (reservedStock was decremented)
-      let reservedBefore: number | null = null;
-      let reservedAfter: number | null = null;
+      // Capture reserved state transition. ORDER_DEDUCTION decremented reservedStock
+      // (read after the decrement), so before = after + qty. All other types leave
+      // reservedStock unchanged, so before == after == currentReserved.
+      let reservedBefore: number | null;
+      let reservedAfter: number | null;
       if (type === 'ORDER_DEDUCTION') {
         reservedAfter = currentReserved;
         reservedBefore = currentReserved + t.qty;
+      } else {
+        reservedBefore = currentReserved;
+        reservedAfter = currentReserved;
       }
 
       await tx.managedStockLedger.create({

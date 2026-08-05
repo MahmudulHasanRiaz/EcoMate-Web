@@ -181,9 +181,7 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                   <TableCell className="text-right text-xs font-medium">
                     {entry.reservedBefore != null && entry.reservedAfter != null
                       ? `${entry.stockBefore - entry.reservedBefore} → ${entry.stockAfter - entry.reservedAfter}`
-                      : (entry.stockBefore != null && entry.stockAfter != null
-                        ? `${entry.stockBefore} → ${entry.stockAfter}`
-                        : '—')}
+                      : '—'}
                   </TableCell>
                 </TableRow>
               ))
