@@ -164,7 +164,6 @@ export function PhysicalStockTable() {
                           onHand: s.quantity,
                           available: s.quantity - s.reservedQuantity,
                           reserved: s.reservedQuantity,
-                          allocated: 0,
                           status: (s.quantity - s.reservedQuantity) < 0 ? 'negative' : ((s.quantity - s.reservedQuantity) === 0 ? 'low' : 'optimal'),
                         })}>
                           View

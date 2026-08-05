@@ -111,10 +111,6 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <div className="text-xl font-bold mt-1 text-orange-600">{productDetails.reserved}</div>
                   </div>
                   <div className="rounded-lg border bg-card p-3">
-                    <div className="text-xs font-medium text-muted-foreground">Allocated</div>
-                    <div className="text-xl font-bold mt-1 text-blue-600">{productDetails.allocated}</div>
-                  </div>
-                  <div className="rounded-lg border bg-card p-3">
                     <div className="text-xs font-medium text-muted-foreground">Total On Hand</div>
                     <div className="text-xl font-bold mt-1">{productDetails.onHand}</div>
                   </div>

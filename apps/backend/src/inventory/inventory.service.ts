@@ -223,6 +223,8 @@ export class InventoryService {
         direction: l.direction,
         stockBefore: l.stockBefore,
         stockAfter: l.stockAfter,
+        reservedBefore: l.reservedBefore ?? null,
+        reservedAfter: l.reservedAfter ?? null,
         type: l.type.toLowerCase(),
         reason: l.reason,
         note: l.reason,

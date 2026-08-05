@@ -164,16 +164,6 @@ export function InventoryDetail() {
             </Card>
           )}
           {imEnabled && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Allocated</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">0</div>
-              </CardContent>
-            </Card>
-          )}
-          {imEnabled && (
             <Card className="bg-primary/5 border-primary/20">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-primary">Total On Hand</CardTitle>

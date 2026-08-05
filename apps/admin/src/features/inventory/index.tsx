@@ -187,7 +187,6 @@ export function Inventory() {
           expiry: '—',
           available: p.availableStock,
           reserved: p.availabilityMode === 'MANAGED_STOCK' ? (p.reservedStock ?? 0) : 0,
-          allocated: 0,
           onHand: p.availabilityMode === 'MANAGED_STOCK' ? (p.managedStockQuantity ?? 0) : p.availableStock,
           cost: p.basePrice || 0,
           lowStockQty: p.lowStockQty,
@@ -302,7 +301,6 @@ export function Inventory() {
           expiry: '—',
           available: hasPhysicalStock ? avail : 0,
           reserved: totalReserved,
-          allocated: 0,
           onHand: totalQty,
           cost: p.basePrice || 0,
           lowStockQty: p.lowStockQty,
@@ -454,19 +452,13 @@ export function Inventory() {
                     <TableHead className='text-right'>
                       <Tooltip>
                         <TooltipTrigger className="flex items-center justify-end w-full gap-1">Available <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
-                        <TooltipContent>On Hand - (Reserved + Allocated)</TooltipContent>
+                        <TooltipContent>On Hand - Reserved</TooltipContent>
                       </Tooltip>
                     </TableHead>
                     <TableHead className='text-right'>
                       <Tooltip>
                         <TooltipTrigger className="flex items-center justify-end w-full gap-1">Reserved <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
                         <TooltipContent>Stock committed to pending sales orders</TooltipContent>
-                      </Tooltip>
-                    </TableHead>
-                    <TableHead className='text-right'>
-                      <Tooltip>
-                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">Allocated <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
-                        <TooltipContent>Stock currently being picked or dispatched</TooltipContent>
                       </Tooltip>
                     </TableHead>
                     <TableHead className='text-right'>
@@ -483,13 +475,13 @@ export function Inventory() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 9 : 8} className="text-center py-12">
+                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 8 : 7} className="text-center py-12">
                       <Loader2 className="animate-spin h-6 w-6 mx-auto text-muted-foreground" />
                     </TableCell>
                   </TableRow>
                 ) : stockLevels.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 9 : 8} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 8 : 7} className="text-center py-12 text-muted-foreground">
                       {search ? 'No products match your search.' : 'No stock levels found.'}
                     </TableCell>
                   </TableRow>
@@ -549,7 +541,6 @@ export function Inventory() {
                           {p.available === null ? '∞' : p.available}
                         </TableCell>
                         <TableCell className='text-right text-orange-600'>{p.reserved}</TableCell>
-                        <TableCell className='text-right text-blue-600'>{p.allocated}</TableCell>
                         <TableCell className='text-right font-bold'>
                           {p.onHand === null ? '∞' : p.onHand}
                         </TableCell>

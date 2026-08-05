@@ -120,8 +120,8 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
               <TableHead>Type</TableHead>
               <TableHead>User / Audit</TableHead>
               <TableHead className="text-right">Qty Change</TableHead>
-              <TableHead className="text-right">Reserved</TableHead>
-              <TableHead className="text-right">Available</TableHead>
+              <TableHead className="text-right">Reserved (Before → After)</TableHead>
+              <TableHead className="text-right">Available (Before → After)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -179,9 +179,11 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                     {entry.reservedBefore != null ? `${entry.reservedBefore} → ${entry.reservedAfter}` : '—'}
                   </TableCell>
                   <TableCell className="text-right text-xs font-medium">
-                    {entry.reservedAfter != null
-                      ? (entry.stockAfter - entry.reservedAfter).toString()
-                      : '—'}
+                    {entry.reservedBefore != null && entry.reservedAfter != null
+                      ? `${entry.stockBefore - entry.reservedBefore} → ${entry.stockAfter - entry.reservedAfter}`
+                      : (entry.stockBefore != null && entry.stockAfter != null
+                        ? `${entry.stockBefore} → ${entry.stockAfter}`
+                        : '—')}
                   </TableCell>
                 </TableRow>
               ))
