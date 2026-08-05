@@ -110,6 +110,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
+      STOCK_RECONCILE_ON_BOOT: ${STOCK_RECONCILE_ON_BOOT:-false}
       # Mobile Build (optional — only if client has mobile license)
       MOBILE_BUILDER_GITHUB_TOKEN: ${MOBILE_BUILDER_GITHUB_TOKEN:-}
       MOBILE_BUILDER_CALLBACK_TOKEN: ${MOBILE_BUILDER_CALLBACK_TOKEN:-}
