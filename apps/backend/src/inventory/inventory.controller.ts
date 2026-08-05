@@ -141,6 +141,13 @@ export class InventoryController {
       const outcome = await this.reconciliation.healOrder(orderId);
       return { orderId, outcome };
     }
-    return this.reconciliation.healAll();
+    const result = await this.reconciliation.healAll();
+    return {
+      scanned: result.scanned,
+      deducted: result.deliveredDeducted,
+      restored: result.cancelledRestored,
+      blocked: result.blocked,
+      verification: result.verification,
+    };
   }
 }
