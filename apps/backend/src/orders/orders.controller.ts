@@ -336,9 +336,6 @@ export class OrdersController {
 
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
-  @Post(':id/trash')
-  @Roles('superadmin', 'admin', 'manager')
-  @RequiresFeature('admin_orders')
   @Post('bulk/dispatch')
   async bulkDispatch(
     @Body() dto: BulkDispatchDto,
