@@ -59,9 +59,9 @@ const testIp = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
       reason: 'smoke: profile-page block',
       blockedBy: 'smoke-staff',
     });
-    cleanup.push(() =>
-      prisma.blockedIp.deleteMany({ where: { ip: { startsWith: '203.0.113.' } } }),
-    );
+    cleanup.push(async () => {
+      await prisma.blockedIp.deleteMany({ where: { ip: { startsWith: '203.0.113.' } } });
+    });
 
     const list0 = await blockedEntries.findAll('ip');
     const entry = (list0 as any[]).find((e) => e.entryType === 'ip' && e.value === testIp);
