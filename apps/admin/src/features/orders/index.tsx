@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { ordersApi, mediaUrl } from './api'
-import type { OrderResponse } from './api'
+import { ordersApi, mediaUrl, type OrderResponse } from './api'
 import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
+import { useOrdersFilterStore } from '@/stores/orders-filter-store'
+import { copyToClipboard } from '@/lib/clipboard'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -28,6 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { OrderSourceBadge } from '@/features/orders/order-source-badge'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -115,15 +117,6 @@ function paymentStatusBadgeClass(status: string): { variant: 'default' | 'second
   if (s === 'partial_paid') return { variant: 'default', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800' }
   if (s === 'refunded') return { variant: 'outline', className: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800' }
   return { variant: 'outline', className: '' }
-}
-
-async function copyToClipboard(text: string, label?: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(label ? `${label} copied` : 'Copied to clipboard')
-  } catch {
-    toast.error('Failed to copy')
-  }
 }
 
 function OrderRowSkeleton() {
@@ -254,15 +247,23 @@ export function Orders() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(10)
   const [customRows, setCustomRows] = useState('')
   const [showCustomRows, setShowCustomRows] = useState(false)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [courierFilter, setCourierFilter] = useState('all')
-  const [assigneeFilter, setAssigneeFilter] = useState('all')
-  const [sort, setSort] = useState('createdAt')
-  const [order, setOrder] = useState('desc')
+  const search = useOrdersFilterStore(s => s.search)
+  const setSearch = useOrdersFilterStore(s => s.setSearch)
+  const statusFilter = useOrdersFilterStore(s => s.statusFilter)
+  const setStatusFilter = useOrdersFilterStore(s => s.setStatusFilter)
+  const courierFilter = useOrdersFilterStore(s => s.courierFilter)
+  const setCourierFilter = useOrdersFilterStore(s => s.setCourierFilter)
+  const assigneeFilter = useOrdersFilterStore(s => s.assigneeFilter)
+  const setAssigneeFilter = useOrdersFilterStore(s => s.setAssigneeFilter)
+  const sort = useOrdersFilterStore(s => s.sort)
+  const setSort = useOrdersFilterStore(s => s.setSort)
+  const order = useOrdersFilterStore(s => s.order)
+  const setOrder = useOrdersFilterStore(s => s.setOrder)
+  const perPage = useOrdersFilterStore(s => s.perPage)
+  const setPerPage = useOrdersFilterStore(s => s.setPerPage)
+  const resetFilters = useOrdersFilterStore(s => s.resetFilters)
   const [selected, setSelected] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -297,7 +298,20 @@ export function Orders() {
 
   const bulkStatusMut = useMutation({
     mutationFn: (d: { ids: string[]; statusId: string }) => apiClient.post('/orders/bulk/status', d),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Bulk status updated') },
+    onSuccess: (res) => {
+      const r = (res as any)?.data as { updated?: number; skipped?: number; failed?: number; failedDetails?: { id: string; reason: string }[] } | undefined
+      const updated = r?.updated ?? 0
+      const skipped = r?.skipped ?? 0
+      const failed = r?.failed ?? 0
+      const details = r?.failedDetails || []
+      if (failed > 0) {
+        toast.error(`${failed} order(s) could not be updated`)
+        details.slice(0, 3).forEach((d) => toast.error(d.reason || 'Unknown error', { id: d.id }))
+      }
+      if (updated > 0) toast.success(`${updated} order(s) updated${skipped > 0 ? ` · ${skipped} failed` : ''}`)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setSelected([])
+    },
   })
 
   const bulkAssignMut = useMutation({
@@ -341,9 +355,9 @@ export function Orders() {
 
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
   const toggleOne = (id: string) => setSelected(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id])
-  const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next }), [])
+  const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next }), [])
 
-  const clearAllFilters = () => { setSearch(''); setStatusFilter('all'); setCourierFilter('all'); setAssigneeFilter('all'); setPage(1) }
+  const clearAllFilters = () => { resetFilters(); setPage(1) }
   const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all'
 
   const statusCountMap = useMemo(() => {
@@ -353,7 +367,7 @@ export function Orders() {
   const totalRevenue = useMemo(() => {
     if (!data?.data) return 0
     return data.data.reduce((sum: number, o: OrderResponse) => sum + nn(o.total), 0)
-  }, [data?.data])
+  }, [data])
 
   const totalOrders = data?.meta?.total || 0
   const totalPages = data?.meta?.totalPages || 1
@@ -533,7 +547,7 @@ export function Orders() {
                     <TableHead>Status</TableHead>
                     <TableHead>Courier</TableHead>
                     <TableHead>Assigned To</TableHead>
-                    <TableHead className='text-right cursor-pointer select-none' onClick={() => { setSort('total'); setOrder(o => o === 'asc' ? 'desc' : 'asc') }}>
+                    <TableHead className='text-right cursor-pointer select-none' onClick={() => { setSort('total'); setOrder(order === 'asc' ? 'desc' : 'asc') }}>
                       Total {sort === 'total' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
                     </TableHead>
                     <TableHead className='text-right'>Items</TableHead>
@@ -569,20 +583,20 @@ export function Orders() {
                             </Tooltip>
                           </div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
-                            <span className='cursor-pointer text-[11px] text-muted-foreground select-none' onClick={e => { e.stopPropagation(); setSort('createdAt'); setOrder(prev => prev === 'asc' ? 'desc' : 'asc') }}>
+                            <span className='cursor-pointer text-[11px] text-muted-foreground select-none' onClick={e => { e.stopPropagation(); setSort('createdAt'); setOrder(order === 'asc' ? 'desc' : 'asc') }}>
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
+                            {o.salesChannel && (
+                              <OrderSourceBadge salesChannel={o.salesChannel} />
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className='text-sm font-medium leading-tight'>{o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : (o.guestName || 'Guest')}</div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
                             <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{o.customer?.phoneNumber || o.guestPhone || '—'}</a>
-                            {(o.customer?.phoneNumber || o.guestPhone) && (
-                              <button onClick={e => { e.stopPropagation(); copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone') }} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-2.5 w-2.5' /></button>
-                            )}
-                            <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
+                            <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} showCopy />
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -764,8 +778,7 @@ export function Orders() {
                                         <div className='flex items-center gap-2 text-sm'>
                                           <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
                                           <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline'>{o.customer?.phoneNumber || o.guestPhone}</a>
-                                          <button onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '')} className='text-muted-foreground/50 hover:text-foreground transition-colors'><ClipboardCopy className='h-3 w-3' /></button>
-                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
+                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} showCopy />
                                         </div>
                                       )}
                                       {o.customer?.email && (

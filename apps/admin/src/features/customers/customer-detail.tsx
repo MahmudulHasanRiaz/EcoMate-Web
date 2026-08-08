@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Loader2, ArrowLeft, Phone, Mail, ShoppingBag, DollarSign, Calendar, Shield, ShieldOff, Ban, Globe, Plus, Trash2 } from 'lucide-react'
+import { Loader2, ArrowLeft, Phone, Mail, ShoppingBag, DollarSign, Calendar, Shield, Ban, Globe, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useCustomerDetail, useBlockPhone, useUnblockPhone, useBlockedIps, useBlockIp, useUnblockIp } from './hooks'
 import { Badge } from '@/components/ui/badge'

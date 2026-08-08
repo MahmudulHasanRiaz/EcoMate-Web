@@ -86,8 +86,10 @@ export interface HealAllResult {
  *
  * Healed cases:
  *   1. Delivered / Partial orders with stock still RESERVED (not deducted) → deduct.
- *   2. Cancelled / Return Pending / Returned / Damaged orders with stock still
+ *   2. Cancelled / Returned / Damaged orders with stock still
  *      reserved OR deducted → release / restore.
+ *      ('Return Pending' is intentionally excluded: stock stays held until a
+ *      return is manually confirmed as 'Returned'.)
  *
  * Idempotency is guaranteed by the underlying services:
  *   - OrderStockDeductService  → guarded by managedStockDeducted / reservation status.
@@ -241,8 +243,11 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       return 'deducted';
     }
 
-    // 2. Cancelled / Return Pending / Returned / Damaged → release or restore.
-    if (['Cancelled', 'Return Pending', 'Returned', 'Damaged'].includes(status)) {
+    // 2. Cancelled / Returned / Damaged → release or restore.
+    // NOTE: 'Return Pending' intentionally NOT healed here — the business rule is
+    // that stock must never be released/restored until the return is manually
+    // confirmed ('Returned'). Reserved quantities stay held until then.
+    if (['Cancelled', 'Returned', 'Damaged'].includes(status)) {
       await this.prisma.$transaction(async (tx) => {
         const prefix = status === 'Returned' || status === 'Damaged'
           ? 'return'
@@ -275,7 +280,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   private async findOrdersWithActiveStock(): Promise<
     { id: string; statusName: string }[]
   > {
-    const statuses = ['Delivered', 'Partial', 'Cancelled', 'Return Pending', 'Returned', 'Damaged'];
+    const statuses = ['Delivered', 'Partial', 'Cancelled', 'Returned', 'Damaged'];
     const [orders, activePhysical, activeCombo] = await Promise.all([
       this.prisma.order.findMany({
         where: {

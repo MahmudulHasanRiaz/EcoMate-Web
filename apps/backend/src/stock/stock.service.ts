@@ -353,6 +353,46 @@ export class StockService {
     }
   }
 
+  private async logPhysicalTargetReservation(
+    targets: StockTarget[],
+    params: StockOperationParams,
+    tx: Prisma.TransactionClient,
+    direction: Prisma.$PhysicalInventoryLedgerPayload['scalars']['direction'],
+    type: string,
+  ) {
+    if (!targets.length || !params.warehouseId) return;
+    const firstTarget = targets[0];
+    const wc: any = {
+      productId: firstTarget.productId,
+      variantId: firstTarget.variantId || null,
+      warehouseId: params.warehouseId,
+    };
+    if (params.binLocationId) wc.binLocationId = params.binLocationId;
+    else wc.binLocationId = null;
+    const pi = await tx.physicalInventory.findFirst({
+      where: wc,
+      select: { reservedQuantity: true },
+    });
+    const reservedAfter = pi?.reservedQuantity ?? 0;
+    const reservedBefore =
+      direction === 'OUT' ? reservedAfter - firstTarget.qty : reservedAfter + firstTarget.qty;
+    await this.logPhysicalInventoryLedger(
+      targets,
+      params.warehouseId,
+      direction,
+      type,
+      params.reference,
+      params.performedBy,
+      params.unitCost,
+      tx,
+      params.binLocationId,
+      params.referenceType,
+      params.referenceId,
+      reservedBefore,
+      reservedAfter,
+    );
+  }
+
   private async logManagedStockLedger(
     targets: StockTarget[],
     direction: Prisma.$ManagedStockLedgerPayload['scalars']['direction'],
@@ -555,12 +595,26 @@ export class StockService {
           'reservedQuantity',
           tx,
         );
+        await this.logPhysicalTargetReservation(
+          targets,
+          params,
+          tx,
+          'OUT',
+          params.ledgerType || 'RESERVE',
+        );
       } else if (effectiveOperation === 'release') {
         await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
           'reservedQuantity',
           tx,
+        );
+        await this.logPhysicalTargetReservation(
+          targets,
+          params,
+          tx,
+          'IN',
+          params.ledgerType || 'RELEASE',
         );
       } else if (effectiveOperation === 'deduct') {
         await this.applyPhysicalChange(

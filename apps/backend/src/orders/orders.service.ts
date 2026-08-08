@@ -56,15 +56,31 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   Damaged: [],
 };
 
+/**
+ * Actors that represent automated processes (courier webhooks, sync jobs)
+ * rather than a logged-in staff member. They must never:
+ *  - take ownership of an order (auto-assignment),
+ *  - mark an order as 'Returned' (manual-confirmation-only, restores stock).
+ */
+const AUTOMATED_ACTORS = new Set(['system', 'reconcile', 'webhook']);
+
+function isAutomatedActor(actor?: string | null): boolean {
+  return !actor || AUTOMATED_ACTORS.has(actor);
+}
+
 /** Public display-only tracking item — exported for controller type inference. */
 export interface PublicDisplayItem {
-  id: string; quantity: number; price: number;
+  id: string;
+  quantity: number;
+  price: number;
   product: { name: string; slug: string; images: string[] } | null;
 }
 
 /** Public display-only tracking order — strictly no PII. */
 export interface PublicDisplayOrder {
-  id: string; displayId: string; createdAt: Date;
+  id: string;
+  displayId: string;
+  createdAt: Date;
   status: { name: string; color?: string } | null;
   items: PublicDisplayItem[];
   total: number;
@@ -80,12 +96,19 @@ export interface PublicTokenOrder extends PublicDisplayOrder {
 
 /** Typed Prisma select for public display lookup — fetches no PII. */
 const PUBLIC_DISPLAY_SELECT = {
-  id: true, displayId: true, createdAt: true, total: true,
-  courierService: true, courierTrackingCode: true, courierConsignmentId: true,
+  id: true,
+  displayId: true,
+  createdAt: true,
+  total: true,
+  courierService: true,
+  courierTrackingCode: true,
+  courierConsignmentId: true,
   status: { select: { name: true, color: true } },
   items: {
     select: {
-      id: true, quantity: true, price: true,
+      id: true,
+      quantity: true,
+      price: true,
       product: { select: { name: true, slug: true, images: true } },
     },
   },
@@ -93,14 +116,22 @@ const PUBLIC_DISPLAY_SELECT = {
 
 /** Typed Prisma select for public token lookup. */
 const PUBLIC_TOKEN_SELECT = {
-  id: true, displayId: true, createdAt: true, total: true,
-  shippingAddress: true, timeline: true,
-  courierService: true, courierTrackingCode: true, courierConsignmentId: true,
+  id: true,
+  displayId: true,
+  createdAt: true,
+  total: true,
+  shippingAddress: true,
+  timeline: true,
+  courierService: true,
+  courierTrackingCode: true,
+  courierConsignmentId: true,
   status: { select: { name: true, color: true } },
   customer: { select: { name: true } },
   items: {
     select: {
-      id: true, quantity: true, price: true,
+      id: true,
+      quantity: true,
+      price: true,
       product: { select: { name: true, slug: true, images: true } },
     },
   },
@@ -147,10 +178,19 @@ export class OrdersService {
     if (!productId) return;
     const product = await tx.product.findUnique({
       where: { id: productId },
-      select: { availabilityMode: true, warehouseId: true, syncManagedStock: true },
+      select: {
+        availabilityMode: true,
+        warehouseId: true,
+        syncManagedStock: true,
+      },
     });
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-    const decision = this.stockRouter.resolve(product?.availabilityMode, opType, imEnabled, product?.syncManagedStock ?? undefined);
+    const decision = this.stockRouter.resolve(
+      product?.availabilityMode,
+      opType,
+      imEnabled,
+      product?.syncManagedStock ?? undefined,
+    );
     let wh = options?.warehouseId || product?.warehouseId;
     if (!wh && decision.pi !== 'skip') {
       const firstStock = await tx.physicalInventory.findFirst({
@@ -164,7 +204,8 @@ export class OrdersService {
     }
 
     if (decision.ms !== 'skip') {
-      const shouldApplyMs = !decision.msConditionalOnSync || product?.syncManagedStock;
+      const shouldApplyMs =
+        !decision.msConditionalOnSync || product?.syncManagedStock;
       if (shouldApplyMs) {
         await this.stockService.operate(decision.ms as any, {
           productId,
@@ -192,7 +233,10 @@ export class OrdersService {
           } else if (decision.ms === 'add') {
             await tx.orderItem.update({
               where: { id: options.orderItemId },
-              data: { managedStockReserved: false, managedStockDeducted: false },
+              data: {
+                managedStockReserved: false,
+                managedStockDeducted: false,
+              },
             });
           }
         }
@@ -215,7 +259,12 @@ export class OrdersService {
     }
 
     // ── Physical reservation: allocate (reserve at order creation/revision) ──
-    if (decision.pi === 'allocate' && opType === 'reserve' && options?.orderId && options?.orderItemId) {
+    if (
+      decision.pi === 'allocate' &&
+      opType === 'reserve' &&
+      options?.orderId &&
+      options?.orderItemId
+    ) {
       let cycle = await tx.orderStockCycle.findFirst({
         where: { orderId: options.orderId, status: 'ACTIVE' },
       });
@@ -234,12 +283,13 @@ export class OrdersService {
       }
 
       if (wh) {
-        const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(
-          options.orderId,
-          options.orderItemId,
-          undefined,
-          cycle.id,
-        );
+        const alreadyReserved =
+          await this.stockService.hasExistingPhysicalReservation(
+            options.orderId,
+            options.orderItemId,
+            undefined,
+            cycle.id,
+          );
         if (!alreadyReserved) {
           const existingPi = await tx.physicalInventory.findFirst({
             where: { productId, variantId: variantId || null, warehouseId: wh },
@@ -249,7 +299,8 @@ export class OrdersService {
               `Insufficient physical stock. No physical inventory record found.`,
             );
           }
-          const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+          const availablePhysical =
+            existingPi.quantity - existingPi.reservedQuantity;
           if (availablePhysical < quantity) {
             throw new BadRequestException(
               `Insufficient physical stock. Available: ${availablePhysical}, needed: ${quantity}.`,
@@ -259,7 +310,7 @@ export class OrdersService {
             orderId: options.orderId,
             cycleId: cycle.id,
             orderItemId: options.orderItemId,
-            productId: productId!,
+            productId: productId,
             variantId: variantId ?? undefined,
             warehouseId: wh,
             quantity,
@@ -270,7 +321,12 @@ export class OrdersService {
     }
 
     // ── Physical reservation: release (cancel/edit) ──
-    if (decision.pi === 'release' && opType === 'release' && options?.orderId && options?.orderItemId) {
+    if (
+      decision.pi === 'release' &&
+      opType === 'release' &&
+      options?.orderId &&
+      options?.orderItemId
+    ) {
       const cycle = await tx.orderStockCycle.findFirst({
         where: { orderId: options.orderId, status: 'ACTIVE' },
       });
@@ -285,7 +341,12 @@ export class OrdersService {
     }
 
     // ── Physical reservation: fulfill (deduct at dispatch/other) ──
-    if (decision.pi === 'fulfill' && opType === 'deduct' && options?.orderId && options?.orderItemId) {
+    if (
+      decision.pi === 'fulfill' &&
+      opType === 'deduct' &&
+      options?.orderId &&
+      options?.orderItemId
+    ) {
       const cycle = await tx.orderStockCycle.findFirst({
         where: { orderId: options.orderId, status: 'ACTIVE' },
       });
@@ -319,8 +380,35 @@ export class OrdersService {
             zone: sa.zone || sa.district || '',
           }
         : sa;
+    // Normalize the edit-lock payload: treat expired locks as absent so the UI
+    // never shows a stale holder, and expose holder name without extra queries.
+    const rawLock = order.editLock as
+      | {
+          orderId: string;
+          userId: string;
+          acquiredAt: Date;
+          heartbeatAt: Date;
+          expiresAt: Date;
+          user?: { firstName: string | null; lastName: string | null } | null;
+        }
+      | null
+      | undefined;
+    const editLock =
+      rawLock && rawLock.expiresAt && rawLock.expiresAt > new Date()
+        ? {
+            orderId: rawLock.orderId,
+            userId: rawLock.userId,
+            userName: rawLock.user
+              ? `${rawLock.user.firstName ?? ''} ${rawLock.user.lastName ?? ''}`.trim() ||
+                null
+              : null,
+            acquiredAt: rawLock.acquiredAt,
+            expiresAt: rawLock.expiresAt,
+          }
+        : null;
     return {
       ...order,
+      editLock,
       customer: order.customer
         ? {
             ...order.customer,
@@ -331,8 +419,9 @@ export class OrdersService {
         : order.customer,
       shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
-      trackingUrl: order.dispatches?.[0]?.trackingUrl
-        || buildTrackingUrl(
+      trackingUrl:
+        order.dispatches?.[0]?.trackingUrl ||
+        buildTrackingUrl(
           order.courierService,
           order.courierTrackingCode,
           order.courierConsignmentId,
@@ -446,6 +535,10 @@ export class OrdersService {
           payments: true,
           shipment: true,
           assignee: { select: { id: true, firstName: true, lastName: true } },
+          // One LEFT JOIN for every list row — no per-order lock queries.
+          editLock: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
         },
       }),
       this.prisma.order.count({ where }),
@@ -534,11 +627,15 @@ export class OrdersService {
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
     return this.transformOrder(order);
   }
 
-  async findOne(id: string, opts: { token?: string; userId?: string; role?: string } = {}) {
+  async findOne(
+    id: string,
+    opts: { token?: string; userId?: string; role?: string } = {},
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -576,15 +673,25 @@ export class OrdersService {
         },
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
         dispatches: { orderBy: { createdAt: 'desc' } },
+        // Include edit lock for staff detail view (stripped for customers).
+        editLock: {
+          include: { user: { select: { firstName: true, lastName: true } } },
+        },
       },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
     const ownsOrder = opts.userId && order.customerId === opts.userId;
     const hasValidToken = opts.token && order.viewToken === opts.token;
-    const isAdmin = opts.role === 'superadmin' || opts.role === 'admin' || opts.role === 'manager';
+    const isAdmin =
+      opts.role === 'superadmin' ||
+      opts.role === 'admin' ||
+      opts.role === 'manager';
     if (!ownsOrder && !hasValidToken && !isAdmin) {
       throw new NotFoundException('Order not found');
     }
+    // Note: edit-lock presence is stripped by transformOrder for the public/customer
+    // shape (it never exposes the holder). Staff only.
     return this.transformOrder(order);
   }
 
@@ -692,7 +799,9 @@ export class OrdersService {
       // Ensure CustomerProfile exists (order FK now references CustomerProfile).
       // Staff-created orders may update the customer's name/email/phone.
       const desiredPhone = dto.guestPhone || user?.phoneNumber;
-      const name = dto.guestName || (user ? `${user.firstName} ${user.lastName}`.trim() : 'Customer');
+      const name =
+        dto.guestName ||
+        (user ? `${user.firstName} ${user.lastName}`.trim() : 'Customer');
       const email = dto.guestEmail || user?.email || undefined;
       if (desiredPhone) {
         // Phone is a unique key — don't clobber another customer's number.
@@ -722,7 +831,9 @@ export class OrdersService {
     }
 
     // ALWAYS_OUT_OF_STOCK guard: block order creation for these products
-    const itemProductIds = dto.items.filter(i => i.productId).map(i => i.productId!);
+    const itemProductIds = dto.items
+      .filter((i) => i.productId)
+      .map((i) => i.productId!);
     if (itemProductIds.length > 0) {
       const blockedProducts = await this.prisma.product.findMany({
         where: {
@@ -732,7 +843,7 @@ export class OrdersService {
         select: { id: true, name: true },
       });
       if (blockedProducts.length > 0) {
-        const names = blockedProducts.map(p => p.name).join(', ');
+        const names = blockedProducts.map((p) => p.name).join(', ');
         throw new BadRequestException(
           `Cannot order "${names}" — this product is currently unavailable.`,
         );
@@ -898,15 +1009,22 @@ export class OrdersService {
 
       // ── Derive shipping server-side ──
       const computedSubtotal = dto.items.reduce(
-        (s, i) => s + i.price * i.quantity, 0,
+        (s, i) => s + i.price * i.quantity,
+        0,
       );
-      const [shippingModeSetting, deliveryChargeSetting, freeDeliveryMinSetting, districtChargesSetting] =
-        await Promise.all([
-          tx.systemSetting.findUnique({ where: { key: 'shipping_mode' } }).catch(() => null),
-          tx.systemSetting.findUnique({ where: { key: 'delivery_charge' } }),
-          tx.systemSetting.findUnique({ where: { key: 'free_delivery_min' } }),
-          tx.systemSetting.findUnique({ where: { key: 'district_charges' } }),
-        ]);
+      const [
+        shippingModeSetting,
+        deliveryChargeSetting,
+        freeDeliveryMinSetting,
+        districtChargesSetting,
+      ] = await Promise.all([
+        tx.systemSetting
+          .findUnique({ where: { key: 'shipping_mode' } })
+          .catch(() => null),
+        tx.systemSetting.findUnique({ where: { key: 'delivery_charge' } }),
+        tx.systemSetting.findUnique({ where: { key: 'free_delivery_min' } }),
+        tx.systemSetting.findUnique({ where: { key: 'district_charges' } }),
+      ]);
 
       const shippingMode = shippingModeSetting?.value || 'auto_district';
 
@@ -914,7 +1032,10 @@ export class OrdersService {
 
       if (shippingMode === 'options') {
         // Options mode: use selected option or auto-fallback to highest amount
-        const hasOptions = await tx.shippingOption.findFirst({ where: { isActive: true }, select: { id: true } });
+        const hasOptions = await tx.shippingOption.findFirst({
+          where: { isActive: true },
+          select: { id: true },
+        });
         if (hasOptions) {
           let optionId = dto.selectedShippingOptionId;
           if (!optionId) {
@@ -932,7 +1053,9 @@ export class OrdersService {
             where: { id: optionId },
           });
           if (!shippingOption || !shippingOption.isActive) {
-            throw new BadRequestException('Selected shipping option is not available');
+            throw new BadRequestException(
+              'Selected shipping option is not available',
+            );
           }
           derivedShippingCharge = Number(shippingOption.amount);
         }
@@ -943,7 +1066,7 @@ export class OrdersService {
         const dtoDistrict =
           dto.district ||
           (typeof dto.shippingAddress === 'object' && dto.shippingAddress
-            ? (dto.shippingAddress as any).district
+            ? dto.shippingAddress.district
             : undefined);
         if (dtoDistrict) {
           const activeZones = await tx.shippingZoneGroup.findMany({
@@ -967,12 +1090,16 @@ export class OrdersService {
           }
           if (!zoneMatched && districtChargesSetting?.value) {
             try {
-              const districtCharges: Record<string, number> = JSON.parse(districtChargesSetting.value);
+              const districtCharges: Record<string, number> = JSON.parse(
+                districtChargesSetting.value,
+              );
               if (districtCharges[dtoDistrict] !== undefined) {
                 derivedShippingCharge = districtCharges[dtoDistrict];
               }
             } catch {
-              throw new BadRequestException('Invalid district charges configuration');
+              throw new BadRequestException(
+                'Invalid district charges configuration',
+              );
             }
           }
         }
@@ -1039,26 +1166,29 @@ export class OrdersService {
         }
 
         // Compute discount from coupon
-      const rawValue = Number(couponRow.value);
+        const rawValue = Number(couponRow.value);
 
-      if (couponRow.type === 'percentage') {
-        let cappedPercent = rawValue;
-        if (couponRow.percentageCap) {
-          const maxPctOfSubtotal =
-            (Number(couponRow.percentageCap) / Number(subtotal)) * 100;
-          cappedPercent = Math.min(rawValue, maxPctOfSubtotal);
+        if (couponRow.type === 'percentage') {
+          let cappedPercent = rawValue;
+          if (couponRow.percentageCap) {
+            const maxPctOfSubtotal =
+              (Number(couponRow.percentageCap) / Number(subtotal)) * 100;
+            cappedPercent = Math.min(rawValue, maxPctOfSubtotal);
+          }
+          effectiveDiscount = cappedPercent;
+          effectiveDiscountType = 'percentage';
+          effectiveDiscountMonetary = subtotal * (cappedPercent / 100);
+          if (couponRow.percentageCap) {
+            effectiveDiscountMonetary = Math.min(
+              effectiveDiscountMonetary,
+              Number(couponRow.percentageCap),
+            );
+          }
+        } else {
+          effectiveDiscount = Math.min(rawValue, Number(subtotal));
+          effectiveDiscountType = 'flat';
+          effectiveDiscountMonetary = effectiveDiscount;
         }
-        effectiveDiscount = cappedPercent;
-        effectiveDiscountType = 'percentage';
-        effectiveDiscountMonetary = subtotal * (cappedPercent / 100);
-        if (couponRow.percentageCap) {
-          effectiveDiscountMonetary = Math.min(effectiveDiscountMonetary, Number(couponRow.percentageCap));
-        }
-      } else {
-        effectiveDiscount = Math.min(rawValue, Number(subtotal));
-        effectiveDiscountType = 'flat';
-        effectiveDiscountMonetary = effectiveDiscount;
-      }
       }
 
       const { subtotal: finalSubtotal, total: finalTotal } = this.recalculate(
@@ -1172,7 +1302,11 @@ export class OrdersService {
       // This is a SILENT close (status SUPERSEDED): NOT a conversion — no
       // convertedOrderId/convertedAt, no conversion tracking event. Manual recovery
       // via convertToOrder remains the ONLY path that marks a lead CONVERTED.
-      if (created.trackingSessionId || created.guestPhone || created.customerId) {
+      if (
+        created.trackingSessionId ||
+        created.guestPhone ||
+        created.customerId
+      ) {
         const phones: string[] = [];
         if (created.guestPhone) phones.push(created.guestPhone);
         if (created.customerId) {
@@ -1268,7 +1402,10 @@ export class OrdersService {
           if (item.comboId) {
             return ci.comboId === item.comboId;
           }
-          return ci.productId === item.productId && (ci.variantId ?? undefined) === (item.variantId ?? undefined);
+          return (
+            ci.productId === item.productId &&
+            (ci.variantId ?? undefined) === (item.variantId ?? undefined)
+          );
         });
 
         if (item.comboId && createdItem) {
@@ -1278,7 +1415,12 @@ export class OrdersService {
           });
           if (combo) {
             for (const ci of combo.items) {
-              const resolvedVariantId = ci.variantId || (item.comboSelection as Record<string, string> | null)?.[ci.productId] || null;
+              const resolvedVariantId =
+                ci.variantId ||
+                (item.comboSelection as Record<string, string> | null)?.[
+                  ci.productId
+                ] ||
+                null;
               const unitQty = ci.quantity;
               const totalQty = unitQty * item.quantity;
 
@@ -1293,10 +1435,13 @@ export class OrdersService {
                   managedStockReserved: false,
                   managedStockDeducted: false,
                 },
-                include: { product: true }
+                include: { product: true },
               });
 
-              if (snapshot.product.availabilityMode === 'MANAGED_STOCK' && snapshot.product.manageStock) {
+              if (
+                snapshot.product.availabilityMode === 'MANAGED_STOCK' &&
+                snapshot.product.manageStock
+              ) {
                 await this.stockService.operate('reserve', {
                   productId: snapshot.productId,
                   variantId: snapshot.variantId ?? undefined,
@@ -1312,11 +1457,17 @@ export class OrdersService {
               }
 
               // Physical reservation for INVENTORY_CONTROLLED combo components at order creation
-              if (snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED') {
-                const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+              if (
+                snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED'
+              ) {
+                const imEnabled =
+                  await this.stockRouter.isInventoryManagementEnabled();
                 if (imEnabled) {
                   const decision = this.stockRouter.resolve(
-                    snapshot.product.availabilityMode, 'reserve', imEnabled, snapshot.product.syncManagedStock ?? undefined,
+                    snapshot.product.availabilityMode,
+                    'reserve',
+                    imEnabled,
+                    snapshot.product.syncManagedStock ?? undefined,
                   );
                   if (decision.pi === 'allocate') {
                     let cycle = await tx.orderStockCycle.findFirst({
@@ -1331,7 +1482,10 @@ export class OrdersService {
                     let wh = snapshot.product.warehouseId;
                     if (!wh) {
                       const firstStock = await tx.physicalInventory.findFirst({
-                        where: { productId: snapshot.productId, variantId: snapshot.variantId || null },
+                        where: {
+                          productId: snapshot.productId,
+                          variantId: snapshot.variantId || null,
+                        },
                         select: { warehouseId: true },
                       });
                       if (firstStock) wh = firstStock.warehouseId;
@@ -1339,10 +1493,15 @@ export class OrdersService {
 
                     if (wh) {
                       const existingPi = await tx.physicalInventory.findFirst({
-                        where: { productId: snapshot.productId, variantId: snapshot.variantId || null, warehouseId: wh },
+                        where: {
+                          productId: snapshot.productId,
+                          variantId: snapshot.variantId || null,
+                          warehouseId: wh,
+                        },
                       });
                       if (existingPi) {
-                        const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+                        const availablePhysical =
+                          existingPi.quantity - existingPi.reservedQuantity;
                         if (availablePhysical < snapshot.totalQuantity) {
                           throw new BadRequestException(
                             `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
@@ -1426,18 +1585,25 @@ export class OrdersService {
     return order;
   }
 
-  async updateOrder(id: string, dto: UpdateOrderDto) {
+  async updateOrder(
+    id: string,
+    dto: UpdateOrderDto,
+    opts?: { userId?: string; performedBy?: string },
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
         items: {
           include: {
-            product: { select: { id: true, name: true, availabilityMode: true } },
+            product: {
+              select: { id: true, name: true, availabilityMode: true },
+            },
           },
         },
       },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     const timeline = [...this.parseTimeline(order.timeline)];
     const now = new Date().toISOString();
@@ -1464,7 +1630,10 @@ export class OrdersService {
     const discountTypeChanged =
       dto.discountType !== undefined && dto.discountType !== order.discountType;
     if (discountChanged || discountTypeChanged) {
-      const logNewVal = dto.discount !== undefined ? Number(dto.discount) : Number(order.discount);
+      const logNewVal =
+        dto.discount !== undefined
+          ? Number(dto.discount)
+          : Number(order.discount);
       const logType = dto.discountType || order.discountType;
       timeline.push({
         type: 'discount',
@@ -1482,7 +1651,16 @@ export class OrdersService {
       const oldMap = new Map(
         order.items.map((i: any) => {
           const key = i.variantId || i.productId || i.id;
-          return [key, { productId: i.productId, variantId: i.variantId, quantity: i.quantity, price: Number(i.price), productName: (i.product as any)?.name }];
+          return [
+            key,
+            {
+              productId: i.productId,
+              variantId: i.variantId,
+              quantity: i.quantity,
+              price: Number(i.price),
+              productName: i.product?.name,
+            },
+          ];
         }),
       );
       const changes: string[] = [];
@@ -1490,14 +1668,23 @@ export class OrdersService {
         const key = newItem.variantId || newItem.productId || '';
         const old = oldMap.get(key);
         if (!old) {
-          changes.push(`Added: ${newItem.quantity}x ${newItem.productId?.slice(0,8) || '?'} @ ৳${newItem.price}`);
-        } else if (old.quantity !== newItem.quantity || old.price !== newItem.price) {
-          changes.push(`Updated: ${old.productName || old.productId?.slice(0,8)} qty ${old.quantity}→${newItem.quantity}, price ৳${old.price}→৳${newItem.price}`);
+          changes.push(
+            `Added: ${newItem.quantity}x ${newItem.productId?.slice(0, 8) || '?'} @ ৳${newItem.price}`,
+          );
+        } else if (
+          old.quantity !== newItem.quantity ||
+          old.price !== newItem.price
+        ) {
+          changes.push(
+            `Updated: ${old.productName || old.productId?.slice(0, 8)} qty ${old.quantity}→${newItem.quantity}, price ৳${old.price}→৳${newItem.price}`,
+          );
         }
         oldMap.delete(key);
       }
       for (const [_, old] of oldMap) {
-        changes.push(`Removed: ${old.productName || old.productId?.slice(0,8)} (${old.quantity}x @ ৳${old.price})`);
+        changes.push(
+          `Removed: ${old.productName || old.productId?.slice(0, 8)} (${old.quantity}x @ ৳${old.price})`,
+        );
       }
       timeline.push({
         type: 'items',
@@ -1533,7 +1720,7 @@ export class OrdersService {
     data.total = total;
     data.timeline = timeline;
 
-    if (dto.shippingCharge !== undefined)
+    if (dto.shippingCharge !== undefined && data.shippingCharge === undefined)
       data.shippingCharge = dto.shippingCharge;
     if (dto.selectedShippingOptionId !== undefined)
       data.selectedShippingOptionId = dto.selectedShippingOptionId || null;
@@ -1543,6 +1730,12 @@ export class OrdersService {
     if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
     if (dto.shippingAddress !== undefined)
       data.shippingAddress = dto.shippingAddress;
+
+    // Auto-assign the acting staff member on any manual order edit.
+    if (!isAutomatedActor(opts?.userId)) {
+      data.assignedToId = opts!.userId;
+      data.assignedAt = new Date();
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.items && dto.items.length > 0) {
@@ -1568,10 +1761,11 @@ export class OrdersService {
               // Physical reservation release (if any ACTIVE cycle reservation)
               // Cascade will delete ComboComponentPhysicalReservation when item is deleted,
               // but we must release the physicalInventory.reservedQuantity first
-              const activePhysRes = await tx.comboComponentPhysicalReservation.findFirst({
-                where: { componentId: snap.id, status: 'ACTIVE' },
-                include: { allocations: true },
-              });
+              const activePhysRes =
+                await tx.comboComponentPhysicalReservation.findFirst({
+                  where: { componentId: snap.id, status: 'ACTIVE' },
+                  include: { allocations: true },
+                });
               if (activePhysRes) {
                 for (const alloc of activePhysRes.allocations) {
                   await tx.physicalInventory.update({
@@ -1648,7 +1842,10 @@ export class OrdersService {
         for (const item of dto.items) {
           const newItem = newItems.find((ni) => {
             if (item.comboId) return ni.comboId === item.comboId;
-            return ni.productId === item.productId && (ni.variantId ?? undefined) === item.variantId;
+            return (
+              ni.productId === item.productId &&
+              (ni.variantId ?? undefined) === item.variantId
+            );
           });
 
           if (item.comboId && newItem) {
@@ -1658,7 +1855,12 @@ export class OrdersService {
             });
             if (combo) {
               for (const ci of combo.items) {
-                const resolvedVariantId = ci.variantId || (item.comboSelection as Record<string, string> | null)?.[ci.productId] || null;
+                const resolvedVariantId =
+                  ci.variantId ||
+                  (item.comboSelection as Record<string, string> | null)?.[
+                    ci.productId
+                  ] ||
+                  null;
                 const unitQty = ci.quantity;
                 const totalQty = unitQty * item.quantity;
 
@@ -1676,7 +1878,10 @@ export class OrdersService {
                   include: { product: true },
                 });
 
-                if (snapshot.product.availabilityMode === 'MANAGED_STOCK' && snapshot.product.manageStock) {
+                if (
+                  snapshot.product.availabilityMode === 'MANAGED_STOCK' &&
+                  snapshot.product.manageStock
+                ) {
                   await this.stockService.operate('reserve', {
                     productId: snapshot.productId,
                     variantId: snapshot.variantId ?? undefined,
@@ -1692,11 +1897,17 @@ export class OrdersService {
                 }
 
                 // Physical reservation for INVENTORY_CONTROLLED combo components at order update
-                if (snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED') {
-                  const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+                if (
+                  snapshot.product.availabilityMode === 'INVENTORY_CONTROLLED'
+                ) {
+                  const imEnabled =
+                    await this.stockRouter.isInventoryManagementEnabled();
                   if (imEnabled) {
                     const decision = this.stockRouter.resolve(
-                      snapshot.product.availabilityMode, 'reserve', imEnabled, snapshot.product.syncManagedStock ?? undefined,
+                      snapshot.product.availabilityMode,
+                      'reserve',
+                      imEnabled,
+                      snapshot.product.syncManagedStock ?? undefined,
                     );
                     if (decision.pi === 'allocate') {
                       let cycle = await tx.orderStockCycle.findFirst({
@@ -1710,19 +1921,31 @@ export class OrdersService {
 
                       let wh = snapshot.product.warehouseId;
                       if (!wh) {
-                        const firstStock = await tx.physicalInventory.findFirst({
-                          where: { productId: snapshot.productId, variantId: snapshot.variantId || null },
-                          select: { warehouseId: true },
-                        });
+                        const firstStock = await tx.physicalInventory.findFirst(
+                          {
+                            where: {
+                              productId: snapshot.productId,
+                              variantId: snapshot.variantId || null,
+                            },
+                            select: { warehouseId: true },
+                          },
+                        );
                         if (firstStock) wh = firstStock.warehouseId;
                       }
 
                       if (wh) {
-                        const existingPi = await tx.physicalInventory.findFirst({
-                          where: { productId: snapshot.productId, variantId: snapshot.variantId || null, warehouseId: wh },
-                        });
+                        const existingPi = await tx.physicalInventory.findFirst(
+                          {
+                            where: {
+                              productId: snapshot.productId,
+                              variantId: snapshot.variantId || null,
+                              warehouseId: wh,
+                            },
+                          },
+                        );
                         if (existingPi) {
-                          const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+                          const availablePhysical =
+                            existingPi.quantity - existingPi.reservedQuantity;
                           if (availablePhysical < snapshot.totalQuantity) {
                             throw new BadRequestException(
                               `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
@@ -1763,54 +1986,42 @@ export class OrdersService {
       }
 
       if (dto.customerInfo && order.customerId) {
-        const allowedFields: (keyof CustomerInfoDto)[] = [
-          'firstName',
-          'lastName',
-          'phoneNumber',
-          'email',
-        ];
-        const safeData: Record<string, string> = {};
-        for (const field of allowedFields) {
-          const value = (dto.customerInfo as any)[field];
-          if (value !== undefined) {
-            safeData[field] = String(value);
-          }
+        // IMPORTANT: `order.customerId` references a CustomerProfile row, NOT a
+        // UserProfile. Editing order customer info must only ever touch
+        // CustomerProfile (what Order.customer relation reads) — never
+        // UserProfile, which would accidentally overwrite a logged-in staff
+        // member's own identity when ids collide across the two tables.
+        const firstName = String(dto.customerInfo.firstName ?? '');
+        const lastName = String(dto.customerInfo.lastName ?? '');
+        const customerData: Record<string, string> = {};
+        if (firstName || lastName) {
+          customerData.name = `${firstName} ${lastName}`.trim();
         }
-        if (safeData.phoneNumber) {
-          const normalized = normalizePhone(safeData.phoneNumber);
+        if (dto.customerInfo.phoneNumber !== undefined) {
+          const normalized = normalizePhone(dto.customerInfo.phoneNumber);
           if (!normalized)
             throw new BadRequestException('Invalid phone number');
-          safeData.phoneNumber = normalized;
-        }
-          if (Object.keys(safeData).length > 0) {
-            // Email is optional: customers without one send "" — never write an
-            // empty string to the unique UserProfile.email, and never clobber
-            // another profile's identity (phone stays the master key). Empty →
-            // omit; a real conflict → a clear error instead of a raw 409.
-            if (Object.prototype.hasOwnProperty.call(safeData, 'email')) {
-              const email = String(safeData.email).trim();
-              if (!email) {
-                delete safeData.email;
-              } else {
-                const emailOwner = await tx.userProfile.findFirst({
-                  where: { email, id: { not: order.customerId } },
-                  select: { id: true },
-                });
-                if (emailOwner) {
-                  throw new ConflictException(
-                    'This email is already registered to another customer.',
-                  );
-                }
-                safeData.email = email;
-              }
-            }
-            if (Object.keys(safeData).length > 0) {
-              await tx.userProfile.update({
-                where: { id: order.customerId },
-                data: safeData,
-              });
-            }
+          const phoneOwner = await tx.customerProfile.findFirst({
+            where: { phone: normalized, id: { not: order.customerId } },
+            select: { id: true },
+          });
+          if (phoneOwner) {
+            throw new ConflictException(
+              'This phone number is already registered to another customer.',
+            );
           }
+          customerData.phone = normalized;
+        }
+        if (dto.customerInfo.email !== undefined) {
+          const email = String(dto.customerInfo.email).trim();
+          if (email) customerData.email = email;
+        }
+        if (Object.keys(customerData).length > 0) {
+          await tx.customerProfile.update({
+            where: { id: order.customerId },
+            data: customerData,
+          });
+        }
       }
 
       return tx.order.update({
@@ -1852,7 +2063,8 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     const timeline = [
       ...this.parseTimeline(order.timeline),
@@ -1885,7 +2097,8 @@ export class OrdersService {
       where: { id },
       include: { status: true },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     const newStatus = await this.prisma.orderStatus.findUnique({
       where: { id: dto.statusId },
@@ -1896,6 +2109,15 @@ export class OrdersService {
     if (!allowed.includes(newStatus.name)) {
       throw new BadRequestException(
         `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
+      );
+    }
+
+    // 'Returned' is a manual-confirmation-only status: it restores stock via
+    // handleReturnedSideEffects, so automated actors (courier webhooks) must
+    // never be able to reach it. Webhooks stop at 'Return Pending'.
+    if (newStatus.name === 'Returned' && isAutomatedActor(userId)) {
+      throw new BadRequestException(
+        'Order cannot be marked Returned by an automated process — it must be manually confirmed from the order detail page.',
       );
     }
 
@@ -1913,7 +2135,14 @@ export class OrdersService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.order.update({
         where: { id },
-        data: { statusId: dto.statusId, timeline: timeline as any },
+        data: {
+          statusId: dto.statusId,
+          timeline: timeline as any,
+          // Auto-assign the acting staff member on every manual status change.
+          ...(isAutomatedActor(userId)
+            ? {}
+            : { assignedToId: userId, assignedAt: new Date() }),
+        },
         include: {
           status: true,
           customer: { select: { id: true, name: true } },
@@ -1951,6 +2180,13 @@ export class OrdersService {
         await this.handleReturnedSideEffects(tx, id, performedBy);
       }
 
+      if (newStatus.name === 'Return Pending') {
+        // Business rule: 'Return Pending' never restores/releases stock and
+        // HOLDS the reservation/deduction. Re-establish the reservation hold
+        // consumed by the deduction (idempotent, RETURN_HOLD-ledged).
+        await this.cancelReturnStock.holdReservationForReturnPending(id);
+      }
+
       // Capture purchase/refund snapshots inside the same transaction as the
       // status update. firePurchaseValidated/fireRefundEvent self-gate on
       // settings; the block is wrapped so a capture-side failure can never roll
@@ -1973,9 +2209,7 @@ export class OrdersService {
             tx,
           );
           if (
-            ['Cancelled', 'Returned', 'Return Pending'].includes(
-              newStatus.name,
-            )
+            ['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)
           ) {
             await this.fireRefundEvent(withItems as any, tx);
           }
@@ -2012,7 +2246,8 @@ export class OrdersService {
       where: { id: orderId },
       include: { status: true },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     // Ownership gate: user must own the order (by customerId) or present a valid viewToken
     const ownsOrder = opts?.userId && order.customerId === opts.userId;
@@ -2054,7 +2289,8 @@ export class OrdersService {
         where: { id: orderId },
         include: { status: true },
       });
-      if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+      if (!order || order.trashedAt)
+        throw new NotFoundException('Order not found');
       if (order.paymentStatus !== 'PAYMENT_VERIFYING') {
         throw new BadRequestException(
           'Order is not awaiting payment verification',
@@ -2087,12 +2323,13 @@ export class OrdersService {
     });
   }
 
-  async addItem(orderId: string, dto: UpdateOrderItemDto) {
+  async addItem(orderId: string, dto: UpdateOrderItemDto, userId?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     if (dto.productId) {
       const product = await this.prisma.product.findUnique({
@@ -2161,7 +2398,15 @@ export class OrdersService {
 
       return tx.order.update({
         where: { id: orderId },
-        data: { subtotal, total, timeline: timeline as any },
+        data: {
+          subtotal,
+          total,
+          timeline: timeline as any,
+          // Auto-assign the acting staff member on manual item add.
+          ...(isAutomatedActor(userId)
+            ? {}
+            : { assignedToId: userId, assignedAt: new Date() }),
+        },
         include: {
           items: {
             include: {
@@ -2175,12 +2420,13 @@ export class OrdersService {
     });
   }
 
-  async removeItem(orderId: string, itemId: string) {
+  async removeItem(orderId: string, itemId: string, userId?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
 
     const removedItem = order.items.find((i) => i.id === itemId);
     if (!removedItem) throw new NotFoundException('Order item not found');
@@ -2198,7 +2444,9 @@ export class OrdersService {
           tx,
           {
             comboId: removedItem.comboId || undefined,
-            comboSelection: (removedItem.comboSelection as Record<string, string>) || undefined,
+            comboSelection:
+              (removedItem.comboSelection as Record<string, string>) ||
+              undefined,
             orderId,
             orderItemId: removedItem.id,
           },
@@ -2223,13 +2471,21 @@ export class OrdersService {
           type: 'item_removed',
           visibility: 'public',
           timestamp: new Date().toISOString(),
-          note: `Item removed: ${removedItem.productId?.slice(0,8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
+          note: `Item removed: ${removedItem.productId?.slice(0, 8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
         },
       ];
 
       return tx.order.update({
         where: { id: orderId },
-        data: { subtotal, total, timeline: timeline as any },
+        data: {
+          subtotal,
+          total,
+          timeline: timeline as any,
+          // Auto-assign the acting staff member on manual item removal.
+          ...(isAutomatedActor(userId)
+            ? {}
+            : { assignedToId: userId, assignedAt: new Date() }),
+        },
         include: {
           items: {
             include: {
@@ -2274,6 +2530,13 @@ export class OrdersService {
     });
     if (!targetStatus) throw new BadRequestException('Status not found');
 
+    // 'Returned' restores stock — automated/system callers must never bulk-apply it.
+    if (targetStatus.name === 'Returned' && isAutomatedActor(userId)) {
+      throw new BadRequestException(
+        'Orders cannot be bulk-marked Returned by an automated process — return confirmation is manual.',
+      );
+    }
+
     const orders = await this.prisma.order.findMany({
       where: { id: { in: ids } },
       select: {
@@ -2285,23 +2548,37 @@ export class OrdersService {
       },
     });
 
+    const foundIds = new Set(orders.map((o) => o.id));
+    const missing = ids.filter((id) => !foundIds.has(id));
+
     const validIds: string[] = [];
-    const skipped: string[] = [];
     const failedDetails: { id: string; reason: string }[] = [];
     for (const order of orders) {
       const allowed = ORDER_TRANSITIONS[order.status.name] || [];
       if (allowed.includes(targetStatus.name)) {
         validIds.push(order.id);
       } else {
-        skipped.push(order.id);
+        failedDetails.push({
+          id: order.id,
+          reason: `Cannot transition from "${order.status.name}" to "${targetStatus.name}"`,
+        });
       }
+    }
+    for (const missingId of missing) {
+      failedDetails.push({ id: missingId, reason: 'Order not found' });
     }
 
     if (validIds.length > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.order.updateMany({
           where: { id: { in: validIds } },
-          data: { statusId },
+          data: {
+            statusId,
+            // Auto-assign the acting staff member on bulk status change.
+            ...(isAutomatedActor(userId)
+              ? {}
+              : { assignedToId: userId, assignedAt: new Date() }),
+          },
         });
 
         if (targetStatus.name === 'Cancelled') {
@@ -2313,6 +2590,24 @@ export class OrdersService {
         if (targetStatus.name === 'Confirmed') {
           for (const confirmOrderId of validIds) {
             await this.handleConfirmedSideEffects(tx, confirmOrderId, userId);
+          }
+        }
+
+        if (targetStatus.name === 'Returned') {
+          for (const returnOrderId of validIds) {
+            await this.handleReturnedSideEffects(tx, returnOrderId, userId);
+          }
+        }
+
+        if (targetStatus.name === 'Delivered') {
+          for (const deliveredOrder of orders.filter((o) =>
+            validIds.includes(o.id),
+          )) {
+            await this.handleDeliveredSideEffects(
+              tx,
+              deliveredOrder as any,
+              userId,
+            );
           }
         }
 
@@ -2337,7 +2632,7 @@ export class OrdersService {
 
     return {
       updated: validIds.length,
-      skipped: skipped.length,
+      skipped: failedDetails.length,
       failed: failedDetails.length,
       failedDetails,
       status: targetStatus.name,
@@ -2370,57 +2665,66 @@ export class OrdersService {
     });
   }
 
-/**
- * Strictest public tracking DTO — for displayId / phone-number lookups.
- * Absolutely no PII: no customer name, no shipping address, no timeline notes,
- * no payment/staff/internal fields.
- * Type: PublicDisplayOrder.
- */
-private toPublicDisplayDto(order: any): PublicDisplayOrder {
-  return {
-    id: order.id,
-    displayId: order.displayId,
-    createdAt: order.createdAt,
-    status: order.status
-      ? { name: order.status.name, color: order.status.color }
-      : null,
-    items: (order.items || []).map((i: any) => ({
-      id: i.id,
-      quantity: i.quantity,
-      price: i.price,
-      product: i.product
-        ? { name: i.product.name, slug: i.product.slug, images: i.product.images }
+  /**
+   * Strictest public tracking DTO — for displayId / phone-number lookups.
+   * Absolutely no PII: no customer name, no shipping address, no timeline notes,
+   * no payment/staff/internal fields.
+   * Type: PublicDisplayOrder.
+   */
+  private toPublicDisplayDto(order: any): PublicDisplayOrder {
+    return {
+      id: order.id,
+      displayId: order.displayId,
+      createdAt: order.createdAt,
+      status: order.status
+        ? { name: order.status.name, color: order.status.color }
         : null,
-    })),
-    total: order.total,
-    trackingUrl: buildTrackingUrl(
-      order.courierService,
-      order.courierTrackingCode,
-      order.courierConsignmentId,
-    ),
-  };
-}
+      items: (order.items || []).map((i: any) => ({
+        id: i.id,
+        quantity: i.quantity,
+        price: i.price,
+        product: i.product
+          ? {
+              name: i.product.name,
+              slug: i.product.slug,
+              images: i.product.images,
+            }
+          : null,
+      })),
+      total: order.total,
+      trackingUrl: buildTrackingUrl(
+        order.courierService,
+        order.courierTrackingCode,
+        order.courierConsignmentId,
+      ),
+    };
+  }
 
-/**
- * Slightly richer DTO for view-token-authenticated guest tracking.
- * Still no payment/staff/internal fields; allows customer name and
- * city-level shipping info for order confirmation.
- * Type: PublicTokenOrder.
- */
-private toPublicTokenDto(order: any): PublicTokenOrder {
-  return {
-    ...this.toPublicDisplayDto(order),
-    customer: order.customer ? { name: order.customer.name || '' } : null,
-    shippingAddress: order.shippingAddress && typeof order.shippingAddress === 'object'
-      ? { city: order.shippingAddress.city || '', zone: order.shippingAddress.zone || '', district: order.shippingAddress.district || '' }
-      : null,
-    timeline: (Array.isArray(order.timeline) ? order.timeline : []).map(
-      (t: any) => ({ status: t.status, timestamp: t.timestamp }),
-    ),
-  };
-}
+  /**
+   * Slightly richer DTO for view-token-authenticated guest tracking.
+   * Still no payment/staff/internal fields; allows customer name and
+   * city-level shipping info for order confirmation.
+   * Type: PublicTokenOrder.
+   */
+  private toPublicTokenDto(order: any): PublicTokenOrder {
+    return {
+      ...this.toPublicDisplayDto(order),
+      customer: order.customer ? { name: order.customer.name || '' } : null,
+      shippingAddress:
+        order.shippingAddress && typeof order.shippingAddress === 'object'
+          ? {
+              city: order.shippingAddress.city || '',
+              zone: order.shippingAddress.zone || '',
+              district: order.shippingAddress.district || '',
+            }
+          : null,
+      timeline: (Array.isArray(order.timeline) ? order.timeline : []).map(
+        (t: any) => ({ status: t.status, timestamp: t.timestamp }),
+      ),
+    };
+  }
 
-/** Public order lookup by phone — bounded to 10 most recent, minimal fields only. */
+  /** Public order lookup by phone — bounded to 10 most recent, minimal fields only. */
   async findByPhone(phone: string) {
     const normalized = normalizePhone(phone);
     if (!normalized) {
@@ -2457,7 +2761,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     }
 
     const order = await this.prisma.order.findFirst({
-      where: { trashedAt: null, displayId: { equals: queryStr, mode: 'insensitive' } },
+      where: {
+        trashedAt: null,
+        displayId: { equals: queryStr, mode: 'insensitive' },
+      },
       select: PUBLIC_DISPLAY_SELECT,
     });
     if (!order) throw new NotFoundException('Order not found');
@@ -2483,7 +2790,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
-    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+    if (!order || order.trashedAt)
+      throw new NotFoundException('Order not found');
     const viewToken = randomUUID();
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -2576,7 +2884,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       include: { status: true },
     });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.trashedAt) throw new BadRequestException('Order is already trashed');
+    if (order.trashedAt)
+      throw new BadRequestException('Order is already trashed');
 
     const timeline = [
       ...this.parseTimeline(order.timeline),
@@ -2670,13 +2979,21 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
           items: { include: { product: true, variant: true } },
         },
       });
-      if (!order || order.trashedAt) throw new NotFoundException(`Order ${orderId} not found`);
+      if (!order || order.trashedAt)
+        throw new NotFoundException(`Order ${orderId} not found`);
 
       const currentStatus = order.status.name;
       const allowed = ORDER_TRANSITIONS[currentStatus];
       if (!allowed || !allowed.includes(newStatus)) {
         throw new BadRequestException(
           `Cannot transition from "${currentStatus}" to "${newStatus}". Allowed: ${allowed?.join(', ') || 'none'}`,
+        );
+      }
+
+      // 'Returned' restores stock — automated/system actors must never set it.
+      if (newStatus === 'Returned' && isAutomatedActor(performedBy)) {
+        throw new BadRequestException(
+          'Order cannot be marked Returned by an automated process — it must be manually confirmed from the order detail page.',
         );
       }
 
@@ -2760,7 +3077,6 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
       tx,
     });
   }
-
 
   private async handleDeliveredSideEffects(
     tx: Prisma.TransactionClient,
@@ -2877,7 +3193,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
           }
 
           // A. Managed Stock reserve if not already reserved
-          if (compProduct.availabilityMode === 'MANAGED_STOCK' && compProduct.manageStock) {
+          if (
+            compProduct.availabilityMode === 'MANAGED_STOCK' &&
+            compProduct.manageStock
+          ) {
             if (!comp.managedStockReserved) {
               const avail = await this.stockService.getAvailableStock(
                 comp.productId,
@@ -2905,8 +3224,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
           // B. Physical Stock reserve if applicable and IM is ON
           const decision = this.stockRouter.resolve(
-            compProduct.availabilityMode, 'allocate',
-            imEnabled, compProduct.syncManagedStock ?? undefined,
+            compProduct.availabilityMode,
+            'allocate',
+            imEnabled,
+            compProduct.syncManagedStock ?? undefined,
           );
 
           if (decision.pi !== 'skip') {
@@ -2928,12 +3249,13 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
               );
             }
 
-            const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(
-              orderId,
-              undefined,
-              comp.id,
-              cycleId,
-            );
+            const alreadyReserved =
+              await this.stockService.hasExistingPhysicalReservation(
+                orderId,
+                undefined,
+                comp.id,
+                cycleId,
+              );
 
             if (!alreadyReserved) {
               const existingPi = await tx.physicalInventory.findFirst({
@@ -2948,7 +3270,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
                   `"${compProduct.name}" in combo has no physical stock record in warehouse. Cannot confirm order.`,
                 );
               }
-              const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+              const availablePhysical =
+                existingPi.quantity - existingPi.reservedQuantity;
               if (availablePhysical < comp.totalQuantity) {
                 throw new BadRequestException(
                   `Insufficient physical stock for combo component "${compProduct.name}". Available: ${availablePhysical}, needed: ${comp.totalQuantity}.`,
@@ -2995,7 +3318,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
 
             await this.resolveAndApplyStock(
               'reserve',
-              item.productId!,
+              item.productId,
               item.variantId ?? undefined,
               item.quantity,
               order.displayId,
@@ -3008,8 +3331,10 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
           }
 
           const decision = this.stockRouter.resolve(
-            product.availabilityMode, 'allocate',
-            imEnabled, product.syncManagedStock ?? undefined,
+            product.availabilityMode,
+            'allocate',
+            imEnabled,
+            product.syncManagedStock ?? undefined,
           );
 
           if (decision.pi !== 'skip') {
@@ -3028,16 +3353,17 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
             if (!whId) {
               throw new BadRequestException(
                 `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
-                `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
+                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
               );
             }
 
-            const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(
-              orderId,
-              item.id,
-              undefined,
-              cycleId,
-            );
+            const alreadyReserved =
+              await this.stockService.hasExistingPhysicalReservation(
+                orderId,
+                item.id,
+                undefined,
+                cycleId,
+              );
             if (!alreadyReserved) {
               const existingPi = await tx.physicalInventory.findFirst({
                 where: {
@@ -3049,15 +3375,16 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
               if (!existingPi) {
                 throw new BadRequestException(
                   `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
-                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
+                    `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
                 );
               }
-              const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+              const availablePhysical =
+                existingPi.quantity - existingPi.reservedQuantity;
               if (availablePhysical < item.quantity) {
                 throw new BadRequestException(
                   `"${product.name}" এর Physical Stock অপর্যাপ্ত। ` +
-                  `Available: ${availablePhysical}, Needed: ${item.quantity}। ` +
-                  `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
+                    `Available: ${availablePhysical}, Needed: ${item.quantity}। ` +
+                    `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
                 );
               }
               await this.stockService.reservePhysicalAllocated({
@@ -3090,12 +3417,13 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
           }
 
           if (icWhId) {
-            const alreadyReserved = await this.stockService.hasExistingPhysicalReservation(
-              orderId,
-              item.id,
-              undefined,
-              cycleId,
-            );
+            const alreadyReserved =
+              await this.stockService.hasExistingPhysicalReservation(
+                orderId,
+                item.id,
+                undefined,
+                cycleId,
+              );
             if (!alreadyReserved) {
               const existingPi = await tx.physicalInventory.findFirst({
                 where: {
@@ -3109,7 +3437,8 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
                   `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
                 );
               }
-              const availablePhysical = existingPi.quantity - existingPi.reservedQuantity;
+              const availablePhysical =
+                existingPi.quantity - existingPi.reservedQuantity;
               if (availablePhysical < item.quantity) {
                 throw new BadRequestException(
                   `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
@@ -3126,11 +3455,12 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
                 tx,
               });
             } else {
-              const physAvail = await this.stockService.checkPhysicalAvailability(
-                item.productId!,
-                icWhId,
-                item.variantId ?? undefined,
-              );
+              const physAvail =
+                await this.stockService.checkPhysicalAvailability(
+                  item.productId!,
+                  icWhId,
+                  item.variantId ?? undefined,
+                );
               if (physAvail.availableStock < 0) {
                 throw new BadRequestException(
                   `Insufficient physical stock for "${product.name}". Available: ${physAvail.availableStock}, needed: ${item.quantity}.`,
@@ -3143,12 +3473,7 @@ private toPublicTokenDto(order: any): PublicTokenOrder {
     }
   }
 
-
-
-  private async firePurchaseInstant(
-    order: any,
-    tx?: Prisma.TransactionClient,
-  ) {
+  private async firePurchaseInstant(order: any, tx?: Prisma.TransactionClient) {
     try {
       const settings = await this.prisma.systemSetting.findMany({
         where: {

@@ -114,11 +114,11 @@ export const customersApi = {
 
 export const blockedIpsApi = {
   list: () =>
-    apiClient.get<BlockedIp[]>('/blocked-ips').then(r => r.data),
+    apiClient.get<BlockedIp[]>('/blocked-entries', { params: { type: 'ip' } }).then(r => r.data),
 
   create: (ip: string, reason?: string) =>
-    apiClient.post('/blocked-ips', { ip, reason }).then(r => r.data),
+    apiClient.post('/blocked-entries', { type: 'ip', value: ip, reason }).then(r => r.data),
 
   remove: (id: string) =>
-    apiClient.delete(`/blocked-ips/${id}`).then(r => r.data),
+    apiClient.post(`/blocked-entries/ip/${id}/unblock`).then(r => r.data),
 }

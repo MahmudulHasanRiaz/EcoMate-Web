@@ -63,6 +63,7 @@ describe('OrdersService', () => {
     ],
     createdAt: new Date('2025-01-15'),
     updatedAt: new Date('2025-01-15'),
+    editLock: null,
     trackingUrl: null,
     status: mockInitialStatus,
     customer: {
@@ -109,6 +110,7 @@ describe('OrdersService', () => {
               findFirst: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
+              updateMany: jest.fn(),
               count: jest.fn(),
               groupBy: jest.fn().mockResolvedValue([]),
             },
@@ -190,6 +192,10 @@ describe('OrdersService', () => {
               findUnique: jest.fn().mockResolvedValue(null),
               findFirst: jest.fn().mockResolvedValue(null),
               upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+              update: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+            },
+            customer: {
+              update: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
             },
             checkoutLead: {
               updateMany: jest.fn(),
@@ -315,6 +321,7 @@ describe('OrdersService', () => {
           provide: CancelReturnStockService,
           useValue: {
             restoreForOrder: jest.fn().mockResolvedValue(undefined),
+            holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -981,6 +988,119 @@ describe('OrdersService', () => {
       expect(capture.mock.calls[0][0].eventType).toBe('Refund');
       expect(capture.mock.calls[0][0].payload.value).toBe(-2050);
     });
+
+    it('blocks automated actors (system) from marking an order Returned', async () => {
+      const returnPendingOrder = {
+        ...mockOrder,
+        status: { ...mockInitialStatus, name: 'Return Pending' },
+      };
+      const returnedStatus = {
+        id: 'status-returned',
+        name: 'Returned',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+        returnPendingOrder,
+      );
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnedStatus,
+      );
+
+      await expect(
+        service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-returned' },
+          'system',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a manual staff transition to Returned and runs restore side effects', async () => {
+      const returnPendingOrder = {
+        ...mockOrder,
+        status: { ...mockInitialStatus, name: 'Return Pending' },
+      };
+      const returnedStatus = {
+        id: 'status-returned',
+        name: 'Returned',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+        returnPendingOrder,
+      );
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...returnPendingOrder,
+        statusId: 'status-returned',
+        status: returnedStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const cancelReturnStock = module.get<CancelReturnStockService>(
+        CancelReturnStockService,
+      );
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-returned' },
+        'staff-123',
+      );
+
+      expect(result.statusId).toBe('status-returned');
+      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ referencePrefix: 'return' }),
+      );
+    });
+
+    it('auto-assigns the acting staff member on a manual status change', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.cancelReturnStock as any) = undefined;
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus(
+        'order-id-1',
+        updateStatusDto,
+        'staff-123',
+      );
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBe('staff-123');
+      expect(updateCall.data.assignedAt).toBeInstanceOf(Date);
+    });
+
+    it('never auto-assigns for automated actors (webhook/system)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus('order-id-1', updateStatusDto, 'system');
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBeUndefined();
+      expect(updateCall.data.assignedAt).toBeUndefined();
+    });
   });
 
   describe('updateOrder', () => {
@@ -1050,29 +1170,52 @@ describe('OrdersService', () => {
       expect(prisma.orderItem.createMany).toHaveBeenCalled();
     });
 
-    it('throws a friendly ConflictException when another profile already owns the email', async () => {
+    it('throws a friendly ConflictException when another customer owns the phone', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
-      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'other-customer',
       });
-      (prisma.userProfile as any).update = jest
+      (prisma.customerProfile as any).update = jest
         .fn()
         .mockResolvedValue({ id: 'customer-id-1' });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
 
       await expect(
         service.updateOrder('order-id-1', {
-          customerInfo: { firstName: 'Jane', email: 'taken@x.com' },
+          customerInfo: {
+            firstName: 'Jane',
+            phoneNumber: '01812345678',
+          },
         }),
       ).rejects.toThrow(ConflictException);
 
-      expect(prisma.userProfile.update).not.toHaveBeenCalled();
+      expect(prisma.customerProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('targets CustomerProfile (not UserProfile) so staff identity can never be overwritten', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.customerProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+      });
+
+      // The write must land on the order's CustomerProfile only.
+      const calls = (prisma.customerProfile.update as jest.Mock).mock.calls;
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toEqual({ where: { id: 'customer-id-1' }, data: { name: 'Jane', email: 'free@x.com' } });
+      const userProfileUpdate = (prisma.userProfile as any).update;
+      expect(userProfileUpdate).toBeUndefined();
     });
 
     it('omits an empty email so a customer without one can still be saved', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
-      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.userProfile as any).update = jest
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.customerProfile as any).update = jest
         .fn()
         .mockResolvedValue({ id: 'customer-id-1' });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
@@ -1082,17 +1225,17 @@ describe('OrdersService', () => {
       });
 
       // Empty email never reaches the unique-key write (no P2002/409).
-      expect(prisma.userProfile.findFirst).not.toHaveBeenCalled();
-      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
+      expect(prisma.customerProfile.findFirst).not.toHaveBeenCalled();
+      const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data).not.toHaveProperty('email');
-      expect(updateCall.data.firstName).toBe('Jane');
+      expect(updateCall.data.name).toBe('Jane');
       expect(prisma.order.update).toHaveBeenCalled();
     });
 
-    it('updates the customer email when no other profile owns it', async () => {
+    it('updates the customer email when no other customer owns it', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
-      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.userProfile as any).update = jest
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.customerProfile as any).update = jest
         .fn()
         .mockResolvedValue({ id: 'customer-id-1' });
       (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
@@ -1101,8 +1244,147 @@ describe('OrdersService', () => {
         customerInfo: { firstName: 'Jane', email: 'free@x.com' },
       });
 
-      const updateCall = (prisma.userProfile.update as jest.Mock).mock.calls[0][0];
+      const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data.email).toBe('free@x.com');
+    });
+  });
+
+  describe('bulkStatusChange', () => {
+    const pendingOrder = {
+      id: 'order-1',
+      displayId: 'ORD-1',
+      timeline: [],
+      statusId: 'status-pending',
+      status: { name: 'Shipping' },
+    };
+    const confirmedOrder = {
+      id: 'order-2',
+      displayId: 'ORD-2',
+      timeline: [],
+      statusId: 'status-confirmed',
+      status: { name: 'Confirmed' },
+    };
+    const returnPendingStatus = {
+      id: 'status-rp',
+      name: 'Return Pending',
+    };
+    const confirmedStatus = { id: 'status-c', name: 'Confirmed' };
+    const returnedStatus = { id: 'status-rt', name: 'Returned' };
+
+    it('reports real updated/skipped counts and failure reasons', async () => {
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnPendingStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        pendingOrder,
+        confirmedOrder,
+      ]);
+
+      // pendingOrder: Pending -> Return Pending is allowed; confirmedOrder not.
+      const result = await service.bulkStatusChange(
+        ['order-1', 'order-2'],
+        'status-rp',
+        'staff-123',
+      );
+
+      expect(result.updated).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.failedDetails[0]).toMatchObject({
+        id: 'order-2',
+        reason: expect.stringContaining('Cannot transition'),
+      });
+    });
+
+    it('reports missing orders as failures instead of pretending success', async () => {
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnPendingStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([pendingOrder]);
+
+      const result = await service.bulkStatusChange(
+        ['order-1', 'ghost-order'],
+        'status-rp',
+        'staff-123',
+      );
+
+      expect(result.updated).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.failedDetails[0]).toMatchObject({
+        id: 'ghost-order',
+        reason: 'Order not found',
+      });
+    });
+
+    it('runs Returned restore side effects per valid order', async () => {
+      const returnPendingOrder = {
+        ...pendingOrder,
+        status: { name: 'Return Pending' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        returnPendingOrder,
+      ]);
+      (prisma.order.update as jest.Mock).mockResolvedValue(returnPendingOrder);
+
+      const cancelReturnStock = module.get<CancelReturnStockService>(
+        CancelReturnStockService,
+      );
+      await service.bulkStatusChange(
+        ['order-1'],
+        'status-rt',
+        'staff-123',
+      );
+
+      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 'order-1', referencePrefix: 'return' }),
+      );
+    });
+
+    it('auto-assigns the actor on bulk update', async () => {
+      const pendingToConfirmed = { ...pendingOrder, status: { name: 'Pending' } };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        pendingToConfirmed,
+      ]);
+
+      await service.bulkStatusChange(
+        ['order-1'],
+        'status-c',
+        'staff-123',
+      );
+
+      const updateManyCall = (prisma.order.updateMany as jest.Mock).mock.calls[0][0];
+      expect(updateManyCall.data.assignedToId).toBe('staff-123');
+    });
+
+    it('does not auto-assign on automated bulk (system)', async () => {
+      const pendingToConfirmed = { ...pendingOrder, status: { name: 'Pending' } };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        pendingToConfirmed,
+      ]);
+
+      await service.bulkStatusChange(['order-1'], 'status-c', 'system');
+
+      const updateManyCall = (prisma.order.updateMany as jest.Mock).mock.calls[0][0];
+      expect(updateManyCall.data.assignedToId).toBeUndefined();
+      expect(updateManyCall.data.assignedAt).toBeUndefined();
+    });
+
+    it('rejects system bulk to Returned', async () => {
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        returnedStatus,
+      );
+
+      await expect(
+        service.bulkStatusChange(['order-1'], 'status-rt', 'system'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

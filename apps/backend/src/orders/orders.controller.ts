@@ -13,6 +13,7 @@ import {
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 
 import { OrdersService } from './orders.service';
+import { OrderEditLockService } from './order-edit-lock.service';
 import { OrdersEventService } from './orders-event.service';
 import {
   CreateOrderDto,
@@ -39,6 +40,7 @@ export class OrdersController {
   constructor(
     private readonly svc: OrdersService,
     private readonly events: OrdersEventService,
+    private readonly lockSvc: OrderEditLockService,
   ) {}
 
   @Roles('superadmin', 'admin', 'manager')
@@ -203,8 +205,15 @@ export class OrdersController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Put(':id')
-  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
-    return this.svc.updateOrder(id, dto);
+  updateOrder(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderDto,
+    @CurrentUser() user: { userId: string; email: string },
+  ) {
+    return this.svc.updateOrder(id, dto, {
+      userId: user.userId,
+      performedBy: user.email,
+    });
   }
 
   @Roles('superadmin', 'admin', 'manager')
@@ -221,14 +230,22 @@ export class OrdersController {
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Post(':id/items')
-  addItem(@Param('id') id: string, @Body() dto: UpdateOrderItemDto) {
-    return this.svc.addItem(id, dto);
+  addItem(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderItemDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.svc.addItem(id, dto, user.userId);
   }
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Delete(':id/items/:itemId')
-  removeItem(@Param('id') id: string, @Param('itemId') itemId: string) {
-    return this.svc.removeItem(id, itemId);
+  removeItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.svc.removeItem(id, itemId, user.userId);
   }
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
@@ -264,6 +281,62 @@ export class OrdersController {
       user?.userId || 'system',
     );
   }
+
+  /** Acquire edit lock. 409-equivalent result is a normal 200 with { acquired: false, heldBy }. */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/lock/acquire')
+  acquireLock(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.lockSvc.acquire(id, user.userId);
+  }
+
+  /** Force-takeover of the lock (audit entry is written to order timeline by caller/UI flow). */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/lock/override')
+  overrideLock(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.lockSvc.override(id, user.userId);
+  }
+
+  /** Heartbeat: renew the lock TTL. */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/lock/heartbeat')
+  heartbeatLock(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.lockSvc.heartbeat(id, user.userId);
+  }
+
+  /** Release the lock (holder only). */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Delete(':id/lock')
+  releaseLock(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.lockSvc.release(id, user.userId);
+  }
+
+  /** Current live lock info, if any. */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Get(':id/lock')
+  getLock(@Param('id') id: string) {
+    return this.lockSvc.getLock(id);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Post(':id/trash')
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Post('bulk/dispatch')

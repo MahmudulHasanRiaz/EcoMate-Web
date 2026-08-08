@@ -56,6 +56,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
       ...ipBlocks.map((b) => ({
         id: b.id,
         entryType: 'ip' as const,
+        ip: b.ip,
         value: b.ip,
         blockType: b.blockType,
         reason: b.reason,

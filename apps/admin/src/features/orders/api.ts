@@ -36,6 +36,7 @@ export interface OrderResponse {
   }[];
   selectedShippingOptionId?: string | null;
   shippingChargeOverridden?: boolean;
+  salesChannel?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;

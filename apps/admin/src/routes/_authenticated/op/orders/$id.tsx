@@ -10,6 +10,8 @@ import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { CustomerViewCard } from '@/features/orders/customer-view-card'
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
+import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
+import { OrderSourceBadge } from '@/features/orders/order-source-badge'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
@@ -255,11 +257,16 @@ function OrderDetailPage() {
 
         <Main className='flex flex-1 flex-col gap-4'>
 
+          <OrderEditLockGuard orderId={order.id} disabled={!!order.trashedAt} />
+
           {/* ── Page Header ──────────────────────────────────────── */}
           <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
             <div>
               <h2 className='text-xl font-bold tracking-tight'>
                 {order.displayId}
+                {order.salesChannel && (
+                  <OrderSourceBadge salesChannel={order.salesChannel} className='text-xs h-auto py-0.5' />
+                )}
                 {order.trashedAt && (
                   <Badge variant='destructive' className='ml-2 align-middle text-xs'>
                     <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed

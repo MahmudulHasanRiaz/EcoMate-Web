@@ -131,6 +131,7 @@ model UserProfile {
   referrals      Referral[]
   posSessions    PosSession[]
   packingLocks   PackingLock[]
+  orderEditLocks OrderEditLock[]
 
   @@index([role])
   @@index([status])
@@ -587,6 +588,20 @@ model PackingLock {
   @@index([packerId])
 }
 
+model OrderEditLock {
+  id          String      @id @default(uuid())
+  orderId     String      @unique
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId      String
+  user        UserProfile @relation(fields: [userId], references: [id])
+  acquiredAt  DateTime    @default(now())
+  heartbeatAt DateTime    @default(now())
+  expiresAt   DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model OrderStatus {
   id           String   @id @default(uuid())
   name         String   @unique
@@ -621,6 +636,7 @@ model Order {
   assignedAt               DateTime?
   timeline                 Json?              @default("[]")
   packingLock              PackingLock?
+  editLock                 OrderEditLock?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
   guestName                String?
@@ -1220,6 +1236,7 @@ enum ManagedStockMovementType {
   CANCEL_RELEASE
   RESERVE
   RELEASE
+  RETURN_HOLD
 }
 
 enum MovementDirection {

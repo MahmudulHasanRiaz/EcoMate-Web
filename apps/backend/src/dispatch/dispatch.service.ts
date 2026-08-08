@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
@@ -15,7 +16,13 @@ const DISPATCH_TRANSITIONS: Record<string, string[]> = {
   PICKED_UP: ['IN_TRANSIT', 'HOLD', 'CANCELLED'],
   IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
   ASSIGNED_TO_RIDER: ['HOLD', 'DELIVERED', 'CANCELLED'],
-  HOLD: ['PICKED_UP', 'IN_TRANSIT', 'ASSIGNED_TO_RIDER', 'DELIVERED', 'CANCELLED'],
+  HOLD: [
+    'PICKED_UP',
+    'IN_TRANSIT',
+    'ASSIGNED_TO_RIDER',
+    'DELIVERED',
+    'CANCELLED',
+  ],
   DELIVERED: ['PARTIAL', 'RETURN_PENDING'],
   PARTIAL: ['RETURN_PENDING', 'CANCELLED'],
   RETURN_PENDING: ['RETURNED', 'CANCELLED'],
@@ -28,6 +35,7 @@ export class DispatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orderStockDeduct: OrderStockDeductService,
+    private readonly cancelReturnStock: CancelReturnStockService,
   ) {}
 
   async findAll(query: DispatchQueryDto) {
@@ -40,9 +48,21 @@ export class DispatchService {
       where.OR = [
         { consignmentId: { contains: query.search, mode: 'insensitive' } },
         { trackingCode: { contains: query.search, mode: 'insensitive' } },
-        { order: { displayId: { contains: query.search, mode: 'insensitive' } } },
-        { order: { guestPhone: { contains: query.search, mode: 'insensitive' } } },
-        { order: { customer: { phone: { contains: query.search, mode: 'insensitive' } } } },
+        {
+          order: { displayId: { contains: query.search, mode: 'insensitive' } },
+        },
+        {
+          order: {
+            guestPhone: { contains: query.search, mode: 'insensitive' },
+          },
+        },
+        {
+          order: {
+            customer: {
+              phone: { contains: query.search, mode: 'insensitive' },
+            },
+          },
+        },
       ];
     }
     if (query.startDate || query.endDate) {
@@ -52,7 +72,9 @@ export class DispatchService {
     }
 
     const page = (query as any).page ? Number((query as any).page) : 1;
-    const perPage = (query as any).perPage ? Number((query as any).perPage) : 10;
+    const perPage = (query as any).perPage
+      ? Number((query as any).perPage)
+      : 10;
 
     const total = await this.prisma.dispatch.count({ where });
     const data = await this.prisma.dispatch.findMany({
@@ -117,18 +139,18 @@ export class DispatchService {
           notes: dto.notes,
           flaggedAt: new Date(),
         },
-      include: {
-        order: {
-          select: {
-            id: true,
-            displayId: true,
-            total: true,
-            guestName: true,
-            guestPhone: true,
-            courierStatus: true,
+        include: {
+          order: {
+            select: {
+              id: true,
+              displayId: true,
+              total: true,
+              guestName: true,
+              guestPhone: true,
+              courierStatus: true,
+            },
           },
         },
-      },
       });
 
       await this.prisma.courierDispatchLog.create({
@@ -176,7 +198,10 @@ export class DispatchService {
 
   async updateStatus(id: string, status: string, performedBy?: string) {
     // Validate transition BEFORE transaction
-    const current = await this.prisma.dispatch.findUnique({ where: { id }, select: { status: true } });
+    const current = await this.prisma.dispatch.findUnique({
+      where: { id },
+      select: { status: true },
+    });
     if (!current) throw new NotFoundException('Dispatch not found');
     const allowed = DISPATCH_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
@@ -187,10 +212,18 @@ export class DispatchService {
 
     const data: any = { status: status as any };
     switch (status) {
-      case 'HANDED_OVER': data.handedOverAt = new Date(); break;
-      case 'PICKED_UP': data.pickedUpAt = new Date(); break;
-      case 'DELIVERED': data.deliveredAt = new Date(); break;
-      case 'RETURNED': data.deliveredAt = null; break;
+      case 'HANDED_OVER':
+        data.handedOverAt = new Date();
+        break;
+      case 'PICKED_UP':
+        data.pickedUpAt = new Date();
+        break;
+      case 'DELIVERED':
+        data.deliveredAt = new Date();
+        break;
+      case 'RETURNED':
+        data.deliveredAt = null;
+        break;
     }
 
     // ALL-OR-NOTHING: status claim + stock side effects in single transaction
@@ -212,7 +245,11 @@ export class DispatchService {
       const dispatch = await this.findOne(id);
       const productMapping = dispatch.productMapping as any[] | null;
 
-      if (status === 'HANDED_OVER' || status === 'RETURNED' || status === 'DAMAGED') {
+      if (
+        status === 'HANDED_OVER' ||
+        status === 'RETURNED' ||
+        status === 'DAMAGED'
+      ) {
         if (status === 'RETURNED' || status === 'DAMAGED') {
           return { claimed: true, dispatch };
         }
@@ -230,7 +267,6 @@ export class DispatchService {
         });
       }
 
-
       // IN_TRANSIT: recheck that deduction was applied (like Confirmed rechecks reservation).
       // If any managed stock deduction was missed, retry it now via the shared service.
       if (status === 'IN_TRANSIT') {
@@ -244,18 +280,25 @@ export class DispatchService {
         });
       }
 
-
       return { claimed: true, dispatch };
     });
 
     if (result.claimed) {
-      await this.syncOrderStatus(result.dispatch.orderId, result.dispatch.status, result.dispatch.courier as string);
+      await this.syncOrderStatus(
+        result.dispatch.orderId,
+        result.dispatch.status,
+        result.dispatch.courier,
+      );
     }
 
     return result.dispatch;
   }
 
-  private async syncOrderStatus(orderId: string, dispatchStatus: string, courier: string) {
+  private async syncOrderStatus(
+    orderId: string,
+    dispatchStatus: string,
+    courier: string,
+  ) {
     const map: Record<string, string> = {
       HANDED_OVER: 'Shipping',
       PICKED_UP: 'Shipping',
@@ -264,7 +307,10 @@ export class DispatchService {
       DELIVERED: 'Delivered',
       PARTIAL: 'Partial',
       RETURN_PENDING: 'Return Pending',
-      RETURNED: 'Returned',
+      // IMPORTANT: dispatch "RETURNED" (courier dropped back the parcel) only
+      // advances the order to 'Return Pending'. The final 'Returned' status —
+      // which restores stock — must be set manually from the order detail.
+      RETURNED: 'Return Pending',
       CANCELLED: 'Cancelled',
     };
 
@@ -277,12 +323,29 @@ export class DispatchService {
     });
     if (!order || order.trashedAt) return;
 
-    const forder = ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Confirmed', 'Packed', 'Packing Hold', 'Shipping', 'Delivered', 'Partial', 'Return Pending', 'Returned', 'Damaged', 'Cancelled'];
+    const forder = [
+      'Pending',
+      'Payment Pending',
+      'Payment Verifying',
+      'Hold',
+      'Confirmed',
+      'Packed',
+      'Packing Hold',
+      'Shipping',
+      'Delivered',
+      'Partial',
+      'Return Pending',
+      'Returned',
+      'Damaged',
+      'Cancelled',
+    ];
     const curIdx = forder.indexOf(order.status.name);
     const tgtIdx = forder.indexOf(targetName);
     if (curIdx < 0 || tgtIdx < 0 || curIdx >= tgtIdx) return;
 
-    const targetStatus = await this.prisma.orderStatus.findUnique({ where: { name: targetName } });
+    const targetStatus = await this.prisma.orderStatus.findUnique({
+      where: { name: targetName },
+    });
     if (!targetStatus) return;
 
     const timeline = [
@@ -303,6 +366,13 @@ export class DispatchService {
         timeline: timeline as any,
       },
     });
+
+    // Business rule: 'Return Pending' holds the reservation/deduction. The
+    // deduction consumed the reservation counter at HANDED_OVER, so re-establish
+    // the hold here (idempotent, ledged as RETURN_HOLD).
+    if (targetName === 'Return Pending') {
+      await this.cancelReturnStock.holdReservationForReturnPending(orderId);
+    }
   }
 
   private async getOrderItemsForStock(
