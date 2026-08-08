@@ -147,7 +147,9 @@ export class InventoryController {
       deducted: result.deliveredDeducted,
       restored: result.cancelledRestored,
       blocked: result.blocked,
+      delta: result.delta,
       verification: result.verification,
+      summary: result.summary,
     };
   }
 }
