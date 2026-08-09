@@ -46,11 +46,20 @@ export function Media() {
   const [gridWidth, setGridWidth] = useState(0)
   const gridGapPx = 8
 
+  // Measure the always-present dropzone so the column count tracks the real
+  // content width even before data loads. (Previously the observer was bound to
+  // the virtual grid, which only mounts after fetch — gridWidth stayed 0 and the
+  // gallery froze at 2 tiny columns while the rest of the row sat empty.)
   useEffect(() => {
-    const el = gridContainerRef.current
+    const el = dropRef.current
     if (!el) return
+    const measure = () =>
+      setGridWidth(el.clientWidth || el.getBoundingClientRect().width)
+    measure()
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) setGridWidth(entry.contentRect.width)
+      for (const entry of entries) {
+        setGridWidth(entry.contentRect.width || entry.target.clientWidth)
+      }
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -61,10 +70,17 @@ export function Media() {
     queryFn: () => mediaApi.list({ page, perPage: 48, search: search || undefined, type: typeFilter || undefined, attached: attachFilter || undefined }).then(r => r.data),
   })
 
-  const columns = gridWidth < 480 ? 2 : gridWidth < 640 ? 3 : gridWidth < 768 ? 4 : gridWidth < 1024 ? 6 : gridWidth < 1536 ? 8 : 10
+  // Fall back to the viewport for the very first paint so a container that is
+  // measured only after the effect runs never renders at 2 columns by default.
+  const effectiveWidth =
+    gridWidth ||
+    (typeof window !== 'undefined' ? window.innerWidth : 0)
+  const columns = effectiveWidth < 480 ? 2 : effectiveWidth < 640 ? 3 : effectiveWidth < 768 ? 4 : effectiveWidth < 1024 ? 6 : effectiveWidth < 1536 ? 8 : 10
   const items = data?.data ?? []
   const rowCount = items.length ? Math.ceil(items.length / columns) : 0
-  const estimatedItemSize = Math.max(80, columns > 0 ? Math.floor((gridWidth - (columns - 1) * gridGapPx) / columns) : 80)
+  const estimatedItemSize = effectiveWidth > 0
+    ? Math.max(64, Math.floor((effectiveWidth - (columns - 1) * gridGapPx - 4) / columns))
+    : 120
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -72,6 +88,11 @@ export function Media() {
     estimateSize: () => estimatedItemSize + gridGapPx,
     overscan: 2,
   })
+
+  // Re-measure virtual rows whenever the container width or column count changes.
+  useEffect(() => {
+    virtualizer.measure()
+  }, [gridWidth, columns, virtualizer])
 
   const { data: attachDetails } = useQuery({
     queryKey: ['media', 'attachments', selected?.id],
@@ -457,9 +478,10 @@ export function Media() {
                           left: 0,
                           height: `${virtualRow.size}px`,
                           transform: `translateY(${virtualRow.start}px)`,
-                          display: 'flex',
-                          gap: `${gridGapPx}px`,
-                          padding: '2px',
+                          display: 'grid',
+                          gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                          columnGap: `${gridGapPx}px`,
+                          padding: '0 2px',
                         }}
                       >
                         {rowItems.map((m, colIdx) => {
@@ -467,7 +489,7 @@ export function Media() {
                           return (
                             <div
                               key={m.id}
-                              className={`flex-1 aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all relative group ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
+                              className={`relative w-full min-w-0 aspect-square rounded-lg border-2 overflow-hidden bg-muted/30 cursor-pointer transition-all group ${selectedIds.has(m.id) ? 'border-primary ring-2 ring-primary/30' : selected?.id === m.id ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/50'}`}
                               onClick={(e) => {
                                 if (e.shiftKey) {
                                   e.preventDefault()
@@ -592,7 +614,7 @@ export function Media() {
                       </Button>
                       <Button variant='outline' size='sm' className='h-7 text-xs' onClick={() => { setDetailOpen(!detailOpen); }}>
                         <Link2 className='h-3 w-3 mr-1' />
-                        <span className='hidden xs:inline'>Attachments</span> ({attachDetails?.length || selected._count?.attachments || 0})
+                        <span className='hidden sm:inline'>Attachments</span> ({attachDetails?.length || selected._count?.attachments || 0})
                       </Button>
                       <Button variant='ghost' size='sm' className='h-7 text-xs text-destructive hover:text-destructive' onClick={() => { setDeleteTarget(selected); setSelected(null); setDetailOpen(false); }}>
                         <Trash2 className='h-3 w-3 mr-1' /> Delete
