@@ -20,7 +20,11 @@ export const apiClient = axios.create({
   },
 })
 
-// Shared promise to deduplicate concurrent refresh calls within the same tab
+// Shared promise to deduplicate concurrent refresh calls within the same tab.
+// It must be reset after every settlement (success or failure): the backend
+// rotates the httpOnly refresh cookie on each /auth/refresh, so reusing the
+// token captured by an earlier refresh would silently fail once THAT token
+// expires — the exact "logged in, but Authentication required" symptom.
 let refreshPromise: Promise<{ accessToken: string }> | null = null
 
 // Retry delays for refresh: 2s + 4s + 8s + 16s = 30s total coverage.
@@ -29,6 +33,28 @@ let refreshPromise: Promise<{ accessToken: string }> | null = null
 // 0s + 2s + 4s + 8s + 16s = 30s from the initial 401.
 const REFRESH_RETRY_DELAYS = [0, 2000, 4000, 8000, 16000]
 const MAX_REFRESH_RETRIES = REFRESH_RETRY_DELAYS.length
+
+function performRefresh(): Promise<{ accessToken: string }> {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post<{ accessToken: string }>(
+        `${API_BASE_URL}/auth/refresh`,
+        {},
+        { withCredentials: true },
+      )
+      .then((res) => {
+        // Persist the rotated token to the shared cookie + store so THIS and
+        // other tabs all use the fresh token for the next request instead of
+        // replaying a stale one until the session dies.
+        useAuthStore.getState().auth.setAccessToken(res.data.accessToken)
+        return res.data
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
 
 apiClient.interceptors.request.use((config) => {
   const store = useAuthStore.getState().auth
@@ -80,18 +106,9 @@ apiClient.interceptors.response.use(
     }
     originalRequest._retry = true
 
-    // If a refresh is already in flight, wait for it and retry the original request
-    if (refreshPromise) {
-      try {
-        const { accessToken } = await refreshPromise
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`
-        return apiClient(originalRequest)
-      } catch {
-        return Promise.reject(error)
-      }
-    }
-
-    // Exponential backoff: retry refresh up to MAX_REFRESH_RETRIES times
+    // 401 → refresh with backoff, then replay the original request once with
+    // the fresh token. performRefresh() dedupes concurrent 401s and always
+    // stores the rotated token, so a long-lived workflow keeps working.
     for (let attempt = 0; attempt < MAX_REFRESH_RETRIES; attempt++) {
       const delay = REFRESH_RETRY_DELAYS[attempt]
       if (delay > 0) {
@@ -99,21 +116,11 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        refreshPromise = axios
-          .post<{ accessToken: string }>(
-            `${API_BASE_URL}/auth/refresh`,
-            {},
-            { withCredentials: true },
-          )
-          .then((res) => res.data)
-
-        const data = await refreshPromise
-        useAuthStore.getState().auth.setAccessToken(data.accessToken)
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
+        const { accessToken } = await performRefresh()
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return apiClient(originalRequest)
       } catch {
-        // Refresh attempt failed — continue to next retry
-        refreshPromise = null
+        // Refresh attempt failed (backend restart / network blip) — retry with backoff
       }
     }
 
