@@ -103,6 +103,11 @@ const PUBLIC_DISPLAY_SELECT = {
   courierService: true,
   courierTrackingCode: true,
   courierConsignmentId: true,
+  dispatches: {
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: { trackingUrl: true },
+  },
   status: { select: { name: true, color: true } },
   items: {
     select: {
@@ -125,6 +130,11 @@ const PUBLIC_TOKEN_SELECT = {
   courierService: true,
   courierTrackingCode: true,
   courierConsignmentId: true,
+  dispatches: {
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: { trackingUrl: true },
+  },
   status: { select: { name: true, color: true } },
   customer: { select: { name: true } },
   items: {
@@ -406,8 +416,19 @@ export class OrdersService {
             expiresAt: rawLock.expiresAt,
           }
         : null;
+    // Expose each dispatch's tracking link — prefer the courier-provided URL,
+    // fall back to a link built from the dispatch's own identifiers.
+    const dispatches = Array.isArray(order.dispatches)
+      ? order.dispatches.map((d: any) => ({
+          ...d,
+          trackingUrl:
+            d.trackingUrl ||
+            buildTrackingUrl(d.courier, d.trackingCode, d.consignmentId),
+        }))
+      : order.dispatches;
     return {
       ...order,
+      dispatches,
       editLock,
       customer: order.customer
         ? {
@@ -420,7 +441,7 @@ export class OrdersService {
       shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
       trackingUrl:
-        order.dispatches?.[0]?.trackingUrl ||
+        dispatches?.[0]?.trackingUrl ||
         buildTrackingUrl(
           order.courierService,
           order.courierTrackingCode,
@@ -539,6 +560,8 @@ export class OrdersService {
           editLock: {
             include: { user: { select: { firstName: true, lastName: true } } },
           },
+          // Latest dispatch only — supplies the (correct) tracking link on list rows.
+          dispatches: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
       }),
       this.prisma.order.count({ where }),
@@ -595,6 +618,7 @@ export class OrdersService {
             },
           },
           payments: true,
+          dispatches: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
       }),
       this.prisma.order.count({ where }),
@@ -2692,11 +2716,13 @@ export class OrdersService {
           : null,
       })),
       total: order.total,
-      trackingUrl: buildTrackingUrl(
-        order.courierService,
-        order.courierTrackingCode,
-        order.courierConsignmentId,
-      ),
+      trackingUrl:
+        order.dispatches?.[0]?.trackingUrl ||
+        buildTrackingUrl(
+          order.courierService,
+          order.courierTrackingCode,
+          order.courierConsignmentId,
+        ),
     };
   }
 

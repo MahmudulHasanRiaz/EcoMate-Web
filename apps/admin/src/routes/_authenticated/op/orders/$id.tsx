@@ -689,7 +689,20 @@ function OrderDetailPage() {
                               <TableCell>
                                 <Badge className={`text-xs ${statusConfig?.color || 'bg-gray-500'}`}>{statusConfig?.label || d.status}</Badge>
                               </TableCell>
-                              <TableCell className='text-sm'>{d.trackingCode || '—'}</TableCell>
+                              <TableCell>
+                                {d.trackingCode ? (
+                                  <div className='flex items-center gap-1.5'>
+                                    <span className='font-mono text-sm'>{d.trackingCode}</span>
+                                    {d.trackingUrl && (
+                                      <a href={d.trackingUrl} target='_blank' rel='noreferrer' title='Track shipment' className='text-muted-foreground hover:text-primary transition-colors'>
+                                        <ExternalLink className='h-3.5 w-3.5' />
+                                      </a>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className='text-sm text-muted-foreground'>—</span>
+                                )}
+                              </TableCell>
                               <TableCell className='text-xs text-muted-foreground'>{new Date(d.createdAt).toLocaleString()}</TableCell>
                             </TableRow>
                           )

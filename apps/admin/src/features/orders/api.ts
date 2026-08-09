@@ -28,6 +28,7 @@ export interface OrderResponse {
     courier: string;
     consignmentId: string;
     trackingCode: string | null;
+    trackingUrl?: string | null;
     status: string;
     productMapping: any;
     notes: string | null;
