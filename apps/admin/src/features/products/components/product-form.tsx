@@ -788,9 +788,17 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', rowId] })
     }
-    setBulkUpdateOpen(false)
-    setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost('')
-    setBulkOverridePrice(false); setBulkOverrideSalePrice(false); setBulkOverrideStandardCost(false)
+    // Close the nested dialog on the NEXT tick. The outer Dialog guards outside
+    // clicks while a sub-overlay is open, but if we flip bulkUpdateOpen=false in
+    // the same event, Radix processes the pending "pointer down outside" AFTER
+    // our re-render — hasSubOverlay is already false, the guard no-ops, and the
+    // whole product form closes (losing the product). Deferring the close keeps
+    // hasSubOverlay=true until the outer has rejected that dismissal.
+    setTimeout(() => {
+      setBulkUpdateOpen(false)
+      setBulkPrice(''); setBulkSalePrice(''); setBulkStandardCost('')
+      setBulkOverridePrice(false); setBulkOverrideSalePrice(false); setBulkOverrideStandardCost(false)
+    }, 0)
   }
 
   const validateForSave = (): string[] => {
@@ -858,6 +866,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'
         onInteractOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
         onPointerDownOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (hasSubOverlay) e.preventDefault(); }}
       >
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
@@ -1645,7 +1654,12 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       handleConfirm={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}
     />
 
-    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen} modal={false}>
+    {/* Nested dialog MUST be a full modal. A non-modal DialogContent inside a
+        modal parent is portaled to <body>, so Radix treats clicks on it as
+        "outside" the parent; when setBulkUpdateOpen(false) runs, the pending
+        dismiss drops hasSubOverlay and the parent closes — losing the whole
+        product form. Nested modals cooperate instead of dismissing each other. */}
+    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen}>
       <DialogContent className='max-w-md'>
         <DialogHeader>
           <DialogTitle>Bulk Update All Variants</DialogTitle>

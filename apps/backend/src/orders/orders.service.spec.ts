@@ -1101,6 +1101,53 @@ describe('OrdersService', () => {
       expect(updateCall.data.assignedToId).toBeUndefined();
       expect(updateCall.data.assignedAt).toBeUndefined();
     });
+
+    it('preserves an existing assignment when another staff member mutates (sticky first assignment)', async () => {
+      const assignedOrder = { ...mockOrder, assignedToId: 'user-a' };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(assignedOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...assignedOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus(
+        'order-id-1',
+        updateStatusDto,
+        'user-b',
+      );
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBeUndefined();
+      expect(updateCall.data.assignedAt).toBeUndefined();
+    });
+
+    it('assigns the FIRST manual actor when the order is unassigned', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus('order-id-1', updateStatusDto, 'user-a');
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBe('user-a');
+      expect(updateCall.data.assignedAt).toBeInstanceOf(Date);
+    });
   });
 
   describe('updateOrder', () => {
@@ -1109,6 +1156,51 @@ describe('OrdersService', () => {
       discount: 100,
       customerNotes: 'Updated notes',
     };
+
+    it('preserves an existing assignment when another staff edits the order', async () => {
+      const existingOrder = {
+        ...mockOrder,
+        assignedToId: 'user-a',
+        shippingCharge: 100,
+        discount: 50,
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        shippingCharge: 150,
+        discount: 100,
+        subtotal: 2000,
+        total: 2050,
+      });
+
+      await service.updateOrder('order-id-1', updateOrderDto, {
+        userId: 'user-b',
+      });
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBeUndefined();
+      expect(updateCall.data.assignedAt).toBeUndefined();
+    });
+
+    it('assigns the first manual editor when the order is unassigned', async () => {
+      const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        shippingCharge: 150,
+        discount: 100,
+        subtotal: 2000,
+        total: 2050,
+      });
+
+      await service.updateOrder('order-id-1', updateOrderDto, {
+        userId: 'user-a',
+      });
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.assignedToId).toBe('user-a');
+      expect(updateCall.data.assignedAt).toBeInstanceOf(Date);
+    });
 
     it('should update an order successfully', async () => {
       const existingOrder = {
@@ -1342,7 +1434,7 @@ describe('OrdersService', () => {
       );
     });
 
-    it('auto-assigns the actor on bulk update', async () => {
+    it('assigns the actor on bulk update only to currently-unassigned orders', async () => {
       const pendingToConfirmed = { ...pendingOrder, status: { name: 'Pending' } };
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
         confirmedStatus,
@@ -1357,8 +1449,37 @@ describe('OrdersService', () => {
         'staff-123',
       );
 
-      const updateManyCall = (prisma.order.updateMany as jest.Mock).mock.calls[0][0];
-      expect(updateManyCall.data.assignedToId).toBe('staff-123');
+      const calls = (prisma.order.updateMany as jest.Mock).mock.calls;
+      // First updateMany applies the status to all valid orders, with no assignment.
+      expect(calls[0][0].data.statusId).toBe('status-c');
+      expect(calls[0][0].data.assignedToId).toBeUndefined();
+      // Unassigned orders get a second update that assigns the actor.
+      const assignCall = calls.find(
+        (c) => c[0].data && c[0].data.assignedToId === 'staff-123',
+      );
+      expect(assignCall).toBeDefined();
+      expect(assignCall[0].where.id.in).toEqual(['order-1']);
+    });
+
+    it('preserves existing assignments on a staff bulk change', async () => {
+      const assignedToB = {
+        ...pendingOrder,
+        status: { name: 'Pending' },
+        assignedToId: 'user-a',
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([assignedToB]);
+
+      await service.bulkStatusChange(['order-1'], 'status-c', 'staff-123');
+
+      const calls = (prisma.order.updateMany as jest.Mock).mock.calls;
+      expect(calls[0][0].data.assignedToId).toBeUndefined();
+      const assignCall = calls.find(
+        (c) => c[0].data && c[0].data.assignedToId === 'staff-123',
+      );
+      expect(assignCall).toBeUndefined();
     });
 
     it('does not auto-assign on automated bulk (system)', async () => {

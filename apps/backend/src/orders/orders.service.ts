@@ -68,6 +68,20 @@ function isAutomatedActor(actor?: string | null): boolean {
   return !actor || AUTOMATED_ACTORS.has(actor);
 }
 
+/**
+ * First-mutation ownership: an order may be auto-assigned to the acting staff
+ * member ONLY while it is currently unassigned. Once a first assignment exists,
+ * it is preserved forever — later manual edits, status changes, webhooks and
+ * reconciliation must never overwrite it. Explicit reassignment happens only
+ * through bulkAssign / the dedicated assign endpoint.
+ */
+function shouldAutoAssign(
+  actor: string | undefined | null,
+  currentAssignedToId: string | null | undefined,
+): boolean {
+  return !isAutomatedActor(actor) && !currentAssignedToId;
+}
+
 /** Public display-only tracking item — exported for controller type inference. */
 export interface PublicDisplayItem {
   id: string;
@@ -1755,8 +1769,8 @@ export class OrdersService {
     if (dto.shippingAddress !== undefined)
       data.shippingAddress = dto.shippingAddress;
 
-    // Auto-assign the acting staff member on any manual order edit.
-    if (!isAutomatedActor(opts?.userId)) {
+    // First manual mutation takes ownership; an existing assignment is preserved.
+    if (shouldAutoAssign(opts?.userId, order.assignedToId)) {
       data.assignedToId = opts!.userId;
       data.assignedAt = new Date();
     }
@@ -2162,10 +2176,10 @@ export class OrdersService {
         data: {
           statusId: dto.statusId,
           timeline: timeline as any,
-          // Auto-assign the acting staff member on every manual status change.
-          ...(isAutomatedActor(userId)
-            ? {}
-            : { assignedToId: userId, assignedAt: new Date() }),
+          // First manual mutation takes ownership; an existing assignment is preserved.
+          ...(shouldAutoAssign(userId, order.assignedToId)
+            ? { assignedToId: userId, assignedAt: new Date() }
+            : {}),
         },
         include: {
           status: true,
@@ -2426,10 +2440,10 @@ export class OrdersService {
           subtotal,
           total,
           timeline: timeline as any,
-          // Auto-assign the acting staff member on manual item add.
-          ...(isAutomatedActor(userId)
-            ? {}
-            : { assignedToId: userId, assignedAt: new Date() }),
+          // First manual mutation takes ownership; an existing assignment is preserved.
+          ...(shouldAutoAssign(userId, order.assignedToId)
+            ? { assignedToId: userId, assignedAt: new Date() }
+            : {}),
         },
         include: {
           items: {
@@ -2505,10 +2519,10 @@ export class OrdersService {
           subtotal,
           total,
           timeline: timeline as any,
-          // Auto-assign the acting staff member on manual item removal.
-          ...(isAutomatedActor(userId)
-            ? {}
-            : { assignedToId: userId, assignedAt: new Date() }),
+          // First manual mutation takes ownership; an existing assignment is preserved.
+          ...(shouldAutoAssign(userId, order.assignedToId)
+            ? { assignedToId: userId, assignedAt: new Date() }
+            : {}),
         },
         include: {
           items: {
@@ -2568,6 +2582,7 @@ export class OrdersService {
         displayId: true,
         timeline: true,
         statusId: true,
+        assignedToId: true,
         status: { select: { name: true } },
       },
     });
@@ -2596,14 +2611,22 @@ export class OrdersService {
       await this.prisma.$transaction(async (tx) => {
         await tx.order.updateMany({
           where: { id: { in: validIds } },
-          data: {
-            statusId,
-            // Auto-assign the acting staff member on bulk status change.
-            ...(isAutomatedActor(userId)
-              ? {}
-              : { assignedToId: userId, assignedAt: new Date() }),
-          },
+          data: { statusId },
         });
+
+        // First-mutation ownership: a bulk status change may ASSIGN only orders
+        // that are currently unassigned — an existing assignment is preserved.
+        const assignableIds = !isAutomatedActor(userId)
+          ? validIds.filter(
+              (id) => orders.find((o) => o.id === id)?.assignedToId == null,
+            )
+          : [];
+        if (assignableIds.length > 0) {
+          await tx.order.updateMany({
+            where: { id: { in: assignableIds } },
+            data: { assignedToId: userId, assignedAt: new Date() },
+          });
+        }
 
         if (targetStatus.name === 'Cancelled') {
           for (const cancelOrderId of validIds) {
