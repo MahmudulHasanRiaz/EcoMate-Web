@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { Product } from "@/lib/types";
 import apiClient from "@/lib/api-client";
 import { transformBackendProduct } from "@/lib/api/products";
+import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import ProductCard from "./ProductCard";
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -20,6 +21,8 @@ interface Props {
 }
 
 export default function RelatedProducts({ product }: Props) {
+  const { config } = useStorefrontConfig();
+  const hideOos = config.features?.hideOosFromArchive === true;
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +38,7 @@ export default function RelatedProducts({ product }: Props) {
           isActive: true,
           perPage: 20,
           category: product.categorySlug || product.category,
+          hasStock: hideOos || undefined,
         };
         const { data } = await apiClient.get('/products', { params });
         let list: Product[] = (data.data || [])

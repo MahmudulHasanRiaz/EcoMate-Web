@@ -41,9 +41,16 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
           <div className="space-y-2.5 max-h-[40vh] overflow-y-auto pr-1">
             {product.variants.map((v: any) => {
               // Construct variant display name from its attribute values
-              const variantName = v.attributeValues
-                ?.map((av: any) => av.attributeValue?.value)
-                .join(' / ') || v.sku || 'Default Variant'
+              // (e.g. "Size: M / Color: Red"), falling back to SKU.
+              const variantName =
+                v.attributeValues
+                  ?.map((av: any) => {
+                    const attr = av?.attributeValue?.attribute?.name
+                    const value = av?.attributeValue?.value
+                    return attr && value ? `${attr}: ${value}` : value || ''
+                  })
+                  .filter(Boolean)
+                  .join(' / ') || v.sku || 'Variant'
 
               const price = Number(v.salePrice || v.price || 0)
 
