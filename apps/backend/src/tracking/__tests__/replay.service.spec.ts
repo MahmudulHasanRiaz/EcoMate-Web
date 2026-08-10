@@ -275,4 +275,130 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       ]);
     });
   });
+
+  describe('replayRecoverable() — safe batch recovery of the DEAD population (incident follow-up)', () => {
+    it('replays only DEAD rows whose payload carries identity; excludes the no-identity (2804050) rows', async () => {
+      const outboxFindMany = jest.fn().mockResolvedValue([
+        { id: 'o-1', snapshotId: 's-1' }, // customer.email present -> replay
+        { id: 'o-2', snapshotId: 's-2' }, // customer.phone present -> replay
+        { id: 'o-3', snapshotId: 's-3' }, // NO customer block -> excluded (unmatchable)
+        { id: 'o-4', snapshotId: 's-4' }, // customer present but all identity keys empty -> excluded
+      ]);
+      const snapshotFindMany = jest.fn().mockResolvedValue([
+        { id: 's-1', payload: { customer: { email: 'a@b.c', firstName: 'Md Rahim' } } },
+        { id: 's-2', payload: { customer: { phone: '+8801711111111', country: 'BD' } } },
+        { id: 's-3', payload: { value: 100, currency: 'BDT' } },
+        { id: 's-4', payload: { customer: { city: '', zip: null } } },
+      ]);
+      const archiveFindMany = jest.fn().mockResolvedValue([]);
+      const snapshotFindUnique = jest.fn().mockResolvedValue({
+        id: 's-1',
+        eventId: 'purchase_1',
+        eventType: 'Purchase',
+        orderId: 'ord-1',
+        ctxId: 'ctx-1',
+        payload: { customer: { email: 'a@b.c' } },
+      });
+      const outboxFindUnique = jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'o-1', status: 'DEAD', snapshotId: 's-1', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 })
+        .mockResolvedValueOnce({ id: 'o-2', status: 'DEAD', snapshotId: 's-2', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 })
+        .mockResolvedValueOnce({ id: 'o-3', status: 'DEAD', snapshotId: 's-3', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 });
+      const outboxUpdate = jest.fn().mockResolvedValue({});
+      const dispatchEventCreate = jest.fn().mockResolvedValue({});
+      const svc = new ReplayService({
+        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: outboxUpdate },
+        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findUnique: jest.fn().mockResolvedValue(null) },
+        trackingDispatchEvent: { create: dispatchEventCreate },
+      } as any);
+
+      const result = await svc.replayRecoverable(100);
+
+      expect(outboxFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: 'DEAD' }, orderBy: { createdAt: 'asc' }, take: 100 }),
+      );
+      expect(result).toEqual({ scanned: 4, excludedNoIdentity: 2, replayed: 2, skippedNotDead: 0 });
+      // only the identity-carrying snapshots were reset to PENDING
+      expect(outboxUpdate.mock.calls.map((c: any[]) => (c[0] as { where: { id: string } }).where.id)).toEqual([
+        'o-1',
+        'o-2',
+      ]);
+    });
+
+    it('counts rows that left DEAD mid-pass and never double-replays them', async () => {
+      const outboxFindMany = jest.fn().mockResolvedValue([
+        { id: 'o-1', snapshotId: 's-1' },
+      ]);
+      const snapshotFindMany = jest.fn().mockResolvedValue([
+        { id: 's-1', payload: { customer: { email: 'a@b.c' } } },
+      ]);
+      const archiveFindMany = jest.fn().mockResolvedValue([]);
+      const outboxFindUnique = jest
+        .fn()
+        .mockResolvedValue({ id: 'o-1', status: 'SENT', snapshotId: 's-1', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 });
+      const snapshotFindUnique = jest.fn().mockResolvedValue(null);
+      const svc = new ReplayService({
+        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: jest.fn() },
+        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findUnique: jest.fn().mockResolvedValue(null) },
+        trackingDispatchEvent: { create: jest.fn() },
+      } as any);
+
+      const result = await svc.replayRecoverable(10);
+
+      expect(result).toEqual({ scanned: 1, excludedNoIdentity: 0, replayed: 0, skippedNotDead: 1 });
+    });
+
+    it('falls back to the PII-stripped archive payload for the identity check after retention', async () => {
+      const outboxFindMany = jest.fn().mockResolvedValue([
+        { id: 'o-1', snapshotId: 's-1' },
+      ]);
+      const snapshotFindMany = jest.fn().mockResolvedValue([]); // purged by retention
+      const archiveFindMany = jest.fn().mockResolvedValue([
+        { snapshotId: 's-1', archivedPayload: { customer: { email: '5d4e41…sha256', phone: '9f2e…sha256' } } },
+      ]);
+      const snapshotFindUnique = jest.fn().mockResolvedValue(null);
+      const archiveFindUnique = jest.fn().mockResolvedValue(
+        // archive survives retention: the replay dispatches from it
+        {
+          snapshotId: 's-1',
+          eventId: 'purchase_1',
+          eventType: 'Purchase',
+          eventTime: 1754300000n,
+          archivedPayload: { customer: { email: '5d4e41…sha256' }, value: 100 },
+          configSnapshot: { enabledProviders: ['meta'] },
+          versions: { adapterVersion: 1, providerApiVersion: 'v22.0' },
+        },
+      );
+      const outboxFindUnique = jest
+        .fn()
+        .mockResolvedValue({ id: 'o-1', status: 'DEAD', snapshotId: 's-1', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 });
+      const svc = new ReplayService({
+        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: jest.fn() },
+        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findUnique: archiveFindUnique },
+        trackingDispatchEvent: { create: jest.fn() },
+      } as any);
+
+      const result = await svc.replayRecoverable(10);
+
+      expect(result).toEqual({ scanned: 1, excludedNoIdentity: 0, replayed: 1, skippedNotDead: 0 });
+    });
+
+    it('caps an unbounded/reckless limit at 500 rows per pass', async () => {
+      const outboxFindMany = jest.fn().mockResolvedValue([]);
+      const svc = new ReplayService({
+        trackingOutbox: { findMany: outboxFindMany },
+        trackingSnapshot: { findMany: jest.fn().mockResolvedValue([]) },
+        trackingReplayArchive: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any);
+
+      await svc.replayRecoverable(999999);
+
+      expect(outboxFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 500 }),
+      );
+    });
+  });
 });

@@ -87,6 +87,31 @@ during the incident remains low-match but is retained (no destructive cleanup).
 - Pin Meta `user_data` flush: ensure server-side dispatch includes context ip/ua
   after mirror fold-in fix (covered by monitor signals).
 
+## DLQ Recovery (after deploy)
+
+The 8 559-event DEAD population was caused by the TikTok 40002 timestamp
+rejection (now fixed) plus the Meta 2804050 no-identity failures. The per-row
+replay path is duplicate-safe by construction: a provider whose dispatch row is
+already terminal SENT is never re-POSTed (work-set rule), and Meta/TikTok dedup
+by `event_id` server-side. Classification + safe batch recovery ships as
+`POST /tracking/admin/replay/bulk?limit=N` (admin-only, feature-gated):
+
+1. Scans the DEAD outbox queue **oldest-first**, bounded (default 200, hard cap
+   500 per pass — repeat the call for the full population).
+2. Loads each snapshot payload (falling back to the PII-stripped replay archive
+   after retention).
+3. Excludes rows with **no identity keys** (`em/ph/fn/ln/ct/st/zp/cn`) — the
+   2804050 family is intentionally unmatchable, and post-fix they would only
+   route to a terminal SKIPPED row. Replaying them buys nothing (quota + noise).
+4. Resets the rest DEAD -> PENDING through the existing `ReplayService.replay()`
+   — attemptCount reset, replay-nonce job id, single relay dispatch. Rows that
+   leave DEAD mid-pass are counted (`skippedNotDead`), never double-replayed.
+5. Returns `{ scanned, excludedNoIdentity, replayed, skippedNotDead }`.
+
+Execute as: `curl -X POST .../tracking/admin/replay/bulk?limit=500` repeated
+until `scanned` is small; verify Event Manager/DLQ depth (`dlq-depth-high`
+signal) drains and `excludedNoIdentity` dominates on the last pass.
+
 ## Ownership
 
 - Files touched: `tracking-time.ts`, `reconciler.service.ts`, `dispatcher.service.ts`,

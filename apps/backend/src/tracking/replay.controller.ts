@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ReplayService } from './replay.service';
+import { ReplayService, BulkReplayResult } from './replay.service';
 import { ReplayDeadOutboxDto } from './dto/replay.dto';
 
 /**
@@ -25,5 +25,12 @@ export class ReplayController {
   async replay(@Param('snapshotId') snapshotId: string): Promise<{ ok: true }> {
     await this.replayService.replay(snapshotId);
     return { ok: true };
+  }
+
+  @Roles('admin')
+  @Post('replay/bulk')
+  async replayBulk(@Query('limit') limit?: string): Promise<BulkReplayResult> {
+    const parsed = limit ? Number(limit) : 200;
+    return this.replayService.replayRecoverable(Number.isFinite(parsed) ? parsed : 200);
   }
 }

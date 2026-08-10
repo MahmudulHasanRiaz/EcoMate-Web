@@ -56,6 +56,23 @@ interface ArchivedVersions {
  * (`${outboxId}:replay:${attemptCount}`) so the re-dispatch is auditable and
  * never collides with the relay's `${outboxId}:${attemptCount}` job ids.
  */
+/**
+ * Result of a batch recovery pass over DEAD outbox rows.
+ */
+export interface BulkReplayResult {
+  /** DEAD rows scanned (bounded by limit). */
+  scanned: number;
+  /** Rows the recoverability check rejected — no identity keys, replay would only re-DEAD/SKIP. */
+  excludedNoIdentity: number;
+  /** Rows reset DEAD -> PENDING for the relay to re-dispatch. */
+  replayed: number;
+  /** Rows skipped because they left DEAD between scan and reset (concurrent activity). */
+  skippedNotDead: number;
+}
+
+/** Identity keys in a snapshot payload; any truthy value makes an event recoverable. */
+const IDENTITY_KEYS = ['email', 'phone', 'firstName', 'lastName', 'city', 'state', 'zip', 'country'];
+
 @Injectable()
 export class ReplayService {
   private readonly logger = new Logger(ReplayService.name);
@@ -89,8 +106,10 @@ export class ReplayService {
    * DEAD -> PENDING reset with a fresh attempt cycle + replay-nonce re-enqueue.
    * The archive is the preferred replay source (PII-stripped, survives retention);
    * the live snapshot is the fallback while it is still within retention.
+   * Returns true when the row was reset (replayed), false when skipped because
+   * the row was no longer DEAD — so batch recovery can count outcomes exactly.
    */
-  async replay(snapshotId: string): Promise<void> {
+  async replay(snapshotId: string): Promise<boolean> {
     const [archive, outbox] = await Promise.all([
       this.prisma.trackingReplayArchive.findUnique({ where: { snapshotId } }),
       this.prisma.trackingOutbox.findUnique({ where: { snapshotId } }),
@@ -107,7 +126,7 @@ export class ReplayService {
       this.logger.warn(
         `Replay skipped: outbox ${outbox.id} is ${outbox.status}, not DEAD`,
       );
-      return;
+      return false;
     }
 
     // Load the live snapshot too: it carries orderId/ctxId for the transition
@@ -161,6 +180,73 @@ export class ReplayService {
         message: 'replay',
       },
     });
+    return true;
+  }
+
+  /**
+   * Batch recovery of the DEAD population (2026-08-10 incident follow-up),
+   * oldest-first and bounded. Only rows whose payload carries at least one
+   * identity key are replayed: a no-identity row (the 2804050 family) is
+   * intentionally unmatchable — after the fix it routes to a terminal SKIPPED
+   * row, so replaying it buys nothing (wasted API quota + monitoring noise).
+   * Everything else re-dispatches through the existing per-row replay(), which
+   * is duplicate-safe: providers already SENT are never re-POSTed (terminal
+   * work-set rule) and Meta/TikTok dedup by event_id. Rows may leave DEAD
+   * between scan and reset; those are counted, never double-replayed
+   * (replay() re-checks status DEAD).
+   */
+  async replayRecoverable(limit = 200): Promise<BulkReplayResult> {
+    const safeLimit = Math.max(1, Math.min(limit, 500));
+    const outboxes = await this.prisma.trackingOutbox.findMany({
+      where: { status: 'DEAD' },
+      orderBy: { createdAt: 'asc' },
+      take: safeLimit,
+      select: { id: true, snapshotId: true },
+    });
+
+    const snapshotIds = outboxes.map((o) => o.snapshotId);
+    const [snapshots, archives] = await Promise.all([
+      this.prisma.trackingSnapshot.findMany({
+        where: { id: { in: snapshotIds } },
+        select: { id: true, payload: true },
+      }),
+      this.prisma.trackingReplayArchive.findMany({
+        where: { snapshotId: { in: snapshotIds } },
+        select: { snapshotId: true, archivedPayload: true },
+      }),
+    ]);
+    const payloadBySnapshot = new Map<string, unknown>();
+    for (const s of snapshots) payloadBySnapshot.set(s.id, s.payload as unknown);
+    for (const a of archives) payloadBySnapshot.set(a.snapshotId, a.archivedPayload as unknown);
+
+    const result: BulkReplayResult = { scanned: outboxes.length, excludedNoIdentity: 0, replayed: 0, skippedNotDead: 0 };
+    for (const outbox of outboxes) {
+      const payload = payloadBySnapshot.get(outbox.snapshotId) as
+        | { customer?: Record<string, unknown> | null }
+        | undefined;
+      const customer = payload?.customer;
+      const hasIdentity =
+        !!customer && IDENTITY_KEYS.some((k) => Boolean((customer as Record<string, unknown>)[k]));
+      if (!hasIdentity) {
+        result.excludedNoIdentity++;
+        continue;
+      }
+      try {
+        if (await this.replay(outbox.snapshotId)) {
+          result.replayed++;
+        } else {
+          result.skippedNotDead++;
+        }
+      } catch (err) {
+        if (err instanceof NotFoundException) {
+          // no outbox/snapshot/archive left — row moved or purged mid-pass
+          result.skippedNotDead++;
+        } else {
+          throw err;
+        }
+      }
+    }
+    return result;
   }
 
   /** Admin list of DEAD outbox rows, joined with snapshot eventId/eventType + archive versions. */
