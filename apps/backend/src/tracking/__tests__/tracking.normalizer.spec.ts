@@ -186,4 +186,48 @@ describe('TrackingNormalizer (design §4.5 — single hashing/normalization abst
       });
     });
   });
+
+  describe('resolveNameFields (P1 fix — canonical fn/ln resolution for adapters)', () => {
+    it('splits a full name stored in firstName when lastName is absent', () => {
+      expect(normalizer.resolveNameFields('Md Rahim Uddin')).toEqual({
+        firstName: 'Md Rahim',
+        lastName: 'Uddin',
+      });
+    });
+
+    it('keeps explicit firstName + lastName untouched', () => {
+      expect(normalizer.resolveNameFields('John', 'Doe')).toEqual({
+        firstName: 'John',
+        lastName: 'Doe',
+      });
+    });
+
+    it('treats a single token as firstName only', () => {
+      expect(normalizer.resolveNameFields('John')).toEqual({
+        firstName: 'John',
+        lastName: undefined,
+      });
+    });
+
+    it('passes lastName through when firstName is empty', () => {
+      expect(normalizer.resolveNameFields('', 'Doe')).toEqual({
+        firstName: undefined,
+        lastName: 'Doe',
+      });
+    });
+
+    it('never splits a two-field payload even if first name contains many words', () => {
+      expect(normalizer.resolveNameFields('John Michael Doe', 'Jr')).toEqual({
+        firstName: 'John Michael Doe',
+        lastName: 'Jr',
+      });
+    });
+
+    it('empty inputs → empty names', () => {
+      expect(normalizer.resolveNameFields()).toEqual({
+        firstName: undefined,
+        lastName: undefined,
+      });
+    });
+  });
 });

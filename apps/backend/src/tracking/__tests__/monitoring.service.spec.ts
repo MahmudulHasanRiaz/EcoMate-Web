@@ -351,14 +351,18 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         { status: 'DEAD', _count: 2 },
         { status: 'RETRY', _count: 5 },
       ]);
-      // getQualityRates' own dispatchEventCount reads: retry attempts, windowed, replay;
-      // then getEmqProxy adds: quality-flagged, windowed. getMirrorCapture adds outboxCount ×2.
+      // getQualityRates' own dispatchEventCount reads: retry attempts, windowed,
+      // replay, then getEmqProxy adds: quality-flagged, windowed; capture-dedup
+      // markers. getMirrorCapture adds outboxCount ×2. Then the capture-level
+      // dedup read + windowed snapshot count.
       dispatchEventCount
         .mockResolvedValueOnce(8)
         .mockResolvedValueOnce(120)
         .mockResolvedValueOnce(2)
         .mockResolvedValueOnce(30)
-        .mockResolvedValueOnce(120);
+        .mockResolvedValueOnce(120)
+        .mockResolvedValueOnce(10); // 'capture dedup' markers
+      snapshotCount.mockResolvedValueOnce(100); // capturedSnapshots
       outboxCount.mockResolvedValueOnce(60).mockResolvedValueOnce(120);
 
       const quality = await service.getQualityRates(hours);
@@ -370,7 +374,9 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         dead: 2,
         retried: 5,
         replayed: 2,
-        dedupRate: 0.2,
+        dedupedCaptures: 10,
+        capturedSnapshots: 100,
+        dedupRate: 10 / 110,
         retryRate: 8 / 120,
       });
       expect(quality.emq).toEqual({
@@ -400,6 +406,52 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         retryRate: 0,
       });
       expect(quality.emq.noEmPhShare).toBe(0);
+    });
+  });
+
+  describe('getIdentityCoverage (incident follow-up, 2026-08-10)', () => {
+    it('reports per-field coverage ratios over snapshot payloads and contexts', async () => {
+      snapshotCount
+        .mockResolvedValueOnce(80) // email
+        .mockResolvedValueOnce(10) // phone
+        .mockResolvedValueOnce(25) // firstName
+        .mockResolvedValueOnce(5) // lastName
+        .mockResolvedValueOnce(12) // city
+        .mockResolvedValueOnce(0) // state
+        .mockResolvedValueOnce(0) // zip
+        .mockResolvedValueOnce(12) // country
+        .mockResolvedValueOnce(100); // snapshot base
+      contextCount
+        .mockResolvedValueOnce(30) // ip
+        .mockResolvedValueOnce(28) // userAgent
+        .mockResolvedValueOnce(40); // context base
+
+      const rows = await service.getIdentityCoverage(hours);
+
+      expect(rows).toEqual([
+        { field: 'email', base: 'snapshot', count: 80, total: 100, coverage: 0.8 },
+        { field: 'phone', base: 'snapshot', count: 10, total: 100, coverage: 0.1 },
+        { field: 'firstName', base: 'snapshot', count: 25, total: 100, coverage: 0.25 },
+        { field: 'lastName', base: 'snapshot', count: 5, total: 100, coverage: 0.05 },
+        { field: 'city', base: 'snapshot', count: 12, total: 100, coverage: 0.12 },
+        { field: 'state', base: 'snapshot', count: 0, total: 100, coverage: 0 },
+        { field: 'zip', base: 'snapshot', count: 0, total: 100, coverage: 0 },
+        { field: 'country', base: 'snapshot', count: 12, total: 100, coverage: 0.12 },
+        { field: 'ip', base: 'context', count: 30, total: 40, coverage: 0.75 },
+        { field: 'userAgent', base: 'context', count: 28, total: 40, coverage: 0.7 },
+      ]);
+      expect(snapshotCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            payload: { path: ['customer', 'email'], not: Prisma.DbNull },
+          }),
+        }),
+      );
+    });
+
+    it('returns zero-filled rows when nothing was captured', async () => {
+      const rows = await service.getIdentityCoverage(hours);
+      expect(rows.every((r) => r.count === 0 && r.coverage === 0)).toBe(true);
     });
   });
 
@@ -495,6 +547,43 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       for (const code of ['dead-failure-spike', 'retry-rate-high', 'emq-match-gap']) {
         expect(violations.find((v) => v.code === code)?.severity).toBe('warning');
       }
+    });
+
+    it('flags the DLQ pile-up, mirror collapse, and low identity coverage (2026-08-10 signals)', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000),
+      });
+      // deep DLQ + dead outbox rows
+      (dlq.getStats as jest.Mock).mockResolvedValue({ deadCount: 9000, dlqDepth: 9000 });
+      // mirror: total 200, browser 50 → ratio 0.25 < 0.5.
+      // getWatchdog Fans out concurrently, so value mocks must be order-agnostic:
+      // inspect the where-clause instead of sequencing mockResolvedValueOnce.
+      outboxCount.mockImplementation((args: any) =>
+        args?.where?.configSnapshot?.path?.[0] === 'source' ? 50 : 200,
+      );
+      // identity coverage: email 20/200, ip 50/150 (context base 150)
+      snapshotCount.mockImplementation((args: any) => {
+        const path = args?.where?.payload?.path;
+        if (Array.isArray(path)) return path[1] === 'email' ? 20 : 0;
+        return 200; // snapshot base + capturedSnapshots
+      });
+      contextCount.mockImplementation((args: any) => {
+        if (args?.where?.ip) return 50;
+        if (args?.where?.userAgent) return 50;
+        return 150; // context base
+      });
+      dispatchEventCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchCount.mockResolvedValue(0);
+
+      const violations = await service.getWatchdog(hours);
+      const codes = violations.map((v) => v.code);
+      expect(codes).toEqual(
+        expect.arrayContaining(['dlq-depth-high', 'mirror-collapse', 'identity-coverage-low', 'context-coverage-low']),
+      );
+      expect(violations.filter((v) => v.code === 'dlq-depth-high').length).toBe(1);
     });
   });
 

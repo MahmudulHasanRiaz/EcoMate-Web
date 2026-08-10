@@ -198,6 +198,37 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(payload.properties.value).toBe(-2500);
     });
 
+    it('splits a full name stored in firstName (guest checkout) into fn/ln hashes', () => {
+      // Offline/guest orders store the FULL name in firstName (checkout-leads
+      // line ~483: firstName = order.customer.name). Assert the last word is
+      // hashed as last_name, the rest as first_name — never the whole name as
+      // first_name with an absent last_name.
+      const full = {
+        ...snapshot,
+        customer: {
+          ...snapshot.customer!,
+          firstName: 'Md Rahim Uddin',
+          lastName: '',
+        },
+      };
+      const payload = adapter.build(full, ctx, normalizer)!;
+      const user = payload.context.user as Record<string, unknown>;
+      expect(user.first_name).toBe(
+        normalizer.hashName('Md Rahim'),
+      );
+      expect(user.last_name).toBe(
+        normalizer.hashName('Uddin'),
+      );
+      expect(user.first_name).not.toBe(normalizer.hashName('Md Rahim Uddin'));
+    });
+
+    it('keeps explicit firstName + lastName untouched (two-field payloads never split)', () => {
+      const payload = adapter.build(snapshot, ctx, normalizer)!;
+      const user = payload.context.user as Record<string, unknown>;
+      expect(user.first_name).toBe(normalizer.hashName('John'));
+      expect(user.last_name).toBe(normalizer.hashName('Doe'));
+    });
+
     it('defaults to Purchase when value is present and eventType is absent', () => {
       const { eventType: _dropped, ...noType } = snapshot;
       const payload = adapter.build(
@@ -285,7 +316,11 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(body.pixel_code).toBe('PIXEL123');
       expect(body.event).toBe('CompletePayment');
       expect(body.event_id).toBe('purchase_ord-1001');
-      expect(body.timestamp).toBe(1722600000);
+      // P0 fix: v1.3 pixel/track requires ISO 8601 STRING timestamp — a JSON
+      // number is rejected with 40002 ("Invalid value for timestamp: not a
+      // valid string."), which DEAD'd 8559 outboxes.
+      expect(body.timestamp).toBe('2024-08-02T12:00:00.000Z');
+      expect(typeof body.timestamp).toBe('string');
       expect(body.context.page.url).toBe('https://ecomate.example/checkout');
       expect(body.context.user.email).toBe('abc123');
       expect(body.properties.value).toBe(2500);

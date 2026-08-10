@@ -27,6 +27,13 @@ export interface ProviderPayload {
    * (external_id/fbp/fbc/ip/ua) — Meta accepts such events with lower EMQ.
    */
   qualityFlags?: string[];
+  /**
+   * Set by build() when the payload MUST NOT be sent because the provider
+   * guarantees rejection (e.g. Meta 2804050 when user_data has no identity
+   * parameter at all). The dispatcher records a terminal SKIPPED dispatch row
+   * carrying this reason instead of POSTing a doomed request.
+   */
+  skipReason?: string;
   [key: string]: any;
 }
 

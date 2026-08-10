@@ -64,6 +64,10 @@ export function TrackingMonitoring() {
     queryKey: ['tracking-monitoring', 'quality'],
     queryFn: () => monitoringApi.quality(),
   })
+  const coverage = useQuery({
+    queryKey: ['tracking-monitoring', 'coverage'],
+    queryFn: () => monitoringApi.coverage(),
+  })
   const watchdog = useQuery({
     queryKey: ['tracking-monitoring', 'watchdog'],
     queryFn: () => monitoringApi.watchdog(),
@@ -330,6 +334,15 @@ export function TrackingMonitoring() {
               </p>
             </div>
             <div>
+              <p className='text-sm text-muted-foreground'>Deduped captures</p>
+              <p className='text-2xl font-bold'>
+                {quality.data?.quality.dedupedCaptures ?? 0}
+              </p>
+              <p className='text-xs text-muted-foreground'>
+                of {(quality.data?.quality.capturedSnapshots ?? 0)} captured
+              </p>
+            </div>
+            <div>
               <p className='text-sm text-muted-foreground'>Retry rate</p>
               <p
                 className={`text-2xl font-bold ${
@@ -372,6 +385,60 @@ export function TrackingMonitoring() {
               <p className='text-2xl font-bold'>{quality.data?.quality.windowedDispatches ?? 0}</p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Identity & context coverage (incident follow-up, 2026-08-10) */}
+      <Card>
+        <CardHeader className='pb-3'>
+          <CardTitle>Identity & Context Coverage</CardTitle>
+          <CardDescription>
+            Share of captures carrying each match/context field (payload paths +
+            context columns) — the server-side truth behind Meta EMQ coverage
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Field</TableHead>
+                <TableHead>Base</TableHead>
+                <TableHead>Count</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Coverage</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {coverage.data?.identityCoverage.map((row) => (
+                <TableRow key={`${row.base}-${row.field}`}>
+                  <TableCell className='font-medium'>{row.field}</TableCell>
+                  <TableCell>{row.base}</TableCell>
+                  <TableCell>{row.count}</TableCell>
+                  <TableCell>{row.total}</TableCell>
+                  <TableCell>
+                    <span
+                      className={
+                        row.coverage >= 0.75
+                          ? 'text-green-600'
+                          : row.coverage >= 0.25
+                            ? 'text-amber-600'
+                            : 'text-red-600'
+                      }
+                    >
+                      {(row.coverage * 100).toFixed(1)}%
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {(coverage.data?.identityCoverage ?? []).length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className='text-muted-foreground'>
+                    No captures in the window.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 

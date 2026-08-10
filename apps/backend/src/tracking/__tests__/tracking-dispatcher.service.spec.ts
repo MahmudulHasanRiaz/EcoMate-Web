@@ -385,6 +385,32 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     );
   });
 
+  it('turns a build() skipReason into a terminal SKIPPED row — never POSTs a guaranteed-reject payload (P1 fix)', async () => {
+    fakeMeta.build = () => ({
+      ...buildPayload('Purchase'),
+      skipReason: 'no identity for Meta user_data (rejected with 2804050)',
+    });
+
+    await service.process(job, 'job-1');
+
+    expect(metaSend).not.toHaveBeenCalled(); // doomed POST never happens
+    expect(dispatchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-meta' },
+        data: expect.objectContaining({
+          status: 'SKIPPED',
+          errorMsg: expect.stringContaining('2804050'),
+        }),
+      }),
+    );
+    // tiktok SENT + meta SKIPPED -> all terminal -> outbox SENT (not DEAD).
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'SENT' }),
+      }),
+    );
+  });
+
   it('maps the context view (externalId/ip/fbp/fbc/gaClientId/gclid/ttclid) for adapter build()', async () => {
     let capturedCtx: any;
     fakeMeta.build = (snapshot, ctx) => {

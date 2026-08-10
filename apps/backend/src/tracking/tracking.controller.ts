@@ -21,6 +21,10 @@ import { SaveContextDto } from './dto/save-context.dto';
 import { PageViewDto } from './dto/page-view.dto';
 import { PageViewBufferService } from './page-view-buffer.service';
 import { TrackingEventType } from './tracking.constants';
+import { synthesizeFbc } from './context-merge';
+
+/** Server-side hard opt-out: mirrors the storefront `ecomate_tracking_optout` cookie. */
+const OPTOUT_COOKIE = 'ecomate_tracking_optout';
 
 @Controller('tracking')
 export class TrackingController {
@@ -42,6 +46,13 @@ export class TrackingController {
     @Req() req: fastify.FastifyRequest,
   ) {
     try {
+      // Server-side opt-out guard (consent hardening): the storefront suppresses
+      // client-side sends, but a stale tab / injected fetch could still POST a
+      // mirror event. Honor the SAME opt-out cookie here — best-effort capture
+      // skip, never a failure to the caller.
+      const optedOut = req.cookies?.[OPTOUT_COOKIE] !== undefined;
+      if (optedOut) return { success: true };
+
       const eventType = this.mapEventType(body.eventName);
       // page_view is deliberately excluded from CAPI (Pixel/analytics only, design §5);
       // any other unmapped name is unknown/typo'd and skipped best-effort, but logged
@@ -95,11 +106,18 @@ export class TrackingController {
         );
       }
 
-      // Wave-2.2 (C3/C6): the mirror event is the first write of a fresh journey's
-      // rotating cookies (fbp/fbc), racing the async context beacon. Fold them into
-      // the context here so a capture without a prior /context still yields one.
+      // Wave-2.2 (C3/C6) + P1 fix: the mirror event is frequently the FIRST
+      // write of a fresh journey (racing the async context beacon) and the only
+      // place ip/ua/url/referrer/fbp/fbc reach the context when the beacon was
+      // lost. Fold context on EVERY mirror event with ctxId — previously only
+      // when fbp||fbc existed, so cookie-less early events kept a MISSING
+      // context → empty Meta user_data → 2804050 rejections. fbc is synthesized
+      // from the Meta click id (fbclid) when the _fbc cookie does not exist yet.
       // Best-effort: a context failure must never fail the event.
-      if (body.ctxId && (body.userData?.fbp || body.userData?.fbc)) {
+      if (body.ctxId) {
+        const fbc =
+          body.userData?.fbc ||
+          (body.userData?.fbclid ? synthesizeFbc(String(body.userData.fbclid)) : undefined);
         void this.trackingContext
           .upsertContext(
             body.ctxId,
@@ -107,9 +125,14 @@ export class TrackingController {
               identifiers: {
                 meta: {
                   fbp: body.userData?.fbp,
-                  fbc: body.userData?.fbc,
+                  ...(fbc ? { fbc } : {}),
                 },
               },
+              url: typeof body.userData?.url === 'string' ? body.userData.url : undefined,
+              referrer:
+                typeof body.userData?.referrer === 'string'
+                  ? body.userData.referrer
+                  : undefined,
             },
             req.ip,
             (req.headers['user-agent'] as string) || '',

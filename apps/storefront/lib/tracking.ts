@@ -299,8 +299,43 @@ function flushPendingMirrors() {
   }
 }
 
+/**
+ * First-party `_fbp`/`_fbc` seeding (P1 fix): the Meta pixel creates these
+ * cookies itself — but only AFTER fbevents.js loads (lazyOnload), so early
+ * events (ViewContent from a product page, AddToCart) would otherwise reach the
+ * mirror without them, and the context row without fbp/fbc. Create them here in
+ * Meta's exact documented formats when absent, gated by isTrackingAllowed():
+ *  - _fbp = fb.1.<unix ms>.<11-digit random>
+ *  - _fbc = fb.1.<unix s>.<fbclid> (from the URL param; passed as-is when the
+ *    param is already in fb.… format)
+ * Values are never lowercased or re-wrapped. The cookie is read at send time
+ * and included in the mirror userData + context identifiers.
+ */
+function ensureMetaCookies() {
+  if (typeof document === 'undefined') return;
+  if (!isTrackingAllowed()) return;
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+  const fbpAttrs = `path=/; max-age=${400 * 86400}; SameSite=Lax${secure}`;
+  const fbcAttrs = `path=/; max-age=${90 * 86400}; SameSite=Lax${secure}`;
+  if (!getCookie('_fbp')) {
+    const rand = String(Math.floor(Math.random() * 9e10) + 1e10);
+    document.cookie = `_fbp=fb.1.${Date.now()}.${rand}; ${fbpAttrs}`;
+  }
+  if (!getCookie('_fbc') && typeof location !== 'undefined') {
+    const fbclid = new URLSearchParams(location.search).get('fbclid');
+    if (fbclid) {
+      const value = fbclid.startsWith('fb.')
+        ? fbclid
+        : `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+      document.cookie = `_fbc=${encodeURIComponent(value)}; ${fbcAttrs}`;
+    }
+  }
+}
+
 if (typeof window !== 'undefined') {
   flushPendingMirrors();
+  // Flush the pending-mirror queue when connectivity returns (offline retry).
+  window.addEventListener('online', () => flushPendingMirrors());
 }
 
 export function getCookie(name: string): string {
@@ -382,6 +417,10 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       }
     }
   }
+
+  // First-party _fbp/_fbc seeding (P1 fix) BEFORE the mirror reads cookies —
+  // guarantees fbp/fbc exist for early events that race the Meta pixel load.
+  ensureMetaCookies();
 
   const fbp = getCookie('_fbp');
   const fbc = getCookie('_fbc');

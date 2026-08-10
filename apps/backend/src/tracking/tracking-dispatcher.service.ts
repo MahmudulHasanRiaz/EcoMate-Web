@@ -402,6 +402,26 @@ export class TrackingDispatcherService {
         return { status: 'SKIPPED' };
       }
 
+      // skipReason (P1 fix): the provider guarantees rejection (e.g. Meta
+      // 2804050 — empty user_data). Record a terminal SKIPPED row with the
+      // reason — observable in monitoring, never a doomed POST.
+      if (built.skipReason) {
+        await this.prisma.trackingDispatch.update({
+          where: { id: dispatch.id },
+          data: { status: 'SKIPPED', errorMsg: built.skipReason },
+        });
+        await this.appendDispatchEvent(
+          source,
+          provider,
+          queueJobId,
+          'SENDING',
+          'SKIPPED',
+          dispatch.attemptCount,
+          built.skipReason,
+        );
+        return { status: 'SKIPPED' };
+      }
+
       const cfg = await this.buildCfg(provider);
       const result = await adapter.send(built, cfg);
       const status = this.classify(result);

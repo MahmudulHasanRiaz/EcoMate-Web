@@ -129,6 +129,8 @@ export interface QualityRates {
   failed: number
   dead: number
   retried: number
+  dedupedCaptures: number
+  capturedSnapshots: number
   replayed: number
   dedupRate: number
   retryRate: number
@@ -138,6 +140,18 @@ export interface QualityRates {
 
 export interface QualityResponse {
   quality: QualityRates
+}
+
+export interface IdentityCoverageRow {
+  field: string
+  base: 'snapshot' | 'context'
+  count: number
+  total: number
+  coverage: number
+}
+
+export interface CoverageResponse {
+  identityCoverage: IdentityCoverageRow[]
 }
 
 export interface WatchdogViolation {
@@ -177,6 +191,8 @@ export const monitoringApi = {
     apiClient.get<{ emq: EmqProxy }>(`/tracking/admin/monitoring/emq?hours=${hours}`).then((r) => r.data),
   quality: (hours = 24) =>
     apiClient.get<QualityResponse>(`/tracking/admin/monitoring/quality?hours=${hours}`).then((r) => r.data),
+  coverage: (hours = 24) =>
+    apiClient.get<CoverageResponse>(`/tracking/admin/monitoring/coverage?hours=${hours}`).then((r) => r.data),
   watchdog: (hours = 24) =>
     apiClient.get<WatchdogResponse>(`/tracking/admin/monitoring/watchdog?hours=${hours}`).then((r) => r.data),
   healthScore: (hours = 24) =>

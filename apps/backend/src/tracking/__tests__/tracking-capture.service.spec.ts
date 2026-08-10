@@ -5,9 +5,11 @@ describe('TrackingCaptureService', () => {
   const snapshotCreateMany = jest.fn();
   const snapshotFindUnique = jest.fn();
   const outboxCreateMany = jest.fn();
+  const dispatchEventCreate = jest.fn();
   const tx = {
     trackingSnapshot: { createMany: snapshotCreateMany, findUnique: snapshotFindUnique },
     trackingOutbox: { createMany: outboxCreateMany },
+    trackingDispatchEvent: { create: dispatchEventCreate },
   };
   const transactionMock = jest.fn((cb) => cb(tx));
   const prisma = { $transaction: transactionMock } as any;
@@ -70,13 +72,29 @@ describe('TrackingCaptureService', () => {
     expect(outboxCall[0].data[0].nextAttemptAt).toBeInstanceOf(Date);
   });
 
-  it('returns DEDUPED for a repeat eventId without throwing or touching the outbox', async () => {
+  it('returns DEDUPED for a repeat eventId without touching the outbox', async () => {
     snapshotCreateMany.mockResolvedValue({ count: 0 });
+    snapshotFindUnique.mockResolvedValue({ id: 'snap-1' });
 
     const result = await service.capture(baseInput);
 
     expect(result).toEqual({ status: 'DEDUPED' });
-    expect(snapshotFindUnique).not.toHaveBeenCalled();
+    // The dedup marker (provider-null 'capture dedup' dispatch event) is the
+    // durable signal feeding the monitoring dedupRate — findUnique only used to
+    // resolve the required snapshotId FK.
+    expect(snapshotFindUnique).toHaveBeenCalledWith({
+      where: { eventId: 'evt-1' },
+      select: { id: true },
+    });
+    expect(dispatchEventCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        snapshotId: 'snap-1',
+        eventId: 'evt-1',
+        provider: null,
+        toStatus: 'DEDUPED',
+        message: 'capture dedup',
+      }),
+    });
     expect(outboxCreateMany).not.toHaveBeenCalled();
   });
 

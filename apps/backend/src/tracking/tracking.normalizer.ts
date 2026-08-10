@@ -114,6 +114,26 @@ export class TrackingNormalizer {
     };
   }
 
+  /**
+   * Resolve canonical fn/ln fields for a provider payload. When only a single
+   * full-name field is available (guest checkout / offline orders store the
+   * FULL name in `firstName`, e.g. "Md Rahim Uddin"), split it so last-name
+   * hashing reaches Meta/TikTok instead of the whole name being hashed as fn.
+   * An explicit lastName is trusted as-is — never split a two-field payload.
+   */
+  resolveNameFields(
+    firstName?: string,
+    lastName?: string,
+  ): { firstName?: string; lastName?: string } {
+    const fn = firstName?.trim();
+    const ln = lastName?.trim();
+    if (fn) {
+      if (ln) return { firstName: fn, lastName: ln };
+      return this.splitName(fn);
+    }
+    return { firstName: undefined, lastName: ln };
+  }
+
   /** Raw-normalized zip (unhashed): lowercase, de-dash/de-space, US first-5. */
   normalizeZip(zip: string): string {
     const clean = zip.toLowerCase().replace(/[\s-]/g, '');

@@ -209,6 +209,76 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(payload.custom_data.value).toBe(-2500);
     });
 
+    it('splits a full name stored in firstName (guest checkout) into fn/ln hashes (P1 fix)', () => {
+      const full = {
+        ...snapshot,
+        customer: {
+          ...snapshot.customer!,
+          firstName: 'Md Rahim Uddin',
+          lastName: '',
+        },
+      };
+      const payload = adapter.build(full, ctx, normalizer)!;
+      expect(payload.user_data.fn).toBe(normalizer.hashName('Md Rahim'));
+      expect(payload.user_data.ln).toBe(normalizer.hashName('Uddin'));
+      expect(payload.user_data.fn).not.toBe(normalizer.hashName('Md Rahim Uddin'));
+    });
+
+    it('never sends a user_data with NO identity — sets skipReason instead (P1 fix: 2804050)', () => {
+      const anonNoCtx: TrackingContextView = {};
+      const payload = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com', phone: '' } },
+        anonNoCtx,
+        normalizer,
+      )!;
+      expect(payload.skipReason).toBeTruthy();
+      expect(payload.skipReason).toContain('2804050');
+      expect(payload.qualityFlags).toContain('NO_IDENTITY');
+      // A build with skipReason must never be POSTed — the dispatcher turns it
+      // into a terminal SKIPPED dispatch row.
+      expect(payload.user_data.em).toBeUndefined();
+      expect(payload.user_data.fbp).toBeUndefined();
+      expect(payload.user_data.client_ip_address).toBeUndefined();
+    });
+
+    it('does NOT skip when any single identity key exists (other identity is enough for Meta to accept)', () => {
+      // external_id only
+      const extOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { externalId: 'CUST-42' },
+        normalizer,
+      )!;
+      expect(extOnly.skipReason).toBeUndefined();
+      expect(extOnly.qualityFlags).toEqual(['NO_EM_PH']);
+
+      // ip only
+      const ipOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { ip: '203.0.113.7' },
+        normalizer,
+      )!;
+      expect(ipOnly.skipReason).toBeUndefined();
+
+      // fbp only
+      const fbpOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { fbp: 'fb.1.999.123' },
+        normalizer,
+      )!;
+      expect(fbpOnly.skipReason).toBeUndefined();
+
+      // name-only user_data still counts as customer information
+      const nameOnly = adapter.build(
+        {
+          ...snapshot,
+          customer: { firstName: 'John', lastName: 'Doe' },
+        },
+        {},
+        normalizer,
+      )!;
+      expect(nameOnly.skipReason).toBeUndefined();
+    });
+
     it('defaults to Purchase when value is present and eventType is absent', () => {
       const { eventType: _dropped, ...noType } = snapshot;
       const payload = adapter.build(noType as TrackingSnapshotPayload, ctx, normalizer)!;

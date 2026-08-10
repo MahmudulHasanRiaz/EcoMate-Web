@@ -1,5 +1,6 @@
 import { TRACKING_EVENT_TYPES } from '../tracking.constants';
 import { TrackingNormalizer } from '../tracking.normalizer';
+import { resolveEventTimeSeconds } from '../tracking-time';
 import { sanitizeProviderText } from '../sanitize';
 import {
   TrackingContextView,
@@ -57,13 +58,19 @@ export class MetaAdapter implements TrackingProviderAdapter {
       isRefund && snapshot.value !== undefined ? -snapshot.value : snapshot.value;
 
     const customer = snapshot.customer;
+    // Canonical fn/ln resolution: guest/offline orders store the FULL name in
+    // firstName ("Md Rahim Uddin") — split so last-name hashing actually works.
+    const { firstName, lastName } = normalizer.resolveNameFields(
+      customer?.firstName,
+      customer?.lastName,
+    );
     const user_data = {
       em: customer?.email ? normalizer.hashEmail(customer.email) : undefined,
       ph: customer?.phone
         ? normalizer.hashPhone(customer.phone, customer.country)
         : undefined,
-      fn: customer?.firstName ? normalizer.hashName(customer.firstName) : undefined,
-      ln: customer?.lastName ? normalizer.hashName(customer.lastName) : undefined,
+      fn: firstName ? normalizer.hashName(firstName) : undefined,
+      ln: lastName ? normalizer.hashName(lastName) : undefined,
       ct: customer?.city ? normalizer.hashCity(customer.city) : undefined,
       cn: customer?.country ? normalizer.hashCountry(customer.country) : undefined,
       zp: customer?.zip ? normalizer.hashZip(customer.zip) : undefined,
@@ -92,7 +99,7 @@ export class MetaAdapter implements TrackingProviderAdapter {
 
     // Business event time (design §4.2) — snapshot.eventTime when captured;
     // fall back to dispatch time only when the snapshot carries none.
-    const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
+    const eventTime = resolveEventTimeSeconds(snapshot.eventTime);
 
     // EMQ DIAGNOSTICS ONLY (Wave-1, Decision C): Meta ACCEPTS an event with no
     // em/ph (lower match quality) as long as it carries other identity keys, and
@@ -108,6 +115,43 @@ export class MetaAdapter implements TrackingProviderAdapter {
         user_data.client_ip_address ||
         user_data.client_user_agent,
     );
+
+    // 2804050 guard (P1 fix, 2026-08-10): Meta REJECTS an event whose user_data
+    // has NO identity parameter at all — `code 100 / subcode 2804050` ("no
+    // customer information parameters") — the observed failure behind 45
+    // rejected dispatches (mirror events racing the context beacon, no ip/ua,
+    // no fbp/fbc, anonymous). Never ship a guaranteed-reject payload: surface a
+    // skipReason (dispatcher records a SKIPPED dispatch row with the reason —
+    // observable, auditable) instead of a doomed POST. The skipReason is
+    // explicit; build() still emits qualityFlags for lower-match-but-accepted
+    // payloads (any single key above is enough for Meta to accept the event).
+    const hasAnyIdentity =
+      hasContact ||
+      hasOtherIdentity ||
+      Boolean(
+        user_data.fn ||
+          user_data.ln ||
+          user_data.ct ||
+          user_data.st ||
+          user_data.zp ||
+          user_data.cn,
+      );
+    if (!hasAnyIdentity) {
+      return {
+        eventName,
+        eventId,
+        eventTime,
+        eventType,
+        action_source: 'website',
+        event_source_url: ctx.url,
+        user_data,
+        custom_data,
+        qualityFlags: ['NO_EM_PH', 'NO_IDENTITY'],
+        skipReason:
+          'no identity for Meta user_data (no em/ph/external_id/fbp/fbc/ip/ua — rejected by Meta with 2804050)',
+      };
+    }
+
     const qualityFlags: string[] | undefined = hasContact
       ? undefined
       : hasOtherIdentity

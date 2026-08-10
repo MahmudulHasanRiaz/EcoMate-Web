@@ -263,16 +263,94 @@ describe('TrackingController', () => {
       );
     });
 
-    it('skips the context merge when there is no ctxId or no rotating cookies', async () => {
+    it('folds context on EVERY mirror event with ctxId — even without cookies (P1 fix: 2804050)', async () => {
       trackingContext.upsertContext.mockClear();
       await controller.trackEvent(
-        { eventId: 'e-x', eventName: 'lead', ctxId: 'ctx-none' },
+        { eventId: 'e-cookieless', eventName: 'lead', ctxId: 'ctx-none' },
         req,
       );
+      expect(trackingContext.upsertContext).toHaveBeenCalledTimes(1);
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-none',
+        {
+          identifiers: { meta: { fbp: undefined } },
+          url: undefined,
+          referrer: undefined,
+        },
+        '203.0.113.7',
+        'storefront-ua',
+      );
+    });
+
+    it('skips the context merge only when there is no ctxId', async () => {
+      trackingContext.upsertContext.mockClear();
       await controller.trackEvent(
         { eventId: 'e-y', eventName: 'lead' },
         req,
       );
+      expect(trackingContext.upsertContext).not.toHaveBeenCalled();
+    });
+
+    it('synthesizes fbc from fbclid when the _fbc cookie is absent (P1 fix)', async () => {
+      trackingContext.upsertContext.mockClear();
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-10T12:00:00Z'));
+      await controller.trackEvent(
+        {
+          eventId: 'e-fbclid',
+          eventName: 'lead',
+          ctxId: 'ctx-clid',
+          userData: { fbclid: 'AeBNw3Q8hVKzX2yU' },
+        },
+        req,
+      );
+      const nowSec = Math.floor(new Date('2026-08-10T12:00:00Z').getTime() / 1000);
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-clid',
+        expect.objectContaining({
+          identifiers: {
+            meta: { fbp: undefined, fbc: `fb.1.${nowSec}.AeBNw3Q8hVKzX2yU` },
+          },
+        }),
+        '203.0.113.7',
+        'storefront-ua',
+      );
+      jest.useRealTimers();
+    });
+
+    it('folds url/referrer from the mirror userData into the context', async () => {
+      trackingContext.upsertContext.mockClear();
+      await controller.trackEvent(
+        {
+          eventId: 'e-url',
+          eventName: 'lead',
+          ctxId: 'ctx-url',
+          userData: {
+            url: 'https://ecomate.example/p/1',
+            referrer: 'https://facebook.com/',
+          },
+        },
+        req,
+      );
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-url',
+        {
+          identifiers: { meta: { fbp: undefined } },
+          url: 'https://ecomate.example/p/1',
+          referrer: 'https://facebook.com/',
+        },
+        '203.0.113.7',
+        'storefront-ua',
+      );
+    });
+
+    it('skips capture when the opt-out cookie is present (server-side guard)', async () => {
+      trackingCapture.capture.mockClear();
+      trackingContext.upsertContext.mockClear();
+      await controller.trackEvent(
+        { eventId: 'e-optout', eventName: 'purchase', ctxId: 'ctx-out' },
+        { ...req, cookies: { ecomate_tracking_optout: '1' } } as never,
+      );
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
       expect(trackingContext.upsertContext).not.toHaveBeenCalled();
     });
   });

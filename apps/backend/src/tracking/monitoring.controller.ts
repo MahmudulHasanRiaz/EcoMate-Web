@@ -152,6 +152,19 @@ export class MonitoringController {
   }
 
   /**
+   * Identity/context field coverage over the window (2026-08-10 incident
+   * follow-up): share of captures carrying em/ph/fn/ln/ct/st/zp/country (JSON
+   * payload paths) and ip/userAgent (context columns). Server-side truth for
+   * the Meta-side coverage survey.
+   */
+  @Get('coverage')
+  async coverage(@Query('hours') hours?: string) {
+    return {
+      identityCoverage: await this.monitoring.getIdentityCoverage(this.hoursParam(hours)),
+    };
+  }
+
+  /**
    * Full lifecycle of one event: the TrackingDispatchEvent rows (capture -> relay
    * -> each provider attempt -> terminal, ascending) plus the snapshot eventType
    * and the current outbox status for context.

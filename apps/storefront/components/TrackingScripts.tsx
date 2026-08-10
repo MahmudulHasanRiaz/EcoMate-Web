@@ -95,6 +95,13 @@ export default function TrackingScripts() {
     setPixelIds(metaId, tiktokCode);
     setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
     syncContext(); // begin tracking-context capture on mount (ctxId + identifiers + url + referrer)
+    // P1 fix: re-sync shortly after load so _fbp/_fbc created by fbevents.js
+    // (lazyOnload) reach the context row — the mount-time sync races the pixel
+    // script and would otherwise miss the cookies (empty fbp/fbc coverage).
+    const resync = setTimeout(() => {
+      syncContext();
+    }, 3000);
+    return () => clearTimeout(resync);
   }, [metaId, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
 
   // Wave-2.1 — resolve the shopper's stable external_id for the Pixel. Endpoint

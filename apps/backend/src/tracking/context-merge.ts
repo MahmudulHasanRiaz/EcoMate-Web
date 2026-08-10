@@ -23,6 +23,19 @@ export interface ContextMerged {
 /** Cookie-based identifiers rotate across sessions: replace-when-newer, never clear. */
 const ROTATING = new Set(['fbp', 'fbc', 'gclid', 'ttclid', '_ga', 'gaClientId', 'fbclid', '_ttp']);
 
+/**
+ * Synthesize a Meta `fbc` cookie value from a `fbclid` URL parameter (Meta's
+ * documented format: `fb.1.<createdAt unix seconds>.<fbclid>`). A fbclid that
+ * is already in `fb.…` format (Meta sometimes passes the full cookie value) is
+ * passed through verbatim — never double-wrapped, never lowercased.
+ */
+export function synthesizeFbc(fbclid: string, nowSec = Math.floor(Date.now() / 1000)): string {
+  const value = fbclid.trim();
+  if (!value) return '';
+  if (value.startsWith('fb.')) return value;
+  return `fb.1.${nowSec}.${value}`;
+}
+
 export function mergeContext(
   existing: ContextMerged | null,
   incoming: ContextInput,

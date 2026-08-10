@@ -94,6 +94,27 @@ export interface MirrorCaptureStats {
   browserMirrorRatio: number;
 }
 
+/** Identity/context coverage over the window (2026-08-10 incident follow-up). */
+export interface IdentityCoverageRow {
+  /** Which canonical field this row measures. */
+  field: string;
+  /** Windowed base population the coverage is measured against. */
+  base: 'snapshot' | 'context';
+  /** Records in the window that carry the field. */
+  count: number;
+  /** Records in the window (denominator). */
+  total: number;
+  /** count / total — the share of captures carrying the field. */
+  coverage: number;
+}
+
+/** Coverage thresholds — leave room for guest-heavy stores; avoid false alarms. */
+const COVERAGE_MIN_VOLUME = 100;
+const EMAIL_COVERAGE_MIN = 0.25;
+const CONTEXT_COVERAGE_MIN = 0.75;
+/** DLQ queue depth beyond which ops should clear/requeue dead events. */
+const DLQ_DEPTH_MAX = 500;
+
 /**
  * Schema-less EMQ quality proxy (Wave-2.4 MON-2). Counts `TrackingDispatchEvent`
  * rows whose `message` begins with the dispatcher's `match-key quality:` prefix
@@ -116,9 +137,22 @@ export interface QualityRates {
   failed: number;
   dead: number;
   retried: number;
+  /**
+   * Capture-level duplicate attempts in the window (TrackingDispatchEvent rows
+   * with message 'capture dedup' — produced by TrackingCaptureService when the
+   * snapshot's eventId UNIQUE skipped a re-capture). This is what dedupeRate
+   * measures: dispatch rows never reach DEDUPED because capture-time
+   * skipDuplicates is the actual dedup.
+   */
+  dedupedCaptures: number;
+  /** Snapshots created in the window (denominator for capture-level dedup). */
+  capturedSnapshots: number;
   /** Dispatch events in the window whose message is the replay marker. */
   replayed: number;
-  /** deduped / (sent + deduped) — event-id dedup share among accepted dispatches. */
+  /**
+   * Capture-level dedup share — dedupedCaptures / (capturedSnapshots +
+   * dedupedCaptures). 0 = every attempted capture was unique.
+   */
   dedupRate: number;
   /** retry attempts / provider dispatch attempts — per-attempt retry intensity. */
   retryRate: number;
@@ -492,6 +526,16 @@ export class MonitoringService {
         this.getEmqProxy(hours),
         this.getMirrorCapture(hours),
       ]);
+    // Capture-level dedup + snapshot volume (Wave-2.4 MON-3 fix): duplicate
+    // attempts are skipped at capture (eventId UNIQUE), never at dispatch — the
+    // previous dedupRate read dispatch DEDUPED rows, which by construction stay
+    // at zero (dedup rate always 0.0% regardless of real duplicate volume).
+    const [dedupedCaptures, capturedSnapshots] = await Promise.all([
+      this.prisma.trackingDispatchEvent.count({
+        where: { createdAt: { gte: cutoff }, message: 'capture dedup' },
+      }),
+      this.prisma.trackingSnapshot.count({ where: { createdAt: { gte: cutoff } } }),
+    ]);
     const counts: Partial<Record<DispatchStatus, number>> = {};
     for (const row of rows) counts[row.status as DispatchStatus] = row._count;
     const sent = counts.SENT ?? 0;
@@ -499,6 +543,7 @@ export class MonitoringService {
     const failed = counts.FAILED ?? 0;
     const dead = counts.DEAD ?? 0;
     const retried = counts.RETRY ?? 0;
+    const dedupTotal = capturedSnapshots + dedupedCaptures;
     return {
       windowedDispatches,
       sent,
@@ -506,12 +551,116 @@ export class MonitoringService {
       failed,
       dead,
       retried,
+      dedupedCaptures,
+      capturedSnapshots,
       replayed,
-      dedupRate: sent + deduped > 0 ? deduped / (sent + deduped) : 0,
+      dedupRate: dedupTotal > 0 ? dedupedCaptures / dedupTotal : 0,
       retryRate: windowedDispatches > 0 ? retriedAttempts / windowedDispatches : 0,
       emq,
       mirror,
     };
+  }
+
+  /**
+   * Identity/context field coverage over the window (2026-08-10 incident
+   * follow-up). Counts, per canonical field, the share of windowed captures
+   * carrying it: contact/geo fields are snapshot `payload.customer.*` JSON
+   * paths; ip/userAgent are TrackingContext columns; externalId coverage is
+   * 100% by construction (server-generated per journey). This mirrors the
+   * Meta-side coverage survey (IP/UA/fbp/fbc 55.56%, City 33.33%…) with
+   * server-side truth — the providers' dataset-quality view stays out-of-band.
+   */
+  async getIdentityCoverage(hours: number): Promise<IdentityCoverageRow[]> {
+    const cutoff = this.cutoff(hours);
+    const snapshotBase = {
+      createdAt: { gte: cutoff },
+    } as const;
+    const [em, ph, fn, ln, ct, st, zp, cn, ip, ua, base] = await Promise.all([
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'email'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'phone'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'firstName'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'lastName'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'city'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'state'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'zip'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingSnapshot.count({
+        where: {
+          ...snapshotBase,
+          payload: { path: ['customer', 'country'], not: Prisma.DbNull },
+        },
+      }),
+      this.prisma.trackingContext.count({
+        where: { createdAt: { gte: cutoff }, ip: { not: '' } },
+      }),
+      this.prisma.trackingContext.count({
+        where: { createdAt: { gte: cutoff }, userAgent: { not: '' } },
+      }),
+      this.prisma.trackingSnapshot.count({ where: snapshotBase }),
+    ]);
+    const rows: IdentityCoverageRow[] = [];
+    const push = (
+      field: string,
+      baseOf: 'snapshot' | 'context',
+      count: number,
+      total: number,
+    ) => {
+      rows.push({
+        field,
+        base: baseOf,
+        count,
+        total,
+        coverage: total > 0 ? count / total : 0,
+      });
+    };
+    push('email', 'snapshot', em, base);
+    push('phone', 'snapshot', ph, base);
+    push('firstName', 'snapshot', fn, base);
+    push('lastName', 'snapshot', ln, base);
+    push('city', 'snapshot', ct, base);
+    push('state', 'snapshot', st, base);
+    push('zip', 'snapshot', zp, base);
+    push('country', 'snapshot', cn, base);
+    const ctxBase = await this.prisma.trackingContext.count({
+      where: { createdAt: { gte: cutoff } },
+    });
+    push('ip', 'context', ip, ctxBase);
+    push('userAgent', 'context', ua, ctxBase);
+    return rows;
   }
 
   /**
@@ -522,9 +671,11 @@ export class MonitoringService {
    * `warning` = elevated but self-healing, `critical` = pipeline at risk.
    */
   async getWatchdog(hours: number): Promise<WatchdogViolation[]> {
-    const [health, quality] = await Promise.all([
+    const [health, quality, dead, coverage] = await Promise.all([
       this.getRuntimeHealth(),
       this.getQualityRates(hours),
+      this.getDeadStats(),
+      this.getIdentityCoverage(hours),
     ]);
     const { relay, redis, queue, dispatcher } = health;
     const violations: WatchdogViolation[] = [];
@@ -601,6 +752,53 @@ export class MonitoringService {
       });
     }
 
+    // 2026-08-10 incident follow-up watchdog signals. The 8559-event DLQ pile-up
+    // was silent for weeks because no signal watched the DLQ queue depth or
+    // capture identity coverage — both added here.
+    if (dead.dlqDepth > DLQ_DEPTH_MAX) {
+      violations.push({
+        severity: 'warning',
+        code: 'dlq-depth-high',
+        message: `DLQ queue holds ${dead.dlqDepth} dead events (${dead.deadCount} DEAD outbox rows) — investigate the top failure signature; recent dead events can be replayed from the DEAD list.`,
+      });
+    }
+    if (
+      quality.mirror.totalSnapshots > 20 &&
+      quality.mirror.browserMirrorRatio < 0.5
+    ) {
+      violations.push({
+        severity: 'warning',
+        code: 'mirror-collapse',
+        message: `Only ${(quality.mirror.browserMirrorRatio * 100).toFixed(0)}% of captured events arrived via the browser mirror (${quality.mirror.totalSnapshots} total) — server-side captures dominate or the mirror is failing; check the storefront mirror POST.`,
+      });
+    }
+    const emRow = coverage.find((r) => r.field === 'email');
+    if (
+      emRow &&
+      emRow.total >= COVERAGE_MIN_VOLUME &&
+      emRow.coverage < EMAIL_COVERAGE_MIN
+    ) {
+      violations.push({
+        severity: 'warning',
+        code: 'identity-coverage-low',
+        message: `Email coverage is ${(emRow.coverage * 100).toFixed(0)}% of ${emRow.total} captures — Meta matching depends on em/ph; review advanced-matching enablement and identity collection.`,
+      });
+    }
+    const ctxRows = coverage.filter((r) => r.base === 'context');
+    const ctxTotal = ctxRows[0]?.total ?? 0;
+    const ipRow = ctxRows.find((r) => r.field === 'ip');
+    if (
+      ipRow &&
+      ctxTotal >= COVERAGE_MIN_VOLUME &&
+      ipRow.coverage < CONTEXT_COVERAGE_MIN
+    ) {
+      violations.push({
+        severity: 'warning',
+        code: 'context-coverage-low',
+        message: `IP coverage is ${(ipRow.coverage * 100).toFixed(0)}% of ${ctxTotal} contexts — context rows missing ip/ua degrade Meta user_data (2804050 risk); verify the context beacon and mirror fold-in.`,
+      });
+    }
+
     return violations;
   }
 
@@ -648,6 +846,18 @@ export class MonitoringService {
           penalize(v.code, 10, v.message);
           break;
         case 'emq-match-gap':
+          penalize(v.code, 10, v.message);
+          break;
+        case 'dlq-depth-high':
+          penalize(v.code, 10, v.message);
+          break;
+        case 'mirror-collapse':
+          penalize(v.code, 10, v.message);
+          break;
+        case 'identity-coverage-low':
+          penalize(v.code, 10, v.message);
+          break;
+        case 'context-coverage-low':
           penalize(v.code, 10, v.message);
           break;
         default:

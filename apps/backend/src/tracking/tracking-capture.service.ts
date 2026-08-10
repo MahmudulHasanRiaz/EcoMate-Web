@@ -68,6 +68,34 @@ export class TrackingCaptureService {
 
       // count 0 => the snapshot already exists for this eventId; nothing new to enqueue.
       if (count === 0) {
+        // Wave-2.4 MON-3 fix: the dedupRate metric needs a durable signal for
+        // CAPTURE-level duplicate attempts (dispatch rows literally never reach
+        // DEDUPED — skipDuplicates is the dedup). Mark the duplicate with a
+        // provider-null TrackingDispatchEvent so monitoring can count it
+        // (message: 'capture dedup') and derive a truthful dedup rate. The
+        // existing snapshot is looked up for the required snapshotId FK; a
+        // failed lookup (row already purged) skips the marker silently.
+        try {
+          const existing = await client.trackingSnapshot.findUnique({
+            where: { eventId: input.eventId },
+            select: { id: true },
+          });
+          if (existing) {
+            await client.trackingDispatchEvent.create({
+              data: {
+                snapshotId: existing.id,
+                eventId: input.eventId,
+                orderId: input.orderId,
+                ctxId: input.ctxId,
+                provider: null,
+                toStatus: 'DEDUPED',
+                message: 'capture dedup',
+              },
+            });
+          }
+        } catch {
+          // best-effort marker — the return contract (DEDUPED) must never throw
+        }
         return { status: 'DEDUPED' };
       }
 

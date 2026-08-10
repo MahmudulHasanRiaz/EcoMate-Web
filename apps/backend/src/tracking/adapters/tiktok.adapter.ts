@@ -10,6 +10,7 @@ import {
   ProviderPayload,
   TrackingProviderAdapter,
 } from './tracking-provider.adapter';
+import { toTikTokTimestamp, resolveEventTimeSeconds } from '../tracking-time';
 
 const TIKTOK_TRACK_API_URL = 'https://business-api.tiktok.com/open_api';
 const REQUEST_TIMEOUT_MS = 1500;
@@ -74,6 +75,12 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       isRefund && snapshot.value !== undefined ? -snapshot.value : snapshot.value;
 
     const customer = snapshot.customer;
+    // Canonical fn/ln resolution: guest/offline orders store the FULL name in
+    // firstName ("Md Rahim Uddin") — split so last_name hashing actually works.
+    const { firstName, lastName } = normalizer.resolveNameFields(
+      customer?.firstName,
+      customer?.lastName,
+    );
     const user: Record<string, unknown> = {
       email: customer?.email ? normalizer.hashEmail(customer.email) : undefined,
       phone_number: customer?.phone
@@ -82,12 +89,8 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       external_id: ctx.externalId
         ? normalizer.hashExternalId(ctx.externalId)
         : undefined,
-      first_name: customer?.firstName
-        ? normalizer.hashName(customer.firstName)
-        : undefined,
-      last_name: customer?.lastName
-        ? normalizer.hashName(customer.lastName)
-        : undefined,
+      first_name: firstName ? normalizer.hashName(firstName) : undefined,
+      last_name: lastName ? normalizer.hashName(lastName) : undefined,
       city: customer?.city ? normalizer.hashCity(customer.city) : undefined,
       state: customer?.state ? normalizer.hashState(customer.state) : undefined,
       zip: customer?.zip ? normalizer.hashZip(customer.zip) : undefined,
@@ -110,7 +113,7 @@ export class TikTokAdapter implements TrackingProviderAdapter {
 
     // Business event time (design §4.2) — snapshot.eventTime when captured;
     // fall back to dispatch time only when the snapshot carries none.
-    const eventTime = snapshot.eventTime ?? Math.floor(Date.now() / 1000);
+    const eventTime = resolveEventTimeSeconds(snapshot.eventTime);
 
     return {
       eventName,
@@ -141,11 +144,15 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       };
     }
 
+    // P0 FIX (2026-08-10): TikTok v1.3 pixel/track requires `timestamp` as an
+    // ISO 8601 STRING — a JSON number is rejected with `40002 Invalid value for
+    // timestamp: not a valid string.` (previously the whole Dispatch went FAILED
+    // → outbox DEAD → DLQ: 8559 events). Serialize through the canonical helper.
     const body: Record<string, unknown> = {
       pixel_code: pixelCode,
       event: payload.eventName,
       event_id: payload.eventId,
-      timestamp: payload.eventTime,
+      timestamp: toTikTokTimestamp(payload.eventTime),
       context: payload.context,
       properties: payload.properties,
       ...(testEventCode ? { test_event_code: testEventCode } : {}),
