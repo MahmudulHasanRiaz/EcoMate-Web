@@ -14,6 +14,7 @@ import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadge } from '@/features/orders/order-source-badge'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
+import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -1088,7 +1089,7 @@ function OrderDetailPage() {
                     setOrderItems([...orderItems, {
                       productId: selectedProductForVariants.id,
                       variantId: v.id,
-                      product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` },
+                      product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${variantLabel(v)})` },
                       quantity: 1,
                       price: v.salePrice ?? v.price ?? selectedProductForVariants.salePrice ?? selectedProductForVariants.basePrice ?? 0,
                     }])
@@ -1096,13 +1097,13 @@ function OrderDetailPage() {
                     setProductSearchQuery('')
                   }}>
                     <div className='flex items-center gap-2'>
-                      {v.image ? (
-                        <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
+                      {variantThumbUrl(v, selectedProductForVariants) ? (
+                        <SafeImage src={mediaUrl(variantThumbUrl(v, selectedProductForVariants)!)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
                       ) : (
                         <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
                       )}
                       <div>
-                        <p className='text-sm font-medium'>{v.name || 'Default Variant'}</p>
+                        <p className='text-sm font-medium'>{variantLabel(v)}</p>
                         <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
                       </div>
                     </div>

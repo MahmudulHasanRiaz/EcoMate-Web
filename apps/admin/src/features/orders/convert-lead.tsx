@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/features/orders/api'
 import { apiClient } from '@/lib/api-client'
+import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -448,13 +449,13 @@ export function ConvertLead({ id }: { id: string }) {
             <div className='space-y-2 max-h-60 overflow-y-auto'>
               {selectedProductForVariants?.variants?.map((v: any) => (
                 <div key={v.id} className='flex items-center justify-between p-2 border rounded-md hover:bg-muted cursor-pointer' onClick={() => {
-                  setOrderItems([...orderItems, { productId: selectedProductForVariants.id, variantId: v.id, product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${v.name || v.sku})` }, quantity: 1,                     price: v.salePrice ?? v.price ?? selectedProductForVariants.salePrice ?? selectedProductForVariants.basePrice ?? 0  }])
+                  setOrderItems([...orderItems, { productId: selectedProductForVariants.id, variantId: v.id, product: { ...selectedProductForVariants, name: `${selectedProductForVariants.name} (${variantLabel(v)})` }, quantity: 1,                     price: v.salePrice ?? v.price ?? selectedProductForVariants.salePrice ?? selectedProductForVariants.basePrice ?? 0  }])
                   setSelectedProductForVariants(null)
                   setProductSearchQuery('')
                 }}>
                   <div className='flex items-center gap-2'>
-                    {v.image ? <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>}
-                    <div><p className='text-sm font-medium'>{v.name || 'Default Variant'}</p><p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p></div>
+                    {variantThumbUrl(v, selectedProductForVariants) ? <SafeImage src={mediaUrl(variantThumbUrl(v, selectedProductForVariants)!)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} /> : <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>}
+                    <div><p className='text-sm font-medium'>{variantLabel(v)}</p><p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p></div>
                   </div>
                   <div className='text-sm font-medium'>৳{fmt(v.salePrice ?? v.price ?? ep(selectedProductForVariants))}</div>
                 </div>

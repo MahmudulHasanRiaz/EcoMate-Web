@@ -11,6 +11,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { normalizePhone } from '@/lib/phone-utils'
+import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -795,17 +796,17 @@ export function CreateOrder() {
                   onClick={() => {
                     addToCart(selectedProductForVariants, v)
                     setSelectedProductForVariants(null)
-                    toast.success(`${selectedProductForVariants.name} (${v.name || v.sku}) added to cart`)
+                    toast.success(`${selectedProductForVariants.name} (${variantLabel(v)}) added to cart`)
                   }}
                 >
                   <div className='flex items-center gap-2'>
-                    {v.image ? (
-                      <SafeImage src={mediaUrl(v.image)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
+                    {variantThumbUrl(v, selectedProductForVariants) ? (
+                      <SafeImage src={mediaUrl(variantThumbUrl(v, selectedProductForVariants)!)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
                     ) : (
                       <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
                     )}
                     <div>
-                      <p className='text-sm font-medium'>{v.name || 'Default Variant'}</p>
+                      <p className='text-sm font-medium'>{variantLabel(v)}</p>
                       <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
                     </div>
                   </div>
