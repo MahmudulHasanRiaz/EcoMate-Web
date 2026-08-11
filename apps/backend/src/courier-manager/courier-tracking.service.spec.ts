@@ -123,6 +123,47 @@ describe('CourierTrackingService.getDispatchTracking', () => {
     expect(prisma.courierReportCache.upsert.mock.calls[0][0].update.courierStatus).toBe('delivered');
   });
 
+  it('uses the current Packzy status_by_cid endpoint (legacy /status_by_consignment now 404s)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        delivery_status: 'partial_delivered',
+      }),
+    });
+
+    const result = await service.getDispatchTracking(
+      'steadfast',
+      '01700000000',
+      '282205529',
+      null,
+      { force: true },
+    );
+
+    const calledUrl = String((global.fetch as jest.Mock).mock.calls[0][0]);
+    expect(calledUrl).toContain('/status_by_cid/282205529');
+    expect(calledUrl).not.toContain('/status_by_consignment/');
+    expect(result?.currentStatus).toBe('partial');
+  });
+
+  it('parses the consignment-wrapped response shape', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        consignment: { status: 'delivered_customer' },
+      }),
+    });
+
+    const result = await service.getDispatchTracking(
+      'steadfast',
+      '01700000000',
+      'CG-1',
+      null,
+      { force: true },
+    );
+
+    expect(result?.currentStatus).toBe('delivered');
+  });
+
   it('falls back to stale DB data when the courier API fails during a force fetch', async () => {
     const staleResult = {
       courier: 'steadfast',

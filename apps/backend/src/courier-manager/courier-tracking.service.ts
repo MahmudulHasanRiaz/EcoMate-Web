@@ -387,8 +387,10 @@ export class CourierTrackingService {
       hold: 'hold',
     };
 
+    // NOTE: Packzy (Steadfast) renamed the status endpoint — the legacy
+    // /status_by_consignment/{id} returns 404. Current: /status_by_cid/{id}.
     const data = await this.jsonFetch(
-      `${base}/status_by_consignment/${consignmentId}`,
+      `${base}/status_by_cid/${consignmentId}`,
       {
         headers: {
           'Api-Key': apiKey,
@@ -399,8 +401,16 @@ export class CourierTrackingService {
     );
 
     const events: TrackingEvent[] = [];
-    const trackingData = data?.['data'] || data;
-    const rawStatus = String(trackingData?.['delivery_status'] || trackingData?.['status'] || '');
+    // Defensive parse across known response shapes:
+    // legacy { data: { delivery_status, tracking_history } },
+    // new { delivery_status } and { consignment: { status } }.
+    const trackingData =
+      data?.['consignment'] || data?.['data'] || data;
+    const rawStatus = String(
+      trackingData?.['delivery_status'] ||
+        trackingData?.['status'] ||
+        '',
+    );
     const currentStatus = STEADFAST_STATUS_MAP[rawStatus] || rawStatus;
 
     if (trackingData?.['tracking_history']) {
