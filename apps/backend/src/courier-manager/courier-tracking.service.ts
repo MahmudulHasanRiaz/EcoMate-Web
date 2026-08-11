@@ -69,7 +69,7 @@ export class CourierTrackingService {
 
     const trackers = await Promise.all(
       order.dispatches.map((d) =>
-        this.getCourierTracking(
+        this.getDispatchTracking(
           d.courier as string,
           phone,
           d.consignmentId,
@@ -94,43 +94,58 @@ export class CourierTrackingService {
     return digits.slice(-11);
   }
 
-  private async getCourierTracking(
+  /**
+   * Fetch the current courier status for a single dispatch/consignment.
+   *
+   * With `force: false` (default) the existing cache-first pipeline applies
+   * (Redis → DB cache → courier API, with stale fallback and background
+   * refresh). With `force: true` the volatile caches are skipped so the
+   * courier API is queried for the latest state and the result is persisted
+   * back into both caches — used by the admin "Sync Status from Courier"
+   * bulk action so a missed/delayed webhook can be reconciled manually.
+   * Error handling, stale fallback and the Pathao token cache still apply,
+   * following the existing rate-limit/error architecture.
+   */
+  async getDispatchTracking(
     courier: string,
     phone: string,
     consignmentId: string,
     trackingCode?: string | null,
+    options: { force?: boolean } = {},
   ): Promise<CourierTrackingResult | null> {
     if (!consignmentId) return null;
 
     const redisKey = `courier-track:${courier}:${consignmentId}`;
     const dbKey = `${courier}:${phone}`;
 
-    // 1. Redis / in-memory cache (fast path)
-    const fresh = await this.cache.get<CourierTrackingResult>(redisKey);
-    if (fresh) return { ...fresh, phone };
+    if (!options.force) {
+      // 1. Redis / in-memory cache (fast path)
+      const fresh = await this.cache.get<CourierTrackingResult>(redisKey);
+      if (fresh) return { ...fresh, phone };
 
-    // 2. DB cache hit
-    const dbRow = await this.prisma.courierReportCache.findUnique({
-      where: { courier_phone: { courier, phone } },
-    });
+      // 2. DB cache hit
+      const dbRow = await this.prisma.courierReportCache.findUnique({
+        where: { courier_phone: { courier, phone } },
+      });
 
-    if (dbRow) {
-      const dbResult = dbRow.report as unknown as CourierTrackingResult;
-      const isExpired = dbRow.expiresAt <= new Date();
+      if (dbRow) {
+        const dbResult = dbRow.report as unknown as CourierTrackingResult;
+        const isExpired = dbRow.expiresAt <= new Date();
 
-      if (!isExpired) {
-        // Fresh DB data — populate Redis for next fast hit
-        const ttl = cacheTtlFor(dbRow.courierStatus || undefined);
-        await this.cache.set(redisKey, dbResult, Math.min(ttl, TWO_MINUTES_MS));
-        return { ...dbResult, phone };
+        if (!isExpired) {
+          // Fresh DB data — populate Redis for next fast hit
+          const ttl = cacheTtlFor(dbRow.courierStatus || undefined);
+          await this.cache.set(redisKey, dbResult, Math.min(ttl, TWO_MINUTES_MS));
+          return { ...dbResult, phone };
+        }
+
+        // Stale DB data — return immediately + background refresh
+        this.refreshInBackground(dbKey, redisKey, courier, phone, consignmentId, trackingCode, dbRow.fetchedAt);
+        return { ...dbResult, phone, stale: true, staleAt: dbResult.fetchedAt };
       }
-
-      // Stale DB data — return immediately + background refresh
-      this.refreshInBackground(dbKey, redisKey, courier, phone, consignmentId, trackingCode, dbRow.fetchedAt);
-      return { ...dbResult, phone, stale: true, staleAt: dbResult.fetchedAt };
     }
 
-    // 3. No cache at all — fetch from courier
+    // 3. No cache at all (or force) — fetch from courier
     const result = await this.fetchAndCache(dbKey, redisKey, courier, phone, consignmentId, trackingCode);
     if (result) result.phone = phone;
     return result;

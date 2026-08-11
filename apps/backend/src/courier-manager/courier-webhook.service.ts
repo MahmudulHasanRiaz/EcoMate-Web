@@ -211,7 +211,7 @@ export class CourierWebhookService {
       data: { courierStatus: rawStatus, courierService: 'steadfast' },
     });
 
-    await this.upsertDispatch(order.id, 'steadfast', consignmentId, dispatchStatus, body);
+    await this.upsertDispatch(order.id, 'steadfast', consignmentId, dispatchStatus, body, rawStatus);
 
     await this.addTimelineEntry(order.id, 'steadfast', dispatchStatus);
 
@@ -240,19 +240,29 @@ export class CourierWebhookService {
     consignmentId: string,
     status: string,
     body: Record<string, unknown>,
+    rawStatus?: string | null,
   ) {
     const trackingCode = (body['tracking_code'] as string) || undefined;
     await this.prisma.dispatch.upsert({
       where: {
         courier_consignmentId: { courier: courier as any, consignmentId },
       },
-      update: { status: status as any, trackingCode },
+      update: {
+        status: status as any,
+        trackingCode,
+        // Persist the courier's raw running status against the dispatch so the
+        // Dispatch list "Courier Status" column reflects the latest state even
+        // before a manual sync. DispatchStatus (`status`) stays separate.
+        ...(rawStatus ? { courierStatus: rawStatus, lastSyncedAt: new Date() } : {}),
+      },
       create: {
         orderId,
         courier: courier as any,
         consignmentId,
         trackingCode,
         status: status as any,
+        courierStatus: rawStatus || null,
+        lastSyncedAt: new Date(),
       },
     });
   }
@@ -399,7 +409,7 @@ export class CourierWebhookService {
       data: { courierStatus: event, courierService: 'pathao' },
     });
 
-    await this.upsertDispatch(order.id, 'pathao', consignmentId, dispatchStatus, body);
+    await this.upsertDispatch(order.id, 'pathao', consignmentId, dispatchStatus, body, event);
 
     const extra: Record<string, unknown> = {};
     if (body['reason']) extra.reason = body['reason'];
@@ -463,7 +473,7 @@ export class CourierWebhookService {
     });
 
     const consignmentId = trackingNumber || invoiceNumber || '';
-    await this.upsertDispatch(order.id, 'redx', consignmentId, dispatchStatus, body);
+    await this.upsertDispatch(order.id, 'redx', consignmentId, dispatchStatus, body, status);
 
     const extra: Record<string, unknown> = {};
     if (messageEn) extra.remarks = messageEn;
@@ -517,7 +527,7 @@ export class CourierWebhookService {
       data: { courierStatus: event, courierService: 'carrybee' },
     });
 
-    await this.upsertDispatch(order.id, 'carrybee', consignmentId, dispatchStatus, body);
+    await this.upsertDispatch(order.id, 'carrybee', consignmentId, dispatchStatus, body, event);
 
     const extra: Record<string, unknown> = {};
     if (body['reason']) extra.reason = body['reason'];

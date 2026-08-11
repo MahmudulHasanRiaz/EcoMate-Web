@@ -1,0 +1,12 @@
+-- Drift repair (diagnosed 2026-08-10): the live database still contains the
+-- singleton UNIQUE index "PhysicalReservation_orderItemId_key" even though
+-- migration 20260715132458_cycle_safe_reservation_and_combo_snapshot already
+-- dropped it and the schema only declares the composite
+-- @@unique([orderItemId, cycleId]). The leftover index was most likely
+-- reintroduced when the database was restored from a backup that predated the
+-- drop. It blocks the cycle-based design (multiple reservation cycles per
+-- order item) and must be removed to bring the schema in line with both the
+-- migration history and prisma/schema.prisma. No rows are modified.
+-- IF EXISTS keeps this no-op during shadow-database replay, where the index
+-- was already removed by the original 20260715132458 drop.
+DROP INDEX IF EXISTS "PhysicalReservation_orderItemId_key";

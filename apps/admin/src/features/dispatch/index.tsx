@@ -7,7 +7,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { useDispatchList, useDispatchMutations } from './hooks'
+import { useDispatchList, useDispatchMutations, useDispatchSync } from './hooks'
 import { DispatchMetrics } from './dispatch-metrics'
 import { DispatchTable } from './dispatch-table'
 import { CreateDispatchDialog } from './create-dispatch-dialog'
@@ -36,6 +36,7 @@ export function DispatchPage() {
   })
 
   const { remove } = useDispatchMutations()
+  const syncMutation = useDispatchSync()
 
   return (
     <>
@@ -68,7 +69,9 @@ export function DispatchPage() {
           search={search}
           onSearchChange={setSearch}
           isLoading={isLoading}
+          isSyncing={syncMutation.isPending}
           onDelete={(id) => setDeleteId(id)}
+          onSyncSelected={(ids) => syncMutation.mutate(ids)}
         />
       </Main>
 

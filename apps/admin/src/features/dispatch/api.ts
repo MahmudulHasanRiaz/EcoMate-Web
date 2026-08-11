@@ -8,6 +8,9 @@ export interface DispatchResponse {
   trackingCode: string | null
   trackingUrl: string | null
   status: string
+  courierStatus: string | null
+  courierStatusAt: string | null
+  lastSyncedAt: string | null
   handedOverAt: string | null
   pickedUpAt: string | null
   deliveredAt: string | null
@@ -16,6 +19,21 @@ export interface DispatchResponse {
   createdAt: string
   updatedAt: string
   order?: { displayId: string; total: number; guestName?: string; guestPhone?: string; courierStatus?: string | null }
+}
+
+export interface DispatchSyncItem {
+  id: string
+  dispatchId?: string
+  status?: string
+  message?: string
+  reason?: string
+}
+
+export interface DispatchSyncSummary {
+  total: number
+  synced: DispatchSyncItem[]
+  unchanged: DispatchSyncItem[]
+  failed: DispatchSyncItem[]
 }
 
 export interface DispatchMetricsResponse {
@@ -31,6 +49,8 @@ export const dispatchApi = {
   create: (data: any) => apiClient.post<DispatchResponse>('/dispatch', data),
   updateStatus: (id: string, status: string) =>
     apiClient.patch(`/dispatch/${id}/status`, { status }),
+  syncStatus: (ids: string[]) =>
+    apiClient.post<DispatchSyncSummary>('/dispatch/sync-status', { ids }),
   remove: (id: string) => apiClient.delete(`/dispatch/${id}`),
   getMetrics: () => apiClient.get<DispatchMetricsResponse[]>('/dispatch/metrics'),
 }

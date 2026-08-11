@@ -47,3 +47,24 @@ export function useDispatchMutations() {
     }),
   }
 }
+
+export function useDispatchSync() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      dispatchApi.syncStatus(ids).then((r) => r.data),
+    onSuccess: (summary) => {
+      const parts = [
+        `${summary.synced.length} synced`,
+        `${summary.unchanged.length} unchanged`,
+      ]
+      if (summary.failed.length) parts.push(`${summary.failed.length} failed`)
+      toast.success(`Courier sync: ${parts.join(' · ')}`)
+      qc.invalidateQueries({ queryKey: ['dispatches'] })
+      qc.invalidateQueries({ queryKey: ['dispatch-metrics'] })
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.message || 'Failed to sync courier status'),
+  })
+}

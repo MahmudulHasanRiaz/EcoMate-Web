@@ -11,6 +11,7 @@ import {
 import { DispatchService } from './dispatch.service';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
+import { SyncDispatchStatusDto } from './dto/sync-dispatch-status.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -49,6 +50,18 @@ export class DispatchController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.dispatchService.findOne(id);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post('sync-status')
+  syncStatusFromCourier(
+    @Body() dto: SyncDispatchStatusDto,
+    @CurrentUser() user: { email: string },
+  ) {
+    return this.dispatchService.syncStatusFromCourier(
+      dto.ids,
+      user?.email || 'admin',
+    );
   }
 
   @Roles('superadmin', 'admin', 'manager')

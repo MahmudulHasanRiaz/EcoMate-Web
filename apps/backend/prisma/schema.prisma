@@ -1044,6 +1044,13 @@ model Dispatch {
   trackingCode   String?
   trackingUrl    String?
   status         DispatchStatus @default(DISPATCHED)
+  // Raw running/current status verbatim from the courier (e.g. "delivered",
+  // "order.in-transit"). Distinct from `status` (internal DispatchStatus):
+  // persists the courier's own latest state even when webhooks are missed,
+  // and is the source for the Dispatch list "Courier Status" column.
+  courierStatus  String?
+  courierStatusAt DateTime?
+  lastSyncedAt   DateTime?
   handedOverAt   DateTime?
   pickedUpAt     DateTime?
   deliveredAt    DateTime?
@@ -1059,6 +1066,8 @@ model Dispatch {
   @@index([orderId])
   @@index([courier])
   @@index([status])
+  @@index([courierStatus])
+  @@index([lastSyncedAt])
 }
 
 model Coupon {

@@ -13,7 +13,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Trash2, Eye, ExternalLink } from 'lucide-react'
+import { Trash2, Eye, ExternalLink, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import {
@@ -26,7 +26,13 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DataTablePagination } from '@/components/data-table'
+import { DataTableBulkActions } from '@/components/data-table/bulk-actions'
 import { DataTableViewOptions } from '@/components/data-table/view-options'
 import { DataTableFacetedFilter } from '@/components/data-table/faceted-filter'
 import { type DispatchResponse } from './api'
@@ -49,7 +56,9 @@ type DispatchTableProps = {
   search: string
   onSearchChange: (search: string) => void
   isLoading?: boolean
+  isSyncing?: boolean
   onDelete: (id: string) => void
+  onSyncSelected: (ids: string[]) => void
 }
 
 export function DispatchTable({
@@ -60,13 +69,40 @@ export function DispatchTable({
   search,
   onSearchChange,
   isLoading,
+  isSyncing,
   onDelete,
+  onSyncSelected,
 }: DispatchTableProps) {
   const [rowSelection, setRowSelection] = useState({})
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
 
   const columns: ColumnDef<DispatchResponse>[] = [
+    {
+      id: 'select',
+      header: ({ table }) => (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && 'indeterminate')
+          }
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label='Select all'
+          className='translate-y-0.5'
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          aria-label='Select row'
+          className='translate-y-0.5'
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+      meta: { className: 'w-12', tdClassName: 'ps-4' },
+    },
     {
       accessorKey: 'id',
       header: 'ID',
@@ -158,13 +194,33 @@ export function DispatchTable({
       id: 'courierStatus',
       header: 'Courier Status',
       cell: ({ row }) => {
-        const cs = row.original.order?.courierStatus
-        return cs ? (
-          <Badge variant='secondary' className='font-mono text-xs max-w-[160px] truncate'>
+        const dispatch = row.original
+        const cs =
+          dispatch.courierStatus ?? dispatch.order?.courierStatus ?? null
+        if (!cs) {
+          return <span className='text-xs text-muted-foreground'>—</span>
+        }
+        const syncedAt = dispatch.lastSyncedAt
+          ? new Date(dispatch.lastSyncedAt).toLocaleString()
+          : null
+        return (
+          <Badge
+            variant='secondary'
+            className='font-mono text-xs max-w-[160px] truncate'
+            title={
+              syncedAt
+                ? `Courier status as of ${syncedAt}${
+                    dispatch.courierStatusAt
+                      ? ` (event ${new Date(
+                          dispatch.courierStatusAt,
+                        ).toLocaleString()})`
+                      : ''
+                  }`
+                : undefined
+            }
+          >
             {cs}
           </Badge>
-        ) : (
-          <span className='text-xs text-muted-foreground'>—</span>
         )
       },
       meta: { className: 'w-32', tdClassName: 'ps-4' },
@@ -235,6 +291,7 @@ export function DispatchTable({
     data,
     columns,
     pageCount,
+    getRowId: (row) => row.id,
     state: { sorting, columnVisibility, rowSelection, pagination },
     manualPagination: true,
     enableRowSelection: true,
@@ -256,7 +313,12 @@ export function DispatchTable({
   })
 
   return (
-    <div className='flex flex-1 flex-col gap-4'>
+    <div
+      className={cn(
+        'max-sm:has-[div[role="toolbar"]]:mb-16',
+        'flex flex-1 flex-col gap-4'
+      )}
+    >
       <div className='flex items-center justify-between'>
         <div className='flex flex-1 flex-col-reverse items-start gap-y-2 sm:flex-row sm:items-center sm:space-x-2'>
           <Input
@@ -347,6 +409,34 @@ export function DispatchTable({
         className='mt-auto'
         totalCount={total}
       />
+
+      <DataTableBulkActions table={table} entityName='dispatch'>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='outline'
+              size='icon'
+              className='size-8'
+              disabled={isSyncing}
+              onClick={() => {
+                const selectedIds = table
+                  .getFilteredSelectedRowModel()
+                  .rows.map((row) => row.original.id)
+                table.resetRowSelection()
+                onSyncSelected(selectedIds)
+              }}
+              aria-label='Sync status from courier'
+              title='Sync status from courier'
+            >
+              <RefreshCw className={cn(isSyncing && 'animate-spin')} />
+              <span className='sr-only'>Sync status from courier</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Sync status from courier</p>
+          </TooltipContent>
+        </Tooltip>
+      </DataTableBulkActions>
     </div>
   )
 }
