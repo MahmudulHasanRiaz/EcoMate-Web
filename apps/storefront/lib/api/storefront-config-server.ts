@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   faq: { items: [] },
   hours: { label: "", details: [] },
   company: { name: "", registration: "", certifications: "", teamSize: "", ceoName: "" },
-  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false },
+  checkout: { districtEnabled: true, thanaEnabled: true, districtRequired: false, thanaRequired: false, emailEnabled: true, emailRequired: false },
   districtCharges: {},
   shippingMode: 'options',
   shippingOptions: [],
