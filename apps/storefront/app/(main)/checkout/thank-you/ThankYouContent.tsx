@@ -9,6 +9,7 @@ import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { trackEvent } from '@/lib/tracking';
 import { syncContext } from '@/lib/tracking-client';
+import { buildPurchaseSharedData, buildPurchaseUserData } from '@/lib/purchase-payload';
 import { ResumePaymentButton } from '@/components/ThankYou/ResumePaymentButton';
 import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { submitPayment } from '@/lib/api/payments';
@@ -80,39 +81,8 @@ export default function ThankYouContent({
     syncContext();
 
     if (fireMeta || fireTiktok) {
-      const itemsList = (order.items as any[]) || [];
-      const totalValue = Number(order.total || order.subtotal || 0);
-      const firstItem = itemsList[0];
-      const sharedData = {
-        value: totalValue,
-        currency: config.currency.code,
-        content_type: 'product',
-        content_ids: itemsList
-          .map((i: any) => i.productId || i.comboId || '')
-          .filter(Boolean),
-        content_name: firstItem
-          ? firstItem.product?.name || firstItem.combo?.name || undefined
-          : undefined,
-        content_category: firstItem?.product?.category?.name || undefined,
-        num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
-        order_id: order.id,
-        contents: itemsList.map((i: any) => ({
-          id: i.productId || i.comboId || '',
-          quantity: i.quantity,
-          item_price: Number(i.price),
-        })),
-      };
-      const sharedUserData = {
-        email: order.customer?.email || '',
-        phone: order.shippingAddress?.phone || order.guestPhone || '',
-        name: order.shippingAddress?.name || order.guestName || '',
-        // Meta geo (BD): ct = district, st = division (lazy fallback for legacy orders).
-        city: order.shippingAddress?.district || order.shippingAddress?.city || '',
-        state: order.shippingAddress?.division || order.shippingAddress?.state || order.shippingAddress?.district || '',
-        country: 'BD',
-        zip: order.shippingAddress?.zip || '',
-        address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),
-      };
+      const sharedData = buildPurchaseSharedData(order, config.currency.code);
+      const sharedUserData = buildPurchaseUserData(order);
       trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
     }
 

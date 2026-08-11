@@ -38,6 +38,7 @@ import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { resolveDivision } from '../delivery-areas/data/district-division';
 import { resolveActionSource } from '../tracking/meta-action-source';
+import { resolveWebAttribution } from './web-attribution';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 
@@ -1261,6 +1262,17 @@ export class OrdersService {
         }
       }
 
+      // Website attribution (spec §20-21): an explicitly supplied source wins;
+      // otherwise resolve the storefront-collected landing signals (utm /
+      // click-id / referrer) through the single canonical resolver.
+      const webAttribution = resolveWebAttribution(
+        dto.attribution as any,
+      );
+      const resolvedSourcePlatform =
+        dto.sourcePlatform || webAttribution?.sourcePlatform || null;
+      const resolvedSourceType =
+        dto.sourceType || webAttribution?.sourceType || null;
+
       const created = await tx.order.create({
         data: {
           displayId,
@@ -1285,8 +1297,8 @@ export class OrdersService {
           customerNotes: dto.customerNotes,
           officeNotes: resolvedOfficeNotes,
           salesChannel: dto.salesChannel || 'WEBSITE',
-          sourcePlatform: dto.sourcePlatform || null,
-          sourceType: dto.sourceType || null,
+          sourcePlatform: resolvedSourcePlatform,
+          sourceType: resolvedSourceType,
           sourceEntity: dto.sourceEntity || null,
           trackingSessionId: dto.trackingSessionId ?? null,
           guestName: dto.guestName,
@@ -3721,6 +3733,8 @@ export class OrdersService {
         where: {
           key: {
             in: [
+              'tracking_meta_purchase_mode',
+              'tracking_tiktok_purchase_mode',
               'tracking_meta_validated_status',
               'tracking_tiktok_validated_status',
             ],
@@ -3730,10 +3744,21 @@ export class OrdersService {
       const settingMap = Object.fromEntries(
         settings.map((s: any) => [s.key, s.value]),
       );
+      const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
+      const tiktokMode = settingMap['tracking_tiktok_purchase_mode'] || 'instant';
       const metaStatus = settingMap['tracking_meta_validated_status'] || '';
       const tiktokStatus = settingMap['tracking_tiktok_validated_status'] || '';
 
-      if (metaStatus !== statusName && tiktokStatus !== statusName) return;
+      // Canonical trigger: a validated Purchase fires only when the order
+      // reaches the configured validated status AND the provider is in
+      // validated mode. Gating on mode keeps the two trigger paths mutually
+      // exclusive (one Purchase per order) so payment verification can never
+      // add a second Purchase on top of an instant-mode capture.
+      const metaFires = metaMode === 'validated' && metaStatus === statusName;
+      const tiktokFires =
+        tiktokMode === 'validated' && tiktokStatus === statusName;
+
+      if (!metaFires && !tiktokFires) return;
 
       await this.buildAndSendPurchaseEvent(order, 'validated', tx);
     } catch (err) {

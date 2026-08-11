@@ -21,6 +21,21 @@ export interface CreateOrderData {
   guestName?: string;
   guestPhone?: string;
   guestEmail?: string;
+  salesChannel?: string;
+  sourcePlatform?: string;
+  sourceType?: string;
+  sourceEntity?: string;
+  attribution?: {
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+    utmContent?: string;
+    utmTerm?: string;
+    referrer?: string;
+    fbclid?: string;
+    ttclid?: string;
+    igshid?: string;
+  };
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   gatewayCode?: string;
   partialAmount?: number;

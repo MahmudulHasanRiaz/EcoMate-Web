@@ -6,6 +6,7 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { useAuth } from "@/context/AuthContext";
 import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed } from "@/lib/tracking";
 import { getTrackingApiUrl, syncContext } from "@/lib/tracking-client";
+import { captureLandingAttribution } from "@/lib/attribution";
 
 declare global {
   interface Window {
@@ -93,6 +94,9 @@ export default function TrackingScripts() {
 
   useEffect(() => {
     setPixelIds(metaId, tiktokCode);
+    // Capture the session landing attribution on first app boot (first write
+    // wins) so the landing page's utm/click-id/referrer survive to checkout.
+    captureLandingAttribution();
     setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
     syncContext(); // begin tracking-context capture on mount (ctxId + identifiers + url + referrer)
     // P1 fix: re-sync shortly after load so _fbp/_fbc created by fbevents.js

@@ -91,6 +91,49 @@ export function CreateOrder() {
   const [sourceType, setSourceType] = useState('')
   const [sourceEntity, setSourceEntity] = useState('')
 
+  // Showroom picker for POS-channel orders (spec §28: derive, don't expose
+  // raw taxonomy). Reuses the existing warehouses API; only type=showroom rows.
+  const { data: warehouses } = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: () => apiClient.get<any[]>('/warehouses').then(r => r.data),
+    enabled: true,
+  })
+  const showrooms = useMemo(
+    () => (warehouses || []).filter((w) => w.type === 'showroom'),
+    [warehouses],
+  )
+
+  // §28 contextual derivation: keep the internal four dimensions in state but
+  // drive them from a small set of human-facing controls.
+  const applyWebsiteSource = (type: 'DIRECT' | 'AD') => {
+    setSourceType(type)
+    setSourcePlatform(type === 'AD' ? sourcePlatform || 'FACEBOOK' : 'DIRECT')
+  }
+  const applyOfflineSource = (entry: string) => {
+    // Entry → {sourcePlatform, sourceType}: WhatsApp/Messenger/TikTok
+    // Chat/Facebook = CHAT; Phone = CALL.
+    const map: Record<string, { platform: string; type: string }> = {
+      WHATSAPP: { platform: 'WHATSAPP', type: 'CHAT' },
+      MESSENGER: { platform: 'FACEBOOK', type: 'CHAT' },
+      'TIKTOK_CHAT': { platform: 'TIKTOK', type: 'CHAT' },
+      FACEBOOK: { platform: 'FACEBOOK', type: 'CHAT' },
+      PHONE: { platform: 'PHONE', type: 'CALL' },
+    }
+    const mapped = map[entry]
+    if (mapped) {
+      setSourcePlatform(mapped.platform)
+      setSourceType(mapped.type)
+    } else {
+      setSourcePlatform(entry === 'OTHER' ? 'OTHER' : '')
+      setSourceType('')
+    }
+  }
+  const applyPosShowroom = (name: string) => {
+    setSourcePlatform('POS')
+    setSourceType('SHOWROOM')
+    setSourceEntity(name)
+  }
+
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
@@ -752,7 +795,18 @@ export function CreateOrder() {
               <CardContent className='space-y-3'>
                 <div>
                   <Label className='text-xs'>Channel</Label>
-                  <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={salesChannel} onChange={e => setSalesChannel(e.target.value)}>
+                  <select
+                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    value={salesChannel}
+                    onChange={e => {
+                      setSalesChannel(e.target.value)
+                      // Contextual controls re-derive these; clear stale values
+                      // when the channel changes to a different branch.
+                      setSourcePlatform('')
+                      setSourceType('')
+                      if (e.target.value !== 'POS') setSourceEntity('')
+                    }}
+                  >
                     <option value='WEBSITE'>Website</option>
                     <option value='POS'>POS</option>
                     <option value='WALK_IN'>Walk-in</option>
@@ -767,39 +821,101 @@ export function CreateOrder() {
                     <option value='OTHER'>Other</option>
                   </select>
                 </div>
-                <div className='grid grid-cols-2 gap-3'>
+
+                {salesChannel === 'WEBSITE' && (
+                  <>
+                    <div>
+                      <Label className='text-xs'>Source</Label>
+                      <select
+                        className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                        value={sourceType || 'DIRECT'}
+                        onChange={e => applyWebsiteSource(e.target.value as 'DIRECT' | 'AD')}
+                      >
+                        <option value='DIRECT'>Direct</option>
+                        <option value='AD'>Ad</option>
+                      </select>
+                    </div>
+                    {sourceType === 'AD' && (
+                      <div>
+                        <Label className='text-xs'>Platform</Label>
+                        <select
+                          className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                          value={sourcePlatform || 'FACEBOOK'}
+                          onChange={e => setSourcePlatform(e.target.value)}
+                        >
+                          <option value='FACEBOOK'>Facebook</option>
+                          <option value='INSTAGRAM'>Instagram</option>
+                          <option value='TIKTOK'>TikTok</option>
+                          <option value='THREADS'>Threads</option>
+                        </select>
+                      </div>
+                    )}
+                    <div>
+                      <Label className='text-xs'>Storefront</Label>
+                      <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='E.g. EcoMate Store' />
+                    </div>
+                  </>
+                )}
+
+                {salesChannel === 'OFFLINE' && (
+                  <>
+                    <div>
+                      <Label className='text-xs'>Source</Label>
+                      <select
+                        className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                        value={
+                          sourceType === 'CALL' && sourcePlatform === 'PHONE'
+                            ? 'PHONE'
+                            : sourceType === 'CHAT' && sourcePlatform === 'TIKTOK'
+                              ? 'TIKTOK_CHAT'
+                              : sourceType === 'CHAT' && sourcePlatform === 'WHATSAPP'
+                                ? 'WHATSAPP'
+                                : sourceType === 'CHAT' && sourcePlatform === 'FACEBOOK'
+                                  ? 'FACEBOOK'
+                                  : ''
+                        }
+                        onChange={e => applyOfflineSource(e.target.value)}
+                      >
+                        <option value='WHATSAPP'>WhatsApp</option>
+                        <option value='MESSENGER'>Messenger</option>
+                        <option value='TIKTOK_CHAT'>TikTok Chat</option>
+                        <option value='FACEBOOK'>Facebook</option>
+                        <option value='PHONE'>Phone</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(optional)</span></Label>
+                      <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='Specific showroom / team / person' />
+                    </div>
+                  </>
+                )}
+
+                {salesChannel === 'POS' && (
                   <div>
-                    <Label className='text-xs'>Source Platform</Label>
-                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={sourcePlatform} onChange={e => setSourcePlatform(e.target.value)}>
+                    <Label className='text-xs'>Showroom</Label>
+                    <select
+                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                      value={sourceEntity || ''}
+                      onChange={e => applyPosShowroom(e.target.value)}
+                    >
                       <option value=''>—</option>
-                      <option value='FACEBOOK'>Facebook</option>
-                      <option value='INSTAGRAM'>Instagram</option>
-                      <option value='TIKTOK'>TikTok</option>
-                      <option value='THREADS'>Threads</option>
-                      <option value='MESSENGER'>Messenger</option>
-                      <option value='WHATSAPP'>WhatsApp</option>
-                      <option value='PHONE'>Phone</option>
-                      <option value='DIRECT'>Direct</option>
-                      <option value='POS'>POS</option>
-                      <option value='OTHER'>Other</option>
+                      {showrooms.map((s) => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
                     </select>
+                    {showrooms.length === 0 && (
+                      <p className='text-[11px] text-muted-foreground mt-1'>No showrooms configured yet.</p>
+                    )}
                   </div>
+                )}
+
+                {(salesChannel === 'WALK_IN' || salesChannel === 'CALL' || salesChannel === 'OTHER' ||
+                  ['FACEBOOK','INSTAGRAM','TIKTOK','MESSENGER','WHATSAPP','THREADS'].includes(salesChannel)) && (
                   <div>
-                    <Label className='text-xs'>Source Type</Label>
-                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={sourceType} onChange={e => setSourceType(e.target.value)}>
-                      <option value=''>—</option>
-                      <option value='DIRECT'>Direct</option>
-                      <option value='AD'>Ad</option>
-                      <option value='CHAT'>Chat</option>
-                      <option value='CALL'>Call</option>
-                      <option value='SHOWROOM'>Showroom</option>
-                    </select>
+                    <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(optional)</span></Label>
+                    <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='Specific team / person / location' />
                   </div>
-                </div>
-                <div>
-                  <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(storefront / showroom)</span></Label>
-                  <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='E.g. Dhanmondi Showroom, EcoMate Store' />
-                </div>
+                )}
               </CardContent>
             </Card>
 

@@ -438,6 +438,24 @@ describe('OrdersService', () => {
       expect(result).toEqual(mockOrder);
     });
 
+    it('loads product.category + combo relations so the browser Purchase can map content metadata (F1)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.findOne('order-id-1', { token: 'mock-view-token' });
+
+      const call = (prisma.order.findUnique as jest.Mock).mock.calls[0][0];
+      expect(call.include.items.include).toEqual(
+        expect.objectContaining({
+          product: expect.objectContaining({
+            select: expect.objectContaining({
+              category: { select: { name: true } },
+            }),
+          }),
+          combo: { select: { id: true, name: true } },
+        }),
+      );
+    });
+
     it('should throw NotFoundException for non-guest order without matching token', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
@@ -565,6 +583,82 @@ describe('OrdersService', () => {
       expect(createData.sourceEntity).toBe('EcoMate Store');
       // Canonical division resolved from the selected district (spec §19-21).
       expect(createData.shippingAddress.division).toBe('Dhaka');
+    });
+
+    it('resolves source platform/type from first-party landing attribution', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        district: 'Dhaka',
+        salesChannel: 'WEBSITE' as any,
+        attribution: {
+          utmSource: 'facebook',
+          utmMedium: 'cpc',
+          fbclid: 'AbCd',
+          referrer: 'https://www.instagram.com/',
+        },
+      });
+
+      const createData = (prisma.order.create as jest.Mock).mock.calls[0][0]
+        .data;
+      // Recognized utm_source wins over click-id/referrer (spec §21 precedence).
+      expect(createData.sourcePlatform).toBe('FACEBOOK');
+      expect(createData.sourceType).toBe('AD');
+    });
+
+    it('explicit sourcePlatform/sourceType win over inferred attribution', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        district: 'Dhaka',
+        salesChannel: 'WEBSITE' as any,
+        sourcePlatform: 'INSTAGRAM',
+        sourceType: 'CHAT',
+        attribution: {
+          utmSource: 'facebook',
+          utmMedium: 'cpc',
+        },
+      });
+
+      const createData = (prisma.order.create as jest.Mock).mock.calls[0][0]
+        .data;
+      // Explicit caller-provided dimensions are authoritative.
+      expect(createData.sourcePlatform).toBe('INSTAGRAM');
+      expect(createData.sourceType).toBe('CHAT');
     });
 
     it('uses a non-empty provided office note on create (overrides the default)', async () => {
@@ -1104,6 +1198,7 @@ describe('OrdersService', () => {
         status: mockConfirmedStatus,
       });
       (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
         { key: 'tracking_meta_validated_status', value: 'Confirmed' },
       ]);
       (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
@@ -1183,6 +1278,7 @@ describe('OrdersService', () => {
         status: mockConfirmedStatus,
       });
       (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
         { key: 'tracking_meta_validated_status', value: 'Confirmed' },
       ]);
       (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
@@ -1198,6 +1294,115 @@ describe('OrdersService', () => {
       expect(input.eventId).toBe('purchase_order-id-1');
       expect(input.eventType).toBe('Purchase');
       expect(input.actionSource).toBe('website');
+    });
+
+    it('does NOT fire a validated Purchase when verifyPayment reaches a non-configured status', async () => {
+      const deliveredStatus = {
+        id: 'status-delivered',
+        name: 'Delivered',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      // Simulate the configured validated status being Delivered — but the
+      // actual reachable status from verifyPayment is Confirmed.
+      (prisma.orderStatus.findUnique as jest.Mock).mockImplementation((arg) =>
+        Promise.resolve(
+          arg?.where?.name === 'Delivered'
+            ? deliveredStatus
+            : arg?.where?.name === 'Confirmed'
+              ? mockConfirmedStatus
+              : null,
+        ),
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAID',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Delivered' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.verifyPayment('order-id-1', true, 'note');
+
+      // Confirmed ≠ configured Delivered → no validated Purchase.
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
+    });
+
+    it('fires exactly one validated Purchase when verifyPayment reaches the configured target', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAID',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.verifyPayment('order-id-1', true, 'note');
+
+      const capture = trackingCapture.capture as jest.Mock;
+      // One logical Purchase, one capture (same purchase_{orderId} event id).
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0][0].eventId).toBe('purchase_order-id-1');
+    });
+
+    it('does NOT add a second Purchase from payment verification in instant mode', async () => {
+      // Instant mode: the Purchase already fired at order creation. Even if a
+      // validated status is configured, payment verification must not add a
+      // second logical Purchase (spec §3 test 4 / one-Purchase-per-order).
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAID',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'instant' },
+        { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.verifyPayment('order-id-1', true, 'note');
+
+      // mode is instant → validated trigger suppressed entirely.
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
     });
 
     it('captures a refund snapshot inside the transaction for cancelled orders', async () => {
@@ -1767,6 +1972,7 @@ describe('OrdersService', () => {
       ]);
       (prisma.order.update as jest.Mock).mockResolvedValue({});
       (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
         { key: 'tracking_meta_validated_status', value: 'Confirmed' },
       ]);
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);

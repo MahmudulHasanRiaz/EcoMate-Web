@@ -57,6 +57,8 @@ export class CreateOrderDto {
   @IsOptional() @IsString() sourcePlatform?: string;
   @IsOptional() @IsString() sourceType?: string;
   @IsOptional() @IsString() sourceEntity?: string;
+  /** Raw landing signals (utm/click-id/referrer) collected first-party by the storefront. */
+  @IsOptional() @IsObject() attribution?: Record<string, unknown>;
   @IsOptional() @IsString() trackingSessionId?: string;
 }
 

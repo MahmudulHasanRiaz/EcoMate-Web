@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent, getCookie, isSyntheticEmail } from '@/lib/tracking';
 import { getOrCreateCtxId } from '@/lib/tracking-client';
+import { getLandingAttribution, clearLandingAttribution } from '@/lib/attribution';
 
 function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
@@ -678,11 +679,24 @@ export default function CheckoutPage() {
       return { productId: item.id, variantId: item.variantId, quantity: item.quantity, price: item.price };
     });
 
-    // Website attribution (spec §8): the storefront identity is the source
-    // entity; a Facebook click (`_fbc`/fbclid) marks the order as Facebook/Ad,
-    // otherwise it is Direct/Direct.
-    const facebookClick = (getCookie('_fbc') || '').length > 0
-      || new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').has('fbclid');
+    // Website attribution (spec §20-21): the storefront only COLLECTS the raw
+    // landing signals (utm / click-id / referrer, captured once at landing and
+    // persisted for the session); the backend resolves platform/type through a
+    // single canonical resolver. An explicit source never gets overwritten here.
+    const landingAttribution = getLandingAttribution();
+    const attributionPayload = landingAttribution
+      ? {
+          utmSource: landingAttribution.utmSource,
+          utmMedium: landingAttribution.utmMedium,
+          utmCampaign: landingAttribution.utmCampaign,
+          utmContent: landingAttribution.utmContent,
+          utmTerm: landingAttribution.utmTerm,
+          referrer: landingAttribution.referrer,
+          fbclid: landingAttribution.fbclid,
+          ttclid: landingAttribution.ttclid,
+          igshid: landingAttribution.igshid,
+        }
+      : undefined;
 
     const payload: any = {
       customerId: user?.id,
@@ -702,8 +716,7 @@ export default function CheckoutPage() {
       district: district || undefined,
       thana: thana || undefined,
       salesChannel: 'WEBSITE',
-      sourcePlatform: facebookClick ? 'FACEBOOK' : 'DIRECT',
-      sourceType: facebookClick ? 'AD' : 'DIRECT',
+      ...(attributionPayload ? { attribution: attributionPayload } : {}),
       sourceEntity: config.store?.name || undefined,
       selectedShippingOptionId: config.shippingMode === 'options' ? (selectedShippingOptionId || null) : undefined,
     };
@@ -849,6 +862,9 @@ export default function CheckoutPage() {
         }
       }
       const order = await createOrder(payload);
+      // A completed checkout consumes the captured landing attribution so a
+      // later, separate order in the same session is not mis-attributed.
+      clearLandingAttribution();
 
       if (isOnlinePayment) {
         paymentSuccessCallback.current = () => {
