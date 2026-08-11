@@ -16,6 +16,7 @@ import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent, getCookie, isSyntheticEmail } from '@/lib/tracking';
+import { computeCartSignature } from '@/lib/cart-signature';
 import { getOrCreateCtxId } from '@/lib/tracking-client';
 import { getLandingAttribution, clearLandingAttribution } from '@/lib/attribution';
 
@@ -610,15 +611,27 @@ export default function CheckoutPage() {
     }
   }, [hasCodGateway, hasFullPayment, hasPartialPayment]);
 
-  const initiatedRef = useRef(false);
+  /**
+   * Material cart signature (spec §8): a stable fingerprint of the logical
+   * checkout contents — the content_ids set/order, per-item quantities, and the
+   * effective subtotal. React re-renders produce identical signatures and must NOT
+   * re-fire InitiateCheckout; a material change (add/remove/qty/value shift)
+   * produces a new signature and MUST re-fire with a fresh event_id so the
+   * payload never goes stale (D1 fix).
+   */
+  const cartSignature = React.useMemo(() => computeCartSignature(items), [items]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
+  const lastSignatureRef = React.useRef<string>('');
+
   useEffect(() => {
-    if (items.length > 0 && !initiatedRef.current) {
+    if (items.length > 0 && cartSignature !== lastSignatureRef.current) {
       const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+      const rawPhone = user?.phoneNumber || '';
+      const normalizedPhone = rawPhone ? (normalizePhone(rawPhone) ?? '') : '';
       trackEvent('InitiateCheckout', {
         value,
         currency: config.currency.code,
@@ -626,13 +639,17 @@ export default function CheckoutPage() {
         content_ids: items.map(i => i.id),
         num_items: items.reduce((s, i) => s + i.quantity, 0),
         contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
+        content_name: items[0]?.name,
+        content_category: items[0]?.category,
       }, {
-        phone: user?.phoneNumber || '',
-        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || '',
+        phone: normalizedPhone || undefined,
+        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
+        country: 'BD',
+        email: user?.email || (guestEmail && !isSyntheticEmail(guestEmail) ? guestEmail.trim() : undefined),
       });
-      initiatedRef.current = true;
+      lastSignatureRef.current = cartSignature;
     }
-  }, [items, config.currency.code, user]);
+  }, [items, cartSignature, config.currency.code, user, guestEmail]);
 
   const getLeadData = useCallback(() => {
     const rawPhone = guestPhone || user?.phoneNumber || '';
