@@ -31,10 +31,13 @@ const STEADFAST_DISPATCH_MAP: Record<string, string | null> = {
   in_review: 'DISPATCHED',
   pending: 'PICKED_UP',
   hold: 'HOLD',
+  // Approval-pending states: the parcel has not progressed to its final
+  // status until the courier confirms — keep at rider/shipping stage.
   delivered_approval_pending: 'ASSIGNED_TO_RIDER',
-  partial_delivered_approval_pending: 'ASSIGNED_TO_RIDER',
+  // AUTHORITATIVE RULE: partial delivery (incl. approval-pending) → 'Partial'.
+  partial_delivered_approval_pending: 'PARTIAL',
   cancelled_approval_pending: 'ASSIGNED_TO_RIDER',
-  unknown_approval_pending: null,
+  unknown_approval_pending: null, // needs support contact — never force a status
   delivered: 'DELIVERED',
   partial_delivered: 'PARTIAL',
   cancelled: null, // handled conditionally in handleSteadfast

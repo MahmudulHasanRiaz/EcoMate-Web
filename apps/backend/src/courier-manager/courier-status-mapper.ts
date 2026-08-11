@@ -28,19 +28,30 @@ const COURIER_TRACKING_STATUS_MAP: Record<
   Record<string, DispatchStatus | null>
 > = {
   // Steadfast: normalized values produced by CourierTrackingService's
-  // STEADFAST_STATUS_MAP (tracking API vocabulary).
+  // STEADFAST_STATUS_MAP (tracking API vocabulary) — kept in sync with the
+  // Steadfast webhook map in courier-webhook.service.ts and the official
+  // API docs (packzy.com/api/v1, "Checking Delivery Status"): pending,
+  // delivered_approval_pending, partial_delivered_approval_pending,
+  // cancelled_approval_pending, unknown_approval_pending, delivered,
+  // partial_delivered, cancelled, hold, in_review, unknown.
   steadfast: {
     pending: 'PICKED_UP',
     picked_up: 'PICKED_UP',
     in_transit: 'IN_TRANSIT',
+    in_review: 'DISPATCHED',
     delivered: 'DELIVERED',
+    'delivered_approval_pending': 'ASSIGNED_TO_RIDER',
     partial: 'PARTIAL',
+    'partial_delivered_approval_pending': 'PARTIAL',
     cancelled: 'CANCELLED',
+    'cancelled_approval_pending': 'ASSIGNED_TO_RIDER',
     return_pending: 'RETURN_PENDING',
     returned: 'RETURNED',
     hold: 'HOLD',
     // Webhook parity: the Steadfast webhook treats "unknown" as cancelled.
     unknown: 'CANCELLED',
+    // Unknown awaiting admin approval — needs support; never force a status.
+    'unknown_approval_pending': null,
   },
   // Pathao tracking API may surface either the webhook event vocabulary
   // ("order.*") or plain status keywords; both are covered — exact labels

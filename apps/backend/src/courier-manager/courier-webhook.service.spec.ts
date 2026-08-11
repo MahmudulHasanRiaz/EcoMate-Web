@@ -86,6 +86,55 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       );
     });
 
+    it('Steadfast partial_delivered_approval_pending → dispatch PARTIAL too (official docs)', async () => {
+      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'partial_delivered_approval_pending',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'PARTIAL' }),
+        }),
+      );
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        { statusId: 'status-partial' },
+        'system',
+      );
+    });
+
+    it('Steadfast unknown_approval_pending is skipped (no forced status)', async () => {
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'unknown_approval_pending',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('Steadfast delivered_approval_pending keeps the dispatch at rider stage', async () => {
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'delivered_approval_pending',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'ASSIGNED_TO_RIDER' }),
+        }),
+      );
+    });
+
     it('Pathao order.partial-delivery → dispatch PARTIAL → order Partial', async () => {
       prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
 

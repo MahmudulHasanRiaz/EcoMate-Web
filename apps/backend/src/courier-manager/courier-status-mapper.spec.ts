@@ -12,6 +12,17 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled')).toBe('CANCELLED');
   });
 
+  it('maps the current Packzy approval-pending/in_review statuses (official API docs)', () => {
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'in_review')).toBe('DISPATCHED');
+    // Delivered/cancelled awaiting admin approval — keep at rider stage.
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'delivered_approval_pending')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_approval_pending')).toBe('ASSIGNED_TO_RIDER');
+    // Partial delivery awaiting approval — still a partial (authoritative rule).
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_approval_pending')).toBe('PARTIAL');
+    // Unknown awaiting approval — never force a status.
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'unknown_approval_pending')).toBeNull();
+  });
+
   it('maps RedX statuses (shared webhook/tracking vocabulary)', () => {
     expect(mapCourierStatusToDispatchStatus('redx', 'delivered')).toBe('DELIVERED');
     expect(mapCourierStatusToDispatchStatus('redx', 'ready-for-delivery')).toBe('PICKED_UP');
