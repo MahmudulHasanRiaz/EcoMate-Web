@@ -60,6 +60,8 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   checkout_thana_enabled:        { label: 'Thana/Upazila Field', type: 'switch', hint: 'Show thana dropdown in checkout' },
   checkout_district_required:    { label: 'District Required', type: 'switch', hint: 'Customer must select a district', },
   checkout_thana_required:       { label: 'Thana/Upazila Required', type: 'switch', hint: 'Customer must select a thana' },
+  checkout_email_enabled:          { label: 'Email Field', type: 'switch', hint: 'Show the email field in guest checkout' },
+  checkout_email_required:         { label: 'Email Required', type: 'switch', hint: 'Customer must provide an email in guest checkout' },
 
   catalogImageRatio:             { label: 'Catalog Image Ratio', type: 'text', hint: 'JSON — managed via Catalog Display section' },
   thanks_page_title:             { label: 'Thank You Page Title', type: 'text', placeholder: 'Order Placed Successfully!' },

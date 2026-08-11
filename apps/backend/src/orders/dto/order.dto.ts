@@ -54,6 +54,9 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(SalesChannel)
   salesChannel?: SalesChannel;
+  @IsOptional() @IsString() sourcePlatform?: string;
+  @IsOptional() @IsString() sourceType?: string;
+  @IsOptional() @IsString() sourceEntity?: string;
   @IsOptional() @IsString() trackingSessionId?: string;
 }
 

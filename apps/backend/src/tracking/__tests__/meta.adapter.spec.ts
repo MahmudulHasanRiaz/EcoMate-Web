@@ -144,6 +144,22 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(payload.eventTime).toBe(1700000000);
     });
 
+    it('honors snapshot.actionSource for offline (physical_store) captures', () => {
+      const payload = adapter.build(
+        { ...snapshot, actionSource: 'physical_store' },
+        ctx,
+        normalizer,
+      )!;
+
+      expect(payload.action_source).toBe('physical_store');
+    });
+
+    it('defaults action_source to website when the snapshot carries none', () => {
+      const payload = adapter.build(snapshot, ctx, normalizer)!;
+
+      expect(payload.action_source).toBe('website');
+    });
+
     it('maps custom_data (value, currency, content_ids, contents, num_items, search_string, order_id)', () => {
       const c = adapter.build(snapshot, ctx, normalizer)!.custom_data;
 

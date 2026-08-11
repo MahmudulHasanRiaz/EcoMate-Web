@@ -75,6 +75,7 @@ export class TrackingSettingsService {
       'tracking_meta_validated_status',
       'tracking_tiktok_purchase_mode',
       'tracking_tiktok_validated_status',
+      'currency',
     ];
     const values = await Promise.all(keys.map((key) => this.get(key, null)));
     const map = Object.fromEntries(keys.map((key, i) => [key, values[i]]));
@@ -92,6 +93,9 @@ export class TrackingSettingsService {
       enabledProviders,
       normalizerVersion: new TrackingNormalizer().version,
       capturedAt: new Date().toISOString(),
+      // Single source of truth for currency: the storefront public config and
+      // every server-side Purchase capture read the same `currency` setting.
+      currency: map['currency'] || 'BDT',
       purchaseModes: {
         meta: map['tracking_meta_purchase_mode'] || 'instant',
         tiktok: map['tracking_tiktok_purchase_mode'] || 'instant',

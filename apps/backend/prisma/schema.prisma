@@ -97,6 +97,8 @@ enum SalesChannel {
   THREADS
   WALK_IN
   WEBSITE
+  OFFLINE
+  POS
   OTHER
 }
 
@@ -645,6 +647,9 @@ model Order {
   paymentOption            PaymentOption?     @relation(fields: [paymentOptionType], references: [type])
   source                   OrderSource?       @default(ECOMMERCE)
   salesChannel             SalesChannel?
+  sourcePlatform           String?
+  sourceType               String?
+  sourceEntity             String?
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])

@@ -187,6 +187,8 @@ describe('OrdersService', () => {
             },
             payment: {
               create: jest.fn(),
+              findFirst: jest.fn(),
+              update: jest.fn(),
             },
             customerProfile: {
               findUnique: jest.fn().mockResolvedValue(null),
@@ -527,6 +529,44 @@ describe('OrdersService', () => {
       ).toBe('default-note');
     });
 
+    it('persists source attribution dimensions and the resolved division on create', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        district: 'Dhaka',
+        salesChannel: 'WEBSITE' as any,
+        sourcePlatform: 'FACEBOOK',
+        sourceType: 'AD',
+        sourceEntity: 'EcoMate Store',
+      });
+
+      const createData = (prisma.order.create as jest.Mock).mock.calls[0][0]
+        .data;
+      expect(createData.salesChannel).toBe('WEBSITE');
+      expect(createData.sourcePlatform).toBe('FACEBOOK');
+      expect(createData.sourceType).toBe('AD');
+      expect(createData.sourceEntity).toBe('EcoMate Store');
+      // Canonical division resolved from the selected district (spec §19-21).
+      expect(createData.shippingAddress.division).toBe('Dhaka');
+    });
+
     it('uses a non-empty provided office note on create (overrides the default)', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
@@ -552,6 +592,37 @@ describe('OrdersService', () => {
       expect(
         (prisma.order.create as jest.Mock).mock.calls[0][0].data.officeNotes,
       ).toBe('Override');
+    });
+
+    it('creates COD cash payment rows as UNPAID so the Delivered path can verify them', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create({
+        ...createOrderDto,
+        paymentOptionType: 'CASH_ON_DELIVERY',
+      } as any);
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            gatewayCode: 'cash',
+            status: 'UNPAID',
+          }),
+        }),
+      );
     });
 
     it('should throw BadRequestException if no initial status configured', async () => {
@@ -1050,6 +1121,83 @@ describe('OrdersService', () => {
       expect(input.ctxId).toBeUndefined(); // mockOrder has no trackingSessionId
       // capture runs inside the business transaction client
       expect(txArg).toBeDefined();
+    });
+
+    it('marks the COD cash payment PAID on Delivered (single delivered path)', async () => {
+      const deliveredStatus = {
+        id: 'status-delivered',
+        name: 'Delivered',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { id: 'status-shipping', name: 'Shipping' },
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        deliveredStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: deliveredStatus,
+      });
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+        id: 'pay-cod',
+        gatewayCode: 'cash',
+        status: 'UNPAID',
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-delivered' },
+        userId,
+      );
+
+      expect(prisma.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'pay-cod' },
+          data: expect.objectContaining({
+            status: 'PAID',
+            verifiedBy: userId,
+          }),
+        }),
+      );
+    });
+
+    it('fires the validated Purchase from verifyPayment when payment verification confirms', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAID',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.verifyPayment('order-id-1', true, 'note');
+
+      const capture = trackingCapture.capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input] = capture.mock.calls[0];
+      expect(input.eventId).toBe('purchase_order-id-1');
+      expect(input.eventType).toBe('Purchase');
+      expect(input.actionSource).toBe('website');
     });
 
     it('captures a refund snapshot inside the transaction for cancelled orders', async () => {
@@ -1608,6 +1756,31 @@ describe('OrdersService', () => {
         service.bulkStatusChange(['order-1'], 'status-rt', 'system'),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('captures validated purchase snapshots for orders touched by a bulk change', async () => {
+      const pendingToConfirmed = { ...pendingOrder, status: { name: 'Pending' } };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        pendingToConfirmed,
+      ]);
+      (prisma.order.update as jest.Mock).mockResolvedValue({});
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+      ]);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.bulkStatusChange(['order-1'], 'status-c', 'staff-123');
+
+      const capture = trackingCapture.capture as jest.Mock;
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [input] = capture.mock.calls[0];
+      expect(input.eventId).toBe('purchase_order-id-1');
+      expect(input.eventType).toBe('Purchase');
+    });
   });
 
   describe('addNote', () => {
@@ -1836,6 +2009,146 @@ describe('OrdersService', () => {
         zip: '4000',
       });
     });
+
+    it('uses the configured currency from the capture-time config snapshot', async () => {
+      const settings =
+        module.get<TrackingSettingsService>(TrackingSettingsService);
+      (settings.buildConfigSnapshot as jest.Mock).mockResolvedValueOnce({
+        enabledProviders: ['meta'],
+        normalizerVersion: 1,
+        capturedAt: '2025-01-15T00:00:00.000Z',
+        currency: 'USD',
+      });
+
+      await (service as any).buildAndSendPurchaseEvent(
+        { ...baseOrder, trackingSessionId: 'ctx-123' },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.currency).toBe('USD');
+    });
+
+    it('lazily resolves the division from the district for historical orders without one', async () => {
+      // No `division` stored — old order, district only. The resolver must
+      // derive the division at capture time (spec §21, §22: st = division).
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          shippingAddress: { district: "Cox's Bazar", postalCode: '4700' },
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.customer).toMatchObject({
+        city: "Cox's Bazar",
+        state: 'Chittagong',
+        zip: '4700',
+        country: 'BD',
+      });
+    });
+
+    it('keeps an explicitly stored division authoritative (no re-resolution)', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          shippingAddress: {
+            district: 'Dhaka',
+            division: 'Rangpur', // stored value wins — canonical, not re-derived
+          },
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.customer.state).toBe('Rangpur');
+    });
+
+    it('maps a CALL-channel order purchase to action_source phone_call via the resolver', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          salesChannel: 'OFFLINE',
+          sourcePlatform: 'PHONE',
+          sourceType: 'CALL',
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.actionSource).toBe('phone_call');
+    });
+
+    it('maps a WhatsApp-chat offline order purchase to action_source chat via the resolver', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          salesChannel: 'OFFLINE',
+          sourcePlatform: 'WHATSAPP',
+          sourceType: 'CHAT',
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.actionSource).toBe('chat');
+    });
+
+    it('maps content_name/content_category from the first line item', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          items: [
+            {
+              id: 'item-id-1',
+              productId: 'prod-1',
+              quantity: 1,
+              price: 500,
+              product: {
+                id: 'prod-1',
+                name: 'Organic Rice',
+                category: { name: 'Groceries' },
+              },
+            },
+          ],
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.content_name).toBe('Organic Rice');
+      expect(input.payload.content_category).toBe('Groceries');
+    });
+
+    it('falls back to the combo name when the first line item is a combo', async () => {
+      await (service as any).buildAndSendPurchaseEvent(
+        {
+          ...baseOrder,
+          items: [
+            {
+              id: 'item-id-1',
+              comboId: 'combo-1',
+              quantity: 1,
+              price: 900,
+              combo: { id: 'combo-1', name: 'Starter Pack' },
+            },
+          ],
+        },
+        'instant',
+      );
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.content_name).toBe('Starter Pack');
+      expect(input.payload.content_ids).toEqual(['combo-1']);
+    });
   });
 
   describe('fireRefundEvent', () => {
@@ -1904,6 +2217,20 @@ describe('OrdersService', () => {
       await (service as any).fireRefundEvent(refundOrder);
 
       expect(captureService().capture).not.toHaveBeenCalled();
+    });
+
+    it('uses the action_source resolver for offline chat refunds', async () => {
+      await (service as any).fireRefundEvent({
+        ...refundOrder,
+        salesChannel: 'OFFLINE',
+        sourcePlatform: 'WHATSAPP',
+        sourceType: 'CHAT',
+      });
+
+      const capture = captureService().capture as jest.Mock;
+      const [input] = capture.mock.calls[0];
+      expect(input.eventType).toBe('Refund');
+      expect(input.actionSource).toBe('chat');
     });
   });
 

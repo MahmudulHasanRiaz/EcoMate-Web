@@ -6,6 +6,8 @@ import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
 import { ConfigService } from '@nestjs/config';
 import { MediaResolverService } from '../../media/media-resolver.service';
+import { TrackingCaptureService } from '../../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 
 describe('PosOrdersService — Inventory-Aware Extensions', () => {
   let service: PosOrdersService;
@@ -86,7 +88,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             product: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
             productVariant: { findMany: jest.fn(), findUnique: jest.fn() },
             combo: { findMany: jest.fn() },
-            order: { findFirst: jest.fn(), create: jest.fn() },
+            order: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
             orderStatus: { findFirst: jest.fn() },
             orderCounter: { upsert: jest.fn() },
             orderItem: { create: jest.fn() },
@@ -121,6 +123,20 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
         {
           provide: MediaResolverService,
           useValue: { resolve: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: TrackingCaptureService,
+          useValue: { capture: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: TrackingSettingsService,
+          useValue: {
+            buildConfigSnapshot: jest.fn().mockResolvedValue({
+              enabledProviders: ['meta'],
+              normalizerVersion: 1,
+              currency: 'BDT',
+            }),
+          },
         },
       ],
     }).compile();

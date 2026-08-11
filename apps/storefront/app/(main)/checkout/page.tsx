@@ -15,7 +15,7 @@ import { submitPayment } from '@/lib/api/payments';
 import { normalizePhone } from '@/lib/phone-utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { trackEvent, getCookie } from '@/lib/tracking';
+import { trackEvent, getCookie, isSyntheticEmail } from '@/lib/tracking';
 import { getOrCreateCtxId } from '@/lib/tracking-client';
 
 function simpleFingerprint(phone: string, items: any[]) {
@@ -484,6 +484,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [paymentOptionType, setPaymentOptionType] = useState<'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'>('CASH_ON_DELIVERY');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number; viewToken?: string } | null>(null);
@@ -515,6 +516,7 @@ export default function CheckoutPage() {
     }
     setGuestName(readStorage('checkout_guestName', ''));
     setGuestPhone(readStorage('checkout_guestPhone', ''));
+    setGuestEmail(readStorage('checkout_guestEmail', ''));
     setPaymentOptionType((readStorage('checkout_paymentOptionType', 'CASH_ON_DELIVERY') as 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'));
     setMounted(true);
   }, []);
@@ -589,6 +591,7 @@ export default function CheckoutPage() {
 
   useEffect(() => { localStorage.setItem('checkout_guestName', guestName); }, [guestName]);
   useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone); }, [guestPhone]);
+  useEffect(() => { localStorage.setItem('checkout_guestEmail', guestEmail); }, [guestEmail]);
   useEffect(() => { localStorage.setItem('checkout_district', district); }, [district]);
   useEffect(() => { localStorage.setItem('checkout_thana', thana); }, [thana]);
   useEffect(() => { localStorage.setItem('checkout_address', addressLine); }, [addressLine]);
@@ -637,6 +640,7 @@ export default function CheckoutPage() {
     if (!phone || !name || wasSubmitted.current) return null;
     return {
       phone, name,
+      email: (guestEmail && !isSyntheticEmail(guestEmail)) ? guestEmail.trim() : undefined,
       address: { district, thana, addressLine },
       items: items.map(i => ({
         id: i.id, name: i.name, price: i.price, quantity: i.quantity,
@@ -647,7 +651,7 @@ export default function CheckoutPage() {
       fbp: getCookie('_fbp') || undefined,
       fbc: getCookie('_fbc') || undefined,
     };
-  }, [guestPhone, guestName, items, district, thana, addressLine, paymentOptionType, user]);
+  }, [guestPhone, guestName, guestEmail, items, district, thana, addressLine, paymentOptionType, user]);
 
   const leadDataRef = useRef(getLeadData());
   leadDataRef.current = getLeadData();
@@ -674,6 +678,12 @@ export default function CheckoutPage() {
       return { productId: item.id, variantId: item.variantId, quantity: item.quantity, price: item.price };
     });
 
+    // Website attribution (spec §8): the storefront identity is the source
+    // entity; a Facebook click (`_fbc`/fbclid) marks the order as Facebook/Ad,
+    // otherwise it is Direct/Direct.
+    const facebookClick = (getCookie('_fbc') || '').length > 0
+      || new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').has('fbclid');
+
     const payload: any = {
       customerId: user?.id,
       trackingSessionId: getOrCreateCtxId(),
@@ -682,10 +692,19 @@ export default function CheckoutPage() {
       shippingAddress: { district, thana, addressLine },
       guestName: user ? undefined : guestName,
       guestPhone: user ? undefined : (normalizePhone(guestPhone) || undefined),
+      guestEmail: user
+        ? undefined
+        : guestEmail && !isSyntheticEmail(guestEmail)
+          ? guestEmail.trim()
+          : undefined,
       paymentOptionType,
       gatewayCode: paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined,
       district: district || undefined,
       thana: thana || undefined,
+      salesChannel: 'WEBSITE',
+      sourcePlatform: facebookClick ? 'FACEBOOK' : 'DIRECT',
+      sourceType: facebookClick ? 'AD' : 'DIRECT',
+      sourceEntity: config.store?.name || undefined,
       selectedShippingOptionId: config.shippingMode === 'options' ? (selectedShippingOptionId || null) : undefined,
     };
 
@@ -741,6 +760,20 @@ export default function CheckoutPage() {
     if (thanaReq && district.trim() && !thana.trim()) {
       errors.thana = 'Please select a thana/upazila';
     }
+    const emailEnabled = checkoutCfg?.emailEnabled !== false;
+    const emailRequired = checkoutCfg?.emailRequired === true;
+    if (!user && emailEnabled) {
+      const email = (guestEmail || '').trim();
+      if (emailRequired && !email) {
+        errors.guestEmail = 'Please enter your email address';
+      } else if (
+        email &&
+        (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          isSyntheticEmail(email))
+      ) {
+        errors.guestEmail = 'Please enter a valid email address';
+      }
+    }
     if (!addressLine.trim() || addressLine.trim().length < 5) {
       errors.addressLine = 'Address must be at least 5 characters';
     }
@@ -762,7 +795,7 @@ export default function CheckoutPage() {
     const errorKeys = Object.keys(errors);
     if (errorKeys.length > 0) {
       // Find the first error in visual order: Phone -> Name -> District -> Thana -> Address Detail
-      const visualOrder = ['guestPhone', 'guestName', 'district', 'thana', 'addressLine', 'shippingOption'];
+      const visualOrder = ['guestPhone', 'guestName', 'guestEmail', 'district', 'thana', 'addressLine', 'shippingOption'];
       const firstErrorField = visualOrder.find(k => k in errors);
       if (firstErrorField) {
         setTimeout(() => {
@@ -795,6 +828,10 @@ export default function CheckoutPage() {
         toast.error('Please enter a valid Bangladeshi phone number (e.g. 01XXXXXXXXX or +8801XXXXXXXXX).');
         return;
       }
+      if (checkoutCfg?.emailEnabled !== false && checkoutCfg?.emailRequired === true && !(guestEmail || '').trim()) {
+        toast.error('Please enter your email address.');
+        return;
+      }
     }
     setSubmitting(true);
 
@@ -817,7 +854,7 @@ export default function CheckoutPage() {
         paymentSuccessCallback.current = () => {
           clearCart();
           try {
-            ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
+            ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
              'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
           } catch {}
         };
@@ -825,7 +862,7 @@ export default function CheckoutPage() {
       } else {
         clearCart();
         try {
-          ['checkout_guestName','checkout_guestPhone','checkout_district','checkout_thana',
+          ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
            'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
         } catch {}
         router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}`);
@@ -1240,6 +1277,23 @@ export default function CheckoutPage() {
                     {fieldErrors.guestPhone && <p className="text-red-500 text-[10px] mt-1 font-semibold">{fieldErrors.guestPhone}</p>}
                     {showPhoneError && <p className="text-red-500 text-[10px] mt-1 font-semibold">Please enter a valid Bangladeshi phone number</p>}
                   </div>
+
+                  {/* Email Input — shown only for guests when email collection is enabled */}
+                  {checkoutCfg?.emailEnabled !== false && (
+                    <div className="md:col-span-2 order-3">
+                      <input
+                        id="checkout-guestEmail"
+                        type="email"
+                        autoComplete="email"
+                        inputMode="email"
+                        value={guestEmail}
+                        onChange={e => { setGuestEmail(e.target.value); clearFieldError('guestEmail'); }}
+                        placeholder={checkoutCfg?.emailRequired ? 'ইমেইল ঠিকানা লিখুন *' : 'ইমেইল ঠিকানা লিখুন (ঐচ্ছিক)'}
+                        className={`w-full h-11 border rounded-md px-3.5 text-xs outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/10 transition-all bg-white ${fieldErrors.guestEmail ? 'border-red-400' : 'border-gray-250'}`}
+                      />
+                      {fieldErrors.guestEmail && <p className="text-red-500 text-[10px] mt-1 font-semibold">{fieldErrors.guestEmail}</p>}
+                    </div>
+                  )}
                 </div>
               )}
 

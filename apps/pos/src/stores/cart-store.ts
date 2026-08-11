@@ -50,7 +50,7 @@ export const useCartStore = create<CartState>()(
       customerId: null,
       guestName: '',
       guestPhone: '',
-      salesChannel: 'WALK_IN',
+      salesChannel: 'POS',
       deliveryMethod: 'Counter Sale',
       notes: '',
 
@@ -92,7 +92,7 @@ export const useCartStore = create<CartState>()(
       clearCart: () => set({
         items: [], orderDiscount: 0, orderDiscountType: 'flat',
         customerId: null, guestName: '', guestPhone: '',
-        salesChannel: 'WALK_IN', deliveryMethod: 'Counter Sale', notes: '',
+        salesChannel: 'POS', deliveryMethod: 'Counter Sale', notes: '',
       }),
 
       subtotal: () => get().items.reduce((s, i) => s + i.price * i.quantity, 0),

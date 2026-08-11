@@ -30,6 +30,8 @@ export function CommerceCheckoutSection({ hook }: Props) {
         <Field fieldKey='checkout_thana_enabled' schema={FIELD_SCHEMAS.checkout_thana_enabled} value={hook.values.checkout_thana_enabled ?? ''} onChange={v => hook.setValue('checkout_thana_enabled', v as string)} />
         <Field fieldKey='checkout_district_required' schema={FIELD_SCHEMAS.checkout_district_required} value={hook.values.checkout_district_required ?? ''} onChange={v => hook.setValue('checkout_district_required', v as string)} />
         <Field fieldKey='checkout_thana_required' schema={FIELD_SCHEMAS.checkout_thana_required} value={hook.values.checkout_thana_required ?? ''} onChange={v => hook.setValue('checkout_thana_required', v as string)} />
+        <Field fieldKey='checkout_email_enabled' schema={FIELD_SCHEMAS.checkout_email_enabled} value={hook.values.checkout_email_enabled ?? ''} onChange={v => hook.setValue('checkout_email_enabled', v as string)} />
+        <Field fieldKey='checkout_email_required' schema={FIELD_SCHEMAS.checkout_email_required} value={hook.values.checkout_email_required ?? ''} onChange={v => hook.setValue('checkout_email_required', v as string)} />
       </div>
     </SectionShell>
   )

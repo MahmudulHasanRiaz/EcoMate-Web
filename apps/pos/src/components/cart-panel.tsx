@@ -18,7 +18,8 @@ interface Props {
 
 const DELIVERY_METHODS = ['Counter Sale', 'Takeaway', 'Home Delivery', 'Courier']
 const SALES_CHANNELS = [
-  { value: 'WALK_IN', label: 'Walk-in' },
+  { value: 'POS', label: 'POS' },
+  { value: 'WALK_IN', label: 'Walk-in (legacy)' },
   { value: 'CALL', label: 'Call' },
   { value: 'FACEBOOK', label: 'Facebook' },
   { value: 'INSTAGRAM', label: 'Instagram' },
@@ -27,6 +28,7 @@ const SALES_CHANNELS = [
   { value: 'WHATSAPP', label: 'WhatsApp' },
   { value: 'THREADS', label: 'Threads' },
   { value: 'WEBSITE', label: 'Website' },
+  { value: 'OFFLINE', label: 'Offline' },
   { value: 'OTHER', label: 'Other' },
 ]
 

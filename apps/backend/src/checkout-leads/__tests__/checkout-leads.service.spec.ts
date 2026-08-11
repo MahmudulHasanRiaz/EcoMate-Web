@@ -259,7 +259,7 @@ describe('CheckoutLeadsService', () => {
       expect(input.eventType).toBe('Purchase');
       expect(input.orderId).toBe('order-1');
       expect(input.ctxId).toBe('ctx-lead');
-      expect(input.actionSource).toBe('physical_store');
+      expect(input.actionSource).toBe('phone_call');
       expect(input.payload).toEqual(
         expect.objectContaining({
           value: 1000,

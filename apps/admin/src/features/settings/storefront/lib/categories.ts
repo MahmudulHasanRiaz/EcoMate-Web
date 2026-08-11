@@ -141,6 +141,7 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     fields: [
       'checkout_district_enabled', 'checkout_thana_enabled',
       'checkout_district_required', 'checkout_thana_required',
+      'checkout_email_enabled', 'checkout_email_required',
     ],
   },
   'commerce-order': {

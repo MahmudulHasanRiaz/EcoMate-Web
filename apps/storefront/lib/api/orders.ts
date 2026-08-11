@@ -20,6 +20,7 @@ export interface CreateOrderData {
   couponCode?: string;
   guestName?: string;
   guestPhone?: string;
+  guestEmail?: string;
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   gatewayCode?: string;
   partialAmount?: number;

@@ -481,6 +481,10 @@ export class SystemSettingsController {
           thanaEnabled: map['checkout_thana_enabled'] !== 'false',
           districtRequired: map['checkout_district_required'] === 'true',
           thanaRequired: map['checkout_thana_required'] === 'true',
+          // Email collection (approved requirement): enabled default true
+          // (field shown), required default false (optional).
+          emailEnabled: map['checkout_email_enabled'] !== 'false',
+          emailRequired: map['checkout_email_required'] === 'true',
           paymentOptions: await (async () => {
             const paymentOptions: Record<string, boolean> = {
               FULL_PAYMENT: true,

@@ -6,6 +6,8 @@ import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
 import { ConfigService } from '@nestjs/config';
 import { MediaResolverService } from '../../media/media-resolver.service';
+import { TrackingCaptureService } from '../../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 
 describe('PosOrdersService', () => {
   let service: PosOrdersService;
@@ -89,6 +91,7 @@ describe('PosOrdersService', () => {
             },
             order: {
               findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
               findMany: jest.fn(),
             },
@@ -131,6 +134,22 @@ describe('PosOrdersService', () => {
           provide: MediaResolverService,
           useValue: {
             resolve: jest.fn().mockResolvedValue({}),
+          },
+        },
+        {
+          provide: TrackingCaptureService,
+          useValue: {
+            capture: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: TrackingSettingsService,
+          useValue: {
+            buildConfigSnapshot: jest.fn().mockResolvedValue({
+              enabledProviders: ['meta'],
+              normalizerVersion: 1,
+              currency: 'BDT',
+            }),
           },
         },
       ],
@@ -782,6 +801,59 @@ describe('PosOrdersService', () => {
           }),
         );
         expect(result).toBeDefined();
+      });
+
+      it('captures an offline Purchase snapshot for counter sales (physical_store)', async () => {
+        setupSuccessMocks();
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+          id: 'order-1',
+          total: 2000,
+          createdAt: new Date('2025-01-15'),
+          salesChannel: 'WALK_IN',
+          trackingSessionId: null,
+          guestPhone: undefined,
+          customer: null,
+          items: [
+            {
+              id: 'item-1',
+              productId: 'prod-1',
+              quantity: 2,
+              price: 1000,
+              product: {
+                id: 'prod-1',
+                name: 'Test Product',
+                category: { name: 'Snacks' },
+              },
+            },
+          ],
+        });
+
+        const dto = {
+          items: [{ productId: 'prod-1', quantity: 2, price: 1000 }],
+        };
+        await service.create(dto, 'session-1', 'cashier-1');
+
+        const capture = module.get<TrackingCaptureService>(
+          TrackingCaptureService,
+        ).capture as jest.Mock;
+        expect(capture).toHaveBeenCalledTimes(1);
+        const [input, txArg] = capture.mock.calls[0];
+        expect(input.eventId).toBe('purchase_order-1');
+        expect(input.eventType).toBe('Purchase');
+        expect(input.actionSource).toBe('physical_store');
+        expect(input.payload).toEqual(
+          expect.objectContaining({
+            value: 2000,
+            currency: 'BDT',
+            content_ids: ['prod-1'],
+            content_name: 'Test Product',
+            content_category: 'Snacks',
+            num_items: 2,
+            contents: [{ id: 'prod-1', quantity: 2, item_price: 1000 }],
+          }),
+        );
+        // capture runs inside the business transaction client
+        expect(txArg).toBeDefined();
       });
 
       it('should handle sale price (use salePrice when set)', async () => {

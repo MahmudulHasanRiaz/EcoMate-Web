@@ -18,6 +18,8 @@ export interface TrackingSnapshotPayload {
   eventType?: string;
   /** Caller-provided dedup id; adapters override for order events (purchase_/refund_). */
   eventId?: string;
+  /** Capture-time action source ('website' | 'physical_store'); the dispatcher merges it for adapters. */
+  actionSource?: string;
   /** Business event time (unix seconds). Adapters fall back to dispatch time when absent. */
   eventTime?: number;
   orderId?: string;

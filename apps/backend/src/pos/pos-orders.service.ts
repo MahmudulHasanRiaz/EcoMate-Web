@@ -13,6 +13,10 @@ import { HoldCartDto } from './dto/hold-cart.dto';
 import { ValidateStockDto, StockValidationResult, StockValidationItemResult, AlternativeSourceDto } from './dto/validate-stock.dto';
 import { CreatePosTransferRequestDto } from './dto/create-transfer-request.dto';
 import { MediaResolverService } from '../media/media-resolver.service';
+import { TrackingCaptureService } from '../tracking/tracking-capture.service';
+import { TrackingSettingsService } from '../tracking/tracking-settings.service';
+import { resolveActionSource } from '../tracking/meta-action-source';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PosOrdersService {
@@ -24,6 +28,8 @@ export class PosOrdersService {
     private readonly stockRouter: StockRouterService,
     @Inject(ConfigService) private config: ConfigService,
     private readonly mediaResolver: MediaResolverService,
+    private readonly trackingCapture: TrackingCaptureService,
+    private readonly trackingSettings: TrackingSettingsService,
   ) {}
 
   private mediaUrls(value: unknown): string[] {
@@ -532,7 +538,10 @@ export class PosOrdersService {
           discountType: 'flat',
           total,
           source: 'POS',
-          salesChannel: dto.salesChannel || 'WALK_IN',
+          salesChannel: dto.salesChannel || 'POS',
+          sourcePlatform: 'POS',
+          sourceType: 'SHOWROOM',
+          sourceEntity: (session.showroom as any)?.name || null,
           posSessionId: sessionId,
           customerId: dto.customerId,
           guestName: dto.guestName,
@@ -714,11 +723,121 @@ export class PosOrdersService {
         });
       }
 
+      // Capture the offline Purchase snapshot inside the same transaction as
+      // the order insert (idempotent). POS sales are completed at the till, so
+      // the event fires regardless of purchase mode — action_source is always
+      // physical_store for Meta offline attribution. Wrapped so a capture-side
+      // failure can never roll back the order.
+      try {
+        const trackOrder = await tx.order.findUnique({
+          where: { id: order.id },
+          include: {
+            customer: true,
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: { select: { name: true } },
+                  },
+                },
+                combo: { select: { id: true, name: true } },
+              },
+            },
+          },
+        });
+        if (trackOrder) {
+          await this.fireOfflinePurchase(trackOrder as any, tx);
+        }
+      } catch (err) {
+        this.logger.error(
+          `Failed to capture offline purchase snapshot for order ${order.id}:`,
+          err,
+        );
+      }
+
       return tx.order.findFirst({
         where: { id: order.id, trashedAt: null },
         include: { items: true, payments: true, customer: true },
       });
     });
+  }
+
+  private async fireOfflinePurchase(
+    order: any,
+    tx?: Prisma.TransactionClient,
+  ) {
+    try {
+      let email = '';
+      let phone = '';
+      let firstName = '';
+      let lastName = '';
+
+      if (order.customer) {
+        email = order.customer.email || '';
+        firstName = order.customer.name || '';
+        lastName = order.customer.lastName || '';
+        phone = order.customer.phoneNumber || order.customer.phone || '';
+      }
+      if (!phone) phone = order.guestPhone || '';
+      if (!firstName) firstName = order.guestName || '';
+
+      const itemsList = (order.items as any[]) || [];
+      const totalValue = Number(order.total || 0);
+      const firstItem = itemsList[0];
+      const contentName = firstItem
+        ? firstItem.product?.name || firstItem.combo?.name || undefined
+        : undefined;
+      const contentCategory = firstItem?.product?.category?.name || undefined;
+
+      const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
+
+      await this.trackingCapture.capture(
+        {
+          eventId: `purchase_${order.id}`,
+          eventType: 'Purchase',
+          orderId: order.id,
+          ctxId: order.trackingSessionId || undefined,
+          eventTime: Math.floor(
+            new Date(order.createdAt).getTime() / 1000,
+          ),
+          actionSource: resolveActionSource(order),
+          payload: {
+            value: totalValue,
+            currency: (configSnapshot as any).currency || 'BDT',
+            content_ids: itemsList
+              .map((i: any) => i.productId || i.comboId || '')
+              .filter(Boolean),
+            content_type: 'product',
+            content_name: contentName,
+            content_category: contentCategory,
+            contents: itemsList.map((i: any) => ({
+              id: i.productId || i.comboId || '',
+              quantity: i.quantity,
+              item_price: Number(i.price),
+            })),
+            num_items: itemsList.reduce(
+              (s: number, i: any) => s + (i.quantity || 0),
+              0,
+            ),
+            customerId: order.customerId ?? undefined,
+            orderId: order.id,
+            customer: {
+              email: email || undefined,
+              phone: phone || undefined,
+              firstName: firstName || undefined,
+              lastName: lastName || undefined,
+              country: 'BD',
+            },
+          },
+          configSnapshot,
+        },
+        tx,
+      );
+    } catch (err) {
+      this.logger.error('Failed to fire offline purchase:', err);
+    }
   }
 
   async getSessionShowroom(sessionId: string): Promise<{ showroomId: string }> {

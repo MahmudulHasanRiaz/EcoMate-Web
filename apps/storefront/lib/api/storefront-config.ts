@@ -119,6 +119,8 @@ export interface StorefrontConfig {
     thanaEnabled: boolean;
     districtRequired: boolean;
     thanaRequired: boolean;
+    emailEnabled: boolean;
+    emailRequired: boolean;
     paymentOptions?: Record<string, boolean>;
   };
   districtCharges: Record<string, number>;

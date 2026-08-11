@@ -11,7 +11,7 @@ import { CustomerViewCard } from '@/features/orders/customer-view-card'
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
-import { OrderSourceBadge } from '@/features/orders/order-source-badge'
+import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
@@ -265,9 +265,19 @@ function OrderDetailPage() {
             <div>
               <h2 className='text-xl font-bold tracking-tight'>
                 {order.displayId}
-                {order.salesChannel && (
-                  <OrderSourceBadge salesChannel={order.salesChannel} className='text-xs h-auto py-0.5' />
-                )}
+                {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity ? (
+                  <span className='ml-2 align-middle'>
+                    <OrderSourceBadges
+                      attribution={{
+                        salesChannel: order.salesChannel,
+                        sourcePlatform: order.sourcePlatform,
+                        sourceType: order.sourceType,
+                        sourceEntity: order.sourceEntity,
+                      }}
+                      className='text-xs h-auto py-0.5'
+                    />
+                  </span>
+                ) : null}
                 {order.trashedAt && (
                   <Badge variant='destructive' className='ml-2 align-middle text-xs'>
                     <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed

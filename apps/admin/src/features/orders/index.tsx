@@ -29,7 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { OrderSourceBadge } from '@/features/orders/order-source-badge'
+import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 
 const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
 const nn = (v: number | string) => Number(v)
@@ -587,9 +587,16 @@ export function Orders() {
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
-                            {o.salesChannel && (
-                              <OrderSourceBadge salesChannel={o.salesChannel} />
-                            )}
+                            {o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity ? (
+                              <OrderSourceBadges
+                                attribution={{
+                                  salesChannel: o.salesChannel,
+                                  sourcePlatform: o.sourcePlatform,
+                                  sourceType: o.sourceType,
+                                  sourceEntity: o.sourceEntity,
+                                }}
+                              />
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell>

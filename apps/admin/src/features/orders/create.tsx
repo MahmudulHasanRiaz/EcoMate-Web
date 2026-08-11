@@ -87,6 +87,9 @@ export function CreateOrder() {
   const [discount, setDiscount] = useState('0')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
   const [salesChannel, setSalesChannel] = useState('WEBSITE')
+  const [sourcePlatform, setSourcePlatform] = useState('')
+  const [sourceType, setSourceType] = useState('')
+  const [sourceEntity, setSourceEntity] = useState('')
 
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
@@ -292,6 +295,9 @@ export function CreateOrder() {
       discount: parseFloat(discount) || 0,
       discountType,
       salesChannel,
+      ...(sourcePlatform ? { sourcePlatform } : {}),
+      ...(sourceType ? { sourceType } : {}),
+      ...(sourceEntity ? { sourceEntity } : {}),
       customerNotes: customerNotes || null,
       officeNotes: officeNotes || null,
       paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,
@@ -741,21 +747,59 @@ export function CreateOrder() {
 
             <Card>
               <CardHeader className='pb-2'>
-                <CardTitle className='text-base'>Sales Channel</CardTitle>
+                <CardTitle className='text-base'>Sales Channel &amp; Source</CardTitle>
               </CardHeader>
-              <CardContent>
-                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={salesChannel} onChange={e => setSalesChannel(e.target.value)}>
-                  <option value='WEBSITE'>Website</option>
-                  <option value='WALK_IN'>Walk-in</option>
-                  <option value='CALL'>Call</option>
-                  <option value='FACEBOOK'>Facebook</option>
-                  <option value='INSTAGRAM'>Instagram</option>
-                  <option value='TIKTOK'>TikTok</option>
-                  <option value='MESSENGER'>Messenger</option>
-                  <option value='WHATSAPP'>WhatsApp</option>
-                  <option value='THREADS'>Threads</option>
-                  <option value='OTHER'>Other</option>
-                </select>
+              <CardContent className='space-y-3'>
+                <div>
+                  <Label className='text-xs'>Channel</Label>
+                  <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={salesChannel} onChange={e => setSalesChannel(e.target.value)}>
+                    <option value='WEBSITE'>Website</option>
+                    <option value='POS'>POS</option>
+                    <option value='WALK_IN'>Walk-in</option>
+                    <option value='OFFLINE'>Offline</option>
+                    <option value='CALL'>Call</option>
+                    <option value='FACEBOOK'>Facebook</option>
+                    <option value='INSTAGRAM'>Instagram</option>
+                    <option value='TIKTOK'>TikTok</option>
+                    <option value='MESSENGER'>Messenger</option>
+                    <option value='WHATSAPP'>WhatsApp</option>
+                    <option value='THREADS'>Threads</option>
+                    <option value='OTHER'>Other</option>
+                  </select>
+                </div>
+                <div className='grid grid-cols-2 gap-3'>
+                  <div>
+                    <Label className='text-xs'>Source Platform</Label>
+                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={sourcePlatform} onChange={e => setSourcePlatform(e.target.value)}>
+                      <option value=''>—</option>
+                      <option value='FACEBOOK'>Facebook</option>
+                      <option value='INSTAGRAM'>Instagram</option>
+                      <option value='TIKTOK'>TikTok</option>
+                      <option value='THREADS'>Threads</option>
+                      <option value='MESSENGER'>Messenger</option>
+                      <option value='WHATSAPP'>WhatsApp</option>
+                      <option value='PHONE'>Phone</option>
+                      <option value='DIRECT'>Direct</option>
+                      <option value='POS'>POS</option>
+                      <option value='OTHER'>Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className='text-xs'>Source Type</Label>
+                    <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={sourceType} onChange={e => setSourceType(e.target.value)}>
+                      <option value=''>—</option>
+                      <option value='DIRECT'>Direct</option>
+                      <option value='AD'>Ad</option>
+                      <option value='CHAT'>Chat</option>
+                      <option value='CALL'>Call</option>
+                      <option value='SHOWROOM'>Showroom</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(storefront / showroom)</span></Label>
+                  <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='E.g. Dhanmondi Showroom, EcoMate Store' />
+                </div>
               </CardContent>
             </Card>
 

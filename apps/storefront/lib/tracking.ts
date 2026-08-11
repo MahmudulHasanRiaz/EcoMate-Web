@@ -346,7 +346,7 @@ export function getCookie(name: string): string {
   return '';
 }
 
-function isSyntheticEmail(email?: string): boolean {
+export function isSyntheticEmail(email?: string): boolean {
   if (!email) return true;
   const localPart = email.split('@')[0]?.toLowerCase() || '';
   return localPart.startsWith('cust_') || /^\d+$/.test(localPart);

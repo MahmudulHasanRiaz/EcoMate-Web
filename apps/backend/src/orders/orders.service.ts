@@ -36,6 +36,8 @@ import {
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { resolveDivision } from '../delivery-areas/data/district-division';
+import { resolveActionSource } from '../tracking/meta-action-source';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 
@@ -156,7 +158,12 @@ const PUBLIC_TOKEN_SELECT = {
       id: true,
       quantity: true,
       price: true,
-      product: { select: { name: true, slug: true, images: true } },
+      comboId: true,
+      productId: true,
+      product: {
+        select: { name: true, slug: true, images: true, category: { select: { name: true } } },
+      },
+      combo: { select: { id: true, name: true } },
     },
   },
 } satisfies Prisma.OrderSelect;
@@ -691,8 +698,15 @@ export class OrdersService {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, images: true, slug: true },
+              select: {
+                id: true,
+                name: true,
+                images: true,
+                slug: true,
+                category: { select: { name: true } },
+              },
             },
+            combo: { select: { id: true, name: true } },
             variant: {
               include: {
                 attributeValues: {
@@ -1265,10 +1279,15 @@ export class OrdersService {
               : {}),
             district: dto.district,
             thana: dto.thana,
+            // Canonical division for the selected district (single resolver).
+            division: resolveDivision(dto.district) ?? undefined,
           },
           customerNotes: dto.customerNotes,
           officeNotes: resolvedOfficeNotes,
           salesChannel: dto.salesChannel || 'WEBSITE',
+          sourcePlatform: dto.sourcePlatform || null,
+          sourceType: dto.sourceType || null,
+          sourceEntity: dto.sourceEntity || null,
           trackingSessionId: dto.trackingSessionId ?? null,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
@@ -1401,7 +1420,12 @@ export class OrdersService {
               orderId: created.id,
               gatewayCode,
               amount: paymentAmount,
-              status: PaymentStatus.PENDING,
+              // COD cash rows are created UNPAID so the Delivered path can
+              // mark them PAID; in-progress online payments stay PENDING.
+              status:
+                gatewayCode === 'cash'
+                  ? PaymentStatus.UNPAID
+                  : PaymentStatus.PENDING,
             },
           });
         }
@@ -1586,7 +1610,16 @@ export class OrdersService {
           where: { id: created.id },
           include: {
             items: {
-              include: { product: { select: { id: true, name: true } } },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: { select: { name: true } },
+                  },
+                },
+                combo: { select: { id: true, name: true } },
+              },
             },
             payments: true,
           },
@@ -2209,19 +2242,6 @@ export class OrdersService {
       }
 
       if (newStatus.name === 'Delivered') {
-        const codPayment = u.payments?.find(
-          (p) => p.gatewayCode === 'cash' && p.status === PaymentStatus.UNPAID,
-        );
-        if (codPayment) {
-          await tx.payment.update({
-            where: { id: codPayment.id },
-            data: {
-              status: PaymentStatus.PAID,
-              verifiedBy: userId,
-              verifiedAt: new Date(),
-            },
-          });
-        }
         await this.handleDeliveredSideEffects(tx, u, performedBy || userId);
       }
 
@@ -2245,7 +2265,16 @@ export class OrdersService {
           where: { id },
           include: {
             items: {
-              include: { product: { select: { id: true, name: true } } },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: { select: { name: true } },
+                  },
+                },
+                combo: { select: { id: true, name: true } },
+              },
             },
             customer: true,
             payments: true,
@@ -2366,6 +2395,45 @@ export class OrdersService {
 
       if (verified) {
         await this.handleConfirmedSideEffects(tx, orderId);
+
+        // Payment-verification path: the transition lands this order on
+        // `targetStatus.name`; the validated Purchase capture keeps the same
+        // canonical configuration-driven gate as updateStatus() (self-gates on
+        // `tracking_meta_validated_status`), so the event fires only when the
+        // configured validated status matches the status actually reached.
+        try {
+          const withItems = await tx.order.findUnique({
+            where: { id: orderId },
+            include: {
+              items: {
+                include: {
+                  product: {
+                    select: {
+                      id: true,
+                      name: true,
+                      category: { select: { name: true } },
+                    },
+                  },
+                  combo: { select: { id: true, name: true } },
+                },
+              },
+              customer: true,
+              payments: true,
+            },
+          });
+          if (withItems) {
+            await this.firePurchaseValidated(
+              targetStatus!.name,
+              withItems as any,
+              tx,
+            );
+          }
+        } catch (err) {
+          this.logger.error(
+            `Failed to capture tracking snapshot for order ${orderId}:`,
+            err,
+          );
+        }
       }
 
       return updated;
@@ -2684,6 +2752,52 @@ export class OrdersService {
             where: { id: order.id },
             data: { timeline: tl as any },
           });
+        }
+
+        // Capture tracking snapshots for every order the bulk change touched.
+        // firePurchaseValidated/fireRefundEvent self-gate on settings; the block
+        // is wrapped so a capture-side failure can never roll back the statuses.
+        try {
+          for (const order of orders) {
+            if (!validIds.includes(order.id)) continue;
+            const withItems = await tx.order.findUnique({
+              where: { id: order.id },
+              include: {
+                items: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        name: true,
+                        category: { select: { name: true } },
+                      },
+                    },
+                    combo: { select: { id: true, name: true } },
+                  },
+                },
+                customer: true,
+                payments: true,
+              },
+            });
+            if (!withItems) continue;
+            await this.firePurchaseValidated(
+              targetStatus.name,
+              withItems as any,
+              tx,
+            );
+            if (
+              ['Cancelled', 'Returned', 'Return Pending'].includes(
+                targetStatus.name,
+              )
+            ) {
+              await this.fireRefundEvent(withItems as any, tx);
+            }
+          }
+        } catch (err) {
+          this.logger.error(
+            `Failed to capture tracking snapshots for bulk status change:`,
+            err,
+          );
         }
       });
     }
@@ -3151,6 +3265,33 @@ export class OrdersService {
     order: any,
     performedBy?: string,
   ) {
+    // COD cash payment verification on delivery — a single path for manual,
+    // bulk, and courier-sync deliveries (idempotent: only UNPAID → PAID).
+    try {
+      const codPayment = await tx.payment.findFirst({
+        where: {
+          orderId: order.id,
+          gatewayCode: 'cash',
+          status: PaymentStatus.UNPAID,
+        },
+      });
+      if (codPayment) {
+        await tx.payment.update({
+          where: { id: codPayment.id },
+          data: {
+            status: PaymentStatus.PAID,
+            verifiedBy: performedBy,
+            verifiedAt: new Date(),
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to verify COD payment for order ${order.id}:`,
+        err,
+      );
+    }
+
     // Final stock deduction on delivery.
     // Idempotent: managed stock only deducts when managedStockDeducted === false;
     // physical reservation only when ACTIVE. Safe for courier auto-delivery.
@@ -3629,8 +3770,14 @@ export class OrdersService {
       city = shippingAddr.city || shippingAddr.district || '';
       // Meta/GA4 match keys (Wave-2.5): state/zip are anonymous match fields —
       // they lift EMQ without PII. Read both the Address model names (state,
-      // zipCode) and storefront aliases (division, postalCode).
-      state = shippingAddr.state || shippingAddr.division || '';
+      // zipCode) and storefront aliases (division, postalCode). Historical
+      // orders without a persisted division are lazily resolved here from the
+      // district via the canonical resolver (spec §21).
+      state =
+        shippingAddr.state ||
+        shippingAddr.division ||
+        resolveDivision(shippingAddr.district) ||
+        '';
       zip = shippingAddr.zipCode || shippingAddr.postalCode || '';
       if (shippingAddr.country) country = shippingAddr.country;
     }
@@ -3644,12 +3791,19 @@ export class OrdersService {
       item_price: Number(i.price),
     }));
 
+    // content_name/content_category drive Meta catalog matching. Single values
+    // from the first line item keep both sides (browser + CAPI) in lockstep.
+    const firstItem = itemsList[0];
+    const contentName = firstItem
+      ? firstItem.product?.name || firstItem.combo?.name || undefined
+      : undefined;
+    const contentCategory = firstItem?.product?.category?.name || undefined;
+
     const createdAt = order.createdAt
       ? Math.floor(new Date(order.createdAt).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
 
-    const actionSource =
-      order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+    const actionSource = resolveActionSource(order);
 
     const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
@@ -3663,11 +3817,13 @@ export class OrdersService {
         actionSource,
         payload: {
           value: totalValue,
-          currency: 'BDT',
+          currency: (configSnapshot as any).currency || 'BDT',
           content_ids: itemsList
             .map((i: any) => i.productId || i.comboId || '')
             .filter(Boolean),
           content_type: 'product',
+          content_name: contentName,
+          content_category: contentCategory,
           contents,
           num_items: itemsList.reduce(
             (s: number, i: any) => s + (i.quantity || 0),
@@ -3713,8 +3869,7 @@ export class OrdersService {
       if (!phone) phone = order.guestPhone || '';
       if (!firstName) firstName = order.guestName || '';
 
-      const actionSource =
-        order.salesChannel === 'WEBSITE' ? 'website' : 'physical_store';
+      const actionSource = resolveActionSource(order);
 
       const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
@@ -3728,10 +3883,11 @@ export class OrdersService {
           actionSource,
           payload: {
             value: -totalValue,
-            currency: 'BDT',
+            currency: (configSnapshot as any).currency || 'BDT',
             content_ids: itemsList
               .map((i: any) => i.productId || i.comboId || '')
               .filter(Boolean),
+            content_type: 'product',
             contents: itemsList.map((i: any) => ({
               id: i.productId || i.comboId || '',
               quantity: i.quantity,

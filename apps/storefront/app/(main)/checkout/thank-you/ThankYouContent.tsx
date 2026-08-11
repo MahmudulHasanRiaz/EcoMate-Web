@@ -82,11 +82,18 @@ export default function ThankYouContent({
     if (fireMeta || fireTiktok) {
       const itemsList = (order.items as any[]) || [];
       const totalValue = Number(order.total || order.subtotal || 0);
+      const firstItem = itemsList[0];
       const sharedData = {
         value: totalValue,
         currency: config.currency.code,
         content_type: 'product',
-        content_ids: itemsList.map((i: any) => i.productId || i.comboId || ''),
+        content_ids: itemsList
+          .map((i: any) => i.productId || i.comboId || '')
+          .filter(Boolean),
+        content_name: firstItem
+          ? firstItem.product?.name || firstItem.combo?.name || undefined
+          : undefined,
+        content_category: firstItem?.product?.category?.name || undefined,
         num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
         order_id: order.id,
         contents: itemsList.map((i: any) => ({
@@ -99,8 +106,9 @@ export default function ThankYouContent({
         email: order.customer?.email || '',
         phone: order.shippingAddress?.phone || order.guestPhone || '',
         name: order.shippingAddress?.name || order.guestName || '',
-        city: order.shippingAddress?.city || '',
-        state: order.shippingAddress?.district || '',
+        // Meta geo (BD): ct = district, st = division (lazy fallback for legacy orders).
+        city: order.shippingAddress?.district || order.shippingAddress?.city || '',
+        state: order.shippingAddress?.division || order.shippingAddress?.state || order.shippingAddress?.district || '',
         country: 'BD',
         zip: order.shippingAddress?.zip || '',
         address: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}`.trim().replace(/^,\s*/, ''),

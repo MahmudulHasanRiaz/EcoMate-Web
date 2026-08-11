@@ -10,6 +10,8 @@ import { CustomersService } from '../customers/customers.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { resolveDivision } from '../delivery-areas/data/district-division';
+import { resolveActionSource } from '../tracking/meta-action-source';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 import { LEAD_STATUS } from './checkout-lead.constants';
 
@@ -312,12 +314,23 @@ export class CheckoutLeadsService {
         ...(typeof shippingAddress === 'object' ? shippingAddress : {}),
         district: overrides.district,
         thana: overrides.thana,
+        division: resolveDivision(overrides.district) ?? undefined,
         ...(overrides.shippingAddress
           ? typeof overrides.shippingAddress === 'object'
             ? overrides.shippingAddress
             : {}
           : {}),
       };
+    } else if (typeof shippingAddress === 'object' && shippingAddress) {
+      // Lazy-resolve the division for lead rows that carry a district.
+      const district =
+        shippingAddress.district || shippingAddress.city || undefined;
+      if (district && !shippingAddress.division) {
+        shippingAddress = {
+          ...shippingAddress,
+          division: resolveDivision(district) ?? undefined,
+        };
+      }
     }
 
     const subtotal = items.reduce(
@@ -359,7 +372,10 @@ export class CheckoutLeadsService {
               price: i.price || 0,
             })),
           },
-          salesChannel: (overrides?.salesChannel || 'CALL') as any,
+          salesChannel: (overrides?.salesChannel || 'OFFLINE') as any,
+          sourcePlatform: overrides?.sourcePlatform || 'PHONE',
+          sourceType: overrides?.sourceType || 'CALL',
+          sourceEntity: overrides?.sourceEntity || null,
           trackingSessionId: lead.ctxId ?? undefined,
           paymentOptionType:
             overrides?.paymentMode === 'cod'
@@ -452,7 +468,16 @@ export class CheckoutLeadsService {
           customer: true,
           status: true,
           items: {
-            include: { product: { select: { id: true, name: true } } },
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: { select: { name: true } },
+                },
+              },
+              combo: { select: { id: true, name: true } },
+            },
           },
         },
       });
@@ -489,6 +514,11 @@ export class CheckoutLeadsService {
 
       const itemsList = (order.items as any[]) || [];
       const totalValue = Number(order.total || 0);
+      const firstItem = itemsList[0];
+      const contentName = firstItem
+        ? firstItem.product?.name || firstItem.combo?.name || undefined
+        : undefined;
+      const contentCategory = firstItem?.product?.category?.name || undefined;
 
       const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
@@ -503,13 +533,16 @@ export class CheckoutLeadsService {
           eventTime: Math.floor(
             new Date(order.createdAt).getTime() / 1000,
           ),
-          actionSource: 'physical_store',
+          actionSource: resolveActionSource(order),
           payload: {
             value: totalValue,
-            currency: 'BDT',
+            currency: (configSnapshot as any).currency || 'BDT',
             content_ids: itemsList
               .map((i: any) => i.productId || i.comboId || '')
               .filter(Boolean),
+            content_type: 'product',
+            content_name: contentName,
+            content_category: contentCategory,
             contents: itemsList.map((i: any) => ({
               id: i.productId || i.comboId || '',
               quantity: i.quantity,

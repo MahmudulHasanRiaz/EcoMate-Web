@@ -31,4 +31,7 @@ export class ConvertOrderDto {
   @IsOptional() @IsString() paymentMode?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
   @IsOptional() @IsString() salesChannel?: string;
+  @IsOptional() @IsString() sourcePlatform?: string;
+  @IsOptional() @IsString() sourceType?: string;
+  @IsOptional() @IsString() sourceEntity?: string;
 }

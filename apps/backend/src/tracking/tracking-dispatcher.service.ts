@@ -180,6 +180,7 @@ export class TrackingDispatcherService {
       eventType,
       eventId,
       ...(eventTime != null ? { eventTime } : {}),
+      ...(actionSource != null ? { actionSource } : {}),
     };
 
     // Wave-2.1 identity-binding at dispatch (Candidate B): for an order-bound

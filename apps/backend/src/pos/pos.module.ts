@@ -4,9 +4,10 @@ import { SessionsService } from './sessions.service';
 import { PosOrdersController } from './pos-orders.controller';
 import { PosOrdersService } from './pos-orders.service';
 import { MediaModule } from '../media/media.module';
+import { TrackingModule } from '../tracking/tracking.module';
 
 @Module({
-  imports: [MediaModule],
+  imports: [MediaModule, TrackingModule],
   controllers: [SessionsController, PosOrdersController],
   providers: [SessionsService, PosOrdersService],
 })
