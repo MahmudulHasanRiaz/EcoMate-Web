@@ -921,6 +921,107 @@ describe('OrdersService', () => {
       expect(prisma.order.update).toHaveBeenCalled();
     });
 
+    describe('Partial automation-stop (authoritative rule)', () => {
+      const partialOrder = {
+        ...mockOrder,
+        status: { id: 'status-partial', name: 'Partial' },
+      };
+      const deliveredStatus = {
+        id: 'status-delivered',
+        name: 'Delivered',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      const returnPendingStatus = {
+        id: 'status-return-pending',
+        name: 'Return Pending',
+        isInitial: false,
+        nextStatuses: [],
+      };
+
+      it('blocks automated actors from moving a Partial order to Delivered', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          deliveredStatus,
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-delivered' },
+            'system',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['system', 'system'],
+        ['webhook', 'webhook'],
+        ['reconcile', 'reconcile'],
+      ])('blocks automated actor %s from moving a Partial order', async (_label, actor) => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          deliveredStatus,
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-delivered' },
+            actor,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it('blocks automated actors from moving a Partial order to Returned', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        const returnedStatus = {
+          id: 'status-returned',
+          name: 'Returned',
+          isInitial: false,
+          nextStatuses: [],
+        };
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          returnedStatus,
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-returned' },
+            'system',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it('allows a manual staff member to move a Partial order forward', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          returnPendingStatus,
+        );
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...partialOrder,
+          statusId: 'status-return-pending',
+          status: returnPendingStatus,
+        });
+        (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+        (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-return-pending', note: 'Manual staff decision' },
+          userId,
+        );
+
+        expect(prisma.order.update).toHaveBeenCalled();
+        expect(result.statusId).toBe('status-return-pending');
+      });
+    });
+
     it('captures a validated purchase snapshot inside the status transaction', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(

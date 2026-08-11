@@ -42,13 +42,16 @@ const STEADFAST_DISPATCH_MAP: Record<string, string | null> = {
 };
 
 // DispatchStatus → OrderStatus name mapping (when webhook should auto-update order)
+// AUTHORITATIVE RULE: PARTIAL from ANY courier advances the order to 'Partial'
+// (no provider exception). 'Partial' is then an automation-stopped state — the
+// lock is enforced in OrdersService.updateStatus for automated actors.
 const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
   HANDED_OVER: 'Shipping',
   PICKED_UP: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
-  PARTIAL: null,
+  PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
   CANCELLED: null,
 };
@@ -139,6 +142,9 @@ const REDX_DISPATCH_MAP: Record<string, string | null> = {
   'ready-for-delivery': 'PICKED_UP',
   'delivery-in-progress': 'ASSIGNED_TO_RIDER',
   delivered: 'DELIVERED',
+  // AUTHORITATIVE RULE: PARTIAL → 'Partial' for every courier, no exception.
+  partial: 'PARTIAL',
+  partial_delivered: 'PARTIAL',
   'agent-hold': 'HOLD',
   'agent-returning': 'RETURN_PENDING',
   returned: 'RETURN_PENDING',

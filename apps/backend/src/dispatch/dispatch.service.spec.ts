@@ -199,6 +199,46 @@ describe('DispatchService', () => {
     }
   });
 
+  it('a staff member can manually move a Partial order forward via dispatch status change', async () => {
+    prisma.dispatch.findUnique
+      .mockResolvedValueOnce({ id: 'd-1', status: 'PARTIAL' })
+      .mockResolvedValueOnce({
+        id: 'd-1',
+        orderId: 'order-1',
+        status: 'RETURN_PENDING',
+        courier: 'pathao',
+        consignmentId: 'CG-001',
+        productMapping: null,
+      });
+    prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    prisma.order = {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { id: 'status-partial', name: 'Partial' },
+        timeline: [],
+      }),
+      update: jest.fn().mockResolvedValue({}),
+    };
+    prisma.orderStatus = {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'status-return-pending',
+        name: 'Return Pending',
+      }),
+    };
+    prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+
+    await service.updateStatus('d-1', 'RETURN_PENDING', 'staff-123');
+
+    // Manual staff action IS allowed to move the Partial order forward.
+    expect(prisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'order-1' },
+        data: expect.objectContaining({ statusId: 'status-return-pending' }),
+      }),
+    );
+  });
+
   describe('syncStatusFromCourier', () => {
     const dispatchRow = {
       id: 'd-1',
@@ -467,6 +507,43 @@ describe('DispatchService', () => {
       expect(summary.failed).toHaveLength(1);
       expect(summary.failed[0].reason).toContain('Dispatch not found');
       expect(summary.synced).toHaveLength(1);
+    });
+
+    it('never transitions an order that is already Partial (automation stop)', async () => {
+      // Courier now reports returned; the order is Partial (automation-stopped).
+      tracking.getDispatchTracking.mockResolvedValue(
+        trackingResult({ currentStatus: 'returned' }),
+      );
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { id: 'status-partial', name: 'Partial' },
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-return-pending',
+        name: 'Return Pending',
+      });
+      ordersService.updateStatus.mockRejectedValue(
+        new BadRequestException('lock'),
+      );
+
+      const summary = await service.syncStatusFromCourier(['d-1']);
+
+      // Courier status recorded on dispatch + order, mapped dispatch status set…
+      expect(summary.synced).toHaveLength(1);
+      expect(prisma.dispatch.update.mock.calls[0][0].data.courierStatus).toBe('returned');
+      expect(prisma.dispatch.update.mock.calls[0][0].data.status).toBe('RETURNED');
+      // …but the automated order advance was attempted and rejected every time
+      // (direct attempt + BFS steps all run under the 'system' actor lock).
+      expect(ordersService.updateStatus).toHaveBeenCalled();
+      for (const call of (ordersService.updateStatus as jest.Mock).mock.calls) {
+        expect(call[0]).toBe('order-1');
+        expect(call[2]).toBe('system');
+      }
+      // The order status must never be touched by the sync.
+      for (const call of (prisma.order.update as jest.Mock).mock.calls) {
+        expect(call[0].data.statusId).toBeUndefined();
+      }
     });
   });
 });

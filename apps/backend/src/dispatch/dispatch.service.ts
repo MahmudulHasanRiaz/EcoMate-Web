@@ -17,6 +17,19 @@ import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 
+// Actors that represent automated processes rather than a logged-in staff
+// member. They must never move an order that is already 'Partial'.
+const AUTOMATED_ACTOR_IDS = new Set([
+  'system',
+  'webhook',
+  'courier_webhook',
+  'reconcile',
+]);
+
+function isAutomatedActorId(actor?: string | null): boolean {
+  return !actor || AUTOMATED_ACTOR_IDS.has(actor);
+}
+
 const DISPATCH_TRANSITIONS: Record<string, string[]> = {
   DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED'],
   HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED'],
@@ -368,6 +381,7 @@ export class DispatchService {
         result.dispatch.orderId,
         result.dispatch.status,
         result.dispatch.courier,
+        performedBy,
       );
     }
 
@@ -378,6 +392,7 @@ export class DispatchService {
     orderId: string,
     dispatchStatus: string,
     courier: string,
+    performedBy?: string,
   ) {
     const map: Record<string, string> = {
       HANDED_OVER: 'Shipping',
@@ -422,6 +437,14 @@ export class DispatchService {
     const curIdx = forder.indexOf(order.status.name);
     const tgtIdx = forder.indexOf(targetName);
     if (curIdx < 0 || tgtIdx < 0 || curIdx >= tgtIdx) return;
+
+    // AUTHORITATIVE RULE: 'Partial' is an automation-stopped state. Staff
+    // dispatch changes (real user id) may move it; automated actors (system,
+    // webhook simulators, reconcile) must not. The same rule is enforced for
+    // the courier-sync path in OrdersService.updateStatus.
+    if (order.status.name === 'Partial' && isAutomatedActorId(performedBy)) {
+      return;
+    }
 
     const targetStatus = await this.prisma.orderStatus.findUnique({
       where: { name: targetName },

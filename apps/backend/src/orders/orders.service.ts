@@ -2143,6 +2143,17 @@ export class OrdersService {
     });
     if (!newStatus) throw new NotFoundException('Status not found');
 
+    // AUTHORITATIVE RULE: 'Partial' is an automation-stopped state. Once an
+    // order is Partial, only manual staff action may change its status —
+    // courier webhooks, webhook replays, the manual courier sync and
+    // reconciliation must never transition it. Manual staff members pass a
+    // real user id and are unaffected.
+    if (order.status.name === 'Partial' && isAutomatedActor(userId)) {
+      throw new BadRequestException(
+        'Order is Partial: automated processes cannot change its status. It must be changed manually.',
+      );
+    }
+
     const allowed = ORDER_TRANSITIONS[order.status.name] || [];
     if (!allowed.includes(newStatus.name)) {
       throw new BadRequestException(
@@ -3030,6 +3041,14 @@ export class OrdersService {
       });
       if (!order || order.trashedAt)
         throw new NotFoundException(`Order ${orderId} not found`);
+
+      // AUTHORITATIVE RULE: 'Partial' is an automation-stopped order state.
+      // Only manual staff action may move it (see updateStatus for details).
+      if (order.status.name === 'Partial' && isAutomatedActor(performedBy)) {
+        throw new BadRequestException(
+          'Order is Partial: automated processes cannot change its status. It must be changed manually.',
+        );
+      }
 
       const currentStatus = order.status.name;
       const allowed = ORDER_TRANSITIONS[currentStatus];
