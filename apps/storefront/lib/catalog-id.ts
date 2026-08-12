@@ -19,11 +19,11 @@ export function resolveCatalogId(
   product: { sku?: string | null; id: string },
   variant?: { sku?: string | null; id: string } | null,
 ): string {
-  if (variant) {
-    if (variant.sku) return variant.sku;
-    if (product.sku) return `${product.sku}-${variant.id}`;
-    return variant.id;
-  }
+  // Exact parity with feed.service.ts:200 — the feed fallback interpolates
+  // `${product.sku}-${variant.id}` verbatim (a null sku renders as `null-...`).
+  // variant.sku is schema-required so the fallback is dead in practice, but the
+  // event id must stay byte-identical to the feed output for catalog matching.
+  if (variant) return variant.sku || `${product.sku}-${variant.id}`;
   return product.sku || product.id;
 }
 

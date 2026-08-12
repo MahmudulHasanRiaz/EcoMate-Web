@@ -17,16 +17,13 @@ describe('resolveCatalogId (AddToCart catalog-matching fix)', () => {
     ).toBe('VAR-9');
   });
 
-  it('uses product.sku-variant.id composite when variant has no sku (feed fallback)', () => {
-    expect(
-      resolveCatalogId({ id: 'uuid-1', sku: 'PRD-1' }, { id: 'var-1' }),
-    ).toBe('PRD-1-var-1');
-  });
-
-  it('uses variant.id when neither product nor variant has sku', () => {
-    expect(
-      resolveCatalogId({ id: 'uuid-1' }, { id: 'var-1' }),
-    ).toBe('var-1');
+  it('uses `{productSku}-{variantId}` fallback matching feed when variant has no sku', () => {
+    // Exact parity with feed.service.ts:200 — variant.sku || `${product.sku}-${variant.id}`.
+    // JS template interpolation of undefined/null renders "undefined-"/"null-" —
+    // the event id must stay byte-identical to the feed output. variant.sku is
+    // schema-required so this path is dead in practice.
+    expect(resolveCatalogId({ id: 'uuid-1', sku: 'PRD-1' }, { id: 'var-1' })).toBe('PRD-1-var-1');
+    expect(resolveCatalogId({ id: 'uuid-1' }, { id: 'var-1' })).toBe('undefined-var-1');
   });
 
   it('combos keep their internal id (no catalog representation in the feed)', () => {
