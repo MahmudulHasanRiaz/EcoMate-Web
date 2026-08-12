@@ -7,13 +7,15 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getProducts } from '@/lib/api/products';
 import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
-import { trackEvent } from '@/lib/tracking';
+import { trackEvent, trackSearch, normalizeSearchQuery } from '@/lib/tracking';
+import { useAuth } from '@/context/AuthContext';
 import type { Product, Category } from '@/lib/types';
 
 export interface ArchivePageClientProps {
   initialItems: Product[];
   initialCursor: string | null;
   initialHasMore: boolean;
+  initialTotal?: number;
   categories: Category[];
   filters: { search?: string; category?: string; categoryId?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
   hasStock?: boolean;
@@ -24,6 +26,56 @@ const PAGE_SIZE = 24;
 function SkeletonCard() {
   return (
     <div className="bg-gray-100 rounded-lg animate-pulse aspect-square" />
+  );
+}
+
+/** On-page search box — commit-only; typing never fires tracking. */
+function SearchBox({
+  value,
+  onChange,
+  onSubmit,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  className?: string;
+}) {
+  return (
+    <form
+      role="search"
+      className={className}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="relative flex items-center h-9 rounded-lg border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-brand-blue/60 focus-within:ring-2 focus-within:ring-brand-blue/10 hover:border-gray-300">
+        <Search size={15} className="absolute left-3 text-gray-400 pointer-events-none" aria-hidden="true" />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label="Search products"
+          inputMode="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Search products…"
+          className="w-full h-full pl-9 pr-9 bg-transparent outline-none text-[13px] text-gray-700 placeholder:text-gray-400 border-none focus:ring-0"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            aria-label="Clear search"
+            className="absolute right-1.5 p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-[4px] hover:bg-gray-50"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 
@@ -168,11 +220,13 @@ export default function ArchivePageClient({
   initialItems,
   initialCursor,
   initialHasMore,
+  initialTotal,
   categories,
   filters,
   hasStock,
 }: ArchivePageClientProps) {
   const { config } = useStorefrontConfig();
+  const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialSearch = filters.search || '';
@@ -197,7 +251,28 @@ export default function ArchivePageClient({
   const [priceMax, setPriceMax] = React.useState(initialMaxPrice);
   const [navigating, setNavigating] = React.useState(false);
 
-  useEffect(() => { setNavigating(false); }, [filters]);
+  useEffect(() => {
+    setNavigating(false);
+    setSearchQuery(filters.search || '');
+  }, [filters]);
+
+  /**
+   * COMMIT semantics for the on-page search box: a Search event fires ONLY on
+   * an explicit commit (Enter / search button). Typing, autocomplete, filter,
+   * sort and pagination changes never fire Search. trackSearch dedupes
+   * accidental double-submissions via its event_id.
+   */
+  const commitSearch = (raw: string) => {
+    const q = normalizeSearchQuery(raw);
+    if (!q) return;
+    trackSearch({
+      query: q,
+      currency: config?.currency?.code,
+      email: user?.email,
+      country: 'BD',
+    });
+    applyFilters({ search: q });
+  };
 
   // Category-view ViewContent (Meta content_type=product_group): fires when the
   // listing is a category (or brand/tag/search) view — one per category change.
@@ -374,8 +449,15 @@ export default function ArchivePageClient({
           <nav className="flex items-center gap-1.5 text-[12px] md:text-[14px] text-gray-500 font-medium">
             <button onClick={() => router.push('/')} className="hover:text-brand-blue transition-colors">Home</button>
             <ChevronRight size={14} className="opacity-40" strokeWidth={2} />
-            <h1 className="text-gray-900 font-bold truncate text-[13px] md:text-[16px] m-0">{currentCategory}</h1>
+            <h1 className="text-gray-900 font-bold truncate text-[13px] md:text-[16px] m-0">
+              {filters.search ? `Search results for “${filters.search}”` : currentCategory}
+            </h1>
           </nav>
+          {filters.search && initialTotal !== undefined && (
+            <p className="mt-0.5 md:mt-1 text-[11px] md:text-[12px] font-medium text-gray-500">
+              {initialTotal} {initialTotal === 1 ? 'product' : 'products'} found
+            </p>
+          )}
         </div>
       </div>
 
@@ -384,7 +466,12 @@ export default function ArchivePageClient({
           <button onClick={() => setIsFilterOpen(true)} className="flex items-center gap-2 border border-brand-blue text-brand-blue px-4 py-1.5 md:py-2 rounded-[4px] font-medium text-[12px] md:text-[13px] uppercase hover:bg-brand-blue/5 transition-colors whitespace-nowrap">
             <Filter size={15} strokeWidth={2}/> FILTERS
           </button>
-          <div className="flex-1 hidden md:block"></div>
+          <SearchBox
+            className="hidden md:flex flex-1 max-w-md ml-2"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onSubmit={() => commitSearch(searchQuery)}
+          />
           <div className="flex items-center gap-2">
             <div className="relative flex-shrink-0">
               <select
@@ -412,6 +499,13 @@ export default function ArchivePageClient({
             </div>
           </div>
         </div>
+
+        <SearchBox
+          className="md:hidden mb-4"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onSubmit={() => commitSearch(searchQuery)}
+        />
 
         <div className="flex flex-col md:flex-row gap-6 md:gap-8">
           <aside className={`

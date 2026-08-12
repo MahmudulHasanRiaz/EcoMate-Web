@@ -100,7 +100,7 @@ export default function Header({}: {}) {
         {/* Mobile Search */}
         {isMobileSearchOpen && (
           <div className="mt-3 md:hidden">
-            <HeaderSearch onCloseMobile={() => setIsMobileSearchOpen(false)} />
+            <HeaderSearch onCloseMobile={() => setIsMobileSearchOpen(false)} autoFocus />
           </div>
         )}
       </div>

@@ -65,6 +65,7 @@ export default async function ProductsPage({
       initialItems={data}
       initialCursor={meta.nextCursor}
       initialHasMore={meta.hasMore}
+      initialTotal={meta.total}
       categories={categories}
       filters={sp}
       hasStock={hideOos || undefined}

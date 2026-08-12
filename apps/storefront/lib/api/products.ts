@@ -134,7 +134,11 @@ export async function getProducts(params?: {
   cursor?: string;
   signal?: AbortSignal;
 }): Promise<ProductsResponse> {
-  const { data } = await apiClient.get("/products", { params });
+  const { signal: abortSignal, ...queryParams } = params || {};
+  // signal must be a TOP-LEVEL axios config — nested inside params it would be
+  // serialized into the query string (`signal=[object AbortSignal]`) and cancel
+  // nothing (verified empirically). Top-level config.signal aborts the request.
+  const { data } = await apiClient.get("/products", { params: queryParams, signal: abortSignal });
   return {
     data: (data.data || []).map(transformBackendProduct),
     meta: data.meta,

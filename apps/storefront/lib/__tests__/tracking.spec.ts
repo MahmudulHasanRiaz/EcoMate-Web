@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackEvent, trackAddToCart, trackViewContent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView } from '../tracking';
+import { trackEvent, trackAddToCart, trackViewContent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView, trackSearch } from '../tracking';
 
 describe('tracking', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
@@ -850,6 +850,134 @@ describe('tracking', () => {
         content_category: 'Footwear',
         content_ids: [],
       });
+    });
+  });
+
+  // --- Search (Meta standard event + semantics) ---
+
+  describe('Search', () => {
+    it('committed search sends search_string to the browser pixel (Case A)', () => {
+      const id = trackSearch({ query: 'shoes', currency: 'BDT' });
+      expect(id).toBeTruthy();
+      expect(window.fbq).toHaveBeenCalledWith('track', 'Search',
+        expect.objectContaining({
+          search_string: 'shoes',
+          currency: 'BDT',
+        }),
+        expect.objectContaining({ eventID: expect.stringMatching(/^search_shoes_[0-9a-f]{8}_\d+$/) }),
+      );
+      expect((window.fbq as any).mock.calls.find((c: any[]) => c[1] === 'Search')[2]).not.toHaveProperty('content_ids');
+      expect((window.fbq as any).mock.calls.find((c: any[]) => c[1] === 'Search')[2]).not.toHaveProperty('value');
+    });
+
+    it('mirrors the SAME event_id to the server (Browser === CAPI)', () => {
+      trackSearch({ query: 'shoes', currency: 'BDT', country: 'BD' });
+      const mirror = fetchMock.mock.calls.find(([url]: any[]) => String(url).includes('/tracking/events'));
+      const body = JSON.parse(mirror![1].body as string);
+      expect(body.eventId).toMatch(/^search_shoes_[0-9a-f]{8}_\d+$/);
+      expect(body.eventName).toBe('search');
+      expect(body.customData.search_string).toBe('shoes');
+      expect(body.userData.country).toBe('BD');
+      const fbqId = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')![3].eventID;
+      expect(fbqId).toBe(body.eventId);
+    });
+
+    it('duplicate accidental submission of the SAME query dedupes (Case B)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        const a = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        const b = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(b).toBe(a);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('distinct queries are distinct searches (Case C)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        trackSearch({ query: 'boots', currency: 'BDT' });
+        const a = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        const b = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(b).not.toBe(a);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('case-only variants of the same query share the logical event id, payload keeps the original', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackSearch({ query: 'Shoes', currency: 'BDT' });
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        const a = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        const b = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(b).toBe(a);
+        expect((window.fbq as any).mock.calls.find((c: any[]) => c[1] === 'Search')![2].search_string).toBe('Shoes');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('same query committed again in a new 5s bucket is a new logical search', () => {
+      let time = 1700000000000;
+      const spy = vi.spyOn(Date, 'now').mockImplementation(() => time);
+      try {
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        const a = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        time += 6000;
+        trackSearch({ query: 'shoes', currency: 'BDT' });
+        const b = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(b).not.toBe(a);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('suggestion selection commits the suggestion label (Case F)', () => {
+      trackSearch({ query: 'Classic Brown Winter Comfort Boot', currency: 'BDT' });
+      const call = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')!;
+      expect(call[2].search_string).toBe('Classic Brown Winter Comfort Boot');
+      expect(call[3].eventID).toMatch(/^search_classic-brown-winter-comfort-boot_[0-9a-f]{8}_\d+$/);
+    });
+
+    it('no-result query is still a legitimate committed search', () => {
+      trackSearch({ query: 'xyzabc123', currency: 'BDT' });
+      const call = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')!;
+      expect(call[2].search_string).toBe('xyzabc123');
+      expect(fetchMock.mock.calls.some(([url]: any[]) => String(url).includes('/tracking/events'))).toBe(true);
+    });
+
+    it('empty and whitespace-only queries send NO event', () => {
+      const before = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'Search').length;
+      const idA = trackSearch({ query: '', currency: 'BDT' });
+      const idB = trackSearch({ query: '    ', currency: 'BDT' });
+      expect(idA).toBeNull();
+      expect(idB).toBeNull();
+      expect(vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'Search').length).toBe(before);
+    });
+
+    it('normalizes internal whitespace for the payload and the id key', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackSearch({ query: '  shoes   red  blue ', currency: 'BDT' });
+        const call = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')!;
+        expect(call[2].search_string).toBe('shoes red blue');
+        expect(call[3].eventID).toMatch(/^search_shoes-red-blue_[0-9a-f]{8}_\d+$/);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('caps absurdly long queries without reordering semantics', () => {
+      const long = 'x'.repeat(300);
+      trackSearch({ query: long, currency: 'BDT' });
+      const call = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')!;
+      expect(call[2].search_string.length).toBeLessThanOrEqual(200);
+      expect(call[2].search_string.startsWith('xxx')).toBe(true);
     });
   });
 });
