@@ -7,6 +7,8 @@ import { ProductImageGallery } from './ProductImageGallery';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
+import { useAuth } from '@/context/AuthContext';
+import { trackAddToCart } from '@/lib/tracking';
 import type { Combo, ComboItemDetails, Variant } from '@/lib/types';
 
 interface UniqueAttr {
@@ -73,6 +75,7 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
   const { config } = useStorefrontConfig();
   const router = useRouter();
   const { items, addToCart, updateQuantity, removeFromCart } = useCart();
+  const { user } = useAuth();
   const [itemSelections, setItemSelections] = useState<ItemSelections>({});
 
   const comboGallery = useMemo(() => {
@@ -278,6 +281,16 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
       comboSelections: effectiveSelections,
       comboSelectionLabels: selectionLabels,
       comboSelectionAttributes: selectionAttributes,
+    });
+    trackAddToCart({
+      contentId: combo.id,
+      contentName: combo.name,
+      contentCategory: combo.category?.name,
+      unitPrice: combo.price,
+      quantityAdded: 1,
+      currency: config.currency.code,
+      email: user?.email,
+      country: 'BD',
     });
   }
 

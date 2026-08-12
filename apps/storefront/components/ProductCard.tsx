@@ -9,9 +9,10 @@ import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE, PRODUCT_BLUR_DATA_URL } from "@/lib/constants";
-import { trackEvent } from "@/lib/tracking";
+import { trackAddToCart } from "@/lib/tracking";
 import { getAspectStyle } from "@/lib/utils/image-ratio";
 import { VariantPickerModal } from '@/components/VariantPickerModal';
+import { useAuth } from '@/context/AuthContext';
 
 interface ProductCardProps {
   product: Product;
@@ -25,6 +26,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
+  const { user } = useAuth();
   const [retryKey, setRetryKey] = React.useState(0);
   const [imageFailed, setImageFailed] = React.useState(false);
   const retriesRef = React.useRef(0);
@@ -103,14 +105,6 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
     window.dispatchEvent(new CustomEvent('fly-to-cart', {
       detail: { x, y, image: product.image || PLACEHOLDER_IMAGE }
     }));
-    trackEvent('AddToCart', {
-      content_ids: [product.id],
-      value: product.price,
-      currency: config.currency.code,
-      content_type: 'product',
-      content_name: product.name,
-      contents: [{ id: product.id, quantity: 1, item_price: product.price }]
-    });
     addToCart({
       id: product.id,
       name: product.name,
@@ -120,6 +114,16 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
       quantity: 1,
       slug: product.slug,
       category: product.category,
+    });
+    trackAddToCart({
+      contentId: product.id,
+      contentName: product.name,
+      contentCategory: product.category,
+      unitPrice: product.price,
+      quantityAdded: 1,
+      currency: config.currency.code,
+      email: user?.email,
+      country: 'BD',
     });
   };
 
