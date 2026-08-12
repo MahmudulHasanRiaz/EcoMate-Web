@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { LandingOrderProvider, useOrder, type OrderLineItem } from "./LandingOrderContext";
 import { CountdownTimer, StockIndicator } from "./LandingUtils";
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useAuth } from '@/context/AuthContext';
-import { trackAddToCart, trackViewContent } from '@/lib/tracking';
+import { trackAddToCart } from '@/lib/tracking';
 import { resolveCatalogId } from '@/lib/catalog-id';
 
 /**
@@ -26,27 +26,6 @@ function useLandingAddToCart() {
       contentCategory: p?.category,
       unitPrice,
       quantityAdded: 1,
-      currency: config?.currency?.code || 'BDT',
-      email: user?.email,
-      country: 'BD',
-    });
-  };
-}
-
-/** Landing template-mode ViewContent — fires once per product card (guarded). */
-function useLandingViewContent() {
-  const { config } = useStorefrontConfig();
-  const { user } = useAuth();
-  const firedRef = useRef<Set<string>>(new Set());
-  return (p: any) => {
-    if (!p?.id || firedRef.current.has(p.id)) return;
-    firedRef.current.add(p.id);
-    const price = Number(p?.salePrice ?? p?.basePrice ?? p?.price ?? 0) || 0;
-    trackViewContent({
-      contentId: resolveCatalogId(p),
-      contentName: p?.name,
-      contentCategory: p?.category,
-      value: price,
       currency: config?.currency?.code || 'BDT',
       email: user?.email,
       country: 'BD',
@@ -130,18 +109,6 @@ function FeaturesSection({ section }: SectionProps) {
 function DynamicProductSection({ section, products = [] }: SectionProps) {
   const { items, updateItem } = useOrder();
   const fireAddToCart = useLandingAddToCart();
-  const fireViewContent = useLandingViewContent();
-
-  // Fire ViewContent once per displayed product when the section mounts (the
-  // template landing grid is a product view). The hook guards per-product; the
-  // deterministic event_id collapses any accidental re-fire from rerenders.
-  const viewFiredRef = useRef(false);
-  useEffect(() => {
-    if (viewFiredRef.current) return;
-    viewFiredRef.current = true;
-    products.forEach((p: any) => fireViewContent(p));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   if (products.length === 0) {
     return (
