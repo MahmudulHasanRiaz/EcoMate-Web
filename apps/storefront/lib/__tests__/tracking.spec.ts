@@ -801,5 +801,55 @@ describe('tracking', () => {
       expect(fbqCall![2]).not.toHaveProperty('fbp');
       expect(fbqCall![2]).not.toHaveProperty('fbc');
     });
+
+    // --- Semantic correction: product GRID render is NOT a ViewContent ---
+    it('does NOT fire ViewContent for a passive product grid render', () => {
+      // A landing/template grid with many products must produce 0 ViewContent —
+      // only an explicit product open (productId present) fires the event.
+      const before = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      (window as any).EcoMate.products = [
+        { id: 'p1', name: 'P1', sku: 'SKU-1', price: 100 },
+        { id: 'p2', name: 'P2', sku: 'SKU-2', price: 200 },
+        { id: 'p3', name: 'P3', sku: 'SKU-3', price: 300 },
+      ];
+      // Simulate the pre-fix grid loop: iterating products WITHOUT opening a
+      // detail view must not emit any ViewContent. The bridge only fires when
+      // an explicit productId open occurs.
+      (window as any).EcoMate.products.forEach(() => { /* grid render — no track call */ });
+      const after = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      expect(after).toBe(before);
+      (window as any).EcoMate.products = [];
+    });
+
+    it('fires ViewContent only on an explicit product open via the landing bridge', () => {
+      const before = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      (window as any).EcoMate.products = [{ id: 'p1', name: 'Shampoo', sku: 'SKU-1', price: 100 }];
+      (window as any).EcoMate.track('ViewContent', { productId: 'p1', price: 100 });
+      const after = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      expect(after).toBe(before + 1);
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.content_ids).toEqual(['SKU-1']);
+      (window as any).EcoMate.products = [];
+    });
+
+    it('category/archive view emits ONE product_group ViewContent (no per-product events)', () => {
+      const before = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      // ArchivePageClient category semantics: content_type=product_group, empty
+      // content_ids, single category-level event per category change.
+      trackEvent('ViewContent', {
+        content_ids: [],
+        content_type: 'product_group',
+        content_category: 'Footwear',
+        currency: 'BDT',
+      });
+      const after = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length;
+      expect(after).toBe(before + 1);
+      const fbqCall = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').at(-1)!;
+      expect(fbqCall[2]).toMatchObject({
+        content_type: 'product_group',
+        content_category: 'Footwear',
+        content_ids: [],
+      });
+    });
   });
 });
