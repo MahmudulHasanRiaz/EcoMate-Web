@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Gift, ShoppingBag, Minus, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
 import { ProductImageGallery } from './ProductImageGallery';
@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useAuth } from '@/context/AuthContext';
-import { trackAddToCart } from '@/lib/tracking';
+import { trackAddToCart, trackViewContent } from '@/lib/tracking';
 import type { Combo, ComboItemDetails, Variant } from '@/lib/types';
 
 interface UniqueAttr {
@@ -98,6 +98,24 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
     }
     setItemSelections(initial);
   }, [combo]);
+
+  // ViewContent for combo detail — combos have NO Meta Catalog representation,
+  // so content_ids uses combo.id (documented gap; no invented catalog id).
+  const lastComboViewedRef = useRef<string>('');
+  useEffect(() => {
+    if (combo.id && combo.id !== lastComboViewedRef.current) {
+      trackViewContent({
+        contentId: combo.id,
+        contentName: combo.name,
+        contentCategory: combo.category?.name,
+        value: combo.salePrice ?? combo.price,
+        currency: config.currency.code,
+        email: user?.email,
+        country: 'BD',
+      });
+      lastComboViewedRef.current = combo.id;
+    }
+  }, [combo.id, combo.name, combo.category?.name, combo.salePrice, combo.price, config.currency.code, user?.email]);
 
   const flexibleItems = useMemo(() => {
     return combo.items.filter((item) => item.productType === 'variable' && !item.variantId);

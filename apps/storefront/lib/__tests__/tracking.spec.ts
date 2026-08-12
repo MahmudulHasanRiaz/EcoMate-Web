@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackEvent, trackAddToCart, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView } from '../tracking';
+import { trackEvent, trackAddToCart, trackViewContent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView } from '../tracking';
 
 describe('tracking', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
@@ -689,6 +689,117 @@ describe('tracking', () => {
         expect.anything(),
       );
       (window as any).EcoMate.products = [];
+    });
+  });
+
+  // --- ViewContent (ViewContent enhancement order) ---
+
+  describe('ViewContent', () => {
+    it('fires the browser Pixel with the canonical catalog content_id', () => {
+      trackViewContent({
+        contentId: 'CWB-1-44',
+        contentName: 'Classic Brown Winter Comfort Boot (CWB-1)',
+        contentCategory: 'Footwear',
+        value: 3500,
+        currency: 'BDT',
+        email: 'real@example.com',
+        country: 'BD',
+      });
+      expect(window.fbq).toHaveBeenCalledWith('track', 'ViewContent',
+        expect.objectContaining({
+          content_ids: ['CWB-1-44'],
+          content_type: 'product',
+          content_name: 'Classic Brown Winter Comfort Boot (CWB-1)',
+          content_category: 'Footwear',
+          value: 3500,
+          currency: 'BDT',
+          contents: [{ id: 'CWB-1-44', quantity: 1, item_price: 3500 }],
+        }),
+        expect.objectContaining({ eventID: expect.stringMatching(/^view_content_CWB-1-44_[0-9a-f]{8}_\d+$/) }),
+      );
+    });
+
+    it('mirrors the same event_id to the server', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.eventId).toMatch(/^view_content_CWB-1-44_[0-9a-f]{8}_\d+$/);
+      expect(body.eventName).toBe('view_content');
+      const fbqId = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'ViewContent')![3].eventID;
+      expect(fbqId).toBe(body.eventId); // Browser === CAPI
+    });
+
+    it('does not duplicate on React rerender of the SAME viewed content', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+        const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        // Same content, same 5s bucket — a rerender must produce the same id.
+        trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+        const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(second).toBe(first);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('generates a new event_id for a genuine variant change (44 → 46)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+        const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        trackViewContent({ contentId: 'CWB-1-46', value: 3600, currency: 'BDT' });
+        const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(second).not.toBe(first);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('generates a new event_id for a genuine product change (A → B)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+        const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        trackViewContent({ contentId: 'OTHER-9', value: 1200, currency: 'BDT' });
+        const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(second).not.toBe(first);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('uses view quantity 1 (NOT a cart quantity) in contents', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.contents).toEqual([{ id: 'CWB-1-44', quantity: 1, item_price: 3500 }]);
+    });
+
+    it('includes logged-in email in the mirror user_data', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT', email: 'real@example.com', country: 'BD' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.userData.email).toBe('real@example.com');
+      expect(body.userData.country).toBe('BD');
+    });
+
+    it('filters synthetic emails via the trackEvent guard', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT', email: 'cust_12345@example.com' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.userData.email).toBe('');
+    });
+
+    it('omits content_name/category when not provided (no fake defaults)', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.content_name).toBeUndefined();
+      expect(body.customData.content_category).toBeUndefined();
+    });
+
+    it('does not attach action_source or fbp/fbc to the browser fbq call', () => {
+      trackViewContent({ contentId: 'CWB-1-44', value: 3500, currency: 'BDT' });
+      const fbqCall = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'ViewContent');
+      expect(fbqCall![2]).not.toHaveProperty('action_source');
+      expect(fbqCall![2]).not.toHaveProperty('fbp');
+      expect(fbqCall![2]).not.toHaveProperty('fbc');
     });
   });
 });

@@ -8,7 +8,7 @@ import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Product, Variant, Review } from "@/lib/types";
-import { trackEvent, trackAddToCart } from "@/lib/tracking";
+import { trackAddToCart, trackViewContent } from "@/lib/tracking";
 import { resolveCatalogId } from '@/lib/catalog-id';
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
@@ -457,14 +457,33 @@ export default function ProductDetailClient({ product, defaultColor }: { product
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    trackEvent('ViewContent', {
-      content_ids: [resolveCatalogId(product, selectedVariant)],
-      value: selectedVariant?.price ?? product.price,
-      currency: config.currency.code,
-      content_name: product.name,
-      content_type: 'product',
-    });
   }, []);
+
+  // ViewContent fires when the RESOLVED viewed content changes (product OR
+  // variant). A variant change (44 → 46) produces a new catalog id → new
+  // logical event. The deterministic event_id inside trackViewContent collapses
+  // rerenders of the same viewed content (React state updates do NOT re-fire).
+  // For variable products the catalog only contains VARIANT items (evidence:
+  // CWB-1-40…46), so we wait for a resolved variant before firing — a
+  // product-level id would match no catalog item.
+  const isVariable_ = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
+  const viewedCatalogId = resolveCatalogId(product, selectedVariant);
+  const viewReady = !isVariable_ || !!selectedVariant;
+  const lastViewedRef = useRef<string>('');
+  useEffect(() => {
+    if (viewReady && viewedCatalogId && viewedCatalogId !== lastViewedRef.current) {
+      trackViewContent({
+        contentId: viewedCatalogId,
+        contentName: product.name,
+        contentCategory: product.category,
+        value: selectedVariant?.price ?? product.price,
+        currency: config.currency.code,
+        email: user?.email,
+        country: 'BD',
+      });
+      lastViewedRef.current = viewedCatalogId;
+    }
+  }, [viewedCatalogId, viewReady, product.name, product.category, selectedVariant?.price, config.currency.code, user?.email]);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -39,11 +39,13 @@ function installLandingTrackingBridge() {
       });
     } else if (event === 'ViewContent' && data.productId) {
       const vProduct = registry.find((p) => p?.id === data.productId);
-      trackEvent('ViewContent', {
-        content_ids: [vProduct ? resolveCatalogId(vProduct) : String(data.productId)],
-        content_name: data.name ?? vProduct?.name,
-        content_type: 'product',
-        value: Number(data.price) || undefined,
+      trackViewContent({
+        contentId: vProduct ? resolveCatalogId(vProduct) : String(data.productId),
+        contentName: data.name ?? vProduct?.name,
+        contentCategory: vProduct?.category,
+        value: Number(data.price ?? vProduct?.price) || undefined,
+        currency: data.currency ?? vProduct?.currency ?? 'BDT',
+        country: 'BD',
       });
     } else if (event === 'Lead') {
       trackEvent('Lead', {}, { phone: data.phone, country: 'BD' });
@@ -99,6 +101,54 @@ export function trackAddToCart(input: {
   }, eventId);
 
   return { eventId };
+}
+
+/**
+ * Central ViewContent helper (ViewContent enhancement order).
+ *
+ * Sends the full Meta-recommended ViewContent payload through the existing
+ * trackEvent pipeline — Browser Pixel + CAPI mirror with the SAME event_id.
+ *
+ * event_id: NO explicit id is passed, so trackEvent derives the deterministic
+ * journey-scoped id (`view_content_{contentKey}_{journeyHash}_{5sBucket}` in
+ * deterministicEventId) where contentKey = content_ids[0] = the canonical
+ * catalog id. Consequences:
+ *  - same viewed catalog item (product or variant) within a 5s bucket → same
+ *    event_id → React rerender / state updates / unrelated UI updates cannot
+ *    create duplicate events (server eventId UNIQUE + Meta dedup).
+ *  - genuine change of viewed content (product A → B, or variant 44 → 46)
+ *    changes contentKey → a new event_id → a new logical ViewContent.
+ * Callers still guard component-level re-fire with a last-viewed-content ref so
+ * the effect only re-invokes this helper when the resolved catalog id changes.
+ *
+ * `value` is the viewed item's price (Meta ViewContent semantics: value of the
+ * page view); NEVER a cart/order total. contents[].quantity is 1 (a view, not a
+ * cart quantity).
+ */
+export function trackViewContent(input: {
+  contentId: string;
+  contentName?: string;
+  contentCategory?: string;
+  value?: number;
+  currency: string;
+  email?: string;
+  country?: string;
+}): string {
+  const { contentId, contentName, contentCategory, value, currency, email, country } = input;
+  const data: Record<string, unknown> = {
+    value,
+    currency,
+    content_type: 'product',
+    content_ids: [contentId],
+    contents: [{ id: contentId, quantity: 1, item_price: value }],
+  };
+  if (contentName) data.content_name = contentName;
+  if (contentCategory) data.content_category = contentCategory;
+  trackEvent('ViewContent', data, {
+    email,
+    country,
+  });
+  return `${eventNameToSnake('ViewContent')}_${contentId}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
 }
 
 declare global {
