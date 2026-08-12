@@ -90,37 +90,43 @@ export function MediaPicker({
         toast.error('No supported files in selection')
         return
       }
-      const entries: PendingUpload[] = valid.map((f) => ({
-        id: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`,
-        name: f.name,
-        progress: 0,
-        status: 'uploading' as const,
-      }))
-      setPending((prev) => [...prev, ...entries])
       const justUploaded: string[] = []
-      await Promise.all(
-        valid.map(async (file, i) => {
-          const entry = entries[i]
-          try {
-            const res = await uploadApi.file(file)
-            justUploaded.push(res.data.url)
-            setPending((prev) =>
-              prev.map((p) => (p.id === entry.id ? { ...p, progress: 100, status: 'done' } : p)),
-            )
-          } catch (err: unknown) {
-            const message =
-              (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-              (err as Error)?.message ||
-              'Upload failed'
-            setPending((prev) =>
-              prev.map((p) =>
-                p.id === entry.id ? { ...p, progress: 100, status: 'error', error: message } : p,
+      // Upload sequentially — firing every file at once on a weak/slow
+      // connection saturates the pipe, hits proxy timeouts and stalls the UI.
+      for (const file of valid) {
+        const entry: PendingUpload = {
+          id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
+          name: file.name,
+          progress: 0,
+          status: 'uploading' as const,
+        }
+        setPending((prev) => [...prev, entry])
+        try {
+          const res = await uploadApi.file(file, {
+            onProgress: (pct) =>
+              setPending((prev) =>
+                prev.map((p) => (p.id === entry.id ? { ...p, progress: pct } : p)),
               ),
-            )
-            toast.error(`${file.name}: ${message}`)
-          }
-        }),
-      )
+          })
+          justUploaded.push(res.data.url)
+          setPending((prev) =>
+            prev.map((p) =>
+              p.id === entry.id ? { ...p, progress: 100, status: 'done' } : p,
+            ),
+          )
+        } catch (err: unknown) {
+          const message =
+            (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+            (err as Error)?.message ||
+            'Upload failed'
+          setPending((prev) =>
+            prev.map((p) =>
+              p.id === entry.id ? { ...p, progress: 100, status: 'error', error: message } : p,
+            ),
+          )
+          toast.error(`${file.name}: ${message}`)
+        }
+      }
       invalidate()
       if (justUploaded.length) {
         setLocalSelected((prev) => {
@@ -244,6 +250,8 @@ export function MediaPicker({
     onOpenChange(false)
   }
 
+  const uploadingCount = pending.filter((p) => p.status === 'uploading').length
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-5xl max-h-[90vh] flex flex-col'>
@@ -349,6 +357,9 @@ export function MediaPicker({
                     <Check className='h-5 w-5 text-emerald-500' />
                   )}
                   <p className='line-clamp-2 break-all'>{p.name}</p>
+                  {p.status === 'uploading' && p.progress > 0 && (
+                    <p className='text-[10px] text-primary'>{p.progress}%</p>
+                  )}
                   {p.error && <p className='text-destructive text-[10px]'>{p.error}</p>}
                 </div>
               ))}
@@ -410,6 +421,9 @@ export function MediaPicker({
         <div className='flex justify-between items-center pt-3 border-t mt-3'>
           <span className='text-sm text-muted-foreground'>
             {data?.pages?.[0]?.meta.total ?? 0} files · {localSelected.length} selected
+            {uploadingCount > 0 && (
+              <span className='text-primary ml-2'>{uploadingCount} uploading…</span>
+            )}
           </span>
           <div className='flex gap-2'>
             <Button variant='outline' onClick={() => onOpenChange(false)}>

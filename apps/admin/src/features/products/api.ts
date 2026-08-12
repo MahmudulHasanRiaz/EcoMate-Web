@@ -47,6 +47,7 @@ export const uploadApi = {
     const fd = new FormData(); fd.append('file', file);
     return apiClient.post<{ url: string; filename: string; size: number }>('/upload/image', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120_000,
     });
   },
 }

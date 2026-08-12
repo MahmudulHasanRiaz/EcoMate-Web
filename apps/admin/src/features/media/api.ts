@@ -73,13 +73,28 @@ export const mediaApi = {
 }
 
 export const uploadApi = {
-  file: (file: File, opts?: { filename?: string; alt?: string }) => {
+  file: (
+    file: File,
+    opts?: {
+      filename?: string
+      alt?: string
+      onProgress?: (pct: number) => void
+    },
+  ) => {
     const fd = new FormData()
     fd.append('file', file)
     if (opts?.filename) fd.append('filename', opts.filename)
     if (opts?.alt) fd.append('alt', opts.alt)
     return apiClient.post<UploadResult>('/upload/image', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // Uploads ride on whatever network the client has — a 15s default
+      // timeout silently kills large/slow uploads. Give each file 2 minutes.
+      timeout: 120_000,
+      onUploadProgress: opts?.onProgress
+        ? (e) => {
+            if (e.total) opts.onProgress!(Math.round((e.loaded / e.total) * 100))
+          }
+        : undefined,
     })
   },
   bulk: (files: File[]) => {
@@ -87,6 +102,7 @@ export const uploadApi = {
     for (const f of files) fd.append('files', f)
     return apiClient.post<{ data: BulkUploadEntry[] }>('/upload/images', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300_000,
     })
   },
   fromUrl: (url: string, opts?: { filename?: string; alt?: string }) =>
