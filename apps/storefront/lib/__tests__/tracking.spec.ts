@@ -205,6 +205,41 @@ describe('tracking', () => {
     expect(window.fbq).toHaveBeenCalledWith('init', 'META', undefined);
   });
 
+  // --- Wave-3: fb_login_id (Facebook login id) on the CAPI mirror ---
+
+  it('carries fbLoginId on the mirror only when resolved (FB shopper), never for guests (Wave-3)', async () => {
+    vi.resetModules();
+    window.fbq = vi.fn();
+    window.ttq = { track: vi.fn() };
+    const fresh = await import('../tracking');
+    fresh.setPixelIds('META', '');
+    fresh.initMetaPixel();
+    const fbq = vi.mocked(window.fbq);
+
+    // fb_login_id is CAPI-only — NEVER an fbq('init') Advanced Matching field.
+    const initCalls = fbq.mock.calls.filter((c: any[]) => c[0] === 'init');
+    expect(initCalls).toHaveLength(1);
+    expect(initCalls[0]!).toEqual(['init', 'META', undefined]);
+
+    fbq.mockClear();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+
+    // FB-logged-in shopper: /tracking/identity resolved the FB user id.
+    fresh.setPixelIdentity(null, undefined, undefined, 'fb-user-987654');
+    fresh.trackEvent('Purchase', { value: 100 }, { email: 'buyer@example.com' }, 'purchase_ord-1');
+    const [, fbInit] = fetchSpy.mock.calls[0]!;
+    const fbBody = JSON.parse(fbInit!.body as string);
+    expect(fbBody.userData.fbLoginId).toBe('fb-user-987654');
+
+    // Guest: identity stayed null → the mirror must NOT fabricate the key.
+    fresh.setPixelIdentity(null);
+    fetchSpy.mockClear();
+    fresh.trackEvent('Purchase', { value: 100 }, {}, 'purchase_ord-2');
+    const [, guestInit] = fetchSpy.mock.calls[0]!;
+    const guestBody = JSON.parse(guestInit!.body as string);
+    expect(guestBody.userData.fbLoginId).toBeUndefined();
+  });
+
   // --- InitiateCheckout (Wave-2.5 deterministic eventId + spec §5/§8 data) ---
 
   describe('InitiateCheckout', () => {

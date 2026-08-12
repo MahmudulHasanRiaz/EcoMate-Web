@@ -78,6 +78,11 @@ export class MetaAdapter implements TrackingProviderAdapter {
       external_id: ctx.externalId
         ? normalizer.hashExternalId(ctx.externalId)
         : undefined,
+      // Wave-3 (Meta EMQ recommendation): fb_login_id is matched VERBATIM —
+      // NEVER hashed (the only customer-information parameter Meta declares
+      // "Do not hash"). Server-resolved for order events, mirror-carried for
+      // browser events; absent for guests.
+      fb_login_id: customer?.fbLoginId || undefined,
       // Raw session identifiers are NEVER hashed (design §4.6).
       fbp: ctx.fbp,
       fbc: ctx.fbc,
@@ -108,8 +113,12 @@ export class MetaAdapter implements TrackingProviderAdapter {
     // suppresses dispatch (no null, no SKIPPED). Skip/refuse policy belongs to the
     // Wave-2 identity wave, after a stable external_id architecture exists.
     const hasContact = Boolean(user_data.em || user_data.ph);
+    // Wave-3: fb_login_id is itself a valid customer identity key (Meta accepts
+    // an event carrying it regardless of em/ph — the 2804050 reject only applies
+    // when user_data has NO identity parameter at all).
     const hasOtherIdentity = Boolean(
-      user_data.external_id ||
+      user_data.fb_login_id ||
+        user_data.external_id ||
         user_data.fbp ||
         user_data.fbc ||
         user_data.client_ip_address ||

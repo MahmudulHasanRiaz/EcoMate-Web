@@ -86,6 +86,13 @@ export class TrackingController {
                 state: body.userData?.state,
                 country: body.userData?.country,
                 zip: body.userData?.zip,
+                // Wave-3 — Facebook user id for Meta CAPI (fb_login_id). Only
+                // present when the storefront resolved it for an authenticated
+                // FB shopper; guests never send it.
+                fbLoginId:
+                  typeof body.userData?.fbLoginId === 'string'
+                    ? body.userData.fbLoginId
+                    : undefined,
               },
             },
             configSnapshot: {
@@ -209,11 +216,18 @@ export class TrackingController {
     if (!baUserId) {
       return { externalId: null };
     }
-    const [externalId, am] = await Promise.all([
+    const [externalId, am, fbLoginId] = await Promise.all([
       this.identityResolution.resolveForShopper(baUserId),
       this.identityResolution.resolveAdvancedMatching(baUserId),
+      this.identityResolution.resolveFbLoginIdForShopper(baUserId),
     ]);
-    return { externalId, ...am };
+    return {
+      externalId,
+      ...am,
+      // The shopper's Facebook user id; present only when the session is
+      // linked to a facebook account. Absent for guests.
+      ...(fbLoginId ? { fbLoginId } : {}),
+    };
   }
 
   /**

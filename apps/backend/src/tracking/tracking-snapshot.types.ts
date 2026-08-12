@@ -43,6 +43,13 @@ export interface TrackingSnapshotPayload {
     state?: string;
     country?: string;
     zip?: string;
+    /**
+     * The customer's Facebook user id (Meta `fb_login_id`). RAW value, never
+     * hashed (Meta matches it verbatim, unlike every other
+     * customer-information parameter). Server-resolved at dispatch for order
+     * events / carried by the mirror for browser events; absent for guests.
+     */
+    fbLoginId?: string;
   };
 }
 

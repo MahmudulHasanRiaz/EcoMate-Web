@@ -197,6 +197,19 @@ export class TrackingDispatcherService {
       contextView.externalId = resolvedExternalId;
     }
 
+    // Meta EMQ recommendation: resolve the shopper's Facebook user id
+    // (fb_login_id) for order-bound events. When resolved, the authoritative
+    // server-side account id overrides any mirror-captured value; when
+    // unresolvable (no linked Facebook account / guest order) the payload stays
+    // unchanged. Like external_id, this is per-order resolution at dispatch
+    // time — replays reuse the same key.
+    const fbLoginId = await this.identity.resolveFbLoginIdForCustomer(
+      payload.customerId,
+    );
+    if (fbLoginId) {
+      payload.customer = { ...payload.customer, fbLoginId };
+    }
+
     const config = (outbox.configSnapshot ?? {}) as ConfigSnapshot;
     const enabledProviders = Array.isArray(config.enabledProviders)
       ? config.enabledProviders

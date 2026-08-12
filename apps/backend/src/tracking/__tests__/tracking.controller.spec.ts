@@ -15,6 +15,7 @@ describe('TrackingController', () => {
   let identityResolution: {
     resolveForShopper: jest.Mock;
     resolveAdvancedMatching: jest.Mock;
+    resolveFbLoginIdForShopper: jest.Mock;
     isEnabled: jest.Mock;
   };
   let controller: TrackingController;
@@ -33,6 +34,7 @@ describe('TrackingController', () => {
     identityResolution = {
       resolveForShopper: jest.fn(),
       resolveAdvancedMatching: jest.fn().mockResolvedValue({}),
+      resolveFbLoginIdForShopper: jest.fn().mockResolvedValue(null),
       isEnabled: jest.fn().mockResolvedValue(false),
     };
     controller = new TrackingController(
@@ -87,6 +89,8 @@ describe('TrackingController', () => {
           fbc: 'fb.1.222',
           url: 'https://ecoshop.example/p',
           referrer: 'https://www.facebook.com/',
+          // Wave-3 — FB-logged-in shoppers carry the Facebook user id on the mirror
+          fbLoginId: 'fb-user-987654',
         },
       };
 
@@ -113,6 +117,7 @@ describe('TrackingController', () => {
           firstName: 'Jane Doe',
           city: 'Dhaka',
           country: 'BD',
+          fbLoginId: 'fb-user-987654',
         },
       });
       expect(input.payload.contents).toEqual([
@@ -211,6 +216,27 @@ describe('TrackingController', () => {
         ph: 'hash-ph',
       });
       expect(identityResolution.resolveAdvancedMatching).toHaveBeenCalledWith('ba-3');
+    });
+
+    it('includes fbLoginId when the shopper is linked to a facebook account (Wave-3)', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-4');
+      identityResolution.resolveFbLoginIdForShopper.mockResolvedValue('fb-user-4242');
+      const user = { betterAuthSession: { user: { id: 'ba-4' } } };
+      await expect(controller.identity(user)).resolves.toEqual({
+        externalId: 'cust-ext-4',
+        fbLoginId: 'fb-user-4242',
+      });
+      expect(identityResolution.resolveFbLoginIdForShopper).toHaveBeenCalledWith(
+        'ba-4',
+      );
+    });
+
+    it('omits fbLoginId for shoppers without a facebook account (never fabricated)', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-5');
+      identityResolution.resolveFbLoginIdForShopper.mockResolvedValue(null);
+      const user = { betterAuthSession: { user: { id: 'ba-5' } } };
+      const result = await controller.identity(user);
+      expect(result).not.toHaveProperty('fbLoginId');
     });
   });
 

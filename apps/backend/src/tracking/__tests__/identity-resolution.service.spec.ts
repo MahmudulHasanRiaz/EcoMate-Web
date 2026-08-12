@@ -5,8 +5,10 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
   const findUnique = jest.fn();
   const findFirst = jest.fn();
   const update = jest.fn();
+  const accountFindFirst = jest.fn();
   const prisma = {
     customerProfile: { findUnique, findFirst, update },
+    betterAuthAccount: { findFirst: accountFindFirst },
   } as any;
   const settings = { isEnabledOrDefault: jest.fn() } as unknown as TrackingSettingsService;
   const service = new IdentityResolutionService(prisma, settings);
@@ -131,6 +133,58 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
       const result = await service.resolveAdvancedMatching('ba-1');
       expect(result.em).toBeUndefined();
       expect(result.ph).toBeDefined();
+    });
+  });
+
+  describe('resolveFbLoginIdForShopper (Facebook login id for the browser pipeline)', () => {
+    it('returns null when the shopper has no facebook account (any other provider ignored)', async () => {
+      accountFindFirst.mockResolvedValue(null);
+      await expect(service.resolveFbLoginIdForShopper('ba-1')).resolves.toBeNull();
+      expect(accountFindFirst).toHaveBeenCalledWith({
+        where: { userId: 'ba-1', providerId: 'facebook' },
+        select: { accountId: true },
+      });
+    });
+
+    it('returns the facebook accountId for a linked shopper (raw, never hashed)', async () => {
+      accountFindFirst.mockResolvedValue({ accountId: '9876543210' });
+      await expect(service.resolveFbLoginIdForShopper('ba-1')).resolves.toBe(
+        '9876543210',
+      );
+    });
+
+    it('returns null when the shopper is not found at all', async () => {
+      accountFindFirst.mockResolvedValue(null);
+      await expect(service.resolveFbLoginIdForShopper('ghost')).resolves.toBeNull();
+    });
+  });
+
+  describe('resolveFbLoginIdForCustomer (order-bound identity at dispatch)', () => {
+    it('returns undefined when there is no customerId (guest order)', async () => {
+      await expect(service.resolveFbLoginIdForCustomer(undefined)).resolves.toBeUndefined();
+      expect(findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns undefined when the customer has no Better Auth link', async () => {
+      findUnique.mockResolvedValue({ betterAuthUserId: null });
+      await expect(service.resolveFbLoginIdForCustomer('cust-1')).resolves.toBeUndefined();
+      expect(accountFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('resolves the facebook accountId via the profile → Better Auth link', async () => {
+      findUnique.mockResolvedValue({ betterAuthUserId: 'ba-7' });
+      accountFindFirst.mockResolvedValue({ accountId: 'fb-4242' });
+      await expect(service.resolveFbLoginIdForCustomer('cust-1')).resolves.toBe(
+        'fb-4242',
+      );
+      expect(findUnique).toHaveBeenCalledWith({
+        where: { id: 'cust-1' },
+        select: { betterAuthUserId: true },
+      });
+      expect(accountFindFirst).toHaveBeenCalledWith({
+        where: { userId: 'ba-7', providerId: 'facebook' },
+        select: { accountId: true },
+      });
     });
   });
 });
