@@ -87,8 +87,12 @@ export interface ComboItemDetails {
   productName: string;
   productImage?: string;
   productType?: string;
+  /** Feed-consistent product identifier (product.sku) — for catalog matching. */
+  sku?: string;
   variantId?: string;
   variantLabel?: string;
+  /** Feed-consistent variant identifier (variant.sku) — for catalog matching. */
+  variantSku?: string;
   quantity: number;
   price?: number;
   stock?: number;

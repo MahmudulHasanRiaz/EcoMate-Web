@@ -19,8 +19,10 @@ function transformBackendCombo(raw: any): Combo {
     productName: i.product?.name || "Unknown",
     productImage: Array.isArray(i.product?.images) ? i.product.images[0] : i.product?.images || "",
     productType: i.product?.type,
+    sku: i.product?.sku || undefined,
     variantId: i.variantId || undefined,
     variantLabel: i.variant?.sku || "",
+    variantSku: i.variant?.sku || undefined,
     quantity: i.quantity,
     price: i.price ? Number(i.price) : undefined,
     variants: i.product?.variants

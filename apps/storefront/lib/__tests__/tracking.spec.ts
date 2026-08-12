@@ -851,6 +851,99 @@ describe('tracking', () => {
         content_ids: [],
       });
     });
+
+    // --- Forensic audit additions: bundle contents, group scoping, bridge variant ---
+
+    it('combo bundle view sends the DEDUPED real catalog ids with one contents row per item', () => {
+      trackViewContent({
+        items: [
+          { id: 'CWB-1-44', quantity: 1, item_price: 3400 },
+          { id: 'MUG-3', quantity: 2, item_price: 400 },
+          { id: 'CWB-1-44', quantity: 1, item_price: 3400 },
+        ],
+        contentName: 'Winter Kit',
+        contentCategory: 'Bundles',
+        value: 3800,
+        currency: 'BDT',
+      });
+      const fbqCall = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'ViewContent')!;
+      expect(fbqCall[2]).toMatchObject({
+        content_type: 'product_group',
+        content_ids: ['CWB-1-44', 'MUG-3'],
+        content_name: 'Winter Kit',
+        content_category: 'Bundles',
+        contents: [
+          { id: 'CWB-1-44', quantity: 1, item_price: 3400 },
+          { id: 'MUG-3', quantity: 2, item_price: 400 },
+          { id: 'CWB-1-44', quantity: 1, item_price: 3400 },
+        ],
+      });
+      expect(fbqCall[3].eventID).toMatch(/^view_content_CWB-1-44\|MUG-3_[0-9a-f]{8}_\d+$/);
+    });
+
+    it('two bundles sharing the same first item get DISTINCT event ids (no false dedup)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackViewContent({ items: [{ id: 'CWB-1-44' }, { id: 'MUG-3' }], currency: 'BDT' });
+        const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        trackViewContent({ items: [{ id: 'CWB-1-44' }, { id: 'TEE-7' }], currency: 'BDT' });
+        const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(second).not.toBe(first);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('same bundle re-viewed in the same bucket collapses (identical joined event id)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        trackViewContent({ items: [{ id: 'CWB-1-44' }, { id: 'MUG-3' }], currency: 'BDT' });
+        const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+        trackViewContent({ items: [{ id: 'CWB-1-44' }, { id: 'MUG-3' }], currency: 'BDT' });
+        const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+        expect(second).toBe(first);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('category/archive grid events: trackViewContent never fires with an EMPTY content set (0 content cards → 0 events)', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        const id = trackViewContent({ items: [], contentName: 'Footwear', contentCategory: 'Footwear', currency: 'BDT' });
+        expect(id).toBeNull();
+        const vc = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent');
+        expect(vc).toHaveLength(0);
+        const mirrors = fetchMock.mock.calls.filter((c: any[]) => JSON.parse(c[1].body as string).eventName === 'view_content');
+        expect(mirrors).toHaveLength(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('landing bridge ViewContent with variantId resolves the VARIANT catalog id and price', () => {
+      (window as any).EcoMate.products = [{
+        id: 'p1',
+        name: 'Classic Boot',
+        sku: 'CWB-1',
+        price: 4000,
+        category: 'Footwear',
+        variants: [
+          { id: 'v44', sku: 'CWB-1-44', price: 3400 },
+          { id: 'v46', sku: 'CWB-1-46', price: 3600 },
+        ],
+      }];
+      (window as any).EcoMate.track('ViewContent', { productId: 'p1', variantId: 'v46', price: 3600 });
+      const fbqCall = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'ViewContent')!;
+      expect(fbqCall[2]).toMatchObject({ content_ids: ['CWB-1-46'], value: 3600 });
+      (window as any).EcoMate.products = [];
+    });
+
+    it('bundle view without any resolvable content returns null (nothing invented)', () => {
+      const id = trackViewContent({ items: [], currency: 'BDT' });
+      expect(id).toBeNull();
+      expect(vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent').length).toBe(0);
+    });
   });
 
   // --- Search (Meta standard event + semantics) ---

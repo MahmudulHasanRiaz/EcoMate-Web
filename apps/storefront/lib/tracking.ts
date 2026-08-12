@@ -39,11 +39,17 @@ function installLandingTrackingBridge() {
       });
     } else if (event === 'ViewContent' && data.productId) {
       const vProduct = registry.find((p) => p?.id === data.productId);
+      const vVariant = data.variantId
+        ? vProduct?.variants?.find((v: any) => v?.id === data.variantId)
+        : undefined;
       trackViewContent({
-        contentId: vProduct ? resolveCatalogId(vProduct) : String(data.productId),
+        contentId: resolveCatalogId(
+          vProduct || { id: String(data.productId) },
+          vVariant || (data.variantId ? { id: String(data.variantId) } : undefined),
+        ),
         contentName: data.name ?? vProduct?.name,
         contentCategory: vProduct?.category,
-        value: Number(data.price ?? vProduct?.price) || undefined,
+        value: Number(data.price ?? vVariant?.price ?? vProduct?.price) || undefined,
         currency: data.currency ?? vProduct?.currency ?? 'BDT',
         country: 'BD',
       });
@@ -126,29 +132,47 @@ export function trackAddToCart(input: {
  * cart quantity).
  */
 export function trackViewContent(input: {
-  contentId: string;
+  contentId?: string;
+  /** Bundle (e.g. combo) contents — multiple catalog ids, one contents[] row each. */
+  items?: { id: string; quantity?: number; item_price?: number }[];
   contentName?: string;
   contentCategory?: string;
   value?: number;
   currency: string;
   email?: string;
   country?: string;
-}): string {
-  const { contentId, contentName, contentCategory, value, currency, email, country } = input;
+}): string | null {
+  const { contentId, items, contentName, contentCategory, value, currency, email, country } = input;
+  // content_ids is the deduped set of catalog ids being viewed. Single-content
+  // views keep the flat {id, quantity:1, item_price:value} shape; bundles use
+  // one contents[] row per real catalog item (no invented ids — all resolved
+  // from the feed-consistent resolver).
+  const contentIds = items ? [...new Set(items.map((i) => String(i.id)).filter(Boolean))] : contentId ? [contentId] : [];
+  if (!contentIds.length) return null;
   const data: Record<string, unknown> = {
     value,
     currency,
-    content_type: 'product',
-    content_ids: [contentId],
-    contents: [{ id: contentId, quantity: 1, item_price: value }],
   };
+  if (items && items.length) {
+    data.content_type = 'product_group';
+    data.content_ids = contentIds;
+    data.contents = items.map((i) => ({
+      id: String(i.id),
+      quantity: i.quantity ?? 1,
+      item_price: i.item_price,
+    }));
+  } else {
+    data.content_type = 'product';
+    data.content_ids = contentIds;
+    data.contents = [{ id: contentIds[0], quantity: 1, item_price: value }];
+  }
   if (contentName) data.content_name = contentName;
   if (contentCategory) data.content_category = contentCategory;
   trackEvent('ViewContent', data, {
     email,
     country,
   });
-  return `${eventNameToSnake('ViewContent')}_${contentId}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
+  return `${eventNameToSnake('ViewContent')}_${contentIds.join('|')}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
 }
 
 /**
@@ -265,7 +289,12 @@ function deterministicEventId(
   let contentKey = '';
   const contentIds = data?.content_ids;
   if (Array.isArray(contentIds) && contentIds.length) {
-    contentKey = String(contentIds[0]);
+    // ViewContent bundles (combo contents) scope by the FULL deduped id set:
+    // two bundles sharing a first item are still distinct logical views. Other
+    // events keep the first-content-id key (cart/order semantics unchanged).
+    contentKey = event === 'ViewContent'
+      ? [...new Set(contentIds.map(String))].join('|')
+      : String(contentIds[0]);
   } else if (typeof data?.content_id === 'string') {
     contentKey = data.content_id;
   } else if (event === 'ViewContent' || event === 'Search') {
