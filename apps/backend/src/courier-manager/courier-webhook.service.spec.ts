@@ -40,6 +40,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       },
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       courierDispatchLog: {
         create: jest.fn().mockResolvedValue({}),
@@ -216,6 +217,118 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         { statusId: 'status-partial' },
         'system',
       );
+    });
+  });
+
+  describe('Order resolution — Steadfast webhook', () => {
+    it('primary lookup by order.courierConsignmentId still wins', async () => {
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'delivered',
+      });
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            courierConsignmentId: 'CG-1',
+            trashedAt: null,
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalled();
+      // Primary hit → fallback lookups are never executed
+      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the Dispatch registry when Order.courierConsignmentId is unset (manual dispatch)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(null); // order column miss
+      prisma.dispatch.findFirst.mockResolvedValueOnce({
+        orderId: 'order-1',
+      });
+      prisma.order.findUnique.mockResolvedValueOnce(order);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'delivered',
+      });
+
+      expect(prisma.dispatch.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            courier: 'steadfast',
+            consignmentId: 'CG-1',
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'DELIVERED' }),
+        }),
+      );
+    });
+
+    it('falls back to the documented invoice identifier (order.displayId)', async () => {
+      prisma.order.findFirst
+        .mockResolvedValueOnce(null) // order.courierConsignmentId miss
+        .mockResolvedValueOnce(order); // invoice → displayId hit
+      prisma.dispatch.findFirst.mockResolvedValue(null); // no dispatch row
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        invoice: 'INV-1',
+        status: 'delivered',
+      });
+
+      // invoice lookup is the 2nd order.findFirst call (primary miss → invoice hit)
+      expect(prisma.order.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            displayId: 'INV-1',
+            courierService: 'steadfast',
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalled();
+    });
+
+    it('trims whitespace from consignment_id before lookup', async () => {
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: '  CG-1  ',
+        status: 'delivered',
+      });
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ courierConsignmentId: 'CG-1' }),
+        }),
+      );
+      expect(result.status).toBe('success');
+    });
+
+    it('returns Order not found only when every source misses', async () => {
+      prisma.order.findFirst.mockResolvedValue(null); // consignment + invoice miss
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'UNKNOWN-99',
+        invoice: 'INV-MISSING',
+        status: 'delivered',
+      });
+
+      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
   });
 

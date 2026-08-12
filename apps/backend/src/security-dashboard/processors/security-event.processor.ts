@@ -7,7 +7,7 @@ import { SecurityEventCategory, SecurityEventSeverity } from '@prisma/client';
 interface EventJobData {
   id: string;
   dedupKey: string;
-  tenant: string;
+  tenant?: string;
   eventType: string;
   severity: SecurityEventSeverity;
   category: SecurityEventCategory;
@@ -45,6 +45,14 @@ export class SecurityEventProcessor extends WorkerHost {
       ? new Date(data.timestamp)
       : new Date();
 
+    // Canonical tenant for the single-deployment architecture. The schema
+    // defaults every security model to "default" and the dashboard queries
+    // (retention policy, aggregates) operate on "default". Jobs enqueued
+    // before this contract settled carry no tenant — normalize to the
+    // canonical value HERE so undefined never reaches any Prisma call
+    // (compound unique keys reject missing args).
+    const eventTenant = data.tenant || 'default';
+
     try {
       // ── Step 1: Insert raw event (dedupKey constraint handles retry duplicates) ──
       await this.prisma.securityEvent
@@ -52,7 +60,7 @@ export class SecurityEventProcessor extends WorkerHost {
           data: {
             id: data.id,
             dedupKey: data.dedupKey,
-            tenant: data.tenant,
+            tenant: eventTenant,
             eventType: data.eventType,
             severity: data.severity,
             category: data.category,
@@ -90,7 +98,7 @@ export class SecurityEventProcessor extends WorkerHost {
       await this.prisma.securityEventHourly.upsert({
         where: {
           tenant_bucket_eventType_severity_category: {
-            tenant: data.tenant,
+            tenant: eventTenant,
             bucket: hour,
             eventType: data.eventType,
             severity: data.severity,
@@ -98,7 +106,7 @@ export class SecurityEventProcessor extends WorkerHost {
           },
         },
         create: {
-          tenant: data.tenant,
+          tenant: eventTenant,
           bucket: hour,
           eventType: data.eventType,
           severity: data.severity,
@@ -115,7 +123,7 @@ export class SecurityEventProcessor extends WorkerHost {
       await this.prisma.securityEventDaily.upsert({
         where: {
           tenant_date_eventType_severity_category: {
-            tenant: data.tenant,
+            tenant: eventTenant,
             date: day,
             eventType: data.eventType,
             severity: data.severity,
@@ -123,7 +131,7 @@ export class SecurityEventProcessor extends WorkerHost {
           },
         },
         create: {
-          tenant: data.tenant,
+          tenant: eventTenant,
           date: day,
           eventType: data.eventType,
           severity: data.severity,
@@ -148,14 +156,14 @@ export class SecurityEventProcessor extends WorkerHost {
         await this.prisma.securityBlockDaily.upsert({
           where: {
             tenant_date_blockSource_targetType: {
-              tenant: data.tenant,
+              tenant: eventTenant,
               date: day,
               blockSource,
               targetType,
             },
           },
           create: {
-            tenant: data.tenant,
+            tenant: eventTenant,
             date: day,
             blockSource,
             targetType,

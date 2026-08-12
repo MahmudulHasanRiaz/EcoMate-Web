@@ -5,6 +5,8 @@ import {
   Param,
   Req,
   Res,
+  HttpCode,
+  HttpStatus,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
@@ -46,6 +48,8 @@ export class CourierWebhookController {
 
   @Public()
   @Post('steadfast')
+  // Steadfast docs require 200 OK on successful processing (was Nest 201 default)
+  @HttpCode(HttpStatus.OK)
   async steadfast(
     @Body() body: Record<string, unknown>,
     @Req() req: FastifyRequest,

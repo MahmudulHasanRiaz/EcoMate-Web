@@ -180,16 +180,17 @@ export class CourierWebhookService {
 
   async handleSteadfast(body: Record<string, unknown>) {
     const notificationType = body['notification_type'] as string;
-    const consignmentId = String(body['consignment_id'] ?? '');
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
 
     if (!consignmentId) {
       this.logger.warn('Steadfast webhook missing consignment_id');
       return { status: 'error', message: 'Missing consignment_id' };
     }
 
-    const order = await this.prisma.order.findFirst({
-      where: { courierConsignmentId: consignmentId, trashedAt: null },
-    });
+    const order = await this.findSteadfastOrder(
+      consignmentId,
+      (body['invoice'] as string) || undefined,
+    );
     if (!order) {
       this.logger.warn(`Steadfast: Order not found for consignment ${consignmentId}`);
       return { status: 'error', message: 'Order not found' };
@@ -231,6 +232,58 @@ export class CourierWebhookService {
 
     this.logger.log(`Steadfast: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Resolve the order for a Steadfast webhook by consignment id.
+   *
+   * Fallback chain (primary path unchanged, all steps additive):
+   * 1. Order.courierConsignmentId — populated by the automated API dispatch
+   *    and bulk-dispatch flows.
+   * 2. Dispatch registry — consignments entered via the manual Dispatch
+   *    creation flow, Steadfast-portal-side bookings logged manually, or
+   *    imports live ONLY on the Dispatch row (unique per courier + consignment)
+   *    and never touch Order.courierConsignmentId.
+   * 3. Documented `invoice` identifier — the API dispatch flow sends
+   *    Order.displayId as the Steadfast invoice, so it re-links orders whose
+   *    consignment identifier no longer matches (mirrors the RedX handler).
+   */
+  private async findSteadfastOrder(
+    consignmentId: string,
+    invoice?: string,
+  ): Promise<{ id: string } | null> {
+    const direct = await this.prisma.order.findFirst({
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
+    });
+    if (direct) return direct;
+
+    const dispatch = await this.prisma.dispatch.findFirst({
+      where: {
+        courier: 'steadfast' as any,
+        consignmentId,
+        order: { trashedAt: null },
+      },
+      select: { orderId: true },
+    });
+    if (dispatch) {
+      const viaDispatch = await this.prisma.order.findUnique({
+        where: { id: dispatch.orderId },
+      });
+      if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
+    }
+
+    if (invoice) {
+      const viaInvoice = await this.prisma.order.findFirst({
+        where: {
+          displayId: invoice,
+          courierService: 'steadfast',
+          trashedAt: null,
+        },
+      });
+      if (viaInvoice) return viaInvoice;
+    }
+
+    return null;
   }
 
   private async resolveCancelledStatus(orderId: string): Promise<string> {
