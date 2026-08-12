@@ -18,7 +18,7 @@ jobs:
     name: Deploy ${{ github.event.inputs.client }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Normalize client name
         id: client

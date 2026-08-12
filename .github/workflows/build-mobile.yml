@@ -31,8 +31,8 @@ jobs:
       matrix:
         app: ${{ fromJSON(inputs.app == 'all' && '["storefront","admin","pos"]' || format('["{0}"]', inputs.app)) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -58,7 +58,7 @@ jobs:
           mkdir -p mobile-builds/${{ matrix.app }}/android
           cp apps/capacitor/${{ matrix.app }}/android/app/build/outputs/apk/release/app-release.apk \
              mobile-builds/${{ matrix.app }}/android/latest.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.app }}-android-apk
           path: mobile-builds/${{ matrix.app }}/android/latest.apk
@@ -70,8 +70,8 @@ jobs:
       matrix:
         app: ${{ fromJSON(inputs.app == 'all' && '["storefront","admin","pos"]' || format('["{0}"]', inputs.app)) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -104,7 +104,7 @@ jobs:
           mkdir -p mobile-builds/${{ matrix.app }}/ios
           cp apps/capacitor/${{ matrix.app }}/ios/build/App.ipa \
              mobile-builds/${{ matrix.app }}/ios/latest.ipa
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.app }}-ios-ipa
           path: mobile-builds/${{ matrix.app }}/ios/latest.ipa
