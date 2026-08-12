@@ -151,6 +151,65 @@ export function trackViewContent(input: {
   return `${eventNameToSnake('ViewContent')}_${contentId}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
 }
 
+/**
+ * Central Search tracking helper (Meta standard Search event).
+ *
+ * SEMANTIC: a Search event represents a COMMITTED search — the user finishing a
+ * meaningful search action (Enter, search button, suggestion selection,
+ * navigation to search results). It is NOT fired for typing/autocomplete input
+ * changes or suggestion rendering.
+ *
+ * event_id: `search_{queryKey}_{journeyHash}_{5sBucket}` where queryKey is the
+ * normalized lowercase query. Consequences:
+ *  - duplicate accidental submission of the SAME query within a 5s bucket →
+ *    identical event_id → server eventId UNIQUE + Meta dedup collapse it
+ *    (Case B).
+ *  - distinct queries → distinct keys → distinct logical events, even in the
+ *    same bucket (Case C).
+ *  - case-only differences of the same query share the key (payload keeps the
+ *    original casing).
+ *  - the same query re-committed after the 5s bucket rolls is a NEW logical
+ *    search (genuine new intent).
+ * Filter/sort/pagination changes are NOT searches and never call this helper.
+ *
+ * Payload: `search_string` is the normalized user query (trimmed, internal
+ * whitespace collapsed, 200-char cap — no semantic reordering). `currency` is
+ * sent when legitimately available. content_ids / contents / value are NOT
+ * forced: Meta lists them as optional for Search (required only for
+ * Advantage+ catalog ads), and EcoMate does not have result-level catalog
+ * match data at commit time — forcing them would fabricate product semantics.
+ * User data (email when logged in, country, fbp/fbc via the mirror) reuses the
+ * existing pipeline; synthetic emails are filtered by trackEvent.
+ *
+ * Returns the event_id (or null when the query is empty/whitespace-only).
+ */
+export const SEARCH_QUERY_MAX_LENGTH = 200;
+
+/** Trim + collapse internal whitespace. Preserves semantic content verbatim. */
+export function normalizeSearchQuery(query: string): string {
+  return (query || '').replace(/\s+/g, ' ').trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
+}
+
+export function trackSearch(input: {
+  query: string;
+  currency?: string;
+  email?: string;
+  country?: string;
+}): string | null {
+  const { query, currency, email, country } = input;
+  const q = normalizeSearchQuery(query);
+  if (!q) return null;
+
+  const queryKey = q.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const eventId = `search_${queryKey}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
+
+  const data: Record<string, unknown> = { search_string: q };
+  if (currency) data.currency = currency;
+
+  trackEvent('Search', data, { email, country }, eventId);
+  return eventId;
+}
+
 declare global {
   interface Window {
     fbq?: any;
