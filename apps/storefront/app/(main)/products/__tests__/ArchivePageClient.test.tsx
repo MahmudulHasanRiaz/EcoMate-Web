@@ -163,3 +163,103 @@ describe('ArchivePageClient — search results page semantics', () => {
     expect(searchCalls()).toHaveLength(0);
   });
 });
+
+describe('ArchivePageClient — ViewContent strict semantics (passive grids fire ZERO)', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.cookie = '_fbp=fb.1.1.1; path=/';
+    document.cookie = '_fbc=fb.1.2.3; path=/';
+    document.cookie = 'ecomate_tracking_optout=; Max-Age=0; path=/';
+    setConsent(false, true);
+    window.fbq = vi.fn();
+    window.ttq = { track: vi.fn(), page: vi.fn() };
+    setPixelIds('TEST-META-ID', 'TEST-TIKTOK-CODE');
+    initMetaPixel();
+    vi.mocked(window.fbq).mockClear();
+    pushMock.mockClear();
+    searchParamsMock.mockClear();
+    searchParamsMock.mockImplementation(() => new URLSearchParams());
+    getProductsMock.mockReset();
+    getProductsMock.mockResolvedValue({
+      data: [],
+      meta: { total: 0, page: 2, perPage: 24, totalPages: 0, nextCursor: null, hasMore: false },
+    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+    if (fetchSpy.mockRestore) void fetchSpy;
+  });
+
+  const renderArchive = (
+    filters: ArchivePageClientProps['filters'],
+    opts: { total?: number; items?: any[]; categories?: any[] } = {},
+  ) =>
+    render(
+      <StorefrontConfigProvider initialConfig={CONFIG}>
+        <CartProvider>
+          <WishlistProvider>
+            <AuthProvider>
+              <ArchivePageClient
+                initialItems={opts.items ?? [productA, productB]}
+                initialCursor="c1"
+                initialHasMore
+                initialTotal={opts.total ?? 2}
+                categories={opts.categories ?? []}
+                filters={filters}
+              />
+            </AuthProvider>
+          </WishlistProvider>
+        </CartProvider>
+      </StorefrontConfigProvider>,
+    );
+
+  const viewContentCalls = () => vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'ViewContent');
+  const viewContentMirrors = () =>
+    fetchSpy.mock.calls.filter((c: any[]) => {
+      try {
+        const body = JSON.parse(String(c[1]?.body));
+        return body.eventName === 'view_content';
+      } catch {
+        return false;
+      }
+    });
+
+  it('category page rendering product cards → ZERO ViewContent (pixel AND mirror)', () => {
+    renderArchive({ category: 'shoes' }, { total: 2 });
+    expect(screen.getByText('Shoes A')).toBeInTheDocument();
+    expect(screen.getByText('Boots B')).toBeInTheDocument();
+    expect(viewContentCalls()).toHaveLength(0);
+    expect(viewContentMirrors()).toHaveLength(0);
+  });
+
+  it('search results rendering product cards → ZERO ViewContent', () => {
+    renderArchive({ search: 'boots' }, { total: 2 });
+    expect(viewContentCalls()).toHaveLength(0);
+    expect(viewContentMirrors()).toHaveLength(0);
+  });
+
+  it('category change (filter navigation) → ZERO ViewContent', () => {
+    const categories = [
+      { id: 'c1', slug: 'shoes', name: 'Shoes', parentId: null, children: [], _count: { products: 3 } },
+    ];
+    renderArchive({}, { categories });
+    fireEvent.click(screen.getAllByText('Shoes')[0]);
+    expect(viewContentCalls()).toHaveLength(0);
+    expect(viewContentMirrors()).toHaveLength(0);
+  });
+
+  it('sort/filter changes → ZERO ViewContent', () => {
+    renderArchive({ sort: 'price-low', minPrice: '100' });
+    expect(viewContentCalls()).toHaveLength(0);
+    expect(viewContentMirrors()).toHaveLength(0);
+  });
+
+  it('scroll/pagination loading more products → ZERO ViewContent', () => {
+    renderArchive({});
+    const [observer] = (globalThis.IntersectionObserver as any).instances;
+    act(() => observer.trigger(true));
+    expect(getProductsMock).toHaveBeenCalled();
+    expect(viewContentCalls()).toHaveLength(0);
+    expect(viewContentMirrors()).toHaveLength(0);
+  });
+});

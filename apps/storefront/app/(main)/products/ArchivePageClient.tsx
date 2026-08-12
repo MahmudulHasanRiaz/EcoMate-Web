@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { getProducts } from '@/lib/api/products';
 import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
-import { trackEvent, trackSearch, normalizeSearchQuery } from '@/lib/tracking';
+import { trackSearch, normalizeSearchQuery } from '@/lib/tracking';
 import { useAuth } from '@/context/AuthContext';
 import type { Product, Category } from '@/lib/types';
 
@@ -274,19 +274,11 @@ export default function ArchivePageClient({
     applyFilters({ search: q });
   };
 
-  // Category-view ViewContent (Meta content_type=product_group): fires when the
-  // listing is a category (or brand/tag/search) view — one per category change.
-  useEffect(() => {
-    const category = filters.category;
-    if (!category) return;
-    trackEvent('ViewContent', {
-      content_ids: [],
-      content_type: 'product_group',
-      content_category: category,
-      currency: config?.currency?.code,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.category]);
+  // NO ViewContent here: archive/category/search/grid listings are PASSIVE
+  // product grids — rendered cards are not a content view (spec: category page
+  // product grid → 0 ViewContent, strictly tested). Only a genuine product
+  // content open (ProductDetailClient / ComboDetailClient / landing primary
+  // product) fires the event.
 
   const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
     useInfiniteScroll<Product>({

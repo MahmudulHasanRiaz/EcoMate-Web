@@ -9,6 +9,7 @@ import { useCart } from '@/context/CartContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useAuth } from '@/context/AuthContext';
 import { trackAddToCart, trackViewContent } from '@/lib/tracking';
+import { resolveCatalogId } from '@/lib/catalog-id';
 import type { Combo, ComboItemDetails, Variant } from '@/lib/types';
 
 interface UniqueAttr {
@@ -99,23 +100,51 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
     setItemSelections(initial);
   }, [combo]);
 
-  // ViewContent for combo detail — combos have NO Meta Catalog representation,
-  // so content_ids uses combo.id (documented gap; no invented catalog id).
+  // ViewContent for combo detail — combos have NO own Meta Catalog item (feed
+  // emits only Products), so content_ids carries the feed-consistent catalog ids
+  // of the combo's REAL included items (decision: bundle representation — never
+  // an invented catalog id). Simple items → product.sku||id; fixed-variant items
+  // → variant.sku||product.sku-variant.id; flexible variable items → first
+  // active variant's id (canonical-active-variant rule, same as landing primary)
+  // — or, when nothing resolvable, that item is omitted instead of fabricating.
+  const viewedComboContents = useMemo(() => {
+    const rows: { id: string; quantity: number; item_price?: number }[] = [];
+    for (const item of combo.items) {
+      const productShape = { id: item.productId, sku: item.sku ?? null };
+      let catalogId: string | null = null;
+      if (item.productType === 'variable') {
+        if (item.variantId) {
+          catalogId = resolveCatalogId(productShape, { id: item.variantId, sku: item.variantSku ?? null });
+        } else {
+          const activeVariant = (item.variants || []).find((v) => v.isActive && v.id);
+          if (activeVariant) {
+            catalogId = resolveCatalogId(productShape, { id: activeVariant.id, sku: activeVariant.sku ?? null });
+          }
+        }
+      } else {
+        catalogId = resolveCatalogId(productShape);
+      }
+      if (!catalogId) continue;
+      rows.push({ id: catalogId, quantity: item.quantity, item_price: item.price });
+    }
+    return rows;
+  }, [combo.items]);
+
   const lastComboViewedRef = useRef<string>('');
   useEffect(() => {
-    if (combo.id && combo.id !== lastComboViewedRef.current) {
-      trackViewContent({
-        contentId: combo.id,
-        contentName: combo.name,
-        contentCategory: combo.category?.name,
-        value: combo.salePrice ?? combo.price,
-        currency: config.currency.code,
-        email: user?.email,
-        country: 'BD',
-      });
-      lastComboViewedRef.current = combo.id;
-    }
-  }, [combo.id, combo.name, combo.category?.name, combo.salePrice, combo.price, config.currency.code, user?.email]);
+    const contents = viewedComboContents;
+    if (!contents.length || combo.id === lastComboViewedRef.current) return;
+    trackViewContent({
+      items: contents,
+      contentName: combo.name,
+      contentCategory: combo.category?.name,
+      value: combo.salePrice ?? combo.price,
+      currency: config.currency.code,
+      email: user?.email,
+      country: 'BD',
+    });
+    lastComboViewedRef.current = combo.id;
+  }, [combo.id, combo.name, combo.category?.name, combo.salePrice, combo.price, viewedComboContents, config.currency.code, user?.email]);
 
   const flexibleItems = useMemo(() => {
     return combo.items.filter((item) => item.productType === 'variable' && !item.variantId);
