@@ -6,8 +6,9 @@ import { ShoppingCart, X } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
-import { trackEvent } from "@/lib/tracking";
+import { trackAddToCart } from "@/lib/tracking";
 import type { Product, Variant } from "@/lib/types";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 const SIZE_ORDER: Record<string, number> = {
@@ -85,6 +86,7 @@ interface Props {
 export function VariantPickerModal({ product, open, onClose, flyTarget, initialAttrs }: Props) {
   const { addToCart, setIsCartOpen } = useCart();
   const { config } = useStorefrontConfig();
+  const { user } = useAuth();
   const [selectedAttrs, setSelectedAttrs] = useState<Record<string, string>>(() => initialAttrs || {});
   const [imageError, setImageError] = useState(false);
 
@@ -135,13 +137,15 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       }));
     }
 
-    trackEvent('AddToCart', {
-      content_ids: [matchingVariant.id || product.id],
-      value: matchingVariant.price,
+    trackAddToCart({
+      contentId: matchingVariant.id || product.id,
+      contentName: product.name,
+      contentCategory: product.category,
+      unitPrice: matchingVariant.price,
+      quantityAdded: 1,
       currency: config.currency.code,
-      content_type: 'product',
-      content_name: product.name,
-      contents: [{ id: matchingVariant.id || product.id, quantity: 1, item_price: matchingVariant.price, variant: variantLabel }],
+      email: user?.email,
+      country: 'BD',
     });
 
     addToCart({

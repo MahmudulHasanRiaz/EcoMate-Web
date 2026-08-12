@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackEvent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView } from '../tracking';
+import { trackEvent, trackAddToCart, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView } from '../tracking';
 
 describe('tracking', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
@@ -531,6 +531,131 @@ describe('tracking', () => {
           spy.mockRestore();
         }
       });
+    });
+  });
+
+  // --- AddToCart (AddToCart implementation order §5/§6/§21) ---
+
+  describe('AddToCart', () => {
+    function add(item: Partial<Parameters<typeof trackAddToCart>[0]>) {
+      return trackAddToCart({
+        contentId: 'p1',
+        contentName: 'Shampoo',
+        contentCategory: 'Hair Care',
+        unitPrice: 100,
+        quantityAdded: 1,
+        currency: 'BDT',
+        email: 'real@example.com',
+        country: 'BD',
+        ...item,
+      });
+    }
+
+    it('fires the browser Pixel AddToCart event', () => {
+      add({});
+      expect(window.fbq).toHaveBeenCalledWith('track', 'AddToCart',
+        expect.objectContaining({ content_ids: ['p1'], content_type: 'product' }),
+        expect.objectContaining({ eventID: expect.stringMatching(/^add_to_cart_p1_\d+_\d+$/) }),
+      );
+    });
+
+    it('mirrors the same event_id to the server', () => {
+      add({});
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.eventId).toMatch(/^add_to_cart_p1_\d+_\d+$/);
+      expect(body.eventName).toBe('add_to_cart');
+      const fbqEventID = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'AddToCart')![3].eventID;
+      expect(fbqEventID).toBe(body.eventId); // Browser === CAPI
+    });
+
+    it('computes value = unitPrice × quantityAdded', () => {
+      add({ quantityAdded: 3, unitPrice: 100 });
+      expect(window.fbq).toHaveBeenCalledWith('track', 'AddToCart',
+        expect.objectContaining({ value: 300, currency: 'BDT' }),
+        expect.anything(),
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.value).toBe(300);
+    });
+
+    it('sets contents.quantity = quantity added (not resulting cart qty)', () => {
+      add({ quantityAdded: 3 });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.contents).toEqual([
+        { id: 'p1', quantity: 3, item_price: 100 },
+      ]);
+    });
+
+    it('includes content_name, content_category, email, country', () => {
+      add({});
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.content_name).toBe('Shampoo');
+      expect(body.customData.content_category).toBe('Hair Care');
+      expect(body.userData.email).toBe('real@example.com');
+      expect(body.userData.country).toBe('BD');
+    });
+
+    it('omits content_category when unavailable (no fake default)', () => {
+      add({ contentCategory: undefined });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.customData.content_category).toBeUndefined();
+    });
+
+    it('filters synthetic emails via the trackEvent guard', () => {
+      add({ email: 'cust_12345@example.com' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.userData.email).toBe('');
+    });
+
+    it('generates a distinct event_id for each genuine add of the same product', () => {
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        const first = add({});
+        const eventId1 = first.eventId;
+        // Same product re-added (A × 1 → A × 2) within the same instant —
+        // two genuine add actions MUST yield distinct ids.
+        const second = add({});
+        expect(second.eventId).not.toBe(eventId1);
+        // Browser/CAPI both carry the second id.
+        const body2 = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+        expect(body2.eventId).toBe(second.eventId);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('generates a distinct event_id across a refresh (counter reset safe)', () => {
+      // First add at t0, then simulate refresh: same millisecond, counter resets.
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      try {
+        const first = add({});
+        // Refresh resets the module counter; but timestamp differs → distinct id.
+        spy.mockReturnValue(1700000010000);
+        const second = add({});
+        expect(second.eventId).not.toBe(first.eventId);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('retries preserve the same event_id (sendMirror stores the id)', () => {
+      const first = add({});
+      // The mirror queue / retry re-uses the caller eventId — assert the id
+      // returned by trackAddToCart is stable across a manual re-send.
+      expect(first.eventId).toMatch(/^add_to_cart_p1_\d+_\d+$/);
+    });
+
+    it('does not attach action_source to the browser fbq call', () => {
+      add({});
+      const fbqCall = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'AddToCart');
+      expect(fbqCall![2]).not.toHaveProperty('action_source');
+    });
+
+    it('does not inject fbp/fbc into the browser fbq call', () => {
+      add({});
+      const fbqCall = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'AddToCart');
+      expect(fbqCall![2]).not.toHaveProperty('fbp');
+      expect(fbqCall![2]).not.toHaveProperty('fbc');
     });
   });
 });

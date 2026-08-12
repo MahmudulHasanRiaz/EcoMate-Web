@@ -1,5 +1,55 @@
 import { getOrCreateCtxId, getTrackingApiUrl } from './tracking-client';
 
+/**
+ * Central AddToCart tracking helper (AddToCart implementation order).
+ *
+ * Responsibilities:
+ *  - Computes quantity_added and value = price × quantity_added
+ *  - Sends content_name, content_category, email, country when legitimately available
+ *  - Generates a fresh event_id per genuine add action (repeated adds of the
+ *    same product get distinct ids — spec §21/§22)
+ *  - Caller is responsible for invoking AFTER successful cart mutation (spec §21)
+ *
+ * Event id design: `add_to_cart_{contentId}_{timestamp}_{counter}`. A timestamp
+ * plus monotonic per-session counter makes every genuine add action unique —
+ * even two adds of the same product within the same millisecond, and even
+ * across a page refresh where the counter resets. Mirror retry reuses the id
+ * because sendMirror stores it, so retries preserve the logical event identity.
+ */
+let _addToCartCounter = 0;
+
+export function trackAddToCart(input: {
+  contentId: string;
+  contentName?: string;
+  contentCategory?: string;
+  unitPrice: number;
+  quantityAdded: number;
+  currency: string;
+  email?: string;
+  country?: string;
+}): { eventId: string } {
+  const { contentId, contentName, contentCategory, unitPrice, quantityAdded, currency, email, country } = input;
+  const value = Math.round(unitPrice * quantityAdded * 100) / 100;
+
+  _addToCartCounter = (_addToCartCounter + 1) % 1_000_000;
+  const eventId = `add_to_cart_${contentId}_${Date.now()}_${_addToCartCounter}`;
+
+  trackEvent('AddToCart', {
+    value,
+    currency,
+    content_type: 'product',
+    content_ids: [contentId],
+    content_name: contentName,
+    content_category: contentCategory,
+    contents: [{ id: contentId, quantity: quantityAdded, item_price: unitPrice }],
+  }, {
+    email: email,
+    country: country,
+  }, eventId);
+
+  return { eventId };
+}
+
 declare global {
   interface Window {
     fbq?: any;

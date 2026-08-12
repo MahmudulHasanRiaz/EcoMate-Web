@@ -8,11 +8,12 @@ import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Product, Variant, Review } from "@/lib/types";
-import { trackEvent } from "@/lib/tracking";
+import { trackEvent, trackAddToCart } from "@/lib/tracking";
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
 import { SizeChartModal } from "./SizeChartModal";
 import VideoEmbed from "./VideoEmbed";
+import { useAuth } from "@/context/AuthContext";
 import RelatedProducts from "./RelatedProducts";
 import DOMPurify from 'isomorphic-dompurify';
 import apiClient from "@/lib/api-client";
@@ -286,6 +287,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
+  const { user } = useAuth();
   const [sizeChartOpen, setSizeChartOpen] = useState(false);
   const [sizeChartData, setSizeChartData] = useState<SizeChartData | null>(null);
   const [justAdded, setJustAdded] = useState(false);
@@ -564,13 +566,15 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         variantAttributes,
         stock: displayStock,
       });
-      trackEvent('AddToCart', {
-        content_ids: [product.id],
-        value: displayPrice,
+      trackAddToCart({
+        contentId: selectedVariant?.id || product.id,
+        contentName: product.name,
+        contentCategory: product.category,
+        unitPrice: displayPrice,
+        quantityAdded: qty,
         currency: config.currency.code,
-        content_type: 'product',
-        content_name: product.name,
-        contents: [{ id: product.id, quantity: 1, item_price: displayPrice }],
+        email: user?.email,
+        country: 'BD',
       });
       setJustAdded(true);
       setTimeout(() => setJustAdded(false), 1500);

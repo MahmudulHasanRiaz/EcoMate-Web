@@ -11,11 +11,14 @@ import { useRouter } from 'next/navigation';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
+import { useAuth } from '@/context/AuthContext';
+import { trackAddToCart } from '@/lib/tracking';
 
 export default function WishlistPage() {
   const { addToCart } = useCart();
   const { ids, remove } = useWishlist();
   const { config } = useStorefrontConfig();
+  const { user } = useAuth();
   const router = useRouter();
 
   if (!config.licenseFeatures?.includes('storefront_wishlist')) {
@@ -49,6 +52,16 @@ export default function WishlistPage() {
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
     addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 });
+    trackAddToCart({
+      contentId: product.id,
+      contentName: product.name,
+      contentCategory: product.category,
+      unitPrice: product.price,
+      quantityAdded: 1,
+      currency: config.currency.code,
+      email: user?.email,
+      country: 'BD',
+    });
   };
 
   const s = config.currency.symbol;
