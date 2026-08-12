@@ -30,9 +30,9 @@ describe('getProducts — request cancellation wiring', () => {
 
     const [url, config] = vi.mocked(apiClient.get).mock.calls[0];
     expect(url).toBe('/products');
-    expect(config.signal).toBe(controller.signal);
-    expect(config.params).not.toHaveProperty('signal');
-    expect(config.params).toEqual({ search: 'shoes', perPage: 5 });
+    expect(config!.signal).toBe(controller.signal);
+    expect(config!.params).not.toHaveProperty('signal');
+    expect(config!.params).toEqual({ search: 'shoes', perPage: 5 });
   });
 
   it('aborting the controller cancels an in-flight request', async () => {
@@ -40,7 +40,7 @@ describe('getProducts — request cancellation wiring', () => {
     const pending = getProducts({ search: 'shoes', signal: controller.signal });
     controller.abort();
     const [, config] = vi.mocked(apiClient.get).mock.calls[0];
-    expect(config.signal.aborted).toBe(true);
+    expect(config!.signal!.aborted).toBe(true);
     await expect(pending).rejects.toThrow();
   });
 });
