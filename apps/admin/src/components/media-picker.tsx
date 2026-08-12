@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Upload, Check, Loader2, ImageIcon, Film, Search, Link2, X } from 'lucide-react'
 import { SafeImage } from '@/components/safe-image'
@@ -54,19 +54,27 @@ export function MediaPicker({
     if (open) setLocalSelected(selected)
   }, [open, selected])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['media', 'picker', accept, search],
-    queryFn: () =>
-      mediaApi
-        .list({
-          page: 1,
-          perPage: 60,
-          search: search || undefined,
-          type: accept === 'image' ? 'image' : undefined,
-        })
-        .then((r) => r.data),
-    enabled: open,
-  })
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ['media', 'picker', accept, search],
+      queryFn: ({ pageParam }) =>
+        mediaApi
+          .list({
+            page: pageParam,
+            perPage: 60,
+            search: search || undefined,
+            type: accept === 'image' ? 'image' : undefined,
+          })
+          .then((r) => r.data),
+      initialPageParam: 1,
+      getNextPageParam: (lastPage) =>
+        lastPage.meta.page < lastPage.meta.totalPages
+          ? lastPage.meta.page + 1
+          : undefined,
+      enabled: open,
+    })
+
+  const allMedia = (data?.pages || []).flatMap((p) => p.data)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['media'] })
@@ -321,7 +329,7 @@ export function MediaPicker({
             <div className='flex justify-center py-10'>
               <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
             </div>
-          ) : (data?.data || []).length === 0 && !pending.length ? (
+          ) : allMedia.length === 0 && !pending.length ? (
             <div className='flex flex-col items-center py-12 text-muted-foreground'>
               <ImageIcon className='h-10 w-10 mb-2' />
               <p>No media yet — drag files here or use Upload / URL import above.</p>
@@ -344,7 +352,7 @@ export function MediaPicker({
                   {p.error && <p className='text-destructive text-[10px]'>{p.error}</p>}
                 </div>
               ))}
-              {(data?.data || []).map((m: MediaResponse) => {
+              {allMedia.map((m: MediaResponse) => {
                 const isSel = localSelected.includes(m.url)
                 return (
                   <div
@@ -380,11 +388,28 @@ export function MediaPicker({
               })}
             </div>
           )}
+          {hasNextPage && (
+            <div className='flex justify-center py-3'>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage ? (
+                  <Loader2 className='h-4 w-4 animate-spin mr-1' />
+                ) : (
+                  <ImageIcon className='h-4 w-4 mr-1' />
+                )}
+                Load more
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className='flex justify-between items-center pt-3 border-t mt-3'>
           <span className='text-sm text-muted-foreground'>
-            {localSelected.length} selected
+            {data?.pages?.[0]?.meta.total ?? 0} files · {localSelected.length} selected
           </span>
           <div className='flex gap-2'>
             <Button variant='outline' onClick={() => onOpenChange(false)}>
