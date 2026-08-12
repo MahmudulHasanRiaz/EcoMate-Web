@@ -152,4 +152,50 @@ export class IdentityResolutionService {
     }
     return ctxExternalId ?? undefined;
   }
+
+  /**
+   * Resolve the shopper's Facebook user id (fb_login_id) for the browser
+   * pipeline — served by `/tracking/identity` and carried by the mirror. The
+   * value comes ONLY from the Better Auth facebook account (providerId =
+   * 'facebook' → accountId = the Facebook Login-issued id), so it is never
+   * fabricated for guests. Unlike every other customer-information parameter,
+   * Meta matches fb_login_id VERBATIM — it must never be hashed anywhere in the
+   * pipeline.
+   */
+  async resolveFbLoginIdForShopper(
+    betterAuthUserId: string,
+  ): Promise<string | null> {
+    return this.resolveFbAccountId(betterAuthUserId);
+  }
+
+  /**
+   * Authoritative fb_login_id for an order-bound event (identity-binding at
+   * dispatch, mirroring resolveForOrder). Resolves via customerId →
+   * CustomerProfile.betterAuthUserId → the customer's facebook account id.
+   * Orders without a linked Facebook account → undefined (the payload keeps
+   * whatever the browser captured; guests send nothing).
+   */
+  async resolveFbLoginIdForCustomer(
+    customerId: string | undefined | null,
+  ): Promise<string | undefined> {
+    if (!customerId) return undefined;
+    const profile = await this.prisma.customerProfile.findUnique({
+      where: { id: customerId },
+      select: { betterAuthUserId: true },
+    });
+    if (!profile?.betterAuthUserId) return undefined;
+    return (await this.resolveFbAccountId(profile.betterAuthUserId)) ?? undefined;
+  }
+
+  /** Shared lookup: the Better Auth facebook account id for a shopper user. */
+  private async resolveFbAccountId(
+    betterAuthUserId: string,
+  ): Promise<string | null> {
+    if (!betterAuthUserId) return null;
+    const account = await this.prisma.betterAuthAccount.findFirst({
+      where: { userId: betterAuthUserId, providerId: 'facebook' },
+      select: { accountId: true },
+    });
+    return account?.accountId ?? null;
+  }
 }

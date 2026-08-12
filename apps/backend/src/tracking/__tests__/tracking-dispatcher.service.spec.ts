@@ -63,7 +63,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const config = { get: configGet } as any;
   const dlq = { mirror: dlqMirror } as any;
   const replay = { archive: replayArchive } as any;
-  const identity = { resolveForOrder: jest.fn() } as any;
+  const identity = { resolveForOrder: jest.fn(), resolveFbLoginIdForCustomer: jest.fn() } as any;
   const service = new TrackingDispatcherService(prisma, context, settings, config, dlq, replay, identity);
 
   const snapshot = {
@@ -158,6 +158,8 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       async (_customerId: string | undefined, ctxExternalId: string | undefined) =>
         ctxExternalId ?? undefined,
     );
+    // fb_login_id default = unresolvable (no FB account).
+    identity.resolveFbLoginIdForCustomer.mockResolvedValue(undefined);
   });
 
   it('dispatches every eligible provider independently and SENTs the outbox when all succeed', async () => {
@@ -780,6 +782,57 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       await service.process(job, 'job-1');
 
       expect(seenCtxExternalId).toBe('ext-1');
+    });
+  });
+
+  describe('Wave-3 — fb_login_id binding at dispatch', () => {
+    it('resolves the Facebook account id per order and injects it into the payload', async () => {
+      identity.resolveFbLoginIdForCustomer.mockResolvedValue('fb-user-987654');
+      let seenFbLoginId: unknown;
+      const fbMeta: TrackingProviderAdapter = {
+        ...fakeMeta,
+        build: (snap) => {
+          seenFbLoginId = (snap.customer as { fbLoginId?: string } | undefined)?.fbLoginId;
+          return buildPayload(snap.eventType);
+        },
+      };
+      mockBuildAdapterRegistry.mockReturnValue([fbMeta]);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', orderId: 'ord-1', customerId: 'cust-1' },
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(identity.resolveFbLoginIdForCustomer).toHaveBeenCalledWith('cust-1');
+      expect(seenFbLoginId).toBe('fb-user-987654');
+    });
+
+    it('keeps the captured payload untouched when the resolver returns none (guest / no FB account)', async () => {
+      identity.resolveFbLoginIdForCustomer.mockResolvedValue(undefined);
+      let seenFbLoginId: unknown;
+      const fbMeta: TrackingProviderAdapter = {
+        ...fakeMeta,
+        build: (snap) => {
+          seenFbLoginId = (snap.customer as { fbLoginId?: string } | undefined)?.fbLoginId;
+          return buildPayload(snap.eventType);
+        },
+      };
+      mockBuildAdapterRegistry.mockReturnValue([fbMeta]);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: {
+          value: 100,
+          currency: 'BDT',
+          orderId: 'ord-1',
+          customerId: 'cust-1',
+          customer: { email: 'buyer@example.com' },
+        },
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(seenFbLoginId).toBeUndefined();
     });
   });
 });

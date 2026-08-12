@@ -25,9 +25,11 @@ export default function TrackingScripts() {
   const hasAny = !!(metaId || tiktokCode || gaMeasurementId);
   // Wave-2.1 — shopper external_id resolution state; gates the Meta pixel init
   // so the external_id is present at fbq('init') (no re-init, no next-load dep).
-  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null; em?: string; ph?: string }>({
+  // Wave-3 — fbLoginId rides along (CAPI mirror key, never in the pixel init).
+  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null; em?: string; ph?: string; fbLoginId?: string | null }>({
     ready: false,
     externalId: null,
+    fbLoginId: null,
   });
   // Wave-2.3 — whether /tracking/config has been resolved; all scripts stay
   // suppressed until we know tracking is allowed.
@@ -126,8 +128,8 @@ export default function TrackingScripts() {
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((d: { externalId?: string | null; em?: string; ph?: string }) => {
-        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null, em: d.em, ph: d.ph });
+      .then((d: { externalId?: string | null; em?: string; ph?: string; fbLoginId?: string | null }) => {
+        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null, em: d.em, ph: d.ph, fbLoginId: d.fbLoginId ?? null });
       })
       .catch(() => {
         // timeout / network / abort → degrade to no external_id; the Meta init
@@ -146,10 +148,10 @@ export default function TrackingScripts() {
   // Meta init. Meta events buffer in initMetaPixel until this runs (init-first).
   useEffect(() => {
     if (!metaId || !identity.ready) return;
-    setPixelIdentity(identity.externalId, identity.em, identity.ph);
+    setPixelIdentity(identity.externalId, identity.em, identity.ph, identity.fbLoginId);
     (window as any).__TRACKING_INIT_READY = true;
     if (window.__initMetaPixel) window.__initMetaPixel();
-  }, [metaId, identity.ready, identity.externalId, identity.em, identity.ph]);
+  }, [metaId, identity.ready, identity.externalId, identity.em, identity.ph, identity.fbLoginId]);
 
   // B12: the orphaned public/scripts/tracking.js (deleted) is the only consumer
   // of __META_ID/__TIKTOK_CODE — dropped to close the latent double-fire hazard.

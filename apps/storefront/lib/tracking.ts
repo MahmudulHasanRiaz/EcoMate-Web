@@ -314,6 +314,14 @@ let _metaExternalId: string | null = null;
 /** Wave-2.3 — hashed email/phone for Meta Advanced Matching init fields (em/ph). */
 let _metaEm: string | undefined;
 let _metaPh: string | undefined;
+/**
+ * Wave-3 — the shopper's Facebook user id (fb_login_id) for the CAPI mirror.
+ * Server-resolved via /tracking/identity (requires a real Better Auth facebook
+ * account) — NEVER fabricated for guests. Meta matches it verbatim (CAPI-only:
+ * fb_login_id is NOT an Advanced Matching init field, so it is never added to
+ * fbq('init') — the mirror carries it instead).
+ */
+let _metaFbLoginId: string | null = null;
 /** True once fbq('init') has run — Meta events buffer until then (init-first ordering). */
 let _metaInited = false;
 
@@ -373,10 +381,11 @@ export function setTrackingConfig(metaPurchaseMode: string, tiktokPurchaseMode: 
  * For an authenticated shopper, TrackingScripts waits for these before signaling
  * init readiness. Guests resolve to null (parameterless init).
  */
-export function setPixelIdentity(externalId?: string | null, em?: string, ph?: string) {
+export function setPixelIdentity(externalId?: string | null, em?: string, ph?: string, fbLoginId?: string | null) {
   _metaExternalId = externalId || null;
   _metaEm = em || undefined;
   _metaPh = ph || undefined;
+  _metaFbLoginId = fbLoginId || null;
 }
 
 /**
@@ -679,6 +688,9 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
         fbc,
         url,
         referrer,
+        // Wave-3 — only when the session actually resolved a Facebook account;
+        // guests and non-FB logins send nothing (never fabricated).
+        ...(_metaFbLoginId ? { fbLoginId: _metaFbLoginId } : {}),
       },
     });
   } else {

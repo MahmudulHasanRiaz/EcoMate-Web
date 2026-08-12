@@ -295,6 +295,36 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(nameOnly.skipReason).toBeUndefined();
     });
 
+    it('passes fb_login_id through VERBATIM (never hashed — Wave-3 Meta EMQ recommendation)', () => {
+      const fbSnapshot = {
+        ...snapshot,
+        customer: { ...snapshot.customer, fbLoginId: 'fb-user-987654' },
+      };
+      const payload = adapter.build(fbSnapshot, ctx, normalizer)!;
+
+      expect(payload.user_data.fb_login_id).toBe('fb-user-987654');
+      // every hashed contact key is still hashed — only fb_login_id is raw
+      expect(payload.user_data.em).toBe(normalizer.hashEmail('John.Doe@Example.com'));
+    });
+
+    it('omits fb_login_id when the snapshot has none (guests / non-FB logins)', () => {
+      const payload = adapter.build(snapshot, ctx, normalizer)!;
+
+      expect(payload.user_data.fb_login_id).toBeUndefined();
+    });
+
+    it('accepts an event whose ONLY identity key is fb_login_id (no skipReason, NO_EM_PH)', () => {
+      const payload = adapter.build(
+        { ...snapshot, customer: { fbLoginId: 'fb-user-987654' } },
+        {},
+        normalizer,
+      )!;
+
+      expect(payload.skipReason).toBeUndefined();
+      expect(payload.qualityFlags).toEqual(['NO_EM_PH']);
+      expect(payload.user_data.fb_login_id).toBe('fb-user-987654');
+    });
+
     it('defaults to Purchase when value is present and eventType is absent', () => {
       const { eventType: _dropped, ...noType } = snapshot;
       const payload = adapter.build(noType as TrackingSnapshotPayload, ctx, normalizer)!;
