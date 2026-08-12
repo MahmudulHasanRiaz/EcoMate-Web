@@ -13,6 +13,7 @@ import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 import { useAuth } from '@/context/AuthContext';
 import { trackAddToCart } from '@/lib/tracking';
+import { resolveCatalogId } from '@/lib/catalog-id';
 
 export default function WishlistPage() {
   const { addToCart } = useCart();
@@ -51,9 +52,9 @@ export default function WishlistPage() {
 
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
-    addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1 });
+    addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1, catalogId: resolveCatalogId(product) });
     trackAddToCart({
-      contentId: product.id,
+      contentId: resolveCatalogId(product),
       contentName: product.name,
       contentCategory: product.category,
       unitPrice: product.price,

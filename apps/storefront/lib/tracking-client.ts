@@ -15,12 +15,20 @@ export function getTrackingApiUrl(): string {
 
 export function getOrCreateCtxId(): string {
   if (typeof window === 'undefined') return '';
-  let id = localStorage.getItem(CTX_KEY);
-  if (!id) {
-    id = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-    localStorage.setItem(CTX_KEY, id);
+  // Landing-page custom mode (EcoMateSDK) blocks localStorage/sessionStorage for
+  // AI-sandbox safety. Tracking must degrade, never throw, so the mirror can
+  // still attach ip/ua/fbp/fbc server-side from the request context.
+  try {
+    if (typeof localStorage === 'undefined') return '';
+    let id = localStorage.getItem(CTX_KEY);
+    if (!id) {
+      id = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      localStorage.setItem(CTX_KEY, id);
+    }
+    return id;
+  } catch {
+    return '';
   }
-  return id;
 }
 export const getCtxId = getOrCreateCtxId;
 

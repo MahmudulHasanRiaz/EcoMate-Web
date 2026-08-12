@@ -13,8 +13,9 @@ export interface BrowserPurchaseItem {
   comboId?: string | null;
   quantity: number;
   price: number | string;
-  product?: { name?: string | null; category?: { name?: string | null } | null } | null;
+  product?: { name?: string | null; sku?: string | null; category?: { name?: string | null } | null } | null;
   combo?: { name?: string | null } | null;
+  variant?: { sku?: string | null } | null;
 }
 
 export interface BrowserPurchaseOrder {
@@ -46,7 +47,7 @@ export function buildPurchaseSharedData(
     currency: currencyCode,
     content_type: 'product',
     content_ids: itemsList
-      .map((i: any) => i.productId || i.comboId || '')
+      .map((i: any) => i.variant?.sku || i.product?.sku || i.productId || i.comboId || '')
       .filter(Boolean),
     content_name: firstItem
       ? firstItem.product?.name || firstItem.combo?.name || undefined
@@ -55,7 +56,7 @@ export function buildPurchaseSharedData(
     num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
     order_id: order.id,
     contents: itemsList.map((i: any) => ({
-      id: i.productId || i.comboId || '',
+      id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
       quantity: i.quantity,
       item_price: Number(i.price),
     })),

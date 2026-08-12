@@ -7,6 +7,7 @@ import { useCart } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { trackAddToCart } from "@/lib/tracking";
+import { resolveCatalogId } from '@/lib/catalog-id';
 import type { Product, Variant } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -138,7 +139,7 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
     }
 
     trackAddToCart({
-      contentId: matchingVariant.id || product.id,
+      contentId: resolveCatalogId(product, matchingVariant),
       contentName: product.name,
       contentCategory: product.category,
       unitPrice: matchingVariant.price,
@@ -159,6 +160,7 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       image: matchingVariant.image || product.image,
       quantity: 1,
       slug: product.slug,
+      catalogId: resolveCatalogId(product, matchingVariant),
     });
 
     onClose();

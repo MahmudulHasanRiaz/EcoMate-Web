@@ -4,6 +4,34 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { LandingOrderProvider, useOrder, type OrderLineItem } from "./LandingOrderContext";
 import { CountdownTimer, StockIndicator } from "./LandingUtils";
+import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
+import { useAuth } from '@/context/AuthContext';
+import { trackAddToCart } from '@/lib/tracking';
+import { resolveCatalogId } from '@/lib/catalog-id';
+
+/**
+ * Landing template-mode AddToCart (AddToCart catalog fix). The landing AI SDK
+ * (`window.EcoMate.track`) is mounted by EcoMateSDK in custom mode; template
+ * mode has no SDK, so call central trackAddToCart directly with the product's
+ * catalog id (sku || id) so Browser + CAPI mirror get the SAME event_id.
+ */
+function useLandingAddToCart() {
+  const { config } = useStorefrontConfig();
+  const { user } = useAuth();
+  return (p: any) => {
+    const unitPrice = Number(p?.salePrice ?? p?.basePrice ?? p?.price ?? 0) || 0;
+    trackAddToCart({
+      contentId: resolveCatalogId(p),
+      contentName: p?.name,
+      contentCategory: p?.category,
+      unitPrice,
+      quantityAdded: 1,
+      currency: config?.currency?.code || 'BDT',
+      email: user?.email,
+      country: 'BD',
+    });
+  };
+}
 
 interface SectionProps {
   section: any;
@@ -80,6 +108,7 @@ function FeaturesSection({ section }: SectionProps) {
 
 function DynamicProductSection({ section, products = [] }: SectionProps) {
   const { items, updateItem } = useOrder();
+  const fireAddToCart = useLandingAddToCart();
 
   if (products.length === 0) {
     return (
@@ -174,7 +203,7 @@ function DynamicProductSection({ section, products = [] }: SectionProps) {
                           } else {
                             updateItem(p.id, { quantity: Math.min(qty + 1, 99) });
                           }
-                          window.EcoMate?.track?.("AddToCart", { productId: p.id, name: p.name });
+                          fireAddToCart(p);
                         }}
                         className="w-10 h-10 flex items-center justify-center bg-white rounded-full text-gray-600 hover:bg-gray-100 hover:text-gray-900 shadow-sm transition-all text-xl font-medium active:scale-95"
                       >
@@ -278,7 +307,7 @@ function DynamicProductSection({ section, products = [] }: SectionProps) {
                       } else {
                         updateItem(p.id, { quantity: Math.min(qty + 1, 99) });
                       }
-                      window.EcoMate?.track?.("AddToCart", { productId: p.id, name: p.name });
+                      fireAddToCart(p);
                     }}
                     className="w-12 h-12 flex items-center justify-center bg-white rounded-xl text-gray-600 hover:bg-gray-100 hover:text-gray-900 shadow-sm transition-all text-2xl font-medium active:scale-95"
                   >

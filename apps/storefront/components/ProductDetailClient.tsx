@@ -9,6 +9,7 @@ import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Product, Variant, Review } from "@/lib/types";
 import { trackEvent, trackAddToCart } from "@/lib/tracking";
+import { resolveCatalogId } from '@/lib/catalog-id';
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
 import { SizeChartModal } from "./SizeChartModal";
@@ -457,7 +458,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   useEffect(() => {
     window.scrollTo(0, 0);
     trackEvent('ViewContent', {
-      content_ids: [product.id],
+      content_ids: [resolveCatalogId(product, selectedVariant)],
       value: selectedVariant?.price ?? product.price,
       currency: config.currency.code,
       content_name: product.name,
@@ -565,9 +566,10 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         variantLabel,
         variantAttributes,
         stock: displayStock,
+        catalogId: resolveCatalogId(product, selectedVariant),
       });
       trackAddToCart({
-        contentId: selectedVariant?.id || product.id,
+        contentId: resolveCatalogId(product, selectedVariant),
         contentName: product.name,
         contentCategory: product.category,
         unitPrice: displayPrice,
@@ -606,6 +608,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       variantLabel,
       variantAttributes,
       stock: displayStock,
+      catalogId: resolveCatalogId(product, selectedVariant),
     }, true);
     window.location.href = '/checkout';
   }

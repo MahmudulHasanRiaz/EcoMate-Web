@@ -652,9 +652,9 @@ export default function CheckoutPage() {
         value,
         currency: config.currency.code,
         content_type: 'product',
-        content_ids: items.map(i => i.id),
+        content_ids: items.map(i => i.catalogId || i.id),
         num_items: items.reduce((s, i) => s + i.quantity, 0),
-        contents: items.map(i => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
+        contents: items.map(i => ({ id: i.catalogId || i.id, quantity: i.quantity, item_price: i.price })),
         content_name: items[0]?.name,
         content_category: items[0]?.category,
       }, {

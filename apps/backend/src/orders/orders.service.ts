@@ -702,6 +702,7 @@ export class OrdersService {
               select: {
                 id: true,
                 name: true,
+                sku: true,
                 images: true,
                 slug: true,
                 category: { select: { name: true } },
@@ -1627,10 +1628,12 @@ export class OrdersService {
                   select: {
                     id: true,
                     name: true,
+                    sku: true,
                     category: { select: { name: true } },
                   },
                 },
                 combo: { select: { id: true, name: true } },
+                variant: { select: { id: true, sku: true } },
               },
             },
             payments: true,
@@ -2282,10 +2285,12 @@ export class OrdersService {
                   select: {
                     id: true,
                     name: true,
+                    sku: true,
                     category: { select: { name: true } },
                   },
                 },
                 combo: { select: { id: true, name: true } },
+                variant: { select: { id: true, sku: true } },
               },
             },
             customer: true,
@@ -3811,7 +3816,7 @@ export class OrdersService {
     const totalValue = Number(order.total || 0);
 
     const contents = itemsList.map((i: any) => ({
-      id: i.productId || i.comboId || '',
+      id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
       quantity: i.quantity,
       item_price: Number(i.price),
     }));
@@ -3844,7 +3849,7 @@ export class OrdersService {
           value: totalValue,
           currency: (configSnapshot as any).currency || 'BDT',
           content_ids: itemsList
-            .map((i: any) => i.productId || i.comboId || '')
+            .map((i: any) => i.variant?.sku || i.product?.sku || i.productId || i.comboId || '')
             .filter(Boolean),
           content_type: 'product',
           content_name: contentName,
@@ -3910,11 +3915,11 @@ export class OrdersService {
             value: -totalValue,
             currency: (configSnapshot as any).currency || 'BDT',
             content_ids: itemsList
-              .map((i: any) => i.productId || i.comboId || '')
+              .map((i: any) => i.variant?.sku || i.product?.sku || i.productId || i.comboId || '')
               .filter(Boolean),
             content_type: 'product',
             contents: itemsList.map((i: any) => ({
-              id: i.productId || i.comboId || '',
+              id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
               quantity: i.quantity,
               item_price: Number(i.price),
             })),
