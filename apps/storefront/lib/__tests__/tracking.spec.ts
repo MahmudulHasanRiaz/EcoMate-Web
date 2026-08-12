@@ -213,7 +213,7 @@ describe('tracking', () => {
       { id: 'p2', name: 'Soap', price: 80, quantity: 1, category: 'Bath' },
     ];
 
-    function fireInitiateCheckout(items: any[], userData: any = {}) {
+    function fireInitiateCheckout(items: any[], userData: any = {}, eventId?: string) {
       trackEvent('InitiateCheckout', {
         value: items.reduce((s: number, i: any) => s + (i.price || 0) * (i.quantity || 1), 0),
         currency: 'BDT',
@@ -228,7 +228,18 @@ describe('tracking', () => {
         name: userData.name || '',
         country: userData.country,
         email: userData.email,
-      });
+      }, eventId);
+    }
+
+    /** Mimics the component's cartAttemptId derivation (spec §8 / D1 correction). */
+    function makeAttemptId(items: any[]): string {
+      const ids = items.map(i => i.id).join(',');
+      const qtys = items.map(i => `${i.id}:${i.quantity}`).join('|');
+      const value = items.reduce((s: number, i: any) => s + (i.price || 0) * (i.quantity || 1), 0);
+      const signature = `${ids}::${qtys}::${value.toFixed(2)}`;
+      const ctxId = '1700000000000-abcdefghij'; // stable mock ctxId
+      const bucket = Math.floor(Date.now() / 5000);
+      return `initiate_checkout_${signature}_${ctxId.slice(-8)}_${bucket}`;
     }
 
     it('fires the browser Pixel event with the mirrored event_id', () => {
@@ -384,6 +395,142 @@ describe('tracking', () => {
       // because the useEffect gates on items.length > 0.
       // (Component-level coverage lives in the checkout-page test below.)
       expect(callCountBefore).toBeGreaterThanOrEqual(0);
+    });
+
+    // --- D1 correction: material cart mutation produces a new event_id ---
+
+    describe('D1 — material cart mutation dedup', () => {
+      it('CRITICAL: quantity change within 5s produces a new event_id', () => {
+        // 10:00:01 — A × 1 = 100; 10:00:02 — A × 2 = 200. Same bucket, same
+        // first content_id, but material value/qty change MUST yield new id.
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+          expect(first.eventId).toBeDefined();
+          expect(first.customData.value).toBe(100);
+
+          spy.mockReturnValue(1700000002000); // +2s — same 5s bucket
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 2 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+          expect(second.eventId).not.toBe(first.eventId); // D1: new logical event
+          expect(second.customData.value).toBe(200); // updated value
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('add item within 5s produces a new event_id', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+          spy.mockReturnValue(1700000003000); // +3s — same bucket
+          const items2 = [
+            { id: 'A', name: 'Shampoo', price: 100, quantity: 1 },
+            { id: 'B', name: 'Soap', price: 50, quantity: 1 },
+          ];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+          expect(second).not.toBe(first);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('remove item within 5s produces a new event_id', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [
+            { id: 'A', name: 'Shampoo', price: 100, quantity: 1 },
+            { id: 'B', name: 'Soap', price: 50, quantity: 1 },
+          ];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+          spy.mockReturnValue(1700000003000); // +3s — same bucket
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+          expect(second).not.toBe(first);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('value change within 5s (same content set, different qty) produces a new event_id', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+          expect(first.customData.value).toBe(100);
+          spy.mockReturnValue(1700000004000); // +4s — same bucket
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 3 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+          expect(second.eventId).not.toBe(first.eventId);
+          expect(second.customData.value).toBe(300);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('unchanged cart signature produces the same event_id (rapid refresh dedup)', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+          spy.mockReturnValue(1700000002000); // +2s — same bucket, same cart
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+          expect(second).toBe(first); // rapid refresh dedup preserved
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('unchanged cart after 5s produces a new event_id (temporal boundary)', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const first = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+          spy.mockReturnValue(1700000010000); // +10s — new bucket
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const second = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+          expect(second).not.toBe(first); // new temporal window → new event
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it('browser and server share the same event_id for each logical event', () => {
+        const spy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+        try {
+          const items1 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 1 }];
+          fireInitiateCheckout(items1, {}, makeAttemptId(items1));
+          const serverId1 = JSON.parse(fetchMock.mock.calls[0][1].body as string).eventId;
+          const fbqCall1 = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'InitiateCheckout');
+          expect(fbqCall1).toBeDefined();
+          expect(fbqCall1![3].eventID).toBe(serverId1); // browser === server
+
+          spy.mockReturnValue(1700000002000); // material change
+          const items2 = [{ id: 'A', name: 'Shampoo', price: 100, quantity: 2 }];
+          fireInitiateCheckout(items2, {}, makeAttemptId(items2));
+          const serverId2 = JSON.parse(fetchMock.mock.calls[1][1].body as string).eventId;
+          const fbqCall2 = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'InitiateCheckout').at(-1);
+          expect(fbqCall2![3].eventID).toBe(serverId2);
+          expect(serverId2).not.toBe(serverId1);
+        } finally {
+          spy.mockRestore();
+        }
+      });
     });
   });
 });

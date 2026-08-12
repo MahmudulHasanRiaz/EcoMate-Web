@@ -621,6 +621,22 @@ export default function CheckoutPage() {
    */
   const cartSignature = React.useMemo(() => computeCartSignature(items), [items]);
 
+  /**
+   * Per-attempt event id (spec §8 / D1 correction). The explicit override path
+   * of `trackEvent` is used so a material cart mutation produces a genuinely
+   * new event_id even within the same 5-second bucket. The id embeds:
+   *  - cartSignature: content_ids + quantities + value (material dimensions)
+   *  - ctxId hash: journey scope (unchanged across attempts)
+   *  - 5s bucket: temporal dedup for rapid refresh of the SAME signature
+   * Rapid refresh of an unchanged cart → identical signature + same bucket →
+   * same event_id (dedup preserved). Material change → new signature → new id.
+   */
+  const cartAttemptId = React.useMemo(() => {
+    const ctxId = getOrCreateCtxId();
+    const bucket = Math.floor(Date.now() / 5000);
+    return `initiate_checkout_${cartSignature}_${ctxId.slice(-8)}_${bucket}`;
+  }, [cartSignature]);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -646,10 +662,10 @@ export default function CheckoutPage() {
         name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
         country: 'BD',
         email: user?.email || (guestEmail && !isSyntheticEmail(guestEmail) ? guestEmail.trim() : undefined),
-      });
+      }, cartAttemptId);
       lastSignatureRef.current = cartSignature;
     }
-  }, [items, cartSignature, config.currency.code, user, guestEmail]);
+  }, [items, cartSignature, cartAttemptId, config.currency.code, user, guestEmail]);
 
   const getLeadData = useCallback(() => {
     const rawPhone = guestPhone || user?.phoneNumber || '';
