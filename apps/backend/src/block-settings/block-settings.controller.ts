@@ -9,13 +9,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class BlockSettingsController {
   constructor(private readonly svc: BlockSettingsService) {}
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get()
   async get() {
     return this.svc.getSettings();
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Put()
   async update(
     @Body(new ValidationPipe({ whitelist: true })) dto: BlockSettingsDto,

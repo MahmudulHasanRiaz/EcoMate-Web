@@ -8,7 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class BlockedEntriesController {
   constructor(private readonly svc: BlockedEntriesService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Get()
   async findAll(
     @Query('type') type?: string,
@@ -17,7 +17,7 @@ export class BlockedEntriesController {
     return this.svc.findAll(type, search);
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Post()
   async create(
     @Body()
@@ -35,14 +35,14 @@ export class BlockedEntriesController {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Post(':type/:id/unblock')
   async unblock(@Param('type') type: string, @Param('id') id: string) {
     await this.svc.unblock(type, id);
     return { success: true };
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Post(':type/:id/whitelist')
   async toggleWhitelist(@Param('type') type: string, @Param('id') id: string) {
     await this.svc.toggleWhitelist(type, id);
