@@ -13,6 +13,7 @@ import { trackAddToCart } from "@/lib/tracking";
 import { getAspectStyle } from "@/lib/utils/image-ratio";
 import { VariantPickerModal } from '@/components/VariantPickerModal';
 import { useAuth } from '@/context/AuthContext';
+import { resolveCatalogId } from '@/lib/catalog-id';
 
 interface ProductCardProps {
   product: Product;
@@ -114,9 +115,10 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
       quantity: 1,
       slug: product.slug,
       category: product.category,
+      catalogId: resolveCatalogId(product),
     });
     trackAddToCart({
-      contentId: product.id,
+      contentId: resolveCatalogId(product),
       contentName: product.name,
       contentCategory: product.category,
       unitPrice: product.price,

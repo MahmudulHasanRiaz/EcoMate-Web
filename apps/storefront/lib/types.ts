@@ -199,5 +199,7 @@ export interface CartItem {
   variantId?: string;
   variantLabel?: string;
   variantAttributes?: { name: string; value: string }[];
+  /** Meta Catalog canonical id (sku || product.id, or variant sku) — resolved at add-to-cart time. */
+  catalogId?: string;
   availabilityMode?: 'MANAGED_STOCK' | 'ALWAYS_IN_STOCK' | 'ALWAYS_OUT_OF_STOCK' | 'INVENTORY_CONTROLLED';
 }

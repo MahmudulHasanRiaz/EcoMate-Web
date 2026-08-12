@@ -658,4 +658,37 @@ describe('tracking', () => {
       expect(fbqCall![2]).not.toHaveProperty('fbc');
     });
   });
+
+  // --- Landing-page AddToCart bridge + catalog id (catalog-matching fix) ---
+
+  describe('landing bridge + catalog id', () => {
+    it('routes window.EcoMate.track AddToCart through the central helper', () => {
+      // Bridge is installed at module load. Mutate the existing EcoMate object
+      // (replacing it would drop the bridge's track function).
+      (window as any).EcoMate.products = [{ id: 'p1', name: 'Shampoo', sku: 'SKU-1', price: 100 }];
+      (window as any).EcoMate.track('AddToCart', { productId: 'p1', quantity: 2, price: 100 });
+      expect(window.fbq).toHaveBeenCalledWith('track', 'AddToCart',
+        expect.objectContaining({
+          value: 200,
+          content_ids: ['SKU-1'],
+          content_name: 'Shampoo',
+          contents: [{ id: 'SKU-1', quantity: 2, item_price: 100 }],
+        }),
+        expect.objectContaining({ eventID: expect.stringMatching(/^add_to_cart_SKU-1_\d+_\d+$/) }),
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.eventId).toBe(vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'AddToCart')![3].eventID);
+      (window as any).EcoMate.products = [];
+    });
+
+    it('resolves variant catalog id (variant sku) from the landing registry', () => {
+      (window as any).EcoMate.products = [{ id: 'p1', name: 'Shampoo', sku: 'SKU-1', variants: [{ id: 'v1', sku: 'VAR-9' }], price: 100 }];
+      (window as any).EcoMate.track('AddToCart', { productId: 'p1', variantId: 'v1', quantity: 1, price: 120 });
+      expect(window.fbq).toHaveBeenCalledWith('track', 'AddToCart',
+        expect.objectContaining({ content_ids: ['VAR-9'] }),
+        expect.anything(),
+      );
+      (window as any).EcoMate.products = [];
+    });
+  });
 });

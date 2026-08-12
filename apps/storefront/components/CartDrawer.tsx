@@ -8,6 +8,9 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getProducts } from "@/lib/api/products";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { trackAddToCart } from "@/lib/tracking";
+import { resolveCatalogId } from "@/lib/catalog-id";
 
 /**
  * Render attribute selections as "Size: M, Color: Red" for the cart drawer.
@@ -25,6 +28,8 @@ function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: stri
 function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
   const [upsells, setUpsells] = useState<any[]>([]);
   const { addToCart } = useCart();
+  const { config } = useStorefrontConfig();
+  const { user } = useAuth();
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
   const s = currencySymbol;
@@ -43,7 +48,17 @@ const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 
       router.push(p.slug ? `/products/${p.slug}` : `/products/${p.id}`);
       return;
     }
-    addToCart({ id: p.id, name: p.name, price: p.price, originalPrice: p.salePrice || p.originalPrice, image: p.image, quantity: 1, slug: p.slug, category: p.category });
+    addToCart({ id: p.id, name: p.name, price: p.price, originalPrice: p.salePrice || p.originalPrice, image: p.image, quantity: 1, slug: p.slug, category: p.category, catalogId: resolveCatalogId(p) });
+    trackAddToCart({
+      contentId: resolveCatalogId(p),
+      contentName: p.name,
+      contentCategory: p.category,
+      unitPrice: p.price,
+      quantityAdded: 1,
+      currency: config.currency.code,
+      email: user?.email,
+      country: 'BD',
+    });
   };
 
   return (

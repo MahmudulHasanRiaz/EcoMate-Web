@@ -5,6 +5,7 @@ interface EcoMateTracking {
     currency: string;
   };
   track: (event: string, data?: Record<string, any>) => void;
+  products?: any[];
 }
 
 interface Window {

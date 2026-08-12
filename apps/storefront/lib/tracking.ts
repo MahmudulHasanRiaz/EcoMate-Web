@@ -1,4 +1,55 @@
 import { getOrCreateCtxId, getTrackingApiUrl } from './tracking-client';
+import { resolveCatalogId } from './catalog-id';
+
+/**
+ * Landing-page tracking bridge (AddToCart catalog fix). The landing AI SDK
+ * (EcoMateSDK in CustomRenderer) exposes `window.EcoMate.track(event, data)`
+ * for AI-generated landing code; it was previously a dead no-op. Route it to
+ * the centralized tracking helpers so landing-page AddToCart reaches Browser
+ * Pixel + CAPI mirror with the SAME event_id (spec: centralized reuse, no new
+ * pipeline). The SDK payload is `{ productId, variantId?, quantity, price }`;
+ * the products registry (`window.EcoMate.products`) provides the catalog id /
+ * name / category. In template mode the call sites pass richer payloads too.
+ */
+function installLandingTrackingBridge() {
+  if (typeof window === 'undefined') return;
+  const eco = (window.EcoMate ||= {} as EcoMateTracking);
+  eco.track = (event: string, data: Record<string, any> = {}) => {
+    const registry: any[] = window.EcoMate?.products || [];
+    if (event === 'AddToCart') {
+      const product = data.productId
+        ? registry.find((p) => p?.id === data.productId)
+        : undefined;
+      const variant = data.variantId
+        ? product?.variants?.find((v: any) => v?.id === data.variantId)
+        : undefined;
+      const unitPrice = Number(data.price ?? variant?.price ?? product?.price ?? 0) || 0;
+      const quantityAdded = Number(data.quantity ?? 1) || 1;
+      trackAddToCart({
+        contentId: resolveCatalogId(
+          product || { id: String(data.productId) },
+          variant || (data.variantId ? { id: String(data.variantId) } : undefined),
+        ),
+        contentName: data.name ?? product?.name,
+        contentCategory: product?.category,
+        unitPrice,
+        quantityAdded,
+        currency: data.currency ?? product?.currency ?? 'BDT',
+        country: 'BD',
+      });
+    } else if (event === 'ViewContent' && data.productId) {
+      const vProduct = registry.find((p) => p?.id === data.productId);
+      trackEvent('ViewContent', {
+        content_ids: [vProduct ? resolveCatalogId(vProduct) : String(data.productId)],
+        content_name: data.name ?? vProduct?.name,
+        content_type: 'product',
+        value: Number(data.price) || undefined,
+      });
+    } else if (event === 'Lead') {
+      trackEvent('Lead', {}, { phone: data.phone, country: 'BD' });
+    }
+  };
+}
 
 /**
  * Central AddToCart tracking helper (AddToCart implementation order).
@@ -65,7 +116,7 @@ declare global {
 }
 
 type EventName = 'ViewContent' | 'AddToCart' | 'AddToWishlist' | 'InitiateCheckout'
-  | 'AddPaymentInfo' | 'Purchase' | 'Search' | 'CompleteRegistration';
+  | 'AddPaymentInfo' | 'Purchase' | 'Search' | 'CompleteRegistration' | 'Lead';
 
 function eventNameToSnake(name: string): string {
   return name.replace(/[A-Z]/g, c => '_' + c.toLowerCase()).replace(/^_/, '');
@@ -275,6 +326,7 @@ export function flushQueue() {
 if (typeof window !== 'undefined') {
   window.__flushTrackingQueue = flushQueue;
   window.__initMetaPixel = initMetaPixel;
+  installLandingTrackingBridge();
 }
 
 // --- Wave-2.5 mirror reliability (B2 + W25-3) ---
