@@ -3,6 +3,7 @@ import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { serverFetch } from "@/lib/api-server";
 import LandingTemplateRenderer from "@/components/landing/TemplateRenderer";
 import LandingCustomRenderer from "@/components/landing/CustomRenderer";
+import LandingPrimaryProductView from "@/components/landing/LandingPrimaryProductView";
 import type { Metadata } from "next";
 
 export const revalidate = 300;
@@ -91,6 +92,13 @@ export default async function LandingPage(props: {
     } catch {}
   }
 
+  // PRIMARY assigned products — the Landing Page Builder page is the DEDICATED
+  // content/view surface for these (NOT a passive grid). They get ONE ViewContent
+  // on page load. Section-level product cards (grids/recommendations) are NOT
+  // included — those fire no ViewContent on render.
+  const primaryIds = new Set(page.productIds || []);
+  const primaryProducts = products.filter((p: any) => p?.id && primaryIds.has(p.id));
+
 
   return (
     <>
@@ -101,6 +109,12 @@ export default async function LandingPage(props: {
       )}
 
       {/* Tracking handled by TrackingScripts in root layout — no inline tracking needed */}
+
+      {/* Primary assigned product view — ONE ViewContent for the landing page's
+          dedicated product(s); section cards fire none. */}
+      {primaryProducts.length > 0 && !isPreview && (
+        <LandingPrimaryProductView primaryProducts={primaryProducts} />
+      )}
 
       {/* Template mode */}
       {page.pageType === "template" && (
