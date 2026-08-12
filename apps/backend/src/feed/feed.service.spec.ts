@@ -347,6 +347,55 @@ describe('FeedService', () => {
     });
   });
 
+  describe('mapToItemXml — production catalog identifier chain', () => {
+    // Mirrors the production Meta Commerce Manager evidence for
+    // "Classic Brown Winter Comfort Boot (CWB-1)": the variant item's
+    // Content ID equals the variant SKU (CWB-1-44), and availability must
+    // reflect actual inventory (out of stock when managedStockQuantity=0).
+    it('emits variant.sku as g:id (Content ID parity with production catalog)', () => {
+      const xml = (service as any).mapToItemXml({
+        id: 'CWB-1-44',
+        title: 'Classic Brown Winter Comfort Boot (CWB-1) - CWB-1-44',
+        price: 3500,
+        availability: 'out of stock',
+        link: 'https://example.com/products/classic-brown-winter-comfort-boot-cwb-1?variant=42915600',
+        imageLink: 'https://example.com/uploads/3d0afd49.jpg',
+      }, 'meta');
+
+      expect(xml).toContain('<g:id>CWB-1-44</g:id>');
+      expect(xml).toContain('<g:availability>out of stock</g:availability>');
+      expect(xml).toContain('<g:image_link>https://example.com/uploads/3d0afd49.jpg</g:image_link>');
+      expect(xml).toContain('<g:link>https://example.com/products/classic-brown-winter-comfort-boot-cwb-1?variant=42915600</g:link>');
+    });
+
+    it('emits product.sku as g:id for simple products (no UUID leaking)', () => {
+      const xml = (service as any).mapToItemXml({
+        id: 'CWB-1',
+        title: 'Classic Brown Winter Comfort Boot (CWB-1)',
+        price: 3500,
+        availability: 'in stock',
+        link: 'https://example.com/products/classic-brown-winter-comfort-boot-cwb-1',
+        imageLink: 'https://example.com/uploads/primary.jpg',
+      }, 'meta');
+
+      expect(xml).toContain('<g:id>CWB-1</g:id>');
+      expect(xml).not.toMatch(/<g:id>[0-9a-f]{8}-/);
+    });
+
+    it('keeps out-of-stock when the variant has zero available stock', () => {
+      const xml = (service as any).mapToItemXml({
+        id: 'CWB-1-44',
+        title: 'x',
+        price: 3500,
+        availability: 'out of stock',
+        link: 'https://example.com/p',
+        imageLink: 'https://example.com/i.jpg',
+      }, 'meta');
+
+      expect(xml).toContain('<g:availability>out of stock</g:availability>');
+    });
+  });
+
   describe('getLogs', () => {
     const mockLog = {
       id: 'log-1',
