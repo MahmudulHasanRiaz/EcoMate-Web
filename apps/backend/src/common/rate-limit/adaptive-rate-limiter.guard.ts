@@ -186,7 +186,8 @@ export class AdaptiveRateLimiterGuard {
     if (path?.startsWith('/api/health')) return 'health';
     if (path?.startsWith('/api/admin/')) return 'admin';
     if (path?.startsWith('/api/pos/')) return 'pos';
-    if (path?.startsWith('/api/webhook/')) return 'webhooks';
+    if (path?.startsWith('/api/webhooks/courier/')) return 'courier_webhook';
+    if (path?.startsWith('/api/webhook/') || path?.startsWith('/api/webhooks/')) return 'webhooks';
     if (path?.startsWith('/api/rate-limit/browser-check')) return 'browser_check';
 
     return 'api';

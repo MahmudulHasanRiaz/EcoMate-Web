@@ -1075,6 +1075,56 @@ model Dispatch {
   @@index([lastSyncedAt])
 }
 
+enum WebhookAttemptOutcome {
+  SUCCESS
+  AUTH_FAILED
+  AUTH_HEADER_MISSING
+  AUTH_FORMAT_INVALID
+  RATE_LIMITED
+  PAYLOAD_INVALID
+  ORDER_NOT_FOUND
+  PROCESSING_ERROR
+  SKIPPED
+  UNKNOWN_ERROR
+}
+
+enum WebhookAttemptStage {
+  RATE_LIMIT
+  AUTH
+  PAYLOAD
+  ORDER_RESOLUTION
+  PROCESSING
+  RESPONSE
+}
+
+model WebhookAttempt {
+  id              String                 @id @default(uuid())
+  courier         String
+  receivedAt      DateTime               @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+  method          String                 @default("POST")
+  path            String
+  responseStatus  Int?
+  outcome         WebhookAttemptOutcome  @default(UNKNOWN_ERROR)
+  failureStage    WebhookAttemptStage?
+  correlationId   String?
+  sourceIp        String?
+  authResult      String?
+  notificationType String?
+  consignmentId   String?
+  invoice         String?
+  courierEvent    String?
+  message         String?
+  isDuplicate     Boolean                @default(false)
+
+  @@index([courier])
+  @@index([receivedAt])
+  @@index([outcome])
+  @@index([correlationId])
+  @@index([courier, receivedAt])
+}
+
 model Coupon {
   id                 String    @id @default(uuid())
   code               String    @unique

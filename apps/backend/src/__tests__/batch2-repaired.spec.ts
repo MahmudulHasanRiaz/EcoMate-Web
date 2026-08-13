@@ -644,6 +644,7 @@ describe('verifyRedxHmac (production function)', () => {
 
 import { CourierWebhookController } from '../courier-manager/courier-webhook.controller';
 import { CourierWebhookService } from '../courier-manager/courier-webhook.service';
+import { WebhookAttemptService } from '../courier-manager/webhook-attempt.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UnauthorizedException } from '@nestjs/common';
 
@@ -657,12 +658,23 @@ describe('CourierWebhookController redx (real instance)', () => {
 
   let handleRedxMock: jest.Mock;
   let controller: CourierWebhookController;
+  let mockAttemptSvc: { startAttempt: jest.Mock; completeAttempt: jest.Mock };
 
   beforeEach(() => {
     handleRedxMock = jest.fn().mockResolvedValue({ success: true });
     const mockSvc = { handleRedx: handleRedxMock } as unknown as CourierWebhookService;
-    const mockPrisma = {} as PrismaService;
-    controller = new CourierWebhookController(mockSvc, mockPrisma);
+    const mockPrisma = { courierCredentials: { findUnique: jest.fn() } } as unknown as PrismaService;
+
+    mockAttemptSvc = {
+      startAttempt: jest.fn().mockResolvedValue({ id: 'att-test', receivedAt: new Date() }),
+      completeAttempt: jest.fn().mockResolvedValue(undefined),
+    };
+
+    controller = new CourierWebhookController(
+      mockSvc,
+      mockPrisma,
+      mockAttemptSvc as unknown as WebhookAttemptService,
+    );
   });
 
   afterEach(() => {
@@ -674,7 +686,13 @@ describe('CourierWebhookController redx (real instance)', () => {
   });
 
   function mockReq(headers: Record<string, string | undefined>): any {
-    return { headers };
+    return {
+      headers,
+      url: '/api/webhooks/courier/redx',
+      ip: '1.2.3.4',
+      method: 'POST',
+      socket: { remoteAddress: '1.2.3.4' },
+    };
   }
 
   it('missing REDX_WEBHOOK_SECRET — throws UnauthorizedException, does not call handleRedx', async () => {

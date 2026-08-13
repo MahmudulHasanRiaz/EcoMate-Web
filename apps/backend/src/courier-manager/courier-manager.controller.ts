@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
+import { WebhookAttemptService } from './webhook-attempt.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomBytes } from 'node:crypto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { WebhookAttemptOutcome } from '@prisma/client';
 
 @Roles('superadmin', 'admin', 'manager')
 @Controller('couriers')
@@ -14,6 +16,7 @@ export class CourierManagerController {
     private readonly svc: CourierManagerService,
     private readonly tracking: CourierTrackingService,
     private readonly prisma: PrismaService,
+    private readonly webhookAttempts: WebhookAttemptService,
   ) {}
 
   @Get('credentials')
@@ -276,5 +279,49 @@ export class CourierManagerController {
   @Get('order-tracking/:orderId')
   async getOrderTracking(@Param('orderId') orderId: string) {
     return this.tracking.getOrderTracking(orderId);
+  }
+
+  @Get('webhook-attempts')
+  async listWebhookAttempts(
+    @Query('courier') courier?: string,
+    @Query('outcome') outcome?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedOutcome = outcome && outcome in WebhookAttemptOutcome
+      ? outcome as WebhookAttemptOutcome
+      : undefined;
+    const parsedLimit = limit ? Math.min(parseInt(limit, 10), 50) : 20;
+
+    if (courier) {
+      return this.webhookAttempts.getRecentAttempts(courier, {
+        outcome: parsedOutcome,
+        limit: parsedLimit,
+      });
+    }
+
+    // Without courier filter, fetch across all couriers
+    const couriers = ['steadfast', 'pathao', 'redx', 'carrybee'];
+    const results = await Promise.all(
+      couriers.map((c) =>
+        this.webhookAttempts.getRecentAttempts(c, {
+          outcome: parsedOutcome,
+          limit: Math.ceil(parsedLimit / couriers.length),
+        }),
+      ),
+    );
+    return results
+      .flat()
+      .sort((a: any, b: any) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+      .slice(0, parsedLimit);
+  }
+
+  @Get('webhook-attempts/summary/:courier')
+  async getWebhookAttemptSummary(@Param('courier') courier: string) {
+    return this.webhookAttempts.getSummary(courier);
+  }
+
+  @Get('webhook-attempts/:id')
+  async getWebhookAttemptDetail(@Param('id') id: string) {
+    return this.webhookAttempts.getAttemptDetail(id);
   }
 }

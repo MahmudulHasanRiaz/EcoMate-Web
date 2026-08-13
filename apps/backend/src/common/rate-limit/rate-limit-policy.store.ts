@@ -99,6 +99,24 @@ const DEFAULT_POLICIES: Record<string, Omit<RateLimitPolicy, 'name'>> = {
   },
 
   /**
+   * Courier webhooks — status callbacks from Steadfast, Pathao, RedX, Carrybee.
+   * Providers send bursts of callbacks during bulk deliveries (10-20 in seconds).
+   * 60/min per source IP allows 1 req/sec sustained + burst headroom.
+   * Signature/bearer validation is the primary auth gate.
+   */
+  courier_webhook: {
+    limits: {
+      [TrustTier.UNKNOWN]: { limit: 60, windowMs: 60000 },
+      [TrustTier.SESSION]: { limit: 60, windowMs: 60000 },
+      [TrustTier.BROWSER_TRUST]: { limit: 60, windowMs: 60000 },
+      [TrustTier.AUTHENTICATED]: { limit: 60, windowMs: 60000 },
+    },
+    burst: { limit: 20, windowMs: 10000 },
+    riskScore: { violationWeight: 5, autoBlockThreshold: 10, autoBlockDurationMinutes: 1440 },
+    trackingKey: 'ip',
+  },
+
+  /**
    * Health — very high limit, never block normal checks.
    */
   health: {

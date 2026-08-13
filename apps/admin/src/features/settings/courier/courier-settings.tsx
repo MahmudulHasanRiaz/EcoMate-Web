@@ -14,7 +14,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, FileText } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 
 const courierLogos: Record<string, string> = {
   steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
@@ -41,6 +42,8 @@ const courierApi = {
   generateWebhookSecret: (courier: string) => apiClient.post(`/couriers/credentials/${courier}/generate-webhook-secret`, {}),
   defaultNote: () => apiClient.get('/couriers/default-note'),
   saveDefaultNote: (note: string) => apiClient.put('/couriers/default-note', { note }),
+  webhookSummary: (courier: string) => apiClient.get(`/couriers/webhook-attempts/summary/${courier}`),
+  webhookAttempts: (courier: string, limit?: number) => apiClient.get(`/couriers/webhook-attempts?courier=${courier}&limit=${limit ?? 20}`),
 }
 
 interface CourierFormState {
@@ -90,6 +93,25 @@ const defaultForm: CourierFormState = {
   webhookSecret: '', pathaoIntegrationSecret: '',
 }
 
+function formatDate(d: string | null): string {
+  if (!d) return '—'
+  return new Date(d).toLocaleString()
+}
+
+function outcomeBadge(outcome: string): { variant: 'default' | 'destructive' | 'outline'; label: string } {
+  switch (outcome) {
+    case 'SUCCESS': return { variant: 'default', label: 'Success' }
+    case 'AUTH_FAILED':
+    case 'AUTH_HEADER_MISSING':
+    case 'AUTH_FORMAT_INVALID': return { variant: 'destructive', label: outcome.replace(/_/g, ' ') }
+    case 'RATE_LIMITED': return { variant: 'destructive', label: 'Rate Limited' }
+    case 'ORDER_NOT_FOUND': return { variant: 'destructive', label: 'Order Not Found' }
+    case 'PROCESSING_ERROR': return { variant: 'destructive', label: 'Processing Error' }
+    case 'PAYLOAD_INVALID': return { variant: 'destructive', label: 'Invalid Payload' }
+    default: return { variant: 'outline', label: outcome.replace(/_/g, ' ') }
+  }
+}
+
 export function CourierSettings() {
   const queryClient = useQueryClient()
   const { data: creds, isLoading, isError, error, refetch } = useQuery({
@@ -105,10 +127,6 @@ export function CourierSettings() {
     () => rawList.filter((c) => hasFeature(`courier_${(c as Record<string, unknown>)['courier'] as string}`)),
     [rawList, hasFeature],
   )
-
-  useEffect(() => {
-    console.log('Courier credentials API response:', creds, 'Parsed list:', list)
-  }, [creds, list])
 
   useEffect(() => {
     if (list.length > 0) {
@@ -142,6 +160,7 @@ export function CourierSettings() {
   })
 
   const [showSecret, setShowSecret] = useState<Record<string, boolean>>({})
+  const [regenDialog, setRegenDialog] = useState<{ open: boolean; courier: string }>({ open: false, courier: '' })
 
   const { data: defaultNoteData, isLoading: noteLoading } = useQuery({
     queryKey: ['courier-default-note'],
@@ -166,6 +185,7 @@ export function CourierSettings() {
         toast.success('Webhook secret generated')
       }
       queryClient.invalidateQueries({ queryKey: ['courier-creds'] })
+      setRegenDialog({ open: false, courier: '' })
     },
     onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to generate secret') },
   })
@@ -375,14 +395,25 @@ export function CourierSettings() {
                       ) : null}
                     </div>
                     {form.webhookSecret ? (
-                      <div className='flex items-center gap-1'>
-                        <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate font-mono'>
-                          {showSecret[courier] ? form.webhookSecret : '••••••••••••••••••••••••••••••••'}
-                        </code>
-                        <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(form.webhookSecret || ''); toast.success('Token copied') }}>
-                          <Copy className='h-3 w-3' />
+                      <>
+                        <div className='flex items-center gap-1'>
+                          <code className='text-[11px] bg-background rounded px-1.5 py-0.5 flex-1 truncate font-mono'>
+                            {showSecret[courier] ? form.webhookSecret : '••••••••••••••••••••••••••••••••'}
+                          </code>
+                          <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={() => { navigator.clipboard.writeText(form.webhookSecret || ''); toast.success('Token copied') }}>
+                            <Copy className='h-3 w-3' />
+                          </Button>
+                        </div>
+                        <Button 
+                          size='sm' 
+                          variant='outline' 
+                          className='w-full text-xs h-7' 
+                          onClick={() => setRegenDialog({ open: true, courier })}
+                        >
+                          <RefreshCw className='h-3 w-3 mr-1' />
+                          Regenerate Token
                         </Button>
-                      </div>
+                      </>
                     ) : (
                       <Button 
                         size='sm' 
@@ -401,6 +432,8 @@ export function CourierSettings() {
                   </div>
                 )}
 
+                <WebhookDiagnosticsSection courier={courier} />
+
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
                   <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials
                 </Button>
@@ -409,6 +442,131 @@ export function CourierSettings() {
           )
         })}
       </div>
+
+      <Dialog open={regenDialog.open} onOpenChange={(open) => setRegenDialog(prev => ({ ...prev, open }))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate Bearer Token</DialogTitle>
+            <DialogDescription asChild>
+              <div className='space-y-2 text-sm'>
+                <p>This will <strong>immediately invalidate</strong> the current token for <strong>{regenDialog.courier}</strong>.</p>
+                <p>After regeneration, you <strong>must update the webhook authentication token</strong> on the courier provider's dashboard (e.g., Steadfast Merchant Panel).</p>
+                <p className='text-destructive font-medium'>Any webhooks using the old token will fail until updated.</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setRegenDialog({ open: false, courier: '' })}>Cancel</Button>
+            <Button 
+              variant='destructive' 
+              onClick={() => generateWebhookMut.mutate(regenDialog.courier)}
+              disabled={generateWebhookMut.isPending}
+            >
+              {generateWebhookMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' /> : <RefreshCw className='h-3.5 w-3.5 mr-1' />}
+              Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function WebhookDiagnosticsSection({ courier }: { courier: string }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const { data: summary } = useQuery({
+    queryKey: ['webhook-summary', courier],
+    queryFn: () => courierApi.webhookSummary(courier).then(r => r.data),
+    enabled: expanded,
+    refetchInterval: 30000,
+  })
+
+  const { data: attempts, isLoading: attemptsLoading } = useQuery({
+    queryKey: ['webhook-attempts', courier],
+    queryFn: () => courierApi.webhookAttempts(courier, 20).then(r => r.data),
+    enabled: expanded,
+    refetchInterval: 30000,
+  })
+
+  return (
+    <div className='border rounded-md'>
+      <button
+        className='w-full flex items-center justify-between p-2 text-[10px] text-muted-foreground hover:bg-muted/30'
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className='flex items-center gap-1 font-medium'>
+          <Webhook className='h-3 w-3' /> Webhook Diagnostics
+        </span>
+        {expanded ? <ChevronUp className='h-3 w-3' /> : <ChevronDown className='h-3 w-3' />}
+      </button>
+
+      {expanded && (
+        <div className='p-2 border-t space-y-2'>
+          {summary && (
+            <div className='grid grid-cols-2 gap-1 text-[10px]'>
+              <div className='bg-muted/30 rounded p-1.5'>
+                <span className='text-muted-foreground block'>Last Received</span>
+                <span className='font-medium'>{formatDate(summary.lastReceivedAt)}</span>
+              </div>
+              <div className='bg-muted/30 rounded p-1.5'>
+                <span className='text-muted-foreground block'>Last Success</span>
+                <span className='font-medium text-green-600'>{formatDate(summary.lastSuccessAt)}</span>
+              </div>
+              <div className='bg-muted/30 rounded p-1.5'>
+                <span className='text-muted-foreground block'>Last Failure</span>
+                <span className='font-medium text-red-600'>{formatDate(summary.lastFailureAt)}</span>
+              </div>
+              <div className='bg-muted/30 rounded p-1.5'>
+                <span className='text-muted-foreground block'>Last HTTP</span>
+                <span className='font-medium'>{summary.lastHttpStatus ?? '—'}</span>
+              </div>
+              {summary.lastFailureReason && (
+                <div className='col-span-2 bg-red-50 dark:bg-red-950/30 rounded p-1.5'>
+                  <span className='text-muted-foreground block'>Last Failure Reason</span>
+                  <span className='font-medium text-red-600 break-all'>{summary.lastFailureReason}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {attemptsLoading ? (
+            <div className='flex justify-center py-2'><Loader2 className='animate-spin h-4 w-4' /></div>
+          ) : attempts && attempts.length > 0 ? (
+            <div className='max-h-64 overflow-y-auto'>
+              <table className='w-full text-[10px]'>
+                <thead>
+                  <tr className='text-muted-foreground border-b'>
+                    <th className='text-left py-1 px-1 font-medium'>Time</th>
+                    <th className='text-left py-1 px-1 font-medium'>Result</th>
+                    <th className='text-left py-1 px-1 font-medium'>HTTP</th>
+                    <th className='text-left py-1 px-1 font-medium'>Consignment</th>
+                    <th className='text-left py-1 px-1 font-medium'>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attempts.map((a: any) => {
+                    const badge = outcomeBadge(a.outcome)
+                    return (
+                      <tr key={a.id} className='border-b last:border-0 hover:bg-muted/20'>
+                        <td className='py-1 px-1 whitespace-nowrap'>{new Date(a.receivedAt).toLocaleTimeString()}</td>
+                        <td className='py-1 px-1'>
+                          <Badge variant={badge.variant} className='text-[9px] px-1 py-0'>{badge.label}</Badge>
+                        </td>
+                        <td className='py-1 px-1'>{a.responseStatus ?? '—'}</td>
+                        <td className='py-1 px-1 truncate max-w-[80px]'>{a.consignmentId || a.invoice || '—'}</td>
+                        <td className='py-1 px-1 truncate max-w-[120px] text-muted-foreground'>{a.message || '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className='text-[10px] text-muted-foreground text-center py-2'>No webhook attempts recorded yet.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

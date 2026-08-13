@@ -35,7 +35,9 @@ function policyFor(name: string): RateLimitPolicy {
     limits: {
       [TrustTier.UNKNOWN]: name === 'health' || name === 'browser_check'
         ? { limit: 100, windowMs: 60000 }
-        : { limit: 10, windowMs: 60000 },
+        : name === 'courier_webhook'
+          ? { limit: 60, windowMs: 60000 }
+          : { limit: 10, windowMs: 60000 },
       [TrustTier.SESSION]: { limit: 50, windowMs: 60000 },
       [TrustTier.BROWSER_TRUST]: { limit: 30, windowMs: 60000 },
       [TrustTier.AUTHENTICATED]: { limit: 100, windowMs: 60000 },
@@ -466,6 +468,9 @@ describe('Predefined Endpoint Policies', () => {
   it('admin endpoint uses 10 limit per unknown tier', () => testPolicy('/api/admin/users', 'admin', 10));
   it('POS endpoint uses 10 limit per unknown tier', () => testPolicy('/api/pos/orders', 'pos', 10));
   it('webhook endpoint uses 10 limit per unknown tier', () => testPolicy('/api/webhook/stripe', 'webhooks', 10));
+  it('courier webhook endpoint uses courier_webhook policy', () => testPolicy('/api/webhooks/courier/steadfast', 'courier_webhook', 60));
+  it('courier webhook pathao uses courier_webhook policy', () => testPolicy('/api/webhooks/courier/pathao', 'courier_webhook', 60));
+  it('plural webhooks non-courier falls back to webhooks policy', () => testPolicy('/api/webhooks/stripe', 'webhooks', 10));
 
   it('payments fallback to checkout policy', async () => {
     mockReflector.get
