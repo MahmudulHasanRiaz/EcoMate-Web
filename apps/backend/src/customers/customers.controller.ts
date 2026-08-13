@@ -47,14 +47,14 @@ export class CustomersController {
     return result;
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Post(':id/block')
   async blockPhone(@Param('id') id: string) {
     await this.svc.blockPhone(id);
     return { success: true };
   }
 
-  @Roles('superadmin', 'admin')
+  @Roles('superadmin', 'admin', 'manager', 'cashier')
   @Post(':id/unblock')
   async unblockPhone(@Param('id') id: string) {
     await this.svc.unblockPhone(id);
