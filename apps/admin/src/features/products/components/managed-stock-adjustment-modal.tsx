@@ -117,7 +117,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetDialog(); else onOpenChange(true) }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setTimeout(resetDialog, 0); else onOpenChange(true) }}>
       <DialogContent className='sm:max-w-[540px]'>
         <DialogHeader>
           <DialogTitle>Adjust Managed Stock</DialogTitle>

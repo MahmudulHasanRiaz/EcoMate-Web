@@ -736,7 +736,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         setRegenerateConfirm(true)
         return
       }
-      setRegenerateConfirm(false)
+      setTimeout(() => setRegenerateConfirm(false), 0)
       const allValueIds = Object.values(selectedValues).flat()
       genVariantMut.mutate({
         id: productId,
@@ -1644,7 +1644,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         dialog. Modal nesting cooperates: focus trap, ESC-to-close, scroll lock
         and aria-hidden are managed per layer, and the hasSubOverlay guards
         keep the parent open until the top-most layer resolves. */}
-    <Dialog open={showReviewGuard} onOpenChange={setShowReviewGuard}>
+    <Dialog open={showReviewGuard} onOpenChange={(v) => { if (v) setShowReviewGuard(true); else setTimeout(() => setShowReviewGuard(false), 0) }}>
       <DialogContent className='max-w-md'>
         <DialogHeader>
           <DialogTitle>Review before creating</DialogTitle>
@@ -1661,8 +1661,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           ))}
         </div>
         <div className='flex justify-end gap-3 pt-2'>
-          <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
-          <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
+          <Button variant='outline' onClick={() => setTimeout(() => setShowReviewGuard(false), 0)}>Continue Editing</Button>
+          <Button onClick={() => { handleSaveClick(true); setTimeout(() => setShowReviewGuard(false), 0); }} disabled={createMut.isPending || updateMut.isPending}>
             {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             Create Anyway
           </Button>
@@ -1670,7 +1670,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       </DialogContent>
     </Dialog>
 
-    <Dialog open={!!variantImgMgr} onOpenChange={(v) => { if (!v) setVariantImgMgr(null) }}>
+    <Dialog open={!!variantImgMgr} onOpenChange={(v) => { if (!v) setTimeout(() => setVariantImgMgr(null), 0) }}>
       <DialogContent className='max-w-lg'>
         <DialogHeader>
           <DialogTitle>Variant Images</DialogTitle>
@@ -1724,7 +1724,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           </DndContext>
         ) : null}
         <div className='flex justify-end gap-3 pt-2 border-t'>
-          <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
+          <Button variant='outline' onClick={() => setTimeout(() => setVariantImgMgr(null), 0)} disabled={updateVariantMut.isPending}>Cancel</Button>
           <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
             {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             Save Images
@@ -1748,7 +1748,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
     <ConfirmDialog
       open={regenerateConfirm}
-      onOpenChange={setRegenerateConfirm}
+      onOpenChange={(v) => { if (v) setRegenerateConfirm(true); else setTimeout(() => setRegenerateConfirm(false), 0) }}
       title='Regenerate Variants?'
       desc={<span>This product already has <strong>{variantList.length} variant(s)</strong>. Regenerating will <strong className='text-destructive'>delete all existing variants</strong> and recreate them with default prices and stock. Any custom prices, images, or inventory adjustments will be lost.</span>}
       confirmText='Delete &amp; Regenerate'
@@ -1759,7 +1759,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
     <ConfirmDialog
       open={clearVariantConfirm}
-      onOpenChange={setClearVariantConfirm}
+      onOpenChange={(v) => { if (v) setClearVariantConfirm(true); else setTimeout(() => setClearVariantConfirm(false), 0) }}
       title='Remove All Variants?'
       desc={`This will delete all ${variantList.length} variant(s) and convert the product to Simple type.`}
       confirmText={clearVariantMut.isPending ? 'Removing...' : 'Remove All'}
@@ -1773,7 +1773,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         "outside" the parent; when setBulkUpdateOpen(false) runs, the pending
         dismiss drops hasSubOverlay and the parent closes — losing the whole
         product form. Nested modals cooperate instead of dismissing each other. */}
-    <Dialog open={bulkUpdateOpen} onOpenChange={setBulkUpdateOpen}>
+    <Dialog open={bulkUpdateOpen} onOpenChange={(v) => { if (v) setBulkUpdateOpen(true); else setTimeout(() => setBulkUpdateOpen(false), 0) }}>
       <DialogContent className='max-w-md'>
         <DialogHeader>
           <DialogTitle>Bulk Update All Variants</DialogTitle>
@@ -1799,7 +1799,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
             </label>
           </div>
           <div className='flex justify-end gap-3 pt-2'>
-            <Button variant='outline' onClick={() => setBulkUpdateOpen(false)} disabled={isBulkUpdating}>Cancel</Button>
+            <Button variant='outline' onClick={() => setTimeout(() => setBulkUpdateOpen(false), 0)} disabled={isBulkUpdating}>Cancel</Button>
             <Button onClick={handleBulkUpdate} disabled={isBulkUpdating}>
               {isBulkUpdating && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               Apply to All
