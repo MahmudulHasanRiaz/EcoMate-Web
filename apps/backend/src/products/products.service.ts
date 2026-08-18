@@ -652,11 +652,21 @@ export class ProductsService {
       dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
     const categoryId = dto.categoryId || categoryIds[0] || null;
 
+    // Smart default: an explicit availabilityMode is ALWAYS persisted as-is
+    // (variable products included — they can legitimately be
+    // ALWAYS_IN_STOCK / ALWAYS_OUT_OF_STOCK / INVENTORY_CONTROLLED). When
+    // omitted: variable products default to MANAGED_STOCK (per-variant stock),
+    // simple products default to INVENTORY_CONTROLLED when inventory
+    // management is enabled, else MANAGED_STOCK.
     const avMode: string =
-      dto.type === 'variable'
+      dto.availabilityMode ||
+      (dto.type === 'variable'
         ? 'MANAGED_STOCK'
-        : dto.availabilityMode ||
-          (dto.manageStock ? 'MANAGED_STOCK' : await this.stockRouter.isInventoryManagementEnabled() ? 'INVENTORY_CONTROLLED' : 'MANAGED_STOCK');
+        : dto.manageStock
+          ? 'MANAGED_STOCK'
+          : (await this.stockRouter.isInventoryManagementEnabled())
+            ? 'INVENTORY_CONTROLLED'
+            : 'MANAGED_STOCK');
 
     const product = await this.prisma.product.create({
       data: {

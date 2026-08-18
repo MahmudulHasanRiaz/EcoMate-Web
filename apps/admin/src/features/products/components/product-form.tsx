@@ -219,9 +219,22 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const prevRowId = useRef<string | undefined>(undefined)
   const prevSku = useRef(sku)
   const hasSavedRef = useRef(false)
+  const availabilityModeTouchedRef = useRef(false)
   const [draftAvailable, setDraftAvailable] = useState(false)
 
+  // Smart default: simple products default to INVENTORY_CONTROLLED when
+  // inventory management is on, MANAGED_STOCK otherwise. Only applies while
+  // the user has NOT explicitly picked a mode (and no saved state exists).
+  useEffect(() => {
+    if (!open || availabilityModeTouchedRef.current) return
+    if (currentRow || draftAvailable) return
+    if (type !== 'simple') return
+    setAvailabilityMode(imEnabled ? 'INVENTORY_CONTROLLED' : 'MANAGED_STOCK')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, imEnabled])
+
   const resumeDraft = (draft: ProductFormDraft) => {
+    availabilityModeTouchedRef.current = true
     setName(draft.name || '')
     setSlug(draft.slug || '')
     setType(draft.type || 'simple')
@@ -296,6 +309,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
     if (currentRow) {
       const isClone = isDuplicate
+      availabilityModeTouchedRef.current = true
       setName(currentRow.name || '')
       setSlug(currentRow.slug || '')
       setType(currentRow.type || 'simple')
@@ -330,7 +344,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
-      setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
+      setAvailabilityMode('MANAGED_STOCK'); availabilityModeTouchedRef.current = false; setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
 setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       setDefaultVariantStock('0'); setLocalVariants([]);
     }
@@ -907,7 +921,22 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     <Label>Product Type</Label>
                     <select
                       value={type}
-                      onChange={e => setType(e.target.value)}
+                      onChange={e => {
+                        const next = e.target.value
+                        setType(next)
+                        // Smart default on type switch: variable products are
+                        // managed per-variant. Only auto-snap while the user
+                        // hasn't explicitly chosen a mode.
+                        if (!availabilityModeTouchedRef.current) {
+                          setAvailabilityMode(
+                            next === 'variable'
+                              ? 'MANAGED_STOCK'
+                              : imEnabled
+                                ? 'INVENTORY_CONTROLLED'
+                                : 'MANAGED_STOCK',
+                          )
+                        }
+                      }}
                       className='w-full rounded-md border px-3 py-2 text-sm bg-background'
                     >
                       <option value='simple'>Simple Product</option>
@@ -1052,7 +1081,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   <select
                     className='flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
                     value={availabilityMode}
-                    onChange={e => setAvailabilityMode(e.target.value)}
+                    onChange={e => {
+                      availabilityModeTouchedRef.current = true
+                      setAvailabilityMode(e.target.value)
+                    }}
                   >
                     <option value='MANAGED_STOCK'>Managed Stock</option>
                     <option value='ALWAYS_IN_STOCK'>Always In Stock</option>

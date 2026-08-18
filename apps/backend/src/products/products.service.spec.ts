@@ -465,6 +465,33 @@ describe('ProductsService', () => {
       expect(result).toEqual(mockProduct);
     });
 
+    it('persists an explicit availabilityMode on variable products (no force to MANAGED_STOCK)', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      await service.create({
+        ...createDto,
+        type: 'variable',
+        availabilityMode: 'ALWAYS_IN_STOCK',
+      });
+
+      const createCall = (prisma.product.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.availabilityMode).toBe('ALWAYS_IN_STOCK');
+      expect(createCall.data.manageStock).toBe(false);
+    });
+
+    it('defaults variable products to MANAGED_STOCK when availabilityMode is omitted', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      await service.create({ ...createDto, type: 'variable' });
+
+      const createCall = (prisma.product.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.availabilityMode).toBe('MANAGED_STOCK');
+    });
+
     it('should throw ConflictException if slug already exists', async () => {
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
 
