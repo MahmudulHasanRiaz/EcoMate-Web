@@ -653,8 +653,10 @@ export class ProductsService {
   async create(dto: CreateProductDto) {
     const existing = await this.prisma.product.findUnique({
       where: { slug: dto.slug },
+      select: { id: true, status: true },
     });
-    if (existing) throw new ConflictException('Slug already exists');
+    if (existing && existing.status !== 'draft')
+      throw new ConflictException('Slug already exists');
 
     const categoryIds =
       dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
@@ -676,72 +678,126 @@ export class ProductsService {
             ? 'INVENTORY_CONTROLLED'
             : 'MANAGED_STOCK');
 
-    const product = await this.prisma.product.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        type: dto.type || 'simple',
-        description: dto.description,
-        shortDesc: dto.shortDesc,
-        brandId: dto.brandId,
-        basePrice: dto.basePrice,
-        salePrice: dto.salePrice,
-        sku: dto.sku,
-        managedStockQuantity:
-          dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
-        lowStockQty: dto.lowStockQty,
-        categoryId: categoryId || undefined,
-        productCategories:
-          categoryIds.length > 0
-            ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
-            : undefined,
-        sizeChartId: dto.sizeChartId,
-        tags: dto.tags as any,
-        images: (dto.images || []) as any,
-        seoMeta: dto.seoMeta,
-        isFeatured: dto.isFeatured || false,
-        isActive: dto.isActive ?? true,
-        availabilityMode: avMode as any,
-        manageStock: avMode === 'MANAGED_STOCK',
-        syncManagedStock: dto.syncManagedStock,
-        warehouseId: dto.warehouseId,
-        variants: dto.variants
-          ? {
-              create: dto.variants.map((v) => ({
-                sku: v.sku,
-                price: v.price,
-                salePrice: v.salePrice,
-                managedStockQuantity: v.managedStockQuantity || 0,
-                image: v.image,
-                images: (v.images || []) as any,
-                attributeValues: v.attributeValues
-                  ? {
-                      create: v.attributeValues.map((av) => ({
-                        attributeValueId: av.attributeValueId,
-                      })),
-                    }
-                  : undefined,
-              })),
-            }
-          : undefined,
-      },
-      include: {
-        category: true,
-        productCategories: {
-          include: {
-            category: { select: { id: true, name: true, slug: true } },
-          },
-        },
-        variants: {
-          include: {
-            attributeValues: {
-              include: { attributeValue: { include: { attribute: true } } },
-            },
-          },
-          orderBy: { sortOrder: 'asc' },
+    const scalars = {
+      name: dto.name,
+      slug: dto.slug,
+      type: dto.type || 'simple',
+      description: dto.description,
+      shortDesc: dto.shortDesc,
+      brandId: dto.brandId,
+      basePrice: dto.basePrice,
+      salePrice: dto.salePrice,
+      sku: dto.sku,
+      managedStockQuantity:
+        dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
+      lowStockQty: dto.lowStockQty,
+      categoryId: categoryId || undefined,
+      sizeChartId: dto.sizeChartId,
+      tags: dto.tags as any,
+      images: (dto.images || []) as any,
+      seoMeta: dto.seoMeta,
+      isFeatured: dto.isFeatured || false,
+      availabilityMode: avMode as any,
+      manageStock: avMode === 'MANAGED_STOCK',
+      syncManagedStock: dto.syncManagedStock,
+      warehouseId: dto.warehouseId,
+    };
+
+    const variantsCreate = dto.variants?.map((v) => ({
+      sku: v.sku,
+      price: v.price,
+      salePrice: v.salePrice,
+      managedStockQuantity: v.managedStockQuantity || 0,
+      image: v.image,
+      images: (v.images || []) as any,
+      attributeValues: v.attributeValues
+        ? {
+            create: v.attributeValues.map((av) => ({
+              attributeValueId: av.attributeValueId,
+            })),
+          }
+        : undefined,
+    }));
+
+    const include = {
+      category: true,
+      productCategories: {
+        include: {
+          category: { select: { id: true, name: true, slug: true } },
         },
       },
-    });
+      variants: {
+        include: {
+          attributeValues: {
+            include: { attributeValue: { include: { attribute: true } } },
+          },
+        },
+        orderBy: { sortOrder: 'asc' as const },
+      },
+    };
+
+    // A draft row produced by the create-dialog autosave (or a previous
+    // session) may already hold the target slug/sku. Promote it in place
+    // instead of colliding with it — the "create" becomes publishing the
+    // session draft.
+    const promote = async (id: string) =>
+      this.prisma.product.update({
+        where: { id },
+        data: {
+          ...scalars,
+          isActive: dto.isActive ?? true,
+          status: 'active',
+          productCategories:
+            categoryIds.length > 0
+              ? {
+                  deleteMany: {},
+                  create: categoryIds.map((cid) => ({ categoryId: cid })),
+                }
+              : { deleteMany: {} },
+          variants: dto.variants
+            ? { deleteMany: {}, create: variantsCreate }
+            : dto.type === 'simple'
+              ? { deleteMany: {} }
+              : undefined,
+        },
+        include,
+      });
+
+    let product;
+    try {
+      if (existing && existing.status === 'draft') {
+        product = await promote(existing.id);
+      } else {
+        product = await this.prisma.product.create({
+          data: {
+            ...scalars,
+            isActive: dto.isActive ?? true,
+            productCategories:
+              categoryIds.length > 0
+                ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
+                : undefined,
+            variants: dto.variants
+              ? { create: variantsCreate }
+              : undefined,
+          },
+          include,
+        });
+      }
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        const skuHolder = await this.prisma.product.findFirst({
+          where: { sku: dto.sku, status: 'draft' },
+          select: { id: true },
+        });
+        if (skuHolder) {
+          product = await promote(skuHolder.id);
+        } else {
+          throw new ConflictException('SKU already in use');
+        }
+      } else {
+        throw e;
+      }
+    }
 
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
@@ -1642,12 +1698,19 @@ export class ProductsService {
 
   async checkSkuAvailability(sku: string, excludeId?: string) {
     const productWithSku = await this.prisma.product.findFirst({
-      where: { sku, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      where: {
+        sku,
+        status: { not: 'draft' },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
       select: { id: true },
     });
     if (productWithSku) return { available: false };
-    const variantWithSku = await this.prisma.productVariant.findUnique({
-      where: { sku },
+    const variantWithSku = await this.prisma.productVariant.findFirst({
+      where: {
+        sku,
+        product: { status: { not: 'draft' } },
+      },
       select: { id: true },
     });
     return { available: !variantWithSku };

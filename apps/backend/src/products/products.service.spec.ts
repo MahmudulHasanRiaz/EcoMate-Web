@@ -74,6 +74,7 @@ describe('ProductsService', () => {
       product: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findUniqueOrThrow: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -82,6 +83,7 @@ describe('ProductsService', () => {
       },
       productVariant: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         deleteMany: jest.fn(),
         create: jest.fn(),
@@ -496,6 +498,7 @@ describe('ProductsService', () => {
 
       expect(prisma.product.findUnique).toHaveBeenCalledWith({
         where: { slug: 'new-product' },
+        select: { id: true, status: true },
       });
       expect(prisma.product.create).toHaveBeenCalled();
       expect(media.syncEntityImages).toHaveBeenCalledWith(
@@ -539,6 +542,63 @@ describe('ProductsService', () => {
       await expect(service.create(createDto)).rejects.toThrow(
         ConflictException,
       );
+    });
+
+    it('adopts a draft row that already holds the slug instead of throwing', async () => {
+      const draftRow = { id: 'draft-9', status: 'draft' };
+      const adopted = { ...mockProduct, id: 'draft-9', status: 'active' };
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftRow);
+      (prisma.product.update as jest.Mock).mockResolvedValue(adopted);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      const result = await service.create(createDto);
+
+      expect(result).toEqual(adopted);
+      expect(prisma.product.create).not.toHaveBeenCalled();
+      const updateCall = (prisma.product.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data.status).toBe('active');
+      expect(updateCall.data.isActive).toBe(true);
+      expect(updateCall.data.sku).toBe('SKU-NEW');
+      expect(updateCall.data.productCategories.deleteMany).toBeDefined();
+      expect(updateCall.data.slug).toBe('new-product');
+    });
+
+    it('promotes the draft that holds the SKU when the slug does not collide (P2002 path)', async () => {
+      const skuDraft = { id: 'draft-42', status: 'draft' };
+      const adopted = { ...mockProduct, id: 'draft-42', status: 'active' };
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(skuDraft);
+      (prisma.product.update as jest.Mock).mockResolvedValue(adopted);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      const result = await service.create(createDto);
+
+      expect(result).toEqual(adopted);
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: { sku: 'SKU-NEW', status: 'draft' },
+        select: { id: true },
+      });
+      expect(prisma.product.update).toHaveBeenCalled();
+    });
+
+    it('maps raw SKU unique violations to a friendly ConflictException when no draft holds the SKU', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.create(createDto)).rejects.toThrow(
+        'SKU already in use',
+      );
+    });
+
+    it('propagates non-unique errors from the insert', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.create(createDto)).rejects.toThrow('db down');
     });
 
     it('should create a product with variants', async () => {
@@ -607,6 +667,60 @@ describe('ProductsService', () => {
         'variant-1',
         ['variant-image.jpg'],
       );
+    });
+  });
+
+  describe('checkSkuAvailability', () => {
+    it('excludes draft products when reporting availability', async () => {
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.checkSkuAvailability('SKU-NEW');
+
+      expect(result).toEqual({ available: true });
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: { sku: 'SKU-NEW', status: { not: 'draft' } },
+        select: { id: true },
+      });
+      expect(prisma.productVariant.findFirst).toHaveBeenCalledWith({
+        where: { sku: 'SKU-NEW', product: { status: { not: 'draft' } } },
+        select: { id: true },
+      });
+    });
+
+    it('reports unavailable when a live product holds the SKU', async () => {
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({ id: 'p-1' });
+
+      const result = await service.checkSkuAvailability('SKU-NEW');
+
+      expect(result).toEqual({ available: false });
+    });
+
+    it('reports unavailable when a live variant holds the SKU', async () => {
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue({
+        id: 'v-1',
+      });
+
+      const result = await service.checkSkuAvailability('SKU-NEW');
+
+      expect(result).toEqual({ available: false });
+    });
+
+    it('ignores the optional excludeId when comparing against drafts', async () => {
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await service.checkSkuAvailability('SKU-NEW', 'exclude-1');
+
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: {
+          sku: 'SKU-NEW',
+          status: { not: 'draft' },
+          id: { not: 'exclude-1' },
+        },
+        select: { id: true },
+      });
     });
   });
 
