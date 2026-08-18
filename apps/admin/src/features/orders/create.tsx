@@ -377,6 +377,13 @@ export function CreateOrder() {
     mutationFn: (data: any) => ordersApi.create(data),
     onSuccess: (res: any) => {
       const orderId = res.data?.id || res.id
+      const warnings: string[] = res.data?.warnings || res.warnings || []
+      if (warnings.length > 0) {
+        toast.warning(
+          warnings.join('\n'),
+          { duration: 8000 },
+        )
+      }
       toast.success('Order created successfully')
       navigate({ to: '/op/orders/$id', params: { id: orderId } })
     },

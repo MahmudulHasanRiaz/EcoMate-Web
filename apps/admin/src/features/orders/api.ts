@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api-client'
 
 export interface OrderResponse {
   id: string; displayId: string; customerId?: string | null; statusId: string;
+  warnings?: string[];
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
   shippingAddress: any; customerNotes?: string | null; officeNotes?: string | null; timeline: any[];

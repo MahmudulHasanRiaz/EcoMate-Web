@@ -823,13 +823,26 @@ export class OrdersService {
       dto.guestPhone = normalized;
     }
 
+    // Staff-created orders (admin/manager/cashier acting on behalf of a
+    // customer) are exempt from storefront block rules — the restriction is
+    // a storefront-ordering concern, not an absolute ban on serving the
+    // customer. The exemption is context-bound (an authenticated staff actor
+    // creating the order), NOT a role-based bypass of any other rule, and it
+    // is never silent: matching blocks are returned on the created order as
+    // `warnings` so the operator UI can surface them.
+    const warnings: string[] = [];
+    const isStaffCreate = !!userId && !isCustomer;
+
     if (clientIp) {
       const orderBlockIp =
         await this.blockedEntries.findOrderBlockedIp(clientIp);
       if (orderBlockIp) {
-        throw new BadRequestException(
-          'Orders from your IP address are temporarily restricted. Please contact support.',
-        );
+        if (!isStaffCreate) {
+          throw new BadRequestException(
+            'Orders from your IP address are temporarily restricted. Please contact support.',
+          );
+        }
+        warnings.push('This IP address is blocked for storefront ordering.');
       }
     }
 
@@ -837,9 +850,12 @@ export class OrdersService {
       ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
       : null;
     if (blockedPhone) {
-      throw new BadRequestException(
-        'This phone number has been blocked. Please contact support.',
-      );
+      if (!isStaffCreate) {
+        throw new BadRequestException(
+          'This phone number has been blocked. Please contact support.',
+        );
+      }
+      warnings.push('This phone number is blocked for storefront ordering.');
     }
 
     if (dto.guestPhone && !dto.customerId) {
@@ -847,8 +863,13 @@ export class OrdersService {
         dto.guestPhone,
       );
       if (isBlocked) {
-        throw new BadRequestException(
-          'This phone number has been blocked. Please contact support.',
+        if (!isStaffCreate) {
+          throw new BadRequestException(
+            'This phone number has been blocked. Please contact support.',
+          );
+        }
+        warnings.push(
+          'This customer account is suspended; the order was created by staff.',
         );
       }
     }
@@ -1759,6 +1780,10 @@ export class OrdersService {
       type: 'order.created',
       data: { id: order.id, displayId: order.displayId },
     });
+
+    if (warnings.length > 0) {
+      (order as any).warnings = warnings;
+    }
 
     return order;
   }

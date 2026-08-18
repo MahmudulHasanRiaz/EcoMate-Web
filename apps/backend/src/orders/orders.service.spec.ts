@@ -19,6 +19,8 @@ import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 describe('OrdersService', () => {
   let service: OrdersService;
   let prisma: PrismaService;
+  let blockedEntries: BlockedEntriesService;
+  let customers: CustomersService;
   let module: TestingModule;
 
   const mockInitialStatus = {
@@ -346,6 +348,8 @@ describe('OrdersService', () => {
 
     service = module.get<OrdersService>(OrdersService);
     prisma = module.get<PrismaService>(PrismaService);
+    blockedEntries = module.get<BlockedEntriesService>(BlockedEntriesService);
+    customers = module.get<CustomersService>(CustomersService);
 
     // Set up default implementation for $transaction to pass the prisma mock
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
@@ -527,6 +531,130 @@ describe('OrdersService', () => {
       });
       expect(prisma.order.create).toHaveBeenCalled();
       expect(result).toEqual(mockOrder);
+    });
+
+    const makeGuestDto = () => ({
+      ...createOrderDto,
+      customerId: undefined,
+      guestPhone: '01712345678',
+      guestName: 'Guest Buyer',
+    });
+
+    const runTx = () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+      });
+    };
+
+    it('hard-blocks storefront (guest) orders from a blocked IP', async () => {
+      runTx();
+      (blockedEntries.findOrderBlockedIp as jest.Mock).mockResolvedValue({
+        id: 'ip-block-1',
+      });
+
+      await expect(
+        service.create(makeGuestDto(), '203.0.113.9'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.order.create).not.toHaveBeenCalled();
+    });
+
+    it('hard-blocks storefront (guest) orders from a blocked phone', async () => {
+      runTx();
+      (blockedEntries.findBlockedPhone as jest.Mock).mockResolvedValue({
+        id: 'phone-block-1',
+      });
+
+      await expect(service.create(makeGuestDto(), undefined)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('hard-blocks storefront (guest) orders from a suspended customer', async () => {
+      runTx();
+      (customers.isPhoneBlocked as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.create(makeGuestDto(), undefined)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('allows staff-created orders for blocked phones and returns warnings', async () => {
+      runTx();
+      (blockedEntries.findBlockedPhone as jest.Mock).mockResolvedValue({
+        id: 'phone-block-1',
+      });
+
+      const result = await service.create(
+        makeGuestDto(),
+        '10.0.0.1',
+        { userId: 'admin-1', role: 'admin' },
+      );
+
+      expect(prisma.order.create).toHaveBeenCalled();
+      expect((result as any).warnings).toEqual([
+        'This phone number is blocked for storefront ordering.',
+      ]);
+    });
+
+    it('allows staff-created orders for blocked IPs and returns warnings', async () => {
+      runTx();
+      (blockedEntries.findOrderBlockedIp as jest.Mock).mockResolvedValue({
+        id: 'ip-block-1',
+      });
+
+      const result = await service.create(
+        makeGuestDto(),
+        '203.0.113.9',
+        { userId: 'admin-1', role: 'admin' },
+      );
+
+      expect(prisma.order.create).toHaveBeenCalled();
+      expect((result as any).warnings).toEqual([
+        'This IP address is blocked for storefront ordering.',
+      ]);
+    });
+
+    it('adds no warnings for staff orders without active blocks', async () => {
+      runTx();
+      (blockedEntries.findOrderBlockedIp as jest.Mock).mockResolvedValue(null);
+      (blockedEntries.findBlockedPhone as jest.Mock).mockResolvedValue(null);
+      (customers.isPhoneBlocked as jest.Mock).mockResolvedValue(false);
+
+      const result = await service.create(
+        makeGuestDto(),
+        '10.0.0.2',
+        { userId: 'admin-1', role: 'admin' },
+      );
+
+      expect((result as any).warnings).toBeUndefined();
+    });
+
+    it('allows staff-created orders for suspended customers with warnings', async () => {
+      runTx();
+      (customers.isPhoneBlocked as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.create(
+        makeGuestDto(),
+        undefined,
+        { userId: 'admin-1', role: 'admin' },
+      );
+
+      expect(prisma.order.create).toHaveBeenCalled();
+      expect((result as any).warnings).toEqual([
+        'This customer account is suspended; the order was created by staff.',
+      ]);
     });
 
     describe('managed-stock availability gate (zero/negative stock)', () => {
