@@ -362,6 +362,9 @@ export class SystemSettingsController {
         order: {
           whatsapp: map['order_whatsapp'] || '',
           callNumber: map['order_call_number'] || '',
+          blockedPhoneMessage:
+            map['blocked_phone_message'] ||
+            'This phone number has been blocked. Please contact support.',
         },
         branding: {
           storefrontFavicon: map['storefront_favicon'] || '',

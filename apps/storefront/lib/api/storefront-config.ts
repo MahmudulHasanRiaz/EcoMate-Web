@@ -55,6 +55,7 @@ export interface StorefrontConfig {
   order: {
     whatsapp: string;
     callNumber: string;
+    blockedPhoneMessage: string;
   };
   branding: {
     storefrontFavicon: string;

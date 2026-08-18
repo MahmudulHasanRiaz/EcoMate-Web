@@ -37,6 +37,7 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   social_messenger_username:     { label: 'Messenger Username', type: 'text', placeholder: 'ecopage.bd' },
   order_whatsapp:                { label: 'Order WhatsApp', type: 'tel', placeholder: '+8801700000000' },
   order_call_number:             { label: 'Order Call Number', type: 'tel', placeholder: '+8801700000000' },
+  blocked_phone_message:         { label: 'Blocked Phone Message', type: 'textarea', rows: 2, hint: 'Shown to customers whose phone number is on the blocked list when they try to order.' },
   seo_title:                     { label: 'Default Page Title', type: 'text' },
   seo_description:               { label: 'Meta Description', type: 'textarea', rows: 3 },
   seo_keywords:                  { label: 'Keywords (comma separated)', type: 'text' },

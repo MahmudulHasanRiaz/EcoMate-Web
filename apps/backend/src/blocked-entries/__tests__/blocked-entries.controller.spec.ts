@@ -1,6 +1,9 @@
 import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
-import { BlockedEntriesController } from '../blocked-entries.controller';
+import {
+  BlockedEntriesController,
+  BlockedEntriesPublicController,
+} from '../blocked-entries.controller';
 
 describe('BlockedEntriesController', () => {
   it('has RequiresFeature(admin_blocking) metadata', () => {
@@ -24,4 +27,24 @@ describe('BlockedEntriesController', () => {
       expect(roles).not.toContain('customer');
     },
   );
+});
+
+describe('BlockedEntriesPublicController', () => {
+  const svc = { findBlockedPhone: jest.fn() };
+  const ctrl = new BlockedEntriesPublicController(svc as any);
+
+  it('reports blocked=true when the phone is on the active block list', async () => {
+    svc.findBlockedPhone.mockResolvedValue({ id: 'block-1' });
+    await expect(ctrl.checkPhone('01712345678')).resolves.toEqual({
+      blocked: true,
+    });
+    expect(svc.findBlockedPhone).toHaveBeenCalledWith('01712345678');
+  });
+
+  it('reports blocked=false when the phone is not blocked', async () => {
+    svc.findBlockedPhone.mockResolvedValue(null);
+    await expect(ctrl.checkPhone('01712345678')).resolves.toEqual({
+      blocked: false,
+    });
+  });
 });

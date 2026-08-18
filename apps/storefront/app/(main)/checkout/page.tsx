@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
 import { PaymentLogo } from '@/components/PaymentLogo';
+import { BlockedPhoneDialog } from '@/components/BlockedPhoneDialog';
+import { checkPhoneBlocked } from '@/lib/api/blocked-entries';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
@@ -490,6 +492,8 @@ export default function CheckoutPage() {
   const [paymentOptionType, setPaymentOptionType] = useState<'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'>('CASH_ON_DELIVERY');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number; viewToken?: string } | null>(null);
+  const [blockedPhoneOpen, setBlockedPhoneOpen] = useState(false);
+  const phoneCheckTimer = useRef<any>(null);
   const paymentSuccessCallback = useRef<(() => void) | null>(null);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
   const [couponInput, setCouponInput] = useState('');
@@ -918,7 +922,11 @@ export default function CheckoutPage() {
       }
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to place order. Please try again.';
-      toast.error(message);
+      if (message.includes('phone number has been blocked')) {
+        setBlockedPhoneOpen(true);
+      } else {
+        toast.error(message);
+      }
       if (message.includes('no longer exist')) {
         clearCart();
       }
@@ -928,6 +936,17 @@ export default function CheckoutPage() {
   };
 
   const handlePayNow = handlePlaceOrder;
+
+  const handlePhoneBlur = () => {
+    if (user) return;
+    const normalized = normalizePhone(guestPhone);
+    if (!normalized) return;
+    if (phoneCheckTimer.current) clearTimeout(phoneCheckTimer.current);
+    phoneCheckTimer.current = setTimeout(async () => {
+      const blocked = await checkPhoneBlocked(normalized);
+      if (blocked) setBlockedPhoneOpen(true);
+    }, 400);
+  };
 
   const s = config.currency.symbol || '৳';
 
@@ -1319,6 +1338,7 @@ export default function CheckoutPage() {
                         type="tel"
                         value={guestPhone}
                         onChange={e => { setGuestPhone(e.target.value); clearFieldError('guestPhone'); }}
+                        onBlur={handlePhoneBlur}
                         placeholder="মোবাইল নম্বর দিন *"
                         className="w-full px-3.5 py-2 text-xs outline-none bg-transparent text-gray-800 font-medium placeholder-gray-400"
                       />
@@ -1594,6 +1614,14 @@ export default function CheckoutPage() {
           }}
         />
       )}
+
+      <BlockedPhoneDialog
+        open={blockedPhoneOpen}
+        onClose={() => setBlockedPhoneOpen(false)}
+        message={config.order?.blockedPhoneMessage || 'This phone number has been blocked. Please contact support.'}
+        callNumber={config.order?.callNumber || config.store?.phone}
+        whatsapp={config.order?.whatsapp}
+      />
     </div>
   );
 }

@@ -148,9 +148,9 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     id: 'commerce-order',
     categoryId: 'commerce',
     title: 'Order Contact',
-    description: 'WhatsApp and phone for order-related customer contact.',
+    description: 'WhatsApp, phone, and blocked-phone message for order-related customer contact.',
     icon: Phone,
-    fields: ['order_whatsapp', 'order_call_number'],
+    fields: ['order_whatsapp', 'order_call_number', 'blocked_phone_message'],
   },
   'commerce-thank-you': {
     id: 'commerce-thank-you',

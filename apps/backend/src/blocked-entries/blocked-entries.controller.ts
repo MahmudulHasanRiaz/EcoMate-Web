@@ -2,6 +2,8 @@ import { Controller, Get, Post, Param, Query, Body, Req } from '@nestjs/common';
 import { BlockedEntriesService } from './blocked-entries.service';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 
 @Controller('blocked-entries')
 @RequiresFeature('admin_blocking')
@@ -47,5 +49,21 @@ export class BlockedEntriesController {
   async toggleWhitelist(@Param('type') type: string, @Param('id') id: string) {
     await this.svc.toggleWhitelist(type, id);
     return { success: true };
+  }
+}
+
+// Public (storefront) endpoint: lets checkout detect a blocked phone number
+// before submitting an order. No auth and no feature gate (separate class),
+// rate-limited like the public order creation route.
+@Controller('blocked-entries')
+export class BlockedEntriesPublicController {
+  constructor(private readonly svc: BlockedEntriesService) {}
+
+  @Public()
+  @RateLimitPolicy('api')
+  @Get('check/phone/:value')
+  async checkPhone(@Param('value') value: string) {
+    const entry = await this.svc.findBlockedPhone(value);
+    return { blocked: !!entry };
   }
 }

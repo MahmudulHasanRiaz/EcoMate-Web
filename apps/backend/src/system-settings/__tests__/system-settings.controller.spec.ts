@@ -65,4 +65,47 @@ describe('SystemSettingsController', () => {
     );
     expect(meta).toBeUndefined();
   });
+
+  describe('getStorefrontConfig blocked-phone message', () => {
+    function mockController(
+      settings: { key: string; value: string }[] = [],
+    ) {
+      const prisma = {
+        systemSetting: { findMany: jest.fn().mockResolvedValue(settings) },
+        shippingOption: { findMany: jest.fn().mockResolvedValue([]) },
+        shippingZoneGroup: { findMany: jest.fn().mockResolvedValue([]) },
+        paymentOption: { findMany: jest.fn().mockResolvedValue([]) },
+      };
+      const cache = {
+        get: jest.fn().mockResolvedValue(null),
+        getStale: jest.fn(),
+        set: jest.fn(),
+      };
+      return new SystemSettingsController(
+        prisma as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        cache as any,
+        {} as any,
+      );
+    }
+
+    it('falls back to the default message when no key is configured', async () => {
+      const cfg = await mockController().getStorefrontConfig();
+      expect(cfg.order.blockedPhoneMessage).toBe(
+        'This phone number has been blocked. Please contact support.',
+      );
+    });
+
+    it('uses the configured blocked_phone_message value', async () => {
+      const ctrl = mockController([
+        { key: 'blocked_phone_message', value: 'Your number is on hold. Call us.' },
+      ]);
+      const cfg = await ctrl.getStorefrontConfig();
+      expect(cfg.order.blockedPhoneMessage).toBe(
+        'Your number is on hold. Call us.',
+      );
+    });
+  });
 });
