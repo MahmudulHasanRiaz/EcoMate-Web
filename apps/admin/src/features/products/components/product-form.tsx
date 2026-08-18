@@ -40,6 +40,7 @@ type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: P
 // A half-finished product creation/duplication is saved locally so closing
 // the dialog doesn't lose the user's work. Resume is offered on next open.
 const PRODUCT_FORM_DRAFT_KEY = 'ecomate-product-form-draft'
+const PRODUCT_SERVER_DRAFT_KEY = 'ecomate-product-server-draft-id'
 
 interface ProductFormDraft {
   mode: 'add' | 'duplicate'
@@ -83,6 +84,23 @@ function loadDraft(): ProductFormDraft | null {
 function clearDraft(): void {
   try {
     localStorage.removeItem(PRODUCT_FORM_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadServerDraftId(): string | null {
+  try {
+    return localStorage.getItem(PRODUCT_SERVER_DRAFT_KEY)
+  } catch {
+    return null
+  }
+}
+
+function storeServerDraftId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(PRODUCT_SERVER_DRAFT_KEY, id)
+    else localStorage.removeItem(PRODUCT_SERVER_DRAFT_KEY)
   } catch {
     /* ignore */
   }
@@ -220,6 +238,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const prevRowId = useRef<string | undefined>(undefined)
   const prevSku = useRef(sku)
+  const openStateRef = useRef<any>(null)
   const hasSavedRef = useRef(false)
   const availabilityModeTouchedRef = useRef(false)
   const [draftAvailable, setDraftAvailable] = useState(false)
@@ -275,47 +294,81 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   const discardDraft = () => {
     clearDraft()
+    if (serverDraftId) {
+      productsApi.delete(serverDraftId).catch(() => {})
+      setServerDraftId(null)
+    }
+    storeServerDraftId(null)
     setDraftAvailable(false)
+  }
+
+  // Snapshot of all form fields (used by auto-save and the exit flush) and a
+  // helper deciding whether the user has changed anything since the dialog
+  // opened — while untouched, none of the persistence layers may overwrite
+  // the stored draft, otherwise reopening would wipe it before resume.
+  const snapshotOf = () => ({
+    mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    availabilityMode, standardCost, images, tags, sizeChartId,
+    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants,
+  })
+  const hasFormContent = (s: any) =>
+    s && (!!s.name?.trim() || !!s.sku || Number(s.basePrice) > 0 ||
+      (Array.isArray(s.images) && s.images.length > 0) ||
+      !!s.shortDesc?.trim() || !!s.desc?.trim() ||
+      (Array.isArray(s.localVariants) && s.localVariants.length > 0))
+  const formUntouched = () => {
+    try {
+      const s = snapshotOf()
+      if (JSON.stringify(openStateRef.current) === JSON.stringify(s)) return true
+      // A blank form (e.g. just the availability default applied after open)
+      // must never count as "changed" — otherwise the auto-save would wipe a
+      // stored draft before the user has a chance to resume it.
+      return !hasFormContent(s)
+    } catch {
+      return false
+    }
   }
 
   // Offer to resume an unsaved draft when opening in add/duplicate mode
   useEffect(() => {
     if (!open || isEdit) { setDraftAvailable(false); return }
     hasSavedRef.current = false
-    setServerDraftId(null)
+    setServerDraftId(loadServerDraftId())
     const draft = loadDraft()
-    setDraftAvailable(!!draft && draft.savedAt > Date.now() - 7 * 24 * 60 * 60 * 1000)
+    openStateRef.current = snapshotOf()
+    const hasContent = !!draft &&
+      (!!draft.name?.trim() || !!draft.sku || !!draft.basePrice ||
+        (Array.isArray(draft.images) && draft.images.length > 0) ||
+        !!draft.shortDesc || !!draft.desc || !!draft.localVariants?.length)
+    setDraftAvailable(hasContent && draft.savedAt > Date.now() - 7 * 24 * 60 * 60 * 1000)
   }, [open, isEdit])
 
-  // Debounced auto-save of form state (creation/duplication only)
+  // Debounced auto-save of form state (creation/duplication only). Skipped
+  // while the form still matches the snapshot loaded at open, so reopening a
+  // dialog with a stored draft can never overwrite that draft before the user
+  // acts on it.
   useEffect(() => {
-    if (!open || isEdit || hasSavedRef.current) return
+    if (!open || isEdit || hasSavedRef.current || formUntouched()) return
     const timer = setTimeout(() => {
       try {
-        const draft: ProductFormDraft = {
-          mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
-          stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
-          availabilityMode, standardCost, images, tags, sizeChartId,
-          seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues,
-          localVariants, savedAt: Date.now(),
-        }
-        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify(draft))
+        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
       } catch {
         /* storage full/unavailable — ignore */
       }
     }, 800)
     return () => clearTimeout(timer)
-  }, [open, isEdit, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+  }, [open, isEdit, mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
-    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants, mode])
+    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
   // Persistent server-side draft: the first meaningful change creates a real
   // (hidden) draft product record; later changes update that same record, so
   // a half-finished product survives closing, other devices and browser
   // storage resets. Publishing consumes the record into a live product.
   useEffect(() => {
-    if (!open || isEdit || hasSavedRef.current) return
+    if (!open || isEdit || hasSavedRef.current || formUntouched()) return
     const payload = buildPayload()
     const hasContent =
       !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
@@ -333,7 +386,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             const created = res.data || res
             if (created?.id) {
               setServerDraftId(created.id)
-              clearDraft()
+              storeServerDraftId(created.id)
               queryClient.invalidateQueries({ queryKey: ['products'] })
             }
           })
@@ -345,6 +398,75 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     basePrice, salePrice, sku, stock, lowStockQty, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, localVariants])
+
+  // Exit flush: the debounced auto-save above is cleared when the dialog
+  // closes or the page unmounts, which would drop text typed less than ~1.5s
+  // before leaving. flushRef holds the latest form snapshot (updated on every
+  // render) and is invoked synchronously on close, page leave and hard close,
+  // so a half-finished product always survives as a draft with all info.
+  const wasOpenRef = useRef(false)
+  const flushRef = useRef<() => void>(() => {})
+  flushRef.current = () => {
+    if (formUntouched()) return
+    try {
+      localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
+    } catch {
+      /* storage full/unavailable — ignore */
+    }
+    if (!wasOpenRef.current || hasSavedRef.current) return
+    const payload = buildPayload()
+    const hasContent =
+      !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
+      !!(payload.images && payload.images.length > 0) ||
+      !!(payload.shortDesc || payload.description)
+    if (!hasContent) return
+    if (serverDraftId) {
+      productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
+        .then(() => queryClient.invalidateQueries({ queryKey: ['products'] }))
+        .catch(() => { /* row deleted/transient — next open starts fresh */ })
+    } else {
+      productsApi.createDraft({ ...payload, isActive: false })
+        .then((res: any) => {
+          const created = res.data || res
+          if (created?.id) {
+            setServerDraftId(created.id)
+            storeServerDraftId(created.id)
+            queryClient.invalidateQueries({ queryKey: ['products'] })
+          }
+        })
+        .catch(() => { /* transient — blob still holds state */ })
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      if (!isEdit) wasOpenRef.current = true
+    } else {
+      // NOTE: no flush here — closing resets form state synchronously in the
+      // Dialog onOpenChange/Cancel handlers (which flush first), so an extra
+      // flush in this effect would overwrite the saved snapshot with empty
+      // values. Page-leave is covered by the unmount flush below.
+      wasOpenRef.current = false
+    }
+  }, [open, isEdit])
+
+  useEffect(() => () => { if (wasOpenRef.current) flushRef.current() }, [])
+
+  useEffect(() => {
+    const syncLocal = () => {
+      if (!wasOpenRef.current || hasSavedRef.current || formUntouched()) return
+      try {
+        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('beforeunload', syncLocal)
+    return () => window.removeEventListener('beforeunload', syncLocal)
+  }, [open, isEdit, mode, name, slug, type, desc, shortDesc, basePrice, salePrice,
+    sku, stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    availabilityMode, standardCost, images, tags, sizeChartId,
+    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
   useEffect(() => {
     if (!open) return
@@ -485,6 +607,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setCreatedProductId(null); setRegenerateConfirm(false); setClearVariantConfirm(false); setLocalVariants([]);
     setServerDraftId(null);
+    // NOTE: do NOT clear the persisted server-draft id here — closing the
+    // dialog must allow reopening to resume/update the SAME server draft.
+    // Only discardDraft and a successful create clear the persisted key.
     setBulkUpdateOpen(false); setIsBulkUpdating(false);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -511,6 +636,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
       clearDraft();
+      storeServerDraftId(null);
       if (serverDraftId && serverDraftId !== createdId) {
         productsApi.delete(serverDraftId).catch(() => {})
       }
@@ -954,7 +1080,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(v) => { if (!v && hasSubOverlay) return; if (!v) { onOpenChange(false); reset(); } }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v && hasSubOverlay) return; if (!v) { if (wasOpenRef.current) flushRef.current(); onOpenChange(false); reset(); } }}>
       <DialogContent
         className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'
         onInteractOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
@@ -1625,7 +1751,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         </Tabs>
 
         <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
-          <Button variant='outline' onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
+          <Button variant='outline' onClick={() => { if (wasOpenRef.current) flushRef.current(); onOpenChange(false); reset(); }}>Cancel</Button>
           {isDraftEdit && currentRow && (
             <Button
               variant='outline'
