@@ -27,7 +27,8 @@
 ### In Progress
 - **Q4 — Order-mutation truthfulness audit: AUDITED + FIXED + TESTED + COMMITTED (`24a09cd2`).** Backend scan of every mutation in orders.service.ts (create, updateOrder, addNote, updateStatus, submitPaymentProof, verifyPayment, addItem, removeItem, bulkOrders, bulkStatusChange, bulkDispatch, bulkAssign, rotateViewToken, cancelByCustomer, trash, restore) — all throw on failure and return truthfully EXCEPT `bulkAssign`, which claimed `{updated: ids.length}` unconditionally (updateMany count ignored). FIXED: scopes to existing non-trashed orders, returns `{updated: res.count, total: ids.length}`. 5 new spec tests (real count, ghost ids → 0, trashed excluded, unassign clears, db failure propagates). Live API proof: 1 real + 1 ghost id → `{"updated":1,"total":2}`.
 - **Q4 admin audit (agent-driven, 40+ mutation sites):** no false success toasts (all success toasts gated on `onSuccess`/`.then`; navigate only on success). Fixed 10 silent failures: row assign/unassign (`.catch` added, index.tsx:688/692), leads status/assign/bulk-assign/bulk-status (missing `onError`), refunds create/status (missing `onError`), dispatch updateStatus/remove (missing `onError`). Fixed 2 partials: bulkAssignMut now reads `{updated,total}` (ghost ids surfaced), block-phone dialog per-phone failure reporting; courier sync uses `toast.warning` when any dispatch fails. Backend **1411/1411**, admin **251/251**, tsc clean, nest build clean, git tree clean.
-- **Q5 — NEXT: Cancelled lifecycle verification** (storefront/API: cancel by viewToken, stock release on cancel, transitions out of Cancelled).
+- **Q5 — Cancelled lifecycle: VERIFIED + TESTED + COMMITTED (`65f21d49`).** Storefront cancel: `@Public() POST /orders/:id/cancel` + `cancelByCustomer` (token match, NotFound for wrong/missing token/trashed, transition map, Cancelled-status config guard, timeline entry); stock release via `handleCancelledSideEffects` → `cancelReturnStock.restoreForOrder(referencePrefix 'cancel')` (restores managed/physical per item, terminates ACTIVE stock cycle); transitions out of Cancelled `['Hold','Confirmed']` with re-reservation re-verified (Hold restores reservation, Confirmed re-verifies stock — existing tests 1394/1444/1484). 6 new spec tests; storefront lookup by token still serves cancelled order (`findByViewToken`). Live E2E: guest order → cancel by token → Cancelled; lookup after cancel shows Cancelled; wrong token 404; admin re-Hold lands Hold; test order trashed, 0 leftovers. Backend **1417/1417**, build clean.
+- **Q6 — NEXT: zero/negative stock verification** (both inventory models: storefront + backend order creation).
 
 ### Blocked
 - (none)
@@ -43,12 +44,12 @@
 - Drift resolution: trust migration history (stale singleton index dropped directly on DB, no migration file).
 
 ## Next Steps
-1. Q5 — Cancelled lifecycle: storefront cancel by viewToken (`cancelByCustomer`), stock release via `handleCancelledSideEffects`, transitions out of Cancelled (re-Hold/Confirm paths), storefront order lookup after cancel; verify API + browser.
-2. Q6–Q10 verifications: zero/negative stock both models, packing image matrix, Dhaka timezone edges, Next 16.3.1 full verify, nested review modal browser behaviors.
+1. Q6 — zero/negative stock verification (both inventory models: storefront + backend order creation).
+2. Q7–Q10 verifications: packing image matrix, Dhaka timezone edges, Next 16.3.1 full verify, nested review modal browser behaviors.
 3. Final: 12-row acceptance matrix + 3 explicit answers; full regression (backend jest + nest build, admin vitest + tsc, storefront test/build); browser smoke with `SKIP_LICENSE_CHECK=true` backend; clean `git status`; evidence report.
 
 ## Critical Context
-- Baselines (current): backend jest **1411/1411**, `nest build` clean; admin vitest **251/251**, tsc clean; git tree clean at `24a09cd2`.
+- Baselines (current): backend jest **1417/1417**, `nest build` clean; admin vitest **251/251**, tsc clean; git tree clean at `65f21d49`.
 - Backend running on :4000 (watch mode, `SKIP_LICENSE_CHECK=true`); admin Vite :5173; login seed `admin@ecomate.com` / `Admin@123` → `/admin/op/overview`.
 - Live E2E facts: draft slug format `draft-<8 hex>`; admin products URL `/admin/op/products`; "Product name" input placeholder-matched; draft row button[0]=edit, Publish has `title="Publish draft"`; `?status=draft` returns only drafts; storefront search defaults exclude drafts. Blocked entries: POST `/blocked-entries` `{type:'phone', value}`, entries returned `entryType`/`value` (normalized `+880…`), unblock `POST /blocked-entries/phone/:id/unblock`. Bulk assign live: `POST /orders/bulk/assign` returns `{updated,total}`; `/orders/staff` shape returns staff array (check `data` vs direct).
 - FeatureGuard patch note: without it, feature-gated admin endpoints return 403 `Feature "admin_X" is not included in your plan` even with `SKIP_LICENSE_CHECK=true`.
