@@ -10,7 +10,7 @@ export default function EcoMateAttribution({ storeName }: Props) {
       </p>
 
       <a
-        href="https://ecomate.business"
+        href="https://ecomate.bd"
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center justify-center no-underline text-gray-400 hover:opacity-70 transition-opacity mt-[6px]"
