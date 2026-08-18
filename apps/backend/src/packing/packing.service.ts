@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { startOfDhakaDay } from '../common/utils/dhaka-time';
 
 @Injectable()
 export class PackingService {
@@ -429,8 +430,7 @@ export class PackingService {
 
     const where = packerId ? { assignedToId: packerId } : {};
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = startOfDhakaDay();
 
     const [packedCount, holdCount, pendingCount] = await Promise.all([
       this.prisma.order.count({

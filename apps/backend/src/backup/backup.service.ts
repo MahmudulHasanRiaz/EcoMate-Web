@@ -3389,12 +3389,13 @@ export class BackupService implements OnModuleInit {
       .slice(0, 20)}`;
 
     // Publish the validated replacement first. If Redis rejects the add, the
-    // previous healthy schedule remains registered.
+    // previous healthy schedule remains registered. Cron is interpreted in
+    // Asia/Dhaka — the backup schedule setting is expressed in business time.
     const scheduled = await this.backupQueue.add(
       'scheduled-backup',
       { scope, type: 'scheduled' },
       {
-        repeat: { pattern: cron, key: scheduleKey },
+        repeat: { pattern: cron, key: scheduleKey, tz: 'Asia/Dhaka' },
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },

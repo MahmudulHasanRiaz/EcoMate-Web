@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecurityEventCategory, SecurityEventSeverity } from '@prisma/client';
+import { dhakaDayKey, dhakaHourBucket } from '../../common/utils/dhaka-time';
 
 interface EventJobData {
   id: string;
@@ -91,9 +92,8 @@ export class SecurityEventProcessor extends WorkerHost {
           throw err;
         });
 
-      // ── Step 2: Update hourly aggregate ──
-      const hour = new Date(eventTimestamp);
-      hour.setMinutes(0, 0, 0);
+      // ── Step 2: Update hourly aggregate (Dhaka-hour bucket) ──
+      const hour = dhakaHourBucket(eventTimestamp);
 
       await this.prisma.securityEventHourly.upsert({
         where: {
@@ -116,9 +116,10 @@ export class SecurityEventProcessor extends WorkerHost {
         update: { count: { increment: 1 } },
       });
 
-      // ── Step 3: Update daily aggregate ──
-      const day = new Date(eventTimestamp);
-      day.setHours(0, 0, 0, 0);
+      // ── Step 3: Update daily aggregate (Dhaka calendar date) ──
+      // `@db.Date` is stored via the Date's UTC components — build a UTC-midnight
+      // instant carrying the Dhaka date label so write and read sides agree.
+      const day = new Date(`${dhakaDayKey(eventTimestamp)}T00:00:00.000Z`);
 
       await this.prisma.securityEventDaily.upsert({
         where: {

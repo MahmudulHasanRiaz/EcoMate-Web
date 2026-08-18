@@ -75,7 +75,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
         <div className="text-right">
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-end gap-2"><span className="text-muted-foreground">Invoice #</span><span className="font-mono font-medium">{order.displayId}</span></div>
-            <div className="flex justify-end gap-2"><span className="text-muted-foreground">Date</span><span>{new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+            <div className="flex justify-end gap-2"><span className="text-muted-foreground">Date</span><span>{new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' })}</span></div>
             <div className="flex justify-end gap-2"><span className="text-muted-foreground">Status</span><span className="font-medium">{order.status?.name}</span></div>
             {order.courierService && <div className="flex justify-end gap-2"><span className="text-muted-foreground">Courier</span><span className="capitalize">{order.courierService}</span></div>}
           </div>

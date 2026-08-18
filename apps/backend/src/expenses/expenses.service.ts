@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { dhakaDateParts, dhakaDayRange } from '../common/utils/dhaka-time';
 
 @Injectable()
 export class ExpensesService {
@@ -135,14 +136,14 @@ export class ExpensesService {
       where.categoryId = categoryId;
     }
     if (fromDate) {
-      const d = new Date(fromDate);
-      if (isNaN(d.getTime()))
+      const d = dhakaDayRange(fromDate).start;
+      if (!d || isNaN(d.getTime()))
         throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
       where.expenseDate = { ...where.expenseDate, gte: d };
     }
     if (toDate) {
-      const d = new Date(toDate);
-      if (isNaN(d.getTime()))
+      const d = dhakaDayRange(toDate).end;
+      if (!d || isNaN(d.getTime()))
         throw new BadRequestException(`Invalid toDate: ${toDate}`);
       where.expenseDate = { ...where.expenseDate, lte: d };
     }
@@ -327,14 +328,14 @@ export class ExpensesService {
   async getSummary(fromDate?: string, toDate?: string) {
     const where: any = {};
     if (fromDate) {
-      const d = new Date(fromDate);
-      if (isNaN(d.getTime()))
+      const d = dhakaDayRange(fromDate).start;
+      if (!d || isNaN(d.getTime()))
         throw new BadRequestException(`Invalid fromDate: ${fromDate}`);
       where.expenseDate = { ...where.expenseDate, gte: d };
     }
     if (toDate) {
-      const d = new Date(toDate);
-      if (isNaN(d.getTime()))
+      const d = dhakaDayRange(toDate).end;
+      if (!d || isNaN(d.getTime()))
         throw new BadRequestException(`Invalid toDate: ${toDate}`);
       where.expenseDate = { ...where.expenseDate, lte: d };
     }
@@ -419,8 +420,9 @@ export class ExpensesService {
       return null;
     }
 
-    // Generate entry number
-    const dateStr = `${String(expenseDate.getFullYear()).slice(2)}${String(expenseDate.getMonth() + 1).padStart(2, '0')}${String(expenseDate.getDate()).padStart(2, '0')}`;
+    // Generate entry number — stamped with the Dhaka calendar day of the expense
+    const { year, month, day } = dhakaDateParts(expenseDate);
+    const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     const counter = await tx.orderCounter.upsert({
       where: { date: dateStr },
       update: { seq: { increment: 1 } },

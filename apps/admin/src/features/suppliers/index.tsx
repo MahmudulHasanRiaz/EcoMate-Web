@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2, Banknote, Receipt } from 'lucide-react'
 import { suppliersApi, type SupplierResponse, type SupplierPaymentResponse } from './api'
+import { dhakaTodayString } from '@/lib/dhaka-time'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -37,7 +38,7 @@ export function Suppliers() {
     amount: '',
     paymentMethod: 'cash',
     reference: '',
-    paidAt: new Date().toISOString().slice(0, 10),
+    paidAt: dhakaTodayString(),
     notes: '',
   })
   const [form, setForm] = useState({
@@ -67,7 +68,7 @@ export function Suppliers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] })
       setPayingSupplier(null)
-      setPaymentForm({ amount: '', paymentMethod: 'cash', reference: '', paidAt: new Date().toISOString().slice(0, 10), notes: '' })
+      setPaymentForm({ amount: '', paymentMethod: 'cash', reference: '', paidAt: dhakaTodayString(), notes: '' })
       toast.success('Payment recorded')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error recording payment'),
@@ -153,7 +154,7 @@ export function Suppliers() {
                             </Button>
                             <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => {
                               setPayingSupplier(supplier)
-                              setPaymentForm({ amount: String(supplier.balance || 0), paymentMethod: 'cash', reference: '', paidAt: new Date().toISOString().slice(0, 10), notes: '' })
+                              setPaymentForm({ amount: String(supplier.balance || 0), paymentMethod: 'cash', reference: '', paidAt: dhakaTodayString(), notes: '' })
                             }} title='Make Payment'>
                               <Banknote className='h-3.5 w-3.5' />
                             </Button>

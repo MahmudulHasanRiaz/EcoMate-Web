@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { dhakaDayRange } from '../common/utils/dhaka-time';
 
 @Injectable()
 export class AnalyticsService {
@@ -175,26 +176,21 @@ export class AnalyticsService {
     if (!startDate && !endDate) return {};
     const filter: Record<string, any> = {};
     if (startDate)
-      filter[field] = { ...filter[field], gte: new Date(startDate) };
+      filter[field] = { ...filter[field], gte: dhakaDayRange(startDate).start ?? undefined };
     if (endDate) {
       filter[field] = {
         ...filter[field],
-        lte: endDate.includes('T')
-          ? new Date(endDate)
-          : new Date(endDate + 'T23:59:59.999Z'),
+        lte: dhakaDayRange(endDate).end ?? undefined,
       };
     }
     return filter;
   }
 
   private getDateRange(startDate?: string, endDate?: string) {
+    const { start, end } = dhakaDayRange(startDate || '');
     return {
-      start: startDate ? new Date(startDate) : null,
-      end: endDate
-        ? endDate.includes('T')
-          ? new Date(endDate)
-          : new Date(endDate + 'T23:59:59.999Z')
-        : null,
+      start: startDate ? start : null,
+      end: endDate ? end : null,
     };
   }
 }

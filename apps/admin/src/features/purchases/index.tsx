@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { purchasesApi, type PurchaseResponse, type PurchaseItem, type GrnResponse } from './api'
 import { suppliersApi } from '@/features/suppliers/api'
 import { productsApi } from '@/features/products/api'
+import { dhakaTodayString } from '@/lib/dhaka-time'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -535,7 +536,7 @@ export function Purchases() {
   const emptyForm = {
     referenceNo: '',
     supplierId: '',
-    orderDate: new Date().toISOString().slice(0, 10),
+    orderDate: dhakaTodayString(),
     notes: '',
     items: [{ productId: '', quantity: '1', totalBill: '0' }],
   }

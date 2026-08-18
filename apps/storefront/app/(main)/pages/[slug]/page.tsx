@@ -57,7 +57,7 @@ export default async function CmsPageView({ params }: PageProps) {
           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.content) }}
         />
         <div className="mt-10 pt-6 border-t border-gray-100 text-[12px] text-gray-400">
-          Last updated: {new Date(page.updatedAt).toLocaleDateString()}
+          Last updated: {new Date(page.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Dhaka' })}
         </div>
       </article>
 

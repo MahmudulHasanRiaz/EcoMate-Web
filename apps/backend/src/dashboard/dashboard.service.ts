@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { dhakaDayRange, endOfDhakaDay, startOfDhakaDay } from '../common/utils/dhaka-time';
 
 @Injectable()
 export class DashboardService {
@@ -17,22 +18,14 @@ export class DashboardService {
   ): { createdAt?: { gte?: Date; lte?: Date } } {
     if (!startDate && !endDate) return {};
     const filter: { gte?: Date; lte?: Date } = {};
-    if (startDate) filter.gte = new Date(startDate);
-    if (endDate) {
-      filter.lte = endDate.includes('T')
-        ? new Date(endDate)
-        : new Date(endDate + 'T23:59:59.999Z');
-    }
+    if (startDate) filter.gte = dhakaDayRange(startDate).start ?? undefined;
+    if (endDate) filter.lte = dhakaDayRange(endDate).end ?? undefined;
     return { createdAt: filter };
   }
 
   private getDateRange(startDate?: string, endDate?: string) {
-    const start = startDate ? new Date(startDate) : null;
-    const end = endDate
-      ? endDate.includes('T')
-        ? new Date(endDate)
-        : new Date(endDate + 'T23:59:59.999Z')
-      : null;
+    const start = startDate ? dhakaDayRange(startDate).start : null;
+    const end = endDate ? dhakaDayRange(endDate).end : null;
     return { start, end };
   }
 
@@ -396,10 +389,8 @@ export class DashboardService {
 
   async getTodayKpi() {
     try {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date();
-      todayEnd.setHours(23, 59, 59, 999);
+      const todayStart = startOfDhakaDay();
+      const todayEnd = endOfDhakaDay();
       const dateFilter = { createdAt: { gte: todayStart, lte: todayEnd } };
       const [orders, delivered, pendingPayments, pendingRefunds] =
         await Promise.all([

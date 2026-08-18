@@ -32,7 +32,7 @@ export class EventAggregatorService {
       SELECT
         gen_random_uuid()::text,
         "tenant",
-        date_trunc('hour', "timestamp") as bucket,
+        date_trunc('hour', "timestamp" AT TIME ZONE 'Asia/Dhaka') AT TIME ZONE 'Asia/Dhaka' as bucket,
         "eventType",
         "severity",
         "category",
@@ -65,7 +65,7 @@ export class EventAggregatorService {
       SELECT
         gen_random_uuid()::text,
         "tenant",
-        date_trunc('day', "timestamp")::date as day,
+        date_trunc('day', "timestamp" AT TIME ZONE 'Asia/Dhaka')::date as day,
         "eventType",
         "severity",
         "category",

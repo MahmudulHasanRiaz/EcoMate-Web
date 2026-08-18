@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
@@ -93,10 +94,10 @@ export class PosOrdersService {
   }
 
   private async generateDisplayId(): Promise<string> {
-    const today = new Date();
-    const yy = String(today.getFullYear()).slice(2);
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
+    const { year, month, day } = dhakaDateParts();
+    const yy = String(year).slice(2);
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
     const dateStr = `${yy}${mm}${dd}`;
     const prefix = `POS-${dateStr}`;
 

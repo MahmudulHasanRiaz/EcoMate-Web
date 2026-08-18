@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import type { DatePresetKey, DateRange } from './types'
 import { DATE_PRESETS } from './constants'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 
 export function useDateFilter() {
   const location = useLocation()
@@ -15,7 +16,11 @@ export function useDateFilter() {
 
   const dateRange: DateRange = useMemo(() => {
     if (preset === 'custom' && customStart && customEnd) {
-      return { start: new Date(customStart), end: new Date(customEnd + 'T23:59:59') }
+      // Custom picker days are Dhaka calendar days.
+      return {
+        start: new Date(customStart + 'T00:00:00+06:00'),
+        end: new Date(customEnd + 'T23:59:59.999+06:00'),
+      }
     }
     const found = DATE_PRESETS.find(p => p.key === preset)
     return found ? found.getRange() : DATE_PRESETS[0].getRange()
@@ -43,7 +48,7 @@ export function useDateFilter() {
     })
   }, [navigate])
 
-  const formatParam = useCallback((d: Date) => d.toISOString().split('T')[0], [])
+  const formatParam = useCallback((d: Date) => toDhakaDateString(d), [])
 
   return { preset, dateRange, setPreset, setCustomRange, formatParam }
 }

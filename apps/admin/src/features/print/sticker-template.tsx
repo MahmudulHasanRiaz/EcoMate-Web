@@ -63,7 +63,7 @@ export function StickerTemplate({ order }: { order: any }) {
       <div className="space-y-0.5 mb-2">
         <div className="row text-[9px]">
           <span className="font-medium"><User className="h-3 w-3 inline mr-0.5" />{customerName || '—'}</span>
-          <span className="text-[7px] text-muted-foreground">{new Date(order.createdAt).toLocaleDateString('en-GB')}</span>
+          <span className="text-[7px] text-muted-foreground">{new Date(order.createdAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka' })}</span>
         </div>
         {customerPhone && <div className="flex items-center gap-1 text-[8px]"><Phone className="h-3 w-3" /> {customerPhone}</div>}
         {customerAddress && <div className="flex items-center gap-1 text-[8px]"><MapPin className="h-3 w-3" /> {customerAddress}</div>}
