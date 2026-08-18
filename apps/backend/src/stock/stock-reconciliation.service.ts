@@ -3,9 +3,12 @@ import {
   Logger,
   OnApplicationBootstrap,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderStockDeductService } from './order-stock-deduct.service';
 import { CancelReturnStockService } from './cancel-return-stock.service';
+import { StockService } from './stock.service';
+import { StockRouterService } from './stock-router.service';
 
 export type InventoryVerifyScope = 'MANAGED' | 'WAREHOUSE' | 'BIN';
 
@@ -70,6 +73,7 @@ export interface HealAllResult {
   scanned: number;
   deliveredDeducted: number;
   cancelledRestored: number;
+  releasedOrphaned: number;
   blocked: string[];
   delta: HealDelta;
   verification: StockVerification;
@@ -103,6 +107,8 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly orderStockDeduct: OrderStockDeductService,
     private readonly cancelReturnStock: CancelReturnStockService,
+    private readonly stockService: StockService,
+    private readonly stockRouter: StockRouterService,
   ) {}
 
   /**
@@ -123,6 +129,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       this.logger.log(
         `Stock reconciliation on boot: DONE scanned=${result.scanned} ` +
         `deducted=${result.deliveredDeducted} restored=${result.cancelledRestored} ` +
+        `released=${result.releasedOrphaned} ` +
         `blocked=${result.blocked.length}`,
       );
       this.logger.log(
@@ -168,6 +175,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     const healedOrderIds = new Set<string>();
     let deliveredDeducted = 0;
     let cancelledRestored = 0;
+    let releasedOrphaned = 0;
     const healWindow = { start: new Date() };
 
     const orderIds = await this.findOrdersWithActiveStock();
@@ -179,6 +187,9 @@ export class StockReconciliationService implements OnApplicationBootstrap {
           healedOrderIds.add(id);
         } else if (outcome === 'restored') {
           cancelledRestored++;
+          healedOrderIds.add(id);
+        } else if (outcome === 'released') {
+          releasedOrphaned++;
           healedOrderIds.add(id);
         }
       } catch (err) {
@@ -214,6 +225,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       scanned: orderIds.length,
       deliveredDeducted,
       cancelledRestored,
+      releasedOrphaned,
       blocked,
       delta,
       verification,
@@ -223,24 +235,30 @@ export class StockReconciliationService implements OnApplicationBootstrap {
 
   /**
    * Heal a single order based on its current status.
-   * Returns 'deducted' | 'restored' | 'noop'.
+   * Returns 'deducted' | 'restored' | 'released' | 'noop'.
    */
-  async healOrder(orderId: string, statusName?: string): Promise<'deducted' | 'restored' | 'noop'> {
+  async healOrder(orderId: string, statusName?: string): Promise<'deducted' | 'restored' | 'released' | 'noop'> {
     const status = statusName ?? (await this.getOrderStatusName(orderId));
     if (!status) return 'noop';
 
     // 1. Delivered / Partial → final deduction (managed + physical, combo-aware).
     if (status === 'Delivered' || status === 'Partial') {
-      await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
+        const orphans = await this.computeManagedOrphans(orderId, tx);
+        const orphanIds = [...orphans.itemIds, ...orphans.componentIds];
+        if (orphanIds.length > 0) {
+          await this.releaseOrphanedReservations(tx, orphans, orderId);
+        }
         await this.orderStockDeduct.deductForOrder({
           orderId,
           reference: `Heal Deduct: ${orderId}`,
           performedBy: 'reconcile',
           tx,
           strict: false,
+          skipManagedUnitIds: new Set(orphanIds),
         });
+        return orphanIds.length > 0 ? ('released' as const) : ('deducted' as const);
       });
-      return 'deducted';
     }
 
     // 2. Cancelled / Returned / Damaged → release or restore.
@@ -263,6 +281,199 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     }
 
     return 'noop';
+  }
+
+  /**
+   * Compute the set of managed-engine units (standalone items + combo
+   * components) whose on-hand stock can no longer satisfy the order quantity —
+   * the "orphaned reservation" case where the historical courier-webhook bug
+   * reserved managed stock that the product no longer carries.
+   *
+   * Engine-aware: mirrors OrderStockDeductService.decision exactly
+   * (StockRouterService.resolve per availability mode), so:
+   *   - Physical-engine units (INVENTORY_CONTROLLED → ms:'skip') are NEVER
+   *     orphans — their fulfillment path consumes the ACTIVE reservation and
+   *     must keep running.
+   *   - MANAGED_STOCK units with syncManagedStock are still orphans on the
+   *     managed side when on-hand is short; the physical side is handled
+   *     independently by the deduction (fulfill ACTIVE reservations).
+   *   - Already-deducted units are never orphans (deduction is idempotent).
+   *   - Non-managed products (manageStock=false) never throw on deduction.
+   */
+  private async computeManagedOrphans(
+    orderId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ itemIds: string[]; componentIds: string[] }> {
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    const items = await tx.orderItem.findMany({
+      where: { orderId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            type: true,
+            manageStock: true,
+            availabilityMode: true,
+            syncManagedStock: true,
+          },
+        },
+        comboComponents: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                type: true,
+                manageStock: true,
+                availabilityMode: true,
+                syncManagedStock: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const itemIds: string[] = [];
+    const componentIds: string[] = [];
+
+    for (const item of items) {
+      if (!item.productId && !item.comboId) continue;
+
+      if (item.comboId) {
+        for (const snap of item.comboComponents) {
+          const decision = this.stockRouter.resolve(
+            snap.product?.availabilityMode,
+            'deduct',
+            imEnabled,
+            snap.product?.syncManagedStock ?? undefined,
+          );
+          if (decision.ms !== 'deduct' || snap.managedStockDeducted) continue;
+          if (!(await this.hasEnoughManaged(snap.productId, snap.variantId ?? undefined, snap.totalQuantity, tx))) {
+            componentIds.push(snap.id);
+          }
+        }
+        continue;
+      }
+
+      const decision = this.stockRouter.resolve(
+        item.product?.availabilityMode,
+        'deduct',
+        imEnabled,
+        item.product?.syncManagedStock ?? undefined,
+      );
+      if (decision.ms !== 'deduct' || item.managedStockDeducted) continue;
+      if (!(await this.hasEnoughManaged(item.productId!, item.variantId ?? undefined, item.quantity, tx))) {
+        itemIds.push(item.id);
+      }
+    }
+
+    return { itemIds, componentIds };
+  }
+
+  /**
+   * Managed on-hand sufficiency check that mirrors the guards inside
+   * StockService.applyStockChange (the same guards that make a heal-time
+   * deduction throw and leave the order permanently blocked):
+   *   - variant → variant.managedStockQuantity, plus the parent product when
+   *     it is a stock-managing simple product.
+   *   - product → product.managedStockQuantity; non-managed products skip.
+   */
+  private async hasEnoughManaged(
+    productId: string,
+    variantId: string | undefined,
+    quantity: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    if (variantId) {
+      const v = await tx.productVariant.findUnique({
+        where: { id: variantId },
+        select: { managedStockQuantity: true, productId: true },
+      });
+      if (!v) return false;
+      if ((v.managedStockQuantity ?? 0) < quantity) return false;
+      const p = await tx.product.findUnique({
+        where: { id: v.productId },
+        select: { manageStock: true, type: true, managedStockQuantity: true },
+      });
+      if (p?.manageStock && p.type === 'simple' && (p.managedStockQuantity ?? 0) < quantity) {
+        return false;
+      }
+      return true;
+    }
+    const p = await tx.product.findUnique({
+      where: { id: productId },
+      select: { manageStock: true, managedStockQuantity: true },
+    });
+    if (!p) return false;
+    if (!p.manageStock) return true;
+    return (p.managedStockQuantity ?? 0) >= quantity;
+  }
+
+  /**
+   * Release orphaned managed reservations where stock was reserved but never
+   * added. Used when on-hand can no longer satisfy the order quantity and
+   * deduction is impossible. Only units that actually hold a reservation
+   * (managedStockReserved) release the counter; units that were never
+   * reserved are skipped from deduction via skipManagedUnitIds instead.
+   */
+  private async releaseOrphanedReservations(
+    tx: Prisma.TransactionClient,
+    orphans: { itemIds: string[]; componentIds: string[] },
+    orderId: string,
+  ): Promise<void> {
+    const releaseManaged = async (params: {
+      productId: string;
+      variantId: string | null;
+      quantity: number;
+      reserved: boolean;
+      update: () => Promise<unknown>;
+    }) => {
+      if (!params.reserved) return;
+      await this.stockService.release({
+        productId: params.productId,
+        variantId: params.variantId ?? undefined,
+        quantity: params.quantity,
+        reference: `Heal Release Orphan: ${orderId}`,
+        performedBy: 'reconcile',
+        tx,
+      });
+      await params.update();
+    };
+
+    for (const id of orphans.itemIds) {
+      const item = await tx.orderItem.findUnique({
+        where: { id },
+        select: { id: true, productId: true, variantId: true, quantity: true, managedStockReserved: true },
+      });
+      if (!item?.productId) continue;
+      await releaseManaged({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        reserved: item.managedStockReserved,
+        update: () =>
+          tx.orderItem.update({ where: { id: item.id }, data: { managedStockReserved: false } }),
+      });
+    }
+
+    for (const id of orphans.componentIds) {
+      const comp = await tx.orderItemComboComponent.findUnique({
+        where: { id },
+        select: { id: true, productId: true, variantId: true, totalQuantity: true, managedStockReserved: true },
+      });
+      if (!comp?.productId) continue;
+      await releaseManaged({
+        productId: comp.productId,
+        variantId: comp.variantId,
+        quantity: comp.totalQuantity,
+        reserved: comp.managedStockReserved,
+        update: () =>
+          tx.orderItemComboComponent.update({
+            where: { id: comp.id },
+            data: { managedStockReserved: false },
+          }),
+      });
+    }
   }
 
   /**

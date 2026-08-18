@@ -198,7 +198,7 @@ export class PrismaService
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
-    const pool = new Pool({ connectionString, max: 6 });
+    const pool = new Pool({ connectionString, max: 12 });
     const adapter = new PrismaPg(pool);
 
     super({

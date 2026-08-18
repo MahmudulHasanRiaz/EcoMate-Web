@@ -37,11 +37,9 @@ export class SearchService {
     }
     const pattern = `%${sanitized}%`;
 
-    const [orders, products, customers] = await Promise.all([
-      this.safeFetch(() => this.searchOrders(pattern, limit), 'orders'),
-      this.safeFetch(() => this.searchProducts(pattern, limit), 'products'),
-      this.safeFetch(() => this.searchCustomers(pattern, limit), 'customers'),
-    ]);
+    const orders = await this.safeFetch(() => this.searchOrders(pattern, limit), 'orders');
+    const products = await this.safeFetch(() => this.searchProducts(pattern, limit), 'products');
+    const customers = await this.safeFetch(() => this.searchCustomers(pattern, limit), 'customers');
 
     return { orders, products, customers };
   }

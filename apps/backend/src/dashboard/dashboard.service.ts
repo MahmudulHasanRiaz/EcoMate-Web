@@ -183,18 +183,16 @@ export class DashboardService {
         images: string | null;
       };
 
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<{ count: number }[]>(
-          `SELECT COUNT(*)::int AS count FROM "Product" WHERE "manageStock" = true AND "stock" <= COALESCE("lowStockQty", 0)`,
-        ),
-        this.prisma.$queryRawUnsafe<LowStockRow[]>(
-          `SELECT id, name, slug, sku, stock, "lowStockQty", images::text AS images
-           FROM "Product"
-           WHERE "manageStock" = true AND "stock" <= COALESCE("lowStockQty", 0)
-           ORDER BY "stock" ASC
-           LIMIT 20`,
-        ),
-      ]);
+      const countResult = await this.prisma.$queryRawUnsafe<{ count: number }[]>(
+        `SELECT COUNT(*)::int AS count FROM "Product" WHERE "manageStock" = true AND "stock" <= COALESCE("lowStockQty", 0)`,
+      );
+      const rows = await this.prisma.$queryRawUnsafe<LowStockRow[]>(
+        `SELECT id, name, slug, sku, stock, "lowStockQty", images::text AS images
+         FROM "Product"
+         WHERE "manageStock" = true AND "stock" <= COALESCE("lowStockQty", 0)
+         ORDER BY "stock" ASC
+         LIMIT 20`,
+      );
 
       return {
         count: countResult[0]?.count ?? 0,

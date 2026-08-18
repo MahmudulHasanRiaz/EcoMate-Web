@@ -40,6 +40,10 @@ export class OrderStockDeductService {
    * @param strict when true, a missing/invalid physical reservation throws (dispatch semantics).
    *               When false, gaps are tolerated and logged so courier auto-delivery can't
    *               silently fail to a hard 500 on legacy/edge orders.
+   * @param skipManagedUnitIds managed-engine units (orderItem or combo-component ids) whose
+   *               managed deduction must be skipped — the reconciliation heal releases those
+   *               orphaned reservations before calling this, so a re-deduct must not throw.
+   *               Physical fulfillment still runs for these units.
    */
   async deductForOrder(params: {
     orderId: string;
@@ -47,9 +51,11 @@ export class OrderStockDeductService {
     performedBy?: string;
     tx: Prisma.TransactionClient;
     strict?: boolean;
+    skipManagedUnitIds?: Set<string>;
   }): Promise<void> {
     const { orderId, reference, performedBy, tx } = params;
     const strict = params.strict !== false;
+    const skipManagedUnitIds = params.skipManagedUnitIds ?? new Set<string>();
 
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
     const activeCycle = await tx.orderStockCycle.findFirst({
@@ -76,11 +82,11 @@ export class OrderStockDeductService {
       if (!oi.productId && !oi.comboId) continue;
 
       if (oi.comboId) {
-        await this.deductComboItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy);
+        await this.deductComboItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds);
         continue;
       }
 
-      await this.deductStandaloneItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy);
+      await this.deductStandaloneItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds);
     }
   }
 
@@ -92,6 +98,7 @@ export class OrderStockDeductService {
     reference: string,
     strict: boolean,
     performedBy?: string,
+    skipManagedUnitIds: Set<string> = new Set(),
   ): Promise<void> {
     const snapshots = await tx.orderItemComboComponent.findMany({
       where: { orderItemId: oi.id },
@@ -107,7 +114,7 @@ export class OrderStockDeductService {
         compProduct.syncManagedStock ?? undefined,
       );
 
-      if (decision.ms === 'deduct' && !snap.managedStockDeducted) {
+      if (decision.ms === 'deduct' && !snap.managedStockDeducted && !skipManagedUnitIds.has(snap.id)) {
         await this.deductManaged(
           tx,
           snap.productId,
@@ -174,6 +181,7 @@ export class OrderStockDeductService {
     reference: string,
     strict: boolean,
     performedBy?: string,
+    skipManagedUnitIds: Set<string> = new Set(),
   ): Promise<void> {
     const product = oi.product;
     if (!product || !oi.productId) return;
@@ -185,7 +193,7 @@ export class OrderStockDeductService {
       product.syncManagedStock ?? undefined,
     );
 
-    if (decision.ms === 'deduct' && !oi.managedStockDeducted) {
+    if (decision.ms === 'deduct' && !oi.managedStockDeducted && !skipManagedUnitIds.has(oi.id)) {
       await this.deductManaged(
         tx,
         oi.productId,
