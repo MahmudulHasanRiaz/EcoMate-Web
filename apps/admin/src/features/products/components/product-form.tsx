@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star, Trash2 } from 'lucide-react'
@@ -27,7 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -1563,94 +1562,100 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       )}
     </Dialog>
 
-    {/* Portal overrides — rendered at document.body to avoid DialogContent transform stacking */}
-    {showReviewGuard && createPortal(
-      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setShowReviewGuard(false)}>
-        <div className='bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-          <h3 className='font-semibold text-lg'>Review before creating</h3>
-          <p className='text-sm text-muted-foreground'>
-            The following configuration areas may need attention:
-          </p>
-          <div className='space-y-2'>
-            {reviewGuardItems.map((item, i) => (
-              <div key={i} className='flex items-center gap-2 text-sm border rounded-lg p-3'>
-                <span className='text-amber-500 font-bold'>⚠</span>
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-          <div className='flex justify-end gap-3 pt-2'>
-            <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
-            <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
-              {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-              Create Anyway
-            </Button>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {variantImgMgr && createPortal(
-      <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/50' onClick={() => setVariantImgMgr(null)}>
-        <div className='bg-background rounded-lg shadow-lg max-w-lg w-full mx-4 p-6 space-y-4' onClick={e => e.stopPropagation()}>
-          <div className='flex items-center justify-between'>
-            <h3 className='font-semibold text-lg'>Variant Images</h3>
-            <Button variant='outline' size='sm' onClick={() => { setVariantImgGalleryOpen(true) }}>
-              <ImageIcon className='h-4 w-4 mr-1' /> Add Images
-            </Button>
-          </div>
-          {variantImgMgr.images.length === 0 ? (
-            <div className='flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg'>
-              <Package className='h-8 w-8 mb-2' />
-              <p className='text-sm'>No images for this variant</p>
-              <Button variant='outline' size='sm' className='mt-2' onClick={() => setVariantImgGalleryOpen(true)}>Browse Library</Button>
+    {/* Nested overlays — full modals (Radix), rendered as siblings of the main
+        dialog. Modal nesting cooperates: focus trap, ESC-to-close, scroll lock
+        and aria-hidden are managed per layer, and the hasSubOverlay guards
+        keep the parent open until the top-most layer resolves. */}
+    <Dialog open={showReviewGuard} onOpenChange={setShowReviewGuard}>
+      <DialogContent className='max-w-md'>
+        <DialogHeader>
+          <DialogTitle>Review before creating</DialogTitle>
+          <DialogDescription>
+            The following configuration areas may need attention
+          </DialogDescription>
+        </DialogHeader>
+        <div className='space-y-2'>
+          {reviewGuardItems.map((item, i) => (
+            <div key={i} className='flex items-center gap-2 text-sm border rounded-lg p-3'>
+              <span className='text-amber-500 font-bold'>⚠</span>
+              <span>{item}</span>
             </div>
-          ) : (
-            <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
-              const { active, over } = event
-              if (!over || active.id === over.id) return
-              const imgs = variantImgMgr.images
-              const idToUrl = (id: string) => imgs.find(u => `vimg-${variantImgMgr.variantId}-${u}` === id)
-              const oldUrl = idToUrl(active.id as string)
-              const newUrl = idToUrl(over.id as string)
-              if (!oldUrl || !newUrl) return
-              const oldIdx = imgs.indexOf(oldUrl)
-              const newIdx = imgs.indexOf(newUrl)
-              if (oldIdx === -1 || newIdx === -1) return
-              reorderVariantImg(variantImgMgr.variantId, oldIdx, newIdx)
-            }}>
-              <SortableContext items={variantImgMgr.images.map(u => `vimg-${variantImgMgr.variantId}-${u}`)} strategy={rectSortingStrategy}>
-                <div className='grid grid-cols-4 gap-3'>
-                  {variantImgMgr.images.map((url) => {
-                    const idx = variantImgMgr.images.indexOf(url)
-                    return (
-                      <SortableImageCard
-                        key={`vimg-${variantImgMgr.variantId}-${url}`}
-                        url={url}
-                        isPrimary={idx === 0}
-                        onSetPrimary={(u) => setPrimaryVariantImg(variantImgMgr.variantId, u)}
-                        onRemove={(u) => removeVariantImg(variantImgMgr.variantId, u)}
-                      />
-                    )
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-          )}
-          <div className='flex justify-end gap-3 pt-2 border-t'>
-            <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
-            <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
-              {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-              Save Images
-            </Button>
-          </div>
+          ))}
         </div>
-      </div>,
-      document.body
-    )}
+        <div className='flex justify-end gap-3 pt-2'>
+          <Button variant='outline' onClick={() => setShowReviewGuard(false)}>Continue Editing</Button>
+          <Button onClick={() => { setShowReviewGuard(false); handleSaveClick(true); }} disabled={createMut.isPending || updateMut.isPending}>
+            {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            Create Anyway
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
-    {variantImgGalleryOpen && variantImgMgr && createPortal(
+    <Dialog open={!!variantImgMgr} onOpenChange={(v) => { if (!v) setVariantImgMgr(null) }}>
+      <DialogContent className='max-w-lg'>
+        <DialogHeader>
+          <DialogTitle>Variant Images</DialogTitle>
+        </DialogHeader>
+        <div className='flex items-center justify-between'>
+          <p className='text-sm text-muted-foreground'>
+            {variantImgMgr?.images.length === 0
+              ? 'No images for this variant'
+              : `${variantImgMgr?.images.length} image(s) — drag to reorder, first is primary`}
+          </p>
+          <Button variant='outline' size='sm' onClick={() => setVariantImgGalleryOpen(true)}>
+            <ImageIcon className='h-4 w-4 mr-1' /> Add Images
+          </Button>
+        </div>
+        {variantImgMgr && variantImgMgr.images.length === 0 ? (
+          <div className='flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg'>
+            <Package className='h-8 w-8 mb-2' />
+            <p className='text-sm'>No images for this variant</p>
+            <Button variant='outline' size='sm' className='mt-2' onClick={() => setVariantImgGalleryOpen(true)}>Browse Library</Button>
+          </div>
+        ) : variantImgMgr ? (
+          <DndContext sensors={imageDndSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
+            const { active, over } = event
+            if (!over || active.id === over.id) return
+            const imgs = variantImgMgr.images
+            const idToUrl = (id: string) => imgs.find(u => `vimg-${variantImgMgr.variantId}-${u}` === id)
+            const oldUrl = idToUrl(active.id as string)
+            const newUrl = idToUrl(over.id as string)
+            if (!oldUrl || !newUrl) return
+            const oldIdx = imgs.indexOf(oldUrl)
+            const newIdx = imgs.indexOf(newUrl)
+            if (oldIdx === -1 || newIdx === -1) return
+            reorderVariantImg(variantImgMgr.variantId, oldIdx, newIdx)
+          }}>
+            <SortableContext items={variantImgMgr.images.map(u => `vimg-${variantImgMgr.variantId}-${u}`)} strategy={rectSortingStrategy}>
+              <div className='grid grid-cols-4 gap-3'>
+                {variantImgMgr.images.map((url) => {
+                  const idx = variantImgMgr.images.indexOf(url)
+                  return (
+                    <SortableImageCard
+                      key={`vimg-${variantImgMgr.variantId}-${url}`}
+                      url={url}
+                      isPrimary={idx === 0}
+                      onSetPrimary={(u) => setPrimaryVariantImg(variantImgMgr.variantId, u)}
+                      onRemove={(u) => removeVariantImg(variantImgMgr.variantId, u)}
+                    />
+                  )
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+        ) : null}
+        <div className='flex justify-end gap-3 pt-2 border-t'>
+          <Button variant='outline' onClick={() => setVariantImgMgr(null)} disabled={updateVariantMut.isPending}>Cancel</Button>
+          <Button onClick={saveVariantImgMgr} disabled={updateVariantMut.isPending}>
+            {updateVariantMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            Save Images
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {variantImgGalleryOpen && variantImgMgr && (
       <MediaPicker
         open={variantImgGalleryOpen}
         onOpenChange={setVariantImgGalleryOpen}
@@ -1660,8 +1665,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           setVariantImgMgr(prev => prev ? { ...prev, images: dedupUrls(urls) } : null)
           setVariantImgGalleryOpen(false)
         }}
-      />,
-      document.body
+      />
     )}
 
     <ConfirmDialog
