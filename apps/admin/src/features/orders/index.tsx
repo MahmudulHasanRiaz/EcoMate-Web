@@ -312,7 +312,16 @@ export function Orders() {
 
   const bulkAssignMut = useMutation({
     mutationFn: (d: { ids: string[]; assignedToId: string | null }) => ordersApi.bulkAssign(d.ids, d.assignedToId === '__unassign__' ? null : d.assignedToId),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Orders assigned') },
+    onSuccess: (res) => {
+      const r = (res as any)?.data as { updated?: number; total?: number } | undefined
+      const updated = r?.updated ?? 0
+      const total = r?.total ?? 0
+      const missing = total - updated
+      if (updated > 0) toast.success(`${updated} order(s) assigned`)
+      if (missing > 0) toast.error(`${missing} order(s) could not be assigned`)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      if (updated > 0) setSelected([])
+    },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Assignment failed'),
   })
 
@@ -676,11 +685,11 @@ export function Orders() {
                               <DropdownMenuGroup className='px-2 py-1.5 text-xs text-muted-foreground'>
                                 <div className='flex items-center gap-1.5 mb-1 font-medium text-foreground'><UserPlus className='h-3.5 w-3.5' />Assign to</div>
                                 <div className='flex flex-col gap-0.5 max-h-32 overflow-y-auto'>
-                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }) }} className='flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors'>
+                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to unassign order')) }} className='flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors'>
                                     <span className='text-muted-foreground italic'>Unassign</span>
                                   </button>
                                   {staff.map((s: any) => (
-                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }) }} className={`flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors ${o.assignee?.id === s.id ? 'bg-accent font-medium' : ''}`}>
+                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to assign order')) }} className={`flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors ${o.assignee?.id === s.id ? 'bg-accent font-medium' : ''}`}>
                                       <div className='h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0'>{s.firstName?.[0]}{s.lastName?.[0]}</div>
                                       <span>{s.firstName} {s.lastName}</span>
                                     </button>

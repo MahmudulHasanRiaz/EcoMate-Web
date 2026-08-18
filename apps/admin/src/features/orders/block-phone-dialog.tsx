@@ -38,22 +38,31 @@ export function BlockPhoneDialog({
     if (unique.length === 0) return
     setSubmitting(true)
     try {
-      await Promise.all(
+      const results = await Promise.all(
         unique.map(phone =>
           blockedEntriesApi.create({
             type: 'phone',
             value: phone,
             reason: reason.trim() || `Blocked from order${contextLabel ? ` ${contextLabel}` : ''}`,
             blockType: 'order',
-          }),
+          }).then(() => null).catch((e) => ({ phone, error: e })),
         ),
       )
+      const failedBlocks = results.filter((r): r is { phone: string; error: any } => r !== null)
+      const succeeded = unique.length - failedBlocks.length
       await qc.invalidateQueries({ queryKey: ['blocked-entries'] })
-      toast.success(
-        unique.length === 1
-          ? `${unique[0]} blocked from ordering`
-          : `${unique.length} phones blocked from ordering`,
-      )
+      if (succeeded > 0) {
+        toast.success(
+          succeeded === 1 ? '1 phone blocked from ordering' : `${succeeded} phones blocked from ordering`,
+        )
+      }
+      if (failedBlocks.length > 0) {
+        toast.error(`${failedBlocks.length} phone(s) could not be blocked`)
+        failedBlocks.slice(0, 3).forEach(({ phone, error }) =>
+          toast.error(`${phone}: ${error?.response?.data?.message || 'Failed to block'}`, { id: phone }),
+        )
+        return
+      }
       setReason('')
       onOpenChange(false)
     } catch {

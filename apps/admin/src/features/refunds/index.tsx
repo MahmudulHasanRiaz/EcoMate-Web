@@ -45,11 +45,13 @@ export function Refunds() {
   const createMut = useMutation({
     mutationFn: refundsApi.create,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['refunds'] }); setCreateOpen(false); setForm({ orderId: '', amount: '', reason: '' }); setTargetStatusId(''); toast.success('Refund created') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to create refund'),
   })
 
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => refundsApi.updateStatus(id, status),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['refunds'] }); toast.success('Updated') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update refund'),
   })
 
   const refunds = (data as any)?.data || []

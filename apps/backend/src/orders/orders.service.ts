@@ -3071,11 +3071,22 @@ export class OrdersService {
   }
 
   async bulkAssign(ids: string[], assignedToId: string | null) {
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: ids }, trashedAt: null },
+      select: { id: true },
+    });
+    const foundIds = orders.map((o) => o.id);
     const data: any = { assignedToId };
     if (assignedToId) data.assignedAt = new Date();
     else data.assignedAt = null;
-    await this.prisma.order.updateMany({ where: { id: { in: ids } }, data });
-    return { updated: ids.length };
+    const res =
+      foundIds.length > 0
+        ? await this.prisma.order.updateMany({
+            where: { id: { in: foundIds } },
+            data,
+          })
+        : { count: 0 };
+    return { updated: res.count, total: ids.length };
   }
 
   async getStaff() {

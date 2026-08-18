@@ -2438,6 +2438,85 @@ describe('OrdersService', () => {
     });
   });
 
+  describe('bulkAssign', () => {
+    it('reports the real number of rows the updateMany touched', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'order-1' },
+        { id: 'order-2' },
+      ]);
+      (prisma.order.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+      const res = await service.bulkAssign(['order-1', 'order-2', 'missing'], 'staff-1');
+
+      expect(res).toEqual({ updated: 2, total: 3 });
+      expect(prisma.order.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['order-1', 'order-2', 'missing'] }, trashedAt: null },
+        select: { id: true },
+      });
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['order-1', 'order-2'] } },
+        data: { assignedToId: 'staff-1', assignedAt: expect.any(Date) },
+      });
+    });
+
+    it('reports zero when none of the ids match an existing order', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+
+      const res = await service.bulkAssign(['ghost-1', 'ghost-2'], 'staff-1');
+
+      expect(res).toEqual({ updated: 0, total: 2 });
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not assign trashed orders', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'order-1' },
+      ]);
+      (prisma.order.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
+
+      expect(prisma.order.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['order-1', 'trashed-1'] },
+          trashedAt: null,
+        },
+        select: { id: true },
+      });
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['order-1'] } },
+        data: { assignedToId: 'staff-1', assignedAt: expect.any(Date) },
+      });
+    });
+
+    it('clears assignedAt when unassigning', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'order-1' },
+      ]);
+      (prisma.order.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      await service.bulkAssign(['order-1'], null);
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['order-1'] } },
+        data: { assignedToId: null, assignedAt: null },
+      });
+    });
+
+    it('propagates updateMany failures instead of reporting success', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'order-1' },
+      ]);
+      (prisma.order.updateMany as jest.Mock).mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(
+        service.bulkAssign(['order-1'], 'staff-1'),
+      ).rejects.toThrow('db down');
+    });
+  });
+
   describe('addNote', () => {
     it('should add a note to order timeline', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);

@@ -37,6 +37,8 @@ export function useDispatchMutations() {
         toast.success('Status updated')
         qc.invalidateQueries({ queryKey: ['dispatches'] })
       },
+      onError: (e: any) =>
+        toast.error(e?.response?.data?.message || 'Failed to update dispatch status'),
     }),
     remove: useMutation({
       mutationFn: dispatchApi.remove,
@@ -44,6 +46,8 @@ export function useDispatchMutations() {
         toast.success('Dispatch deleted')
         qc.invalidateQueries({ queryKey: ['dispatches'] })
       },
+      onError: (e: any) =>
+        toast.error(e?.response?.data?.message || 'Failed to delete dispatch'),
     }),
   }
 }
@@ -59,8 +63,12 @@ export function useDispatchSync() {
         `${summary.synced.length} synced`,
         `${summary.unchanged.length} unchanged`,
       ]
-      if (summary.failed.length) parts.push(`${summary.failed.length} failed`)
-      toast.success(`Courier sync: ${parts.join(' · ')}`)
+      if (summary.failed.length) {
+        parts.push(`${summary.failed.length} failed`)
+        toast.warning(`Courier sync: ${parts.join(' · ')}`)
+      } else {
+        toast.success(`Courier sync: ${parts.join(' · ')}`)
+      }
       qc.invalidateQueries({ queryKey: ['dispatches'] })
       qc.invalidateQueries({ queryKey: ['dispatch-metrics'] })
     },

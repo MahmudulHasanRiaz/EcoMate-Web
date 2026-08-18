@@ -145,21 +145,25 @@ export function IncompleteLeads() {
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => apiClient.patch(`/checkout-leads/${id}/status`, { status }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); toast.success('Status updated') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update lead status'),
   })
 
   const assignMut = useMutation({
     mutationFn: ({ id, assignedToId }: { id: string; assignedToId: string | null }) => apiClient.patch(`/checkout-leads/${id}/assign`, { assignedToId }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); toast.success('Lead assigned') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to assign lead'),
   })
 
   const bulkAssignMut = useMutation({
     mutationFn: ({ ids, assignedToId }: { ids: string[]; assignedToId: string | null }) => apiClient.post('/checkout-leads/bulk/assign', { ids, assignedToId }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); setSelected([]); toast.success('Leads assigned') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Bulk lead assignment failed'),
   })
 
   const bulkStatusMut = useMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: string }) => apiClient.post('/checkout-leads/bulk/status', { ids, status }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['checkout-leads'] }); setSelected([]); toast.success('Bulk status updated') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Bulk lead status change failed'),
   })
 
   const convertEditMut = useMutation({
