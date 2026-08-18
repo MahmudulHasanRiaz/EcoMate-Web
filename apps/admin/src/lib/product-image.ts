@@ -133,13 +133,15 @@ export function colorValueOf(
   let byName: { attributeName: string; value: string } | null = null
   for (const link of variant.attributeValues) {
     const av = link?.attributeValue
-    if (!av || isBlank(av.value)) continue
+    if (!av) continue
+    const value = av.value ?? ''
+    if (value.trim() === '') continue
     const name = av.attribute?.name ?? ''
     if (!isBlank(av.hexCode)) {
-      return { attributeName: name || 'color', value: av.value.trim() }
+      return { attributeName: name || 'color', value: value.trim() }
     }
     if (byName === null && COLOR_ATTR_NAMES.some((re) => re.test(name))) {
-      byName = { attributeName: name, value: av.value.trim() }
+      byName = { attributeName: name, value: value.trim() }
     }
   }
   return byName
