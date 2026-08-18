@@ -44,6 +44,7 @@ export class ProductsController {
     @Query('order') order?: string,
     @Query('cursor') cursor?: string,
     @Query('hasStock') hasStock?: string,
+    @Query('status') status?: 'active' | 'draft',
   ) {
     const effectiveCategoryId =
       categoryId ||
@@ -76,6 +77,7 @@ export class ProductsController {
           isFeatured !== undefined ? isFeatured === 'true' : undefined,
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
         hasStock: parsedHasStock,
+        status,
       });
     }
     const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
@@ -96,6 +98,7 @@ export class ProductsController {
       sort,
       order,
       hasStock: parsedHasStock,
+      status,
     });
   }
 
@@ -134,6 +137,27 @@ export class ProductsController {
   bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
     return this.svc.bulkUpdate(body.ids, body.data);
   }
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Post('draft')
+  createDraft(@Body() dto: UpdateProductDto) {
+    return this.svc.createDraft(dto);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Put('draft/:id')
+  updateDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
+    return this.svc.updateDraft(id, dto);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_products')
+  @Post('draft/:id/publish')
+  publishDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
+    return this.svc.publishDraft(id, dto);
+  }
+
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_products')
   @Post()

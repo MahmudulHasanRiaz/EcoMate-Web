@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
@@ -62,6 +66,7 @@ describe('ProductsService', () => {
   };
 
   let cache: CacheService;
+  let stockRouter: StockRouterService;
 
   beforeEach(async () => {
     const prismaMock = {
@@ -175,6 +180,10 @@ describe('ProductsService', () => {
     prisma = module.get<PrismaService>(PrismaService);
     media = module.get<MediaService>(MediaService);
     cache = module.get<CacheService>(CacheService);
+    stockRouter = module.get<StockRouterService>(StockRouterService);
+    (media.syncEntityImages as jest.Mock).mockImplementation(
+      (_t: string, _id: string, imgs: string[]) => Promise.resolve(imgs),
+    );
   });
 
   afterEach(() => {
@@ -212,6 +221,7 @@ describe('ProductsService', () => {
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            status: { not: 'draft' },
             OR: [
               { name: { contains: 'test', mode: 'insensitive' } },
               { slug: { contains: 'test', mode: 'insensitive' } },
@@ -244,6 +254,7 @@ describe('ProductsService', () => {
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            status: { not: 'draft' },
             OR: expect.arrayContaining([
               {
                 variants: {
@@ -300,6 +311,36 @@ describe('ProductsService', () => {
       expect(prisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 24 }),
       );
+    });
+
+    it('excludes drafts by default and when status=active', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({});
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: { not: 'draft' } }) }),
+      );
+
+      (prisma.product.findMany as jest.Mock).mockClear();
+      await service.findAll({ status: 'active' });
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'active' }) }),
+      );
+    });
+
+    it('returns drafts only when status=draft is requested', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { ...mockProduct, status: 'draft', isActive: false },
+      ]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findAll({ status: 'draft' });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'draft' }) }),
+      );
+      expect(result.data).toHaveLength(1);
     });
 
     it('should calculate total pages correctly', async () => {
@@ -777,6 +818,208 @@ describe('ProductsService', () => {
       expect(prisma.product.update).toHaveBeenCalledWith({
         where: { id: 'prod-1' },
         data: { type: 'variable', manageStock: false, managedStockQuantity: 0 },
+      });
+    });
+  });
+
+  describe('persistent drafts', () => {
+    const draftProduct = {
+      ...mockProduct,
+      id: 'draft-1',
+      slug: 'draft-mock-uui',
+      name: 'Untitled Draft',
+      status: 'draft',
+      isActive: false,
+      basePrice: 0,
+    };
+
+    describe('createDraft', () => {
+      it('creates a hidden draft record with a typed slug', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+
+        const result = await service.createDraft({ name: 'New Item' });
+
+        expect(result).toBe(draftProduct);
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.status).toBe('draft');
+        expect(call.data.isActive).toBe(false);
+        expect(call.data.slug).toMatch(/^draft-[0-9a-f]{8}$/);
+        expect(call.data.name).toBe('New Item');
+        expect(call.data.availabilityMode).toBe('MANAGED_STOCK');
+        expect(call.data.manageStock).toBe(true);
+      });
+
+      it('uses the global IM setting for the draft default mode', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+        (
+          stockRouter.isInventoryManagementEnabled as jest.Mock
+        ).mockResolvedValue(true);
+
+        await service.createDraft({ name: 'New Item' });
+
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.availabilityMode).toBe('INVENTORY_CONTROLLED');
+        expect(call.data.manageStock).toBe(false);
+      });
+
+      it('ensures slug uniqueness for explicit slugs', async () => {
+        (prisma.product.findUnique as jest.Mock)
+          .mockResolvedValueOnce(mockProduct)
+          .mockResolvedValueOnce(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.createDraft({ slug: 'test-product' });
+
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('test-product-2');
+      });
+
+      it('creates nested variants and invalidates the product cache', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.createDraft({
+          variants: [
+            {
+              sku: 'V-1',
+              price: 100,
+              attributeValues: [{ attributeValueId: 'av-1' }],
+            },
+          ],
+        });
+
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.variants.create[0].sku).toBe('V-1');
+        expect(cache.invalidateByPrefix).toHaveBeenCalledWith('product:');
+      });
+    });
+
+    describe('updateDraft', () => {
+      it('refuses to edit a non-draft product', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+
+        await expect(service.updateDraft('prod-1', { name: 'X' })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(prisma.product.update).not.toHaveBeenCalled();
+      });
+
+      it('persists autosave data while keeping the record a hidden draft', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+          draftProduct,
+        );
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Mid Progress',
+        });
+
+        await service.updateDraft('draft-1', {
+          name: 'Mid Progress',
+          isActive: true,
+          managedStockQuantity: 25,
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.name).toBe('Mid Progress');
+        expect(call.data.managedStockQuantity).toBe(25);
+        expect(call.data.status).toBeUndefined();
+        expect(call.data.isActive).toBeUndefined();
+      });
+
+      it('rejects a slug owned by another product', async () => {
+        (prisma.product.findUnique as jest.Mock)
+          .mockResolvedValueOnce(draftProduct)
+          .mockResolvedValueOnce(mockProduct);
+
+        await expect(
+          service.updateDraft('draft-1', { slug: 'test-product' }),
+        ).rejects.toThrow(ConflictException);
+      });
+    });
+
+    describe('publishDraft', () => {
+      it('activates a complete draft and replaces variants', async () => {
+        (prisma.product.findUnique as jest.Mock)
+          .mockResolvedValueOnce(draftProduct)
+          .mockResolvedValueOnce(null);
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Ready Product',
+          status: 'active',
+          isActive: true,
+        });
+
+        const result = await service.publishDraft('draft-1', {
+          name: 'Ready Product',
+          basePrice: 1200,
+          variants: [{ sku: 'V3', price: 500 }],
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.status).toBe('active');
+        expect(call.data.isActive).toBe(true);
+        expect(call.data.name).toBe('Ready Product');
+        expect(call.data.basePrice).toBe(1200);
+        expect(call.data.availabilityMode).toBe('MANAGED_STOCK');
+        expect(call.data.manageStock).toBe(true);
+        expect(call.data.slug).toBe('draft-mock-uui');
+        expect(call.data.variants.deleteMany).toEqual({});
+        expect(call.data.variants.create[0].sku).toBe('V3');
+        expect(result.name).toBe('Ready Product');
+      });
+
+      it('rejects unnamed drafts', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+          draftProduct,
+        );
+
+        await expect(service.publishDraft('draft-1', {})).rejects.toThrow(
+          BadRequestException,
+        );
+        await expect(
+          service.publishDraft('draft-1', { name: 'Untitled Draft' }),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.product.update).not.toHaveBeenCalled();
+      });
+
+      it('rejects negative base price', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+          draftProduct,
+        );
+
+        await expect(
+          service.publishDraft('draft-1', { name: 'X', basePrice: -5 }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects publishing a non-draft record', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+          mockProduct,
+        );
+
+        await expect(
+          service.publishDraft('prod-1', { name: 'X' }),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('update() on drafts', () => {
+      it('never activates a draft through the generic edit path', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+          draftProduct,
+        );
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Edited',
+        });
+
+        await service.update('draft-1', { name: 'Edited', isActive: true }, 'tester@ecomate.com');
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.isActive).toBe(false);
+        expect(call.data.status).toBeUndefined();
       });
     });
   });

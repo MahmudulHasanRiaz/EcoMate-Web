@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
-import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package, Printer } from 'lucide-react'
+import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package, Printer, Rocket, FileEdit } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProductsQuery } from './hooks'
 import { ProductsTable } from './components/products-table'
 import { ProductForm } from './components/product-form'
@@ -35,6 +36,7 @@ export function Products() {
   const [adjustmentProductId, setAdjustmentProductId] = useState<string | undefined>()
   const [priceLabelModalOpen, setPriceLabelModalOpen] = useState(false)
   const [duplicateSourceRow, setDuplicateSourceRow] = useState<ProductResponse | undefined>()
+  const [listStatus, setListStatus] = useState<'active' | 'draft'>('active')
 
   const { data: allCats } = useQuery({
     queryKey: ['categories'],
@@ -74,6 +76,7 @@ export function Products() {
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
     categoryId: filterCategoryId[0] || undefined,
+    status: listStatus,
   })
 
   // Reset selection when data changes (e.g., on pagination, search, or refresh)
@@ -143,6 +146,16 @@ export function Products() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
   })
 
+  const publishMut = useMutation({
+    mutationFn: (row: ProductResponse) => productsApi.publishDraft(row.id, { name: row.name }),
+    onSuccess: (res: any, row) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', row.id] })
+      toast.success(`"${(res.data || res).name || row.name}" published`)
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to publish draft'),
+  })
+
   const isBulkPending = bulkDeleteMut.isPending || bulkUpdateMut.isPending
 
   const handleDuplicate = async (row: ProductResponse) => {
@@ -201,6 +214,13 @@ export function Products() {
             </Button>
           </div>
         </div>
+
+        <Tabs value={listStatus} onValueChange={(v) => { setListStatus(v as 'active' | 'draft'); setPagination((p) => ({ ...p, pageIndex: 0 })); }}>
+          <TabsList>
+            <TabsTrigger value='active'>Active</TabsTrigger>
+            <TabsTrigger value='draft'><FileEdit className='h-3.5 w-3.5 mr-1.5' /> Drafts</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* Filters */}
         <div className='flex items-center gap-4'>
@@ -275,6 +295,7 @@ export function Products() {
           onDelete={(row) => setDeleteTarget(row)}
           onToggleActive={(row, active) => toggleActiveMut.mutate({ id: row.id, isActive: active })}
           onDuplicate={handleDuplicate}
+          onPublish={(row) => publishMut.mutate(row)}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
         />

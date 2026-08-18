@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateProductDto,
@@ -75,6 +76,7 @@ export class ProductsService {
     isActive?: boolean;
     isFeatured?: boolean;
     ids?: string[];
+    status?: 'active' | 'draft';
   }) {
     const where: any = {};
     if (query.search) {
@@ -112,6 +114,10 @@ export class ProductsService {
     if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
     if (query.ids?.length) where.id = { in: query.ids };
+    // Drafts are hidden from every listing unless explicitly requested.
+    if (query.status === 'draft') where.status = 'draft';
+    else if (query.status === 'active') where.status = 'active';
+    else where.status = { not: 'draft' };
     return where;
   }
 
@@ -214,6 +220,7 @@ export class ProductsService {
     order?: string;
     cursor?: string;
     hasStock?: boolean;
+    status?: 'active' | 'draft';
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 24;
@@ -437,6 +444,7 @@ export class ProductsService {
     isFeatured?: boolean;
     ids?: string[];
     hasStock?: boolean;
+    status?: 'active' | 'draft';
   }) {
     const perPage = query.perPage || 24;
     const effectiveCategoryId =
@@ -802,6 +810,10 @@ export class ProductsService {
     delete data.variants;
     delete data.attributes;
     delete data.categoryIds;
+    if (p.status === 'draft') {
+      data.isActive = false;
+      delete data.status;
+    }
 
     if (p.type === 'variable' || p.type === 'combo') {
       delete data.managedStockQuantity;
@@ -977,6 +989,353 @@ export class ProductsService {
       throw e;
     }
     return { message: 'Product deleted' };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Persistent product drafts
+  //
+  // Drafts are REAL product records: status='draft', isActive=false, so
+  // they are fully editable, listable and recoverable, yet never visible
+  // to storefront queries (all of which filter isActive: true). A draft
+  // only goes live through an explicit publish that validates the data.
+  // ─────────────────────────────────────────────────────────────────────
+
+  private async ensureUniqueSlug(base: string): Promise<string> {
+    const exists = await this.prisma.product.findUnique({
+      where: { slug: base },
+    });
+    if (!exists) return base;
+    let i = 2;
+    while (
+      await this.prisma.product.findUnique({
+        where: { slug: `${base}-${i}` },
+      })
+    ) {
+      i++;
+    }
+    return `${base}-${i}`;
+  }
+
+  private draftAvailabilityMode(dto: {
+    availabilityMode?: string;
+    type?: string;
+    manageStock?: boolean;
+  }): Promise<string> {
+    return Promise.resolve(
+      dto.availabilityMode ||
+        (dto.type === 'variable'
+          ? 'MANAGED_STOCK'
+          : dto.manageStock
+            ? 'MANAGED_STOCK'
+            : null),
+    ).then((pre) =>
+      pre
+        ? pre
+        : this.stockRouter.isInventoryManagementEnabled().then((im) =>
+            im ? 'INVENTORY_CONTROLLED' : 'MANAGED_STOCK',
+          ),
+    );
+  }
+
+  /** Create a NEW independent draft record (one per form session). */
+  async createDraft(dto: UpdateProductDto) {
+    const slug = await this.ensureUniqueSlug(
+      dto.slug?.trim()
+        ? dto.slug.trim()
+        : `draft-${randomUUID().slice(0, 8)}`,
+    );
+    const avMode = await this.draftAvailabilityMode({
+      availabilityMode: dto.availabilityMode,
+      type: dto.type,
+      manageStock: dto.manageStock,
+    });
+    const categoryIds =
+      dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
+    const categoryId = dto.categoryId || categoryIds[0] || null;
+
+    const product = await this.prisma.product.create({
+      data: {
+        name: dto.name?.trim() || 'Untitled Draft',
+        slug,
+        type: dto.type || 'simple',
+        description: dto.description,
+        shortDesc: dto.shortDesc,
+        basePrice: dto.basePrice ?? 0,
+        salePrice: dto.salePrice,
+        sku: dto.sku,
+        managedStockQuantity:
+          dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
+        lowStockQty: dto.lowStockQty,
+        categoryId: categoryId || undefined,
+        productCategories:
+          categoryIds.length > 0
+            ? { create: categoryIds.map((cid) => ({ categoryId: cid })) }
+            : undefined,
+        sizeChartId: dto.sizeChartId,
+        tags: dto.tags as any,
+        images: (dto.images || []) as any,
+        seoMeta: dto.seoMeta,
+        isFeatured: dto.isFeatured || false,
+        isActive: false,
+        status: 'draft',
+        availabilityMode: avMode as any,
+        manageStock: avMode === 'MANAGED_STOCK',
+        syncManagedStock: dto.syncManagedStock,
+        warehouseId: dto.warehouseId,
+        variants: dto.variants
+          ? {
+              create: dto.variants.map((v) => ({
+                sku: v.sku,
+                price: v.price,
+                salePrice: v.salePrice,
+                managedStockQuantity: v.managedStockQuantity || 0,
+                image: v.image,
+                images: (v.images || []) as any,
+                attributeValues: v.attributeValues
+                  ? {
+                      create: v.attributeValues.map((av) => ({
+                        attributeValueId: av.attributeValueId,
+                      })),
+                    }
+                  : undefined,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        category: true,
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+        variants: {
+          include: {
+            attributeValues: {
+              include: { attributeValue: { include: { attribute: true } } },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    await this.cache.invalidateByPrefix('product:');
+    return product;
+  }
+
+  /** Autosave: update the SAME draft record. Scalars only; stays a draft. */
+  async updateDraft(id: string, dto: UpdateProductDto) {
+    const p = await this.prisma.product.findUnique({ where: { id } });
+    if (!p) throw new NotFoundException('Product not found');
+    if (p.status !== 'draft') {
+      throw new BadRequestException(
+        'Only draft products can be saved with the draft endpoint',
+      );
+    }
+    if (dto.slug && dto.slug !== p.slug) {
+      const exists = await this.prisma.product.findUnique({
+        where: { slug: dto.slug },
+      });
+      if (exists) throw new ConflictException('Slug already exists');
+    }
+
+    const data: any = { ...dto };
+    if (dto.tags) data.tags = dto.tags as any;
+    if (dto.images !== undefined) data.images = dto.images as any;
+    if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    delete data.variants;
+    delete data.attributes;
+    delete data.categoryIds;
+    delete data.status;
+    delete data.isActive;
+
+    if (dto.categoryIds !== undefined) {
+      data.categoryId = dto.categoryIds[0] || null;
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryIds.map((cid) => ({ categoryId: cid })),
+      };
+    } else if (dto.categoryId !== undefined) {
+      data.categoryId = dto.categoryId;
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryId ? [{ categoryId: dto.categoryId }] : [],
+      };
+    }
+
+    const newMode = dto.availabilityMode
+      ? dto.availabilityMode
+      : dto.manageStock !== undefined
+        ? dto.manageStock
+          ? 'MANAGED_STOCK'
+          : await this.stockRouter.isInventoryManagementEnabled()
+            ? 'INVENTORY_CONTROLLED'
+            : 'MANAGED_STOCK'
+        : undefined;
+    if (newMode && newMode !== p.availabilityMode) {
+      data.availabilityMode = newMode;
+      data.manageStock = newMode === 'MANAGED_STOCK';
+    }
+
+    const product = await this.prisma.product.update({
+      where: { id },
+      data,
+      include: {
+        brand: { select: { id: true, name: true, slug: true } },
+        category: true,
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+        variants: {
+          include: {
+            attributeValues: {
+              include: { attributeValue: { include: { attribute: true } } },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    await this.syncTags(dto.tags || [], id);
+    if (dto.images !== undefined) {
+      const synced = await this.media.syncEntityImages(
+        'product',
+        id,
+        dto.images || [],
+      );
+      if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
+        await this.prisma.product.update({
+          where: { id },
+          data: { images: synced as any },
+        });
+      }
+    }
+    await this.cache.invalidateByPrefix('product:');
+    return product;
+  }
+
+  /** Publish: validate completeness, then activate the draft. */
+  async publishDraft(id: string, dto: UpdateProductDto) {
+    const p = await this.prisma.product.findUnique({ where: { id } });
+    if (!p) throw new NotFoundException('Product not found');
+    if (p.status !== 'draft') {
+      throw new BadRequestException('Product is not a draft');
+    }
+
+    const name = (dto.name?.trim() || p.name || '').trim();
+    if (!name || name === 'Untitled Draft') {
+      throw new BadRequestException(
+        'Product name is required before publishing',
+      );
+    }
+    const basePrice = Number(dto.basePrice ?? p.basePrice) || 0;
+    if (basePrice < 0) {
+      throw new BadRequestException(
+        'A non-negative base price is required before publishing',
+      );
+    }
+
+    const slug =
+      dto.slug?.trim() && dto.slug.trim() !== p.slug
+        ? await this.ensureUniqueSlug(dto.slug.trim())
+        : p.slug;
+
+    const data: any = { ...dto };
+    if (dto.tags) data.tags = dto.tags as any;
+    if (dto.images !== undefined) data.images = dto.images as any;
+    if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    delete data.attributes;
+    delete data.categoryIds;
+
+    if (dto.categoryIds !== undefined) {
+      data.categoryId = dto.categoryIds[0] || null;
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryIds.map((cid) => ({ categoryId: cid })),
+      };
+    } else if (dto.categoryId !== undefined) {
+      data.categoryId = dto.categoryId;
+      data.productCategories = {
+        deleteMany: {},
+        create: dto.categoryId ? [{ categoryId: dto.categoryId }] : [],
+      };
+    }
+
+    const newMode = await this.draftAvailabilityMode({
+      availabilityMode: dto.availabilityMode,
+      type: dto.type || p.type,
+      manageStock: dto.manageStock,
+    });
+    data.availabilityMode = newMode;
+    data.manageStock = newMode === 'MANAGED_STOCK';
+    data.name = name;
+    data.basePrice = basePrice;
+    data.slug = slug;
+    data.status = 'active';
+    data.isActive = true;
+    if (dto.variants) {
+      data.variants = {
+        deleteMany: {},
+        create: dto.variants.map((v) => ({
+          sku: v.sku,
+          price: v.price,
+          salePrice: v.salePrice,
+          managedStockQuantity: v.managedStockQuantity || 0,
+          image: v.image,
+          images: (v.images || []) as any,
+          attributeValues: v.attributeValues
+            ? {
+                create: v.attributeValues.map((av) => ({
+                  attributeValueId: av.attributeValueId,
+                })),
+              }
+            : undefined,
+        })),
+      };
+    }
+
+    const product = await this.prisma.product.update({
+      where: { id },
+      data,
+      include: {
+        brand: { select: { id: true, name: true, slug: true } },
+        category: true,
+        productCategories: {
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+        variants: {
+          include: {
+            attributeValues: {
+              include: { attributeValue: { include: { attribute: true } } },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    await this.syncTags(dto.tags || [], id);
+    if (dto.images !== undefined) {
+      const synced = await this.media.syncEntityImages(
+        'product',
+        id,
+        dto.images || [],
+      );
+      if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
+        await this.prisma.product.update({
+          where: { id },
+          data: { images: synced as any },
+        });
+      }
+    }
+    await this.cache.invalidateByPrefix('product:');
+    return product;
   }
 
   async bulkRemove(ids: string[]) {

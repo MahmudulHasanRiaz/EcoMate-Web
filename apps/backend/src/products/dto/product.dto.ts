@@ -109,6 +109,11 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() syncManagedStock?: boolean;
   @IsOptional() @IsUUID() warehouseId?: string | null;
   @IsOptional() @IsUUID() sizeChartId?: string | null;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateVariantDto)
+  variants?: CreateVariantDto[];
 }
 
 export class GenerateVariantsDto {

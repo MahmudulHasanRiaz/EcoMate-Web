@@ -423,6 +423,7 @@ model Product {
   seoMeta              Json?            @default("{}")
   isFeatured           Boolean          @default(false)
   isActive             Boolean          @default(true)
+  status               String           @default("active")
   manageStock          Boolean          @default(false)
   syncManagedStock     Boolean          @default(false)
   createdAt            DateTime         @default(now())

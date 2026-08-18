@@ -2,7 +2,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Pencil, Trash2, Copy, Package } from 'lucide-react'
+import { Pencil, Trash2, Copy, Package, Rocket } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
@@ -16,6 +16,7 @@ export function productsColumns(
   onToggleActive?: (row: ProductResponse, active: boolean) => void,
   onDuplicate?: (row: ProductResponse) => void,
   imEnabled?: boolean,
+  onPublish?: (row: ProductResponse) => void,
 ): ColumnDef<ProductResponse>[] {
   return [
     {
@@ -54,7 +55,12 @@ export function productsColumns(
       header: 'Name',
       cell: ({ row }) => (
         <div>
-          <p className='font-medium text-sm'>{row.getValue('name')}</p>
+          <p className='font-medium text-sm'>
+            {row.getValue('name')}
+            {row.original.status === 'draft' && (
+              <Badge variant='secondary' className='ml-2 text-xs'>Draft</Badge>
+            )}
+          </p>
           {row.original.sku && <p className='text-xs text-muted-foreground'>SKU: {row.original.sku}</p>}
         </div>
       ),
@@ -126,10 +132,14 @@ export function productsColumns(
       header: 'Active',
       cell: ({ row }) => (
         <div className='flex justify-center'>
-          <Switch
-            checked={row.original.isActive}
-            onCheckedChange={(v) => onToggleActive?.(row.original, v)}
-          />
+          {row.original.status === 'draft'
+            ? <Badge variant='outline' className='text-xs text-muted-foreground'>—</Badge>
+            : (
+              <Switch
+                checked={row.original.isActive}
+                onCheckedChange={(v) => onToggleActive?.(row.original, v)}
+              />
+            )}
         </div>
       ),
       enableSorting: false,
@@ -142,11 +152,17 @@ export function productsColumns(
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onEdit(row.original)}>
             <Pencil className='h-3.5 w-3.5' />
           </Button>
-          {onDuplicate && (
-            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDuplicate(row.original)} title='Duplicate product'>
-              <Copy className='h-3.5 w-3.5' />
-            </Button>
-          )}
+          {row.original.status === 'draft'
+            ? onPublish && (
+              <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={() => onPublish(row.original)} title='Publish draft'>
+                <Rocket className='h-3.5 w-3.5 mr-1' /> Publish
+              </Button>
+            )
+            : onDuplicate && (
+              <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDuplicate(row.original)} title='Duplicate product'>
+                <Copy className='h-3.5 w-3.5' />
+              </Button>
+            )}
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDelete(row.original)}>
             <Trash2 className='h-3.5 w-3.5 text-destructive' />
           </Button>

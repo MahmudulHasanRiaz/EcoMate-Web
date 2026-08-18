@@ -15,6 +15,7 @@ export interface ProductResponse {
   categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean; manageStock: boolean;
   availabilityMode?: string; standardCost?: number | string | null;
+  status?: 'active' | 'draft';
   createdAt: string; updatedAt: string;
   category?: { id: string; name: string } | null;
   variants: ProductVariantResponse[];
@@ -28,6 +29,9 @@ export const productsApi = {
   create: (data: any) => apiClient.post<ProductResponse>('/products', data),
   update: (id: string, data: any) => apiClient.put<ProductResponse>(`/products/${id}`, data),
   delete: (id: string) => apiClient.delete(`/products/${id}`),
+  createDraft: (data: any) => apiClient.post<ProductResponse>('/products/draft', data),
+  updateDraft: (id: string, data: any) => apiClient.put<ProductResponse>(`/products/draft/${id}`, data),
+  publishDraft: (id: string, data: any) => apiClient.post<ProductResponse>(`/products/draft/${id}/publish`, data),
   bulkDelete: (ids: string[]) => apiClient.post('/products/bulk/delete', { ids }),
   bulkUpdate: (ids: string[], data: any) => apiClient.post('/products/bulk/update', { ids, data }),
   generateVariants: (id: string, data: { attributeIds: string[]; defaultPrice?: number; defaultManagedStockQuantity?: number }) =>

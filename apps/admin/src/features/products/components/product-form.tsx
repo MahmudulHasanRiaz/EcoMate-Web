@@ -14,6 +14,7 @@ import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
+import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
@@ -91,8 +92,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const queryClient = useQueryClient()
   const isEdit = mode === 'edit'
   const isDuplicate = mode === 'duplicate'
+  const isDraftEdit = isEdit && currentRow?.status === 'draft'
   const [tab, setTab] = useState('general')
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
+  const [serverDraftId, setServerDraftId] = useState<string | null>(null)
 
   const { data: fullProduct } = useQuery({
     queryKey: ['product', currentRow?.id || createdProductId],
@@ -110,7 +113,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     enabled: isEdit && !!currentRow?.id,
   })
 
-  const { data: imEnabled = true } = useInventoryManagement()
+  const { data: imEnabled } = useInventoryManagement()
 
   const categoryOptions = React.useMemo(() => {
     const flat = Array.isArray(cats) ? cats : []
@@ -221,14 +224,21 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const availabilityModeTouchedRef = useRef(false)
   const [draftAvailable, setDraftAvailable] = useState(false)
 
-  // Smart default: simple products default to INVENTORY_CONTROLLED when
-  // inventory management is on, MANAGED_STOCK otherwise. Only applies while
-  // the user has NOT explicitly picked a mode (and no saved state exists).
+  // Smart default: global Inventory Management setting determines the
+  // new-product availability mode (IM on → INVENTORY_CONTROLLED, off →
+  // MANAGED_STOCK). Applies only for a brand-new simple product whose mode
+  // the user has NOT explicitly touched and where no saved state exists —
+  // editing and draft restore always keep the stored/explicit mode.
   useEffect(() => {
-    if (!open || availabilityModeTouchedRef.current) return
-    if (currentRow || draftAvailable) return
-    if (type !== 'simple') return
-    setAvailabilityMode(imEnabled ? 'INVENTORY_CONTROLLED' : 'MANAGED_STOCK')
+    const def = defaultAvailabilityMode({
+      imEnabled,
+      type,
+      userTouched: availabilityModeTouchedRef.current,
+      hasExistingRow: !!currentRow,
+      hasDraft: draftAvailable,
+    })
+    if (!open || def === undefined) return
+    setAvailabilityMode(def)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, imEnabled])
 
@@ -272,6 +282,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   useEffect(() => {
     if (!open || isEdit) { setDraftAvailable(false); return }
     hasSavedRef.current = false
+    setServerDraftId(null)
     const draft = loadDraft()
     setDraftAvailable(!!draft && draft.savedAt > Date.now() - 7 * 24 * 60 * 60 * 1000)
   }, [open, isEdit])
@@ -298,6 +309,42 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants, mode])
+
+  // Persistent server-side draft: the first meaningful change creates a real
+  // (hidden) draft product record; later changes update that same record, so
+  // a half-finished product survives closing, other devices and browser
+  // storage resets. Publishing consumes the record into a live product.
+  useEffect(() => {
+    if (!open || isEdit || hasSavedRef.current) return
+    const payload = buildPayload()
+    const hasContent =
+      !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
+      !!(payload.images && payload.images.length > 0) ||
+      !!(payload.shortDesc || payload.description)
+    if (!hasContent) return
+    const timer = setTimeout(() => {
+      if (serverDraftId) {
+        productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
+          .then(() => queryClient.invalidateQueries({ queryKey: ['products'] }))
+          .catch(() => { /* offline/transient — localStorage still holds state */ })
+      } else {
+        productsApi.createDraft({ ...payload, isActive: false })
+          .then((res: any) => {
+            const created = res.data || res
+            if (created?.id) {
+              setServerDraftId(created.id)
+              clearDraft()
+              queryClient.invalidateQueries({ queryKey: ['products'] })
+            }
+          })
+          .catch(() => { /* first save failed — next tick retries */ })
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc,
+    basePrice, salePrice, sku, stock, lowStockQty, categoryIds, brandId,
+    isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
+    seoTitle, seoDesc, seoKeywords, localVariants])
 
   useEffect(() => {
     if (!open) return
@@ -437,6 +484,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setCreatedProductId(null); setRegenerateConfirm(false); setClearVariantConfirm(false); setLocalVariants([]);
+    setServerDraftId(null);
     setBulkUpdateOpen(false); setIsBulkUpdating(false);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -463,6 +511,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
       clearDraft();
+      if (serverDraftId && serverDraftId !== createdId) {
+        productsApi.delete(serverDraftId).catch(() => {})
+      }
+      setServerDraftId(null);
       hasSavedRef.current = true;
       setLocalVariants([]);
       if (type === 'variable' && selectedAttrs.length > 0 && createdId) {
@@ -485,6 +537,28 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
       onOpenChange(false)
       toast.success('Product updated')
+    },
+    onError: handleBackendError,
+  })
+
+  const publishDraftMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.publishDraft(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+      onOpenChange(false)
+      toast.success('Draft published')
+    },
+    onError: handleBackendError,
+  })
+
+  const saveDraftMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.updateDraft(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
+      onOpenChange(false)
+      toast.success('Draft saved')
     },
     onError: handleBackendError,
   })
@@ -582,7 +656,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     upsertOverrideMut.mutate({ type, data: update })
   }
 
-  const handleSave = () => {
+  const buildPayload = () => {
     const payload: any = {
       name, slug: slug || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
       description: desc || undefined, shortDesc: shortDesc || undefined,
@@ -613,7 +687,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         attributeValues: v.attributeValueIds.map((id: string) => ({ attributeValueId: id })),
       }))
     }
-    if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
+    return payload
+  }
+
+  const handleSave = () => {
+    const payload = buildPayload()
+    if (isDraftEdit && currentRow) publishDraftMut.mutate({ id: currentRow.id, data: payload })
+    else if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
     else createMut.mutate(payload)
   }
 
@@ -882,7 +962,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         onEscapeKeyDown={(e) => { if (hasSubOverlay) e.preventDefault(); }}
       >
         <DialogHeader className='px-6 pt-6 pb-2'>
-          <DialogTitle>{isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
+          <DialogTitle>{isDraftEdit ? `Edit Draft: ${currentRow?.name || 'Untitled Draft'}` : isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
 
         {draftAvailable && !isEdit && (
@@ -1546,9 +1626,19 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
         <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
           <Button variant='outline' onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
-          <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending}>
-            {(createMut.isPending || updateMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-            {isEdit ? 'Update Product' : 'Create Product'}
+          {isDraftEdit && currentRow && (
+            <Button
+              variant='outline'
+              disabled={saveDraftMut.isPending}
+              onClick={() => saveDraftMut.mutate({ id: currentRow.id, data: buildPayload() })}
+            >
+              {saveDraftMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Save Draft
+            </Button>
+          )}
+          <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending || publishDraftMut.isPending}>
+            {(createMut.isPending || updateMut.isPending || publishDraftMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {isDraftEdit ? 'Publish' : isEdit ? 'Update Product' : 'Create Product'}
           </Button>
         </div>
       </DialogContent>

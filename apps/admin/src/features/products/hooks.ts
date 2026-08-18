@@ -3,7 +3,7 @@ import { productsApi } from './api'
 
 export function useProductsQuery(query: {
   page?: number; perPage?: number; search?: string; type?: string;
-  categoryId?: string; sort?: string; order?: string;
+  categoryId?: string; status?: 'active' | 'draft'; sort?: string; order?: string;
 }) {
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['products', query],
