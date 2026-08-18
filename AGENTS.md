@@ -25,7 +25,9 @@
 - Previous 11 remediation commits intact (last before Q1+Q2: `ecfd8ee5` order no-silent-failure; then `697e1b95`, `ac9f0a9d`).
 
 ### In Progress
-- **Q4 — Order-mutation truthfulness audit** (next): systematic review of every order mutation in orders.service.ts (status update, bulk status, assign/unassign, dispatch, hold/confirm, cancel, delete/restore, note, payment verify/refund) — each must truthfully reflect DB state on success and throw on failure; verify admin UI (`features/orders/index.tsx`, `routes/_authenticated/op/orders/$id.tsx`) doesn't show success toasts on failed mutations.
+- **Q4 — Order-mutation truthfulness audit: AUDITED + FIXED + TESTED + COMMITTED (`24a09cd2`).** Backend scan of every mutation in orders.service.ts (create, updateOrder, addNote, updateStatus, submitPaymentProof, verifyPayment, addItem, removeItem, bulkOrders, bulkStatusChange, bulkDispatch, bulkAssign, rotateViewToken, cancelByCustomer, trash, restore) — all throw on failure and return truthfully EXCEPT `bulkAssign`, which claimed `{updated: ids.length}` unconditionally (updateMany count ignored). FIXED: scopes to existing non-trashed orders, returns `{updated: res.count, total: ids.length}`. 5 new spec tests (real count, ghost ids → 0, trashed excluded, unassign clears, db failure propagates). Live API proof: 1 real + 1 ghost id → `{"updated":1,"total":2}`.
+- **Q4 admin audit (agent-driven, 40+ mutation sites):** no false success toasts (all success toasts gated on `onSuccess`/`.then`; navigate only on success). Fixed 10 silent failures: row assign/unassign (`.catch` added, index.tsx:688/692), leads status/assign/bulk-assign/bulk-status (missing `onError`), refunds create/status (missing `onError`), dispatch updateStatus/remove (missing `onError`). Fixed 2 partials: bulkAssignMut now reads `{updated,total}` (ghost ids surfaced), block-phone dialog per-phone failure reporting; courier sync uses `toast.warning` when any dispatch fails. Backend **1411/1411**, admin **251/251**, tsc clean, nest build clean, git tree clean.
+- **Q5 — NEXT: Cancelled lifecycle verification** (storefront/API: cancel by viewToken, stock release on cancel, transitions out of Cancelled).
 
 ### Blocked
 - (none)
@@ -35,18 +37,20 @@
 - Drafts = real `Product` rows (`status='draft'`, `isActive=false`) — NOT localStorage; multiple drafts = multiple rows; publish validates name + non-negative price then `status='active'`/`isActive=true`; storefront excludes drafts via `status: { not: 'draft' }` regardless of `isActive`.
 - Q3 exemption is context-bound (authenticated staff actor creating an order), never a role-based bypass; covers IP + blocked phone + suspended customer (all storefront-context rules); warnings array on returned order; guest/storefront paths keep hard 400s; UI surfaces via sonner `toast.warning` (8s) + success toast + navigate.
 - Jest gotcha discovered (Q3 tests): shared const mock objects mutate across tests — service writes `dto.customerId`/`order.warnings` onto the shared fixture; use factories (`makeGuestDto()`) and fresh object per `mockResolvedValue({...mockOrder})`. Order soft-delete = `POST /orders/:id/trash` (no DELETE route).
+- Q4: `bulkAssign` truthfulness requires a `findMany` (ids ∩ non-trashed) BEFORE `updateMany` — trashedAt filter lives in findMany; jest `toHaveBeenCalledWith` asserts exact call shape, keep expectations split per call.
+- Backend watch process env trap: `nest start --watch` children inherit env from the ORIGINAL launch; after machine-level build restarts the child may drop `SKIP_LICENSE_CHECK` → 403 `License is invalid: license_not_found`; restart via `nohup env SKIP_LICENSE_CHECK=true npx nest start --watch`.
 - Local `node_modules/@ecomate/feature-flags` FeatureGuard ignores `SKIP_LICENSE_CHECK` — patched `canUse()` locally (backup `/tmp/feature-flags.service.js.bak`) to permit E2E feature-gated endpoints; untracked node_modules hack, not committed.
 - Drift resolution: trust migration history (stale singleton index dropped directly on DB, no migration file).
 
 ## Next Steps
-1. Q4: enumerate order mutations in orders.service.ts (status, bulk, assign/unassign, dispatch, hold/confirm, cancel, delete/restore, note, payment); for each: verify success returns updated row/throw path, add failure-simulation tests where silent-failure risk exists; audit admin `features/orders/index.tsx` + `routes/_authenticated/op/orders/$id.tsx` for misleading toasts; fix gaps; commit.
-2. Q5–Q10 verifications: Cancelled lifecycle, zero/negative stock both models, packing image matrix, Dhaka timezone edges, Next 16.3.1 full verify, nested review modal browser behaviors.
+1. Q5 — Cancelled lifecycle: storefront cancel by viewToken (`cancelByCustomer`), stock release via `handleCancelledSideEffects`, transitions out of Cancelled (re-Hold/Confirm paths), storefront order lookup after cancel; verify API + browser.
+2. Q6–Q10 verifications: zero/negative stock both models, packing image matrix, Dhaka timezone edges, Next 16.3.1 full verify, nested review modal browser behaviors.
 3. Final: 12-row acceptance matrix + 3 explicit answers; full regression (backend jest + nest build, admin vitest + tsc, storefront test/build); browser smoke with `SKIP_LICENSE_CHECK=true` backend; clean `git status`; evidence report.
 
 ## Critical Context
-- Baselines (current): backend jest **1406/1406**, `nest build` clean; admin vitest **251/251**, tsc clean; git tree clean at `ac9f0a9d`.
+- Baselines (current): backend jest **1411/1411**, `nest build` clean; admin vitest **251/251**, tsc clean; git tree clean at `24a09cd2`.
 - Backend running on :4000 (watch mode, `SKIP_LICENSE_CHECK=true`); admin Vite :5173; login seed `admin@ecomate.com` / `Admin@123` → `/admin/op/overview`.
-- Live E2E facts: draft slug format `draft-<8 hex>`; admin products URL `/admin/op/products`; "Product name" input placeholder-matched; draft row button[0]=edit, Publish has `title="Publish draft"`; `?status=draft` returns only drafts; storefront search defaults exclude drafts. Blocked entries: POST `/blocked-entries` `{type:'phone', value}`, entries returned `entryType`/`value` (normalized `+880…`), unblock `POST /blocked-entries/phone/:id/unblock`.
+- Live E2E facts: draft slug format `draft-<8 hex>`; admin products URL `/admin/op/products`; "Product name" input placeholder-matched; draft row button[0]=edit, Publish has `title="Publish draft"`; `?status=draft` returns only drafts; storefront search defaults exclude drafts. Blocked entries: POST `/blocked-entries` `{type:'phone', value}`, entries returned `entryType`/`value` (normalized `+880…`), unblock `POST /blocked-entries/phone/:id/unblock`. Bulk assign live: `POST /orders/bulk/assign` returns `{updated,total}`; `/orders/staff` shape returns staff array (check `data` vs direct).
 - FeatureGuard patch note: without it, feature-gated admin endpoints return 403 `Feature "admin_X" is not included in your plan` even with `SKIP_LICENSE_CHECK=true`.
 
 ## Relevant Files
@@ -54,7 +58,7 @@
 - `apps/backend/src/orders/orders.service.spec.ts` (providers ~250-310; `describe('create')` ~485; Q3 tests ~530-660; `makeGuestDto()` + `runTx()` local helpers): Q3 committed; Q4 test target.
 - `apps/admin/src/features/orders/create.tsx` (`createMut.onSuccess` ~376-392 with warnings toast; `handleSubmit` ~395-415): Q3 committed.
 - `apps/admin/src/features/orders/api.ts` (`OrderResponse` gained `warnings?: string[]` line 6): Q3 committed.
-- Q4 audit targets: `apps/backend/src/orders/orders.service.ts` mutation methods; `apps/admin/src/features/orders/index.tsx`; `apps/admin/src/routes/_authenticated/op/orders/$id.tsx`.
+- Q4 audit targets: `apps/backend/src/orders/orders.service.ts` mutation methods (bulkAssign fixed); `apps/admin/src/features/orders/index.tsx`; `apps/admin/src/routes/_authenticated/op/orders/$id.tsx`.
 - `apps/backend/src/blocked-entries/{blocked-entries.service.ts,blocked-entries.controller.ts}` (`findOrderBlockedIp` ~298, `findBlockedPhone` ~310, POST/unblock endpoints): Q3 evidence.
 - `apps/backend/src/customers/customers.service.ts` (`isPhoneBlocked` ~149): Q3 evidence.
 - `apps/backend/prisma/schema.prisma` + `apps/backend/prisma/migrations/20260818101136_product_draft_status/`: Q2 committed.
