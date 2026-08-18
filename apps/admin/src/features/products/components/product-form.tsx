@@ -37,75 +37,9 @@ import { CSS } from '@dnd-kit/utilities'
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; currentRow?: ProductResponse; mode: 'add' | 'edit' | 'duplicate' }
 
 // ---- Unsaved-draft persistence (localStorage) ----
-// A half-finished product creation/duplication is saved locally so closing
-// the dialog doesn't lose the user's work. Resume is offered on next open.
-const PRODUCT_FORM_DRAFT_KEY = 'ecomate-product-form-draft'
-const PRODUCT_SERVER_DRAFT_KEY = 'ecomate-product-server-draft-id'
-
-interface ProductFormDraft {
-  mode: 'add' | 'duplicate'
-  name: string
-  slug: string
-  type: string
-  desc: string
-  shortDesc: string
-  basePrice: string
-  salePrice: string
-  sku: string
-  stock: string
-  lowStockQty: string
-  categoryIds: string[]
-  brandId: string
-  isActive: boolean
-  isFeatured: boolean
-  availabilityMode: string
-  standardCost: string
-  images: string[]
-  tags: string
-  sizeChartId: string
-  seoTitle: string
-  seoDesc: string
-  seoKeywords: string
-  selectedAttrs: string[]
-  selectedValues: Record<string, string[]>
-  localVariants: any[]
-  savedAt: number
-}
-
-function loadDraft(): ProductFormDraft | null {
-  try {
-    const raw = localStorage.getItem(PRODUCT_FORM_DRAFT_KEY)
-    return raw ? (JSON.parse(raw) as ProductFormDraft) : null
-  } catch {
-    return null
-  }
-}
-
-function clearDraft(): void {
-  try {
-    localStorage.removeItem(PRODUCT_FORM_DRAFT_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
-function loadServerDraftId(): string | null {
-  try {
-    return localStorage.getItem(PRODUCT_SERVER_DRAFT_KEY)
-  } catch {
-    return null
-  }
-}
-
-function storeServerDraftId(id: string | null): void {
-  try {
-    if (id) localStorage.setItem(PRODUCT_SERVER_DRAFT_KEY, id)
-    else localStorage.removeItem(PRODUCT_SERVER_DRAFT_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
+// A half-finished product creation/duplication is auto-saved as a server
+// draft (visible in the product list's Drafts tab), so closing the dialog
+// never loses work. No local resume prompt — drafts are managed there.
 export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const queryClient = useQueryClient()
   const isEdit = mode === 'edit'
@@ -255,71 +189,28 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   }
   const hasSavedRef = useRef(false)
   const availabilityModeTouchedRef = useRef(false)
-  const [draftAvailable, setDraftAvailable] = useState(false)
 
   // Smart default: global Inventory Management setting determines the
   // new-product availability mode (IM on → INVENTORY_CONTROLLED, off →
   // MANAGED_STOCK). Applies only for a brand-new simple product whose mode
-  // the user has NOT explicitly touched and where no saved state exists —
-  // editing and draft restore always keep the stored/explicit mode.
+  // the user has NOT explicitly touched — editing always keeps the stored mode.
   useEffect(() => {
     const def = defaultAvailabilityMode({
       imEnabled,
       type,
       userTouched: availabilityModeTouchedRef.current,
       hasExistingRow: !!currentRow,
-      hasDraft: draftAvailable,
+      hasDraft: false,
     })
     if (!open || def === undefined) return
     setAvailabilityMode(def)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, imEnabled])
 
-  const resumeDraft = (draft: ProductFormDraft) => {
-    availabilityModeTouchedRef.current = true
-    setName(draft.name || '')
-    setSlug(draft.slug || '')
-    setType(draft.type || 'simple')
-    setDesc(draft.desc || '')
-    setShortDesc(draft.shortDesc || '')
-    setBasePrice(draft.basePrice || '')
-    setSalePrice(draft.salePrice || '')
-    setSku(draft.sku || '')
-    setStock(draft.stock ?? '0')
-    setLowStockQty(draft.lowStockQty || '')
-    setCategoryIds(draft.categoryIds || [])
-    setBrandId(draft.brandId || '')
-    setIsActive(draft.isActive ?? true)
-    setIsFeatured(draft.isFeatured ?? false)
-    setAvailabilityMode(draft.availabilityMode || 'MANAGED_STOCK')
-    setStandardCost(draft.standardCost || '')
-    setImages(Array.isArray(draft.images) ? draft.images : [])
-    setTags(draft.tags || '')
-    setSizeChartId(draft.sizeChartId || '')
-    setSeoTitle(draft.seoTitle || '')
-    setSeoDesc(draft.seoDesc || '')
-    setSeoKeywords(draft.seoKeywords || '')
-    setSelectedAttrs(draft.selectedAttrs || [])
-    setSelectedValues(draft.selectedValues || {})
-    setLocalVariants(Array.isArray(draft.localVariants) ? draft.localVariants : [])
-    setDraftAvailable(false)
-    toast.success('Draft restored')
-  }
-
-  const discardDraft = () => {
-    clearDraft()
-    if (serverDraftId) {
-      productsApi.delete(serverDraftId).catch(() => {})
-      setServerDraftId(null)
-    }
-    storeServerDraftId(null)
-    setDraftAvailable(false)
-  }
-
   // Snapshot of all form fields (used by auto-save and the exit flush) and a
   // helper deciding whether the user has changed anything since the dialog
-  // opened — while untouched, none of the persistence layers may overwrite
-  // the stored draft, otherwise reopening would wipe it before resume.
+  // opened — while untouched, the persistence layers skip, so an empty form
+  // never creates or overwrites any draft row.
   const snapshotOf = () => ({
     mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
@@ -344,38 +235,21 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     }
   }
 
-  // Offer to resume an unsaved draft when opening in add/duplicate mode
+  // Opening the dialog always starts a fresh create/duplicate session: the
+  // draft surface is the Drafts tab, so no resume prompt here. Clean up the
+  // legacy localStorage draft keys from the previous system, if present.
   useEffect(() => {
-    if (!open || isEdit) { setDraftAvailable(false); return }
+    if (!open || isEdit) return
     hasSavedRef.current = false
-    setServerDraftId(loadServerDraftId())
-    const draft = loadDraft()
+    setServerDraftId(null)
     openStateRef.current = null // captured fresh after row-load settles
-    const hasContent = !!draft &&
-      (!!draft.name?.trim() || !!draft.sku || !!draft.basePrice ||
-        (Array.isArray(draft.images) && draft.images.length > 0) ||
-        !!draft.shortDesc || !!draft.desc || !!draft.localVariants?.length)
-    setDraftAvailable(hasContent && draft.savedAt > Date.now() - 7 * 24 * 60 * 60 * 1000)
+    try {
+      localStorage.removeItem('ecomate-product-form-draft')
+      localStorage.removeItem('ecomate-product-server-draft-id')
+    } catch {
+      /* ignore */
+    }
   }, [open, isEdit])
-
-  // Debounced auto-save of form state (creation/duplication only). Skipped
-  // while the form still matches the snapshot loaded at open, so reopening a
-  // dialog with a stored draft can never overwrite that draft before the user
-  // acts on it.
-  useEffect(() => {
-    if (!open || isEdit || hasSavedRef.current || formUntouched()) return
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
-      } catch {
-        /* storage full/unavailable — ignore */
-      }
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [open, isEdit, mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
-    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
-    availabilityMode, standardCost, images, tags, sizeChartId,
-    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
   // Persistent server-side draft: the first meaningful change creates a real
   // (hidden) draft product record; later changes update that same record, so
@@ -402,7 +276,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
             if (created?.id) {
               notifySaveErrorRef.current = false
               setServerDraftId(created.id)
-              storeServerDraftId(created.id)
               queryClient.invalidateQueries({ queryKey: ['products'] })
             }
           })
@@ -424,13 +297,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const flushRef = useRef<() => void>(() => {})
   flushRef.current = () => {
     const untouched = formUntouched()
-    if (!untouched && !isEdit) {
-      try {
-        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
-      } catch {
-        /* storage full/unavailable — ignore */
-      }
-    }
     if (!wasOpenRef.current || hasSavedRef.current || untouched) return
     const payload = buildPayload()
     const hasContent =
@@ -439,7 +305,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!(payload.shortDesc || payload.description) ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
-    // Draft edits target the row being edited; creation targets the persisted
+    // Draft edits target the row being edited; creation targets the session's
     // server draft (created on first autosave) or creates a fresh one.
     const targetId = serverDraftId || (isDraftEdit && currentRow ? currentRow.id : null)
     if (targetId) {
@@ -453,7 +319,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
           if (created?.id) {
             notifySaveErrorRef.current = false
             setServerDraftId(created.id)
-            storeServerDraftId(created.id)
             queryClient.invalidateQueries({ queryKey: ['products'] })
           }
         })
@@ -474,23 +339,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   }, [open, isEdit])
 
   useEffect(() => () => { if (wasOpenRef.current) flushRef.current() }, [])
-
-  useEffect(() => {
-    const syncLocal = () => {
-      if (!wasOpenRef.current || hasSavedRef.current || formUntouched()) return
-      if (isEdit) return // draft edits persist server-side; blob is add-mode only
-      try {
-        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
-      } catch {
-        /* ignore */
-      }
-    }
-    window.addEventListener('beforeunload', syncLocal)
-    return () => window.removeEventListener('beforeunload', syncLocal)
-  }, [open, isEdit, mode, name, slug, type, desc, shortDesc, basePrice, salePrice,
-    sku, stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
-    availabilityMode, standardCost, images, tags, sizeChartId,
-    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
   useEffect(() => {
     if (!open) return
@@ -642,9 +490,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     setCreatedProductId(null); setRegenerateConfirm(false); setClearVariantConfirm(false); setLocalVariants([]);
     setServerDraftId(null);
-    // NOTE: do NOT clear the persisted server-draft id here — closing the
-    // dialog must allow reopening to resume/update the SAME server draft.
-    // Only discardDraft and a successful create clear the persisted key.
     setBulkUpdateOpen(false); setIsBulkUpdating(false);
     setOverrideFormState({
       FULL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
@@ -670,8 +515,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
-      clearDraft();
-      storeServerDraftId(null);
       if (serverDraftId && serverDraftId !== createdId) {
         productsApi.delete(serverDraftId).catch(() => {})
       }
@@ -1125,22 +968,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isDraftEdit ? `Edit Draft: ${currentRow?.name || 'Untitled Draft'}` : isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
-
-        {draftAvailable && !isEdit && (
-          <div className='mx-6 mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5'>
-            <p className='text-xs text-amber-700 dark:text-amber-300 font-medium'>
-              Unsaved draft found from a previous session.
-            </p>
-            <div className='flex items-center gap-2 shrink-0'>
-              <Button variant='outline' size='sm' onClick={discardDraft}>
-                Discard
-              </Button>
-              <Button size='sm' onClick={() => { const d = loadDraft(); if (d) resumeDraft(d); }}>
-                Resume Draft
-              </Button>
-            </div>
-          </div>
-        )}
 
         <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
           <TabsList className='px-6 justify-start rounded-none border-b'>
