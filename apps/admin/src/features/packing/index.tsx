@@ -8,6 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Html5Qrcode } from 'html5-qrcode'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
+import {
+  resolveOrderItemImages,
+  type ProductImageSource,
+  type ProductVariantImageSource,
+} from '@/lib/product-image'
 import { toast } from 'sonner'
 import { 
   Camera, 
@@ -818,11 +823,25 @@ export function PackingWorkspace() {
                   const currentVerifiedQty = verifiedQuantities[item.id] ?? 0
                   const isVerified = currentVerifiedQty === item.quantity
                   const isMultiple = item.quantity > 1
-                  // Resolve both the variant image and the parent-product
-                  // fallback so a broken/missing variant image never hides
-                  // which product the packer is looking at.
-                  const primaryImage = mediaUrl(item.image)
-                  const fallbackImage = mediaUrl(item.fallbackImage)
+                  // Canonical hierarchy: variant → color-sibling → product.
+                  // A broken/missing variant image never hides which product
+                  // the packer is looking at (fallback terminates at the
+                  // controlled SafeImage placeholder).
+                  const catalog = activeOrder.photoCatalog?.[
+                    item.productId ?? ''
+                  ] as ProductImageSource | null
+                  const variant = catalog?.variants?.find(
+                    (v) => v.id === item.variantId,
+                  ) as ProductVariantImageSource | null
+                  const resolvedImg = resolveOrderItemImages(catalog, variant)
+                  const primaryImage = mediaUrl(
+                    resolvedImg.image ?? item.image,
+                  )
+                  const fallbackImage = mediaUrl(
+                    resolvedImg.colorImage ??
+                      resolvedImg.productImage ??
+                      item.fallbackImage,
+                  )
                   const zoomSource = primaryImage || fallbackImage
 
                   return (

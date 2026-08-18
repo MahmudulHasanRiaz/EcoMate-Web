@@ -711,9 +711,37 @@ export class OrdersService {
             combo: { select: { id: true, name: true } },
             variant: {
               include: {
+                product: {
+                  select: {
+                    id: true,
+                    variants: {
+                      where: { isActive: true },
+                      select: {
+                        id: true,
+                        image: true,
+                        images: true,
+                        attributeValues: {
+                          select: {
+                            attributeValue: {
+                              select: {
+                                value: true,
+                                hexCode: true,
+                                attribute: { select: { name: true } },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
                 attributeValues: {
                   include: {
-                    attributeValue: true,
+                    attributeValue: {
+                      include: {
+                        attribute: { select: { name: true } },
+                      },
+                    },
                   },
                 },
               },

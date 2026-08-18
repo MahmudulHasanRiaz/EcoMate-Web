@@ -153,6 +153,8 @@ describe('PackingService', () => {
         items: [
           {
             id: 'item-1',
+            productId: null,
+            variantId: null,
             productName: 'Product A',
             variantName: 'Red / M',
             sku: 'SKU-001',
@@ -166,6 +168,7 @@ describe('PackingService', () => {
         statusName: 'Confirmed',
         statusColor: 'blue',
         createdAt: mockOrder.createdAt,
+        photoCatalog: {},
       });
     });
 

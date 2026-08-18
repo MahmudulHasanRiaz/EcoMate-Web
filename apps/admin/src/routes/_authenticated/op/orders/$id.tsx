@@ -15,6 +15,7 @@ import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
+import { resolveOrderItemImages } from '@/lib/product-image'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -462,12 +463,24 @@ function OrderDetailPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(editingItems ? orderItems : order.items)?.map((item: any, index: number) => (
+                      {(editingItems ? orderItems : order.items)?.map((item: any, index: number) => {
+                        const itemImages = resolveOrderItemImages(
+                          item.product ?? item.variant?.product,
+                          item.variant,
+                        )
+                        return (
                         <TableRow key={item.id || index}>
                           <TableCell>
                             <div className='flex items-center gap-3'>
-                              {item.product?.images && Array.isArray(item.product.images) && item.product.images[0] ? (
-                                <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-10 w-10 rounded border object-cover flex-shrink-0' thumbWidth={48} thumbHeight={48} />
+                              {itemImages.hasImage ? (
+                                <SafeImage
+                                  src={mediaUrl(itemImages.image)}
+                                  fallbackSrc={mediaUrl(itemImages.colorImage ?? itemImages.productImage)}
+                                  alt=''
+                                  className='h-10 w-10 rounded border object-cover flex-shrink-0'
+                                  thumbWidth={48}
+                                  thumbHeight={48}
+                                />
                               ) : (
                                 <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center flex-shrink-0'>
                                   <Package className='h-5 w-5 text-muted-foreground' />
@@ -525,7 +538,8 @@ function OrderDetailPage() {
                             </TableCell>
                           )}
                         </TableRow>
-                      ))}
+                        )
+                      })}
 
                       {/* Add product search row */}
                       {editingItems && (

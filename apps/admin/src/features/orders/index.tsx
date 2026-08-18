@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
+import { resolveOrderItemImages } from '@/lib/product-image'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -81,19 +82,10 @@ function formatAddressFull(addr: AddressParts): string {
 }
 
 function getProductThumb(item: OrderResponse['items'][number]): string | null {
-  const imgs = item?.product?.images
-  if (!imgs) return null
-  if (Array.isArray(imgs) && imgs.length > 0) {
-    const first = imgs[0]
-    const url = typeof first === 'string' ? first : (first as Record<string, unknown>)?.url || (first as Record<string, unknown>)?.src || (first as Record<string, unknown>)?.path || ''
-    return url ? mediaUrl(url as string) : null
-  }
-  if (typeof imgs === 'object' && !Array.isArray(imgs)) {
-    const imgObj = imgs as Record<string, unknown>
-    const url = (imgObj.url || imgObj.src || imgObj.path || '') as string
-    return url ? mediaUrl(url) : null
-  }
-  return null
+  const resolved = resolveOrderItemImages(item?.product, undefined)
+  if (!resolved.hasImage) return null
+  const raw = resolved.image ?? resolved.colorImage ?? resolved.productImage
+  return raw ? mediaUrl(raw) : null
 }
 
 function paymentMethodLabel(method: string): { label: string; colorClass: string } {

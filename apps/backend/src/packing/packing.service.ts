@@ -48,8 +48,28 @@ export class PackingService {
           include: {
             variant: {
               include: {
-                product: true,
-                attributeValues: { include: { attributeValue: true } },
+                product: {
+                  include: {
+                    variants: {
+                      include: {
+                        attributeValues: {
+                          include: {
+                            attributeValue: {
+                              include: { attribute: { select: { name: true } } },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                attributeValues: {
+                  include: {
+                    attributeValue: {
+                      include: { attribute: { select: { name: true } } },
+                    },
+                  },
+                },
               },
             },
           },
@@ -65,21 +85,77 @@ export class PackingService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return orders.map((o) => ({
-      id: o.id,
-      displayId: o.displayId,
-      customer: o.customer
-        ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
-        : o.guestName
-          ? { name: o.guestName, phone: o.guestPhone }
+    // Canonical photo catalog: compact per-product variant/attribute data used
+    // by the shared admin image resolver (lib/product-image.ts) to apply the
+    // variant -> color-sibling -> product hierarchy client-side. Deduplicated
+    // across the whole queue to keep the payload slim.
+    const photoCatalog: Record<
+      string,
+      {
+        images: unknown;
+        variants: {
+          id: string | null;
+          image: string | null;
+          images: unknown;
+          attributeValues: {
+            attributeValue: {
+              value: string | null;
+              hexCode: string | null;
+              attribute: { name: string | null };
+            } | null;
+          }[];
+        }[];
+      }
+    > = {};
+
+    const slimAttrs = (avs: any[]) =>
+      avs.map((av: any) => ({
+        attributeValue: av?.attributeValue
+          ? {
+              value: av.attributeValue.value ?? null,
+              hexCode: av.attributeValue.hexCode ?? null,
+              attribute: { name: av.attributeValue.attribute?.name ?? null },
+            }
           : null,
-      items: o.items.map((i) => {
-        const productImages = i.variant?.product?.images as
-          | any[]
-          | null
-          | undefined;
-        const variantAttrs = i.variant?.attributeValues
-          ? i.variant.attributeValues
+      }));
+
+    const slimVariant = (v: any) => ({
+      id: v?.id ?? null,
+      image: typeof v?.image === 'string' ? v.image : null,
+      images: v?.images ?? null,
+      attributeValues: slimAttrs(v?.attributeValues ?? []),
+    });
+
+    const buildCatalog = (product: any, variant: any) => {
+      if (!product?.id || photoCatalog[product.id]) return;
+      photoCatalog[product.id] = {
+        images: product.images ?? null,
+        variants: (product.variants ?? []).map(slimVariant),
+      };
+      if (!photoCatalog[product.id].variants.length && variant?.id) {
+        photoCatalog[product.id].variants.push(slimVariant(variant));
+      }
+    };
+
+    return orders.map((o) => {
+      // Build the per-product photo catalog for this order's lines up front so
+      // each item payload can resolve images against it.
+      for (const i of o.items) {
+        buildCatalog(i.variant?.product ?? null, i.variant ?? null);
+      }
+      return {
+        id: o.id,
+        displayId: o.displayId,
+        customer: o.customer
+          ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
+          : o.guestName
+            ? { name: o.guestName, phone: o.guestPhone }
+            : null,
+        items: o.items.map((i) => {
+          const product = i.variant?.product ?? null;
+          const variant = i.variant ?? null;
+          const variantAttrs = variant?.attributeValues
+          ? variant.attributeValues
               .map((av: any) => av.attributeValue?.value)
               .filter(Boolean)
               .join(' / ')
@@ -105,17 +181,19 @@ export class PackingService {
           }
           return null;
         };
-        const variantImages = (i.variant as any)?.images as any;
+        const variantImages = variant?.images as any;
         const variantImage =
-          resolveImage(i.variant?.image) || firstOf(variantImages);
+          resolveImage(variant?.image) || firstOf(variantImages);
         // Parent product image — used when the variant has no image of its
         // own (e.g. size-only variations) or the variant image is broken.
-        const productImage = firstOf(productImages);
+        const productImage = firstOf(product?.images);
         return {
           id: i.id,
-          productName: i.variant?.product?.name ?? 'Unknown',
+          productId: i.productId ?? product?.id ?? null,
+          variantId: i.variantId ?? null,
+          productName: product?.name ?? 'Unknown',
           variantName: variantAttrs || '',
-          sku: i.variant?.sku ?? '',
+          sku: variant?.sku ?? '',
           quantity: i.quantity,
           image: variantImage || productImage,
           fallbackImage: productImage,
@@ -130,10 +208,12 @@ export class PackingService {
             expiresAt: o.packingLock.expiresAt,
           }
         : null,
-      statusName: o.status.name,
-      statusColor: o.status.color,
-      createdAt: o.createdAt,
-    }));
+        statusName: o.status.name,
+        statusColor: o.status.color,
+        createdAt: o.createdAt,
+        photoCatalog,
+      };
+    });
   }
 
   async openOrder(orderId: string, packerId: string) {
