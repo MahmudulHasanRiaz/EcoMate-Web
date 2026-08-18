@@ -47,6 +47,21 @@ export class PackingService {
       include: {
         items: {
           include: {
+            product: {
+              include: {
+                variants: {
+                  include: {
+                    attributeValues: {
+                      include: {
+                        attributeValue: {
+                          include: { attribute: { select: { name: true } } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             variant: {
               include: {
                 product: {
@@ -142,7 +157,7 @@ export class PackingService {
       // Build the per-product photo catalog for this order's lines up front so
       // each item payload can resolve images against it.
       for (const i of o.items) {
-        buildCatalog(i.variant?.product ?? null, i.variant ?? null);
+        buildCatalog(i.variant?.product ?? i.product ?? null, i.variant ?? null);
       }
       return {
         id: o.id,
@@ -153,7 +168,7 @@ export class PackingService {
             ? { name: o.guestName, phone: o.guestPhone }
             : null,
         items: o.items.map((i) => {
-          const product = i.variant?.product ?? null;
+          const product = i.variant?.product ?? i.product ?? null;
           const variant = i.variant ?? null;
           const variantAttrs = variant?.attributeValues
           ? variant.attributeValues

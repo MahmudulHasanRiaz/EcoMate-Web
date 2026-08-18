@@ -172,6 +172,56 @@ describe('PackingService', () => {
       });
     });
 
+    it('should resolve name and image for a simple product item (no variant) via the item product relation', async () => {
+      const mockOrder = {
+        id: 'order-3',
+        displayId: 'ORD-003',
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15'),
+        customer: null,
+        items: [
+          {
+            id: 'item-3',
+            productId: 'prod-1',
+            variantId: null,
+            quantity: 1,
+            variant: null,
+            product: {
+              id: 'prod-1',
+              name: 'Simple Product',
+              images: ['/simple-1.jpg', '/simple-2.jpg'],
+              variants: [],
+            },
+          },
+        ],
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+
+      const result = await service.getQueue();
+
+      expect(result[0].items[0]).toEqual({
+        id: 'item-3',
+        productId: 'prod-1',
+        variantId: null,
+        productName: 'Simple Product',
+        variantName: '',
+        sku: '',
+        quantity: 1,
+        image: '/simple-1.jpg',
+        fallbackImage: '/simple-1.jpg',
+      });
+      expect(result[0].photoCatalog['prod-1']).toEqual({
+        images: ['/simple-1.jpg', '/simple-2.jpg'],
+        variants: [],
+      });
+    });
+
     it('should use guest name when no customer', async () => {
       const mockOrder = {
         id: 'order-2',

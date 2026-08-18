@@ -40,7 +40,7 @@ export class EventAggregatorService {
         NOW() as "updatedAt"
       FROM "SecurityEvent"
       WHERE "timestamp" >= $1 AND "timestamp" <= $2
-      GROUP BY "tenant", date_trunc('hour', "timestamp"), "eventType", "severity", "category"
+      GROUP BY "tenant", date_trunc('hour', "timestamp" AT TIME ZONE 'Asia/Dhaka') AT TIME ZONE 'Asia/Dhaka', "eventType", "severity", "category"
       ON CONFLICT ("tenant", "bucket", "eventType", "severity", "category")
       DO UPDATE SET "count" = EXCLUDED."count", "updatedAt" = NOW()
     `, from.toISOString(), to.toISOString());
@@ -73,7 +73,7 @@ export class EventAggregatorService {
         NOW() as "updatedAt"
       FROM "SecurityEvent"
       WHERE "timestamp" >= $1 AND "timestamp" <= $2
-      GROUP BY "tenant", date_trunc('day', "timestamp"), "eventType", "severity", "category"
+      GROUP BY "tenant", date_trunc('day', "timestamp" AT TIME ZONE 'Asia/Dhaka')::date, "eventType", "severity", "category"
       ON CONFLICT ("tenant", "date", "eventType", "severity", "category")
       DO UPDATE SET "count" = EXCLUDED."count", "updatedAt" = NOW()
     `, from.toISOString(), to.toISOString());
