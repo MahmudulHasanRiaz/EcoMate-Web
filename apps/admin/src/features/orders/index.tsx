@@ -288,6 +288,7 @@ export function Orders() {
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
   })
 
   const bulkStatusMut = useMutation({
@@ -302,15 +303,17 @@ export function Orders() {
         toast.error(`${failed} order(s) could not be updated`)
         details.slice(0, 3).forEach((d) => toast.error(d.reason || 'Unknown error', { id: d.id }))
       }
-      if (updated > 0) toast.success(`${updated} order(s) updated${skipped > 0 ? ` · ${skipped} failed` : ''}`)
+      if (updated > 0) toast.success(`${updated} order(s) updated`)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      setSelected([])
+      if (updated > 0) setSelected([])
     },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Bulk status change failed'),
   })
 
   const bulkAssignMut = useMutation({
     mutationFn: (d: { ids: string[]; assignedToId: string | null }) => ordersApi.bulkAssign(d.ids, d.assignedToId === '__unassign__' ? null : d.assignedToId),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); setSelected([]); toast.success('Orders assigned') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Assignment failed'),
   })
 
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]) })

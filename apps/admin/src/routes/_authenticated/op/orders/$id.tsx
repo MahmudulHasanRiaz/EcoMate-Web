@@ -154,11 +154,13 @@ function OrderDetailPage() {
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
   })
 
   const noteMut = useMutation({
     mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Note added') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to add note'),
   })
 
   const dispatchMut = useMutation({
@@ -1088,7 +1090,7 @@ function OrderDetailPage() {
             </div>
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote('') }}>Cancel</Button>
-              <Button onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }); setShowStatusDialog(null); setStatusNote('') }}>Confirm</Button>
+              <Button onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }, { onSuccess: () => { setShowStatusDialog(null); setStatusNote('') } }) }}>Confirm</Button>
             </div>
           </DialogContent>
         </Dialog>
