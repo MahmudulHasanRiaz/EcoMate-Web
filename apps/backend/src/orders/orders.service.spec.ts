@@ -141,8 +141,11 @@ describe('OrdersService', () => {
                   price: 1000,
                   isActive: true,
                   productId: 'prod-1',
+                  managedStockQuantity: 10,
+                  reservedStock: 0,
                 },
               ]),
+              findUnique: jest.fn(),
               update: jest.fn(),
             },
             product: {
@@ -166,6 +169,9 @@ describe('OrdersService', () => {
                     isActive: true,
                     availabilityMode: 'MANAGED_STOCK',
                     name: 'Prod 1',
+                    type: 'variable',
+                    managedStockQuantity: 25,
+                    reservedStock: 0,
                   },
                   {
                     id: 'prod-2',
@@ -174,6 +180,9 @@ describe('OrdersService', () => {
                     isActive: true,
                     availabilityMode: 'MANAGED_STOCK',
                     name: 'Prod 2',
+                    type: 'simple',
+                    managedStockQuantity: 25,
+                    reservedStock: 0,
                   },
                 ];
               }),
@@ -518,6 +527,208 @@ describe('OrdersService', () => {
       });
       expect(prisma.order.create).toHaveBeenCalled();
       expect(result).toEqual(mockOrder);
+    });
+
+    describe('managed-stock availability gate (zero/negative stock)', () => {
+      const runTx = () => {
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (cb: (tx: any) => Promise<any>) =>
+            cb({
+              ...prisma,
+              orderCounter: {
+                upsert: jest
+                  .fn()
+                  .mockResolvedValue({ date: '250115', seq: 1 }),
+              },
+            }),
+        );
+        (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+          mockInitialStatus,
+        );
+      };
+
+      it('blocks a MANAGED_STOCK variant with zero stock', async () => {
+        runTx();
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'variant-1',
+            price: 1000,
+            isActive: true,
+            productId: 'prod-1',
+            managedStockQuantity: 0,
+            reservedStock: 0,
+          },
+        ]);
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          'out of stock and cannot be ordered',
+        );
+      });
+
+      it('blocks a MANAGED_STOCK variant with negative stock', async () => {
+        runTx();
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'variant-1',
+            price: 1000,
+            isActive: true,
+            productId: 'prod-1',
+            managedStockQuantity: -3,
+            reservedStock: 0,
+          },
+        ]);
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          'out of stock and cannot be ordered',
+        );
+      });
+
+      it('blocks a variant whose reservations consume the full stock', async () => {
+        runTx();
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'variant-1',
+            price: 1000,
+            isActive: true,
+            productId: 'prod-1',
+            managedStockQuantity: 5,
+            reservedStock: 5,
+          },
+        ]);
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          'out of stock and cannot be ordered',
+        );
+      });
+
+      it('blocks a quantity exceeding the available stock', async () => {
+        runTx();
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'variant-1',
+            price: 1000,
+            isActive: true,
+            productId: 'prod-1',
+            managedStockQuantity: 1,
+            reservedStock: 0,
+          },
+        ]);
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          'Only 1 unit(s) of "Prod 1" are in stock (requested 2)',
+        );
+      });
+
+      it('blocks a MANAGED_STOCK simple product with zero stock', async () => {
+        runTx();
+        (prisma.product.findMany as jest.Mock).mockImplementation(
+          async (args: any) => {
+            if (args?.where?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+              return [];
+            }
+            return [
+              {
+                id: 'prod-2',
+                basePrice: 500,
+                salePrice: null,
+                isActive: true,
+                availabilityMode: 'MANAGED_STOCK',
+                name: 'Prod 2',
+                type: 'simple',
+                managedStockQuantity: 0,
+                reservedStock: 0,
+              },
+            ];
+          },
+        );
+
+        await expect(
+          service.create({
+            ...createOrderDto,
+            items: [{ productId: 'prod-2', quantity: 1, price: 500 }],
+          }),
+        ).rejects.toThrow('out of stock and cannot be ordered');
+      });
+
+      it('blocks a combo whose simple component is out of stock', async () => {
+        runTx();
+        (prisma.combo.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'combo-1',
+            basePrice: 900,
+            salePrice: null,
+            isActive: true,
+            name: 'Combo A',
+            items: [
+              {
+                productId: 'prod-2',
+                variantId: null,
+                quantity: 2,
+                product: {
+                  type: 'simple',
+                  availabilityMode: 'MANAGED_STOCK',
+                  name: 'Prod 2',
+                  managedStockQuantity: 0,
+                  reservedStock: 0,
+                },
+              },
+            ],
+          },
+        ]);
+
+        await expect(
+          service.create({
+            ...createOrderDto,
+            items: [{ comboId: 'combo-1', quantity: 1, price: 900 }],
+          }),
+        ).rejects.toThrow('out of stock and cannot be ordered');
+      });
+
+      it('blocks a combo whose variable component variant is out of stock', async () => {
+        runTx();
+        (prisma.combo.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'combo-1',
+            basePrice: 900,
+            salePrice: null,
+            isActive: true,
+            name: 'Combo A',
+            items: [
+              {
+                productId: 'prod-1',
+                variantId: null,
+                quantity: 1,
+                product: {
+                  type: 'variable',
+                  availabilityMode: 'MANAGED_STOCK',
+                  name: 'Prod 1',
+                  managedStockQuantity: 25,
+                  reservedStock: 0,
+                },
+              },
+            ],
+          },
+        ]);
+        (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue({
+          id: 'variant-9',
+          managedStockQuantity: 0,
+          reservedStock: 0,
+        });
+
+        await expect(
+          service.create({
+            ...createOrderDto,
+            items: [
+              {
+                comboId: 'combo-1',
+                quantity: 1,
+                price: 900,
+                comboSelection: { 'prod-1': 'variant-9' },
+              },
+            ],
+          }),
+        ).rejects.toThrow('out of stock and cannot be ordered');
+      });
     });
 
     it('copies the current default office note on create when input is empty/blank (Hotfix 2 rule)', async () => {

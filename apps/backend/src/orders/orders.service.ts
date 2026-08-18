@@ -957,6 +957,9 @@ export class OrdersService {
                 isActive: true,
                 availabilityMode: true,
                 name: true,
+                type: true,
+                managedStockQuantity: true,
+                reservedStock: true,
               },
             })
           : [];
@@ -975,6 +978,8 @@ export class OrdersService {
                 salePrice: true,
                 isActive: true,
                 productId: true,
+                managedStockQuantity: true,
+                reservedStock: true,
               },
             })
           : [];
@@ -997,7 +1002,16 @@ export class OrdersService {
                   select: {
                     productId: true,
                     variantId: true,
-                    product: { select: { type: true } },
+                    quantity: true,
+                    product: {
+                      select: {
+                        type: true,
+                        availabilityMode: true,
+                        name: true,
+                        managedStockQuantity: true,
+                        reservedStock: true,
+                      },
+                    },
                   },
                 },
               },
@@ -1027,6 +1041,41 @@ export class OrdersService {
               throw new BadRequestException(
                 `Product "${sub.productId}" in combo "${combo.name}" requires a variant selection.`,
               );
+            }
+            // Managed-stock availability for each combo component, mirroring
+            // feed._availableStock (managedStockQuantity - reservedStock).
+            const compVariantId =
+              sub.variantId ||
+              (item.comboSelection as Record<string, string> | null)?.[
+                sub.productId
+              ] ||
+              null;
+            const compQty = (sub.quantity ?? 1) * item.quantity;
+            if (sub.product?.type === 'variable') {
+              if (!compVariantId) continue;
+              const compVariant = await tx.productVariant.findUnique({
+                where: { id: compVariantId },
+                select: {
+                  id: true,
+                  managedStockQuantity: true,
+                  reservedStock: true,
+                },
+              });
+              this.assertManagedAvailability({
+                name: sub.product.name ?? sub.productId,
+                availabilityMode: sub.product.availabilityMode,
+                managedStockQuantity: compVariant?.managedStockQuantity ?? 0,
+                reservedStock: compVariant?.reservedStock ?? 0,
+                quantity: compQty,
+              });
+            } else {
+              this.assertManagedAvailability({
+                name: sub.product?.name ?? sub.productId,
+                availabilityMode: sub.product?.availabilityMode,
+                managedStockQuantity: sub.product?.managedStockQuantity ?? 0,
+                reservedStock: sub.product?.reservedStock ?? 0,
+                quantity: compQty,
+              });
             }
           }
         } else if (item.variantId) {
@@ -1059,6 +1108,13 @@ export class OrdersService {
               `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
             );
           }
+          this.assertManagedAvailability({
+            name: parentProduct.name,
+            availabilityMode: parentProduct.availabilityMode,
+            managedStockQuantity: variant.managedStockQuantity ?? 0,
+            reservedStock: variant.reservedStock ?? 0,
+            quantity: item.quantity,
+          });
           item.price = Number(
             variant.salePrice ??
               variant.price ??
@@ -1081,6 +1137,13 @@ export class OrdersService {
               `Product "${product.name}" is out of stock and cannot be ordered`,
             );
           }
+          this.assertManagedAvailability({
+            name: product.name,
+            availabilityMode: product.availabilityMode,
+            managedStockQuantity: product.managedStockQuantity ?? 0,
+            reservedStock: product.reservedStock ?? 0,
+            quantity: item.quantity,
+          });
           item.price = Number(product.salePrice ?? product.basePrice);
         } else {
           throw new BadRequestException(
@@ -1699,6 +1762,35 @@ export class OrdersService {
     return order;
   }
 
+  /**
+   * Managed-stock availability gate mirroring feed._availableStock
+   * (managedStockQuantity - reservedStock). Only MANAGED_STOCK mode is
+   * checked here: ALWAYS_IN_STOCK is unlimited, ALWAYS_OUT_OF_STOCK is
+   * rejected earlier, and the physical (INVENTORY_CONTROLLED) engine already
+   * throws on insufficient physical stock at reservation time.
+   */
+  private assertManagedAvailability(opts: {
+    name: string;
+    availabilityMode?: string | null;
+    managedStockQuantity: number | null;
+    reservedStock: number | null;
+    quantity: number;
+  }) {
+    if (opts.availabilityMode !== 'MANAGED_STOCK') return;
+    const available =
+      (opts.managedStockQuantity ?? 0) - (opts.reservedStock ?? 0);
+    if (available <= 0) {
+      throw new BadRequestException(
+        `Product "${opts.name}" is out of stock and cannot be ordered`,
+      );
+    }
+    if (opts.quantity > available) {
+      throw new BadRequestException(
+        `Only ${available} unit(s) of "${opts.name}" are in stock (requested ${opts.quantity})`,
+      );
+    }
+  }
+
   async updateOrder(
     id: string,
     dto: UpdateOrderDto,
@@ -1940,7 +2032,14 @@ export class OrdersService {
         if (newProductIds.length > 0) {
           const newProducts = await tx.product.findMany({
             where: { id: { in: newProductIds } },
-            select: { id: true, availabilityMode: true, name: true },
+            select: {
+              id: true,
+              availabilityMode: true,
+              name: true,
+              type: true,
+              managedStockQuantity: true,
+              reservedStock: true,
+            },
           });
           const outOfStock = newProducts.find(
             (p) => p.availabilityMode === 'ALWAYS_OUT_OF_STOCK',
@@ -1949,6 +2048,55 @@ export class OrdersService {
             throw new BadRequestException(
               `Product "${outOfStock.name}" is out of stock and cannot be ordered`,
             );
+          }
+          // Managed-stock gate for direct product/variant lines (combos are
+          // validated component-by-component in the reserve loop below).
+          const newVariantIds = Array.from(
+            new Set(
+              dto.items
+                .filter((i) => i.variantId && !i.comboId)
+                .map((i) => i.variantId!),
+            ),
+          );
+          const newVariants =
+            newVariantIds.length > 0
+              ? await tx.productVariant.findMany({
+                  where: { id: { in: newVariantIds } },
+                  select: {
+                    id: true,
+                    managedStockQuantity: true,
+                    reservedStock: true,
+                  },
+                })
+              : [];
+          const newVariantMap = new Map(
+            newVariants.map((v) => [v.id, v]),
+          );
+          const newProductMap = new Map(
+            newProducts.map((p) => [p.id, p]),
+          );
+          for (const item of dto.items) {
+            if (item.comboId) continue;
+            const p = newProductMap.get(item.productId ?? '');
+            if (!p) continue;
+            if (item.variantId) {
+              const v = newVariantMap.get(item.variantId);
+              this.assertManagedAvailability({
+                name: p.name,
+                availabilityMode: p.availabilityMode,
+                managedStockQuantity: v?.managedStockQuantity ?? 0,
+                reservedStock: v?.reservedStock ?? 0,
+                quantity: item.quantity,
+              });
+            } else {
+              this.assertManagedAvailability({
+                name: p.name,
+                availabilityMode: p.availabilityMode,
+                managedStockQuantity: p.managedStockQuantity ?? 0,
+                reservedStock: p.reservedStock ?? 0,
+                quantity: item.quantity,
+              });
+            }
           }
         }
 
@@ -1992,10 +2140,37 @@ export class OrdersService {
                   include: { product: true },
                 });
 
+                // variantId on combo components is a plain string (not an FK),
+                // so fetch the resolved variant for the managed-stock gate.
+                const compVariant = snapshot.variantId
+                  ? await tx.productVariant.findUnique({
+                      where: { id: snapshot.variantId },
+                      select: {
+                        managedStockQuantity: true,
+                        reservedStock: true,
+                      },
+                    })
+                  : null;
+
                 if (
                   snapshot.product.availabilityMode === 'MANAGED_STOCK' &&
                   snapshot.product.manageStock
                 ) {
+                  // Managed-stock gate BEFORE reserving, so a zero/negative
+                  // stock component fails the whole edit atomically.
+                  this.assertManagedAvailability({
+                    name: snapshot.product.name,
+                    availabilityMode: 'MANAGED_STOCK',
+                    managedStockQuantity:
+                      compVariant?.managedStockQuantity ??
+                      snapshot.product.managedStockQuantity ??
+                      0,
+                    reservedStock:
+                      compVariant?.reservedStock ??
+                      snapshot.product.reservedStock ??
+                      0,
+                    quantity: snapshot.totalQuantity,
+                  });
                   await this.stockService.operate('reserve', {
                     productId: snapshot.productId,
                     variantId: snapshot.variantId ?? undefined,
