@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -2514,6 +2514,105 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       await expect(
         service.bulkAssign(['order-1'], 'staff-1'),
       ).rejects.toThrow('db down');
+    });
+  });
+
+  describe('cancelByCustomer', () => {
+    it('cancels a Pending order by view token and releases stock', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      const out: any = {};
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) => {
+          const txOrderUpdate = jest.fn().mockResolvedValue({
+            ...mockOrder,
+            status: { id: 'status-cancelled', name: 'Cancelled' },
+          });
+          const tx = { ...prisma, order: { ...prisma.order, update: txOrderUpdate } };
+          out.data = (await cb(tx)) && txOrderUpdate.mock.calls[0]?.[0]?.data;
+          return { ...mockOrder, status: { id: 'status-cancelled', name: 'Cancelled' } };
+        },
+      );
+
+      const result = await service.cancelByCustomer('order-id-1', 'the-token');
+
+      const cancelReturnStock = module.get<CancelReturnStockService>(
+        CancelReturnStockService,
+      );
+      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderId: 'order-id-1',
+          referencePrefix: 'cancel',
+        }),
+      );
+      expect((result as any).status.name).toBe('Cancelled');
+      expect(out.data.statusId).toBe('status-cancelled');
+      const timeline = out.data.timeline;
+      expect(timeline[timeline.length - 1].note).toBe('Cancelled by customer');
+    });
+
+    it('throws ForbiddenException when no token is supplied', async () => {
+      await expect(
+        service.cancelByCustomer('order-id-1', ''),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws NotFoundException when the token does not match', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-real-token',
+      });
+
+      await expect(
+        service.cancelByCustomer('order-id-1', 'wrong-token'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException for trashed orders', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+        trashedAt: new Date(),
+      });
+
+      await expect(
+        service.cancelByCustomer('order-id-1', 'the-token'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects cancellation when the status transition is not allowed', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+        status: { id: 'status-delivered', name: 'Delivered' },
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+
+      await expect(
+        service.cancelByCustomer('order-id-1', 'the-token'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when Cancelled status is not configured', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.cancelByCustomer('order-id-1', 'the-token'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
