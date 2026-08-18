@@ -56,7 +56,7 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
   Returned: ['Damaged'],
-  Cancelled: ['Confirmed'],
+  Cancelled: ['Hold', 'Confirmed'],
   Damaged: [],
 };
 
@@ -2456,6 +2456,12 @@ export class OrdersService {
         await this.verifyStockForOrder(id, tx);
       }
 
+      // A cancelled order released its reservation; a Hold must hold stock
+      // again (throws when stock is no longer available).
+      if (newStatus.name === 'Hold' && order.status.name === 'Cancelled') {
+        await this.verifyStockForOrder(id, tx);
+      }
+
       if (newStatus.name === 'Cancelled') {
         await this.handleCancelledSideEffects(tx, id, performedBy);
       }
@@ -3433,6 +3439,13 @@ export class OrdersService {
     switch (toStatus) {
       case 'Confirmed':
         await this.handleConfirmedSideEffects(tx, order.id, performedBy);
+        break;
+      case 'Hold':
+        // Cancelled orders released their reservation; a Hold must hold stock.
+        // Restore the invariant (throws when stock is no longer available).
+        if (fromStatus === 'Cancelled') {
+          await this.verifyStockForOrder(order.id, tx);
+        }
         break;
       case 'Cancelled':
         await this.handleCancelledSideEffects(tx, order.id, performedBy);

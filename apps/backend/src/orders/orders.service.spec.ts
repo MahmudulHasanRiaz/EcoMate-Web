@@ -1263,6 +1263,116 @@ describe('OrdersService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('allows Cancelled → Hold and re-establishes the stock reservation', async () => {
+      const cancelledOrder = {
+        ...mockOrder,
+        status: { id: 'status-cancelled', name: 'Cancelled' },
+      };
+      const holdStatus = {
+        id: 'status-hold',
+        name: 'Hold',
+        isInitial: false,
+        nextStatuses: [],
+      };
+
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(cancelledOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...cancelledOrder,
+        statusId: 'status-hold',
+        status: holdStatus,
+      });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
+        cb(prisma),
+      );
+      (prisma.orderStockCycle.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.orderStockCycle.create as jest.Mock).mockResolvedValue({
+        id: 'cycle-1',
+      });
+      (prisma.orderItemComboComponent as any) = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+      (prisma.physicalInventory as any) = {
+        findFirst: jest.fn().mockResolvedValue(null),
+      };
+      (prisma.physicalReservation as any).findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-hold', note: 'Customer asked to pause' },
+        userId,
+      );
+
+      expect(prisma.order.update).toHaveBeenCalled();
+      // verifyStockForOrder ran → a fresh ACTIVE cycle was created (the
+      // cancelled order's reservation was restored, Hold now holds stock).
+      expect(prisma.orderStockCycle.findFirst).toHaveBeenCalledWith({
+        where: { orderId: 'order-id-1', status: 'ACTIVE' },
+      });
+    });
+
+    it('allows Cancelled → Confirmed and re-verifies stock', async () => {
+      const cancelledOrder = {
+        ...mockOrder,
+        status: { id: 'status-cancelled', name: 'Cancelled' },
+      };
+
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(cancelledOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...cancelledOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
+        cb(prisma),
+      );
+      (prisma.orderStockCycle.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.orderStockCycle.create as jest.Mock).mockResolvedValue({
+        id: 'cycle-1',
+      });
+      (prisma.orderItemComboComponent as any) = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+      (prisma.physicalInventory as any) = {
+        findFirst: jest.fn().mockResolvedValue(null),
+      };
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-confirmed' },
+        userId,
+      );
+
+      expect(prisma.order.update).toHaveBeenCalled();
+      expect(prisma.orderStockCycle.create).toHaveBeenCalled();
+      expect(result.statusId).toBe('status-confirmed');
+    });
+
+    it('rejects Cancelled → Shipping (not in allowed transitions)', async () => {
+      const cancelledOrder = {
+        ...mockOrder,
+        status: { id: 'status-cancelled', name: 'Cancelled' },
+      };
+
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(cancelledOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockShippedStatus,
+      );
+
+      await expect(
+        service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-shipped' },
+          userId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('allows a return to be started from Shipping without requiring delivery', async () => {
       const shippingOrder = {
         ...mockOrder,
