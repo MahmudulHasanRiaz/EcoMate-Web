@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { ordersApi, mediaUrl, type OrderResponse } from './api'
 import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
+import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
@@ -28,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2 } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 
@@ -262,6 +263,7 @@ export function Orders() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [statusDialog, setStatusDialog] = useState<{ order: OrderResponse; newStatusId: string; newStatusName: string } | null>(null)
   const [statusNote, setStatusNote] = useState('')
+  const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
 
   useEffect(() => { const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
 
@@ -346,6 +348,14 @@ export function Orders() {
   })
 
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
+  const selectedPhones = useMemo(() => {
+    const rows = (data?.data || []) as OrderResponse[]
+    const phones = rows
+      .filter(o => selected.includes(o.id))
+      .map(o => o.customer?.phoneNumber || o.guestPhone || '')
+      .filter(Boolean)
+    return Array.from(new Set(phones))
+  }, [data, selected])
   const toggleOne = (id: string) => setSelected(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id])
   const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next }), [])
 
@@ -675,6 +685,8 @@ export function Orders() {
                                 </div>
                               </DropdownMenuGroup>
                               <DropdownMenuSeparator />
+                              <DropdownMenuItem className='text-destructive focus:text-destructive' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-4 w-4 mr-2' />Block Phone</DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')}><Printer className='h-4 w-4 mr-2' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')}><Receipt className='h-4 w-4 mr-2' />Print Invoice</DropdownMenuItem>
                               {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl || undefined, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
@@ -910,6 +922,15 @@ export function Orders() {
             </div>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=sticker&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Stickers</Button>
             <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=invoice&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Invoices</Button>
+            <Button
+              variant='outline'
+              size='sm'
+              className='h-8 text-xs text-destructive'
+              disabled={selectedPhones.length === 0}
+              onClick={() => setBlockPhones({ phones: selectedPhones, contextLabel: `${selected.length} orders` })}
+            >
+              <Ban className='h-3.5 w-3.5 mr-1' /> Block Phones
+            </Button>
             <div className='flex items-center gap-1 border-l pl-3'>
               <Select value={dispatchCourier} onValueChange={setDispatchCourier}>
                 <SelectTrigger className='h-8 w-[130px] text-xs'><SelectValue placeholder='Send to...' /></SelectTrigger>
@@ -926,6 +947,13 @@ export function Orders() {
             </div>
           </div>
         )}
+
+        <BlockPhoneDialog
+          open={!!blockPhones}
+          onOpenChange={o => { if (!o) setBlockPhones(null) }}
+          phones={blockPhones?.phones || []}
+          contextLabel={blockPhones?.contextLabel}
+        />
 
         <Dialog open={!!statusDialog} onOpenChange={o => { if (!o) setStatusDialog(null); setStatusNote('') }}>
           <DialogContent className="sm:max-w-md">

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
+import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
 import { CustomerViewCard } from '@/features/orders/customer-view-card'
@@ -36,7 +37,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
-  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw
+  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban
 } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
@@ -92,6 +93,7 @@ function OrderDetailPage() {
   const [noteText, setNoteText] = useState('')
   const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
   const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
+  const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
   const [statusNote, setStatusNote] = useState('')
 
   // ── Collapsible sidebar panels ────────────────────────────────────
@@ -790,6 +792,15 @@ function OrderDetailPage() {
                           <Phone className='h-3 w-3' />{order.customer?.phoneNumber || order.guestPhone}
                         </a>
                         <CustomerContactActions phone={order.customer?.phoneNumber || order.guestPhone} />
+                        {(order.customer?.phoneNumber || order.guestPhone) && (
+                          <button
+                            onClick={() => setBlockPhones({ phones: [order.customer?.phoneNumber || order.guestPhone || ''], contextLabel: order.displayId })}
+                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
+                            title='Block this phone from ordering'
+                          >
+                            <Ban className='h-3 w-3' />Block
+                          </button>
+                        )}
                       </p>
                     )}
                   </div>
@@ -1041,6 +1052,13 @@ function OrderDetailPage() {
             </div>
           </div>
         </Main>
+
+        <BlockPhoneDialog
+          open={!!blockPhones}
+          onOpenChange={o => { if (!o) setBlockPhones(null) }}
+          phones={blockPhones?.phones || []}
+          contextLabel={blockPhones?.contextLabel}
+        />
 
         {/* ── Customer Edit Sheet ──────────────────────────────── */}
         <CustomerEditSheet
