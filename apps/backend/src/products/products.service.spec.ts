@@ -937,6 +937,87 @@ describe('ProductsService', () => {
           service.updateDraft('draft-1', { slug: 'test-product' }),
         ).rejects.toThrow(ConflictException);
       });
+
+      it('replaces the variant set wholesale when variants are provided', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', {
+          variants: [
+            {
+              sku: 'V-1',
+              price: 100,
+              attributeValues: [{ attributeValueId: 'av-1' }],
+            },
+            {
+              sku: 'V-2',
+              price: 150,
+              attributeValues: [{ attributeValueId: 'av-2' }],
+            },
+          ],
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.variants.deleteMany).toEqual({});
+        expect(call.data.variants.create.map((v: any) => v.sku)).toEqual([
+          'V-1',
+          'V-2',
+        ]);
+        expect(call.data.variants.create[0].attributeValues.create[0]).toEqual({
+          attributeValueId: 'av-1',
+        });
+      });
+
+      it('leaves existing variants untouched when variants are omitted', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { name: 'Renamed Draft' });
+        (prisma.product.update as jest.Mock).mockClear();
+
+        await service.updateDraft('draft-1', { shortDesc: 'More info' });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.variants).toBeUndefined();
+      });
+
+      it('clears stale variant rows when switching back to a simple product', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          type: 'variable',
+        });
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { type: 'simple' });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.variants.deleteMany).toEqual({});
+      });
+
+      it('preserves existing tags when tags are omitted from the autosave', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { name: 'No Tags Sent' });
+
+        expect(prisma.productTag.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('clears tag links when tags are explicitly emptied', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.productTag.findMany as jest.Mock).mockResolvedValue([
+          { tagId: 'tag-1' },
+        ]);
+        (prisma.tag.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+        await service.updateDraft('draft-1', { tags: [] });
+
+        expect(prisma.productTag.deleteMany).toHaveBeenCalledWith({
+          where: { productId: 'draft-1' },
+        });
+        expect(prisma.tag.updateMany).toHaveBeenCalled();
+      });
     });
 
     describe('publishDraft', () => {

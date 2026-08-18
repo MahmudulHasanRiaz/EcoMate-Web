@@ -865,7 +865,9 @@ export class ProductsService {
       },
     });
 
-    await this.syncTags(dto.tags || [], id);
+    if (dto.tags !== undefined) {
+      await this.syncTags(dto.tags || [], id);
+    }
 
     if (dto.images !== undefined) {
       const synced = await this.media.syncEntityImages(
@@ -1120,6 +1122,7 @@ export class ProductsService {
       },
     });
 
+    await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
     return product;
   }
@@ -1144,11 +1147,37 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
-    delete data.variants;
     delete data.attributes;
-    delete data.categoryIds;
     delete data.status;
     delete data.isActive;
+
+    if (dto.variants) {
+      // Autosave carries the generated variant set — replace it wholesale so
+      // variations never get lost between the form and the stored draft.
+      data.variants = {
+        deleteMany: {},
+        create: dto.variants.map((v) => ({
+          sku: v.sku,
+          price: v.price,
+          salePrice: v.salePrice,
+          managedStockQuantity: v.managedStockQuantity || 0,
+          image: v.image,
+          images: (v.images || []) as any,
+          attributeValues: v.attributeValues
+            ? {
+                create: v.attributeValues.map((av) => ({
+                  attributeValueId: av.attributeValueId,
+                })),
+              }
+            : undefined,
+        })),
+      };
+    } else if (dto.type === 'simple') {
+      // Switched back to a simple product — drop stale variant rows.
+      data.variants = { deleteMany: {} };
+    } else {
+      delete data.variants;
+    }
 
     if (dto.categoryIds !== undefined) {
       data.categoryId = dto.categoryIds[0] || null;
@@ -1200,7 +1229,9 @@ export class ProductsService {
       },
     });
 
-    await this.syncTags(dto.tags || [], id);
+    if (dto.tags !== undefined) {
+      await this.syncTags(dto.tags || [], id);
+    }
     if (dto.images !== undefined) {
       const synced = await this.media.syncEntityImages(
         'product',
@@ -1320,7 +1351,9 @@ export class ProductsService {
       },
     });
 
-    await this.syncTags(dto.tags || [], id);
+    if (dto.tags !== undefined) {
+      await this.syncTags(dto.tags || [], id);
+    }
     if (dto.images !== undefined) {
       const synced = await this.media.syncEntityImages(
         'product',

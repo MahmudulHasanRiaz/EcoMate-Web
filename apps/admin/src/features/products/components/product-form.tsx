@@ -239,6 +239,20 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const prevRowId = useRef<string | undefined>(undefined)
   const prevSku = useRef(sku)
   const openStateRef = useRef<any>(null)
+  const notifySaveErrorRef = useRef(false)
+
+  const notifyDraftSaveFailure = (e: any) => {
+    console.error('[draft-save]', e?.response?.data || e?.message || e)
+    if (notifySaveErrorRef.current) return
+    notifySaveErrorRef.current = true
+    const raw = e?.response?.data?.message
+    const msg = Array.isArray(raw) ? raw.join('. ') : (raw || 'The draft could not be saved to the server')
+    toast.error(`Draft not saved: ${msg}`)
+    if (msg.toLowerCase().includes('sku')) {
+      // variant SKUs are globally unique — nudge towards unique values
+      setTimeout(() => notifySaveErrorRef.current = false, 4000)
+    }
+  }
   const hasSavedRef = useRef(false)
   const availabilityModeTouchedRef = useRef(false)
   const [draftAvailable, setDraftAvailable] = useState(false)
@@ -336,7 +350,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     hasSavedRef.current = false
     setServerDraftId(loadServerDraftId())
     const draft = loadDraft()
-    openStateRef.current = snapshotOf()
+    openStateRef.current = null // captured fresh after row-load settles
     const hasContent = !!draft &&
       (!!draft.name?.trim() || !!draft.sku || !!draft.basePrice ||
         (Array.isArray(draft.images) && draft.images.length > 0) ||
@@ -373,24 +387,26 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     const hasContent =
       !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
       !!(payload.images && payload.images.length > 0) ||
-      !!(payload.shortDesc || payload.description)
+      !!(payload.shortDesc || payload.description) ||
+      !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     const timer = setTimeout(() => {
       if (serverDraftId) {
         productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
-          .then(() => queryClient.invalidateQueries({ queryKey: ['products'] }))
-          .catch(() => { /* offline/transient — localStorage still holds state */ })
+          .then(() => { notifySaveErrorRef.current = false; queryClient.invalidateQueries({ queryKey: ['products'] }) })
+          .catch((e: any) => notifyDraftSaveFailure(e))
       } else {
         productsApi.createDraft({ ...payload, isActive: false })
           .then((res: any) => {
             const created = res.data || res
             if (created?.id) {
+              notifySaveErrorRef.current = false
               setServerDraftId(created.id)
               storeServerDraftId(created.id)
               queryClient.invalidateQueries({ queryKey: ['products'] })
             }
           })
-          .catch(() => { /* first save failed — next tick retries */ })
+          .catch((e: any) => notifyDraftSaveFailure(e))
       }
     }, 1500)
     return () => clearTimeout(timer)
@@ -407,40 +423,47 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const wasOpenRef = useRef(false)
   const flushRef = useRef<() => void>(() => {})
   flushRef.current = () => {
-    if (formUntouched()) return
-    try {
-      localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
-    } catch {
-      /* storage full/unavailable — ignore */
+    const untouched = formUntouched()
+    if (!untouched && !isEdit) {
+      try {
+        localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
+      } catch {
+        /* storage full/unavailable — ignore */
+      }
     }
-    if (!wasOpenRef.current || hasSavedRef.current) return
+    if (!wasOpenRef.current || hasSavedRef.current || untouched) return
     const payload = buildPayload()
     const hasContent =
       !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
       !!(payload.images && payload.images.length > 0) ||
-      !!(payload.shortDesc || payload.description)
+      !!(payload.shortDesc || payload.description) ||
+      !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
-    if (serverDraftId) {
-      productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
-        .then(() => queryClient.invalidateQueries({ queryKey: ['products'] }))
-        .catch(() => { /* row deleted/transient — next open starts fresh */ })
+    // Draft edits target the row being edited; creation targets the persisted
+    // server draft (created on first autosave) or creates a fresh one.
+    const targetId = serverDraftId || (isDraftEdit && currentRow ? currentRow.id : null)
+    if (targetId) {
+      productsApi.updateDraft(targetId, { ...payload, isActive: false })
+        .then(() => { notifySaveErrorRef.current = false; queryClient.invalidateQueries({ queryKey: ['products'] }) })
+        .catch((e: any) => notifyDraftSaveFailure(e))
     } else {
       productsApi.createDraft({ ...payload, isActive: false })
         .then((res: any) => {
           const created = res.data || res
           if (created?.id) {
+            notifySaveErrorRef.current = false
             setServerDraftId(created.id)
             storeServerDraftId(created.id)
             queryClient.invalidateQueries({ queryKey: ['products'] })
           }
         })
-        .catch(() => { /* transient — blob still holds state */ })
+        .catch((e: any) => notifyDraftSaveFailure(e))
     }
   }
 
   useEffect(() => {
     if (open) {
-      if (!isEdit) wasOpenRef.current = true
+      if (!isEdit || isDraftEdit) wasOpenRef.current = true
     } else {
       // NOTE: no flush here — closing resets form state synchronously in the
       // Dialog onOpenChange/Cancel handlers (which flush first), so an extra
@@ -455,6 +478,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   useEffect(() => {
     const syncLocal = () => {
       if (!wasOpenRef.current || hasSavedRef.current || formUntouched()) return
+      if (isEdit) return // draft edits persist server-side; blob is add-mode only
       try {
         localStorage.setItem(PRODUCT_FORM_DRAFT_KEY, JSON.stringify({ ...snapshotOf(), savedAt: Date.now() }))
       } catch {
@@ -518,6 +542,17 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
     setTab('general')
   }, [open, currentRow, isEdit])
+
+  // Baseline for "untouched" detection: captured on the render AFTER the
+  // row-load effect above populated the form (its field deps re-fire this
+  // effect once the loaded values land), so edits to a draft/edit row are
+  // compared against the loaded values, never stale prior state.
+  useEffect(() => {
+    if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
+  }, [open, mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    availabilityMode, standardCost, images, tags, sizeChartId,
+    seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
   useEffect(() => {
     if (type === 'variable') {
