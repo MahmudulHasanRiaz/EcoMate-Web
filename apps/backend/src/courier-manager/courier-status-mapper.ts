@@ -80,6 +80,36 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.paid': 'DELIVERED',
     'order.exchanged': 'DELIVERED',
     'order.pickup-cancelled': 'CANCELLED',
+    // Plain labels from the official /orders/{id}/info endpoint
+    // ("Order Status" vocabulary of the Pathao Merchant API): the tracking
+    // API returns these instead of the webhook event names. Exact-match
+    // entries are evaluated against the lowercased raw status, so the
+    // title-case labels are listed lowercase.
+    'pickup requested': null,
+    'assigned for pickup': null,
+    // 'assigned for delivery' → ASSIGNED_TO_RIDER, NOT the `deliver` keyword.
+    'assigned for delivery': 'ASSIGNED_TO_RIDER',
+    // 'pickup failed' / 'delivery failed' are "skip" statuses like their
+    // webhook equivalents; the generic /fail|error/ guard below covers them,
+    // listed here explicitly so the intent is visible.
+    'pickup failed': null,
+    'delivery failed': null,
+    'payment invoice': null,
+    'at the sorting hub': 'IN_TRANSIT',
+    'in transit': 'IN_TRANSIT',
+    'received at last mile hub': 'ASSIGNED_TO_RIDER',
+    'partial delivery': 'PARTIAL',
+    'on hold': 'HOLD',
+    delivered: 'DELIVERED',
+    // 'return' → return flow start; returned → RETURNED via keyword fallback.
+    return: 'RETURN_PENDING',
+    'paid return': 'RETURN_PENDING',
+    exchange: 'DELIVERED',
+    exchanged: 'DELIVERED',
+    exchanged_approval_pending: 'DELIVERED',
+    pickup: 'PICKED_UP',
+    picked: 'PICKED_UP',
+    pending: 'DISPATCHED',
   },
   // RedX: tracking API and webhook share the same status vocabulary.
   redx: {

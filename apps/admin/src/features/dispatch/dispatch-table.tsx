@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DotsHorizontalIcon, Cross2Icon } from '@radix-ui/react-icons'
+import { DotsHorizontalIcon, Cross2Icon, CheckIcon } from '@radix-ui/react-icons'
 import {
   type ColumnDef,
   type PaginationState,
@@ -7,13 +7,11 @@ import {
   type VisibilityState,
   flexRender,
   getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Trash2, Eye, ExternalLink, RefreshCw } from 'lucide-react'
+import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import {
@@ -37,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -44,7 +43,6 @@ import {
 import { DataTablePagination } from '@/components/data-table'
 import { DataTableBulkActions } from '@/components/data-table/bulk-actions'
 import { DataTableViewOptions } from '@/components/data-table/view-options'
-import { DataTableFacetedFilter } from '@/components/data-table/faceted-filter'
 import { type DispatchResponse } from './api'
 import { DISPATCH_STATUSES, ALL_COURIERS, getCourierColor } from './data/data'
 
@@ -55,10 +53,75 @@ type DispatchTableProps = {
   onPaginationChange: (pagination: PaginationState) => void
   search: string
   onSearchChange: (search: string) => void
+  statusFilter: string
+  onStatusFilterChange: (value: string) => void
+  courierFilter: string
+  onCourierFilterChange: (value: string) => void
+  activeFilterCount: number
+  onResetFilters: () => void
   isLoading?: boolean
   isSyncing?: boolean
   onDelete: (id: string) => void
   onSyncSelected: (ids: string[]) => void
+}
+
+function ServerFilterDropdown({
+  title,
+  value,
+  onValueChange,
+  options,
+}: {
+  title: string
+  value: string
+  onValueChange: (value: string) => void
+  options: { label: string; value: string }[]
+}) {
+  const displayLabel = value
+    ? options.find((o) => o.value === value)?.label || value
+    : title
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant='outline'
+          size='sm'
+          className={cn('h-8 border-dashed gap-1', value && 'border-solid')}
+        >
+          {displayLabel}
+          {value ? (
+            <span
+              role='button'
+              aria-label={`Clear ${title} filter`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onValueChange('')
+              }}
+              className='hover:text-foreground'
+            >
+              <Cross2Icon className='h-3.5 w-3.5' />
+            </span>
+          ) : (
+            <ChevronDown size={14} />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' className='w-44 max-h-80 overflow-auto'>
+        <DropdownMenuLabel>{title}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onClick={() => onValueChange(option.value)}
+          >
+            {value === option.value && <CheckIcon className='me-1 h-4 w-4' />}
+            <span className={cn(value !== option.value && 'ms-5')}>
+              {option.label}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export function DispatchTable({
@@ -68,6 +131,12 @@ export function DispatchTable({
   onPaginationChange,
   search,
   onSearchChange,
+  statusFilter,
+  onStatusFilterChange,
+  courierFilter,
+  onCourierFilterChange,
+  activeFilterCount,
+  onResetFilters,
   isLoading,
   isSyncing,
   onDelete,
@@ -141,7 +210,6 @@ export function DispatchTable({
         )
       },
       meta: { className: 'w-24', tdClassName: 'ps-4' },
-      filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
       accessorKey: 'consignmentId',
@@ -188,7 +256,6 @@ export function DispatchTable({
         )
       },
       meta: { tdClassName: 'ps-4' },
-      filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
       id: 'courierStatus',
@@ -308,8 +375,6 @@ export function DispatchTable({
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
   })
 
   return (
@@ -328,11 +393,28 @@ export function DispatchTable({
             className='h-8 w-37.5 lg:w-62.5'
           />
           <div className='flex gap-x-2'>
-            <DataTableFacetedFilter column={table.getColumn('status')!} title='Status' options={statusFilterOpts} />
-            <DataTableFacetedFilter column={table.getColumn('courier')!} title='Courier' options={courierFilterOpts} />
+            <ServerFilterDropdown
+              title='Status'
+              value={statusFilter}
+              onValueChange={onStatusFilterChange}
+              options={statusFilterOpts}
+            />
+            <ServerFilterDropdown
+              title='Courier'
+              value={courierFilter}
+              onValueChange={onCourierFilterChange}
+              options={courierFilterOpts}
+            />
           </div>
-          {search && (
-            <Button variant='ghost' onClick={() => onSearchChange('')} className='h-8 px-2 lg:px-3'>
+          {(search || activeFilterCount > 0) && (
+            <Button
+              variant='ghost'
+              onClick={() => {
+                onSearchChange('')
+                onResetFilters()
+              }}
+              className='h-8 px-2 lg:px-3'
+            >
               Reset
               <Cross2Icon className='ms-2 h-4 w-4' />
             </Button>

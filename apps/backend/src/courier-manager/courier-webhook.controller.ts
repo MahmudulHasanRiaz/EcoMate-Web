@@ -85,11 +85,15 @@ export class CourierWebhookController {
     const creds = await this.prisma.courierCredentials.findUnique({
       where: { courier: 'pathao' },
     });
-    if (!creds?.webhookSecret) {
+    // The merchant's registered integration secret (registered with Pathao,
+    // e.g. f3992ecc-59da-4cbe-a049-a13da2018d51) takes precedence; the legacy
+    // generic webhookSecret field is accepted as a fallback.
+    const secret = creds?.pathaoIntegrationSecret || creds?.webhookSecret;
+    if (!secret) {
       return { result: 'CREDENTIAL_MISSING', detail: 'Pathao webhook secret not configured' };
     }
 
-    if (signature !== creds.webhookSecret) {
+    if (signature !== secret) {
       return { result: 'MISMATCH', detail: 'Signature does not match stored secret' };
     }
 

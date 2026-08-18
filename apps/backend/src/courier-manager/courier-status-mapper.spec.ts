@@ -41,6 +41,29 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.on-hold')).toBe('HOLD');
   });
 
+  it('maps Pathao plain status labels (official /orders/{id}/info vocabulary) before keyword fallback', () => {
+    // `deliver` keyword must NOT win over "Assigned for Delivery" / "On Hold".
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Assigned for Delivery')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'assigned for delivery')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Assigned For Pickup')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Requested')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'At the Sorting Hub')).toBe('IN_TRANSIT');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'In Transit')).toBe('IN_TRANSIT');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Partial Delivery')).toBe('PARTIAL');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'On Hold')).toBe('HOLD');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Return')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Paid Return')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Exchange')).toBe('DELIVERED');
+    // Skip labels from the info vocabulary never get promoted.
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Delivery Failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Payment Invoice')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pending')).toBe('DISPATCHED');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup')).toBe('PICKED_UP');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Delivered')).toBe('DELIVERED');
+  });
+
   it('webhook-skip statuses map to null (never promoted by keyword fallback)', () => {
     // Pathao/Carrybee webhooks explicitly map these to null ("skip").
     const skipLabels = [

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { CourierTokenService } from './courier-token.service';
 import { buildTrackingUrl } from './courier-webhook.service';
 
 interface TrackingEvent {
@@ -49,6 +50,7 @@ export class CourierTrackingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly tokenStore: CourierTokenService,
   ) {}
 
   async getOrderTracking(orderId: string) {
@@ -469,27 +471,74 @@ export class CourierTrackingService {
     if (!clientId || !clientSecret || !username || !password)
       return { ...baseResult, events: [] };
 
-    const token = await this.getPathaoToken(base, clientId, clientSecret, username, password);
-    const data = await this.jsonFetch(
-      `${base}/aladdin/api/v1/orders/${consignmentId}/tracking`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+    const token = await this.tokenStore.getAccessToken({
+      courier: 'pathao',
+      baseUrl: base,
+      clientId,
+      clientSecret,
+      username,
+      password,
+    });
+
+    // Primary: official GET /orders/{consignment_id}/info. The legacy
+    // /tracking endpoint expects the POST (order-creation) request shape and
+    // fails on plain GET reads — using it as a first choice made every
+    // manual sync fail. It remains as a 404 fallback for old-format data.
+    let trackingData: any;
+    try {
+      const info = await this.jsonFetch(
+        `${base}/aladdin/api/v1/orders/${consignmentId}/info`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      trackingData = info?.['data'] || info;
+    } catch (err) {
+      const httpStatus =
+        Number((err as any)?.['response']?.['status'] || (err as any)?.status) ||
+        Number(/(?:^|\s)HTTP (\d+)/.exec(String((err as Error).message))?.[1] || 0);
+      if (httpStatus !== 404) throw err;
+      const legacy = await this.jsonFetch(
+        `${base}/aladdin/api/v1/orders/${consignmentId}/tracking`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      trackingData = legacy?.['data'] || legacy;
+    }
+
+    const events: TrackingEvent[] = [];
+    if (trackingData?.['timeline'] || trackingData?.['tracking']) {
+      const timeline = trackingData['timeline'] || trackingData['tracking'];
+      if (Array.isArray(timeline)) {
+        for (const t of timeline) {
+          events.push({
+            status: String(t['status'] || t['event'] || ''),
+            message: String(t['message'] || t['note'] || ''),
+            timestamp: String(t['updated_at'] || t['timestamp'] || t['time'] || ''),
+            location: t['location'] ? String(t['location']) : undefined,
+          });
+        }
+      }
+    }
+
+    // Official /info response carries `order_status` (+ `order_status_slug`
+    // on some environments); the legacy shape used `status`.
+    const currentStatus = String(
+      trackingData?.['order_status'] || trackingData?.['order_status_slug'] || trackingData?.['status'] || '',
+    );
+    const currentMessage = String(
+      trackingData?.['message'] || events[events.length - 1]?.message || currentStatus,
     );
 
-    const trackingData = data?.['data'] || data;
-    const events: TrackingEvent[] = [];
-    const timeline = trackingData?.['timeline'] || trackingData?.['tracking'] || [];
-
-    if (Array.isArray(timeline)) {
-      for (const t of timeline) {
-        events.push({
-          status: String(t['status'] || t['event'] || ''),
-          message: String(t['message'] || t['note'] || ''),
-          timestamp: String(t['updated_at'] || t['timestamp'] || t['time'] || ''),
-          location: t['location'] ? String(t['location']) : undefined,
-        });
-      }
+    if (currentStatus && !events.some((e) => e.message === currentMessage)) {
+      events.push({
+        status: currentStatus,
+        message: currentMessage,
+        timestamp: String(
+          trackingData?.['updated_at'] || new Date().toISOString(),
+        ),
+      });
     }
 
     events.sort(
@@ -498,41 +547,10 @@ export class CourierTrackingService {
 
     return {
       ...baseResult,
-      currentStatus: String(trackingData?.['status'] || ''),
-      currentMessage: String(trackingData?.['message'] || events[events.length - 1]?.message || ''),
+      currentStatus,
+      currentMessage,
       events,
     };
-  }
-
-  private async getPathaoToken(
-    base: string,
-    clientId: string,
-    clientSecret: string,
-    username: string,
-    password: string,
-  ): Promise<string> {
-    const cacheKey = 'pathao:token';
-    const cached = await this.cache.get<string>(cacheKey);
-    if (cached) return cached;
-
-    const data = await this.jsonFetch(`${base}/aladdin/api/v1/issue-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        username,
-        password,
-        grant_type: 'password',
-      }),
-    });
-
-    const token = String(data?.['access_token'] || data?.['token'] || '');
-    if (!token) throw new Error('Pathao token fetch returned no token');
-
-    const expiresIn = Number(data?.['expires_in'] || 3600);
-    await this.cache.set(cacheKey, token, (expiresIn - 60) * 1000);
-    return token;
   }
 
   private async trackRedx(

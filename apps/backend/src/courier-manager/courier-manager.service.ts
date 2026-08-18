@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CourierTokenService } from './courier-token.service';
 import { formatCourierAddress } from './address-format';
 
 const BASE_URLS: Record<string, Record<string, string>> = {
@@ -25,7 +26,10 @@ const BASE_URLS: Record<string, Record<string, string>> = {
 export class CourierManagerService {
   private readonly logger = new Logger(CourierManagerService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tokenStore: CourierTokenService,
+  ) {}
 
   private async fetchWithTimeout(
     url: string,
@@ -522,25 +526,14 @@ export class CourierManagerService {
     username: string,
     password: string,
   ): Promise<string> {
-    const tokenData = await this.jsonFetch(
-      `${base}/aladdin/api/v1/issue-token`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          username,
-          password,
-          grant_type: 'password',
-        }),
-      },
-    );
-    if (!tokenData['access_token'])
-      throw new BadRequestException(
-        String(tokenData['message'] || 'Pathao auth failed'),
-      );
-    return String(tokenData['access_token']);
+    return this.tokenStore.getAccessToken({
+      courier: 'pathao',
+      baseUrl: base,
+      clientId,
+      clientSecret,
+      username,
+      password,
+    });
   }
 
   private async dispatchRedx(creds: any, base: string, order: any) {

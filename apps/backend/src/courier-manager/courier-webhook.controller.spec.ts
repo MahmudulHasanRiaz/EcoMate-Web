@@ -55,15 +55,14 @@ describe('CourierWebhookController — Diagnostics', () => {
   }
 
   function makeRes() {
-    let statusCode = 200;
     const headers: Record<string, string> = {};
-    return {
+    const res = {
       header: jest.fn((k: string, v: string) => { headers[k] = v; }),
-      status: jest.fn((c: number) => { statusCode = c; return res; }),
-      statusCode,
+      status: jest.fn((c: number) => { res.statusCode = c; return res; }),
+      statusCode: 200,
       raw: { on: jest.fn() },
-      get statusCode() { return statusCode; },
     } as any;
+    return res;
   }
 
   describe('Steadfast — auth diagnostics', () => {
@@ -199,6 +198,71 @@ describe('CourierWebhookController — Diagnostics', () => {
         expect.objectContaining({
           outcome: 'AUTH_FAILED',
           failureStage: 'AUTH',
+        }),
+      );
+    });
+  });
+
+  describe('Pathao — signature + integration-secret response header', () => {
+    it('accepts the registered pathaoIntegrationSecret when webhookSecret is not set', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({
+        webhookSecret: null,
+        pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
+      });
+      webhookSvc.handlePathao.mockResolvedValue({ status: 'success', message: 'ok' });
+
+      const result = await controller.pathao(
+        { event: 'order.delivered', consignment_id: 'P-CG-1' },
+        makeReq({ 'x-pathao-signature': 'f3992ecc-59da-4cbe-a049-a13da2018d51' }, '2.2.2.2'),
+        makeRes(),
+      );
+
+      expect(result).toEqual({ status: 'success', message: 'ok' });
+      expect(webhookSvc.handlePathao).toHaveBeenCalled();
+      const finalCall = attemptSvc.completeAttempt.mock.calls[attemptSvc.completeAttempt.mock.calls.length - 1];
+      expect(finalCall[1]).toEqual(expect.objectContaining({ outcome: 'SUCCESS' }));
+    });
+
+    it('echoes the integration secret back in the required response header', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({
+        webhookSecret: 'wh-secret',
+        pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
+      });
+
+      const res = makeRes();
+      await controller.pathao(
+        { event: 'order.updated', consignment_id: 'P-CG-2' },
+        makeReq({ 'x-pathao-signature': 'f3992ecc-59da-4cbe-a049-a13da2018d51' }),
+        res,
+      );
+
+      expect(res.header).toHaveBeenCalledWith(
+        'X-Pathao-Merchant-Webhook-Integration-Secret',
+        'f3992ecc-59da-4cbe-a049-a13da2018d51',
+      );
+      expect(res.status).toHaveBeenCalledWith(202);
+    });
+
+    it('rejects with AUTH_FAILED when neither secret is configured', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({
+        webhookSecret: null,
+        pathaoIntegrationSecret: null,
+      });
+
+      await expect(
+        controller.pathao(
+          { event: 'order.delivered' },
+          makeReq({ 'x-pathao-signature': 'anything' }),
+          makeRes(),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
+        'att-1',
+        expect.objectContaining({
+          outcome: 'AUTH_FAILED',
+          failureStage: 'AUTH',
+          authResult: expect.stringContaining('Pathao webhook secret not configured'),
         }),
       );
     });

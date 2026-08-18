@@ -332,6 +332,165 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
   });
 
+  describe('Order resolution — Pathao webhook', () => {
+    const pathaoOrder = {
+      id: 'order-1',
+      status: { id: 'status-pending', name: 'Shipping' },
+      courierConsignmentId: 'P-CG-1',
+      displayId: 'INV-1',
+      courierService: 'pathao',
+    };
+
+    it('primary lookup by order.courierConsignmentId still wins', async () => {
+      prisma.order.findFirst.mockResolvedValue(pathaoOrder);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+
+      const result = await service.handlePathao({
+        event: 'order.delivered',
+        consignment_id: 'P-CG-1',
+      });
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            courierConsignmentId: 'P-CG-1',
+            trashedAt: null,
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalled();
+      // Primary hit → fallback lookups are never executed
+      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the Dispatch registry when Order.courierConsignmentId is unset (manual dispatch list)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(null); // order column miss
+      prisma.dispatch.findFirst.mockResolvedValueOnce({
+        orderId: 'order-1',
+      });
+      prisma.order.findUnique.mockResolvedValueOnce(order);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+
+      const result = await service.handlePathao({
+        event: 'order.delivered',
+        consignment_id: 'P-CG-9',
+      });
+
+      expect(prisma.dispatch.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            courier: 'pathao',
+            consignmentId: 'P-CG-9',
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'DELIVERED' }),
+        }),
+      );
+    });
+
+    it('falls back to the documented merchant_order_id (order.displayId)', async () => {
+      prisma.order.findFirst
+        .mockResolvedValueOnce(null) // order.courierConsignmentId miss
+        .mockResolvedValueOnce(pathaoOrder); // merchant_order_id → displayId hit
+      prisma.dispatch.findFirst.mockResolvedValue(null); // no dispatch row
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+
+      const result = await service.handlePathao({
+        event: 'order.delivered',
+        consignment_id: 'P-CG-9',
+        merchant_order_id: 'INV-1',
+      });
+
+      expect(prisma.order.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            displayId: 'INV-1',
+            courierService: 'pathao',
+          }),
+        }),
+      );
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalled();
+    });
+
+    it('returns Order not found only when every source misses (incl. no merchant_order_id)', async () => {
+      prisma.order.findFirst.mockResolvedValue(null);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+
+      const result = await service.handlePathao({
+        event: 'order.delivered',
+        consignment_id: 'UNKNOWN-99',
+      });
+
+      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Pathao skip-statuses record raw state without forcing a workflow change', () => {
+    beforeEach(() => {
+      // The "all sources miss" test above leaves findFirst → null; the raw
+      // record path needs the order resolvable.
+      prisma.order.findFirst.mockResolvedValue(order);
+    });
+
+    it('order.pickup-failed: records courierStatus + timeline, never cancels the dispatch', async () => {
+      const result = await service.handlePathao({
+        event: 'order.pickup-failed',
+        consignment_id: 'CG-1',
+      });
+
+      expect(result.status).toBe('success');
+      // Order courier status recorded verbatim…
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0];
+      expect(orderUpdate[0].data.courierStatus).toBe('order.pickup-failed');
+      // …touched in before they existed? dispatch.upsert must not carry a
+      // status change (no CANCELLED / no forced status).
+      const upsertCalls = (prisma.dispatch.upsert as jest.Mock).mock.calls;
+      if (upsertCalls.length > 0) {
+        expect(upsertCalls[0][0].update.status).toBeUndefined();
+      }
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('order.delivery-failed: records courierStatus + timeline, never forces RETURN_PENDING', async () => {
+      const result = await service.handlePathao({
+        event: 'order.delivery-failed',
+        consignment_id: 'CG-1',
+        reason: 'Customer not reachable',
+      });
+
+      expect(result.status).toBe('success');
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0];
+      expect(orderUpdate[0].data.courierStatus).toBe('order.delivery-failed');
+      const upsertCalls = (prisma.dispatch.upsert as jest.Mock).mock.calls;
+      if (upsertCalls.length > 0) {
+        expect(upsertCalls[0][0].update.status).toBeUndefined();
+      }
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('order.updated (informational) is recorded the same way', async () => {
+      const result = await service.handlePathao({
+        event: 'order.updated',
+        consignment_id: 'CG-1',
+      });
+
+      expect(result.status).toBe('success');
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0];
+      expect(orderUpdate[0].data.courierStatus).toBe('order.updated');
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Rule B — Partial order is automation-stopped', () => {
     it('a Delivered webhook on a Partial order locks the ORDER but still updates the DISPATCH (Steadfast)', async () => {
       // Order is already Partial; the OrdersService lock rejects the advance.

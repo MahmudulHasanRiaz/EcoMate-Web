@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CourierTrackingService } from './courier-tracking.service';
+import { CourierTokenService } from './courier-token.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 
@@ -26,6 +27,10 @@ describe('CourierTrackingService.getDispatchTracking', () => {
       courierCredentials: {
         findUnique: jest.fn().mockResolvedValue(creds),
       },
+      courierAuthToken: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
       isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
     };
     cache = {
@@ -50,6 +55,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CourierTrackingService,
+        CourierTokenService,
         { provide: PrismaService, useValue: prisma },
         { provide: CacheService, useValue: cache },
       ],
@@ -225,5 +231,175 @@ describe('CourierTrackingService.getDispatchTracking', () => {
       { force: true },
     );
     expect(result).toBeNull();
+  });
+
+  describe('Pathao — official /orders/{id}/info endpoint (with legacy /tracking fallback)', () => {
+    const pathaoCreds = {
+      courier: 'pathao',
+      enabled: true,
+      mode: 'sandbox',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      username: 'user@merchant.com',
+      password: 'pass',
+      credentials: {},
+    };
+
+    function mockTokenResponse() {
+      return {
+        ok: true,
+        json: async () => ({
+          token_type: 'Bearer',
+          expires_in: 432000,
+          access_token: 'TOKEN-123',
+          refresh_token: 'REFRESH-1',
+        }),
+      };
+    }
+
+    beforeEach(() => {
+      prisma.courierCredentials.findUnique.mockResolvedValue(pathaoCreds);
+    });
+
+    it('queries /orders/{id}/info first and parses order_status (official vocabulary)', async () => {
+      const calls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        calls.push(String(url));
+        if (String(url).includes('issue-token')) return mockTokenResponse();
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              consignment_id: 'P-CG-1',
+              merchant_order_id: 'INV-1',
+              order_status: 'In Transit',
+              order_status_slug: 'In Transit',
+              updated_at: '2026-08-10 12:00:00',
+            },
+          }),
+        };
+      });
+
+      const result = await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+
+      expect(calls.some((u) => u.includes('/orders/P-CG-1/info'))).toBe(true);
+      expect(calls.some((u) => u.includes('/orders/P-CG-1/tracking'))).toBe(false);
+      expect(result?.currentStatus).toBe('In Transit');
+      expect(result?.currentMessage).toBe('In Transit');
+      expect(result?.configured).toBe(true);
+    });
+
+    it('parses order_status_slug when order_status is absent', async () => {
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        if (String(url).includes('issue-token')) return mockTokenResponse();
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              consignment_id: 'P-CG-1',
+              order_status_slug: 'Delivered',
+            },
+          }),
+        };
+      });
+
+      const result = await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+
+      expect(result?.currentStatus).toBe('Delivered');
+    });
+
+    it('falls back to the legacy /orders/{id}/tracking endpoint on HTTP 404', async () => {
+      const calls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        calls.push(String(url));
+        if (String(url).includes('issue-token')) return mockTokenResponse();
+        if (String(url).includes('/info'))
+          return { ok: false, status: 404, text: async () => 'Not Found' };
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              status: 'assign_for_delivery',
+              timeline: [
+                { status: 'pending', message: 'Order Placed', updated_at: '2026-08-10 09:00:00' },
+                { status: 'assign_for_delivery', message: 'Rider assigned', updated_at: '2026-08-10 11:00:00' },
+              ],
+            },
+          }),
+        };
+      });
+
+      const result = await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+
+      expect(calls.some((u) => u.includes('/orders/P-CG-1/tracking'))).toBe(true);
+      expect(result?.currentStatus).toBe('assign_for_delivery');
+      expect(result?.events).toHaveLength(2);
+      expect(result?.events[1].message).toBe('Rider assigned');
+    });
+
+    it('uses the persisted token from the shared store instead of re-issuing on every call', async () => {
+      // First call: no stored row → issues once. Subsequent calls: the
+      // durable CourierAuthToken row is present → no token API call.
+      prisma.courierAuthToken.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({
+          courier: 'pathao',
+          accessToken: 'DB-TOKEN',
+          refreshToken: 'REFRESH-1',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        if (String(url).includes('issue-token')) return mockTokenResponse();
+        return {
+          ok: true,
+          json: async () => ({ data: { order_status: 'Pending' } }),
+        };
+      });
+
+      await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+      await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+      await service.getDispatchTracking(
+        'pathao',
+        '01700000000',
+        'P-CG-1',
+        null,
+        { force: true },
+      );
+
+      const tokenCalls = (global.fetch as jest.Mock).mock.calls.filter((c: any) =>
+        String(c[0]).includes('issue-token'),
+      );
+      expect(tokenCalls.length).toBe(1);
+    });
   });
 });

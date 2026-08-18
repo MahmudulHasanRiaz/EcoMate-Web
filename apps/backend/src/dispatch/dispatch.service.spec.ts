@@ -35,6 +35,7 @@ describe('DispatchService', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderStatus: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -544,6 +545,76 @@ describe('DispatchService', () => {
       for (const call of (prisma.order.update as jest.Mock).mock.calls) {
         expect(call[0].data.statusId).toBeUndefined();
       }
+    });
+  });
+
+  describe('create — manual dispatch links the order for webhook/tracking resolution', () => {
+    it('writes courierService/courierConsignmentId on the order when not already claimed (Pathao)', async () => {
+      prisma.dispatch.findUnique.mockResolvedValue(null); // no existing row
+      prisma.dispatch.create.mockResolvedValue({ id: 'd-new', courier: 'pathao', consignmentId: 'CG-001' });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'pathao',
+        consignmentId: 'CG-001',
+        trackingCode: 'CG-001',
+      });
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'order-1',
+          OR: [
+            { courierConsignmentId: null },
+            { courierConsignmentId: 'CG-001' },
+          ],
+        },
+        data: {
+          courierService: 'pathao',
+          courierConsignmentId: 'CG-001',
+          courierTrackingCode: 'CG-001',
+        },
+      });
+    });
+
+    it('never overwrites an order already claimed by a different consignment/courier', async () => {
+      prisma.dispatch.findUnique.mockResolvedValue(null);
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'pathao',
+        consignmentId: 'CG-999',
+      });
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: 'order-1',
+            OR: [
+              { courierConsignmentId: null },
+              { courierConsignmentId: 'CG-999' },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('links the order even when the dispatch row is flagged as a duplicate', async () => {
+      prisma.dispatch.findUnique.mockResolvedValue({
+        id: 'd-existing',
+        status: 'IN_TRANSIT',
+        consignmentId: 'CG-001',
+      });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'pathao',
+        consignmentId: 'CG-001',
+      });
+
+      expect(prisma.dispatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ flaggedAt: expect.any(Date) }) }),
+      );
+      expect(prisma.order.updateMany).toHaveBeenCalled();
     });
   });
 });

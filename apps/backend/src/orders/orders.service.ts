@@ -3066,7 +3066,13 @@ export class OrdersService {
   async bulkDispatch(courier: string, ids: string[], _userId: string) {
     const { CourierManagerService } =
       await import('../courier-manager/courier-manager.service.js');
-    const mgr = new CourierManagerService(this.prisma);
+    const { CourierTokenService } =
+      await import('../courier-manager/courier-token.service.js');
+    const { CacheService } = await import('../cache/cache.service.js');
+    const mgr = new CourierManagerService(
+      this.prisma,
+      new CourierTokenService(this.prisma, new CacheService()),
+    );
     return mgr.dispatch(courier, ids);
   }
 

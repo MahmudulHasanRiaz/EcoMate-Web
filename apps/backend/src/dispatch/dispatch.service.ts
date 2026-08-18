@@ -257,6 +257,10 @@ export class DispatchService {
         },
       });
 
+      // Link the order regardless of the duplicate flag: the created row must
+      // be resolvable by webhooks and manual sync keyed on courier+consignment.
+      await this.linkOrderToConsignment(dto);
+
       return {
         duplicate: true,
         id: flagged.id,
@@ -265,7 +269,7 @@ export class DispatchService {
       };
     }
 
-    return this.prisma.dispatch.create({
+    const created = await this.prisma.dispatch.create({
       data: {
         orderId: dto.orderId,
         courier: dto.courier as any,
@@ -285,6 +289,36 @@ export class DispatchService {
             guestPhone: true,
           },
         },
+      },
+    });
+
+    // Persist courierService/courierConsignmentId on the Order: without this,
+    // webhooks AND the manual "Sync Status from Courier" lookups keyed on
+    // coupon consignment miss manual dispatch-list rows entirely. The OR
+    // guard keeps an order claimed by a DIFFERENT consignment untouched.
+    await this.linkOrderToConsignment(dto);
+
+    return created;
+  }
+
+  /**
+   * Link the order to the dispatch's consignment so Pathao/Steadfast webhooks
+   * and manual syncs can resolve it by consignment id. Never overwrites an
+   * order already claimed by a different consignment/courier combo.
+   */
+  private async linkOrderToConsignment(dto: CreateDispatchDto): Promise<void> {
+    await this.prisma.order.updateMany({
+      where: {
+        id: dto.orderId,
+        OR: [
+          { courierConsignmentId: null },
+          { courierConsignmentId: dto.consignmentId },
+        ],
+      },
+      data: {
+        courierService: dto.courier as any,
+        courierConsignmentId: dto.consignmentId,
+        courierTrackingCode: dto.trackingCode || undefined,
       },
     });
   }

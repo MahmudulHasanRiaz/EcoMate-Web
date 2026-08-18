@@ -441,15 +441,16 @@ export class CourierWebhookService {
       return { status: 'success', message: 'Store event, no action needed' };
     }
 
-    const consignmentId = body['consignment_id'] as string;
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
     if (!consignmentId) {
       this.logger.warn('Pathao webhook missing consignment_id');
       return { status: 'error', message: 'Missing consignment_id' };
     }
 
-    const order = await this.prisma.order.findFirst({
-      where: { courierConsignmentId: consignmentId, trashedAt: null },
-    });
+    const order = await this.findPathaoOrder(
+      consignmentId,
+      (body['merchant_order_id'] as string) || undefined,
+    );
     if (!order) {
       this.logger.warn(`Pathao: Order not found for consignment ${consignmentId}`);
       return { status: 'error', message: 'Order not found' };
@@ -457,13 +458,37 @@ export class CourierWebhookService {
 
     let dispatchStatus: string | null = PATHAO_DISPATCH_MAP[event] ?? null;
 
-    if (['order.pickup-failed', 'order.delivery-failed'].includes(event)) {
-      dispatchStatus = await this.resolveCancelledStatus(order.id);
+    if (!dispatchStatus) {
+      // Skip-statuses (order.updated, pickup-failed, delivery-failed, …):
+      // persist the raw courier state so the Dispatch list "Courier Status"
+      // column and the order reflect what really happened, but NEVER force a
+      // workflow change (no CANCELLED, no RETURN_PENDING, no cancellation —
+      // these events carry no delivery outcome).
+      this.logger.log(`Pathao: ${consignmentId} event "${event}" → recorded, workflow unchanged`);
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { courierStatus: event, courierService: 'pathao' },
+      });
+
+      const existing = await this.prisma.dispatch.findFirst({
+        where: {
+          courier: 'pathao' as any,
+          consignmentId,
+        },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        await this.prisma.dispatch.update({
+          where: { id: existing.id },
+          data: { courierStatus: event, lastSyncedAt: new Date() },
+        });
+      }
+      await this.addTimelineEntry(order.id, 'pathao', event);
+      return { status: 'success', message: 'No status change needed' };
     }
 
-    if (!dispatchStatus) {
-      this.logger.log(`Pathao: ${consignmentId} event "${event}" → skipped`);
-      return { status: 'success', message: 'No status change needed' };
+    if (event === 'order.pickup-cancelled') {
+      dispatchStatus = await this.resolveCancelledStatus(order.id);
     }
 
     await this.prisma.order.update({
@@ -487,6 +512,54 @@ export class CourierWebhookService {
 
     this.logger.log(`Pathao: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Resolve the order for a Pathao webhook by consignment id — mirrors the
+   * Steadfast fallback chain so webhooks for orders from the MANUAL dispatch
+   * list (registry-only consignments) and legacy re-links resolve too:
+   * 1. Order.courierConsignmentId — automated API / bulk dispatch.
+   * 2. Dispatch registry — manual dispatch-list entries whose consignment
+   *    lives only on the Dispatch row.
+   * 3. merchant_order_id — the documented webhook identifier; the API
+   *    dispatch flow sends Order.displayId as merchant_order_id.
+   */
+  private async findPathaoOrder(
+    consignmentId: string,
+    merchantOrderId?: string,
+  ): Promise<{ id: string } | null> {
+    const direct = await this.prisma.order.findFirst({
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
+    });
+    if (direct) return direct;
+
+    const dispatch = await this.prisma.dispatch.findFirst({
+      where: {
+        courier: 'pathao' as any,
+        consignmentId,
+        order: { trashedAt: null },
+      },
+      select: { orderId: true },
+    });
+    if (dispatch) {
+      const viaDispatch = await this.prisma.order.findUnique({
+        where: { id: dispatch.orderId },
+      });
+      if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
+    }
+
+    if (merchantOrderId) {
+      const viaMerchantId = await this.prisma.order.findFirst({
+        where: {
+          displayId: merchantOrderId,
+          courierService: 'pathao',
+          trashedAt: null,
+        },
+      });
+      if (viaMerchantId) return viaMerchantId;
+    }
+
+    return null;
   }
 
   async handleRedx(body: Record<string, unknown>) {
