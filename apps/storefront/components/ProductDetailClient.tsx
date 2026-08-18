@@ -35,7 +35,7 @@ function cartItemKey(productId: string, variantId?: string) {
 
 function StockBadge({ stock }: { stock?: number }) {
   if (stock === undefined) return null;
-  if (stock === 0) {
+  if (stock <= 0) {
     return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>;
   }
   if (stock > 10) {
@@ -543,7 +543,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const displayImage = selectedVariant?.image || product.image;
   const variantImages = selectedVariant?.images?.length ? selectedVariant.images : undefined;
   const displayStock = effectiveStock;
-  const isOutOfStock = displayStock === 0;
+  const isOutOfStock = displayStock !== undefined && displayStock <= 0;
 
   const itemGallery = isVariable
     ? (variantImages || [displayImage, ...(product.images?.slice(1) || [])])

@@ -1481,6 +1481,218 @@ describe('OrdersService', () => {
       expect(result.statusId).toBe('status-confirmed');
     });
 
+    describe('confirm re-verifies stock truthfully (zero/negative)', () => {
+      const buildConfirmOrder = (productOverrides: Record<string, unknown>) => ({
+        ...mockOrder,
+        status: { id: 'status-cancelled', name: 'Cancelled' },
+        items: [
+          {
+            id: 'item-id-1',
+            orderId: 'order-id-1',
+            productId: 'prod-1',
+            variantId: 'variant-1',
+            quantity: 2,
+            price: 1000,
+            product: {
+              id: 'prod-1',
+              name: 'Test Product',
+              availabilityMode: 'MANAGED_STOCK',
+              manageStock: true,
+              type: 'simple',
+              warehouseId: null,
+              syncManagedStock: null,
+              ...productOverrides,
+            },
+          },
+        ],
+      });
+
+      const stubConfirmCommon = (order: Record<string, unknown>) => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(order);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          mockConfirmedStatus,
+        );
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...order,
+          statusId: 'status-confirmed',
+          status: mockConfirmedStatus,
+        });
+        (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
+          cb(prisma),
+        );
+        (prisma.orderStockCycle.findFirst as jest.Mock).mockResolvedValue(null);
+        (prisma.orderStockCycle.create as jest.Mock).mockResolvedValue({
+          id: 'cycle-1',
+        });
+        (prisma.orderItemComboComponent as any) = {
+          findMany: jest.fn().mockResolvedValue([]),
+        };
+        (prisma.physicalInventory as any) = {
+          findFirst: jest.fn().mockResolvedValue(null),
+        };
+      };
+
+      it('rejects confirm when managed stock available has dropped to zero', async () => {
+        stubConfirmCommon(buildConfirmOrder({}));
+        (module.get<StockService>(StockService).getAvailableStock as jest.Mock)
+          .mockResolvedValue({ stock: 0, reserved: 0, available: 0 });
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Insufficient stock for "Test Product". Available: 0, needed: 2.',
+        );
+      });
+
+      it('rejects confirm when managed stock available is negative', async () => {
+        stubConfirmCommon(buildConfirmOrder({}));
+        (module.get<StockService>(StockService).getAvailableStock as jest.Mock)
+          .mockResolvedValue({ stock: 4, reserved: 7, available: -3 });
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Insufficient stock for "Test Product". Available: -3, needed: 2.',
+        );
+      });
+
+      it('rejects confirm for an ALWAYS_OUT_OF_STOCK product', async () => {
+        stubConfirmCommon(
+          buildConfirmOrder({ availabilityMode: 'ALWAYS_OUT_OF_STOCK' }),
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Product "Test Product" is out of stock and cannot be ordered',
+        );
+      });
+
+      it('rejects confirm when physical stock available is zero', async () => {
+        const stockService = module.get<StockService>(StockService);
+        (stockService as any).hasExistingPhysicalReservation = jest
+          .fn()
+          .mockResolvedValue(false);
+        (module.get<StockRouterService>(StockRouterService).resolve as jest.Mock)
+          .mockReturnValue({ ms: 'skip', pi: 'allocate' });
+        stubConfirmCommon(
+          buildConfirmOrder({
+            availabilityMode: 'INVENTORY_CONTROLLED',
+            warehouseId: 'wh-1',
+          }),
+        );
+        (prisma.physicalInventory as any) = {
+          findFirst: jest.fn().mockResolvedValue({
+            quantity: 2,
+            reservedQuantity: 2,
+          }),
+        };
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Insufficient physical stock for "Test Product". Available: 0, needed: 2.',
+        );
+      });
+
+      it('rejects confirm when physical reservations exceed quantity (negative available)', async () => {
+        const stockService = module.get<StockService>(StockService);
+        (stockService as any).hasExistingPhysicalReservation = jest
+          .fn()
+          .mockResolvedValue(false);
+        (module.get<StockRouterService>(StockRouterService).resolve as jest.Mock)
+          .mockReturnValue({ ms: 'skip', pi: 'allocate' });
+        stubConfirmCommon(
+          buildConfirmOrder({
+            availabilityMode: 'INVENTORY_CONTROLLED',
+            warehouseId: 'wh-1',
+          }),
+        );
+        (prisma.physicalInventory as any) = {
+          findFirst: jest.fn().mockResolvedValue({
+            quantity: 2,
+            reservedQuantity: 5,
+          }),
+        };
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Insufficient physical stock for "Test Product". Available: -3, needed: 2.',
+        );
+      });
+
+      it('rejects confirm when a combo component managed stock is zero', async () => {
+        stubConfirmCommon({
+          ...mockOrder,
+          status: { id: 'status-cancelled', name: 'Cancelled' },
+          items: [
+            {
+              id: 'item-id-1',
+              orderId: 'order-id-1',
+              comboId: 'combo-1',
+              quantity: 1,
+              price: 1000,
+              product: null,
+            },
+          ],
+        });
+        (prisma.orderItemComboComponent as any) = {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'comp-1',
+              orderItemId: 'item-id-1',
+              productId: 'comp-prod',
+              variantId: null,
+              totalQuantity: 1,
+              managedStockReserved: false,
+              product: {
+                id: 'comp-prod',
+                name: 'Comp A',
+                availabilityMode: 'MANAGED_STOCK',
+                manageStock: true,
+                type: 'simple',
+                warehouseId: null,
+                syncManagedStock: null,
+              },
+            },
+          ]),
+        };
+        (module.get<StockService>(StockService).getAvailableStock as jest.Mock)
+          .mockResolvedValue({ stock: 0, reserved: 0, available: 0 });
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          'Insufficient managed stock for combo component "Comp A". Available: 0, needed: 1.',
+        );
+      });
+    });
+
     it('rejects Cancelled → Shipping (not in allowed transitions)', async () => {
       const cancelledOrder = {
         ...mockOrder,

@@ -254,3 +254,59 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
     expect(secondId).toBe(firstId);
   });
 });
+describe('ProductDetailClient — zero/negative stock is out of stock', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setConsent(false, true);
+    window.fbq = vi.fn();
+    window.ttq = { track: vi.fn(), page: vi.fn() };
+    setPixelIds('TEST-META-ID', 'TEST-TIKTOK-CODE');
+    initMetaPixel();
+    apiClientGetMock.mockClear();
+    apiClientGetMock.mockResolvedValue({ data: [] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  const renderDetail = (product: any) =>
+    render(
+      <StorefrontConfigProvider initialConfig={CONFIG}>
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <ProductDetailClient product={product} />
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
+      </StorefrontConfigProvider>,
+    );
+
+  it('negative stock renders the Out of Stock state with a disabled CTA', () => {
+    renderDetail({
+      ...simpleProduct,
+      stock: -2,
+      availabilityMode: 'MANAGED_STOCK',
+    });
+    const cta = screen.getByRole('button', { name: /OUT OF STOCK/i });
+    expect(cta).toBeDisabled();
+    expect(screen.getByText('Out of Stock')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ADD TO CART/i })).not.toBeInTheDocument();
+  });
+
+  it('zero stock keeps the Out of Stock state', () => {
+    renderDetail({
+      ...simpleProduct,
+      stock: 0,
+      availabilityMode: 'MANAGED_STOCK',
+    });
+    expect(screen.getByRole('button', { name: /OUT OF STOCK/i })).toBeDisabled();
+  });
+
+  it('positive stock renders an enabled ADD TO CART button', () => {
+    renderDetail({
+      ...simpleProduct,
+      stock: 10,
+      availabilityMode: 'MANAGED_STOCK',
+    });
+    expect(screen.getByRole('button', { name: /ADD TO CART/i })).not.toBeDisabled();
+  });
+});

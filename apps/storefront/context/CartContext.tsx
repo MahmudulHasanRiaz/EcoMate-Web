@@ -74,6 +74,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback((product: CartItem, skipOpen?: boolean) => {
     if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return;
+    if (product.stock != null && product.stock <= 0) return;
     const qtyToAdd = product.quantity || 1;
     setItems((prev) => {
       const key = getItemKey(product);
@@ -102,6 +103,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       prev.map((item) => {
         if (getItemKey(item) === productKey) {
           if (item.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return item;
+          if (item.stock != null && item.stock <= 0) return item;
           const cappedQty = item.stock != null ? Math.min(quantity, item.stock) : quantity;
           return { ...item, quantity: cappedQty };
         }
