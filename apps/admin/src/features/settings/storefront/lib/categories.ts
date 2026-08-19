@@ -13,6 +13,7 @@ export type SectionId =
   | 'discovery-social'
   | 'commerce-checkout'
   | 'commerce-order'
+  | 'commerce-courier'
   | 'commerce-thank-you'
   | 'catalog-display'
   | 'smtp'
