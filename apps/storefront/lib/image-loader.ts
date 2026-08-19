@@ -1,7 +1,5 @@
 import type { ImageLoaderProps } from "next/image";
 
-const RESIZE_API = "/api/images/resize";
-
 // Derivative variant widths in pixels
 const DERIVATIVE_SIZES = [
   { name: "thumbnail", maxWidth: 150 },
@@ -19,36 +17,27 @@ function closestVariant(width: number): string {
   return "large";
 }
 
-export default function imageLoader({ src, width, quality }: ImageLoaderProps) {
+export default function imageLoader({ src, width }: ImageLoaderProps) {
   if (src.startsWith("data:") || src.startsWith("blob:")) return src;
 
   // Local static assets (e.g. /placeholder.svg, /icons/*.svg) — return as-is.
-  // Only /uploads/ and /assets/ are backend-served and need the resize proxy.
-  if (
-    src.startsWith("/") &&
-    !src.startsWith("/uploads/") &&
-    !src.startsWith("/assets/")
-  ) {
+  if (src.startsWith("/") && !src.startsWith("/uploads/") && !src.startsWith("/assets/")) {
     return src;
   }
 
-  // Derivative URLs: map requested width to closest variant
+  // Derivative URLs already served by backend storage — pick closest variant
   const match = src.match(DERIVATIVE_REGEX);
   if (match) {
     const variant = closestVariant(width);
-    // Only rewrite if variant differs from current — avoids unnecessary URL change
     if (match[2] !== variant) {
       return `${match[1]}${variant}.${match[3]}`;
     }
     return src;
   }
 
-  const params = new URLSearchParams({
-    path: src,
-    w: String(width),
-    q: String(quality || 75),
-    fit: "cover",
-  });
-
-  return `${RESIZE_API}?${params.toString()}`;
+  // Raw /uploads/ images — serve directly (resize proxy is unreliable in
+  // production and breaks ALL storefront images when it fails with a 500).
+  // The backend derivative system (displayUrl in ProductImageGallery) already
+  // picks the right pre-generated size; the loader just passes the path through.
+  return src;
 }
