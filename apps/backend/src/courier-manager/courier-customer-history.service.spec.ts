@@ -5,7 +5,7 @@ import { CourierCustomerHistoryService, CourierReport } from './courier-customer
 const PHONE = '01712345678';
 const NOR_PHONE = '01712345678';
 
-function mockPathaoApi(globalFetch: jest.Mock, rating: string, totalOrders: number) {
+function mockPathaoApi(globalFetch: jest.Mock, rating: string | null, totalOrders: number | null, extra: Record<string, unknown> = {}) {
   globalFetch.mockImplementation((url: string) => {
     if (url.includes('/api/v1/login')) {
       return Promise.resolve({
@@ -16,7 +16,9 @@ function mockPathaoApi(globalFetch: jest.Mock, rating: string, totalOrders: numb
     if (url.includes('/user/success')) {
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ data: { customer_rating: rating, total_orders: totalOrders } }),
+        json: () => Promise.resolve({
+          data: { customer_rating: rating ?? '', total_orders: totalOrders ?? undefined, ...extra },
+        }),
       } as any);
     }
     return Promise.resolve({ ok: false, json: () => Promise.resolve({}) } as any);
@@ -78,11 +80,14 @@ describe('CourierCustomerHistoryService', () => {
       ['new_customer', 'new', null],
       ['Excellent', 'normalized', 90],
       ['excellent', 'normalized', 90],
+      ['excellent_customer', 'normalized', 90],
       ['Good', 'normalized', 80],
       ['good_customer', 'normalized', 80],
       ['Moderate', 'normalized', 70],
+      ['moderate_customer', 'normalized', 70],
       ['average_customer', 'normalized', 70],
       ['Risky', 'normalized', 40],
+      ['risky_customer', 'normalized', 40],
       ['bad_customer', 'normalized', 40],
     ] as [string, string, number | null][])(
       'rating "%s" resolves to source %s with ratio %s',
@@ -134,8 +139,59 @@ describe('CourierCustomerHistoryService', () => {
       expect(res.report).toMatchObject({ source: 'new', successRatio: null, success: 0 });
     });
 
-    it('total_orders = 0 yields no report (zero history, not 0% success)', async () => {
-      mockPathaoApi(globalFetchSpy, 'Good', 0);
+    it('rating-based response (no counts) uses 100-unit normalized representation', async () => {
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 90,
+        cancel: 10,
+        total: 100,
+        successRatio: 90,
+        source: 'normalized',
+        rating: 'excellent_customer',
+      });
+    });
+
+    it('rating present with total: 0 (rating-only data) still yields a report', async () => {
+      mockPathaoApi(globalFetchSpy, 'good_customer', null, { total: 0 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 80,
+        cancel: 20,
+        total: 100,
+        successRatio: 80,
+        source: 'normalized',
+      });
+    });
+
+    it('new_customer rating-only response is neutral with total 0 (never fabricated counts)', async () => {
+      mockPathaoApi(globalFetchSpy, 'new_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toEqual({
+        success: 0,
+        cancel: 0,
+        total: 0,
+        successRatio: null,
+        source: 'new',
+        rating: 'new_customer',
+        schemaVersion: 2,
+      });
+    });
+
+    it('rating present with real totals scales normalized counts to the real total', async () => {
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', 20);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 18,
+        cancel: 2,
+        total: 20,
+        successRatio: 90,
+        source: 'normalized',
+      });
+    });
+
+    it('no rating and total_orders = 0 yields no report (zero history, not 0% success)', async () => {
+      mockPathaoApi(globalFetchSpy, null, 0);
       const res = await service.getCustomerHistory('pathao', PHONE);
       expect(res.report).toBeNull();
       expect(res.fresh).toBe(false);

@@ -232,15 +232,18 @@ export class CourierCustomerHistoryService {
       case 'new':
         return 'new';
       case 'risky':
+      case 'risky customer':
       case 'bad customer':
         return 'risky';
       case 'moderate':
+      case 'moderate customer':
       case 'average customer':
         return 'moderate';
       case 'good':
       case 'good customer':
         return 'good';
       case 'excellent':
+      case 'excellent customer':
         return 'excellent';
       default:
         return 'unknown';
@@ -291,10 +294,16 @@ export class CourierCustomerHistoryService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: creds.username, password: creds.password }),
     });
-    if (!loginRes.ok) return null;
+    if (!loginRes.ok) {
+      this.logger.warn(`Pathao history: merchant login failed (HTTP ${loginRes.status}) for ${phone}`);
+      return null;
+    }
     const loginData = await loginRes.json();
     const token = loginData['access_token'] || loginData['accessToken'];
-    if (!token) return null;
+    if (!token) {
+      this.logger.warn(`Pathao history: merchant login returned no token for ${phone}`);
+      return null;
+    }
 
     const successRes = await this.fetchWithTimeout('https://merchant.pathao.com/api/v1/user/success', {
       method: 'POST',
@@ -304,33 +313,41 @@ export class CourierCustomerHistoryService {
       },
       body: JSON.stringify({ phone }),
     });
-    if (!successRes.ok) return null;
+    if (!successRes.ok) {
+      const preview = (await successRes.text()).slice(0, 200);
+      this.logger.warn(`Pathao history: lookup failed (HTTP ${successRes.status}) for ${phone}: ${preview}`);
+      return null;
+    }
     const body = await successRes.json();
     const d = (body as any)?.data as Record<string, unknown> | undefined;
-    if (!d) return null;
+    if (!d) {
+      this.logger.warn(`Pathao history: lookup response missing data for ${phone}: ${JSON.stringify(body).slice(0, 200)}`);
+      return null;
+    }
 
     const rating = (d['customer_rating'] as string) || '';
-    const totalOrders = (d as any)?.total_orders ?? (d as any)?.totalOrders ?? (d as any)?.total_delivery ?? null;
+    const level = this.ratingLevel(rating);
+    if (level === 'unknown' && rating) {
+      this.logger.warn(`Pathao history: unrecognized rating value "${rating}" for ${phone}`);
+    }
+    const totalOrders = (d as any)?.total_orders ?? (d as any)?.totalOrders ?? (d as any)?.total_delivery ?? (d as any)?.total ?? null;
 
-    if (totalOrders !== null) {
-      const total = Number(totalOrders);
-      if (total <= 0) return null;
-
-      const level = this.ratingLevel(rating);
-      const calibrated = level === 'new' || level === 'unknown' ? null : (await this.getCalibration())[level];
+    if (level !== 'unknown') {
+      // Rating-based response (Pathao's current format — counts are 0/absent).
+      const calibrated = level === 'new' ? null : (await this.getCalibration())[level];
+      const realTotal = Number(totalOrders);
       if (calibrated == null) {
-        // New / unknown customer: neutral — no fabricated success/cancel counts.
         return {
           success: 0,
           cancel: 0,
-          total,
+          total: Number.isFinite(realTotal) && realTotal > 0 ? realTotal : 0,
           successRatio: null,
           source: 'new' as const,
           rating,
           schemaVersion: REPORT_SCHEMA_VERSION,
         };
       }
-
+      const total = Number.isFinite(realTotal) && realTotal > 0 ? realTotal : 100;
       const success = Math.round((total * calibrated) / 100);
       return {
         success,
@@ -343,7 +360,20 @@ export class CourierCustomerHistoryService {
       };
     }
 
-    return null;
+    if (totalOrders === null) return null;
+    const total = Number(totalOrders);
+    if (total <= 0) return null;
+
+    // Counts present but no rating — neutral (never fabricate a ratio).
+    return {
+      success: 0,
+      cancel: 0,
+      total,
+      successRatio: null,
+      source: 'new' as const,
+      rating,
+      schemaVersion: REPORT_SCHEMA_VERSION,
+    };
   }
 
   private toBdPhone(raw: string): string {
