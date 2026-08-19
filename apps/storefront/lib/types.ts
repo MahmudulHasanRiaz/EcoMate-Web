@@ -8,6 +8,7 @@ export type MediaMeta = Record<string, MediaDerivatives>;
 export interface VariantAttribute {
   id: string;
   value: string;
+  image?: string;
   attribute: {
     id: string;
     name: string;
@@ -189,7 +190,9 @@ export interface CartItem {
   name: string;
   price: number;
   originalPrice?: number;
-  image: string;
+  image?: string;
+  /** Parent product image — live onError fallback when the variant image 404s. */
+  productImage?: string;
   quantity: number;
   category?: string;
   slug?: string;

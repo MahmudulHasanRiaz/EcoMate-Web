@@ -36,6 +36,10 @@ export interface CourierReport {
 
 const REPORT_SCHEMA_VERSION = 2;
 const CALIBRATION_KEY = 'pathao_rating_calibration';
+// Last-resort normalized scale when Pathao has no counts AND no other courier
+// has cached history for the phone yet. Real production data (another courier's
+// actual parcel total) is always preferred over this fixed base.
+const REPORT_SCALE_FALLBACK = 100;
 
 export type PathaoRatingLevel = 'excellent' | 'good' | 'moderate' | 'risky' | 'new';
 
@@ -281,6 +285,29 @@ export class CourierCustomerHistoryService {
     }
   }
 
+  /**
+   * Smart scale for Pathao rating-only responses: normalize against the largest
+   * REAL parcel total this customer has with any other courier (cached), so the
+   * normalized report is comparable in magnitude with the other couriers'
+   * actual counts (e.g. 25 parcels → 23/2 instead of always 90/10 on 100).
+   * Falls back to REPORT_SCALE_FALLBACK only when no other courier has data.
+   */
+  private async smartScaleFor(phone: string): Promise<number> {
+    try {
+      const rows = await this.prisma.courierReportCache.findMany({
+        where: { phone, courier: { not: 'pathao' } },
+      });
+      let max = 0;
+      for (const row of rows) {
+        const t = Number((row.report as any)?.total);
+        if (Number.isFinite(t) && t > max) max = t;
+      }
+      return max > 0 ? max : REPORT_SCALE_FALLBACK;
+    } catch {
+      return REPORT_SCALE_FALLBACK;
+    }
+  }
+
   private async fetchPathao(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('pathao');
     if (!creds?.enabled) return null;
@@ -347,6 +374,9 @@ export class CourierCustomerHistoryService {
 
     if (level !== 'unknown') {
       // Rating-based response (Pathao's current format — counts are 0/absent).
+      // Scale to the customer's real parcel base from other couriers when
+      // Pathao itself carries no counts (a fixed 100-unit base misrepresents
+      // customers whose actual history is, e.g., 25 parcels).
       const calibrated = level === 'new' ? null : (await this.getCalibration())[level];
       const realTotal = Number(totalOrders);
       if (calibrated == null) {
@@ -360,7 +390,9 @@ export class CourierCustomerHistoryService {
           schemaVersion: REPORT_SCHEMA_VERSION,
         };
       }
-      const total = Number.isFinite(realTotal) && realTotal > 0 ? realTotal : 100;
+      const total =
+        Number.isFinite(realTotal) && realTotal > 0 ? realTotal : await this.smartScaleFor(phone);
+      // Integer split: Math.round keeps success integral, cancel absorbs the rest.
       const success = Math.round((total * calibrated) / 100);
       return {
         success,

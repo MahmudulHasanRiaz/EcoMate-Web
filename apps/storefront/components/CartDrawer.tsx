@@ -99,9 +99,17 @@ export default function CartDrawer() {
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const router = useRouter();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
+  const [imgFallbackErrors, setImgFallbackErrors] = useState<{ [key: string]: boolean }>({});
 
-  const handleImageError = (id: string) => {
-    setImgErrors(prev => ({ ...prev, [id]: true }));
+  const imgSrcFor = (key: string, item: { image?: string; productImage?: string }) => {
+    if (!imgErrors[key]) return item.image || PLACEHOLDER_IMAGE;
+    if (!imgFallbackErrors[key] && item.productImage) return item.productImage;
+    return PLACEHOLDER_IMAGE;
+  };
+
+  const handleImageError = (key: string, item: { image?: string; productImage?: string }) => {
+    if (!imgErrors[key]) setImgErrors(prev => ({ ...prev, [key]: true }));
+    else if (item.productImage) setImgFallbackErrors(prev => ({ ...prev, [key]: true }));
   };
 
   if (!isCartOpen) return null;
@@ -178,11 +186,11 @@ export default function CartDrawer() {
                 <div key={key} className="bg-white rounded-xl p-3 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 relative flex gap-3">
                   <div className="w-[60px] h-[60px] md:w-[70px] md:h-[70px] bg-white rounded-lg border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">
                     <Image 
-                      src={imgErrors[key] ? PLACEHOLDER_IMAGE : (item.image || PLACEHOLDER_IMAGE)} 
+                      src={imgSrcFor(key, item)} 
                       alt={item.name} 
                       width={70} height={70}
                       className="w-full h-full object-contain" 
-                      onError={() => handleImageError(key)}
+                      onError={() => handleImageError(key, item)}
                     />
                   </div>
                   

@@ -9,6 +9,7 @@ interface FlyingItem {
   x: number;
   y: number;
   image: string;
+  productImage?: string;
 }
 
 export default function FlyCartLayer() {
@@ -17,8 +18,8 @@ export default function FlyCartLayer() {
   useEffect(() => {
     const handleFly = ((e: CustomEvent) => {
       setItems(prev => [
-        ...prev, 
-        { id: Date.now() + Math.random(), x: e.detail.x, y: e.detail.y, image: e.detail.image }
+        ...prev,
+        { id: Date.now() + Math.random(), x: e.detail.x, y: e.detail.y, image: e.detail.image, productImage: e.detail.productImage }
       ]);
     }) as EventListener;
     
@@ -101,7 +102,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
         }}
       >
         <Image src={item.image || PLACEHOLDER_IMAGE} alt="Flying Item" width={128} height={128} className="w-full h-full object-contain drop-shadow-md"
-          onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }} />
+          onError={(e) => { e.currentTarget.src = item.productImage || PLACEHOLDER_IMAGE; }} />
       </div>
     </div>
   );

@@ -163,6 +163,10 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
   const s = currencySymbol || '৳';
   const key = getItemKey(item);
   const [imgError, setImgError] = React.useState(false);
+  const [imgFallbackError, setImgFallbackError] = React.useState(false);
+  const resolvedImg = imgError
+    ? (!imgFallbackError && item.productImage ? item.productImage : '/placeholder.svg')
+    : (item.image || '/placeholder.svg');
   return (
     <div className="flex gap-3 py-3.5 border-b border-gray-100 last:border-0 items-start">
       {/* Thumbnail with Badge */}
@@ -174,12 +178,15 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
             </div>
           ) : (
             <Image
-              src={item.image || '/placeholder.svg'}
+              src={resolvedImg}
               alt={item.name}
               width={56}
               height={56}
               className="w-full h-full object-contain rounded"
-              onError={() => setImgError(true)}
+              onError={() => {
+                if (!imgError) setImgError(true);
+                else if (item.productImage) setImgFallbackError(true);
+              }}
             />
           )}
         </div>

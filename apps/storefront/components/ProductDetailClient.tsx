@@ -10,6 +10,7 @@ import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import type { Product, Variant, Review } from "@/lib/types";
 import { trackAddToCart, trackViewContent } from "@/lib/tracking";
 import { resolveCatalogId } from '@/lib/catalog-id';
+import { resolveVariantImage, parentImage } from '@/lib/variant-image';
 import { VariantSelector } from "./VariantSelector";
 import { ProductImageGallery } from "./ProductImageGallery";
 import { SizeChartModal } from "./SizeChartModal";
@@ -540,14 +541,15 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         ? refPrice
         : undefined)
     : (product.originalPrice && product.originalPrice > displayPrice ? product.originalPrice : undefined);
-  const displayImage = selectedVariant?.image || product.image;
+  const displayImage = resolveVariantImage(selectedVariant, product);
+  const parentImg = parentImage(product);
   const variantImages = selectedVariant?.images?.length ? selectedVariant.images : undefined;
   const displayStock = effectiveStock;
   const isOutOfStock = displayStock !== undefined && displayStock <= 0;
 
-  const itemGallery = isVariable
-    ? (variantImages || [displayImage, ...(product.images?.slice(1) || [])])
-    : [product.image, ...(product.images?.slice(1) || [])];
+  const itemGallery: string[] = isVariable
+    ? (variantImages || [displayImage ?? '', ...(product.images?.slice(1) || [])]).filter((u): u is string => !!u)
+    : [product.image ?? '', ...(product.images?.slice(1) || [])].filter((u): u is string => !!u);
 
   const itemKey = cartItemKey(product.id, selectedVariant?.id);
   const cartItem = items.find((item) => {
@@ -580,6 +582,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         price: displayPrice,
         originalPrice: displayOriginalPrice,
         image: displayImage,
+        productImage: parentImg,
         quantity: qty,
         variantId: selectedVariant?.id,
         variantLabel,
@@ -622,6 +625,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       price: displayPrice,
       originalPrice: displayOriginalPrice,
       image: displayImage,
+      productImage: parentImg,
       quantity: 1,
       variantId: selectedVariant?.id,
       variantLabel,
@@ -702,7 +706,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       </div>
 
       <div className="mx-auto flex flex-col md:flex-row gap-0 md:gap-8 md:max-w-screen-xl">
-        <ProductImageGallery images={itemGallery} productName={product.name} mediaMeta={product.mediaMeta} key={selectedVariant?.id || product.id} />
+        <ProductImageGallery images={itemGallery} productName={product.name} mediaMeta={product.mediaMeta} fallbackImage={parentImg} key={selectedVariant?.id || product.id} />
 
         <div className="flex flex-col md:w-1/2 px-4 md:px-0 pt-4 md:pt-2">
           {videoUrl && videoPos === 1 && (

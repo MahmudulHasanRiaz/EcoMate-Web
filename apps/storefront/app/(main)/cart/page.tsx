@@ -22,6 +22,18 @@ export default function CartPage() {
   const s = config.currency.symbol;
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
+  const [imgFallbackErrors, setImgFallbackErrors] = useState<{ [key: string]: boolean }>({});
+
+  const imgSrcFor = (key: string, item: { image?: string; productImage?: string }) => {
+    if (!imgErrors[key]) return item.image || PLACEHOLDER_IMAGE;
+    if (!imgFallbackErrors[key] && item.productImage) return item.productImage;
+    return PLACEHOLDER_IMAGE;
+  };
+
+  const handleImageError = (key: string, item: { image?: string; productImage?: string }) => {
+    if (!imgErrors[key]) setImgErrors((prev) => ({ ...prev, [key]: true }));
+    else if (item.productImage) setImgFallbackErrors((prev) => ({ ...prev, [key]: true }));
+  };
 
   const deliveryThreshold = config.delivery?.freeDeliveryMin || 0;
   const deliveryProgress = deliveryThreshold > 0 ? Math.min(100, (cartTotal / deliveryThreshold) * 100) : 100;
@@ -77,11 +89,11 @@ export default function CartPage() {
                 >
                   <div className="w-[72px] h-[72px] md:w-[88px] md:h-[88px] bg-gray-50 rounded-lg border border-gray-100 flex items-center justify-center p-1 flex-shrink-0">
                     <Image
-                      src={imgErrors[key] ? PLACEHOLDER_IMAGE : (item.image || PLACEHOLDER_IMAGE)}
+                      src={imgSrcFor(key, item)}
                       alt={item.name}
                       width={88} height={88}
                       className="w-full h-full object-contain"
-                      onError={() => setImgErrors((prev) => ({ ...prev, [key]: true }))}
+                      onError={() => handleImageError(key, item)}
                     />
                   </div>
 

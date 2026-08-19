@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { resolveVariantImage } from "@/lib/variant-image";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { VariantPickerModal } from "@/components/VariantPickerModal";
 import type { Product, Variant } from "@/lib/types";
@@ -56,7 +57,7 @@ function buildColorEntries(variants: Variant[]): ColorEntry[] {
 }
 
 function getBestImage(product: Product, variant: Variant): string {
-  return variant.image || product.image || PLACEHOLDER_IMAGE;
+  return resolveVariantImage(variant, product) || PLACEHOLDER_IMAGE;
 }
 
 function findColorAttrName(variants: Variant[]): string | null {

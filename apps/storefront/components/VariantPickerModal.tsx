@@ -8,6 +8,7 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { trackAddToCart } from "@/lib/tracking";
 import { resolveCatalogId } from '@/lib/catalog-id';
+import { resolveVariantImage, parentImage } from '@/lib/variant-image';
 import type { Product, Variant } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -118,6 +119,8 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       return;
     }
     if (matchingVariant.stock <= 0) return;
+    const resolvedImg = resolveVariantImage(matchingVariant, product) || PLACEHOLDER_IMAGE;
+    const parentImg = parentImage(product);
     const variantLabel = matchingVariant.attributeValues
       .map(av => `${av.attributeValue.attribute.name}: ${av.attributeValue.value}`)
       .join(', ');
@@ -130,11 +133,11 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
     if (img) {
       const rect = img.getBoundingClientRect();
       window.dispatchEvent(new CustomEvent('fly-to-cart', {
-        detail: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, image: imageError ? PLACEHOLDER_IMAGE : matchingVariant.image || product.image }
+        detail: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, image: imageError ? PLACEHOLDER_IMAGE : resolvedImg }
       }));
     } else if (flyTarget) {
       window.dispatchEvent(new CustomEvent('fly-to-cart', {
-        detail: { x: flyTarget.x, y: flyTarget.y, image: imageError ? PLACEHOLDER_IMAGE : matchingVariant.image || product.image }
+        detail: { x: flyTarget.x, y: flyTarget.y, image: imageError ? PLACEHOLDER_IMAGE : resolvedImg }
       }));
     }
 
@@ -157,7 +160,8 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
       name: `${product.name} - ${variantLabel}`,
       price: matchingVariant.price,
       originalPrice: refPrice != null && matchingVariant.price < refPrice ? refPrice : undefined,
-      image: matchingVariant.image || product.image,
+      image: resolvedImg,
+      productImage: parentImg,
       quantity: 1,
       slug: product.slug,
       catalogId: resolveCatalogId(product, matchingVariant),
@@ -168,7 +172,8 @@ export function VariantPickerModal({ product, open, onClose, flyTarget, initialA
   };
 
   const displayPrice = matchingVariant?.price ?? product.price;
-  const displayImg = imageError || !(matchingVariant?.image || product.image) ? PLACEHOLDER_IMAGE : (matchingVariant?.image || product.image);
+  const resolvedDisplayImg = resolveVariantImage(matchingVariant, product);
+  const displayImg = imageError || !resolvedDisplayImg ? PLACEHOLDER_IMAGE : resolvedDisplayImg;
 
   if (!open) return null;
 

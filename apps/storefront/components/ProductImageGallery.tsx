@@ -11,15 +11,33 @@ interface Props {
   productName: string;
   badge?: string;
   mediaMeta?: MediaMeta;
+  fallbackImage?: string;
 }
 
 function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
   return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
 }
 
+function displayUrl(
+  raw: string,
+  mediaMeta: MediaMeta | undefined,
+  derivative: string,
+  failed: boolean,
+  fallbackImage?: string,
+  index = 0,
+): string {
+  if (failed) {
+    return index === 0 && fallbackImage ? fallbackImage : PLACEHOLDER_IMAGE;
+  }
+  if (!raw) {
+    return index === 0 && fallbackImage ? fallbackImage : PLACEHOLDER_IMAGE;
+  }
+  return resolveDerivative(raw, mediaMeta, derivative);
+}
+
 const AUTO_SLIDE_MS = 4000;
 
-export function ProductImageGallery({ images: rawImages, productName, badge, mediaMeta }: Props) {
+export function ProductImageGallery({ images: rawImages, productName, badge, mediaMeta, fallbackImage }: Props) {
   const images = (rawImages || [])
     .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
     .filter((img: any) => img !== '');
@@ -217,7 +235,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   }`}
                 >
                   <Image
-                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'thumbnail')}
+                    src={displayUrl(img, mediaMeta, 'thumbnail', !!imgErrors[i], fallbackImage, i)}
                     alt=""
                     width={72} height={72}
                     className="w-full h-full object-cover"
@@ -250,7 +268,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
                 >
                   <Image
-                    src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'medium')}
+                    src={displayUrl(img, mediaMeta, 'medium', !!imgErrors[i], fallbackImage, i)}
                     alt={`${productName} ${i + 1}`}
                     fill
                     sizes="(max-width: 768px) 100vw, 45vw"
@@ -324,7 +342,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                 onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
               >
                 <Image
-                  src={imgErrors[i] ? PLACEHOLDER_IMAGE : resolveDerivative(img, mediaMeta, 'small')}
+                  src={displayUrl(img, mediaMeta, 'small', !!imgErrors[i], fallbackImage, i)}
                   alt={`${productName} image ${i + 1}`}
                   fill
                   priority={i === 0}
@@ -444,7 +462,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
               }}
             >
               <Image
-                src={imgErrors[lightboxIndex] ? PLACEHOLDER_IMAGE : (images[lightboxIndex] || PLACEHOLDER_IMAGE)}
+                src={displayUrl(images[lightboxIndex] || '', mediaMeta, 'large', !!imgErrors[lightboxIndex], fallbackImage, lightboxIndex) || PLACEHOLDER_IMAGE}
                 alt={productName}
                 width={800} height={800}
                 className="max-w-[95vw] max-h-[90vh] object-contain transition-transform duration-300 ease-out"

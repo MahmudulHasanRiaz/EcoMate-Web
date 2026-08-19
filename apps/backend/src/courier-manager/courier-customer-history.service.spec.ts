@@ -41,6 +41,7 @@ describe('CourierCustomerHistoryService', () => {
     prisma = {
       courierReportCache: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierCredentials: {
@@ -188,6 +189,81 @@ describe('CourierCustomerHistoryService', () => {
         successRatio: 90,
         source: 'normalized',
       });
+    });
+
+    it('rating-only response scales to the customer real parcel total from another courier, not 100', async () => {
+      prisma.courierReportCache.findMany.mockResolvedValue([
+        { courier: 'steadfast', phone: NOR_PHONE, report: { success: 21, cancel: 4, total: 25 } },
+      ]);
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 23,
+        cancel: 2,
+        total: 25,
+        successRatio: 90,
+        source: 'normalized',
+      });
+      expect(prisma.courierReportCache.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ phone: NOR_PHONE, courier: { not: 'pathao' } }) }),
+      );
+    });
+
+    it('uses the LARGEST parcel total across other couriers as the scale base', async () => {
+      prisma.courierReportCache.findMany.mockResolvedValue([
+        { courier: 'steadfast', phone: NOR_PHONE, report: { success: 21, cancel: 4, total: 25 } },
+        { courier: 'redx', phone: NOR_PHONE, report: { success: 34, cancel: 6, total: 40 } },
+        { courier: 'carrybee', phone: NOR_PHONE, report: { success: 0, cancel: 0, total: 0 } },
+      ]);
+      mockPathaoApi(globalFetchSpy, 'good_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 32,
+        cancel: 8,
+        total: 40,
+        successRatio: 80,
+        source: 'normalized',
+      });
+    });
+
+    it('integer-splits odd totals without fractional counts (90% of 25 → 23/2)', async () => {
+      prisma.courierReportCache.findMany.mockResolvedValue([
+        { courier: 'steadfast', phone: NOR_PHONE, report: { success: 13, cancel: 12, total: 25 } },
+      ]);
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({ success: 23, cancel: 2, total: 25 });
+      expect(Number.isInteger(res.report!.success)).toBe(true);
+      expect(Number.isInteger(res.report!.cancel)).toBe(true);
+    });
+
+    it('prefers Pathao own real totals over the other-courier scale when both exist', async () => {
+      prisma.courierReportCache.findMany.mockResolvedValue([
+        { courier: 'steadfast', phone: NOR_PHONE, report: { success: 90, cancel: 10, total: 100 } },
+      ]);
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', 3);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({ success: 3, cancel: 0, total: 3, successRatio: 90 });
+    });
+
+    it('still uses the 100-unit fallback when no other courier has cached data', async () => {
+      prisma.courierReportCache.findMany.mockResolvedValue([]);
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 90,
+        cancel: 10,
+        total: 100,
+        successRatio: 90,
+        source: 'normalized',
+      });
+    });
+
+    it('falls back to 100 when the scale lookup itself fails', async () => {
+      prisma.courierReportCache.findMany.mockRejectedValue(new Error('db down'));
+      mockPathaoApi(globalFetchSpy, 'good_customer', null);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({ success: 80, cancel: 20, total: 100 });
     });
 
     it('no rating and total_orders = 0 yields no report (zero history, not 0% success)', async () => {

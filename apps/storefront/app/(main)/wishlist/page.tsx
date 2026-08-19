@@ -52,7 +52,7 @@ export default function WishlistPage() {
 
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
-    addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, quantity: 1, catalogId: resolveCatalogId(product) });
+    addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, productImage: product.image, quantity: 1, catalogId: resolveCatalogId(product) });
     trackAddToCart({
       contentId: resolveCatalogId(product),
       contentName: product.name,
