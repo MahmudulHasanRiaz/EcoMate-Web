@@ -38,6 +38,7 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   order_whatsapp:                { label: 'Order WhatsApp', type: 'tel', placeholder: '+8801700000000' },
   order_call_number:             { label: 'Order Call Number', type: 'tel', placeholder: '+8801700000000' },
   blocked_phone_message:         { label: 'Blocked Phone Message', type: 'textarea', rows: 2, hint: 'Shown to customers whose phone number is on the blocked list when they try to order.' },
+  pathao_rating_calibration:     { label: 'Pathao Rating Calibration', type: 'textarea', rows: 3, hint: 'JSON mapping Pathao customer ratings to expected success %. Valid keys: excellent, good, moderate, risky (0-100). Example: {"excellent":90,"good":80,"moderate":70,"risky":40}.' },
   seo_title:                     { label: 'Default Page Title', type: 'text' },
   seo_description:               { label: 'Meta Description', type: 'textarea', rows: 3 },
   seo_keywords:                  { label: 'Keywords (comma separated)', type: 'text' },

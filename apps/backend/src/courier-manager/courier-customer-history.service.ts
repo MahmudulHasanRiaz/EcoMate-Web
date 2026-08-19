@@ -22,12 +22,29 @@ const BASE_URLS: Record<string, Record<string, string>> = {
   },
 };
 
+export type CourierReportSource = 'actual' | 'normalized' | 'new' | 'none';
+
 export interface CourierReport {
   success: number;
   cancel: number;
   total: number;
-  successRatio: number;
+  successRatio: number | null;
+  source: CourierReportSource;
+  rating?: string;
+  schemaVersion?: number;
 }
+
+const REPORT_SCHEMA_VERSION = 2;
+const CALIBRATION_KEY = 'pathao_rating_calibration';
+
+export type PathaoRatingLevel = 'excellent' | 'good' | 'moderate' | 'risky' | 'new';
+
+const DEFAULT_CALIBRATION: Record<Exclude<PathaoRatingLevel, 'new'>, number> = {
+  excellent: 90,
+  good: 80,
+  moderate: 70,
+  risky: 40,
+};
 
 @Injectable()
 export class CourierCustomerHistoryService {
@@ -66,17 +83,19 @@ export class CourierCustomerHistoryService {
 
   async getCustomerHistory(courier: string, rawPhone: string): Promise<{ report: CourierReport | null; cached: boolean; fresh: boolean }> {
     const phone = this.normalizePhone(rawPhone);
-    const cached = await this.prisma.courierReportCache.findUnique({
+    const cachedRow = await this.prisma.courierReportCache.findUnique({
       where: { courier_phone: { courier, phone } },
     });
 
     const now = Date.now();
-    const expired = !cached || (now - cached.fetchedAt.getTime() >= CACHE_TTL_MS);
-    const hasData = cached?.report != null && cached?.courierStatus !== 'no_data' && cached?.courierStatus !== 'empty';
+    const cached = cachedRow ? this.coerceCached(courier, cachedRow.report) : null;
+    const hasData = cached != null && cachedRow?.courierStatus !== 'no_data' && cachedRow?.courierStatus !== 'empty';
+    const schemaStale = cachedRow?.report != null && cached == null;
+    const expired = !cachedRow || schemaStale || now - cachedRow.fetchedAt.getTime() >= CACHE_TTL_MS;
 
     if (!expired) {
       if (hasData) {
-        return { report: cached!.report as unknown as CourierReport, cached: true, fresh: true };
+        return { report: cached, cached: true, fresh: true };
       }
       return { report: null, cached: true, fresh: true };
     }
@@ -88,8 +107,8 @@ export class CourierCustomerHistoryService {
     }
 
     if (hasData) {
-      await this.saveToCache(courier, phone, cached!.report as unknown as CourierReport, 'stale');
-      return { report: cached!.report as unknown as CourierReport, cached: true, fresh: false };
+      await this.saveToCache(courier, phone, cached, 'stale');
+      return { report: cached, cached: true, fresh: false };
     }
 
     await this.saveToCache(courier, phone, null, 'no_data');
@@ -112,7 +131,14 @@ export class CourierCustomerHistoryService {
   private async saveToCache(courier: string, phone: string, report: CourierReport | null, status = 'fresh') {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + CACHE_TTL_MS);
-    const payload = report || { success: 0, cancel: 0, total: 0, successRatio: 0 };
+    const payload = report || {
+      success: 0,
+      cancel: 0,
+      total: 0,
+      successRatio: null,
+      source: 'none' as const,
+      schemaVersion: REPORT_SCHEMA_VERSION,
+    };
     await this.prisma.courierReportCache.upsert({
       where: { courier_phone: { courier, phone } },
       create: { courier, phone, report: payload as any, courierStatus: status, fetchedAt: now, expiresAt },
@@ -120,17 +146,46 @@ export class CourierCustomerHistoryService {
     });
   }
 
+  private coerceCached(courier: string, raw: unknown): CourierReport | null {
+    const r = raw as CourierReport | null | undefined;
+    if (!r) return null;
+    if (courier === 'pathao' && r.schemaVersion !== REPORT_SCHEMA_VERSION) {
+      // Legacy Pathao rows synthesized fake counts from an unknown default rating
+      // (50% success) — they carry no source metadata, so they must be refetched.
+      return null;
+    }
+    return {
+      success: Number(r.success ?? 0),
+      cancel: Number(r.cancel ?? 0),
+      total: Number(r.total ?? 0),
+      successRatio: r.successRatio != null ? Number(r.successRatio) : null,
+      source: r.source ?? 'actual',
+      rating: r.rating,
+      schemaVersion: REPORT_SCHEMA_VERSION,
+    };
+  }
+
+  private stampReport(courier: string, report: CourierReport | null): CourierReport | null {
+    if (!report) return null;
+    return {
+      ...report,
+      successRatio: report.successRatio != null ? Number(report.successRatio) : null,
+      source: report.source ?? 'actual',
+      schemaVersion: REPORT_SCHEMA_VERSION,
+    };
+  }
+
   private async fetchFromCourier(courier: string, phone: string): Promise<CourierReport | null> {
     try {
       switch (courier) {
         case 'steadfast':
-          return this.fetchSteadfast(phone);
+          return this.stampReport(courier, await this.fetchSteadfast(phone));
         case 'pathao':
-          return this.fetchPathao(phone);
+          return this.stampReport(courier, await this.fetchPathao(phone));
         case 'redx':
-          return this.fetchRedx(phone);
+          return this.stampReport(courier, await this.fetchRedx(phone));
         case 'carrybee':
-          return this.fetchCarrybee(phone);
+          return this.stampReport(courier, await this.fetchCarrybee(phone));
         default:
           return null;
       }
@@ -160,15 +215,53 @@ export class CourierCustomerHistoryService {
     const success = Number(data['total_delivered'] ?? 0);
     const cancel = Number(data['total_cancelled'] ?? 0);
     const total = success + cancel;
-    return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0 };
+    return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0, source: 'actual' as const };
   }
 
-  private ratingToSuccessRatio(rating: string): number {
-    switch (rating) {
-      case 'good_customer': return 90;
-      case 'average_customer': return 70;
-      case 'bad_customer': return 30;
-      default: return 50;
+  private normalizeRatingLabel(raw: string): string {
+    return (raw || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private ratingLevel(raw: string): PathaoRatingLevel | 'unknown' {
+    switch (this.normalizeRatingLabel(raw)) {
+      case 'new customer':
+      case 'new':
+        return 'new';
+      case 'risky':
+      case 'bad customer':
+        return 'risky';
+      case 'moderate':
+      case 'average customer':
+        return 'moderate';
+      case 'good':
+      case 'good customer':
+        return 'good';
+      case 'excellent':
+        return 'excellent';
+      default:
+        return 'unknown';
+    }
+  }
+
+  private async getCalibration(): Promise<Record<Exclude<PathaoRatingLevel, 'new'>, number>> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: CALIBRATION_KEY },
+      });
+      if (!setting?.value) return { ...DEFAULT_CALIBRATION };
+      const parsed = JSON.parse(setting.value) as Record<string, unknown>;
+      const out = { ...DEFAULT_CALIBRATION };
+      for (const level of Object.keys(DEFAULT_CALIBRATION) as (keyof typeof DEFAULT_CALIBRATION)[]) {
+        const v = Number(parsed[level]);
+        if (Number.isFinite(v) && v >= 0 && v <= 100) out[level] = v;
+      }
+      return out;
+    } catch {
+      return { ...DEFAULT_CALIBRATION };
     }
   }
 
@@ -220,11 +313,34 @@ export class CourierCustomerHistoryService {
     const totalOrders = (d as any)?.total_orders ?? (d as any)?.totalOrders ?? (d as any)?.total_delivery ?? null;
 
     if (totalOrders !== null) {
-      const successRatio = this.ratingToSuccessRatio(rating);
       const total = Number(totalOrders);
-      const success = Math.round(total * successRatio / 100);
-      const cancel = total - success;
-      return { success, cancel, total, successRatio };
+      if (total <= 0) return null;
+
+      const level = this.ratingLevel(rating);
+      const calibrated = level === 'new' || level === 'unknown' ? null : (await this.getCalibration())[level];
+      if (calibrated == null) {
+        // New / unknown customer: neutral — no fabricated success/cancel counts.
+        return {
+          success: 0,
+          cancel: 0,
+          total,
+          successRatio: null,
+          source: 'new' as const,
+          rating,
+          schemaVersion: REPORT_SCHEMA_VERSION,
+        };
+      }
+
+      const success = Math.round((total * calibrated) / 100);
+      return {
+        success,
+        cancel: total - success,
+        total,
+        successRatio: calibrated,
+        source: 'normalized' as const,
+        rating,
+        schemaVersion: REPORT_SCHEMA_VERSION,
+      };
     }
 
     return null;
@@ -274,7 +390,7 @@ export class CourierCustomerHistoryService {
       const total = Number(d?.totalParcels ?? d?.total ?? 0);
       if (total > 0) {
         const cancel = Number(d?.cancelledParcels ?? d?.cancelled ?? Math.max(0, total - success));
-        return { success, cancel, total, successRatio: Math.round((success / total) * 10000) / 100 };
+        return { success, cancel, total, successRatio: Math.round((success / total) * 10000) / 100, source: 'actual' as const };
       }
       return null;
     } catch (e) {
@@ -383,6 +499,7 @@ export class CourierCustomerHistoryService {
       cancel: cancelledOrder,
       total: totalOrder,
       successRatio: successRate > 0 ? successRate : totalOrder > 0 ? Math.round((success / totalOrder) * 10000) / 100 : 0,
+      source: 'actual' as const,
     };
   }
 }

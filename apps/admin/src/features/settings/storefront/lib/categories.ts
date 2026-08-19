@@ -152,6 +152,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     icon: Phone,
     fields: ['order_whatsapp', 'order_call_number', 'blocked_phone_message'],
   },
+  'commerce-courier': {
+    id: 'commerce-courier',
+    categoryId: 'commerce',
+    title: 'Courier Calibration',
+    description: 'Pathao rating-to-success calibration used for normalized courier customer history.',
+    icon: Phone,
+    fields: ['pathao_rating_calibration'],
+  },
   'commerce-thank-you': {
     id: 'commerce-thank-you',
     categoryId: 'commerce',
