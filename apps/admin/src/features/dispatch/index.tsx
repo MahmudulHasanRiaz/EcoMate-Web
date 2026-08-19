@@ -91,6 +91,8 @@ export function DispatchPage() {
           onStatusFilterChange={setStatusFilter}
           courierFilter={courierFilter}
           onCourierFilterChange={setCourierFilter}
+          statusCounts={data?.facets?.status}
+          courierCounts={data?.facets?.courier}
           activeFilterCount={activeFilterCount}
           onResetFilters={resetFilters}
           isLoading={isLoading}

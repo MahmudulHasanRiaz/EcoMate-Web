@@ -51,6 +51,7 @@ const STEADFAST_DISPATCH_MAP: Record<string, string | null> = {
 const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
   HANDED_OVER: 'Shipping',
   PICKED_UP: 'Shipping',
+  IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
@@ -89,6 +90,9 @@ const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
 const PATHAO_DISPATCH_TO_ORDER: Record<string, string | null> = {
   HANDED_OVER: 'Shipping',
   PICKED_UP: 'Shipping',
+  // Parcel physically with the courier — if the `picked` webhook was missed,
+  // IN_TRANSIT still guarantees the order leaves Packed and reaches Shipping.
+  IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
@@ -131,6 +135,7 @@ const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
 const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
   HANDED_OVER: 'Shipping',
   PICKED_UP: 'Shipping',
+  IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
@@ -159,6 +164,7 @@ const REDX_DISPATCH_TO_ORDER: Record<string, string | null> = {
   DISPATCHED: null,
   HANDED_OVER: 'Shipping',
   PICKED_UP: 'Shipping',
+  IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',

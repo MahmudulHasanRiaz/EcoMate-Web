@@ -491,6 +491,77 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
   });
 
+  describe('Pathao picked/in-transit guarantee the order reaches Shipping', () => {
+    beforeEach(() => {
+      // Order behind the courier: webhook (or pickup event) missed, order
+      // still Packed while the courier already has the parcel.
+      prisma.order.findUnique.mockResolvedValue({
+        ...order,
+        status: { id: 'status-packed', name: 'Packed' },
+      });
+      prisma.order.findFirst.mockResolvedValue({
+        ...order,
+        status: { id: 'status-packed', name: 'Packed' },
+        timeline: [],
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-shipping',
+        name: 'Shipping',
+      });
+    });
+
+    it('order.picked → dispatch PICKED_UP → order advances Packed → Shipping', async () => {
+      const result = await service.handlePathao({
+        event: 'order.picked',
+        consignment_id: 'CG-1',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'PICKED_UP' }),
+        }),
+      );
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-shipping' }),
+        'system',
+      );
+    });
+
+    it('order.in-transit → dispatch IN_TRANSIT → order advances Packed → Shipping (missed picked webhook)', async () => {
+      const result = await service.handlePathao({
+        event: 'order.in-transit',
+        consignment_id: 'CG-1',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'IN_TRANSIT' }),
+        }),
+      );
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-shipping' }),
+        'system',
+      );
+    });
+
+    it('order.at-the-sorting-hub → dispatch IN_TRANSIT → order Shipping', async () => {
+      await service.handlePathao({
+        event: 'order.at-the-sorting-hub',
+        consignment_id: 'CG-1',
+      });
+
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-shipping' }),
+        'system',
+      );
+    });
+  });
+
   describe('Rule B — Partial order is automation-stopped', () => {
     it('a Delivered webhook on a Partial order locks the ORDER but still updates the DISPATCH (Steadfast)', async () => {
       // Order is already Partial; the OrdersService lock rejects the advance.

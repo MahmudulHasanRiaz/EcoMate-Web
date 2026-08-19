@@ -57,6 +57,8 @@ type DispatchTableProps = {
   onStatusFilterChange: (value: string) => void
   courierFilter: string
   onCourierFilterChange: (value: string) => void
+  statusCounts?: Record<string, number>
+  courierCounts?: Record<string, number>
   activeFilterCount: number
   onResetFilters: () => void
   isLoading?: boolean
@@ -70,11 +72,13 @@ function ServerFilterDropdown({
   value,
   onValueChange,
   options,
+  counts,
 }: {
   title: string
   value: string
   onValueChange: (value: string) => void
   options: { label: string; value: string }[]
+  counts?: Record<string, number>
 }) {
   const displayLabel = value
     ? options.find((o) => o.value === value)?.label || value
@@ -105,18 +109,33 @@ function ServerFilterDropdown({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' className='w-44 max-h-80 overflow-auto'>
+      <DropdownMenuContent align='start' className='w-52 max-h-80 overflow-auto'>
         <DropdownMenuLabel>{title}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
             onClick={() => onValueChange(option.value)}
+            className='justify-between'
           >
-            {value === option.value && <CheckIcon className='me-1 h-4 w-4' />}
-            <span className={cn(value !== option.value && 'ms-5')}>
-              {option.label}
+            <span className='flex min-w-0 items-center'>
+              {value === option.value && (
+                <CheckIcon className='me-1 h-4 w-4 shrink-0' />
+              )}
+              <span
+                className={cn(
+                  'truncate',
+                  value !== option.value && 'ms-5',
+                )}
+              >
+                {option.label}
+              </span>
             </span>
+            {counts ? (
+              <span className='ms-3 shrink-0 text-xs tabular-nums text-muted-foreground'>
+                {counts[option.value] ?? 0}
+              </span>
+            ) : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -135,6 +154,8 @@ export function DispatchTable({
   onStatusFilterChange,
   courierFilter,
   onCourierFilterChange,
+  statusCounts,
+  courierCounts,
   activeFilterCount,
   onResetFilters,
   isLoading,
@@ -398,12 +419,14 @@ export function DispatchTable({
               value={statusFilter}
               onValueChange={onStatusFilterChange}
               options={statusFilterOpts}
+              counts={statusCounts}
             />
             <ServerFilterDropdown
               title='Courier'
               value={courierFilter}
               onValueChange={onCourierFilterChange}
               options={courierFilterOpts}
+              counts={courierCounts}
             />
           </div>
           {(search || activeFilterCount > 0) && (

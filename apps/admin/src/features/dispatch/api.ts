@@ -42,9 +42,18 @@ export interface DispatchMetricsResponse {
   _count: number
 }
 
+export interface DispatchFacets {
+  status: Record<string, number>
+  courier: Record<string, number>
+}
+
 export const dispatchApi = {
   list: (params?: any) =>
-    apiClient.get<{ data: DispatchResponse[]; total: number }>('/dispatch', { params }),
+    apiClient.get<{
+      data: DispatchResponse[]
+      total: number
+      facets?: DispatchFacets
+    }>('/dispatch', { params }),
   get: (id: string) => apiClient.get<DispatchResponse>(`/dispatch/${id}`),
   create: (data: any) => apiClient.post<DispatchResponse>('/dispatch', data),
   updateStatus: (id: string, status: string) =>

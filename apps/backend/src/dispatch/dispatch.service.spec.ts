@@ -96,10 +96,42 @@ describe('DispatchService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should return dispatches list', async () => {
+  it('should return dispatches list with facets', async () => {
+    prisma.dispatch.groupBy.mockResolvedValueOnce([
+      { status: 'DELIVERED', _count: { _all: 3 } },
+      { status: 'IN_TRANSIT', _count: { _all: 1 } },
+    ]);
+    prisma.dispatch.groupBy.mockResolvedValueOnce([
+      { courier: 'pathao', _count: { _all: 4 } },
+    ]);
     const result = await service.findAll({});
-    expect(result).toEqual({ data: [], total: 0 });
+    expect(result).toEqual({
+      data: [],
+      total: 0,
+      facets: {
+        status: { DELIVERED: 3, IN_TRANSIT: 1 },
+        courier: { pathao: 4 },
+      },
+    });
     expect(prisma.dispatch.findMany).toHaveBeenCalled();
+  });
+
+  it('facets exclude their own filter but keep search/date scope', async () => {
+    await service.findAll({
+      status: 'DELIVERED',
+      courier: 'pathao',
+      search: 'CG-1',
+    });
+    const groupByCalls = prisma.dispatch.groupBy.mock.calls;
+    for (const call of groupByCalls) {
+      expect(call[0].where.status).toBeUndefined();
+      expect(call[0].where.courier).toBeUndefined();
+      expect(call[0].where.OR).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ consignmentId: { contains: 'CG-1', mode: 'insensitive' } }),
+        ]),
+      );
+    }
   });
 
   it('should throw on not found', async () => {
@@ -334,11 +366,23 @@ describe('DispatchService', () => {
       expect(logCall.consignmentId).toBe('CG-001');
     });
 
-    it('does not overwrite anything when already up to date', async () => {
+    it('already up to date: refreshes timestamp but still advances the ORDER (heals missed webhooks)', async () => {
       prisma.dispatch.findMany.mockResolvedValue([
         { ...dispatchRow, courierStatus: 'delivered' },
       ]);
       tracking.getDispatchTracking.mockResolvedValue(trackingResult());
+
+      // The order never left Packed — e.g. the pickup webhook was missed and
+      // the courier status was only ever recorded.
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Packed' },
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-delivered',
+        name: 'Delivered',
+      });
 
       const summary = await service.syncStatusFromCourier(['d-1']);
 
@@ -348,9 +392,76 @@ describe('DispatchService', () => {
       expect(update.data.status).toBeUndefined();
       expect(update.data.courierStatus).toBeUndefined();
       expect(update.data.lastSyncedAt).toEqual(expect.any(Date));
-      expect(prisma.order.update).not.toHaveBeenCalled();
-      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+      // ORDER status still advanced to the status implied by the courier state.
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-delivered' }),
+        'system',
+      );
       expect(prisma.courierDispatchLog.create.mock.calls[0][0].data.status).toBe('SYNC_UNCHANGED');
+    });
+
+    it('unchanged in-transit courierStatus heals a Packed order to Shipping (Pathao race)', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([
+        { ...dispatchRow, courier: 'pathao', courierStatus: 'order.in-transit' },
+      ]);
+      tracking.getDispatchTracking.mockResolvedValue(
+        trackingResult({ currentStatus: 'order.in-transit' }),
+      );
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Packed' },
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-shipping',
+        name: 'Shipping',
+      });
+
+      const summary = await service.syncStatusFromCourier(['d-1']);
+
+      expect(summary.unchanged).toHaveLength(1);
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-shipping' }),
+        'system',
+      );
+    });
+
+    it('fresh in-transit sync maps dispatch to IN_TRANSIT and advances the order to Shipping', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([
+        { ...dispatchRow, courier: 'pathao' },
+      ]);
+      tracking.getDispatchTracking.mockResolvedValue(
+        trackingResult({ currentStatus: 'in transit' }),
+      );
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Packed' },
+      });
+      prisma.order.findFirst.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        timeline: [],
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-shipping',
+        name: 'Shipping',
+      });
+
+      const summary = await service.syncStatusFromCourier(['d-1']);
+
+      expect(summary.synced).toHaveLength(1);
+      expect(summary.failed).toHaveLength(0);
+      const dispatchUpdate = prisma.dispatch.update.mock.calls[0][0];
+      expect(dispatchUpdate.data.status).toBe('IN_TRANSIT');
+      expect(dispatchUpdate.data.courierStatus).toBe('in transit');
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        expect.objectContaining({ statusId: 'status-shipping' }),
+        'system',
+      );
     });
 
     it('handles courier API failure safely without touching the dispatch', async () => {

@@ -93,6 +93,9 @@ const SYNC_ORDER_TRANSITIONS: Record<string, string[]> = {
 const SYNC_DISPATCH_TO_ORDER: Record<string, string | null> = {
   DISPATCHED: null,
   PICKED_UP: 'Shipping',
+  // Parcel physically with the courier — IN_TRANSIT must still guarantee the
+  // order reached Shipping even when the pickup webhook was missed.
+  IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
   DELIVERED: 'Delivered',
@@ -187,7 +190,39 @@ export class DispatchService {
       take: perPage,
     });
 
-    return { data, total };
+    // Facet counts for the dispatch filter dropdowns — computed over the FULL
+    // filtered list (search + date range), never the current page. Each facet
+    // count excludes its own filter so switching a filter never collapses
+    // sibling counts.
+    const facetWhere: Prisma.DispatchWhereInput = { ...where };
+    delete (facetWhere as any).status;
+    delete (facetWhere as any).courier;
+
+    const [statusGroups, courierGroups] = await Promise.all([
+      this.prisma.dispatch.groupBy({
+        by: ['status'],
+        where: facetWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.dispatch.groupBy({
+        by: ['courier'],
+        where: facetWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      data,
+      total,
+      facets: {
+        status: Object.fromEntries(
+          statusGroups.map((g) => [g.status, g._count._all]),
+        ),
+        courier: Object.fromEntries(
+          courierGroups.map((g) => [g.courier, g._count._all]),
+        ),
+      },
+    };
   }
 
   async findOne(id: string) {
@@ -431,6 +466,7 @@ export class DispatchService {
     const map: Record<string, string> = {
       HANDED_OVER: 'Shipping',
       PICKED_UP: 'Shipping',
+      IN_TRANSIT: 'Shipping',
       HOLD: 'Shipping',
       ASSIGNED_TO_RIDER: 'Shipping',
       DELIVERED: 'Delivered',
@@ -697,12 +733,17 @@ export class DispatchService {
           continue;
         }
 
-        // Already up to date — just refresh the sync timestamp.
+        // Already up to date — refresh the sync timestamp, but STILL advance
+        // the order to the status implied by the courier state: a (missed)
+        // webhook may have recorded the raw courierStatus without moving the
+        // workflow (e.g. Pathao `in-transit` recorded, order still Packed).
+        // Sync is the healing path for that race.
         if (dispatch.courierStatus === rawStatus) {
           await this.prisma.dispatch.update({
             where: { id: dispatch.id },
             data: { lastSyncedAt: new Date() },
           });
+          await this.applySyncOrderAdvancement(dispatch, rawStatus);
           await this.logSync(dispatch, 'SYNC_UNCHANGED', rawStatus, {
             performedBy,
             result,
@@ -759,10 +800,11 @@ export class DispatchService {
         );
 
         if (nextDispatchStatus) {
-          const targetName = SYNC_DISPATCH_TO_ORDER[nextDispatchStatus];
-          if (targetName) {
-            await this.advanceOrderStatusFromSync(dispatch.orderId, targetName);
-          }
+          await this.applySyncOrderAdvancement(
+            dispatch,
+            rawStatus,
+            nextDispatchStatus,
+          );
         }
 
         await this.logSync(dispatch, 'SYNCED', rawStatus, {
@@ -861,6 +903,39 @@ export class DispatchService {
       where: { id: orderId },
       data: { timeline: timeline as unknown as Prisma.InputJsonValue },
     });
+  }
+
+  /**
+   * Advance the ORDER to the status implied by the courier's mapped status.
+   * Called from BOTH the fresh-sync branch and the already-up-to-date branch:
+   * a (missed) webhook may have recorded the raw courierStatus without
+   * advancing the workflow (e.g. Pathao `in-transit`, order still Packed), so
+   * sync heals the order even when the courier status did not change.
+   */
+  private async applySyncOrderAdvancement(
+    dispatch: any,
+    rawStatus: string,
+    preMapped?: string | null,
+  ) {
+    let mappedStatus: string | null =
+      preMapped ??
+      mapCourierStatusToDispatchStatus(
+        dispatch.courier as string,
+        rawStatus,
+      );
+    if (mappedStatus === 'CANCELLED') {
+      // Same business rule as the courier webhooks: a cancelled consignment
+      // becomes RETURN_PENDING when the parcel had already progressed.
+      mappedStatus = await this.resolveCancelledWithProgress(
+        dispatch.orderId,
+      );
+    }
+    const targetName = mappedStatus
+      ? SYNC_DISPATCH_TO_ORDER[mappedStatus]
+      : undefined;
+    if (targetName) {
+      await this.advanceOrderStatusFromSync(dispatch.orderId, targetName);
+    }
   }
 
   /**
