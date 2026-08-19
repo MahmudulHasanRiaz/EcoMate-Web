@@ -3,10 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
-import steadfastLogo from '@/assets/payment-logos/steadfast.png'
-import pathaoLogo from '@/assets/payment-logos/pathao.png'
-import redxLogo from '@/assets/payment-logos/redx.webp'
-import carrybeeLogo from '@/assets/payment-logos/carrybee.jpg'
+import { courierLogos } from './courier-logos'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,10 +13,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react'
-
-const courierLogos: Record<string, string> = {
-  steadfast: steadfastLogo, pathao: pathaoLogo, redx: redxLogo, carrybee: carrybeeLogo,
-}
 
 const webhookBase = (() => {
   const apiUrl = import.meta.env.VITE_API_URL

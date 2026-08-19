@@ -57,31 +57,53 @@ describe('CourierCustomerHistoryCard', () => {
     vi.clearAllMocks()
   })
 
-  it('renders an actual report with risk level and no Normalized badge', async () => {
-    const { getByText } = await renderCard({
+  it('renders a single overall risk badge and aligned actual columns', async () => {
+    const { getByText, container } = await renderCard({
       steadfast: { report: ACTUAL, cached: true, fresh: false },
       pathao: { report: NO_DATA, cached: false, fresh: false },
       redx: { report: NO_DATA, cached: false, fresh: false },
       carrybee: { report: NO_DATA, cached: false, fresh: false },
     })
+    await expect.element(getByText('Customer History', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('Medium Risk', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/75% success/)).toBeInTheDocument()
+    await expect.element(getByText('High Risk', { exact: true })).not.toBeInTheDocument()
+    await expect.element(getByText('75.0%', { exact: true }).first()).toBeInTheDocument()
+    await expect.element(getByText('25.0%', { exact: true }).first()).toBeInTheDocument()
     await expect.element(getByText('Normalized', { exact: true })).not.toBeInTheDocument()
+    const imgs = container.querySelectorAll('img')
+    expect(imgs.length).toBe(4)
   })
 
-  it('shows a subtle Normalized badge for Pathao normalized reports', async () => {
+  it('shows the overall verdict line with one decimal consistency', async () => {
     const { getByText } = await renderCard({
+      steadfast: { report: ACTUAL, cached: true, fresh: false },
+      pathao: { report: NORMALIZED, cached: true, fresh: true },
+      redx: { report: NO_DATA, cached: false, fresh: false },
+      carrybee: { report: NEW_CUSTOMER, cached: true, fresh: false },
+    })
+    await expect.element(getByText('87.5%', { exact: true }).first()).toBeInTheDocument()
+    await expect.element(getByText('12.5%', { exact: true }).first()).toBeInTheDocument()
+    await expect.element(getByText('Delivery', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Cancelled', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText(/Actual/)).not.toBeInTheDocument()
+    await expect.element(getByText(/Normalized/)).not.toBeInTheDocument()
+  })
+
+  it('hides normalization terminology from primary UI (tooltip only)', async () => {
+    const { getByText, getByTitle } = await renderCard({
       steadfast: { report: NO_DATA, cached: false, fresh: false },
       pathao: { report: NORMALIZED, cached: true, fresh: true },
       redx: { report: NO_DATA, cached: false, fresh: false },
       carrybee: { report: NO_DATA, cached: false, fresh: false },
     })
-    await expect.element(getByText('Normalized', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/90% expected/)).toBeInTheDocument()
     await expect.element(getByText('Low Risk', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('90.0%', { exact: true }).first()).toBeInTheDocument()
+    await expect.element(getByText('10.0%', { exact: true }).first()).toBeInTheDocument()
+    await expect.element(getByText('Normalized', { exact: true })).not.toBeInTheDocument()
+    await expect.element(getByTitle('Normalized (calibrated estimate)')).toBeInTheDocument()
   })
 
-  it('renders New Customer as neutral — never High Risk, success N/A', async () => {
+  it('renders New Customer as neutral — never High Risk, never 0% success', async () => {
     const { getByText } = await renderCard({
       steadfast: { report: NO_DATA, cached: false, fresh: false },
       pathao: { report: NEW_CUSTOMER, cached: true, fresh: false },
@@ -89,12 +111,12 @@ describe('CourierCustomerHistoryCard', () => {
       carrybee: { report: NO_DATA, cached: false, fresh: false },
     })
     await expect.element(getByText('New Customer', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/Total 25/)).toBeInTheDocument()
+    await expect.element(getByText('25', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('High Risk', { exact: true })).not.toBeInTheDocument()
-    await expect.element(getByText('0% success', { exact: true })).not.toBeInTheDocument()
+    await expect.element(getByText('0.0%', { exact: true })).not.toBeInTheDocument()
   })
 
-  it('shows No History for couriers without data', async () => {
+  it('shows No History for couriers without data and a single muted footer note', async () => {
     const { getByText } = await renderCard({
       steadfast: { report: NO_DATA, cached: false, fresh: false },
       pathao: { report: NO_DATA, cached: false, fresh: false },
@@ -103,20 +125,36 @@ describe('CourierCustomerHistoryCard', () => {
     })
     await expect.element(getByText('No History', { exact: true }).first()).toBeInTheDocument()
     await expect.element(getByText('No history across couriers', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Medium Risk', { exact: true })).not.toBeInTheDocument()
   })
 
-  it('overall row keeps actual counts and normalized units separate', async () => {
-    const { getByText } = await renderCard({
+  it('overall row sums every ratio-bearing report into one aligned row', async () => {
+    const { getByText, container } = await renderCard({
       steadfast: { report: ACTUAL, cached: true, fresh: false },
       pathao: { report: NORMALIZED, cached: true, fresh: true },
       redx: { report: NO_DATA, cached: false, fresh: false },
       carrybee: { report: NEW_CUSTOMER, cached: true, fresh: false },
     })
-    await expect.element(getByText(/Actual 75% \(3\/4\)/)).toBeInTheDocument()
-    await expect.element(getByText(/Normalized 90% \(18\/20\)/)).toBeInTheDocument()
+    await expect.element(getByText('Overall', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('24', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('21', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('87.5%', { exact: true }).first()).toBeInTheDocument()
+    const rows = container.querySelectorAll('.grid')
+    expect(rows.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('new customer rows do not pollute the overall aggregates', async () => {
+  it('keeps live/cached metadata subtle and secondary', async () => {
+    const { getByText } = await renderCard({
+      steadfast: { report: ACTUAL, cached: true, fresh: false },
+      pathao: { report: NO_DATA, cached: false, fresh: false },
+      redx: { report: NO_DATA, cached: false, fresh: false },
+      carrybee: { report: NO_DATA, cached: false, fresh: false },
+    })
+    await expect.element(getByText(/Cached: Steadfast/)).toBeInTheDocument()
+    await expect.element(getByText(/Live:/)).not.toBeInTheDocument()
+  })
+
+  it('new customer rows do not pollute the overall aggregate', async () => {
     const { getByText } = await renderCard({
       steadfast: { report: NO_DATA, cached: false, fresh: false },
       pathao: { report: NEW_CUSTOMER, cached: true, fresh: false },
@@ -124,5 +162,6 @@ describe('CourierCustomerHistoryCard', () => {
       carrybee: { report: NO_DATA, cached: false, fresh: false },
     })
     await expect.element(getByText('No history across couriers', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Overall', { exact: true })).not.toBeInTheDocument()
   })
 })
