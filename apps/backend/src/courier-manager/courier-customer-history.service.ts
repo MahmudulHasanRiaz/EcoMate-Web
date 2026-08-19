@@ -81,7 +81,11 @@ export class CourierCustomerHistoryService {
     return BASE_URLS[courier]?.[mode] || BASE_URLS[courier]?.['production'] || '';
   }
 
-  async getCustomerHistory(courier: string, rawPhone: string): Promise<{ report: CourierReport | null; cached: boolean; fresh: boolean }> {
+  async getCustomerHistory(
+    courier: string,
+    rawPhone: string,
+    opts: { force?: boolean } = {},
+  ): Promise<{ report: CourierReport | null; cached: boolean; fresh: boolean; fetchedAt: Date | null }> {
     const phone = this.normalizePhone(rawPhone);
     const cachedRow = await this.prisma.courierReportCache.findUnique({
       where: { courier_phone: { courier, phone } },
@@ -91,41 +95,50 @@ export class CourierCustomerHistoryService {
     const cached = cachedRow ? this.coerceCached(courier, cachedRow.report) : null;
     const hasData = cached != null && cachedRow?.courierStatus !== 'no_data' && cachedRow?.courierStatus !== 'empty';
     const schemaStale = cachedRow?.report != null && cached == null;
-    const expired = !cachedRow || schemaStale || now - cachedRow.fetchedAt.getTime() >= CACHE_TTL_MS;
+    const expired = !cachedRow || schemaStale || now - cachedRow.fetchedAt.getTime() >= CACHE_TTL_MS || opts.force === true;
 
     if (!expired) {
       if (hasData) {
-        return { report: cached, cached: true, fresh: true };
+        return { report: cached, cached: true, fresh: true, fetchedAt: cachedRow?.fetchedAt ?? null };
       }
-      return { report: null, cached: true, fresh: true };
+      return { report: null, cached: true, fresh: true, fetchedAt: cachedRow?.fetchedAt ?? null };
     }
 
     const report = await this.fetchFromCourier(courier, phone).catch(() => null);
     if (report) {
       await this.saveToCache(courier, phone, report, 'fresh');
-      return { report, cached: false, fresh: true };
+      return { report, cached: false, fresh: true, fetchedAt: new Date() };
     }
 
     if (hasData) {
       await this.saveToCache(courier, phone, cached, 'stale');
-      return { report: cached, cached: true, fresh: false };
+      return { report: cached, cached: true, fresh: false, fetchedAt: cachedRow?.fetchedAt ?? null };
     }
 
     await this.saveToCache(courier, phone, null, 'no_data');
-    return { report: null, cached: false, fresh: false };
+    return { report: null, cached: false, fresh: false, fetchedAt: cachedRow?.fetchedAt ?? new Date() };
   }
 
-  async getAll(phone: string): Promise<Record<string, { report: CourierReport | null; cached: boolean; fresh: boolean } | null>> {
+  async getAll(
+    phone: string,
+    opts: { force?: boolean } = {},
+  ): Promise<Record<string, { report: CourierReport | null; cached: boolean; fresh: boolean; fetchedAt: Date | null } | null>> {
     const couriers = ['steadfast', 'pathao', 'redx', 'carrybee'];
     const results: Record<string, any> = {};
     for (const courier of couriers) {
       try {
-        results[courier] = await this.getCustomerHistory(courier, phone);
+        results[courier] = await this.getCustomerHistory(courier, phone, opts);
       } catch {
         results[courier] = null;
       }
     }
     return results;
+  }
+
+  async refresh(phone: string, courier?: string) {
+    return courier
+      ? this.getCustomerHistory(courier, phone, { force: true })
+      : this.getAll(phone, { force: true });
   }
 
   private async saveToCache(courier: string, phone: string, report: CourierReport | null, status = 'fresh') {

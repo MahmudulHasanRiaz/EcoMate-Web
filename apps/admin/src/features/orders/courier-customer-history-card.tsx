@@ -1,9 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { courierLogos } from '@/features/settings/courier/courier-logos'
-import { Loader2, Shield, ShieldAlert, ShieldCheck, Clock, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
+import { Loader2, Shield, ShieldAlert, ShieldCheck, RefreshCw } from 'lucide-react'
 
 const courierMeta: Record<string, { name: string }> = {
   steadfast: { name: 'Steadfast' },
@@ -27,6 +31,7 @@ interface CourierHistoryEntry {
   report: CourierReport | null
   cached: boolean
   fresh: boolean
+  fetchedAt?: string | null
 }
 
 function riskLevel(successRatio: number): { label: string; color: string; icon: typeof Shield } {
@@ -50,9 +55,31 @@ function aggregateOverall(
   return { delivered, cancel, total, ratio: total > 0 ? Math.round((delivered / total) * 10000) / 100 : 0 }
 }
 
-const GRID = 'grid grid-cols-[minmax(0,1.3fr)_repeat(5,minmax(0,1fr))] gap-x-1.5 items-center'
+const GRID = 'grid grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,1fr))] gap-x-1.5 items-center'
+
+function RefreshRow({ label, onRefresh, pending }: { label: string; onRefresh: () => void; pending: boolean }) {
+  return (
+    <div className='flex items-center justify-between gap-2 rounded px-1 py-0.5 hover:bg-muted/50'>
+      <span className='text-[11px]'>{label}</span>
+      <Button
+        variant='outline'
+        size='sm'
+        className='h-6 gap-1 px-2 text-[10px]'
+        onClick={onRefresh}
+        disabled={pending}
+        aria-label={`Refresh ${label}`}
+      >
+        {pending ? <Loader2 className='h-3 w-3 animate-spin' /> : <RefreshCw className='h-3 w-3' />}
+        {pending ? 'Refreshing…' : 'Refresh'}
+      </Button>
+    </div>
+  )
+}
 
 export function CourierCustomerHistoryCard({ phone }: { phone?: string | null }) {
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState<string | null>(null)
+
   const { data, isLoading } = useQuery({
     queryKey: ['courier-customer-history', phone],
     queryFn: () => apiClient.get(`/couriers/customer-history?phone=${encodeURIComponent(phone || '')}`).then(r => r.data),
@@ -69,14 +96,26 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
   const overall = aggregateOverall(reports)
   const risk = overall ? riskLevel(overall.ratio) : null
 
-  const liveNames: string[] = []
-  const cachedNames: string[] = []
-  Object.entries(courierMeta).forEach(([key, meta]) => {
-    const entry = couriers[key]
-    if (!entry?.report) return
-    if (entry.fresh) liveNames.push(meta.name)
-    else if (entry.cached) cachedNames.push(meta.name)
-  })
+  const latestFetched = Object.values(couriers)
+    .map(e => (e?.fetchedAt ? new Date(e.fetchedAt).getTime() : 0))
+    .reduce((max, t) => Math.max(max, t), 0)
+  const lastUpdated = latestFetched > 0 ? new Date(latestFetched) : null
+
+  async function revalidate(target: string | null) {
+    if (refreshing) return
+    setRefreshing(target ?? 'all')
+    try {
+      await apiClient.post('/couriers/customer-history/refresh', {
+        phone,
+        ...(target ? { courier: target } : {}),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['courier-customer-history', phone] })
+    } catch {
+      toast.error('Refresh failed — try again')
+    } finally {
+      setRefreshing(null)
+    }
+  }
 
   return (
     <Card>
@@ -95,6 +134,7 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
         </div>
         {overall && (
           <p className='text-[11px] text-muted-foreground'>
+            <b className='text-foreground tabular-nums'>{overall.total} parcels</b> ·{' '}
             <b className='text-foreground tabular-nums'>{pct(overall.ratio)}</b> Delivery ·{' '}
             <b className='text-foreground tabular-nums'>{pct(100 - overall.ratio)}</b> Cancellation
           </p>
@@ -110,8 +150,6 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
               <span className='text-[10px] font-medium text-muted-foreground text-right leading-none'>Total</span>
               <span className='text-[10px] font-medium text-muted-foreground text-right leading-none'>Delivered</span>
               <span className='text-[10px] font-medium text-muted-foreground text-right leading-none'>Cancelled</span>
-              <span className='text-[10px] font-medium text-muted-foreground text-right leading-none'>Delivery</span>
-              <span className='text-[10px] font-medium text-muted-foreground text-right leading-none'>Cancel</span>
             </div>
 
             {Object.entries(courierMeta).map(([key, meta]) => {
@@ -131,28 +169,27 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
                     <span className='truncate text-[11px] font-medium'>{meta.name}</span>
                     {status && <span className='shrink-0 text-[9px] text-muted-foreground'>{status}</span>}
                   </span>
+                  <span className='text-right text-[11px] tabular-nums'>{report?.total ?? '—'}</span>
                   {rated ? (
                     <>
-                      <span className='text-right text-[11px] tabular-nums'>{report.total}</span>
-                      <span className='text-right text-[11px] tabular-nums'>{report.success}</span>
-                      <span className='text-right text-[11px] tabular-nums'>{report.cancel}</span>
-                      <span
-                        className='text-right text-[11px] tabular-nums'
-                        title={report.source === 'normalized' ? 'Normalized (calibrated estimate)' : undefined}
-                      >
-                        {pct(report.successRatio!)}
+                      <span className='flex items-center justify-end gap-1 text-right'>
+                        <b className='text-[11px] tabular-nums'>{report.success}</b>
+                        <span
+                          className='text-[10px] tabular-nums text-muted-foreground'
+                          title={report.source === 'normalized' ? 'Normalized (calibrated estimate)' : undefined}
+                        >
+                          ({pct(report.successRatio!)})
+                        </span>
                       </span>
-                      <span className='text-right text-[11px] tabular-nums'>{pct(100 - report.successRatio!)}</span>
+                      <span className='flex items-center justify-end gap-1 text-right'>
+                        <b className='text-[11px] tabular-nums'>{report.cancel}</b>
+                        <span className='text-[10px] tabular-nums text-muted-foreground'>({pct(100 - report.successRatio!)})</span>
+                      </span>
                     </>
                   ) : (
                     <>
-                      <span className='text-right text-[11px] text-muted-foreground tabular-nums'>
-                        {report?.source === 'new' ? report.total : '—'}
-                      </span>
-                      <span className='text-right text-[11px] text-muted-foreground tabular-nums'>—</span>
-                      <span className='text-right text-[11px] text-muted-foreground tabular-nums'>—</span>
-                      <span className='text-right text-[11px] text-muted-foreground tabular-nums'>—</span>
-                      <span className='text-right text-[11px] text-muted-foreground tabular-nums'>—</span>
+                      <span className='text-right text-[11px] tabular-nums text-muted-foreground'>—</span>
+                      <span className='text-right text-[11px] tabular-nums text-muted-foreground'>—</span>
                     </>
                   )}
                 </div>
@@ -163,24 +200,52 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
               <div className={`${GRID} mt-1 rounded-md border-t bg-muted/40 py-1.5`}>
                 <span className='text-[11px] font-semibold'>Overall</span>
                 <span className='text-right text-[11px] font-semibold tabular-nums'>{overall.total}</span>
-                <span className='text-right text-[11px] font-semibold tabular-nums'>{overall.delivered}</span>
-                <span className='text-right text-[11px] font-semibold tabular-nums'>{overall.cancel}</span>
-                <span className='text-right text-[11px] font-semibold tabular-nums'>{pct(overall.ratio)}</span>
-                <span className='text-right text-[11px] font-semibold tabular-nums'>{pct(100 - overall.ratio)}</span>
+                <span className='flex items-center justify-end gap-1 text-right'>
+                  <b className='text-[11px] font-semibold tabular-nums'>{overall.delivered}</b>
+                  <span className='text-[10px] tabular-nums text-muted-foreground'>({pct(overall.ratio)})</span>
+                </span>
+                <span className='flex items-center justify-end gap-1 text-right'>
+                  <b className='text-[11px] font-semibold tabular-nums'>{overall.cancel}</b>
+                  <span className='text-[10px] tabular-nums text-muted-foreground'>({pct(100 - overall.ratio)})</span>
+                </span>
               </div>
             ) : (
               <p className='pt-1 text-[11px] text-muted-foreground'>No history across couriers</p>
             )}
 
-            {(liveNames.length > 0 || cachedNames.length > 0) && (
-              <p className='mt-1.5 flex items-center gap-2 text-[9px] leading-none text-muted-foreground/70'>
-                {liveNames.length > 0 && (
-                  <span className='flex items-center gap-0.5'><RefreshCw className='h-2.5 w-2.5' /> Live: {liveNames.join(', ')}</span>
-                )}
-                {cachedNames.length > 0 && (
-                  <span className='flex items-center gap-0.5'><Clock className='h-2.5 w-2.5' /> Cached: {cachedNames.join(', ')}</span>
-                )}
-              </p>
+            {lastUpdated && (
+              <div className='mt-1.5 flex items-center justify-between gap-2'>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='h-5 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground hover:text-foreground'
+                    >
+                      <RefreshCw className='h-3 w-3' /> Live
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align='start' side='top' className='w-52 p-2'>
+                    <p className='px-1 pb-1 text-[10px] font-medium text-muted-foreground'>Refresh courier data</p>
+                    <div className='space-y-0.5'>
+                      <RefreshRow label='All Couriers' pending={refreshing === 'all'} onRefresh={() => revalidate(null)} />
+                      {Object.entries(courierMeta).map(([key, meta]) => (
+                        <RefreshRow key={key} label={meta.name} pending={refreshing === key} onRefresh={() => revalidate(key)} />
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <span className='text-[9px] leading-none text-muted-foreground/70'>
+                  Last updated ·{' '}
+                  {lastUpdated.toLocaleString(undefined, {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
             )}
           </div>
         )}

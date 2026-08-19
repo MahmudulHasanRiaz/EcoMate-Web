@@ -300,6 +300,7 @@ describe('CourierCustomerHistoryService', () => {
       } as any);
       const res = await service.getCustomerHistory('steadfast', PHONE);
       expect(res.report).toMatchObject({ success: 3, cancel: 1, total: 4, successRatio: 75, source: 'actual' });
+      expect(res.fetchedAt).toBeInstanceOf(Date);
       expect(prisma.courierReportCache.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
@@ -307,6 +308,59 @@ describe('CourierCustomerHistoryService', () => {
           }),
         }),
       );
+    });
+
+    it('force revalidation refetches even from a fresh cache and updates fetchedAt', async () => {
+      const oldFetched = new Date(Date.now() - 60 * 60 * 1000);
+      neverResolvedCache(prisma, {
+        courier: 'pathao',
+        phone: NOR_PHONE,
+        report: { success: 5, cancel: 5, total: 10, successRatio: 50, source: 'normalized', schemaVersion: 2 },
+        courierStatus: 'fresh',
+        fetchedAt: oldFetched,
+        expiresAt: new Date(Date.now() + 100000),
+      });
+      mockPathaoApi(globalFetchSpy, 'excellent_customer', 20);
+      const res = await service.refresh(PHONE, 'pathao');
+      expect(globalFetchSpy).toHaveBeenCalled();
+      expect(res.report).toMatchObject({ success: 18, successRatio: 90, source: 'normalized' });
+      expect(res.fetchedAt).toBeInstanceOf(Date);
+      expect(res.fetchedAt!.getTime()).toBeGreaterThan(oldFetched.getTime());
+      expect(prisma.courierReportCache.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ courierStatus: 'fresh' }),
+        }),
+      );
+    });
+
+    it('force revalidation keeps the previous fetchedAt when the courier fetch fails', async () => {
+      const oldFetched = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      neverResolvedCache(prisma, {
+        courier: 'pathao',
+        phone: NOR_PHONE,
+        report: { success: 18, cancel: 2, total: 20, successRatio: 90, source: 'normalized', schemaVersion: 2 },
+        courierStatus: 'fresh',
+        fetchedAt: oldFetched,
+        expiresAt: new Date(Date.now() + 100000),
+      });
+      globalFetchSpy.mockResolvedValue({ ok: false, json: () => Promise.resolve({}) });
+      const res = await service.refresh(PHONE, 'pathao');
+      expect(res.report).toMatchObject({ success: 18, successRatio: 90 });
+      expect(res.cached).toBe(true);
+      expect(res.fresh).toBe(false);
+      expect(res.fetchedAt!.getTime()).toBe(oldFetched.getTime());
+    });
+
+    it('refresh all forces a fetch for every courier', async () => {
+      const creds = { courier: 'steadfast', enabled: true, apiKey: 'k', secretKey: 's', credentials: {} };
+      prisma.courierCredentials.findUnique.mockResolvedValue(creds);
+      globalFetchSpy.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ total_delivered: 3, total_cancelled: 1 }),
+      } as any);
+      const res = await service.refresh(PHONE);
+      expect(Object.keys(res)).toEqual(['steadfast', 'pathao', 'redx', 'carrybee']);
+      expect(Object.values(res).every(r => r !== null)).toBe(true);
     });
   });
 });
