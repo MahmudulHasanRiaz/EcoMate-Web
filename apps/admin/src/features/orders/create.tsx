@@ -219,7 +219,7 @@ export function CreateOrder() {
     productSearchRef.current = setTimeout(() => {
       const params: any = { search: productSearch, perPage: 50 }
       apiClient.get('/products', { params })
-        .then(r => { setProductResults(byExactMatchFirst(r.data?.data || r.data || [], productSearch)); setShowProductDropdown(true) })
+        .then(r => { setProductResults(byExactMatchFirst<any>(r.data?.data || r.data || [], productSearch)); setShowProductDropdown(true) })
         .catch(() => {})
         .finally(() => setProductSearching(false))
     }, 300)
@@ -244,7 +244,7 @@ export function CreateOrder() {
     if (!q) return
     apiClient.get('/products', { params: { search: q, perPage: 50 } })
       .then(r => {
-        const results = byExactMatchFirst(r.data?.data || r.data || [], q)
+        const results = byExactMatchFirst<any>(r.data?.data || r.data || [], q)
         const exact = results.find((p: any) =>
           p.sku?.toLowerCase() === q.toLowerCase() ||
           p.variants?.some((v: any) => v.sku?.toLowerCase() === q.toLowerCase())

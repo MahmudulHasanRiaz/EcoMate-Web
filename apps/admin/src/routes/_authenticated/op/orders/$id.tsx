@@ -175,7 +175,7 @@ function OrderDetailPage() {
     if (!q || !editingItems) { setProductSearchResults([]); return }
     const t = setTimeout(() => {
       apiClient.get('/products', { params: { search: q, perPage: 50 } })
-        .then(r => setProductSearchResults(byExactMatchFirst(r.data?.data || r.data || [], q)))
+        .then(r => setProductSearchResults(byExactMatchFirst<any>(r.data?.data || r.data || [], q)))
         .catch(() => setProductSearchResults([]))
     }, 300)
     return () => clearTimeout(t)
@@ -241,6 +241,7 @@ function OrderDetailPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────
   function openPaymentEdit() {
+    if (!order) return
     const mode: 'cod' | 'full' | 'partial' =
       order.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cod'
       : order.paymentOptionType === 'PARTIAL_PAYMENT' ? 'partial'
@@ -1016,8 +1017,8 @@ function OrderDetailPage() {
                     </CardContent>
                   ) : (
                     <CardContent className='space-y-1 text-sm pt-0'>
-                      <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order.paymentOptionType)}</p>
-                      {order.partialAmount && <p><span className='text-muted-foreground'>Partial:</span> ৳{fmt(order.partialAmount)}</p>}
+                      <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order?.paymentOptionType ?? '')}</p>
+                      {order?.partialAmount && <p><span className='text-muted-foreground'>Partial:</span> ৳{fmt(order.partialAmount)}</p>}
                     </CardContent>
                   )}
                 </Card>
