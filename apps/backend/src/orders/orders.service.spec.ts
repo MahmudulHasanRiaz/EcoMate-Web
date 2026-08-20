@@ -1513,6 +1513,53 @@ describe('OrdersService', () => {
       });
     });
 
+    it('allows Confirmed → Hold and re-verifies stock', async () => {
+      const confirmedOrder = {
+        ...mockOrder,
+        status: { id: 'status-confirmed', name: 'Confirmed' },
+      };
+      const holdStatus = {
+        id: 'status-hold',
+        name: 'Hold',
+        isInitial: false,
+        nextStatuses: [],
+      };
+
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(confirmedOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(holdStatus);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...confirmedOrder,
+        statusId: 'status-hold',
+        status: holdStatus,
+      });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
+        cb(prisma),
+      );
+      (prisma.orderStockCycle.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.orderStockCycle.create as jest.Mock).mockResolvedValue({
+        id: 'cycle-1',
+      });
+      (prisma.orderItemComboComponent as any) = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+      (prisma.physicalInventory as any) = {
+        findFirst: jest.fn().mockResolvedValue(null),
+      };
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-hold', note: 'Customer asked to pause' },
+        userId,
+      );
+
+      expect(prisma.order.update).toHaveBeenCalled();
+      // verifyStockForOrder ran → a fresh ACTIVE cycle was created (the
+      // Confirmed order's reservation is validated, Hold now holds stock).
+      expect(prisma.orderStockCycle.findFirst).toHaveBeenCalledWith({
+        where: { orderId: 'order-id-1', status: 'ACTIVE' },
+      });
+    });
+
     it('allows Cancelled → Confirmed and re-verifies stock', async () => {
       const cancelledOrder = {
         ...mockOrder,

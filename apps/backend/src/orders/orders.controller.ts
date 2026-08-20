@@ -216,7 +216,7 @@ export class OrdersController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'manager', 'employee')
   @RequiresFeature('admin_orders')
   @Put(':id/status')
   updateStatus(

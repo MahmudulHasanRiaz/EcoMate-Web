@@ -49,7 +49,7 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
   'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
   Hold: ['Pending', 'Confirmed', 'Cancelled'],
-  Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
+  Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
   Shipping: ['Delivered', 'Partial', 'Return Pending'],
@@ -2623,9 +2623,14 @@ export class OrdersService {
         await this.verifyStockForOrder(id, tx);
       }
 
-      // A cancelled order released its reservation; a Hold must hold stock
-      // again (throws when stock is no longer available).
-      if (newStatus.name === 'Hold' && order.status.name === 'Cancelled') {
+      // A cancelled order released its reservation; a Confirmed order's
+      // reservation may no longer be fully available. Hold must hold stock
+      // again (throws when stock is no longer available). Idempotent: only
+      // unreserved items are reserved, so a re-hold is a validation pass.
+      if (
+        newStatus.name === 'Hold' &&
+        (order.status.name === 'Cancelled' || order.status.name === 'Confirmed')
+      ) {
         await this.verifyStockForOrder(id, tx);
       }
 

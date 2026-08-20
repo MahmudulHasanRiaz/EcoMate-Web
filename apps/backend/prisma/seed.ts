@@ -133,7 +133,7 @@ async function main() {
     'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
     'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
     'Hold': ['Pending', 'Confirmed', 'Cancelled'],
-    'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
+    'Confirmed': ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
     'Packed': ['Shipping', 'Packing Hold'],
     'Packing Hold': ['Packed', 'Cancelled'],
     'Shipping': ['Delivered', 'Partial'],
