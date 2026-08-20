@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+export type AllocationMode = 'product_value' | 'equal' | 'quantity';
+
+const ALLOCATION_MODE_SETTING = 'marketing_allocation_mode';
+const ALLOCATION_MODES: AllocationMode[] = ['product_value', 'equal', 'quantity'];
+
 interface SpendEntry {
   campaignId: string;
   date: Date;
@@ -15,11 +20,25 @@ export class MarketingAllocationService {
 
   /**
    * Distribute recorded campaign spend to the store orders attributed to that
-   * campaign on the same day (product_value method: an order carries marketing
-   * cost proportional to its share of the day's attributed revenue). Rows are
-   * fully replaced per (order, campaign) — rerunning is deterministic and never
+   * campaign on the same day. The split method is read from the
+   * `marketing_allocation_mode` system setting (product_value: marketing cost
+   * proportional to share of the day's attributed revenue; equal: uniform
+   * split; quantity: proportional to ordered item quantities). Rows are fully
+   * replaced per (order, campaign) — rerunning is deterministic and never
    * double-counts.
    */
+  private async resolveAllocationMode(): Promise<AllocationMode> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: ALLOCATION_MODE_SETTING },
+      });
+      const value = setting?.value as AllocationMode | undefined;
+      return value && ALLOCATION_MODES.includes(value) ? value : 'product_value';
+    } catch {
+      return 'product_value';
+    }
+  }
+
   async allocateCampaignDate(entry: SpendEntry) {
     if (entry.spend <= 0) return { allocated: 0, orders: 0 };
 
@@ -51,12 +70,19 @@ export class MarketingAllocationService {
     );
     if (candidates.length === 0) return { allocated: 0, orders: 0 };
 
+    const mode = await this.resolveAllocationMode();
+
     const orderTotals = new Map<string, number>();
     let sumTotals = 0;
+    const orderQuantities = new Map<string, number>();
+    let sumQuantities = 0;
     for (const a of candidates) {
       const total = Number(a.order.total) || 0;
       orderTotals.set(a.orderId, total);
       sumTotals += total;
+      const qty = a.order.items.reduce((sum, it) => sum + it.quantity, 0);
+      orderQuantities.set(a.orderId, qty);
+      sumQuantities += qty;
     }
 
     const allocated = await this.prisma.$transaction(async (tx) => {
@@ -85,8 +111,20 @@ export class MarketingAllocationService {
 
       let allocatedTotal = 0;
       for (const a of candidates) {
-        const share =
-          sumTotals > 0 ? (orderTotals.get(a.orderId) || 0) / sumTotals : 1 / candidates.length;
+        let share: number;
+        if (mode === 'equal') {
+          share = 1 / candidates.length;
+        } else if (mode === 'quantity') {
+          share =
+            sumQuantities > 0
+              ? (orderQuantities.get(a.orderId) || 0) / sumQuantities
+              : 1 / candidates.length;
+        } else {
+          share =
+            sumTotals > 0
+              ? (orderTotals.get(a.orderId) || 0) / sumTotals
+              : 1 / candidates.length;
+        }
         const allocatedSpend = Math.round(sourceSpend * share * 10000) / 10000;
         if (allocatedSpend <= 0) continue;
         allocatedTotal += allocatedSpend;
@@ -99,7 +137,7 @@ export class MarketingAllocationService {
             allocatedSpend,
             allocatedCost,
             allocatedRate: dayRate,
-            allocationMethod: 'product_value',
+            allocationMethod: mode,
             calculatedAt: new Date(),
           },
           create: {
@@ -110,7 +148,7 @@ export class MarketingAllocationService {
             allocatedCurrency: 'USD',
             allocatedRate: dayRate,
             allocatedCost,
-            allocationMethod: 'product_value',
+            allocationMethod: mode,
           },
         });
 

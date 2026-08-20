@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Megaphone, TrendingUp, TrendingDown, Wallet, ShoppingCart, BadgeDollarSign, PiggyBank, RefreshCw } from 'lucide-react'
 import { marketingApi, money, fmtDate } from './api'
+import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -75,8 +76,14 @@ export function MarketingDashboard() {
     queryKey: ['marketing-ad-accounts-dash'],
     queryFn: () => marketingApi.adAccounts.list({ page: 1, perPage: 50 }).then(r => r.data),
   })
+  const { data: intelligence } = useQuery({
+    queryKey: ['marketing-intelligence', from, toDate],
+    queryFn: () => apiClient.get('/marketing/analysis/intelligence', { params: { fromDate: from, toDate } }).then(r => r.data as any),
+  })
 
   const rows = overview?.series?.slice(-30) ?? []
+  const roiSeries = ((intelligence?.roiTimeline ?? []) as any[])
+  const maxAbsRoi = Math.max(1, ...roiSeries.map((d) => Math.abs(d.roi ?? 0)))
 
   return (
     <>
@@ -129,6 +136,63 @@ export function MarketingDashboard() {
             delta={overview?.deltas.profit}
           />
         </div>
+
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="text-base">Marketing Intelligence</CardTitle>
+            <CardDescription>Last {days} days · CAC, CPP, attribution confidence, ROI</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!intelligence && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {intelligence && (
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">CAC</span>
+                    <span className="text-sm font-semibold tabular-nums">{intelligence.cac === null ? '—' : money(intelligence.cac)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">CPP</span>
+                    <span className="text-sm font-semibold tabular-nums">{intelligence.cpp === null ? '—' : money(intelligence.cpp)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">Avg attribution confidence</span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {intelligence.attributionConfidence?.avg ?? 0}%
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        ({(Object.values(intelligence.attributionConfidence?.byMethod ?? {}) as number[]).reduce((s, n) => s + n, 0)} attributed)
+                      </span>
+                    </span>
+                  </div>
+                  <p className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">{intelligence.explainProfit?.text}</p>
+                </div>
+                <div className="lg:col-span-2">
+                  <p className="mb-2 text-xs text-muted-foreground">ROI trend · daily (revenue − cost) / cost</p>
+                  {roiSeries.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      No data yet — sync an ad account and run "Recalculate summaries" in Reports.
+                    </p>
+                  ) : (
+                    <div className="flex h-32 items-end gap-[2px]">
+                      {roiSeries.map((d: any) => {
+                        const roi = d.roi ?? 0
+                        return (
+                          <div key={d.date} className="flex flex-1 items-end">
+                            <div
+                              className={`w-full rounded-t ${roi >= 0 ? 'bg-emerald-400/80' : 'bg-red-400/70'}`}
+                              style={{ height: `${(Math.abs(roi) / maxAbsRoi) * 100}%`, minHeight: 2 }}
+                              title={`${d.date} · ROI ${d.roi === null ? 'N/A' : `${d.roi.toFixed(2)}x`} · cost ${money(d.cost)}`}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">

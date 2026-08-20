@@ -40,6 +40,8 @@ export class MetaGraphService {
     path: string,
     accessToken: string,
     params: Record<string, string | number | boolean> = {},
+    method: 'GET' | 'POST' = 'GET',
+    body?: Record<string, string | number | boolean>,
   ): Promise<any> {
     const url = new URL(`${META_GRAPH_BASE}/${path}`);
     url.searchParams.set('access_token', accessToken);
@@ -47,45 +49,50 @@ export class MetaGraphService {
       url.searchParams.set(k, String(v));
     }
 
+    const headers: Record<string, string> = { accept: 'application/json' };
+    const init: RequestInit = { method, headers, signal: undefined };
     const controller = new AbortController();
+    init.signal = controller.signal;
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: { accept: 'application/json' },
-        signal: controller.signal,
-      });
-      const body: MetaErrorResponse = await res.json();
-      if (!res.ok || body.error) {
-        const code = body.error?.code;
+      if (body && Object.keys(body).length > 0) {
+        headers['content-type'] = 'application/x-www-form-urlencoded';
+        init.body = new URLSearchParams(
+          Object.entries(body).map(([k, v]) => [k, String(v)]),
+        ).toString();
+      }
+      const res = await fetch(url.toString(), init);
+      const data: MetaErrorResponse = await res.json();
+      if (!res.ok || data.error) {
+        const code = data.error?.code;
         if (code === 190) {
           throw new MetaApiError(
             'Access token has expired. Reconnect the ad account.',
             code,
-            body.error?.error_subcode,
+            data.error?.error_subcode,
           );
         }
-        if (code === 4 && body.error?.error_subcode === 2446079) {
+        if (code === 4 && data.error?.error_subcode === 2446079) {
           throw new MetaApiError(
             'Page access token is in use. Use a separate long-lived user token.',
             code,
-            body.error?.error_subcode,
+            data.error?.error_subcode,
           );
         }
         if (code === 100) {
           throw new MetaApiError(
-            `Facebook returned invalid parameters: ${body.error?.message ?? 'unknown'}`,
+            `Facebook returned invalid parameters: ${data.error?.message ?? 'unknown'}`,
             code,
-            body.error?.error_subcode,
+            data.error?.error_subcode,
           );
         }
         throw new MetaApiError(
-          body.error?.message ?? `Facebook API error (HTTP ${res.status})`,
+          data.error?.message ?? `Facebook API error (HTTP ${res.status})`,
           code,
-          body.error?.error_subcode,
+          data.error?.error_subcode,
         );
       }
-      return body;
+      return data;
     } catch (err) {
       if (err instanceof MetaApiError) throw err;
       if (err instanceof Error && err.name === 'AbortError') {

@@ -78,6 +78,11 @@ export class MarketingController {
     return this.connections.disconnect(id, user?.sub);
   }
 
+  @Post('connections/:id/refresh')
+  refreshConnection(@Param('id', ParseUUIDPipe) id: string) {
+    return this.connections.refreshLongLivedToken(id);
+  }
+
   @Delete('connections/:id')
   removeConnection(
     @Param('id', ParseUUIDPipe) id: string,
@@ -166,6 +171,22 @@ export class MarketingController {
     @Body() dto: UpdateCampaignDto,
   ) {
     return this.connections.updateCampaign(id, dto);
+  }
+
+  @Post('campaigns/:id/pause')
+  pauseCampaign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.connections.pauseCampaign(id, user?.sub);
+  }
+
+  @Post('campaigns/:id/resume')
+  resumeCampaign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.connections.resumeCampaign(id, user?.sub);
   }
 
   @Get('insights')

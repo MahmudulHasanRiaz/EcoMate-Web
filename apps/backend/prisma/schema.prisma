@@ -451,6 +451,7 @@ model Product {
   physicalLedgers          PhysicalInventoryLedger[]
   physicalReservations     PhysicalReservation[]
   orderItemComboComponents OrderItemComboComponent[]
+  marketingDailyProductCosts MarketingDailyProductCost[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -3173,5 +3174,24 @@ model MarketingDailySummary {
   adAccount AdAccount @relation(fields: [adAccountId], references: [id])
 
   @@unique([adAccountId, date])
+  @@index([date])
+}
+
+model MarketingDailyProductCost {
+  id        String   @id @default(uuid())
+  productId String
+  date      DateTime @db.Date
+  spend     Decimal  @default(0) @db.Decimal(14, 4)
+  revenue   Decimal? @db.Decimal(14, 2)
+  cost      Decimal? @db.Decimal(14, 2)
+  profit    Decimal? @db.Decimal(14, 2)
+  orders    Int      @default(0)
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, date])
   @@index([date])
 }

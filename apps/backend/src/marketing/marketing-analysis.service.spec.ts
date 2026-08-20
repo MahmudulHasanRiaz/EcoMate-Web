@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { MarketingAnalysisService } from './marketing-analysis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketingAllocationService } from './marketing-allocation.service';
@@ -14,7 +14,7 @@ describe('MarketingAnalysisService', () => {
     marketingCostAllocation: { aggregate: jest.fn(), findMany: jest.fn() },
     marketingCampaign: { findUnique: jest.fn(), findMany: jest.fn() },
     marketingConsumption: { aggregate: jest.fn() },
-    marketingDailySummary: { deleteMany: jest.fn(), upsert: jest.fn(), findMany: jest.fn() },
+    marketingDailySummary: { deleteMany: jest.fn(), upsert: jest.fn(), findMany: jest.fn(), aggregate: jest.fn() },
     journalEntry: { findMany: jest.fn() },
   });
 
@@ -124,6 +124,144 @@ describe('MarketingAnalysisService', () => {
       expect(res.deltas.spend).toBe(1); // (20-10)/10
       expect(res.series).toHaveLength(2);
     });
+
+    it('rejects an invalid period with 400', async () => {
+      await expect(service.periodOverview(undefined, undefined, 'fortnight')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('buckets series weekly with YYYY-Www labels and bucket bounds', async () => {
+      const day = (d: string, spend: number) => ({
+        date: new Date(`${d}T00:00:00Z`),
+        spend,
+        revenue: spend * 100,
+        marketingCost: spend * 120,
+        profit: spend * 100 - spend * 120,
+        orders: 1,
+      });
+      (prisma.marketingDailySummary.findMany as jest.Mock).mockResolvedValue([
+        day('2026-08-05', 10),
+        day('2026-08-10', 20),
+      ]);
+      const res = await service.periodOverview('2026-08-01', '2026-08-30', 'week');
+      expect(res.series).toHaveLength(2);
+      expect(res.series[0]).toMatchObject({
+        label: '2026-W32',
+        date: '2026-08-03',
+        start: '2026-08-03',
+        end: '2026-08-09',
+        spend: 10,
+        revenue: 1000,
+      });
+      expect(res.series[1]).toMatchObject({
+        label: '2026-W33',
+        date: '2026-08-10',
+        start: '2026-08-10',
+        end: '2026-08-16',
+        spend: 20,
+      });
+    });
+
+    it('buckets series monthly into YYYY-MM', async () => {
+      const day = (d: string, spend: number) => ({
+        date: new Date(`${d}T00:00:00Z`),
+        spend,
+        revenue: spend * 100,
+        marketingCost: spend * 120,
+        profit: spend * 100 - spend * 120,
+        orders: 1,
+      });
+      (prisma.marketingDailySummary.findMany as jest.Mock).mockResolvedValue([
+        day('2026-08-05', 10),
+        day('2026-09-03', 20),
+      ]);
+      const res = await service.periodOverview('2026-08-01', '2026-09-30', 'month');
+      expect(res.series[0]).toMatchObject({
+        label: '2026-08',
+        start: '2026-08-01',
+        end: '2026-08-31',
+        spend: 10,
+      });
+      expect(res.series[1]).toMatchObject({
+        label: '2026-09',
+        start: '2026-09-01',
+        end: '2026-09-30',
+        spend: 20,
+      });
+    });
+
+    it('buckets series quarterly into YYYY-Qn', async () => {
+      const day = (d: string, spend: number) => ({
+        date: new Date(`${d}T00:00:00Z`),
+        spend,
+        revenue: spend * 100,
+        marketingCost: spend * 120,
+        profit: spend * 100 - spend * 120,
+        orders: 1,
+      });
+      (prisma.marketingDailySummary.findMany as jest.Mock).mockResolvedValue([
+        day('2026-08-05', 10),
+        day('2026-11-20', 20),
+      ]);
+      const res = await service.periodOverview('2026-08-01', '2026-12-31', 'quarter');
+      expect(res.series[0]).toMatchObject({
+        label: '2026-Q3',
+        start: '2026-07-01',
+        end: '2026-09-30',
+        spend: 10,
+      });
+      expect(res.series[1]).toMatchObject({
+        label: '2026-Q4',
+        start: '2026-10-01',
+        end: '2026-12-31',
+        spend: 20,
+      });
+    });
+
+    it('buckets series yearly into a single YYYY bucket', async () => {
+      const day = (d: string, spend: number) => ({
+        date: new Date(`${d}T00:00:00Z`),
+        spend,
+        revenue: spend * 100,
+        marketingCost: spend * 120,
+        profit: spend * 100 - spend * 120,
+        orders: 1,
+      });
+      (prisma.marketingDailySummary.findMany as jest.Mock).mockResolvedValue([
+        day('2026-08-05', 10),
+        day('2026-12-01', 20),
+      ]);
+      const res = await service.periodOverview('2026-08-01', '2026-12-31', 'year');
+      expect(res.series).toHaveLength(1);
+      expect(res.series[0]).toMatchObject({
+        label: '2026',
+        start: '2026-01-01',
+        end: '2026-12-31',
+        spend: 30,
+      });
+    });
+
+    it('adapts previous-window deltas to a non-day period', async () => {
+      const day = (d: string, spend: number, revenue: number) => ({
+        date: new Date(`${d}T00:00:00Z`),
+        spend,
+        revenue,
+        marketingCost: spend * 120,
+        profit: revenue - spend * 120,
+        orders: Math.round(revenue / 1000),
+      });
+      (prisma.marketingDailySummary.findMany as jest.Mock).mockResolvedValue([
+        day('2026-07-05', 10, 500),
+        day('2026-08-05', 20, 2000),
+      ]);
+      const res = await service.periodOverview('2026-08-01', '2026-08-30', 'month');
+      expect(res.current.spend).toBe(20);
+      expect(res.previous.spend).toBe(10);
+      expect(res.current.revenue).toBe(2000);
+      expect(res.deltas.spend).toBe(1);
+      expect(res.deltas.profit).toBeCloseTo(0.43, 2);
+    });
   });
 
   describe('profitability', () => {
@@ -189,6 +327,156 @@ describe('MarketingAnalysisService', () => {
         profit: 400,
         roas: 8,
       });
+    });
+  });
+
+  describe('intelligence', () => {
+    const attribution = (over: Partial<any> = {}) => ({
+      method: 'TOUCHPOINT',
+      confidence: 80,
+      order: {
+        createdAt: new Date('2026-08-02T00:00:00Z'),
+        total: 6000,
+        items: [{ id: 'it-1', quantity: 1, price: 6000, product: { id: 'p-1', name: 'Tee' } }],
+      },
+      ...over,
+    });
+
+    const emptyAgg = () => ({ _sum: { purchases: 0 } });
+
+    it('returns all intelligence shape keys', async () => {
+      (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.marketingCostAllocation.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.marketingDailySummary.aggregate as jest.Mock).mockResolvedValue(emptyAgg());
+      const res = await service.intelligence('2026-08-01', '2026-08-05');
+      expect(Object.keys(res).sort()).toEqual([
+        'attributionConfidence',
+        'cac',
+        'costTrend',
+        'cpp',
+        'explainProfit',
+        'productProfitTrend',
+        'range',
+        'roasTrend',
+        'roiTimeline',
+      ]);
+    });
+
+    it('computes cac, cpp, confidence, ROAS, ROI and per-product profit from seeded rows', async () => {
+      (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([
+        attribution(),
+        attribution({
+          confidence: 60,
+          order: {
+            createdAt: new Date('2026-08-02T00:00:00Z'),
+            total: 4000,
+            items: [{ id: 'it-2', quantity: 2, price: 2000, product: { id: 'p-1', name: 'Tee' } }],
+          },
+        }),
+      ]);
+      (prisma.marketingCostAllocation.findMany as jest.Mock).mockResolvedValue([
+        {
+          calculatedAt: new Date('2026-08-02T00:00:00Z'),
+          allocatedCost: 500,
+          productCosts: [
+            { orderItemId: 'it-1', marketingCost: 300 },
+            { orderItemId: 'it-2', marketingCost: 200 },
+          ],
+        },
+      ]);
+      (prisma.marketingDailySummary.aggregate as jest.Mock).mockResolvedValue({ _sum: { purchases: 5 } });
+
+      const res = await service.intelligence('2026-08-01', '2026-08-05');
+
+      expect(res.cac).toBe(250);
+      expect(res.cpp).toBe(100);
+
+      const day = res.roasTrend.find((d: any) => d.date === '2026-08-02');
+      expect(day).toMatchObject({ revenue: 10000, cost: 500, roas: 20 });
+
+      const sameDay = res.roiTimeline.find((d: any) => d.date === '2026-08-02');
+      expect(sameDay).toMatchObject({ roi: 19 });
+
+      expect(res.costTrend.find((d: any) => d.date === '2026-08-02')).toMatchObject({ cost: 500 });
+      expect(res.roasTrend.find((d: any) => d.date === '2026-08-01')).toMatchObject({ roas: null });
+
+      expect(res.attributionConfidence).toEqual({ avg: 70, byMethod: { TOUCHPOINT: 2 } });
+
+      expect(res.productProfitTrend).toHaveLength(1);
+      expect(res.productProfitTrend[0]).toMatchObject({
+        productId: 'p-1',
+        productName: 'Tee',
+        revenue: 10000,
+        cost: 500,
+        profit: 9500,
+        roas: 20,
+      });
+      expect(res.productProfitTrend[0].trend).toHaveLength(5);
+      expect(res.productProfitTrend[0].trend[1]).toBe(9500);
+
+      expect(res.explainProfit).toMatchObject({
+        revenue: 10000,
+        orders: 2,
+        confidence: 70,
+        cost: 500,
+        profit: 9500,
+        roas: 20,
+      });
+      expect(res.explainProfit.text).toContain('৳10000.00 revenue from 2 attributed orders at 70% confidence');
+      expect(res.explainProfit.text).toContain('cost ৳500.00 → profit ৳9500.00 (ROAS 20.00x)');
+    });
+
+    it('sorts top products by profit desc', async () => {
+      (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([
+        attribution({
+          order: {
+            createdAt: new Date('2026-08-02T00:00:00Z'),
+            total: 1000,
+            items: [{ id: 'it-3', quantity: 1, price: 1000, product: { id: 'p-low', name: 'Low' } }],
+          },
+        }),
+        attribution({
+          order: {
+            createdAt: new Date('2026-08-02T00:00:00Z'),
+            total: 9000,
+            items: [{ id: 'it-4', quantity: 1, price: 9000, product: { id: 'p-high', name: 'High' } }],
+          },
+        }),
+      ]);
+      (prisma.marketingCostAllocation.findMany as jest.Mock).mockResolvedValue([
+        {
+          calculatedAt: new Date('2026-08-02T00:00:00Z'),
+          allocatedCost: 300,
+          productCosts: [
+            { orderItemId: 'it-3', marketingCost: 100 },
+            { orderItemId: 'it-4', marketingCost: 200 },
+          ],
+        },
+      ]);
+      (prisma.marketingDailySummary.aggregate as jest.Mock).mockResolvedValue(emptyAgg());
+
+      const res = await service.intelligence('2026-08-01', '2026-08-05');
+      expect(res.productProfitTrend.map((p) => p.productId)).toEqual(['p-high', 'p-low']);
+      expect(res.productProfitTrend[0].profit).toBe(8800);
+      expect(res.productProfitTrend[1].profit).toBe(900);
+    });
+
+    it('returns zeros/empty for an empty window without throwing', async () => {
+      (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.marketingCostAllocation.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.marketingDailySummary.aggregate as jest.Mock).mockResolvedValue(emptyAgg());
+
+      const res = await service.intelligence('2026-08-01', '2026-08-05');
+      expect(res.costTrend).toHaveLength(5);
+      expect(res.costTrend.every((d: any) => d.cost === 0)).toBe(true);
+      expect(res.cac).toBeNull();
+      expect(res.cpp).toBeNull();
+      expect(res.productProfitTrend).toEqual([]);
+      expect(res.roiTimeline.every((d: any) => d.roi === null)).toBe(true);
+      expect(res.attributionConfidence).toEqual({ avg: 0, byMethod: {} });
+      expect(res.explainProfit.revenue).toBe(0);
+      expect(res.explainProfit.profit).toBe(0);
+      expect(res.explainProfit.text).toContain('ROAS N/A');
     });
   });
 });

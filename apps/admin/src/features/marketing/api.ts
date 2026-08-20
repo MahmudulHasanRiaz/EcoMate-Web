@@ -181,6 +181,7 @@ export const marketingApi = {
     update: (id: string, data: Partial<{ accessToken: string; refreshToken: string; tokenExpiry: string; providerUserId: string }>) =>
       apiClient.put<ConnectionResponse>(`/marketing/connections/${id}`, data),
     disconnect: (id: string) => apiClient.post(`/marketing/connections/${id}/disconnect`),
+    refresh: (id: string) => apiClient.post<ConnectionResponse>(`/marketing/connections/${id}/refresh`),
     remove: (id: string) => apiClient.delete(`/marketing/connections/${id}`),
   },
   adAccounts: {
@@ -202,6 +203,8 @@ export const marketingApi = {
     get: (id: string) => apiClient.get<CampaignResponse>(`/marketing/campaigns/${id}`),
     update: (id: string, data: Partial<{ name: string; isArchived: boolean }>) =>
       apiClient.put<CampaignResponse>(`/marketing/campaigns/${id}`, data),
+    pause: (id: string) => apiClient.post<{ ok: boolean; status: string }>(`/marketing/campaigns/${id}/pause`),
+    resume: (id: string) => apiClient.post<{ ok: boolean; status: string }>(`/marketing/campaigns/${id}/resume`),
     performance: (id: string, params?: { fromDate?: string; toDate?: string }) =>
       apiClient.get(`/marketing/analysis/campaigns/${id}/performance`, { params }),
   },

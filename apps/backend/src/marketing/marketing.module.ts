@@ -10,11 +10,13 @@ import { MarketingAllocationService } from './marketing-allocation.service';
 import { MarketingFundingService } from './marketing-funding.service';
 import { MarketingAttributionService } from './marketing-attribution.service';
 import { MarketingAnalysisService } from './marketing-analysis.service';
+import { MarketingSnapshotService } from './marketing-snapshot.service';
 import { MetaGraphService } from './meta-graph.service';
 import { MarketingSyncProcessor, enqueueMarketingSync } from './marketing-sync.processor';
 import { MarketingController } from './marketing.controller';
 import { MarketingFundingController } from './marketing-funding.controller';
 import { MarketingAnalysisController } from './marketing-analysis.controller';
+import { MarketingSnapshotController } from './marketing-snapshot.controller';
 import { MarketingCaptureController } from './marketing-capture.controller';
 import { MarketingWebhooksController } from './marketing-webhooks.controller';
 import { MARKETING_QUEUE, DEFAULT_SYNC_INTERVAL_HOURS, SYNC_INTERVAL_SETTING } from './marketing.constants';
@@ -34,6 +36,7 @@ import { Queue } from 'bullmq';
     MarketingController,
     MarketingFundingController,
     MarketingAnalysisController,
+    MarketingSnapshotController,
     MarketingCaptureController,
     MarketingWebhooksController,
   ],
@@ -46,6 +49,7 @@ import { Queue } from 'bullmq';
     MarketingFundingService,
     MarketingAttributionService,
     MarketingAnalysisService,
+    MarketingSnapshotService,
     MetaGraphService,
     EncryptionService,
     MarketingSyncProcessor,

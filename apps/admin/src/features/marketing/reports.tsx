@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { BarChart3, TrendingUp, TrendingDown, RefreshCw, Scale } from 'lucide-react'
 import { marketingApi, money, fmtDate } from './api'
+import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -16,10 +17,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export function MarketingReports() {
   const queryClient = useQueryClient()
+  const [period, setPeriod] = useState('day')
+
+  const periodLabels: Record<string, string> = {
+    day: 'Daily',
+    week: 'Weekly',
+    month: 'Monthly',
+    quarter: 'Quarterly',
+    year: 'Yearly',
+  }
 
   const { data: overview, isLoading } = useQuery({
-    queryKey: ['marketing-analysis-overview'],
-    queryFn: () => marketingApi.analysis.overview().then(r => r.data as any),
+    queryKey: ['marketing-analysis-overview', period],
+    queryFn: () => apiClient.get('/marketing/analysis/overview', { params: { period } }).then(r => r.data as any),
   })
   const { data: kpis } = useQuery({
     queryKey: ['marketing-analysis-kpis'],
@@ -50,6 +60,7 @@ export function MarketingReports() {
 
   const series = useMemo(() => ((overview?.series ?? []) as any[]).slice(-30), [overview])
   const maxSpend = Math.max(1, ...series.map((d) => Number(d.spend)))
+  const tick = (s: string) => (s.length > 5 ? s.slice(5) : s)
 
   const stat = (label: string, value: string, sub?: string) => (
     <Card><CardContent className="p-4">
@@ -87,7 +98,20 @@ export function MarketingReports() {
         )}
 
         <Card className="mt-4">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Daily spend vs order revenue</CardTitle></CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-semibold">{periodLabels[period] ?? 'Daily'} spend vs order revenue</CardTitle>
+            <select
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+            >
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="quarter">Quarter</option>
+              <option value="year">Year</option>
+            </select>
+          </CardHeader>
           <CardContent>
             {series.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No daily data yet — sync an ad account to populate.</p>}
             <div className="flex h-44 items-end gap-1">
@@ -99,7 +123,7 @@ export function MarketingReports() {
                     <div className="w-1/2 rounded-t bg-emerald-400/80" style={{ height: `${Math.min(100, (Number(d.revenue) / Math.max(1, maxSpend)) * 100)}%`, minHeight: 2 }}
                       title={`revenue ${money(Number(d.revenue))}`} />
                   </div>
-                  <span className="text-[9px] text-muted-foreground">{String(d.date).slice(5)}</span>
+                  <span className="text-[9px] text-muted-foreground">{tick(String(d.label ?? d.date))}</span>
                 </div>
               ))}
             </div>

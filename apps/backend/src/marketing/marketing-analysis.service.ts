@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketingAllocationService } from './marketing-allocation.service';
 
@@ -138,9 +138,17 @@ export class MarketingAnalysisService {
 
   /**
    * Period-over-period overview for the top of the dashboard: this vs previous
-   * equal-length window.
+   * equal-length window. `period` controls the series bucketing — day keeps
+   * one point per row, week/month/quarter/year aggregate rows into labelled
+   * buckets with explicit start/end bounds.
    */
-  async periodOverview(fromDate?: string, toDate?: string) {
+  async periodOverview(fromDate?: string, toDate?: string, period: string = 'day') {
+    const periods = ['day', 'week', 'month', 'quarter', 'year'];
+    if (!periods.includes(period)) {
+      throw new BadRequestException(
+        `Invalid period '${period}'. Expected one of: ${periods.join(', ')}`,
+      );
+    }
     const { from, to } = this.range(fromDate, toDate);
     const lengthMs = to.getTime() - from.getTime();
     const prevTo = new Date(from.getTime());
@@ -182,14 +190,125 @@ export class MarketingAnalysisService {
         profit: delta(current.profit, previous.profit),
         orders: delta(current.orders, previous.orders),
       },
-      series: rows.map((r) => ({
-        date: r.date.toISOString().slice(0, 10),
-        spend: Number(r.spend),
-        revenue: Number(r.revenue ?? 0),
-        marketingCost: Number(r.marketingCost ?? 0),
-        profit: Number(r.profit ?? 0),
-      })),
+      series: this.bucketSeries(rows, period),
+      period,
+      granularity: period,
     };
+  }
+
+  private round2(n: number) {
+    return Math.round(n * 100) / 100;
+  }
+
+  private isoWeek(date: Date) {
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const dow = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dow);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+    return { year: d.getUTCFullYear(), week };
+  }
+
+  private bucketBounds(date: Date, period: string) {
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth();
+    const d = date.getUTCDate();
+    switch (period) {
+      case 'week': {
+        const iso = this.isoWeek(date);
+        const dow = date.getUTCDay() || 7;
+        const start = new Date(Date.UTC(y, m, d - (dow - 1)));
+        const end = new Date(Date.UTC(y, m, d - (dow - 1) + 6));
+        return { label: `${iso.year}-W${String(iso.week).padStart(2, '0')}`, start, end };
+      }
+      case 'month': {
+        const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        return {
+          label: `${y}-${String(m + 1).padStart(2, '0')}`,
+          start: new Date(Date.UTC(y, m, 1)),
+          end: new Date(Date.UTC(y, m, last)),
+        };
+      }
+      case 'quarter': {
+        const q = Math.floor(m / 3) + 1;
+        const startM = (q - 1) * 3;
+        const endM = startM + 2;
+        const last = new Date(Date.UTC(y, endM + 1, 0)).getUTCDate();
+        return {
+          label: `${y}-Q${q}`,
+          start: new Date(Date.UTC(y, startM, 1)),
+          end: new Date(Date.UTC(y, endM, last)),
+        };
+      }
+      case 'year': {
+        const last = new Date(Date.UTC(y + 1, 0, 0)).getUTCDate();
+        return {
+          label: `${y}`,
+          start: new Date(Date.UTC(y, 0, 1)),
+          end: new Date(Date.UTC(y, 11, last)),
+        };
+      }
+      default: {
+        const label = date.toISOString().slice(0, 10);
+        return { label, start: date, end: date };
+      }
+    }
+  }
+
+  private bucketSeries(rows: any[], period: string) {
+    if (period === 'day') {
+      return rows.map((r) => {
+        const date = r.date.toISOString().slice(0, 10);
+        return {
+          date,
+          spend: Number(r.spend),
+          revenue: Number(r.revenue ?? 0),
+          marketingCost: Number(r.marketingCost ?? 0),
+          profit: Number(r.profit ?? 0),
+          label: date,
+          start: date,
+          end: date,
+        };
+      });
+    }
+
+    const out: any[] = [];
+    let bucket: any = null;
+    const flush = () => {
+      if (!bucket) return;
+      out.push({
+        date: bucket.start,
+        spend: this.round2(bucket.spend),
+        revenue: this.round2(bucket.revenue),
+        marketingCost: this.round2(bucket.marketingCost),
+        profit: this.round2(bucket.profit),
+        label: bucket.label,
+        start: bucket.start,
+        end: bucket.end,
+      });
+      bucket = null;
+    };
+    for (const r of rows) {
+      const b = this.bucketBounds(r.date, period);
+      if (!bucket || bucket.label !== b.label) {
+        flush();
+        bucket = {
+          label: b.label,
+          start: b.start.toISOString().slice(0, 10),
+          end: b.end.toISOString().slice(0, 10),
+          spend: 0,
+          revenue: 0,
+          marketingCost: 0,
+          profit: 0,
+        };
+      }
+      bucket.spend += Number(r.spend);
+      bucket.revenue += Number(r.revenue ?? 0);
+      bucket.marketingCost += Number(r.marketingCost ?? 0);
+      bucket.profit += Number(r.profit ?? 0);
+    }
+    flush();
+    return out;
   }
 
   /**
@@ -366,5 +485,180 @@ export class MarketingAnalysisService {
 
   async rebuildAllocations(fromDate?: string, toDate?: string) {
     return this.allocation.rebuildFromInsights(fromDate, toDate);
+  }
+
+  async intelligence(fromDate?: string, toDate?: string) {
+    const { from, to } = this.range(fromDate, toDate);
+
+    const [attributions, allocations, purchases] = await Promise.all([
+      this.prisma.orderAttribution.findMany({
+        where: { order: { createdAt: { gte: from, lte: to } } },
+        select: {
+          method: true,
+          confidence: true,
+          order: {
+            select: {
+              createdAt: true,
+              total: true,
+              items: {
+                select: {
+                  id: true,
+                  quantity: true,
+                  price: true,
+                  product: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.marketingCostAllocation.findMany({
+        where: { calculatedAt: { gte: from, lte: to } },
+        select: {
+          calculatedAt: true,
+          allocatedCost: true,
+          productCosts: { select: { orderItemId: true, marketingCost: true } },
+        },
+      }),
+      this.prisma.marketingDailySummary.aggregate({
+        _sum: { purchases: true },
+        where: { date: { gte: from, lte: to } },
+      }),
+    ]);
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const days: string[] = [];
+    const start = new Date(from);
+    start.setUTCHours(0, 0, 0, 0);
+    for (let d = new Date(start); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(dayKey(d));
+    }
+
+    const costByDay = new Map<string, number>();
+    const costByItem = new Map<string, number>();
+    let marketingCost = 0;
+    for (const a of allocations) {
+      const cost = Number(a.allocatedCost ?? 0);
+      marketingCost += cost;
+      const k = dayKey(a.calculatedAt);
+      costByDay.set(k, (costByDay.get(k) ?? 0) + cost);
+      for (const pc of a.productCosts) {
+        costByItem.set(
+          pc.orderItemId,
+          (costByItem.get(pc.orderItemId) ?? 0) + Number(pc.marketingCost ?? 0),
+        );
+      }
+    }
+
+    const revenueByDay = new Map<string, number>();
+    const products = new Map<
+      string,
+      { id: string; name: string; revenue: number; cost: number; dayProfit: Map<string, number> }
+    >();
+    const byMethod = new Map<string, number>();
+    let confidenceSum = 0;
+    let orderRevenue = 0;
+
+    for (const a of attributions) {
+      byMethod.set(a.method, (byMethod.get(a.method) ?? 0) + 1);
+      confidenceSum += a.confidence ?? 0;
+      const orderDay = dayKey(a.order.createdAt);
+      const total = Number(a.order.total ?? 0);
+      orderRevenue += total;
+      revenueByDay.set(orderDay, (revenueByDay.get(orderDay) ?? 0) + total);
+      for (const item of a.order.items) {
+        if (!item.product) continue;
+        let p = products.get(item.product.id);
+        if (!p) {
+          p = {
+            id: item.product.id,
+            name: item.product.name,
+            revenue: 0,
+            cost: 0,
+            dayProfit: new Map(),
+          };
+          products.set(p.id, p);
+        }
+        const itemRevenue = Number(item.price ?? 0) * item.quantity;
+        const itemCost = costByItem.get(item.id) ?? 0;
+        p.revenue += itemRevenue;
+        p.cost += itemCost;
+        p.dayProfit.set(orderDay, (p.dayProfit.get(orderDay) ?? 0) + itemRevenue - itemCost);
+      }
+    }
+
+    const orders = attributions.length;
+    const purchaseCount = Number(purchases._sum.purchases ?? 0);
+    const trendDays = days.slice(-7);
+
+    const costTrend = days.map((date) => ({
+      date,
+      cost: this.round2(costByDay.get(date) ?? 0),
+    }));
+    const roasTrend = days.map((date) => {
+      const cost = costByDay.get(date) ?? 0;
+      const revenue = revenueByDay.get(date) ?? 0;
+      return {
+        date,
+        cost: this.round2(cost),
+        revenue: this.round2(revenue),
+        roas: cost > 0 ? this.round2(revenue / cost) : null,
+      };
+    });
+    const roiTimeline = days.map((date) => {
+      const cost = costByDay.get(date) ?? 0;
+      const revenue = revenueByDay.get(date) ?? 0;
+      return {
+        date,
+        cost: this.round2(cost),
+        revenue: this.round2(revenue),
+        roi: cost > 0 ? this.round2((revenue - cost) / cost) : null,
+      };
+    });
+
+    const productProfitTrend = [...products.values()]
+      .map((p) => ({
+        productId: p.id,
+        productName: p.name,
+        profit: this.round2(p.revenue - p.cost),
+        cost: this.round2(p.cost),
+        revenue: this.round2(p.revenue),
+        roas: p.cost > 0 ? this.round2(p.revenue / p.cost) : null,
+        trend: trendDays.map((d) => this.round2(p.dayProfit.get(d) ?? 0)),
+      }))
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 10);
+
+    const cac = orders > 0 ? this.round2(marketingCost / orders) : null;
+    const cpp = purchaseCount > 0 ? this.round2(marketingCost / purchaseCount) : null;
+
+    const attributionConfidence = {
+      avg: orders > 0 ? Math.round(confidenceSum / orders) : 0,
+      byMethod: Object.fromEntries([...byMethod.entries()].sort()),
+    };
+
+    const profit = this.round2(orderRevenue - marketingCost);
+    const roas = marketingCost > 0 ? this.round2(orderRevenue / marketingCost) : null;
+    const money2 = (n: number) => `৳${n.toFixed(2)}`;
+
+    return {
+      range: { from, to },
+      costTrend,
+      roasTrend,
+      productProfitTrend,
+      cac,
+      cpp,
+      roiTimeline,
+      attributionConfidence,
+      explainProfit: {
+        revenue: this.round2(orderRevenue),
+        orders,
+        confidence: attributionConfidence.avg,
+        cost: this.round2(marketingCost),
+        profit,
+        roas,
+        text: `${money2(this.round2(orderRevenue))} revenue from ${orders} attributed orders at ${attributionConfidence.avg}% confidence; cost ${money2(this.round2(marketingCost))} → profit ${money2(profit)} (ROAS ${roas === null ? 'N/A' : `${roas.toFixed(2)}x`})`,
+      },
+    };
   }
 }

@@ -103,6 +103,7 @@ import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './rout
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
+import { Route as AuthenticatedOpMarketingSpendSnapshotsIndexRouteImport } from './routes/_authenticated/op/marketing/spend-snapshots/index'
 import { Route as AuthenticatedOpMarketingReportsIndexRouteImport } from './routes/_authenticated/op/marketing/reports/index'
 import { Route as AuthenticatedOpMarketingFundingIndexRouteImport } from './routes/_authenticated/op/marketing/funding/index'
 import { Route as AuthenticatedOpMarketingConnectionsIndexRouteImport } from './routes/_authenticated/op/marketing/connections/index'
@@ -682,6 +683,12 @@ const AuthenticatedOpOrdersIncompleteLeadsIndexRoute =
     path: '/op/orders/incomplete-leads/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpMarketingSpendSnapshotsIndexRoute =
+  AuthenticatedOpMarketingSpendSnapshotsIndexRouteImport.update({
+    id: '/op/marketing/spend-snapshots/',
+    path: '/op/marketing/spend-snapshots/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpMarketingReportsIndexRoute =
   AuthenticatedOpMarketingReportsIndexRouteImport.update({
     id: '/op/marketing/reports/',
@@ -1009,6 +1016,7 @@ export interface FileRoutesByFullPath {
   '/op/marketing/connections/': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/op/marketing/funding/': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/op/marketing/reports/': typeof AuthenticatedOpMarketingReportsIndexRoute
+  '/op/marketing/spend-snapshots/': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
@@ -1138,6 +1146,7 @@ export interface FileRoutesByTo {
   '/op/marketing/connections': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/op/marketing/funding': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/op/marketing/reports': typeof AuthenticatedOpMarketingReportsIndexRoute
+  '/op/marketing/spend-snapshots': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/op/print/bulk': typeof AuthenticatedOpPrintBulkIndexRoute
   '/op/print/price-labels': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
@@ -1269,6 +1278,7 @@ export interface FileRoutesById {
   '/_authenticated/op/marketing/connections/': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/_authenticated/op/marketing/funding/': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/_authenticated/op/marketing/reports/': typeof AuthenticatedOpMarketingReportsIndexRoute
+  '/_authenticated/op/marketing/spend-snapshots/': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   '/_authenticated/op/print/bulk/': typeof AuthenticatedOpPrintBulkIndexRoute
   '/_authenticated/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
@@ -1400,6 +1410,7 @@ export interface FileRouteTypes {
     | '/op/marketing/connections/'
     | '/op/marketing/funding/'
     | '/op/marketing/reports/'
+    | '/op/marketing/spend-snapshots/'
     | '/op/orders/incomplete-leads/'
     | '/op/print/bulk/'
     | '/op/print/price-labels/'
@@ -1529,6 +1540,7 @@ export interface FileRouteTypes {
     | '/op/marketing/connections'
     | '/op/marketing/funding'
     | '/op/marketing/reports'
+    | '/op/marketing/spend-snapshots'
     | '/op/orders/incomplete-leads'
     | '/op/print/bulk'
     | '/op/print/price-labels'
@@ -1659,6 +1671,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/marketing/connections/'
     | '/_authenticated/op/marketing/funding/'
     | '/_authenticated/op/marketing/reports/'
+    | '/_authenticated/op/marketing/spend-snapshots/'
     | '/_authenticated/op/orders/incomplete-leads/'
     | '/_authenticated/op/print/bulk/'
     | '/_authenticated/op/print/price-labels/'
@@ -2343,6 +2356,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/marketing/spend-snapshots/': {
+      id: '/_authenticated/op/marketing/spend-snapshots/'
+      path: '/op/marketing/spend-snapshots'
+      fullPath: '/op/marketing/spend-snapshots/'
+      preLoaderRoute: typeof AuthenticatedOpMarketingSpendSnapshotsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/marketing/reports/': {
       id: '/_authenticated/op/marketing/reports/'
       path: '/op/marketing/reports'
@@ -2778,6 +2798,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpMarketingConnectionsIndexRoute: typeof AuthenticatedOpMarketingConnectionsIndexRoute
   AuthenticatedOpMarketingFundingIndexRoute: typeof AuthenticatedOpMarketingFundingIndexRoute
   AuthenticatedOpMarketingReportsIndexRoute: typeof AuthenticatedOpMarketingReportsIndexRoute
+  AuthenticatedOpMarketingSpendSnapshotsIndexRoute: typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
   AuthenticatedOpMarketingAdAccountsManageIndexRoute: typeof AuthenticatedOpMarketingAdAccountsManageIndexRoute
@@ -2897,6 +2918,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpMarketingFundingIndexRoute,
   AuthenticatedOpMarketingReportsIndexRoute:
     AuthenticatedOpMarketingReportsIndexRoute,
+  AuthenticatedOpMarketingSpendSnapshotsIndexRoute:
+    AuthenticatedOpMarketingSpendSnapshotsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute:
     AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute:

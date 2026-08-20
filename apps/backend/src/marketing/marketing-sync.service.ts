@@ -75,9 +75,10 @@ export class MarketingSyncService {
 
     try {
       await mark('campaigns', 10);
-      const campaigns = await this.metaGraph.listCampaigns(
-        adAccount.providerAccountId,
+      const campaigns = await this.runWithTokenRefresh(
+        adAccount.connection,
         token,
+        (t) => this.metaGraph.listCampaigns(adAccount.providerAccountId, t),
       );
 
       const campaignMap = new Map<
@@ -131,9 +132,10 @@ export class MarketingSyncService {
         update: { stage: 'adsets', progressPct: 30 },
         create: { adAccountId, provider: adAccount.connection.platform.slug, stage: 'adsets', status: 'running', progressPct: 30 },
       });
-      const adSets = await this.metaGraph.listAdSets(
-        adAccount.providerAccountId,
+      const adSets = await this.runWithTokenRefresh(
+        adAccount.connection,
         token,
+        (t) => this.metaGraph.listAdSets(adAccount.providerAccountId, t),
       );
       const adSetMap = new Map<string, string>();
       for (const s of adSets) {
@@ -167,9 +169,10 @@ export class MarketingSyncService {
         update: { stage: 'ads', progressPct: 45 },
         create: { adAccountId, provider: adAccount.connection.platform.slug, stage: 'ads', status: 'running', progressPct: 45 },
       });
-      const ads = await this.metaGraph.listAds(
-        adAccount.providerAccountId,
+      const ads = await this.runWithTokenRefresh(
+        adAccount.connection,
         token,
+        (t) => this.metaGraph.listAds(adAccount.providerAccountId, t),
       );
       for (const ad of ads) {
         const targetSetId = adSetMap.get(ad.adset_id);
@@ -218,11 +221,16 @@ export class MarketingSyncService {
 
       let insightRows: Awaited<ReturnType<MetaGraphService['fetchInsights']>> = [];
       try {
-        insightRows = await this.metaGraph.fetchInsights(
-          adAccount.providerAccountId,
+        insightRows = await this.runWithTokenRefresh(
+          adAccount.connection,
           token,
-          sinceStr,
-          untilStr,
+          (t) =>
+            this.metaGraph.fetchInsights(
+              adAccount.providerAccountId,
+              t,
+              sinceStr,
+              untilStr,
+            ),
         );
       } catch (err) {
         this.logger.warn(`Insights fetch failed for ${adAccountId}: ${err instanceof Error ? err.message : err}`);
@@ -273,6 +281,25 @@ export class MarketingSyncService {
         data: { lastError: message },
       });
       throw err;
+    }
+  }
+
+  private async runWithTokenRefresh<T>(
+    connection: any,
+    token: string,
+    fn: (token: string) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn(token);
+    } catch (err) {
+      if (!(err instanceof MetaApiError) || err.code !== 190) throw err;
+      const refreshed = await this.connections.refreshLongLivedToken(connection.id);
+      if (!refreshed) throw err;
+      const { token: newToken } = this.connections.getDecryptedToken(refreshed);
+      this.logger.log(
+        `Token refreshed for connection ${connection.id}; retrying Meta API call`,
+      );
+      return fn(newToken);
     }
   }
 

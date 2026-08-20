@@ -15,6 +15,9 @@ import {
   AddAdAccountDto,
 } from './dto/marketing.dto';
 
+const APP_ID_SETTING = 'marketing_app_id';
+const APP_SECRET_SETTING = 'marketing_app_secret';
+
 @Injectable()
 export class MarketingConnectionsService {
   private readonly logger = new Logger(MarketingConnectionsService.name);
@@ -473,6 +476,127 @@ export class MarketingConnectionsService {
         ? this.encryption.decrypt(connection.refreshTokenEnc)
         : null,
     };
+  }
+
+  async refreshLongLivedToken(connectionId: string) {
+    const connection = await this.prisma.marketingConnection.findUnique({
+      where: { id: connectionId },
+      include: { platform: true },
+    });
+    if (!connection) {
+      this.logger.warn(`Token refresh skipped: connection ${connectionId} not found`);
+      return null;
+    }
+
+    const [appIdSetting, appSecretSetting] = await Promise.all([
+      this.prisma.systemSetting.findUnique({ where: { key: APP_ID_SETTING } }),
+      this.prisma.systemSetting.findUnique({ where: { key: APP_SECRET_SETTING } }),
+    ]);
+    if (!appIdSetting?.value || !appSecretSetting?.value) {
+      this.logger.warn(
+        `Token refresh skipped: ${APP_ID_SETTING} or ${APP_SECRET_SETTING} not configured`,
+      );
+      return null;
+    }
+
+    const { token } = this.getDecryptedToken(connection);
+    try {
+      const body = await this.metaGraph.request(
+        'oauth/access_token',
+        token,
+        {},
+        'POST',
+        {
+          grant_type: 'fb_exchange_token',
+          client_id: appIdSetting.value,
+          client_secret: appSecretSetting.value,
+          fb_exchange_token: token,
+        },
+      );
+      if (!body?.access_token) {
+        this.logger.warn(
+          `Token refresh failed for connection ${connectionId}: no access_token in Meta response`,
+        );
+        return null;
+      }
+
+      const updated = await this.prisma.marketingConnection.update({
+        where: { id: connectionId },
+        data: {
+          accessTokenEnc: this.encryption.encrypt(body.access_token),
+          tokenExpiry: body.expires_in
+            ? new Date(Date.now() + Number(body.expires_in) * 1000)
+            : null,
+          status: 'connected',
+        },
+        include: { platform: true },
+      });
+      await this.prisma.marketingAuditLog.create({
+        data: {
+          action: 'connection.token_refresh',
+          entityType: 'connection',
+          entityId: connectionId,
+          metadata: { provider: connection.platform?.slug ?? null },
+        },
+      });
+      this.logger.log(`Long-lived token refreshed for connection ${connectionId}`);
+      return this.sanitize(updated as any);
+    } catch (err) {
+      this.logger.warn(
+        `Token refresh failed for connection ${connectionId}: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+
+  async pauseCampaign(campaignId: string, userId?: string) {
+    return this.setCampaignStatus(campaignId, 'PAUSED', userId);
+  }
+
+  async resumeCampaign(campaignId: string, userId?: string) {
+    return this.setCampaignStatus(campaignId, 'ACTIVE', userId);
+  }
+
+  private async setCampaignStatus(
+    campaignId: string,
+    status: 'PAUSED' | 'ACTIVE',
+    userId?: string,
+  ) {
+    const campaign = await this.prisma.marketingCampaign.findUnique({
+      where: { id: campaignId },
+      include: { adAccount: { include: { connection: true } } },
+    });
+    if (!campaign || !campaign.adAccount?.connection) {
+      throw new BadRequestException('Campaign not found');
+    }
+    const { token } = this.getDecryptedToken(campaign.adAccount.connection);
+    const verb = status === 'PAUSED' ? 'pause' : 'resume';
+    try {
+      await this.metaGraph.request(
+        campaign.providerCampaignId,
+        token,
+        {},
+        'POST',
+        { status },
+      );
+    } catch (err) {
+      throw new BadRequestException(
+        `Failed to ${verb} campaign on Meta: ${err instanceof Error ? err.message : 'unknown error'}`,
+      );
+    }
+    const updated = await this.prisma.marketingCampaign.update({
+      where: { id: campaignId },
+      data: { status, effectiveStatus: status, lastSyncedAt: new Date() },
+    });
+    await this.prisma.marketingAuditLog.create({
+      data: {
+        action: `campaign.${verb}`,
+        entityType: 'campaign',
+        entityId: campaignId,
+        actorId: userId,
+      },
+    });
+    return { ok: true, status: updated.status };
   }
 
   private sanitize(connection: any) {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Search, Megaphone } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Search, Megaphone, Pause, Play, Loader2 } from 'lucide-react'
 import { marketingApi, fmtDate } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -19,6 +20,7 @@ import {
 import { Link } from '@tanstack/react-router'
 
 export function MarketingCampaigns() {
+  const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -33,6 +35,28 @@ export function MarketingCampaigns() {
   const { data: accounts } = useQuery({
     queryKey: ['marketing-ad-accounts-opt'],
     queryFn: () => marketingApi.adAccounts.list({ page: 1, perPage: 100 }).then(r => r.data),
+  })
+
+  const invalidateCampaigns = () => {
+    queryClient.invalidateQueries({ queryKey: ['marketing-campaigns'] })
+  }
+
+  const pauseMut = useMutation({
+    mutationFn: (id: string) => marketingApi.campaigns.pause(id),
+    onSuccess: () => {
+      toast.success('Campaign paused')
+      invalidateCampaigns()
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Pause failed'),
+  })
+
+  const resumeMut = useMutation({
+    mutationFn: (id: string) => marketingApi.campaigns.resume(id),
+    onSuccess: () => {
+      toast.success('Campaign resumed')
+      invalidateCampaigns()
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Resume failed'),
   })
 
   const campaigns = data?.data ?? []
@@ -86,12 +110,13 @@ export function MarketingCampaigns() {
                   <TableHead>Status</TableHead>
                   <TableHead>Attributed orders</TableHead>
                   <TableHead>Last sync</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">Loading…</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">Loading…</TableCell></TableRow>}
                 {!isLoading && campaigns.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                  <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
                     No campaigns. Sync an ad account to pull them from the platform.
                   </TableCell></TableRow>
                 )}
@@ -112,6 +137,22 @@ export function MarketingCampaigns() {
                     </TableCell>
                     <TableCell className="tabular-nums">{c._count?.orderAttributions ?? 0}</TableCell>
                     <TableCell className="text-sm">{fmtDate(c.lastSyncedAt)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {c.status === 'ACTIVE' && !c.isArchived && (
+                          <Button variant="outline" size="sm" onClick={() => pauseMut.mutate(c.id)} disabled={pauseMut.isPending}>
+                            {pauseMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+                            Pause
+                          </Button>
+                        )}
+                        {c.status === 'PAUSED' && !c.isArchived && (
+                          <Button variant="outline" size="sm" onClick={() => resumeMut.mutate(c.id)} disabled={resumeMut.isPending}>
+                            {resumeMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                            Resume
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

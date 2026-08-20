@@ -28,6 +28,8 @@ describe('MarketingConnectionsService', () => {
       delete: jest.fn(),
     },
     marketingAuditLog: { create: jest.fn() },
+    systemSetting: { findUnique: jest.fn() },
+    marketingCampaign: { findUnique: jest.fn(), update: jest.fn() },
     adAccount: {
       findMany: jest.fn(),
       count: jest.fn(),
@@ -44,7 +46,7 @@ describe('MarketingConnectionsService', () => {
         MarketingConnectionsService,
         { provide: PrismaService, useValue: mockPrisma() },
         { provide: MarketingPlatformsService, useValue: { ensureDefaults: jest.fn() } },
-        { provide: MetaGraphService, useValue: { validateToken: jest.fn(), listAdAccounts: jest.fn() } },
+        { provide: MetaGraphService, useValue: { validateToken: jest.fn(), listAdAccounts: jest.fn(), request: jest.fn() } },
         { provide: EncryptionService, useValue: mockEncryption },
       ],
     }).compile();
@@ -122,5 +124,185 @@ describe('MarketingConnectionsService', () => {
   it('getDecryptedToken handles missing refresh token', async () => {
     const res = service.getDecryptedToken({ accessTokenEnc: 'enc:abc', refreshTokenEnc: null });
     expect(res).toEqual({ token: 'abc', refreshToken: null });
+  });
+
+  describe('refreshLongLivedToken', () => {
+    const mockSettings = () => {
+      (prisma.systemSetting.findUnique as jest.Mock).mockImplementation(({ where }: any) => {
+        const values: any = {
+          marketing_app_id: { key: 'marketing_app_id', value: 'app-123' },
+          marketing_app_secret: { key: 'marketing_app_secret', value: 'secret-456' },
+        };
+        return Promise.resolve(values[where.key] ?? null);
+      });
+    };
+
+    const mockConnection = {
+      id: 'conn-1',
+      accessTokenEnc: 'enc:EAAG-live-token',
+      platform: { slug: 'facebook' },
+    };
+
+    it('returns null without touching Meta when app id or secret settings are missing', async () => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const res = await service.refreshLongLivedToken('conn-1');
+
+      expect(res).toBeNull();
+      expect(metaGraph.request).not.toHaveBeenCalled();
+      expect(prisma.marketingConnection.update).not.toHaveBeenCalled();
+    });
+
+    it('returns null for a missing connection', async () => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(null);
+      expect(await service.refreshLongLivedToken('conn-nope')).toBeNull();
+    });
+
+    it('exchanges the token, encrypts the new one and updates the row', async () => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      mockSettings();
+      (metaGraph.request as jest.Mock).mockResolvedValue({
+        access_token: 'EAAG-new-token',
+        expires_in: 5184000,
+      });
+      (prisma.marketingConnection.update as jest.Mock).mockImplementation(async ({ data }: any) => ({
+        id: 'conn-1',
+        platform: mockPlatform,
+        status: data.status,
+        tokenExpiry: data.tokenExpiry,
+      }));
+      (prisma.marketingAuditLog.create as jest.Mock).mockResolvedValue({});
+
+      const res = await service.refreshLongLivedToken('conn-1');
+
+      expect(metaGraph.request).toHaveBeenCalledWith(
+        'oauth/access_token',
+        'EAAG-live-token',
+        {},
+        'POST',
+        {
+          grant_type: 'fb_exchange_token',
+          client_id: 'app-123',
+          client_secret: 'secret-456',
+          fb_exchange_token: 'EAAG-live-token',
+        },
+      );
+      const updateArgs = (prisma.marketingConnection.update as jest.Mock).mock.calls[0][0];
+      expect(updateArgs.where).toEqual({ id: 'conn-1' });
+      expect(updateArgs.data.accessTokenEnc).toBe('enc:EAAG-new-token');
+      expect(updateArgs.data.status).toBe('connected');
+      expect(updateArgs.data.tokenExpiry).toBeInstanceOf(Date);
+      const expected = Date.now() + 5184000 * 1000;
+      expect(Math.abs(updateArgs.data.tokenExpiry.getTime() - expected)).toBeLessThan(5000);
+      expect(prisma.marketingAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'connection.token_refresh',
+            entityId: 'conn-1',
+          }),
+        }),
+      );
+      expect(JSON.stringify(res)).not.toContain('accessTokenEnc');
+      expect(JSON.stringify(res)).not.toContain('EAAG-new-token');
+    });
+
+    it('returns null when the Meta call fails instead of throwing', async () => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      mockSettings();
+      (metaGraph.request as jest.Mock).mockRejectedValue(new Error('Rate limit hit'));
+
+      const res = await service.refreshLongLivedToken('conn-1');
+
+      expect(res).toBeNull();
+      expect(prisma.marketingConnection.update).not.toHaveBeenCalled();
+    });
+
+    it('returns null when Meta responds without access_token', async () => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      mockSettings();
+      (metaGraph.request as jest.Mock).mockResolvedValue({});
+
+      const res = await service.refreshLongLivedToken('conn-1');
+
+      expect(res).toBeNull();
+      expect(prisma.marketingConnection.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pauseCampaign / resumeCampaign', () => {
+    const campaignWithConnection = {
+      id: 'camp-1',
+      providerCampaignId: '2384345',
+      adAccount: {
+        id: 'acct-1',
+        connection: { id: 'conn-1', accessTokenEnc: 'enc:EAAG-xyz' },
+      },
+    };
+
+    it('PAUSEs the campaign on Meta and mirrors the status locally', async () => {
+      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (metaGraph.request as jest.Mock).mockResolvedValue({ success: true });
+      (prisma.marketingCampaign.update as jest.Mock).mockResolvedValue({
+        id: 'camp-1',
+        status: 'PAUSED',
+      });
+      (prisma.marketingAuditLog.create as jest.Mock).mockResolvedValue({});
+
+      const res = await service.pauseCampaign('camp-1', 'user-1');
+
+      expect(res).toEqual({ ok: true, status: 'PAUSED' });
+      expect(metaGraph.request).toHaveBeenCalledWith(
+        '2384345',
+        'EAAG-xyz',
+        {},
+        'POST',
+        { status: 'PAUSED' },
+      );
+      expect(prisma.marketingCampaign.update).toHaveBeenCalledWith({
+        where: { id: 'camp-1' },
+        data: expect.objectContaining({ status: 'PAUSED', effectiveStatus: 'PAUSED' }),
+      });
+      expect(prisma.marketingAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'campaign.pause', actorId: 'user-1' }),
+        }),
+      );
+    });
+
+    it('resumes an ACTIVE campaign on Meta and mirrors the status locally', async () => {
+      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (metaGraph.request as jest.Mock).mockResolvedValue({ success: true });
+      (prisma.marketingCampaign.update as jest.Mock).mockResolvedValue({
+        id: 'camp-1',
+        status: 'ACTIVE',
+      });
+      (prisma.marketingAuditLog.create as jest.Mock).mockResolvedValue({});
+
+      const res = await service.resumeCampaign('camp-1');
+
+      expect(res).toEqual({ ok: true, status: 'ACTIVE' });
+      expect(metaGraph.request).toHaveBeenCalledWith(
+        '2384345',
+        'EAAG-xyz',
+        {},
+        'POST',
+        { status: 'ACTIVE' },
+      );
+    });
+
+    it('rejects with BadRequest when the campaign does not exist', async () => {
+      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(service.pauseCampaign('nope')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.resumeCampaign('nope')).rejects.toBeInstanceOf(BadRequestException);
+      expect(metaGraph.request).not.toHaveBeenCalled();
+    });
+
+    it('rejects with BadRequest when Meta rejects the status change', async () => {
+      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (metaGraph.request as jest.Mock).mockRejectedValue(new Error('Not permitted'));
+      await expect(service.pauseCampaign('camp-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.marketingCampaign.update).not.toHaveBeenCalled();
+    });
   });
 });

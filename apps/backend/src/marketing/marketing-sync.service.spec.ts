@@ -47,7 +47,7 @@ describe('MarketingSyncService', () => {
       providers: [
         MarketingSyncService,
         { provide: PrismaService, useValue: mockPrisma() },
-        { provide: MarketingConnectionsService, useValue: { getDecryptedToken: jest.fn() } },
+        { provide: MarketingConnectionsService, useValue: { getDecryptedToken: jest.fn(), refreshLongLivedToken: jest.fn() } },
         { provide: MetaGraphService, useValue: {
             listCampaigns: jest.fn(),
             listAdSets: jest.fn(),
@@ -167,6 +167,51 @@ describe('MarketingSyncService', () => {
       where: { id: 'acct-1' },
       data: expect.objectContaining({ lastError: expect.stringContaining('Session has expired') }),
     });
+  });
+
+  it('auto-refreshes the token on MetaApiError 190 and retries the graph call once', async () => {
+    setupHappyPath();
+    (connections.getDecryptedToken as jest.Mock).mockImplementation((conn: any) => ({
+      token: conn.accessTokenEnc === 'enc:EAAG-new' ? 'EAAG-new' : 'EAAG-xyz',
+    }));
+    (metaGraph.listCampaigns as jest.Mock)
+      .mockRejectedValueOnce(new MetaApiError('Session has expired', 190, 458))
+      .mockResolvedValueOnce([
+        { id: 'c-1', name: 'Launch', status: 'ACTIVE', objective: 'OUTCOME_SALES' },
+      ]);
+    (connections.refreshLongLivedToken as jest.Mock).mockResolvedValue({
+      id: 'conn-1',
+      accessTokenEnc: 'enc:EAAG-new',
+      status: 'connected',
+    });
+
+    const res = await service.syncAdAccount('acct-1');
+
+    expect(res).toMatchObject({ adAccountId: 'acct-1', imported: 1, skipped: false });
+    expect(connections.refreshLongLivedToken).toHaveBeenCalledWith('conn-1');
+    expect(metaGraph.listCampaigns).toHaveBeenCalledTimes(2);
+    expect(metaGraph.listCampaigns).toHaveBeenLastCalledWith('act_12345', 'EAAG-new');
+  });
+
+  it('rethrows the original MetaApiError when refresh is not possible', async () => {
+    setupHappyPath();
+    (metaGraph.listCampaigns as jest.Mock).mockRejectedValue(
+      new MetaApiError('Session has expired', 190, undefined),
+    );
+    (connections.refreshLongLivedToken as jest.Mock).mockResolvedValue(null);
+
+    await expect(service.syncAdAccount('acct-1')).rejects.toBeInstanceOf(MetaApiError);
+    expect(connections.refreshLongLivedToken).toHaveBeenCalledWith('conn-1');
+    expect(metaGraph.listCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('never attempts a refresh for non-190 MetaApiErrors', async () => {
+    setupHappyPath();
+    (metaGraph.listCampaigns as jest.Mock).mockRejectedValue(
+      new MetaApiError('Invalid parameter', 100, undefined),
+    );
+    await expect(service.syncAdAccount('acct-1')).rejects.toBeInstanceOf(MetaApiError);
+    expect(connections.refreshLongLivedToken).not.toHaveBeenCalled();
   });
 
   it('syncAll iterates every active ad account', async () => {

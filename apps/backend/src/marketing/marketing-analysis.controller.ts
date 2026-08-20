@@ -26,8 +26,17 @@ export class MarketingAnalysisController {
   }
 
   @Get('overview')
-  overview(@Query('fromDate') fromDate?: string, @Query('toDate') toDate?: string) {
-    return this.analysis.periodOverview(fromDate, toDate);
+  overview(
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+    @Query('period') period?: string,
+  ) {
+    return this.analysis.periodOverview(fromDate, toDate, period);
+  }
+
+  @Get('intelligence')
+  intelligence(@Query('fromDate') fromDate?: string, @Query('toDate') toDate?: string) {
+    return this.analysis.intelligence(fromDate, toDate);
   }
 
   @Get('profitability')

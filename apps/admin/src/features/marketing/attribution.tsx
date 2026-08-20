@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Target, RefreshCw, GitBranch } from 'lucide-react'
+import { Target, RefreshCw, GitBranch, Save, Percent } from 'lucide-react'
 import { marketingApi, money, fmtDate } from './api'
+import { systemSettingsApi } from '../settings/storage-api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -10,10 +11,17 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+
+const ALLOCATION_MODES = ['product_value', 'equal', 'quantity'] as const
+type AllocationMode = (typeof ALLOCATION_MODES)[number]
 
 const METHOD_BADGE: Record<string, string> = {
   session: 'bg-blue-50 text-blue-700',
@@ -29,6 +37,25 @@ export function MarketingAttribution() {
   const [page, setPage] = useState(1)
   const [sessionPage, setSessionPage] = useState(1)
   const perPage = 15
+
+  const [allocationMode, setAllocationMode] = useState<AllocationMode>('product_value')
+  const { data: settings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => systemSettingsApi.getAll().then(r => r.data),
+  })
+  useEffect(() => {
+    const stored = settings?.marketing_allocation_mode as AllocationMode | undefined
+    if (stored && ALLOCATION_MODES.includes(stored)) setAllocationMode(stored)
+  }, [settings])
+
+  const saveModeMut = useMutation({
+    mutationFn: (mode: AllocationMode) => systemSettingsApi.set('marketing_allocation_mode', mode),
+    onSuccess: () => {
+      toast.success('Cost allocation method saved')
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to save cost allocation method'),
+  })
 
   const { data } = useQuery({
     queryKey: ['marketing-attributions', page],
@@ -72,6 +99,37 @@ export function MarketingAttribution() {
           UTM campaign match — first match wins, one record per order, later resolutions never overwrite the first outcome.
           Unmatched orders are simply not attributed (listed under Attribution failures in Reports).
         </div>
+        <Card className="mb-4">
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-2">
+              <Label htmlFor="allocation-mode" className="flex items-center gap-1.5 text-sm font-medium">
+                <Percent className="h-4 w-4 text-primary" />
+                Cost Allocation method
+              </Label>
+              <Select value={allocationMode} onValueChange={(v) => setAllocationMode(v as AllocationMode)}>
+                <SelectTrigger id="allocation-mode" className="w-full sm:w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="product_value">Product Value</SelectItem>
+                  <SelectItem value="equal">Equal</SelectItem>
+                  <SelectItem value="quantity">Quantity</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                How daily campaign spend is split across attributed orders. Existing allocations keep their recorded method.
+              </p>
+            </div>
+            <Button size="sm" disabled={saveModeMut.isPending} onClick={() => saveModeMut.mutate(allocationMode)}>
+              {saveModeMut.isPending ? (
+                <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-1 h-4 w-4" />
+              )}
+              Save
+            </Button>
+          </CardContent>
+        </Card>
         <Tabs defaultValue="attributions">
           <TabsList>
             <TabsTrigger value="attributions">Attributed orders</TabsTrigger>
