@@ -29,7 +29,17 @@ describe('browser Purchase payload (spec §5, §12, §33)', () => {
       { id: 'prod-1', quantity: 2, item_price: 1000 },
       { id: 'combo-1', quantity: 1, item_price: 50 },
     ]);
+    // Falls back to id when displayId is absent
     expect(d.order_id).toBe('order-1');
+  });
+
+  it('uses displayId as order_id when available (business order ID, not UUID)', () => {
+    const orderWithDisplayId = {
+      ...productOrder,
+      displayId: 'ORD-260820-00123',
+    };
+    const d = buildPurchaseSharedData(orderWithDisplayId, 'BDT');
+    expect(d.order_id).toBe('ORD-260820-00123');
   });
 
   it('content_name falls back to the combo when the first line item is a combo', () => {

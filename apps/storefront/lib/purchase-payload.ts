@@ -20,6 +20,7 @@ export interface BrowserPurchaseItem {
 
 export interface BrowserPurchaseOrder {
   id: string;
+  displayId?: string;
   total?: number | string | null;
   subtotal?: number | string | null;
   items?: BrowserPurchaseItem[] | null;
@@ -54,7 +55,7 @@ export function buildPurchaseSharedData(
       : undefined,
     content_category: firstItem?.product?.category?.name || undefined,
     num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
-    order_id: order.id,
+    order_id: order.displayId || order.id,
     contents: itemsList.map((i: any) => ({
       id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
       quantity: i.quantity,

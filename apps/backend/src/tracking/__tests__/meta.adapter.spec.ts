@@ -257,7 +257,7 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(payload.user_data.client_ip_address).toBeUndefined();
     });
 
-    it('does NOT skip when any single identity key exists (other identity is enough for Meta to accept)', () => {
+    it('does NOT skip when any real identity key exists — external_id, fbp, fbc, fb_login_id, or name (ip/ua alone are NOT identity)', () => {
       // external_id only
       const extOnly = adapter.build(
         { ...snapshot, customer: { email: 'cust_9@example.com' } },
@@ -267,14 +267,6 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(extOnly.skipReason).toBeUndefined();
       expect(extOnly.qualityFlags).toEqual(['NO_EM_PH']);
 
-      // ip only
-      const ipOnly = adapter.build(
-        { ...snapshot, customer: { email: 'cust_9@example.com' } },
-        { ip: '203.0.113.7' },
-        normalizer,
-      )!;
-      expect(ipOnly.skipReason).toBeUndefined();
-
       // fbp only
       const fbpOnly = adapter.build(
         { ...snapshot, customer: { email: 'cust_9@example.com' } },
@@ -282,6 +274,14 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
         normalizer,
       )!;
       expect(fbpOnly.skipReason).toBeUndefined();
+
+      // fbc only
+      const fbcOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { fbc: 'fb.1.999.AwB' },
+        normalizer,
+      )!;
+      expect(fbcOnly.skipReason).toBeUndefined();
 
       // name-only user_data still counts as customer information
       const nameOnly = adapter.build(
@@ -293,6 +293,32 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
         normalizer,
       )!;
       expect(nameOnly.skipReason).toBeUndefined();
+    });
+
+    it('skips when only ip/ua are present (no real identity key — strengthened 2804050 guard)', () => {
+      // ip only — NOT a valid customer information parameter for Meta's 2804050 check
+      const ipOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { ip: '203.0.113.7' },
+        normalizer,
+      )!;
+      expect(ipOnly.skipReason).toContain('2804050');
+
+      // ua only
+      const uaOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { userAgent: 'Mozilla/5.0' },
+        normalizer,
+      )!;
+      expect(uaOnly.skipReason).toContain('2804050');
+
+      // ip + ua together still not enough
+      const ipUaOnly = adapter.build(
+        { ...snapshot, customer: { email: 'cust_9@example.com' } },
+        { ip: '203.0.113.7', userAgent: 'Mozilla/5.0' },
+        normalizer,
+      )!;
+      expect(ipUaOnly.skipReason).toContain('2804050');
     });
 
     it('passes fb_login_id through VERBATIM (never hashed — Wave-3 Meta EMQ recommendation)', () => {
@@ -538,5 +564,153 @@ describe('MetaAdapter — EMQ diagnostics only (Wave-1 Decision C)', () => {
     const payload = adapter.build(snapshot, ctx, normalizer);
     expect(payload).not.toBeNull();
     expect(payload!.qualityFlags).toBeUndefined();
+  });
+});
+
+describe('MetaAdapter — forensic remediation tests', () => {
+  const adapter = new MetaAdapter();
+
+  describe('order_id uses displayId (business order ID) instead of UUID', () => {
+    it('uses orderId directly when it is a displayId (e.g. ORD-260820-00123)', () => {
+      const payload = adapter.build(
+        { ...snapshot, orderId: 'ORD-260820-00123' },
+        ctx,
+        normalizer,
+      )!;
+      expect(payload.custom_data.order_id).toBe('ORD-260820-00123');
+    });
+
+    it('passes through any string orderId (UUID fallback still works)', () => {
+      const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      const payload = adapter.build(
+        { ...snapshot, orderId: uuid },
+        ctx,
+        normalizer,
+      )!;
+      expect(payload.custom_data.order_id).toBe(uuid);
+    });
+
+    it('omits order_id when orderId is absent', () => {
+      const payload = adapter.build(
+        { ...snapshot, orderId: undefined },
+        ctx,
+        normalizer,
+      );
+      // May return null if no identity; test the payload when present
+      if (payload) {
+        expect(payload.custom_data.order_id).toBeUndefined();
+      }
+    });
+  });
+
+  describe('contents validation (2804008 guard)', () => {
+    it('includes contents with valid items (id, quantity, item_price)', () => {
+      const payload = adapter.build(snapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toHaveLength(2);
+      expect(payload.custom_data.contents[0]).toEqual({
+        id: 'sku-1',
+        quantity: 2,
+        item_price: 1000,
+      });
+    });
+
+    it('filters out items with empty id', () => {
+      const badSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [
+          { id: 'sku-1', quantity: 1, item_price: 100 },
+          { id: '', quantity: 1, item_price: 100 },
+          { id: 'sku-3', quantity: 1, item_price: 100 },
+        ],
+      };
+      const payload = adapter.build(badSnapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toHaveLength(2);
+      expect(
+        payload.custom_data.contents.map((c: any) => c.id),
+      ).toEqual(['sku-1', 'sku-3']);
+    });
+
+    it('filters out items with zero or negative quantity', () => {
+      const badSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [
+          { id: 'sku-1', quantity: 0, item_price: 100 },
+          { id: 'sku-2', quantity: -1, item_price: 100 },
+          { id: 'sku-3', quantity: 2, item_price: 100 },
+        ],
+      };
+      const payload = adapter.build(badSnapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toHaveLength(1);
+      expect(payload.custom_data.contents[0].id).toBe('sku-3');
+    });
+
+    it('filters out items with non-numeric item_price', () => {
+      const badSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [
+          { id: 'sku-1', quantity: 1, item_price: 'not-a-number' as any },
+          { id: 'sku-2', quantity: 1, item_price: 100 },
+        ],
+      };
+      const payload = adapter.build(badSnapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toHaveLength(1);
+      expect(payload.custom_data.contents[0].id).toBe('sku-2');
+    });
+
+    it('omits contents entirely when all items are malformed', () => {
+      const badSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [
+          { id: '', quantity: 0, item_price: 0 },
+          { id: 'x', quantity: -1, item_price: NaN },
+        ],
+      };
+      const payload = adapter.build(badSnapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toBeUndefined();
+    });
+
+    it('omits contents when snapshot has empty array', () => {
+      const emptySnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [],
+      };
+      const payload = adapter.build(emptySnapshot, ctx, normalizer)!;
+      expect(payload.custom_data.contents).toBeUndefined();
+    });
+  });
+
+  describe('NaN eventTime handling', () => {
+    it('falls back to dispatch time when snapshot eventTime is NaN', () => {
+      const before = Math.floor(Date.now() / 1000);
+      const payload = adapter.build(
+        { ...snapshot, eventTime: NaN as any },
+        ctx,
+        normalizer,
+      )!;
+      const after = Math.floor(Date.now() / 1000);
+      expect(payload.eventTime).toBeGreaterThanOrEqual(before - 1);
+      expect(payload.eventTime).toBeLessThanOrEqual(after + 1);
+    });
+
+    it('falls back to dispatch time when snapshot eventTime is negative', () => {
+      const before = Math.floor(Date.now() / 1000);
+      const payload = adapter.build(
+        { ...snapshot, eventTime: -1 },
+        ctx,
+        normalizer,
+      )!;
+      const after = Math.floor(Date.now() / 1000);
+      expect(payload.eventTime).toBeGreaterThanOrEqual(before - 1);
+      expect(payload.eventTime).toBeLessThanOrEqual(after + 1);
+    });
+
+    it('uses valid snapshot eventTime when present', () => {
+      const payload = adapter.build(
+        { ...snapshot, eventTime: 1700000000 },
+        ctx,
+        normalizer,
+      )!;
+      expect(payload.eventTime).toBe(1700000000);
+    });
   });
 });

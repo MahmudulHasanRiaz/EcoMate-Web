@@ -130,7 +130,13 @@ export class TrackingDispatcherService {
     if (snapshot) {
       eventId = snapshot.eventId;
       eventType = snapshot.eventType;
-      eventTime = snapshot.eventTime != null ? Number(snapshot.eventTime) : undefined;
+      // BigInt → number: guard against corrupted/NaN values from legacy rows.
+      // A valid eventTime must be a positive finite integer (unix seconds).
+      const rawTime = snapshot.eventTime != null ? Number(snapshot.eventTime) : undefined;
+      eventTime =
+        rawTime != null && Number.isFinite(rawTime) && rawTime > 0
+          ? Math.floor(rawTime)
+          : undefined;
       orderId = snapshot.orderId ?? undefined;
       ctxId = snapshot.ctxId ?? undefined;
       actionSource = snapshot.actionSource ?? undefined;
@@ -149,7 +155,11 @@ export class TrackingDispatcherService {
       );
       eventId = archive.eventId;
       eventType = archive.eventType;
-      eventTime = archive.eventTime != null ? Number(archive.eventTime) : undefined;
+      const rawTime = archive.eventTime != null ? Number(archive.eventTime) : undefined;
+      eventTime =
+        rawTime != null && Number.isFinite(rawTime) && rawTime > 0
+          ? Math.floor(rawTime)
+          : undefined;
       basePayload = (archive.archivedPayload ?? {}) as unknown as TrackingSnapshotPayload;
     }
 

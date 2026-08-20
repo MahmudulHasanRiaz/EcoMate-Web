@@ -480,6 +480,40 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     expect(typeof captured.eventTime).toBe('number');
   });
 
+  it('strips null eventTime from the payload passed to the adapter (corrupted row guard)', async () => {
+    snapshotFindUnique.mockResolvedValueOnce({
+      ...snapshot,
+      eventTime: null,
+    });
+    let receivedSnapshot: any;
+    fakeMeta.build = (snap) => {
+      receivedSnapshot = snap;
+      return buildPayload(snap.eventType);
+    };
+
+    await service.process(job, 'job-1');
+
+    // null eventTime → dispatcher strips it from the payload → adapter receives no eventTime
+    expect(receivedSnapshot.eventTime).toBeUndefined();
+  });
+
+  it('strips zero eventTime from the payload passed to the adapter (invalid timestamp)', async () => {
+    snapshotFindUnique.mockResolvedValueOnce({
+      ...snapshot,
+      eventTime: BigInt(0),
+    });
+    let receivedSnapshot: any;
+    fakeMeta.build = (snap) => {
+      receivedSnapshot = snap;
+      return buildPayload(snap.eventType);
+    };
+
+    await service.process(job, 'job-1');
+
+    // BigInt(0) → Number(BigInt(0)) = 0 → 0 > 0 is false → eventTime stripped
+    expect(receivedSnapshot.eventTime).toBeUndefined();
+  });
+
   it('releases a stuck CLAIMED outbox (PENDING, lock cleared) when process() throws', async () => {
     snapshotFindUnique.mockRejectedValueOnce(new Error('boom'));
 
