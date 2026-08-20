@@ -40,12 +40,14 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
+            // API GETs must never serve stale sw-cache (one browser showed
+            // 24h-old empty product/SKU search results while others saw fresh
+            // data). NetworkOnly: every request hits the backend; PWA stays
+            // installable for app-shell assets only.
             urlPattern: /^https?:\/\/.*\/api\/.*/i,
-            handler: 'NetworkFirst',
+            handler: 'NetworkOnly',
             options: {
               cacheName: 'api-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
-              networkTimeoutSeconds: 5,
             },
           },
         ],

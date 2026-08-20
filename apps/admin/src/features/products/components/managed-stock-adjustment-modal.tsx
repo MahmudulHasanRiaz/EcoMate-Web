@@ -45,7 +45,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       try {
-        const res = await apiClient.get('/products', { params: { search: productSearch, perPage: 8 } })
+        const res = await apiClient.get('/products', { params: { search: productSearch, perPage: 50 } })
         setSearchResults((res.data as any)?.data || [])
       } catch { setSearchResults([]) }
       setSearching(false)

@@ -99,7 +99,7 @@ export function Transfers() {
     queryKey: ['product-search', productSearch],
     queryFn: () =>
       apiClient
-        .get<{ data: Product[] }>('/products', { params: { search: productSearch, perPage: 8 } })
+        .get<{ data: Product[] }>('/products', { params: { search: productSearch, perPage: 50 } })
         .then(r => r.data.data ?? r.data),
     enabled: productSearch.length > 0,
   })

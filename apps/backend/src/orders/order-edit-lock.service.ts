@@ -36,6 +36,17 @@ export class OrderEditLockService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Resolve a user's display name (one extra query). */
+  private async displayNameFor(userId: string): Promise<string | null> {
+    const user = await this.prisma.userProfile.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    return user && (user.firstName || user.lastName)
+      ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+      : null;
+  }
+
   /** Enrich a raw lock row with the holder's display name (one extra query). */
   private async toInfo(lock: {
     orderId: string;
@@ -44,14 +55,7 @@ export class OrderEditLockService {
     heartbeatAt: Date;
     expiresAt: Date;
   }): Promise<OrderLockInfo> {
-    const user = await this.prisma.userProfile.findUnique({
-      where: { id: lock.userId },
-      select: { firstName: true, lastName: true },
-    });
-    const name =
-      user && (user.firstName || user.lastName)
-        ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-        : null;
+    const name = await this.displayNameFor(lock.userId);
     return {
       orderId: lock.orderId,
       userId: lock.userId,
@@ -112,11 +116,14 @@ export class OrderEditLockService {
           data: { userId, heartbeatAt: now, expiresAt },
         });
         if (existing.userId !== userId) {
+          const prevName = await this.displayNameFor(existing.userId);
           await this.appendAuditEntry(orderId, {
             type: 'edit_lock',
             visibility: 'private',
             timestamp: new Date().toISOString(),
-            note: `Lock taken over after expiry (previous holder released session).`,
+            note: prevName
+              ? `Lock taken over after expiry — previous holder: ${prevName}.`
+              : `Lock taken over after expiry (previous holder released session).`,
             performedBy: userId,
           });
         }
@@ -147,16 +154,26 @@ export class OrderEditLockService {
     if (!order) throw new NotFoundException('Order not found');
     const now = new Date();
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
+    const existing = await this.prisma.orderEditLock.findUnique({
+      where: { orderId },
+    });
     const lock = await this.prisma.orderEditLock.upsert({
       where: { orderId },
       create: { orderId, userId, expiresAt },
       update: { userId, heartbeatAt: now, expiresAt },
     });
+    const prevName =
+      existing && existing.userId !== userId
+        ? await this.displayNameFor(existing.userId)
+        : null;
+    const myName = await this.displayNameFor(userId);
     await this.appendAuditEntry(orderId, {
       type: 'edit_lock',
       visibility: 'private',
-      timestamp: new Date().toISOString(),
-      note: `Edit lock overridden and taken over.`,
+      timestamp: now.toISOString(),
+      note: prevName
+        ? `Edit lock overridden by ${myName || 'a staff member'} — previous holder: ${prevName}.`
+        : `Edit lock taken by ${myName || 'a staff member'}.`,
       performedBy: userId,
     });
     return this.toInfo(lock);

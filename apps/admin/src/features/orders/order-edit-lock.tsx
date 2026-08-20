@@ -131,7 +131,7 @@ export function OrderEditLockGuard({ orderId, disabled }: { orderId: string | un
           ) : (
             <>
               <AlertTriangle className='h-4 w-4 shrink-0' />
-              <span className='flex-1'>Could not verify the edit lock. Editing is not blocked, but double-check before saving.</span>
+              <span className='flex-1'>Could not verify the edit lock. Saving is blocked until the lock is resolved.</span>
             </>
           )}
         </div>

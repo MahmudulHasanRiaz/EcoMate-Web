@@ -102,6 +102,14 @@ export class UpdateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items?: OrderItemDto[];
+  // Payment editing — mirrors the create-page payment UI so staff can switch
+  // an order between COD / full online payment / partial payment and choose
+  // the gateway the customer should use.
+  @IsOptional()
+  @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY'])
+  paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
+  @IsOptional() @IsString() gatewayCode?: string;
+  @IsOptional() @IsNumber() partialAmount?: number;
 }
 
 export class UpdateOrderItemDto {

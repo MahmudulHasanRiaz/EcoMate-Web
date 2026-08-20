@@ -4,6 +4,14 @@ COPY package*.json ./
 COPY packages/ packages/
 COPY apps/backend/package.json apps/backend/package.json
 RUN --mount=type=cache,target=/root/.npm npm install
+# Guarantee sharp's musl prebuilt binaries in the alpine (musl) runtime image.
+# The root package.json optionalDependencies already carry every platform's
+# binary so a normal install resolves them; this explicit no-save install is a
+# belt-and-suspenders guard against a stale npm cache populated on another
+# platform. `|| true` — if it ever fails the runtime degrades gracefully
+# (resize serves originals) instead of breaking the build.
+RUN npm install --package-lock=false --no-save --os=linux --libc=musl --cpu=x64 \
+    @img/sharp-linuxmusl-x64@0.35.3 @img/sharp-libvips-linuxmusl-x64@1.3.2 2>/dev/null || true
 RUN npx tsc -p packages/shared-types/tsconfig.json && \
     npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json

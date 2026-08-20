@@ -167,7 +167,7 @@ export function LandingPages() {
     clearTimeout(searchRef.current)
     searchRef.current = setTimeout(() => {
       setSearching(true)
-      apiClient.get('/products', { params: { search: productSearch, perPage: 8, isActive: true } })
+      apiClient.get('/products', { params: { search: productSearch, perPage: 50, isActive: true } })
         .then(res => {
           const items = (res.data as any)?.data || []
           setProductResults(items)
@@ -196,7 +196,7 @@ export function LandingPages() {
     clearTimeout(comboSearchRef.current)
     comboSearchRef.current = setTimeout(() => {
       setCombosSearching(true)
-      apiClient.get('/combos', { params: { search: comboSearch, perPage: 8, isActive: true } })
+      apiClient.get('/combos', { params: { search: comboSearch, perPage: 50, isActive: true } })
         .then(res => {
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.data || []
           setComboResults(items)

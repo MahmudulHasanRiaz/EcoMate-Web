@@ -59,7 +59,11 @@ export async function fetchProductsServer(
 ): Promise<ServerProductsResponse> {
   const url = `/products${buildQuery(opts)}`;
   try {
-    const data = await serverFetch<any>(url, { revalidate: 60 });
+    // Search results must reflect inventory immediately (a fresh product/
+    // SKU should show up the same second, not after a 60s revalidate window).
+    const data = await serverFetch<any>(url, {
+      revalidate: opts.search ? 0 : 60,
+    });
     return {
       data: (data.data || []).map(transformBackendProduct),
       meta: {

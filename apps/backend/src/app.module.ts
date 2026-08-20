@@ -1,9 +1,10 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { FeatureGuard } from '@ecomate/feature-flags';
+import { NoStoreMiddleware } from './common/middleware/no-store.middleware';
 import { LicenseGuard } from './license/license.guard';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -181,6 +182,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
+    consumer.apply(NoStoreMiddleware).forRoutes('*');
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
     consumer
       .apply(IpBlockMiddleware)

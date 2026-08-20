@@ -43,6 +43,27 @@ export class ImagesService {
     defaultDns,
     defaultHttpTransport,
   );
+  /** Memoized sharp instance — `null` means the binary is unavailable. */
+  private sharpModule: any | null | undefined;
+
+  /**
+   * Load sharp once; remember failures so a missing runtime binary never 500s.
+   * When sharp is unavailable the resize pipeline degrades to serving the
+   * original file (see resize()).
+   */
+  private getSharp(): any | null {
+    if (this.sharpModule !== undefined) return this.sharpModule;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      this.sharpModule = require('sharp');
+    } catch (err) {
+      this.sharpModule = null;
+      this.logger.error(
+        `Sharp is unavailable — resize will serve original images instead of transcoded ones. ${(err as Error).message}`,
+      );
+    }
+    return this.sharpModule;
+  }
 
   async resize(params: {
     path: string;
@@ -52,13 +73,26 @@ export class ImagesService {
     fit?: 'cover' | 'contain' | 'fill' | 'inside' | 'outside';
     version?: string;
   }): Promise<{ buffer: Buffer; ext: string; mime: string }> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const sharp = require('sharp');
+    const sharp = this.getSharp();
     const isExternal =
       params.path.startsWith('http://') || params.path.startsWith('https://');
 
     if (!isExternal && params.path.includes('..')) {
       throw new Error('Invalid path');
+    }
+
+    if (!sharp) {
+      // Sharp binary missing (e.g. wrong platform prebuilt in a container):
+      // NEVER return a 500 — serve the source with its original encoding.
+      if (isExternal) {
+        const result = await this.downloadExternal(params.path, params.version);
+        return {
+          buffer: result.buffer,
+          ext: extForMime(result.mimeType),
+          mime: result.mimeType,
+        };
+      }
+      return this.readLocalFile(params.path);
     }
 
     if (!params.w && !params.h) {

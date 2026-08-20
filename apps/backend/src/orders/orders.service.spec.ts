@@ -15,12 +15,14 @@ import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.ser
 import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
+import { OrderEditLockService } from './order-edit-lock.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
   let prisma: PrismaService;
   let blockedEntries: BlockedEntriesService;
   let customers: CustomersService;
+  let editLock: OrderEditLockService;
   let module: TestingModule;
 
   const mockInitialStatus = {
@@ -200,6 +202,7 @@ describe('OrdersService', () => {
               create: jest.fn(),
               findFirst: jest.fn(),
               update: jest.fn(),
+              count: jest.fn().mockResolvedValue(0),
             },
             customerProfile: {
               findUnique: jest.fn().mockResolvedValue(null),
@@ -259,6 +262,12 @@ describe('OrdersService', () => {
               capturedAt: '2025-01-15T00:00:00.000Z',
             }),
             get: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: OrderEditLockService,
+          useValue: {
+            getLock: jest.fn().mockResolvedValue(null),
           },
         },
         {
@@ -350,6 +359,7 @@ describe('OrdersService', () => {
     prisma = module.get<PrismaService>(PrismaService);
     blockedEntries = module.get<BlockedEntriesService>(BlockedEntriesService);
     customers = module.get<CustomersService>(CustomersService);
+    editLock = module.get<OrderEditLockService>(OrderEditLockService);
 
     // Set up default implementation for $transaction to pass the prisma mock
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb) =>
@@ -483,6 +493,68 @@ describe('OrdersService', () => {
       await expect(service.findOne('nonexistent-id')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('blocks a staff viewer when another user holds a live edit lock', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        editLock: {
+          orderId: 'order-id-1',
+          userId: 'user-b',
+          expiresAt: new Date(Date.now() + 60_000),
+          user: { firstName: 'Bilal', lastName: 'Hossain' },
+        },
+      });
+
+      await expect(
+        service.findOne('order-id-1', {
+          userId: 'user-a',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          statusCode: 409,
+          code: 'ORDER_LOCKED',
+          message: expect.stringContaining('Bilal Hossain'),
+        },
+      });
+    });
+
+    it('allows the lock holder to view while they hold the lock', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        editLock: {
+          orderId: 'order-id-1',
+          userId: 'user-a',
+          expiresAt: new Date(Date.now() + 60_000),
+          user: { firstName: 'Ayesha', lastName: 'Khan' },
+        },
+      });
+
+      const result = await service.findOne('order-id-1', {
+        userId: 'user-a',
+        role: 'admin',
+      });
+      expect(result.id).toBe('order-id-1');
+      expect(result.editLock).toBeDefined();
+    });
+
+    it('ignores an expired edit lock when viewing as staff', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        editLock: {
+          orderId: 'order-id-1',
+          userId: 'user-b',
+          expiresAt: new Date(Date.now() - 5_000),
+          user: { firstName: 'Bilal', lastName: 'Hossain' },
+        },
+      });
+
+      const result = await service.findOne('order-id-1', {
+        userId: 'user-a',
+        role: 'admin',
+      });
+      expect(result.id).toBe('order-id-1');
     });
   });
 
@@ -2295,6 +2367,145 @@ describe('OrdersService', () => {
       const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data.assignedToId).toBeUndefined();
       expect(updateCall.data.assignedAt).toBeUndefined();
+    });
+
+    it('blocks a save when another staff member holds a live edit lock', async () => {
+      const existingOrder = {
+        ...mockOrder,
+        shippingCharge: 100,
+        discount: 50,
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (editLock.getLock as jest.Mock).mockResolvedValue({
+        orderId: 'order-id-1',
+        userId: 'user-b',
+        userName: 'Bilal Hossain',
+        acquiredAt: new Date(),
+        heartbeatAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(
+        service.updateOrder('order-id-1', updateOrderDto, {
+          userId: 'user-a',
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          statusCode: 409,
+          code: 'ORDER_LOCKED',
+          message: expect.stringContaining('Bilal Hossain'),
+        },
+      });
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a save while the caller holds the live lock', async () => {
+      const existingOrder = {
+        ...mockOrder,
+        shippingCharge: 100,
+        discount: 50,
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (editLock.getLock as jest.Mock).mockResolvedValue(null);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        shippingCharge: 150,
+        discount: 100,
+        subtotal: 2000,
+        total: 2050,
+      });
+
+      const result = await service.updateOrder('order-id-1', updateOrderDto, {
+        userId: 'user-a',
+      });
+      expect(result.shippingCharge).toBe(150);
+    });
+
+    it('updates the payment row when the mode is switched to COD', async () => {
+      const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        paymentOptionType: 'CASH_ON_DELIVERY',
+        paymentStatus: 'UNPAID',
+      });
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+        id: 'pay-1',
+        gatewayCode: 'bkash',
+        amount: 2050,
+        status: 'PENDING',
+      });
+
+      await service.updateOrder('order-id-1', {
+        paymentOptionType: 'CASH_ON_DELIVERY',
+        gatewayCode: 'cash',
+      });
+
+      const paymentUpdate = (prisma.payment.update as jest.Mock).mock
+        .calls[0][0];
+      expect(paymentUpdate.where).toEqual({ id: 'pay-1' });
+      expect(paymentUpdate.data).toMatchObject({
+        gatewayCode: 'cash',
+        amount: 2050,
+        status: 'UNPAID',
+      });
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(orderUpdate.data.paymentOptionType).toBe('CASH_ON_DELIVERY');
+      expect(orderUpdate.data.paymentStatus).toBe('UNPAID');
+      expect(orderUpdate.data.partialAmount).toBeNull();
+    });
+
+    it('creates a payment row when the order had none', async () => {
+      const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        paymentOptionType: 'FULL_PAYMENT',
+      });
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await service.updateOrder('order-id-1', {
+        paymentOptionType: 'FULL_PAYMENT',
+        gatewayCode: 'bkash',
+      });
+
+      const paymentCreate = (prisma.payment.create as jest.Mock).mock
+        .calls[0][0];
+      expect(paymentCreate.data).toMatchObject({
+        orderId: 'order-id-1',
+        gatewayCode: 'bkash',
+        amount: 2050,
+        status: 'PENDING',
+      });
+    });
+
+    it('rejects partial payment amounts outside the valid range', async () => {
+      const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+
+      await expect(
+        service.updateOrder('order-id-1', {
+          paymentOptionType: 'PARTIAL_PAYMENT',
+          gatewayCode: 'bkash',
+          partialAmount: 99999,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses to change the gateway when a payment is already paid', async () => {
+      const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.payment.count as jest.Mock).mockResolvedValue(1);
+
+      await expect(
+        service.updateOrder('order-id-1', {
+          paymentOptionType: 'CASH_ON_DELIVERY',
+          gatewayCode: 'cash',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.payment.create).not.toHaveBeenCalled();
     });
 
     it('assigns the first manual editor when the order is unassigned', async () => {

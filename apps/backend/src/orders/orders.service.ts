@@ -42,6 +42,7 @@ import { resolveActionSource } from '../tracking/meta-action-source';
 import { resolveWebAttribution } from './web-attribution';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
+import { OrderEditLockService } from './order-edit-lock.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -189,6 +190,7 @@ export class OrdersService {
     private readonly costingLotService: CostingLotService,
     private readonly cancelReturnStock: CancelReturnStockService,
     private readonly orderStockDeduct: OrderStockDeductService,
+    private readonly editLock: OrderEditLockService,
   ) {}
 
   private async resolveAndApplyStock(
@@ -772,6 +774,35 @@ export class OrdersService {
       opts.role === 'manager';
     if (!ownsOrder && !hasValidToken && !isAdmin) {
       throw new NotFoundException('Order not found');
+    }
+
+    // Edit-lock view gate (staff context only): while another staff member
+    // holds a live lock the order cannot be opened — the UI offers an explicit
+    // override, which is recorded in the timeline. The holder themselves and
+    // public/customer token lookups are never blocked.
+    if (isAdmin && opts.userId && !hasValidToken && order.editLock) {
+      const lock = order.editLock as any;
+      const isLive = lock.expiresAt && new Date(lock.expiresAt) > new Date();
+      if (isLive && lock.userId !== opts.userId) {
+        const holderName =
+          [lock.user?.firstName, lock.user?.lastName].filter(Boolean).join(
+            ' ',
+          ) || null;
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'ORDER_LOCKED',
+          message: holderName
+            ? `This order is currently being edited by ${holderName}. Override the lock to open it.`
+            : 'This order is currently being edited by another staff member. Override the lock to open it.',
+          lock: {
+            orderId: lock.orderId,
+            userId: lock.userId,
+            userName: holderName,
+            acquiredAt: lock.acquiredAt ?? null,
+            expiresAt: lock.expiresAt ?? null,
+          },
+        });
+      }
     }
     // Note: edit-lock presence is stripped by transformOrder for the public/customer
     // shape (it never exposes the holder). Staff only.
@@ -1837,6 +1868,23 @@ export class OrdersService {
     if (!order || order.trashedAt)
       throw new NotFoundException('Order not found');
 
+    // Edit-lock write gate: a live lock held by another staff member blocks
+    // saving. The UI surfaces the holder and offers the override flow; after
+    // override the requester holds the lock and writes succeed.
+    if (opts?.userId) {
+      const live = await this.editLock.getLock(id);
+      if (live && live.userId !== opts.userId) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'ORDER_LOCKED',
+          message: live.userName
+            ? `This order is currently being edited by ${live.userName}. Take over the edit lock before saving.`
+            : 'This order is currently being edited by another staff member. Take over the edit lock before saving.',
+          lock: live,
+        });
+      }
+    }
+
     const timeline = [...this.parseTimeline(order.timeline)];
     const now = new Date().toISOString();
     const data: any = {};
@@ -2336,6 +2384,100 @@ export class OrdersService {
             where: { id: order.customerId },
             data: customerData,
           });
+        }
+      }
+
+      // Payment editing — mirrors create() semantics so staff can switch
+      // COD ↔ full online payment ↔ partial payment and pick the gateway.
+      if (dto.paymentOptionType) {
+        if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
+          if (
+            dto.partialAmount !== undefined &&
+            (dto.partialAmount <= 0 ||
+              dto.partialAmount > Number(data.total ?? order.total))
+          ) {
+            throw new BadRequestException(
+              'Partial payment amount must be greater than 0 and not exceed the order total',
+            );
+          }
+        }
+        data.paymentOptionType = dto.paymentOptionType;
+        data.paymentStatus =
+          dto.paymentOptionType === 'CASH_ON_DELIVERY'
+            ? PaymentStatus.UNPAID
+            : PaymentStatus.PAYMENT_PENDING;
+        data.partialAmount =
+          dto.paymentOptionType === 'PARTIAL_PAYMENT'
+            ? (dto.partialAmount ?? null)
+            : null;
+        data.timeline = [
+          ...timeline,
+          {
+            type: 'payment',
+            visibility: 'public',
+            timestamp: now,
+            note: `Payment updated to ${dto.paymentOptionType.replace(/_/g, ' ').toLowerCase()}${dto.gatewayCode ? ` via ${dto.gatewayCode}` : ''}${dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount ? ` (৳${dto.partialAmount})` : ''}.`,
+          },
+        ];
+
+        const paymentAmount =
+          dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
+            ? dto.partialAmount
+            : Number(data.total ?? order.total);
+        const gatewayCode =
+          dto.gatewayCode ||
+          (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
+        if (gatewayCode) {
+          // Update the earliest non-finalized payment row rather than piling
+          // up duplicates; only create when the order has no payment row yet.
+          const existing = await tx.payment.findFirst({
+            where: {
+              orderId: id,
+              status: {
+                notIn: [
+                  PaymentStatus.PAID,
+                  PaymentStatus.PARTIAL_PAID,
+                  PaymentStatus.REFUNDED,
+                  PaymentStatus.PARTIAL_REFUNDED,
+                  PaymentStatus.CANCELLED,
+                ],
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (existing) {
+            await tx.payment.update({
+              where: { id: existing.id },
+              data: {
+                gatewayCode,
+                amount: paymentAmount,
+                status:
+                  gatewayCode === 'cash'
+                    ? PaymentStatus.UNPAID
+                    : PaymentStatus.PENDING,
+              },
+            });
+          } else {
+            const paidRows = await tx.payment.count({
+              where: { orderId: id, status: PaymentStatus.PAID },
+            });
+            if (paidRows > 0) {
+              throw new BadRequestException(
+                'Payment was already completed — change the gateway via a refund instead of editing the order',
+              );
+            }
+            await tx.payment.create({
+              data: {
+                orderId: id,
+                gatewayCode,
+                amount: paymentAmount,
+                status:
+                  gatewayCode === 'cash'
+                    ? PaymentStatus.UNPAID
+                    : PaymentStatus.PENDING,
+              },
+            });
+          }
         }
       }
 

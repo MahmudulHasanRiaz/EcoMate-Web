@@ -12,6 +12,7 @@ import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { normalizePhone } from '@/lib/phone-utils'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
+import { byExactMatchFirst } from '@/lib/search-products'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -216,9 +217,9 @@ export function CreateOrder() {
     setProductSearching(true)
     clearTimeout(productSearchRef.current)
     productSearchRef.current = setTimeout(() => {
-      const params: any = { search: productSearch, perPage: 12 }
+      const params: any = { search: productSearch, perPage: 50 }
       apiClient.get('/products', { params })
-        .then(r => { setProductResults(r.data?.data || r.data || []); setShowProductDropdown(true) })
+        .then(r => { setProductResults(byExactMatchFirst(r.data?.data || r.data || [], productSearch)); setShowProductDropdown(true) })
         .catch(() => {})
         .finally(() => setProductSearching(false))
     }, 300)
@@ -241,9 +242,9 @@ export function CreateOrder() {
   const handleBarcodeSearch = (sku: string) => {
     const q = sku.trim()
     if (!q) return
-    apiClient.get('/products', { params: { search: q, perPage: 5 } })
+    apiClient.get('/products', { params: { search: q, perPage: 50 } })
       .then(r => {
-        const results = r.data?.data || r.data || []
+        const results = byExactMatchFirst(r.data?.data || r.data || [], q)
         const exact = results.find((p: any) =>
           p.sku?.toLowerCase() === q.toLowerCase() ||
           p.variants?.some((v: any) => v.sku?.toLowerCase() === q.toLowerCase())

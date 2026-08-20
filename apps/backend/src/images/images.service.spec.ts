@@ -145,4 +145,43 @@ describe('ImagesService cache and upstream failure behavior', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(first.buffer.equals(second.buffer)).toBe(false);
   });
+
+  it('serves the original local file when sharp is unavailable (no 500)', async () => {
+    const fetch = jest.fn();
+    const service = createService(fetch);
+    const uploads = join(tempRoot, 'uploads');
+    mkdirSync(uploads, { recursive: true });
+    writeFileSync(join(uploads, 'prod.jpg'), sourcePng);
+    // Simulate a missing platform binary (e.g. linuxmusl prebuilt absent).
+    (service as any).sharpModule = null;
+
+    const result = await service.resize({
+      path: '/uploads/prod.jpg',
+      w: 48,
+      h: 48,
+    });
+
+    expect(result.buffer.equals(sourcePng)).toBe(true);
+    expect(result.ext).toBe('.jpg');
+    expect(result.mime).toBe('image/jpeg');
+    expect(existsSync(cacheRoot)).toBe(false);
+  });
+
+  it('serves the downloaded original for external images when sharp is unavailable', async () => {
+    const fetch = jest.fn().mockResolvedValue({
+      buffer: sourcePng,
+      mimeType: 'image/png',
+    });
+    const service = createService(fetch);
+    (service as any).sharpModule = null;
+
+    const result = await service.resize({
+      path: 'https://cdn.example.com/product.png',
+      w: 100,
+    });
+
+    expect(result.buffer.equals(sourcePng)).toBe(true);
+    expect(result.mime).toBe('image/png');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

@@ -45,7 +45,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
 
   const { data: products } = useQuery<any[]>({
     queryKey: ['product-search-physical-bulk', productSearch],
-    queryFn: () => apiClient.get('/products', { params: { search: productSearch, perPage: 8 } }).then(r => {
+    queryFn: () => apiClient.get('/products', { params: { search: productSearch, perPage: 50 } }).then(r => {
       const raw = r.data?.data || r.data || []
       return raw.map((p: any) => ({
         ...p,

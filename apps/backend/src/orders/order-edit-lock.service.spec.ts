@@ -192,6 +192,7 @@ describe('OrderEditLockService', () => {
       id: 'order-1',
       timeline: [],
     });
+    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
     prisma.orderEditLock.upsert.mockResolvedValue({
       ...liveLock,
       userId: 'user-b',
@@ -209,6 +210,7 @@ describe('OrderEditLockService', () => {
     );
     const timelineUpdate = prisma.order.update.mock.calls[0][0];
     expect(timelineUpdate.data.timeline[0].note).toContain('overridden');
+    expect(timelineUpdate.data.timeline[0].note).toContain('previous holder');
   });
 
   it('getLock returns null when the lock is expired', async () => {

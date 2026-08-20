@@ -17,6 +17,7 @@ import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { resolveOrderItemImages } from '@/lib/product-image'
+import { byExactMatchFirst } from '@/lib/search-products'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -37,13 +38,26 @@ import { Separator } from '@/components/ui/separator'
 import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
-  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban
+  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock
 } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
+
+// Pull the HUMAN-readable reason out of an axios/unknown error. Backend guards
+// throw spotted objects ({message}) or plain strings; axios wraps these in
+// e.response.data. Never fall back to the generic "Request failed" text.
+const errMsg = (e: unknown): string => {
+  const err = e as any
+  const d = err?.response?.data
+  const msg = d?.message ?? d?.error ?? err?.message
+  if (typeof msg === 'string' && msg.trim()) return msg.trim()
+  if (Array.isArray(msg)) return msg.join(', ')
+  if (typeof d === 'string' && d.trim()) return d.trim()
+  return 'Update failed. Please try again.'
+}
 
 const ep = (p: any) => {
   if (p.type === 'variable' && p.variants?.length) {
@@ -74,7 +88,26 @@ export const Route = createFileRoute('/_authenticated/op/orders/$id')({ componen
 function OrderDetailPage() {
   const queryClient = useQueryClient()
   const { id } = Route.useParams() as { id: string }
-  const { data: order, isLoading } = useQuery({ queryKey: ['order', id], queryFn: () => ordersApi.get(id).then(r => r.data) })
+
+  // A live edit lock held by ANOTHER staff member makes the backend return
+  // 409 ORDER_LOCKED on GET /orders/:id. We surface the holder here and offer
+  // the override — after override the query refetches successfully.
+  const [viewLock, setViewLock] = useState<{ userName?: string | null; acquiredAt?: string | null } | null>(null)
+  const { data: order, isLoading } = useQuery({
+    queryKey: ['order', id],
+    queryFn: async () => {
+      try {
+        setViewLock(null)
+        return (await ordersApi.get(id)).data
+      } catch (e: any) {
+        if (e?.response?.status === 409 && e?.response?.data?.code === 'ORDER_LOCKED') {
+          setViewLock(e?.response?.data?.lock ?? { userName: null })
+        }
+        throw e
+      }
+    },
+    retry: false,
+  })
 
   const { data: statuses } = useQuery({ queryKey: ['order-statuses'], queryFn: () => apiClient.get('/order-statuses').then(r => r.data as any[]) })
   const statusList = (Array.isArray(statuses) ? statuses : []) as any[]
@@ -88,6 +121,12 @@ function OrderDetailPage() {
 
   // ── Customer sheet state ──────────────────────────────────────────
   const [showCustomerSheet, setShowCustomerSheet] = useState(false)
+
+  // ── Payment edit state (mirrors the create-page payment card) ──
+  const [editingPayment, setEditingPayment] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
+  const [partialAmount, setPartialAmount] = useState('')
 
   // ── Timeline / Notes ─────────────────────────────────────────────
   const [noteText, setNoteText] = useState('')
@@ -129,13 +168,14 @@ function OrderDetailPage() {
   }, [order])
 
   // Product search hits the backend so ANY product (not just the first page) is
-  // findable by name, product SKU, or variant SKU.
+  // findable by name, product SKU, or variant SKU. Exact SKU/name matches are
+  // re-sorted to the top so they never hide behind partial matches.
   useEffect(() => {
     const q = productSearchQuery.trim()
     if (!q || !editingItems) { setProductSearchResults([]); return }
     const t = setTimeout(() => {
-      apiClient.get('/products', { params: { search: q, perPage: 20 } })
-        .then(r => setProductSearchResults(r.data?.data || r.data || []))
+      apiClient.get('/products', { params: { search: q, perPage: 50 } })
+        .then(r => setProductSearchResults(byExactMatchFirst(r.data?.data || r.data || [], q)))
         .catch(() => setProductSearchResults([]))
     }, 300)
     return () => clearTimeout(t)
@@ -148,19 +188,19 @@ function OrderDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['order', id] })
       toast.success('Updated')
     },
-    onError: (e: unknown) => toast.error((e as Error).message || 'Update failed'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   const noteMut = useMutation({
     mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Note added') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to add note'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   const dispatchMut = useMutation({
@@ -176,7 +216,7 @@ function OrderDetailPage() {
         toast.success('Order dispatched')
       }
     },
-    onError: (e: unknown) => toast.error((e as Error).message || 'Dispatch failed'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   const trashMut = useMutation({
@@ -186,7 +226,7 @@ function OrderDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       toast.success('Order moved to trash')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || e?.message || 'Failed'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   const restoreMut = useMutation({
@@ -196,23 +236,60 @@ function OrderDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       toast.success('Order restored from trash')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || e?.message || 'Failed'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   // ── Handlers ──────────────────────────────────────────────────────
-  function handleSaveItems() {
-    updateMut.mutate({
-      id,
-      data: {
-        items: orderItems.map((i: any) => ({
-          productId: i.productId,
-          variantId: i.variantId,
-          quantity: i.quantity,
-          price: Number(i.price),
-        })),
-      },
-    })
-    setEditingItems(false)
+  function openPaymentEdit() {
+    const mode: 'cod' | 'full' | 'partial' =
+      order.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cod'
+      : order.paymentOptionType === 'PARTIAL_PAYMENT' ? 'partial'
+      : 'full'
+    setPaymentMode(mode)
+    setPaymentMethod((order.payments?.[0]?.gatewayCode) || 'cash')
+    setPartialAmount(order.partialAmount ? String(order.partialAmount) : '')
+    setEditingPayment(true)
+  }
+
+  async function handleSavePayment() {
+    if (paymentMode === 'partial' && (!partialAmount || parseFloat(partialAmount) <= 0)) {
+      toast.error('Enter a partial amount greater than 0')
+      return
+    }
+    try {
+      await updateMut.mutateAsync({
+        id,
+        data: {
+          paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : 'PARTIAL_PAYMENT',
+          gatewayCode: paymentMethod || undefined,
+          partialAmount: paymentMode === 'partial' && partialAmount ? parseFloat(partialAmount) : undefined,
+        },
+      })
+      setEditingPayment(false)
+    } catch {
+      // onError toast surfaces the backend reason; keep the editor open.
+    }
+  }
+
+  async function handleSaveItems() {
+    try {
+      await updateMut.mutateAsync({
+        id,
+        data: {
+          items: orderItems.map((i: any) => ({
+            productId: i.productId,
+            variantId: i.variantId,
+            quantity: i.quantity,
+            price: Number(i.price),
+          })),
+        },
+      })
+      // Only exit the inline editor when the save succeeded — on failure the
+      // rows stay visible so the user sees WHY (stock/sku errors) and can fix.
+      setEditingItems(false)
+    } catch {
+      // onError toast already surfaced the backend reason; keep editor open.
+    }
   }
 
   function handleSaveShipping(charge: number, optionId?: string) {
@@ -246,6 +323,51 @@ function OrderDetailPage() {
   }
 
   if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
+
+  // Another staff member holds a live edit lock — view is blocked until the
+  // viewer explicitly overrides (recorded in the order timeline).
+  if (!order && viewLock) {
+    return (
+      <TooltipProvider>
+        <>
+          <Header fixed>
+            <Link to='/op/orders' className='me-auto'>
+              <Button variant='ghost'><ArrowLeft className='h-4 w-4 mr-1' /> Back</Button>
+            </Link>
+            <ThemeSwitch />
+            <ProfileDropdown />
+          </Header>
+          <Main className='flex flex-1 items-center justify-center'>
+            <div className='max-w-md w-full rounded-xl border border-amber-500/25 bg-amber-500/5 p-8 text-center'>
+              <Lock className='h-10 w-10 mx-auto mb-4 text-amber-500' />
+              <h2 className='text-lg font-bold mb-2'>Order is being edited</h2>
+              <p className='text-sm text-muted-foreground mb-6'>
+                <strong>{viewLock.userName || 'Another staff member'}</strong> is currently editing this order.
+                You can open it in read-only mode by taking over the edit lock — the takeover is recorded in the order history.
+              </p>
+              <div className='flex justify-center gap-3'>
+                <Button variant='outline' onClick={() => window.history.back()}>Go back</Button>
+                <Button
+                  onClick={async () => {
+                    try {
+                      await apiClient.post(`/orders/${id}/lock/override`)
+                      toast.success('Lock overridden — you are now editing')
+                      queryClient.invalidateQueries({ queryKey: ['order', id] })
+                    } catch (e: unknown) {
+                      toast.error(errMsg(e))
+                    }
+                  }}
+                >
+                  <Lock className='h-4 w-4 mr-2' /> Override and open
+                </Button>
+              </div>
+            </div>
+          </Main>
+        </>
+      </TooltipProvider>
+    )
+  }
+
   if (!order) return <div className='p-6 text-muted-foreground'>Order not found</div>
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
@@ -847,17 +969,57 @@ function OrderDetailPage() {
               </Card>
 
               {/* Payment Cards */}
-              {order.paymentOptionType && (
+              {(order.paymentOptionType || editingPayment) && (
                 <Card>
                   <CardHeader className='pb-2'>
                     <CardTitle className='text-sm font-semibold flex items-center gap-2'>
                       Payment <PaymentStatusBadge status={order.paymentStatus} />
+                      {!editingPayment && (
+                        <Button variant='ghost' size='sm' className='h-6 px-2 text-xs ml-auto' onClick={openPaymentEdit}>
+                          <Pencil className='h-3 w-3 mr-1' /> Edit
+                        </Button>
+                      )}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className='space-y-1 text-sm pt-0'>
-                    <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order.paymentOptionType)}</p>
-                    {order.partialAmount && <p><span className='text-muted-foreground'>Partial:</span> ৳{fmt(order.partialAmount)}</p>}
-                  </CardContent>
+                  {editingPayment ? (
+                    <CardContent className='space-y-3 pt-0'>
+                      <div>
+                        <Label className='text-xs'>Method</Label>
+                        <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                          <option value='cash'>Cash</option>
+                          <option value='bkash'>bKash</option>
+                          <option value='nagad'>Nagad</option>
+                          <option value='bank'>Bank</option>
+                          <option value='card'>Card</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label className='text-xs'>Mode</Label>
+                        <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
+                          <option value='cod'>COD</option>
+                          <option value='full'>Full Payment</option>
+                          <option value='partial'>Partial Payment</option>
+                        </select>
+                      </div>
+                      {paymentMode === 'partial' && (
+                        <div>
+                          <Label className='text-xs'>Partial Amount</Label>
+                          <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-sm mt-1' placeholder='Amount to collect' />
+                        </div>
+                      )}
+                      <div className='flex gap-2'>
+                        <Button size='sm' className='h-8' onClick={handleSavePayment} disabled={updateMut.isPending}>
+                          {updateMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' /> : <Save className='h-3.5 w-3.5 mr-1' />} Save
+                        </Button>
+                        <Button size='sm' variant='outline' className='h-8' onClick={() => setEditingPayment(false)}>Cancel</Button>
+                      </div>
+                    </CardContent>
+                  ) : (
+                    <CardContent className='space-y-1 text-sm pt-0'>
+                      <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order.paymentOptionType)}</p>
+                      {order.partialAmount && <p><span className='text-muted-foreground'>Partial:</span> ৳{fmt(order.partialAmount)}</p>}
+                    </CardContent>
+                  )}
                 </Card>
               )}
               {order.payments?.map((p: any) => {
