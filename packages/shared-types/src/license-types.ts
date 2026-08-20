@@ -94,12 +94,13 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_employees: { key: 'admin_employees', enabled: true },
   admin_tasks: { key: 'admin_tasks', enabled: true },
 
-  // ── J: Marketing & Content (5) ──
+  // ── J: Marketing & Content (6) ──
   admin_email_campaigns: { key: 'admin_email_campaigns', enabled: true, dependencies: ['admin_customers'] },
   admin_landing_pages: { key: 'admin_landing_pages', enabled: true },
   admin_cms_pages: { key: 'admin_cms_pages', enabled: true },
   admin_product_feeds: { key: 'admin_product_feeds', enabled: true, dependencies: ['admin_products'] },
   admin_referrals: { key: 'admin_referrals', enabled: true, dependencies: ['storefront_referral'] },
+  marketing_attribution: { key: 'marketing_attribution', enabled: true },
 
   // ── K: Inventory & Fulfillment (8) ──
   admin_inventory: { key: 'admin_inventory', enabled: true, dependencies: ['admin_products'] },

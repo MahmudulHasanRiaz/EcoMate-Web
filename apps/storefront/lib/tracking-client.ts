@@ -97,3 +97,49 @@ export async function syncContext(payload?: {
   })();
   return inflight;
 }
+
+/**
+ * Best-effort landing-session capture for the marketing-attribution module.
+ * Public, rate-limited endpoint; fires once per journey (first write wins) so
+ * a later order carrying the same ctxId can be resolved to a campaign. Never
+ * blocks or errors the page (failed fetches are silently dropped).
+ */
+export async function captureMarketingSession(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!isTrackingAllowed()) return;
+  try {
+    const attribution = (await import('./attribution')).getLandingAttribution();
+    if (!attribution) return;
+    // Only fire when there is a real marketing signal — a bare session row is
+    // useless and would churn the rate-limited capture endpoint.
+    const hasSignal = !!(
+      attribution.fbclid ||
+      attribution.utmSource ||
+      attribution.utmMedium ||
+      attribution.utmCampaign ||
+      attribution.utmContent ||
+      attribution.utmTerm
+    );
+    if (!hasSignal) return;
+    const url = `${getTrackingApiUrl()}/marketing/capture`;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: getOrCreateCtxId(),
+        fbclid: attribution.fbclid ?? undefined,
+        utmSource: attribution.utmSource ?? undefined,
+        utmMedium: attribution.utmMedium ?? undefined,
+        utmCampaign: attribution.utmCampaign ?? undefined,
+        utmContent: attribution.utmContent ?? undefined,
+        utmTerm: attribution.utmTerm ?? undefined,
+        referrer: attribution.referrer ?? undefined,
+        landingUrl: location.href.slice(0, 500),
+        userAgent: navigator.userAgent.slice(0, 500),
+      }),
+      keepalive: true,
+    });
+  } catch {
+    /* best-effort — never block the page */
+  }
+}

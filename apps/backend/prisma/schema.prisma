@@ -676,6 +676,8 @@ model Order {
   referralLeads  ReferralLead[]
   stockCycles    OrderStockCycle[]
   stockTransfers StockTransfer[]
+  orderAttribution    OrderAttribution?
+  marketingAllocations MarketingCostAllocation[]
 
   @@index([customerId])
   @@index([statusId])
@@ -715,6 +717,7 @@ model OrderItem {
   combo           Combo?                    @relation(fields: [comboId], references: [id])
   sourceWarehouse Warehouse?                @relation(fields: [sourceWarehouseId], references: [id])
   comboComponents OrderItemComboComponent[]
+  marketingCosts  ProductMarketingCost[]
 
   @@index([orderId])
   @@index([productId])
@@ -2064,6 +2067,7 @@ model JournalEntry {
   period  FinancialPeriod    @relation(fields: [periodId], references: [id])
   lines   JournalEntryLine[]
   expense Expense?
+  marketingFunding MarketingFundingEntry?
 
   @@index([periodId])
   @@index([entryDate])
@@ -2649,8 +2653,525 @@ model TrackingReplayArchive {
   archivedPayload Json     @default("{}") // canonical payload, PII-stripped (hashed keys only)
   configSnapshot  Json     @default("{}")
   versions        Json     @default("{}") // {schemaVersion, adapterVersion, providerApiVersion, payloadVersion, normalizerVersion}
-  archivedAt      DateTime @default(now())
+archivedAt   DateTime @default(now())
 
   @@index([eventId])
   @@index([eventType, archivedAt])
+}
+
+// ============================================================================
+// MARKETING ATTRIBUTION PLATFORM (SPEC-001)
+// ============================================================================
+
+enum MarketingPlatformSlug {
+  facebook
+  google_ads
+  tiktok
+  linkedin
+}
+
+enum MarketingConnectionStatus {
+  connected
+  disconnected
+  expired
+  error
+}
+
+enum MarketingFundingStatus {
+  draft
+  confirmed
+  posted
+  partially_consumed
+  fully_consumed
+  archived
+}
+
+enum MarketingAllocationMethod {
+  equal
+  product_value
+  quantity
+}
+
+enum OrderAttributionMethod {
+  fbclid
+  conversion_api
+  pixel
+  session
+  utm
+  manual
+}
+
+model MarketingPlatform {
+  id          String                @id @default(uuid())
+  name        String
+  slug        MarketingPlatformSlug @unique
+  status      String                @default("active")
+  createdAt   DateTime              @default(now())
+
+  connections MarketingConnection[]
+
+  @@index([slug])
+}
+
+model MarketingConnection {
+  id                 String                    @id @default(uuid())
+  platformId         String
+  providerUserId     String?
+  providerBusinessId String?
+  accessTokenEnc     String                    @db.Text
+  refreshTokenEnc    String?                   @db.Text
+  tokenType          String? // long-lived-user | system-user
+  tokenExpiry        DateTime?
+  status             MarketingConnectionStatus @default(connected)
+  lastSyncAt         DateTime?
+  lastError          String?                   @db.Text
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  platform   MarketingPlatform   @relation(fields: [platformId], references: [id])
+  businesses MarketingBusiness[]
+  adAccounts AdAccount[]
+
+  @@index([platformId])
+  @@index([status])
+}
+
+model MarketingBusiness {
+  id                 String   @id @default(uuid())
+  connectionId       String
+  providerBusinessId String   @unique
+  name               String
+  createdAt          DateTime @default(now())
+
+  connection MarketingConnection @relation(fields: [connectionId], references: [id])
+  adAccounts AdAccount[]
+
+  @@index([connectionId])
+}
+
+model AdAccount {
+  id                 String   @id @default(uuid())
+  connectionId       String
+  businessId         String?
+  providerAccountId  String   @unique // e.g. act_123456
+  name               String
+  currency           String   @default("USD")
+  timezone           String?
+  status             String   @default("ACTIVE")
+  isActive           Boolean  @default(true)
+  lastSyncAt         DateTime?
+  lastError          String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  connection      MarketingConnection        @relation(fields: [connectionId], references: [id])
+  business        MarketingBusiness?         @relation(fields: [businessId], references: [id])
+  campaigns       MarketingCampaign[]
+  fundingEntries  MarketingFundingEntry[]
+  fundingLedger   MarketingFundingLedger[]
+  syncStatus      MarketingSyncStatus?
+  dailySummaries  MarketingDailySummary[]
+
+  @@index([connectionId])
+  @@index([businessId])
+}
+
+model MarketingCampaign {
+  id                  String    @id @default(uuid())
+  adAccountId         String
+  providerCampaignId  String    @unique
+  name                String
+  objective           String?
+  buyingType          String?
+  status              String    @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED | DELETED
+  effectiveStatus     String?
+  dailyBudget         Decimal?  @db.Decimal(14, 2)
+  lifetimeBudget      Decimal?  @db.Decimal(14, 2)
+  createdTime         DateTime?
+  updatedTime         DateTime?
+  startTime           DateTime?
+  stopTime            DateTime?
+  isArchived          Boolean   @default(false)
+  deletedFromProvider Boolean   @default(false)
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  adAccount         AdAccount                    @relation(fields: [adAccountId], references: [id])
+  adSets            MarketingAdSet[]
+  insights          MarketingCampaignInsight[]
+  consumptions      MarketingConsumption[]
+  orderAttributions OrderAttribution[]
+  allocations       MarketingCostAllocation[]
+  sessions          MarketingSession[]
+
+  @@index([adAccountId])
+  @@index([status])
+  @@index([name])
+  @@index([providerCampaignId])
+}
+
+model MarketingAdSet {
+  id                 String    @id @default(uuid())
+  campaignId         String
+  providerAdSetId    String    @unique
+  name               String
+  status             String    @default("ACTIVE")
+  optimizationGoal   String?
+  billingEvent       String?
+  bidStrategy        String?
+  budget             Decimal?  @db.Decimal(14, 2)
+  startTime          DateTime?
+  endTime            DateTime?
+  isArchived         Boolean   @default(false)
+  deletedFromProvider Boolean  @default(false)
+  lastSyncedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  campaign          MarketingCampaign        @relation(fields: [campaignId], references: [id])
+  ads               MarketingAd[]
+  insights          MarketingAdSetInsight[]
+  orderAttributions OrderAttribution[]
+
+  @@index([campaignId])
+  @@index([providerAdSetId])
+}
+
+model MarketingAd {
+  id                 String    @id @default(uuid())
+  adSetId            String
+  providerAdId       String    @unique
+  name               String
+  creativeId         String?
+  creativeName       String?
+  status             String    @default("ACTIVE")
+  landingUrl         String?   @db.Text
+  previewUrl         String?   @db.Text
+  isArchived         Boolean   @default(false)
+  deletedFromProvider Boolean  @default(false)
+  lastSyncedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  adSet             MarketingAdSet      @relation(fields: [adSetId], references: [id])
+  insights          MarketingAdInsight[]
+  orderAttributions OrderAttribution[]
+  sessions          MarketingSession[]
+
+  @@index([adSetId])
+  @@index([providerAdId])
+}
+
+// ---- Insight snapshots (immutable daily snapshots; unique per object+date) ----
+
+model MarketingCampaignInsight {
+  id            String   @id @default(uuid())
+  campaignId    String
+  date          DateTime @db.Date
+  impressions   Int      @default(0)
+  reach         Int      @default(0)
+  clicks        Int      @default(0)
+  cpc           Decimal? @db.Decimal(14, 4)
+  cpm           Decimal? @db.Decimal(14, 4)
+  ctr           Decimal? @db.Decimal(14, 4)
+  spend         Decimal  @db.Decimal(14, 4)
+  purchases     Int      @default(0)
+  purchaseValue Decimal? @db.Decimal(14, 4)
+  roas          Decimal? @db.Decimal(14, 4)
+  frequency     Decimal? @db.Decimal(14, 4)
+  syncedAt      DateTime @default(now())
+
+  campaign MarketingCampaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([campaignId, date])
+  @@index([date])
+}
+
+model MarketingAdSetInsight {
+  id            String   @id @default(uuid())
+  adSetId       String
+  date          DateTime @db.Date
+  impressions   Int      @default(0)
+  reach         Int      @default(0)
+  clicks        Int      @default(0)
+  cpc           Decimal? @db.Decimal(14, 4)
+  cpm           Decimal? @db.Decimal(14, 4)
+  ctr           Decimal? @db.Decimal(14, 4)
+  spend         Decimal  @db.Decimal(14, 4)
+  purchases     Int      @default(0)
+  purchaseValue Decimal? @db.Decimal(14, 4)
+  roas          Decimal? @db.Decimal(14, 4)
+  frequency     Decimal? @db.Decimal(14, 4)
+  syncedAt      DateTime @default(now())
+
+  adSet MarketingAdSet @relation(fields: [adSetId], references: [id])
+
+  @@unique([adSetId, date])
+  @@index([date])
+}
+
+model MarketingAdInsight {
+  id            String   @id @default(uuid())
+  adId          String
+  date          DateTime @db.Date
+  impressions   Int      @default(0)
+  reach         Int      @default(0)
+  clicks        Int      @default(0)
+  cpc           Decimal? @db.Decimal(14, 4)
+  cpm           Decimal? @db.Decimal(14, 4)
+  ctr           Decimal? @db.Decimal(14, 4)
+  spend         Decimal  @db.Decimal(14, 4)
+  purchases     Int      @default(0)
+  purchaseValue Decimal? @db.Decimal(14, 4)
+  roas          Decimal? @db.Decimal(14, 4)
+  frequency     Decimal? @db.Decimal(14, 4)
+  syncedAt      DateTime @default(now())
+
+  ad MarketingAd @relation(fields: [adId], references: [id])
+
+  @@unique([adId, date])
+  @@index([date])
+}
+
+// ---- Funding / marketing accounting ----
+
+model MarketingFundingEntry {
+  id              String                  @id @default(uuid())
+  platform        String                  @default("facebook")
+  adAccountId     String
+  fundingSource   String // BANK | DEBIT_CARD | CREDIT_CARD | WALLET | CASH | VIRTUAL_CARD
+  fundingDate     DateTime
+  currency        String                  @default("USD")
+  currencyAmount  Decimal                 @db.Decimal(14, 4)
+  baseCurrency    String                  @default("BDT")
+  baseAmount      Decimal                 @db.Decimal(14, 2)
+  effectiveRate   Decimal                 @db.Decimal(14, 4)
+  reference       String?
+  remarks         String?                 @db.Text
+  journalEntryId  String?                 @unique
+  status          MarketingFundingStatus  @default(draft)
+  createdBy       String?
+  postedAt        DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  adAccount    AdAccount                 @relation(fields: [adAccountId], references: [id])
+  journalEntry JournalEntry?             @relation(fields: [journalEntryId], references: [id])
+  ledger       MarketingFundingLedger[]
+
+  @@index([adAccountId])
+  @@index([fundingDate])
+  @@index([status])
+}
+
+model MarketingFundingLedger {
+  id              String                 @id @default(uuid())
+  fundingEntryId  String
+  adAccountId     String
+  receivedAmount  Decimal                @db.Decimal(14, 4)
+  remainingAmount Decimal                @db.Decimal(14, 4)
+  effectiveRate   Decimal                @db.Decimal(14, 4)
+  consumedAmount  Decimal                @default(0) @db.Decimal(14, 4)
+  status          MarketingFundingStatus @default(confirmed)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  fundingEntry MarketingFundingEntry  @relation(fields: [fundingEntryId], references: [id])
+  adAccount    AdAccount              @relation(fields: [adAccountId], references: [id])
+  consumptions MarketingConsumption[]
+
+  @@index([fundingEntryId])
+  @@index([adAccountId])
+  @@index([status])
+}
+
+model MarketingConsumption {
+  id             String   @id @default(uuid())
+  ledgerId       String
+  campaignId     String?
+  orderId        String?
+  consumedAmount Decimal  @db.Decimal(14, 4) // spend currency units
+  effectiveRate  Decimal  @db.Decimal(14, 4)
+  calculatedCost Decimal  @db.Decimal(14, 2) // consumedAmount * effectiveRate
+  spendDate      DateTime? @db.Date // insight date the spend belongs to
+  source         String   @default("spend_sync") // spend_sync | allocation | replay | adjustment
+  allocatedAt    DateTime @default(now())
+
+  ledger   MarketingFundingLedger @relation(fields: [ledgerId], references: [id])
+  campaign MarketingCampaign?     @relation(fields: [campaignId], references: [id])
+
+  @@index([ledgerId])
+  @@index([campaignId])
+  @@index([orderId])
+  @@index([spendDate])
+  @@index([allocatedAt])
+}
+
+// ---- Sessions / attribution ----
+
+model MarketingSession {
+  id           String   @id @default(uuid())
+  visitorId    String
+  sessionToken String   @unique // stable journey id (storefront ecomate_ctx_id)
+  fbclid       String?
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  utmContent   String?
+  utmTerm      String?
+  referrer     String?  @db.Text
+  landingUrl   String?  @db.Text
+  campaignId   String?
+  adSetId      String?
+  adId         String?
+  ip           String?
+  userAgent    String?
+  startedAt    DateTime @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaign          MarketingCampaign?   @relation(fields: [campaignId], references: [id])
+  ad                MarketingAd?         @relation(fields: [adId], references: [id])
+  orderAttributions OrderAttribution[]
+
+  @@index([visitorId])
+  @@index([fbclid])
+  @@index([utmCampaign])
+  @@index([createdAt])
+}
+
+model OrderAttribution {
+  id                 String                @id @default(uuid())
+  orderId            String                @unique
+  sessionId          String?
+  campaignId         String?
+  adSetId            String?
+  adId               String?
+  confidence         Int                   @default(0)
+  method             OrderAttributionMethod
+  explanation        String?               @db.Text
+  attributionVersion Int                   @default(1)
+  attributedAt       DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  order       Order                    @relation(fields: [orderId], references: [id])
+  session     MarketingSession?        @relation(fields: [sessionId], references: [id])
+  campaign    MarketingCampaign?       @relation(fields: [campaignId], references: [id])
+  adSet       MarketingAdSet?          @relation(fields: [adSetId], references: [id])
+  ad          MarketingAd?             @relation(fields: [adId], references: [id])
+  allocations MarketingCostAllocation[]
+
+  @@index([sessionId])
+  @@index([campaignId])
+  @@index([adId])
+  @@index([attributedAt])
+}
+
+// ---- Cost allocation ----
+
+model MarketingCostAllocation {
+  id                String                  @id @default(uuid())
+  orderId           String
+  attributionId     String?
+  campaignId        String
+  allocatedSpend    Decimal                 @db.Decimal(14, 4)
+  allocatedCurrency String                  @default("USD")
+  allocatedRate     Decimal                 @db.Decimal(14, 4)
+  allocatedCost     Decimal                 @db.Decimal(14, 2)
+  allocationMethod  MarketingAllocationMethod
+  calculatedAt      DateTime                @default(now())
+
+  order       Order                    @relation(fields: [orderId], references: [id])
+  attribution OrderAttribution?        @relation(fields: [attributionId], references: [id])
+  campaign    MarketingCampaign        @relation(fields: [campaignId], references: [id])
+  productCosts ProductMarketingCost[]
+
+  @@unique([orderId, campaignId])
+  @@index([campaignId])
+  @@index([calculatedAt])
+}
+
+model ProductMarketingCost {
+  id              String   @id @default(uuid())
+  orderItemId     String
+  allocationId    String
+  marketingCost   Decimal  @db.Decimal(14, 2)
+  allocationRatio Decimal  @db.Decimal(14, 6)
+  calculatedAt    DateTime @default(now())
+
+  allocation MarketingCostAllocation @relation(fields: [allocationId], references: [id])
+  orderItem  OrderItem               @relation(fields: [orderItemId], references: [id])
+
+  @@unique([orderItemId, allocationId])
+  @@index([allocationId])
+}
+
+// ---- Sync / audit / observability ----
+
+model MarketingSyncStatus {
+  id              String   @id @default(uuid())
+  adAccountId     String   @unique
+  provider        String   @default("facebook")
+  status          String   @default("idle") // idle | running | error | partial
+  stage           String? // businesses | ad_accounts | campaigns | adsets | ads | insights
+  progressPct     Int      @default(0)
+  lastRunAt       DateTime?
+  lastSuccessAt   DateTime?
+  lastError       String?  @db.Text
+  recordsImported Int      @default(0)
+  recordsUpdated  Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id])
+}
+
+model MarketingAuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String
+  entityId   String
+  actorId    String?
+  actorEmail String?
+  metadata   Json?    @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model MarketingRawPayload {
+  id          String   @id @default(uuid())
+  provider    String   @default("facebook")
+  endpoint    String
+  objectType  String
+  objectId    String?
+  payloadJson Json
+  receivedAt  DateTime @default(now())
+
+  @@index([objectType, objectId])
+  @@index([receivedAt])
+}
+
+// Snapshot aggregates (regenerable)
+model MarketingDailySummary {
+  id            String   @id @default(uuid())
+  adAccountId   String
+  date          DateTime @db.Date
+  spend         Decimal  @default(0) @db.Decimal(14, 4)
+  purchases     Int      @default(0)
+  purchaseValue Decimal? @db.Decimal(14, 4)
+  orders        Int      @default(0)
+  revenue       Decimal? @db.Decimal(14, 2)
+  marketingCost Decimal? @db.Decimal(14, 2)
+  profit        Decimal? @db.Decimal(14, 2)
+  roas          Decimal? @db.Decimal(14, 4)
+  calculatedAt  DateTime @default(now())
+
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id])
+
+  @@unique([adAccountId, date])
+  @@index([date])
 }

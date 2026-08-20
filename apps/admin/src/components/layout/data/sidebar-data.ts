@@ -4,7 +4,7 @@ import {
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
-  HardDrive,
+  HardDrive, Target, Plug, Wallet, BarChart3,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -105,6 +105,20 @@ export const sidebarData: SidebarData = {
           feature: 'admin_email_campaigns',
           items: [
             { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
+          ],
+        },
+        {
+          title: 'Marketing Attribution',
+          icon: Target,
+          feature: 'marketing_attribution',
+          items: [
+            { title: 'Dashboard', url: '/op/marketing', icon: LayoutDashboard },
+            { title: 'Connections', url: '/op/marketing/connections', icon: Plug },
+            { title: 'Ad Accounts', url: '/op/marketing/ad-accounts', icon: Monitor },
+            { title: 'Campaigns', url: '/op/marketing/campaigns', icon: Megaphone },
+            { title: 'Funding', url: '/op/marketing/funding', icon: Wallet },
+            { title: 'Attribution', url: '/op/marketing/attribution', icon: Target },
+            { title: 'Reports', url: '/op/marketing/reports', icon: BarChart3 },
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },

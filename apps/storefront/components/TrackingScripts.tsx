@@ -5,7 +5,7 @@ import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { useAuth } from "@/context/AuthContext";
 import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed } from "@/lib/tracking";
-import { getTrackingApiUrl, syncContext } from "@/lib/tracking-client";
+import { getTrackingApiUrl, syncContext, captureMarketingSession } from "@/lib/tracking-client";
 import { captureLandingAttribution } from "@/lib/attribution";
 
 declare global {
@@ -101,6 +101,7 @@ export default function TrackingScripts() {
     captureLandingAttribution();
     setTrackingConfig(config.meta.purchaseMode || 'instant', config.tiktok.purchaseMode || 'instant');
     syncContext(); // begin tracking-context capture on mount (ctxId + identifiers + url + referrer)
+    captureMarketingSession(); // landing-session capture for marketing attribution (best-effort)
     // P1 fix: re-sync shortly after load so _fbp/_fbc created by fbevents.js
     // (lazyOnload) reach the context row — the mount-time sync races the pixel
     // script and would otherwise miss the cookies (empty fbp/fbc coverage).
