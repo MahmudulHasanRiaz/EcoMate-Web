@@ -97,7 +97,21 @@ export class MetaAdapter implements TrackingProviderAdapter {
     if (snapshot.content_type) custom_data.content_type = snapshot.content_type;
     if (snapshot.content_name) custom_data.content_name = snapshot.content_name;
     if (snapshot.content_category) custom_data.content_category = snapshot.content_category;
-    if (snapshot.contents?.length) custom_data.contents = snapshot.contents;
+    // 2804008 guard: contents must be a valid JSON array of objects with
+    // non-empty id, positive quantity, and numeric item_price. Filter out
+    // malformed items to prevent Meta rejecting the entire event.
+    if (snapshot.contents?.length) {
+      const validContents = snapshot.contents.filter(
+        (item) =>
+          item &&
+          typeof item.id === 'string' &&
+          item.id.length > 0 &&
+          typeof item.quantity === 'number' &&
+          item.quantity > 0 &&
+          (item.item_price === undefined || typeof item.item_price === 'number'),
+      );
+      if (validContents.length) custom_data.contents = validContents;
+    }
     if (snapshot.num_items !== undefined) custom_data.num_items = snapshot.num_items;
     if (snapshot.search_string) custom_data.search_string = snapshot.search_string;
     if (snapshot.orderId) custom_data.order_id = snapshot.orderId;
@@ -116,24 +130,22 @@ export class MetaAdapter implements TrackingProviderAdapter {
     // Wave-3: fb_login_id is itself a valid customer identity key (Meta accepts
     // an event carrying it regardless of em/ph — the 2804050 reject only applies
     // when user_data has NO identity parameter at all).
+    // NOTE: client_ip_address and client_user_agent are NOT customer information
+    // parameters for Meta's 2804050 check — they improve match quality but do
+    // NOT satisfy the "sufficient customer information" requirement. Only the
+    // keys below count as identity for the 2804050 guard.
     const hasOtherIdentity = Boolean(
       user_data.fb_login_id ||
         user_data.external_id ||
         user_data.fbp ||
-        user_data.fbc ||
-        user_data.client_ip_address ||
-        user_data.client_user_agent,
+        user_data.fbc,
     );
 
-    // 2804050 guard (P1 fix, 2026-08-10): Meta REJECTS an event whose user_data
-    // has NO identity parameter at all — `code 100 / subcode 2804050` ("no
-    // customer information parameters") — the observed failure behind 45
-    // rejected dispatches (mirror events racing the context beacon, no ip/ua,
-    // no fbp/fbc, anonymous). Never ship a guaranteed-reject payload: surface a
-    // skipReason (dispatcher records a SKIPPED dispatch row with the reason —
-    // observable, auditable) instead of a doomed POST. The skipReason is
-    // explicit; build() still emits qualityFlags for lower-match-but-accepted
-    // payloads (any single key above is enough for Meta to accept the event).
+    // 2804050 guard (P1 fix, 2026-08-10; strengthened 2026-08-20): Meta REJECTS
+    // an event whose user_data has NO customer information parameter —
+    // `code 100 / subcode 2804050` ("no customer information parameters").
+    // client_ip_address/client_user_agent alone do NOT satisfy this check.
+    // Never ship a guaranteed-reject payload: surface a skipReason instead.
     const hasAnyIdentity =
       hasContact ||
       hasOtherIdentity ||

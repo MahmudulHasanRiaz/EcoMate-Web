@@ -4096,11 +4096,16 @@ export class OrdersService {
 
     const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
+    // orderId = human-readable displayId (Meta custom_data.order_id) for
+    // business-order identification; event_id = purchase_{internal UUID} for
+    // dedup — the two serve different purposes and must never be conflated.
+    const businessOrderId = order.displayId || order.id;
+
     await this.trackingCapture.capture(
       {
         eventId: `purchase_${order.id}`,
         eventType: 'Purchase',
-        orderId: order.id,
+        orderId: businessOrderId,
         ctxId: order.trackingSessionId || undefined,
         eventTime: createdAt,
         actionSource,
@@ -4119,7 +4124,7 @@ export class OrdersService {
             0,
           ),
           customerId: order.customerId ?? undefined,
-          orderId: order.id,
+          orderId: businessOrderId,
           customer: {
             email: email || undefined,
             phone: phone || undefined,
@@ -4162,11 +4167,13 @@ export class OrdersService {
 
       const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
+      const businessOrderId = order.displayId || order.id;
+
       await this.trackingCapture.capture(
         {
           eventId: `refund_${order.id}`,
           eventType: 'Refund',
-          orderId: order.id,
+          orderId: businessOrderId,
           ctxId: order.trackingSessionId || undefined,
           eventTime: Math.floor(Date.now() / 1000),
           actionSource,
@@ -4187,7 +4194,7 @@ export class OrdersService {
               0,
             ),
             customerId: order.customerId ?? undefined,
-            orderId: order.id,
+            orderId: businessOrderId,
             customer: {
               phone: phone || undefined,
               firstName: firstName || undefined,
