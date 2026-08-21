@@ -105,6 +105,7 @@ import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
 import { Route as AuthenticatedOpMarketingSpendSnapshotsIndexRouteImport } from './routes/_authenticated/op/marketing/spend-snapshots/index'
 import { Route as AuthenticatedOpMarketingReportsIndexRouteImport } from './routes/_authenticated/op/marketing/reports/index'
+import { Route as AuthenticatedOpMarketingPaymentsIndexRouteImport } from './routes/_authenticated/op/marketing/payments/index'
 import { Route as AuthenticatedOpMarketingHelpIndexRouteImport } from './routes/_authenticated/op/marketing/help/index'
 import { Route as AuthenticatedOpMarketingFundingIndexRouteImport } from './routes/_authenticated/op/marketing/funding/index'
 import { Route as AuthenticatedOpMarketingConnectionsIndexRouteImport } from './routes/_authenticated/op/marketing/connections/index'
@@ -696,6 +697,12 @@ const AuthenticatedOpMarketingReportsIndexRoute =
     path: '/op/marketing/reports/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpMarketingPaymentsIndexRoute =
+  AuthenticatedOpMarketingPaymentsIndexRouteImport.update({
+    id: '/op/marketing/payments/',
+    path: '/op/marketing/payments/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpMarketingHelpIndexRoute =
   AuthenticatedOpMarketingHelpIndexRouteImport.update({
     id: '/op/marketing/help/',
@@ -1023,6 +1030,7 @@ export interface FileRoutesByFullPath {
   '/op/marketing/connections/': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/op/marketing/funding/': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/op/marketing/help/': typeof AuthenticatedOpMarketingHelpIndexRoute
+  '/op/marketing/payments/': typeof AuthenticatedOpMarketingPaymentsIndexRoute
   '/op/marketing/reports/': typeof AuthenticatedOpMarketingReportsIndexRoute
   '/op/marketing/spend-snapshots/': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
@@ -1154,6 +1162,7 @@ export interface FileRoutesByTo {
   '/op/marketing/connections': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/op/marketing/funding': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/op/marketing/help': typeof AuthenticatedOpMarketingHelpIndexRoute
+  '/op/marketing/payments': typeof AuthenticatedOpMarketingPaymentsIndexRoute
   '/op/marketing/reports': typeof AuthenticatedOpMarketingReportsIndexRoute
   '/op/marketing/spend-snapshots': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/op/orders/incomplete-leads': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
@@ -1287,6 +1296,7 @@ export interface FileRoutesById {
   '/_authenticated/op/marketing/connections/': typeof AuthenticatedOpMarketingConnectionsIndexRoute
   '/_authenticated/op/marketing/funding/': typeof AuthenticatedOpMarketingFundingIndexRoute
   '/_authenticated/op/marketing/help/': typeof AuthenticatedOpMarketingHelpIndexRoute
+  '/_authenticated/op/marketing/payments/': typeof AuthenticatedOpMarketingPaymentsIndexRoute
   '/_authenticated/op/marketing/reports/': typeof AuthenticatedOpMarketingReportsIndexRoute
   '/_authenticated/op/marketing/spend-snapshots/': typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   '/_authenticated/op/orders/incomplete-leads/': typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
@@ -1420,6 +1430,7 @@ export interface FileRouteTypes {
     | '/op/marketing/connections/'
     | '/op/marketing/funding/'
     | '/op/marketing/help/'
+    | '/op/marketing/payments/'
     | '/op/marketing/reports/'
     | '/op/marketing/spend-snapshots/'
     | '/op/orders/incomplete-leads/'
@@ -1551,6 +1562,7 @@ export interface FileRouteTypes {
     | '/op/marketing/connections'
     | '/op/marketing/funding'
     | '/op/marketing/help'
+    | '/op/marketing/payments'
     | '/op/marketing/reports'
     | '/op/marketing/spend-snapshots'
     | '/op/orders/incomplete-leads'
@@ -1683,6 +1695,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/marketing/connections/'
     | '/_authenticated/op/marketing/funding/'
     | '/_authenticated/op/marketing/help/'
+    | '/_authenticated/op/marketing/payments/'
     | '/_authenticated/op/marketing/reports/'
     | '/_authenticated/op/marketing/spend-snapshots/'
     | '/_authenticated/op/orders/incomplete-leads/'
@@ -2383,6 +2396,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpMarketingReportsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/marketing/payments/': {
+      id: '/_authenticated/op/marketing/payments/'
+      path: '/op/marketing/payments'
+      fullPath: '/op/marketing/payments/'
+      preLoaderRoute: typeof AuthenticatedOpMarketingPaymentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/marketing/help/': {
       id: '/_authenticated/op/marketing/help/'
       path: '/op/marketing/help'
@@ -2818,6 +2838,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpMarketingConnectionsIndexRoute: typeof AuthenticatedOpMarketingConnectionsIndexRoute
   AuthenticatedOpMarketingFundingIndexRoute: typeof AuthenticatedOpMarketingFundingIndexRoute
   AuthenticatedOpMarketingHelpIndexRoute: typeof AuthenticatedOpMarketingHelpIndexRoute
+  AuthenticatedOpMarketingPaymentsIndexRoute: typeof AuthenticatedOpMarketingPaymentsIndexRoute
   AuthenticatedOpMarketingReportsIndexRoute: typeof AuthenticatedOpMarketingReportsIndexRoute
   AuthenticatedOpMarketingSpendSnapshotsIndexRoute: typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
@@ -2939,6 +2960,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpMarketingFundingIndexRoute,
   AuthenticatedOpMarketingHelpIndexRoute:
     AuthenticatedOpMarketingHelpIndexRoute,
+  AuthenticatedOpMarketingPaymentsIndexRoute:
+    AuthenticatedOpMarketingPaymentsIndexRoute,
   AuthenticatedOpMarketingReportsIndexRoute:
     AuthenticatedOpMarketingReportsIndexRoute,
   AuthenticatedOpMarketingSpendSnapshotsIndexRoute:

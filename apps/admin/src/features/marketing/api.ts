@@ -114,6 +114,49 @@ export interface SessionResponse {
   createdAt: string
 }
 
+export interface MarketingPaymentResponse {
+  id: string
+  adAccountId: string
+  providerPaymentId?: string | null
+  platformAmount: string | number
+  platformCurrency: string
+  actualCost?: string | number | null
+  baseCurrency: string
+  effectiveRate?: string | number | null
+  feeAmount?: string | number | null
+  taxAmount?: string | number | null
+  processingFee?: string | number | null
+  sourceAccountId?: string | null
+  paymentDate: string
+  status: string
+  notes?: string | null
+  journalEntryId?: string | null
+  reconciledAt?: string | null
+  createdAt: string
+  adAccount: AdAccountResponse
+  sourceAccount?: { id: string; code: string; name: string; type: string } | null
+  journalEntry?: { id: string; entryNo: string; description: string } | null
+}
+
+export interface CreditDueResponse {
+  adAccountId: string
+  adAccountName: string
+  currency: string
+  paidFunded: number
+  paidConsumed: number
+  paidCredit: number
+  promoFunded: number
+  promoConsumed: number
+  promotionalCredit: number
+  totalFunded: number
+  totalConsumed: number
+  totalCredit: number
+  totalPaid: number
+  billed: number
+  due: number
+  netPosition: number
+}
+
 export interface SyncStatusResponse {
   id: string
   status: string
@@ -244,6 +287,33 @@ export const marketingApi = {
     archive: (id: string) => apiClient.post(`/marketing/funding/${id}/archive`),
     remove: (id: string) => apiClient.delete(`/marketing/funding/${id}`),
     consume: (data: { campaignId: string; amount: number; source?: string }) => apiClient.post('/marketing/funding/consume', data),
+  },
+  payments: {
+    list: (params?: { page?: number; perPage?: number; adAccountId?: string; status?: string }) =>
+      apiClient.get<Paginated<MarketingPaymentResponse>>('/marketing/payments', { params }),
+    get: (id: string) => apiClient.get<MarketingPaymentResponse>(`/marketing/payments/${id}`),
+    create: (data: {
+      adAccountId: string
+      providerPaymentId?: string
+      platformAmount: number
+      platformCurrency?: string
+      paymentDate: string
+      notes?: string
+      sourceAccountId?: string
+    }) => apiClient.post<MarketingPaymentResponse>('/marketing/payments', data),
+    reconcile: (id: string, data: {
+      actualCost: number
+      baseCurrency?: string
+      feeAmount?: number
+      taxAmount?: number
+      processingFee?: number
+    }) => apiClient.post<MarketingPaymentResponse>(`/marketing/payments/${id}/reconcile`, data),
+    post: (id: string) => apiClient.post<MarketingPaymentResponse>(`/marketing/payments/${id}/post`),
+    creditDue: (adAccountId?: string) =>
+      apiClient.get<CreditDueResponse[]>('/marketing/payments/credit-due', { params: adAccountId ? { adAccountId } : undefined }),
+  },
+  accounts: {
+    list: () => apiClient.get<Array<{ id: string; code: string; name: string; type: string; isGroup: boolean; isActive: boolean }>>('/accounts'),
   },
   attribution: {
     list: (params?: { page?: number; perPage?: number; campaignId?: string }) =>

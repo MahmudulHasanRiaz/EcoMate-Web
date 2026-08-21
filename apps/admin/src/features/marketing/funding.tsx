@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Wallet, Plus, Loader2 } from 'lucide-react'
+import { Wallet, Plus, Loader2, ChevronDown } from 'lucide-react'
 import { marketingApi, money, fmtDate } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -21,6 +21,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 const STATUS_BADGE: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
   draft: 'secondary',
@@ -40,16 +41,14 @@ export function MarketingFunding() {
   const [fundingAccountId, setFundingAccountId] = useState('')
   const [form, setForm] = useState({
     adAccountId: '',
-    fundingSource: 'BANK',
     fundingDate: new Date().toISOString().slice(0, 10),
-    currency: 'USD',
     currencyAmount: '',
-    baseCurrency: 'BDT',
     baseAmount: '',
-    effectiveRate: '',
+    sourceAccountId: '',
     reference: '',
     remarks: '',
   })
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const { data } = useQuery({
     queryKey: ['marketing-funding', page],
@@ -78,22 +77,25 @@ export function MarketingFunding() {
   }
 
   const createMut = useMutation({
-    mutationFn: () => marketingApi.funding.create({
-      adAccountId: form.adAccountId,
-      fundingSource: form.fundingSource,
-      fundingDate: form.fundingDate,
-      currency: form.currency,
-      currencyAmount: parseFloat(form.currencyAmount),
-      baseCurrency: form.baseCurrency,
-      baseAmount: form.baseAmount ? parseFloat(form.baseAmount) : undefined,
-      effectiveRate: form.effectiveRate ? parseFloat(form.effectiveRate) : undefined,
-      reference: form.reference || undefined,
-      remarks: form.remarks || undefined,
-    }),
+    mutationFn: () => {
+      const selectedAccount = (accounts?.data ?? []).find((a) => a.id === form.adAccountId)
+      return marketingApi.funding.create({
+        adAccountId: form.adAccountId,
+        fundingSource: 'BANK',
+        fundingDate: form.fundingDate,
+        currency: selectedAccount?.currency,
+        currencyAmount: parseFloat(form.currencyAmount),
+        baseCurrency: 'BDT',
+        baseAmount: form.baseAmount ? parseFloat(form.baseAmount) : undefined,
+        reference: form.reference || undefined,
+        remarks: form.remarks || undefined,
+      })
+    },
     onSuccess: () => {
       toast.success('Funding entry created (draft)')
       setDialogOpen(false)
-      setForm({ ...form, currencyAmount: '', baseAmount: '', effectiveRate: '', reference: '', remarks: '' })
+      setForm({ ...form, currencyAmount: '', baseAmount: '', sourceAccountId: '', reference: '', remarks: '' })
+      setShowAdvanced(false)
       invalidate()
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to create funding'),
@@ -152,7 +154,7 @@ export function MarketingFunding() {
         </div>
 
         <Card className="mt-4">
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -215,54 +217,63 @@ export function MarketingFunding() {
               <Select value={form.adAccountId} onValueChange={(v) => setForm({ ...form, adAccountId: v })}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Select ad account" /></SelectTrigger>
                 <SelectContent>
-                  {(accounts?.data ?? []).map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {(accounts?.data ?? []).map((a) => <SelectItem key={a.id} value={a.id}>{a.name} ({a.currency})</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Platform amount</Label>
+                <Input type="number" step="0.01" value={form.currencyAmount} onChange={(e) => setForm({ ...form, currencyAmount: e.target.value })} placeholder="100.00" />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <Input value={(accounts?.data ?? []).find((a) => a.id === form.adAccountId)?.currency ?? 'USD'} disabled />
+              </div>
+            </div>
             <div>
-              <Label>Funding source</Label>
-              <Select value={form.fundingSource} onValueChange={(v) => setForm({ ...form, fundingSource: v })}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <Label>Actual BDT cost</Label>
+              <Input type="number" step="0.01" value={form.baseAmount} onChange={(e) => setForm({ ...form, baseAmount: e.target.value })} placeholder="13200" />
+              {form.currencyAmount && form.baseAmount && parseFloat(form.currencyAmount) > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Effective rate: {(parseFloat(form.baseAmount) / parseFloat(form.currencyAmount)).toFixed(4)} BDT / {(accounts?.data ?? []).find((a) => a.id === form.adAccountId)?.currency ?? 'USD'}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>Paid from (accounting wallet)</Label>
+              <Select value={form.sourceAccountId} onValueChange={(v) => setForm({ ...form, sourceAccountId: v })}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select wallet used for payment" /></SelectTrigger>
                 <SelectContent>
-                  {['BANK', 'DEBIT_CARD', 'CREDIT_CARD', 'WALLET', 'CASH', 'VIRTUAL_CARD'].map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  {fundingAccounts.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div><Label>Funding date</Label><Input type="date" value={form.fundingDate} onChange={(e) => setForm({ ...form, fundingDate: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Currency</Label>
-                <Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
-              </div>
-              <div>
-                <Label>Amount (currency)</Label>
-                <Input type="number" step="0.01" value={form.currencyAmount} onChange={(e) => setForm({ ...form, currencyAmount: e.target.value })} placeholder="120.00" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Base amount (BDT) — optional</Label>
-                <Input type="number" step="0.01" value={form.baseAmount} onChange={(e) => setForm({ ...form, baseAmount: e.target.value })} placeholder="15000" />
-              </div>
-              <div>
-                <Label>Effective rate — optional</Label>
-                <Input type="number" step="0.0001" value={form.effectiveRate} onChange={(e) => setForm({ ...form, effectiveRate: e.target.value })} placeholder="125.00" />
-              </div>
-            </div>
-            <div>
-              <Label>Reference</Label>
-              <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="bank ref / card no" />
-            </div>
-            <div>
-              <Label>Remarks</Label>
-              <Input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
-            </div>
+            <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <ChevronDown className={`mr-1 h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                  Advanced options
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 pt-2">
+                <div>
+                  <Label>Reference</Label>
+                  <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Bank ref / card no" />
+                </div>
+                <div>
+                  <Label>Remarks</Label>
+                  <Input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button disabled={!form.adAccountId || !form.currencyAmount || createMut.isPending} onClick={() => createMut.mutate()}>
+            <Button disabled={!form.adAccountId || !form.currencyAmount || !form.baseAmount || createMut.isPending} onClick={() => createMut.mutate()}>
               {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create draft'}
             </Button>
           </DialogFooter>
@@ -274,7 +285,7 @@ export function MarketingFunding() {
           <DialogHeader><DialogTitle>Post funding to accounting</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Creates a journal entry: Dr Marketing Expenses / Cr funding account. Closed financial periods block posting.
+              Creates a journal entry: Dr Marketing Prepaid / Cr Funding Account. Closed financial periods block posting.
             </p>
             <div>
               <Label>Funding (credit) account</Label>

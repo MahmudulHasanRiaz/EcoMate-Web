@@ -4,7 +4,7 @@ import {
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
-  HardDrive, Target, Plug, Wallet, BarChart3,
+  HardDrive, Target, Plug, Wallet, BarChart3, CreditCard,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -117,6 +117,7 @@ export const sidebarData: SidebarData = {
             { title: 'Ad Accounts', url: '/op/marketing/ad-accounts', icon: Monitor },
             { title: 'Campaigns', url: '/op/marketing/campaigns', icon: Megaphone },
             { title: 'Funding', url: '/op/marketing/funding', icon: Wallet },
+            { title: 'Payments', url: '/op/marketing/payments', icon: CreditCard },
             { title: 'Attribution', url: '/op/marketing/attribution', icon: Target },
             { title: 'Reports', url: '/op/marketing/reports', icon: BarChart3 },
             { title: 'Help', url: '/op/marketing/help', icon: HelpCircle },
