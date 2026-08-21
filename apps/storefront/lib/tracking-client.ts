@@ -113,6 +113,7 @@ export async function captureMarketingSession(): Promise<void> {
     // Only fire when there is a real marketing signal — a bare session row is
     // useless and would churn the rate-limited capture endpoint.
     const hasSignal = !!(
+      attribution.clickId ||
       attribution.fbclid ||
       attribution.ttclid ||
       attribution.utmSource ||
@@ -128,8 +129,8 @@ export async function captureMarketingSession(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
           sessionToken: getOrCreateCtxId(),
+          clickId: attribution.clickId ?? undefined,
           fbclid: attribution.fbclid ?? undefined,
-          clickId: attribution.fbclid || attribution.ttclid || undefined,
           utmSource: attribution.utmSource ?? undefined,
         utmMedium: attribution.utmMedium ?? undefined,
         utmCampaign: attribution.utmCampaign ?? undefined,

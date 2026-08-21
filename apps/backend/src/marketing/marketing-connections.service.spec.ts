@@ -302,4 +302,71 @@ describe('MarketingConnectionsService', () => {
       expect(prisma.marketingCampaign.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('discoverAdAccounts', () => {
+    const connWithPlatform = {
+      id: 'conn-1',
+      accessTokenEnc: 'enc:EAAG-xyz',
+      platform: mockPlatform,
+    };
+
+    beforeEach(() => {
+      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(connWithPlatform);
+      mockAdapter.withTokenRefresh.mockImplementation((_conn: any, _decrypt: any, _refresh: any, fn: any) => fn('EAAG-xyz'));
+    });
+
+    it('creates ad accounts when provider returns valid currency', async () => {
+      mockAdapter.listAdAccounts.mockResolvedValue([
+        { id: 'act_111', name: 'Main Account', currency: 'BDT', timezone_name: 'Asia/Dhaka', account_status: 1 },
+      ]);
+      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.create as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-1', ...data }));
+
+      const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
+
+      expect(res.discovered).toBe(1);
+      expect(res.adAccounts[0].currency).toBe('BDT');
+    });
+
+    it('skips ad accounts when provider returns no currency (financial invariant)', async () => {
+      mockAdapter.listAdAccounts.mockResolvedValue([
+        { id: 'act_no-currency', name: 'Test Account', currency: undefined, timezone_name: 'UTC', account_status: 1 },
+      ]);
+      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
+
+      expect(res.discovered).toBe(0);
+      expect(prisma.adAccount.create).not.toHaveBeenCalled();
+    });
+
+    it('skips only the uncurrency account and creates the valid one', async () => {
+      mockAdapter.listAdAccounts.mockResolvedValue([
+        { id: 'act_bad', name: 'Bad', currency: undefined, timezone_name: 'UTC', account_status: 1 },
+        { id: 'act_good', name: 'Good', currency: 'USD', timezone_name: 'America/New_York', account_status: 1 },
+      ]);
+      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.create as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-1', ...data }));
+
+      const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
+
+      expect(res.discovered).toBe(1);
+      expect(res.adAccounts[0].providerAccountId).toBe('act_good');
+      expect(prisma.adAccount.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('updates existing accounts even when currency is present', async () => {
+      mockAdapter.listAdAccounts.mockResolvedValue([
+        { id: 'act_111', name: 'Updated', currency: 'USD', timezone_name: 'UTC', account_status: 1 },
+      ]);
+      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue({ id: 'acc-existing', providerAccountId: 'act_111' });
+      (prisma.adAccount.update as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-existing', ...data }));
+
+      const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
+
+      expect(res.discovered).toBe(1);
+      expect(prisma.adAccount.create).not.toHaveBeenCalled();
+      expect(prisma.adAccount.update).toHaveBeenCalled();
+    });
+  });
 });

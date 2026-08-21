@@ -104,6 +104,8 @@ export interface AttributionResponse {
 export interface SessionResponse {
   id: string
   sessionToken: string
+  clickId?: string | null
+  /** @deprecated Use clickId */
   fbclid?: string | null
   utmSource?: string | null
   utmCampaign?: string | null

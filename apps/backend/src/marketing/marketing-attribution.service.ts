@@ -67,7 +67,7 @@ export class MarketingAttributionService {
    * Deterministic single-touch attribution resolution for a freshly created
    * order. Resolution order (first match wins, each hop is explicit):
    *  1. session-matched campaign (tracking journey link)
-   *  2. fbclid → most recent session carrying the click id
+   *  2. click_id (generic) — most recent session carrying a click identifier
    *  3. UTM campaign value matching a synced campaign id/name
    * Records an OrderAttribution (orderId unique — exactly one record per
    * order; later resolutions never overwrite the first outcome).

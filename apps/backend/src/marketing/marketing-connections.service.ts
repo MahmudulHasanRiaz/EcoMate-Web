@@ -262,13 +262,23 @@ export class MarketingConnectionsService {
         }));
         continue;
       }
+      // Ad Account currency must be present — without it, financial records
+      // (allocations, insights, consumptions) would be attributed to the wrong
+      // currency.  Skip accounts missing currency rather than silently
+      // manufacturing a potentially incorrect USD record.
+      if (!acc.currency) {
+        this.logger.warn(
+          `Skipping ad account ${acc.id} (${acc.name}): provider returned no currency`,
+        );
+        continue;
+      }
       results.push(
         await this.prisma.adAccount.create({
           data: {
             connectionId: connection.id,
             providerAccountId: acc.id,
             name: acc.name,
-            currency: acc.currency ?? 'USD',
+            currency: acc.currency,
             timezone: acc.timezone_name,
             status: acc.account_status === 1 ? 'ACTIVE' : String(acc.account_status),
           },

@@ -25,7 +25,8 @@ type AllocationMode = (typeof ALLOCATION_MODES)[number]
 
 const METHOD_BADGE: Record<string, string> = {
   session: 'bg-blue-50 text-blue-700',
-  fbclid: 'bg-emerald-50 text-emerald-700',
+  click_id: 'bg-emerald-50 text-emerald-700',
+  fbclid: 'bg-emerald-50 text-emerald-700', // legacy records
   utm: 'bg-amber-50 text-amber-700',
   pixel: 'bg-violet-50 text-violet-700',
   conversion_api: 'bg-violet-50 text-violet-700',
@@ -95,7 +96,7 @@ export function MarketingAttribution() {
       <Main>
         <div className="mb-3 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
           <GitBranch className="mr-1 inline h-3 w-3" />
-          Deterministic single-touch attribution. Orders are matched by tracking session (journey cookie), fbclid, or exact
+                Deterministic single-touch attribution. Orders are matched by tracking session (journey cookie), click ID (provider-agnostic), or exact
           UTM campaign match — first match wins, one record per order, later resolutions never overwrite the first outcome.
           Unmatched orders are simply not attributed (listed under Attribution failures in Reports).
         </div>
@@ -191,7 +192,7 @@ export function MarketingAttribution() {
                       <TableHead>Session token</TableHead>
                       <TableHead>Campaign</TableHead>
                       <TableHead>Source</TableHead>
-                      <TableHead>fbclid</TableHead>
+                      <TableHead>Click ID</TableHead>
                       <TableHead>Started</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -206,7 +207,7 @@ export function MarketingAttribution() {
                         <TableCell className="font-mono text-xs">{s.sessionToken}</TableCell>
                         <TableCell className="text-sm">{s.campaign?.name ?? '—'}</TableCell>
                         <TableCell className="text-sm">{s.utmSource ?? '—'}{s.utmCampaign ? ` / ${s.utmCampaign}` : ''}</TableCell>
-                        <TableCell className="font-mono text-xs">{s.fbclid ?? '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">{s.clickId ?? s.fbclid ?? '—'}</TableCell>
                         <TableCell className="text-sm">{fmtDate(s.createdAt)}</TableCell>
                       </TableRow>
                     ))}
