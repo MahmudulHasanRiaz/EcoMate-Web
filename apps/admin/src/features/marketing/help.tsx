@@ -112,8 +112,9 @@ export function MarketingHelp() {
               <CardTitle className="text-base">Marketing Attribution কী?</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
-              <p>আপনার Facebook/Instagram বা অন্য যেকোনো ad platform এ যখন campaign চালান, তখন EcoMate অটোমেটিকলি কোন order কোন campaign থেকে এসেছে তা track করে।</p>
+              <p>আপনার Meta, TikTok বা অন্য যেকোনো ad platform এ যখন campaign চালান, তখন EcoMate অটোমেটিকলি কোন order কোন campaign থেকে এসেছে তা track করে।</p>
               <p><strong className="text-foreground">ফলাফল:</strong> প্রতিটি campaign-এ কত টাকা খরচ হয়েছে, কত টাকা revenue এসেছে, এবং কত profit হয়েছে — সব এক জায়গায় দেখবেন।</p>
+              <p className="text-xs">Dashboard-এ <strong>verdict badge</strong> (Profitable / Near break-even / Loss-making) এবং <strong>break-even CPA</strong> সরাসরি দেখতে পাবেন।</p>
             </CardContent>
           </Card>
 
@@ -125,9 +126,9 @@ export function MarketingHelp() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Step n={1} title="Connect Meta (Facebook/Instagram)">
+              <Step n={1} title="Connect an Ad Platform (Meta / TikTok / Google)">
                 <p>সাইডবার থেকে <strong>Connections</strong> এ যান। "Add connection" ক্লিক করুন।</p>
-                <p>আপনার Facebook/Meta account-এর access token দিন। Token এর মাধ্যমে EcoMate আপনার ad data পড়বে।</p>
+                <p>আপনার ad platform-এর access token দিন। Token এর মাধ্যমে EcoMate আপনার ad data পড়বে।</p>
                 <TokenGuide open={tokenOpen} onToggle={() => setTokenOpen(!tokenOpen)} />
                 <p className="text-xs"><strong>গুরুত্বপূর্ণ:</strong> Token শুধু <code>ads_read</code> permission দরকার। EcoMate কোনো post করবে না।</p>
               </Step>
@@ -156,19 +157,19 @@ export function MarketingHelp() {
             <CardContent className="text-sm text-muted-foreground space-y-2">
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
-                <p><strong className="text-foreground">Step 1:</strong> Customer আপনার ad দেখে website-এ আসে। Meta-র UTM/tracking data EcoMate-তে store হয়।</p>
+                <p><strong className="text-foreground">Step 1:</strong> Customer আপনার ad দেখে website-এ আসে। Click ID (fbclid/ttclid), UTM/tracking data EcoMate-তে store হয়।</p>
               </div>
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
-                <p><strong className="text-foreground">Step 2:</strong> Customer order দেখান। Order confirm হলে system automatically campaign match করে।</p>
+                <p><strong className="text-foreground">Step 2:</strong> Customer order দেখান। Order confirm হলে system automatically campaign match করে (session → click ID → UTM — প্রথম match জিতে)।</p>
               </div>
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
-                <p><strong className="text-foreground">Step 3:</strong> Campaign spending + attributed revenue মিলিয়ে profit calculate হয়।</p>
+                <p><strong className="text-foreground">Step 3:</strong> Campaign spending + attributed revenue মিলিয়ে profit, gross margin এবং break-even CPA calculate হয়।</p>
               </div>
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
-                <p><strong className="text-foreground">Step 4:</strong> Reports পেজে ROI, CAC, CPP সহ সব analytics দেখুন।</p>
+                <p><strong className="text-foreground">Step 4:</strong> Dashboard-এ verdict badge (Profitable / Near break-even / Loss-making), ROI, CAC সহ সব analytics দেখুন।</p>
               </div>
             </CardContent>
           </Card>
@@ -197,9 +198,19 @@ export function MarketingHelp() {
                 example="marketing_app_id + marketing_app_secret (Settings থেকে)"
               />
               <ConfigRow
-                label="Allocation mode"
-                desc="Day-level campaign spend কোন অর্ডারে কত ভাগ যাবে।"
-                example="product_value: order value অনুযায়ী, equal: সমান ভাগ, quantity: quantity অনুযায়ী"
+                label="FIFO consumption"
+                desc="Prepaid credit কখন খরচ হবে — Promotional credit আগে খরচ হয়, তারপর Paid credit।"
+                example="Promotional credit consumed first (platform standard)"
+              />
+              <ConfigRow
+                label="Prepaid account"
+                desc="Ad Account-এর জন্য auto-created asset account — funding এবং consumption এর মধ্যে bridge হিসেবে কাজ করে।"
+                example="Dr Marketing Prepaid / Cr Funding Account (funding confirm করলে)"
+              />
+              <ConfigRow
+                label="Campaign deletion"
+                desc="Provider থেকে campaign delete হলেও EcoMate-এ local data ও historical records সংরক্ষিত থাকবে।"
+                example="Soft delete only — local records preserved"
               />
             </CardContent>
           </Card>
@@ -215,7 +226,7 @@ export function MarketingHelp() {
               <div className="grid gap-2 sm:grid-cols-2">
                 <Link to="/op/marketing" className="rounded-md border px-3 py-2 hover:bg-muted transition-colors">
                   <p className="font-medium">Dashboard</p>
-                  <p className="text-xs text-muted-foreground">সব কিছুর সারসংক্ষেপ — spend, revenue, profit, campaigns</p>
+                  <p className="text-xs text-muted-foreground">Verdict, break-even CPA, gross margin, financial position — সব কিছুর সারসংক্ষেপ</p>
                 </Link>
                 <Link to="/op/marketing/connections" className="rounded-md border px-3 py-2 hover:bg-muted transition-colors">
                   <p className="font-medium">Connections</p>
@@ -262,16 +273,16 @@ export function MarketingHelp() {
                 <p>Connections পেজে Meta token আছে কিনা দেখুন। Token expire হলে নতুন token দিন। Ad Accounts পেজে sync status check করুন।</p>
               </div>
               <div>
-                <p className="font-medium text-foreground">Attribution খালি</p>
-                <p>Orders confirm হয়েছে কিনা দেখুন। শুধু Pending orders match হবে না। "Recalculate" চাপুন Reports পেজে।</p>
+                <p className="font-medium text-foreground">Funding P&L-তে দেখাচ্ছে না</p>
+                <p>Funding confirm করুন — তাহলে journal entry auto-create হবে (Dr Marketing Prepaid / Cr Funding Account)। Promotional credit আলাদভাবে track হয়, P&L খরচে গণনা হয় না।</p>
               </div>
               <div>
                 <p className="font-medium text-foreground">Token expire হয়ে গেছে</p>
                 <p>Meta token ৬০ দিনের বেশি স্থায়ী হয় না। Settings এ <code>marketing_app_id</code> + <code>marketing_app_secret</code> দিলে auto-refresh হবে। নাহলে Connections পেজে নতুন token দিন।</p>
               </div>
               <div>
-                <p className="font-medium text-foreground">Funding P&L-তে দেখাচ্ছে না</p>
-                <p>Funding confirm করুন — তাহলে journal entry auto-create হবে (Dr marketing-expense / Cr funding account)।</p>
+                <p className="font-medium text-foreground">Attribution খালি / অসম্পূর্ণ</p>
+                <p>Order confirm হয়েছে কিনা দেখুন। শুধু Pending orders match হবে না। Click ID / UTM / session — প্রথম match জিতে, পরবর্তী overwrite হয় না। "Recalculate" চাপুন।</p>
               </div>
             </CardContent>
           </Card>
