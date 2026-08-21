@@ -1,11 +1,22 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccountingService } from '../accounting/accounting.service';
+import { AccountType } from '@prisma/client';
+import {
+  MARKETING_EXPENSE_ACCOUNT_CODE,
+  MARKETING_EXPENSE_ACCOUNT_NAME,
+  MARKETING_PREPAID_ACCOUNT_CODE,
+  MARKETING_PREPAID_ACCOUNT_NAME,
+} from './marketing.constants';
 
 @Injectable()
 export class MarketingConsumptionService {
   private readonly logger = new Logger(MarketingConsumptionService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private accounting: AccountingService,
+  ) {}
 
   /**
    * FIFO consumption: spend is drawn from the oldest confirmed funding rows
@@ -33,7 +44,12 @@ export class MarketingConsumptionService {
         status: { in: ['confirmed', 'partially_consumed'] },
         remainingAmount: { gt: 0 },
       },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: [
+        // Promotional credit consumed FIRST (platform standard: use-it-or-lose-it)
+        { fundingType: 'asc' },
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
     });
 
     let remaining = amount;
@@ -52,13 +68,14 @@ export class MarketingConsumptionService {
           if (!current || Number(current.remainingAmount) < take - 1e-9) {
             throw new Error('stale_ledger');
           }
+          const calculatedCost = Math.round(take * Number(row.effectiveRate) * 100) / 100;
           await tx.marketingConsumption.create({
             data: {
               ledgerId: row.id,
               campaignId,
               consumedAmount: take,
               effectiveRate: Number(row.effectiveRate),
-              calculatedCost: Math.round(take * Number(row.effectiveRate) * 100) / 100,
+              calculatedCost,
               spendDate: spendDate ?? null,
               source,
             },
@@ -71,6 +88,16 @@ export class MarketingConsumptionService {
               status: Number(current.remainingAmount) - take < 1e-9 ? 'fully_consumed' : 'partially_consumed',
             },
           });
+
+          // Accrual journal: Dr Marketing Expense / Cr Marketing Prepaid
+          // ONLY for paid credit — promotional credit has no cash outflow
+          if (calculatedCost > 0 && row.fundingType !== 'promotional') {
+            await this.createConsumptionJournal(
+              calculatedCost,
+              spendDate ?? new Date(),
+              campaignId,
+            );
+          }
         });
       } catch (err) {
         if (err instanceof Error && err.message === 'stale_ledger') {
@@ -120,6 +147,73 @@ export class MarketingConsumptionService {
       where: adAccountId
         ? { ledger: { adAccountId } }
         : undefined,
+    });
+  }
+
+  /**
+   * Accrual journal entry: Dr Marketing Expense / Cr Marketing Prepaid.
+   * Created at spend/consumption time, NOT at deposit time.
+   */
+  private async createConsumptionJournal(
+    amount: number,
+    spendDate: Date,
+    campaignId: string,
+  ) {
+    const period = await this.prisma.financialPeriod.findFirst({
+      where: {
+        startDate: { lte: spendDate },
+        endDate: { gte: spendDate },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!period || period.isClosed) {
+      this.logger.warn(
+        `No open period for consumption journal on ${spendDate.toISOString().slice(0, 10)} — skipping`,
+      );
+      return;
+    }
+
+    const expenseAccount = await this.ensureAccount(
+      MARKETING_EXPENSE_ACCOUNT_CODE,
+      MARKETING_EXPENSE_ACCOUNT_NAME,
+      'expense',
+    );
+    const prepaidAccount = await this.ensureAccount(
+      MARKETING_PREPAID_ACCOUNT_CODE,
+      MARKETING_PREPAID_ACCOUNT_NAME,
+      'asset',
+    );
+
+    await this.accounting.createEntry(
+      {
+        periodId: period.id,
+        entryDate: spendDate.toISOString(),
+        description: `Marketing consumption — campaign ${campaignId}`,
+        referenceNo: `MCON-${campaignId.slice(0, 8)}-${spendDate.toISOString().slice(0, 10)}`,
+        lines: [
+          {
+            accountId: expenseAccount.id,
+            debit: amount,
+            credit: 0,
+            description: 'Marketing expense recognized at spend time',
+          },
+          {
+            accountId: prepaidAccount.id,
+            debit: 0,
+            credit: amount,
+            description: 'Marketing prepaid credit consumed',
+          },
+        ],
+      },
+      undefined,
+    );
+  }
+
+  private async ensureAccount(code: string, name: string, type: AccountType) {
+    const existing = await this.prisma.account.findFirst({ where: { code } });
+    if (existing) return existing;
+    return this.prisma.account.create({
+      data: { code, name, type, isGroup: false },
     });
   }
 }

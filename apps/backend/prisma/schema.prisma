@@ -451,7 +451,6 @@ model Product {
   physicalLedgers          PhysicalInventoryLedger[]
   physicalReservations     PhysicalReservation[]
   orderItemComboComponents OrderItemComboComponent[]
-  marketingDailyProductCosts MarketingDailyProductCost[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -2014,6 +2013,7 @@ model Account {
   journalLines    JournalEntryLine[]
   expenseCategory ExpenseCategory[]
   expensePayments Expense[]
+  marketingPayments MarketingPayment[]
 
   @@index([type])
   @@index([parentId])
@@ -2069,6 +2069,7 @@ model JournalEntry {
   lines   JournalEntryLine[]
   expense Expense?
   marketingFunding MarketingFundingEntry?
+  marketingPayment MarketingPayment?
 
   @@index([periodId])
   @@index([entryDate])
@@ -2693,8 +2694,21 @@ enum MarketingAllocationMethod {
   quantity
 }
 
+enum MarketingPaymentStatus {
+  pending
+  reconciled
+  needs_review
+  failed
+}
+
+enum MarketingFundingType {
+  paid
+  promotional
+}
+
 enum OrderAttributionMethod {
   fbclid
+  click_id
   conversion_api
   pixel
   session
@@ -2751,25 +2765,27 @@ model MarketingBusiness {
 }
 
 model AdAccount {
-  id                 String   @id @default(uuid())
-  connectionId       String
-  businessId         String?
-  providerAccountId  String   @unique // e.g. act_123456
-  name               String
-  currency           String   @default("USD")
-  timezone           String?
-  status             String   @default("ACTIVE")
-  isActive           Boolean  @default(true)
-  lastSyncAt         DateTime?
-  lastError          String?  @db.Text
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                       String   @id @default(uuid())
+  connectionId             String
+  businessId               String?
+  providerAccountId        String   @unique // e.g. act_123456
+  name                     String
+  currency                 String   @default("USD")
+  timezone                 String?
+  status                   String   @default("ACTIVE")
+  isActive                 Boolean  @default(true)
+  defaultPaymentAccountId  String?  // accounting wallet for auto-preselection
+  lastSyncAt               DateTime?
+  lastError                String?  @db.Text
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   connection      MarketingConnection        @relation(fields: [connectionId], references: [id])
   business        MarketingBusiness?         @relation(fields: [businessId], references: [id])
   campaigns       MarketingCampaign[]
   fundingEntries  MarketingFundingEntry[]
   fundingLedger   MarketingFundingLedger[]
+  payments        MarketingPayment[]
   syncStatus      MarketingSyncStatus?
   dailySummaries  MarketingDailySummary[]
 
@@ -2939,8 +2955,10 @@ model MarketingAdInsight {
 
 model MarketingFundingEntry {
   id              String                  @id @default(uuid())
-  platform        String                  @default("facebook")
+  platform        String                  @default("") // derived from connection.platform.slug
   adAccountId     String
+  paymentId       String?
+  fundingType     MarketingFundingType    @default(paid)
   fundingSource   String // BANK | DEBIT_CARD | CREDIT_CARD | WALLET | CASH | VIRTUAL_CARD
   fundingDate     DateTime
   currency        String                  @default("USD")
@@ -2948,6 +2966,8 @@ model MarketingFundingEntry {
   baseCurrency    String                  @default("BDT")
   baseAmount      Decimal                 @db.Decimal(14, 2)
   effectiveRate   Decimal                 @db.Decimal(14, 4)
+  feeAmount       Decimal?                @db.Decimal(14, 4) // optional platform/processing fee in currency
+  taxAmount       Decimal?                @db.Decimal(14, 4) // optional tax in currency
   reference       String?
   remarks         String?                 @db.Text
   journalEntryId  String?                 @unique
@@ -2958,18 +2978,53 @@ model MarketingFundingEntry {
   updatedAt       DateTime                @updatedAt
 
   adAccount    AdAccount                 @relation(fields: [adAccountId], references: [id])
+  payment      MarketingPayment?         @relation(fields: [paymentId], references: [id])
   journalEntry JournalEntry?             @relation(fields: [journalEntryId], references: [id])
   ledger       MarketingFundingLedger[]
 
   @@index([adAccountId])
   @@index([fundingDate])
   @@index([status])
+  @@index([paymentId])
+}
+
+model MarketingPayment {
+  id                String                @id @default(uuid())
+  adAccountId       String
+  providerPaymentId String?               @unique // platform's payment/charge ID
+  platformAmount    Decimal               @db.Decimal(14, 4) // what platform charged
+  platformCurrency  String                @default("USD")
+  actualCost        Decimal?              @db.Decimal(14, 2) // actual BDT debit (user-entered)
+  baseCurrency      String                @default("BDT")
+  effectiveRate     Decimal?              @db.Decimal(14, 4) // derived: actualCost / platformAmount
+  feeAmount         Decimal?              @db.Decimal(14, 4) // optional decomposition
+  taxAmount         Decimal?              @db.Decimal(14, 4) // optional decomposition
+  processingFee     Decimal?              @db.Decimal(14, 4) // optional decomposition
+  sourceAccountId   String?               // accounting wallet/account used for payment
+  paymentDate       DateTime
+  status            MarketingPaymentStatus @default(pending)
+  notes             String?               @db.Text
+  journalEntryId    String?               @unique
+  reconciledAt      DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  adAccount     AdAccount              @relation(fields: [adAccountId], references: [id])
+  sourceAccount Account?               @relation(fields: [sourceAccountId], references: [id])
+  journalEntry  JournalEntry?          @relation(fields: [journalEntryId], references: [id])
+  fundingEntries MarketingFundingEntry[]
+
+  @@index([adAccountId])
+  @@index([paymentDate])
+  @@index([status])
+  @@index([providerPaymentId])
 }
 
 model MarketingFundingLedger {
   id              String                 @id @default(uuid())
   fundingEntryId  String
   adAccountId     String
+  fundingType     MarketingFundingType   @default(paid)
   receivedAmount  Decimal                @db.Decimal(14, 4)
   remainingAmount Decimal                @db.Decimal(14, 4)
   effectiveRate   Decimal                @db.Decimal(14, 4)
@@ -3016,6 +3071,7 @@ model MarketingSession {
   visitorId    String
   sessionToken String   @unique // stable journey id (storefront ecomate_ctx_id)
   fbclid       String?
+  clickId      String?  // generic click identifier (provider-agnostic)
   utmSource    String?
   utmMedium    String?
   utmCampaign  String?
@@ -3039,6 +3095,7 @@ model MarketingSession {
 
   @@index([visitorId])
   @@index([fbclid])
+  @@index([clickId])
   @@index([utmCampaign])
   @@index([createdAt])
 }
@@ -3078,7 +3135,7 @@ model MarketingCostAllocation {
   attributionId     String?
   campaignId        String
   allocatedSpend    Decimal                 @db.Decimal(14, 4)
-  allocatedCurrency String                  @default("USD")
+  allocatedCurrency String                  @default("") // derived from AdAccount.currency
   allocatedRate     Decimal                 @db.Decimal(14, 4)
   allocatedCost     Decimal                 @db.Decimal(14, 2)
   allocationMethod  MarketingAllocationMethod
@@ -3114,7 +3171,7 @@ model ProductMarketingCost {
 model MarketingSyncStatus {
   id              String   @id @default(uuid())
   adAccountId     String   @unique
-  provider        String   @default("facebook")
+  provider        String   @default("") // derived from connection.platform.slug
   status          String   @default("idle") // idle | running | error | partial
   stage           String? // businesses | ad_accounts | campaigns | adsets | ads | insights
   progressPct     Int      @default(0)
@@ -3145,7 +3202,7 @@ model MarketingAuditLog {
 
 model MarketingRawPayload {
   id          String   @id @default(uuid())
-  provider    String   @default("facebook")
+  provider    String   @default("") // derived from connection.platform.slug
   endpoint    String
   objectType  String
   objectId    String?
@@ -3189,8 +3246,6 @@ model MarketingDailyProductCost {
   quantity  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, date])
   @@index([date])

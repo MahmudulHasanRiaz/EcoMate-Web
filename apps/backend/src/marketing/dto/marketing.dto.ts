@@ -112,6 +112,11 @@ export class CreateFundingDto {
   @IsNotEmpty()
   adAccountId: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  fundingType?: string;
+
   @IsString()
   @IsNotEmpty()
   fundingSource: string;
@@ -190,6 +195,10 @@ export class CaptureSessionDto {
 
   @IsOptional()
   @IsString()
+  clickId?: string;
+
+  @IsOptional()
+  @IsString()
   utmSource?: string;
 
   @IsOptional()
@@ -240,4 +249,62 @@ export class UpdateCampaignDto {
 
   @IsOptional()
   isArchived?: boolean;
+}
+
+export class CreatePaymentDto {
+  @IsString()
+  @IsNotEmpty()
+  adAccountId: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  providerPaymentId?: string;
+
+  @IsNumber()
+  @Min(0)
+  platformAmount: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  platformCurrency?: string;
+
+  @IsDateString()
+  paymentDate: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceAccountId?: string;
+}
+
+export class ReconcilePaymentDto {
+  @IsNumber()
+  @Min(0)
+  actualCost: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  baseCurrency?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  feeAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  processingFee?: number;
 }

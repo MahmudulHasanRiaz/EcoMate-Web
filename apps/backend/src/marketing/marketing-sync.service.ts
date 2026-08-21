@@ -1,10 +1,19 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketingConnectionsService } from './marketing-connections.service';
-import { MetaGraphService, MetaApiError } from './meta-graph.service';
 import { MarketingConsumptionService } from './marketing-consumption.service';
 import { MarketingAllocationService } from './marketing-allocation.service';
 import { DEFAULT_INSIGHT_LOOKBACK_DAYS } from './marketing.constants';
+import {
+  type AdProviderAdapter,
+  AD_PROVIDER_ADAPTER,
+  ProviderError,
+  ProviderErrorCategory,
+  ProviderCampaign,
+  ProviderAdSet,
+  ProviderAd,
+} from './ad-provider.adapter';
+import type { InsightRow } from './meta-graph.service';
 
 @Injectable()
 export class MarketingSyncService {
@@ -14,7 +23,7 @@ export class MarketingSyncService {
   constructor(
     private prisma: PrismaService,
     private connections: MarketingConnectionsService,
-    private metaGraph: MetaGraphService,
+    @Inject(AD_PROVIDER_ADAPTER) private provider: AdProviderAdapter,
     private consumption: MarketingConsumptionService,
     private allocation: MarketingAllocationService,
   ) {}
@@ -59,14 +68,14 @@ export class MarketingSyncService {
       throw new Error('Connection is not connected');
     }
 
-    const { token } = this.connections.getDecryptedToken(adAccount.connection);
+    const providerSlug = adAccount.connection.platform.slug;
     const mark = (stage: string, progressPct: number) =>
       this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: { stage, progressPct, status: 'running', lastError: null, updatedAt: new Date() },
         create: {
           adAccountId,
-          provider: adAccount.connection.platform.slug,
+          provider: providerSlug,
           stage,
           status: 'running',
           progressPct,
@@ -74,11 +83,13 @@ export class MarketingSyncService {
       });
 
     try {
+      // ── Campaigns ──────────────────────────────────────────────────
       await mark('campaigns', 10);
-      const campaigns = await this.runWithTokenRefresh(
+      const campaigns = await this.provider.withTokenRefresh(
         adAccount.connection,
-        token,
-        (t) => this.metaGraph.listCampaigns(adAccount.providerAccountId, t),
+        (c) => this.connections.getDecryptedToken(c),
+        (id) => this.connections.refreshLongLivedToken(id),
+        (t) => this.provider.listCampaigns(t, adAccount.providerAccountId),
       );
 
       const campaignMap = new Map<
@@ -90,7 +101,7 @@ export class MarketingSyncService {
 
       for (const c of campaigns) {
         const existing = await this.prisma.marketingCampaign.findUnique({
-          where: { providerCampaignId: c.id },
+          where: { providerCampaignId: c.providerCampaignId },
         });
         if (existing) {
           updated++;
@@ -98,26 +109,27 @@ export class MarketingSyncService {
             where: { id: existing.id },
             data: this.campaignData(c),
           });
-          campaignMap.set(c.id, { id: existing.id, adAccountId: existing.adAccountId });
+          campaignMap.set(c.providerCampaignId, { id: existing.id, adAccountId: existing.adAccountId });
         } else {
           imported++;
           const created = await this.prisma.marketingCampaign.create({
             data: {
               adAccountId,
-              providerCampaignId: c.id,
+              providerCampaignId: c.providerCampaignId,
               ...this.campaignData(c),
             },
           });
-          campaignMap.set(c.id, { id: created.id, adAccountId });
+          campaignMap.set(c.providerCampaignId, { id: created.id, adAccountId });
         }
       }
 
+      // Mark campaigns deleted from provider
       const ownedCampaignIds =
         await this.prisma.marketingCampaign.findMany({
           where: { adAccountId, deletedFromProvider: false },
           select: { id: true, providerCampaignId: true },
         });
-      const seen = new Set(campaigns.map((c) => c.id));
+      const seen = new Set(campaigns.map((c) => c.providerCampaignId));
       for (const oc of ownedCampaignIds) {
         if (!seen.has(oc.providerCampaignId) && !oc.providerCampaignId.includes('manual_')) {
           await this.prisma.marketingCampaign.update({
@@ -127,22 +139,24 @@ export class MarketingSyncService {
         }
       }
 
+      // ── Ad Sets ────────────────────────────────────────────────────
       await this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: { stage: 'adsets', progressPct: 30 },
-        create: { adAccountId, provider: adAccount.connection.platform.slug, stage: 'adsets', status: 'running', progressPct: 30 },
+        create: { adAccountId, provider: providerSlug, stage: 'adsets', status: 'running', progressPct: 30 },
       });
-      const adSets = await this.runWithTokenRefresh(
+      const adSets = await this.provider.withTokenRefresh(
         adAccount.connection,
-        token,
-        (t) => this.metaGraph.listAdSets(adAccount.providerAccountId, t),
+        (c) => this.connections.getDecryptedToken(c),
+        (id) => this.connections.refreshLongLivedToken(id),
+        (t) => this.provider.listAdSets(t, adAccount.providerAccountId),
       );
       const adSetMap = new Map<string, string>();
       for (const s of adSets) {
-        const target = campaignMap.get(s.campaign_id);
+        const target = campaignMap.get(s.providerCampaignId);
         if (!target) continue;
         const existing = await this.prisma.marketingAdSet.findUnique({
-          where: { providerAdSetId: s.id },
+          where: { providerAdSetId: s.providerAdSetId },
         });
         if (existing) {
           updated++;
@@ -150,35 +164,37 @@ export class MarketingSyncService {
             where: { id: existing.id },
             data: this.adSetData(s, target.id),
           });
-          adSetMap.set(s.id, existing.id);
+          adSetMap.set(s.providerAdSetId, existing.id);
         } else {
           imported++;
           const created = await this.prisma.marketingAdSet.create({
             data: {
               campaignId: target.id,
-              providerAdSetId: s.id,
+              providerAdSetId: s.providerAdSetId,
               ...this.adSetData(s, target.id),
             },
           });
-          adSetMap.set(s.id, created.id);
+          adSetMap.set(s.providerAdSetId, created.id);
         }
       }
 
+      // ── Ads ────────────────────────────────────────────────────────
       await this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: { stage: 'ads', progressPct: 45 },
-        create: { adAccountId, provider: adAccount.connection.platform.slug, stage: 'ads', status: 'running', progressPct: 45 },
+        create: { adAccountId, provider: providerSlug, stage: 'ads', status: 'running', progressPct: 45 },
       });
-      const ads = await this.runWithTokenRefresh(
+      const ads = await this.provider.withTokenRefresh(
         adAccount.connection,
-        token,
-        (t) => this.metaGraph.listAds(adAccount.providerAccountId, t),
+        (c) => this.connections.getDecryptedToken(c),
+        (id) => this.connections.refreshLongLivedToken(id),
+        (t) => this.provider.listAds(t, adAccount.providerAccountId),
       );
       for (const ad of ads) {
-        const targetSetId = adSetMap.get(ad.adset_id);
+        const targetSetId = adSetMap.get(ad.providerAdSetId);
         if (!targetSetId) continue;
         const existing = await this.prisma.marketingAd.findUnique({
-          where: { providerAdId: ad.id },
+          where: { providerAdId: ad.providerAdId },
         });
         if (existing) {
           updated++;
@@ -191,17 +207,18 @@ export class MarketingSyncService {
           await this.prisma.marketingAd.create({
             data: {
               adSetId: targetSetId,
-              providerAdId: ad.id,
+              providerAdId: ad.providerAdId,
               ...this.adData(ad, targetSetId),
             },
           });
         }
       }
 
+      // ── Insights ───────────────────────────────────────────────────
       await this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: { stage: 'insights', progressPct: 60 },
-        create: { adAccountId, provider: adAccount.connection.platform.slug, stage: 'insights', status: 'running', progressPct: 60 },
+        create: { adAccountId, provider: providerSlug, stage: 'insights', status: 'running', progressPct: 60 },
       });
 
       const until = new Date();
@@ -219,22 +236,26 @@ export class MarketingSyncService {
       const sinceStr = since.toISOString().slice(0, 10);
       const untilStr = until.toISOString().slice(0, 10);
 
-      let insightRows: Awaited<ReturnType<MetaGraphService['fetchInsights']>> = [];
+      let insightRows: InsightRow[] = [];
       try {
-        insightRows = await this.runWithTokenRefresh(
+        insightRows = await this.provider.withTokenRefresh(
           adAccount.connection,
-          token,
-          (t) =>
-            this.metaGraph.fetchInsights(
-              adAccount.providerAccountId,
-              t,
-              sinceStr,
-              untilStr,
-            ),
+          (c) => this.connections.getDecryptedToken(c),
+          (id) => this.connections.refreshLongLivedToken(id),
+          (t) => this.provider.fetchInsights(t, adAccount.providerAccountId, { since: sinceStr, until: untilStr }),
         );
       } catch (err) {
-        this.logger.warn(`Insights fetch failed for ${adAccountId}: ${err instanceof Error ? err.message : err}`);
-        if (!(err instanceof MetaApiError)) throw err;
+        const translated = err instanceof ProviderError ? err : undefined;
+        const category = translated?.category ?? ProviderErrorCategory.UNKNOWN;
+        // Rate limits and temporary failures are non-fatal for insights
+        if (category === ProviderErrorCategory.RATE_LIMITED || category === ProviderErrorCategory.TEMPORARY_FAILURE) {
+          this.logger.warn(`Insights fetch non-fatal for ${adAccountId}: ${translated?.message ?? err}`);
+        } else if (category === ProviderErrorCategory.AUTHENTICATION_FAILED) {
+          // Token expired — already retried via withTokenRefresh; if still failing, skip insights
+          this.logger.warn(`Insights fetch skipped (auth) for ${adAccountId}: ${translated?.message}`);
+        } else {
+          throw err;
+        }
       }
 
       const totalSpend = await this.applyInsights(campaignMap, insightRows);
@@ -249,7 +270,7 @@ export class MarketingSyncService {
       await this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: { status: 'idle', lastRunAt: new Date(), lastSuccessAt: new Date(), lastError: null, recordsImported: imported, recordsUpdated: updated, progressPct: 100 },
-        create: { adAccountId, provider: adAccount.connection.platform.slug, status: 'idle', lastRunAt: new Date(), lastSuccessAt: new Date(), recordsImported: imported, recordsUpdated: updated },
+        create: { adAccountId, provider: providerSlug, status: 'idle', lastRunAt: new Date(), lastSuccessAt: new Date(), recordsImported: imported, recordsUpdated: updated },
       });
       await this.prisma.marketingAuditLog.create({
         data: {
@@ -266,15 +287,17 @@ export class MarketingSyncService {
       this.logger.error(
         `Marketing sync failed for ${adAccountId}: ${message}`,
       );
+      const status = (err instanceof ProviderError && err.category === ProviderErrorCategory.AUTHENTICATION_FAILED)
+        ? 'error' : 'error';
       await this.prisma.marketingSyncStatus.upsert({
         where: { adAccountId },
         update: {
-          status: err instanceof MetaApiError ? 'error' : 'error',
+          status,
           lastError: message,
           lastRunAt: new Date(),
           updatedAt: new Date(),
         },
-        create: { adAccountId, provider: 'facebook', status: 'error', lastError: message, lastRunAt: new Date() },
+        create: { adAccountId, provider: providerSlug, status: 'error', lastError: message, lastRunAt: new Date() },
       });
       await this.prisma.adAccount.update({
         where: { id: adAccountId },
@@ -284,75 +307,56 @@ export class MarketingSyncService {
     }
   }
 
-  private async runWithTokenRefresh<T>(
-    connection: any,
-    token: string,
-    fn: (token: string) => Promise<T>,
-  ): Promise<T> {
-    try {
-      return await fn(token);
-    } catch (err) {
-      if (!(err instanceof MetaApiError) || err.code !== 190) throw err;
-      const refreshed = await this.connections.refreshLongLivedToken(connection.id);
-      if (!refreshed) throw err;
-      const { token: newToken } = this.connections.getDecryptedToken(refreshed);
-      this.logger.log(
-        `Token refreshed for connection ${connection.id}; retrying Meta API call`,
-      );
-      return fn(newToken);
-    }
-  }
+  // ── Normalized data mappers ────────────────────────────────────────
 
-  private campaignData(c: Record<string, any>) {
+  private campaignData(c: ProviderCampaign) {
     return {
-      name: c.name ?? 'Unknown campaign',
+      name: c.name,
       objective: c.objective ?? null,
-      buyingType: c.buying_type ?? null,
-      status: c.status ?? 'UNKNOWN',
-      effectiveStatus: c.effective_status ?? null,
-      dailyBudget: c.daily_budget ? Number(c.daily_budget) : null,
-      lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) : null,
-      createdTime: c.created_time ? new Date(c.created_time) : null,
-      updatedTime: c.updated_time ? new Date(c.updated_time) : null,
-      startTime: c.start_time ? new Date(c.start_time) : null,
-      stopTime: c.stop_time ? new Date(c.stop_time) : null,
+      buyingType: c.buyingType ?? null,
+      status: c.status,
+      effectiveStatus: c.effectiveStatus ?? null,
+      dailyBudget: c.dailyBudget ?? null,
+      lifetimeBudget: c.lifetimeBudget ?? null,
+      createdTime: c.createdTime ? new Date(c.createdTime) : null,
+      updatedTime: c.updatedTime ? new Date(c.updatedTime) : null,
       isArchived: ['ARCHIVED', 'DELETED'].includes(c.status),
       deletedFromProvider: c.status === 'DELETED',
       lastSyncedAt: new Date(),
     };
   }
 
-  private adSetData(s: Record<string, any>, campaignId: string) {
+  private adSetData(s: ProviderAdSet, campaignId: string) {
     return {
-      name: s.name ?? 'Unknown ad set',
-      status: s.status ?? 'UNKNOWN',
-      optimizationGoal: s.optimization_goal ?? null,
-      billingEvent: s.billing_event ?? null,
-      bidStrategy: s.bid_strategy ?? null,
-      budget: s.daily_budget ? Number(s.daily_budget) : null,
-      startTime: s.start_time ? new Date(s.start_time) : null,
-      endTime: s.end_time ? new Date(s.end_time) : null,
+      name: s.name,
+      status: s.status,
+      optimizationGoal: s.optimizationGoal ?? null,
+      billingEvent: s.billingEvent ?? null,
+      bidStrategy: s.bidStrategy ?? null,
+      budget: s.budget ?? null,
+      startTime: s.startTime ? new Date(s.startTime) : null,
+      endTime: s.endTime ? new Date(s.endTime) : null,
       isArchived: ['ARCHIVED', 'DELETED'].includes(s.status),
       deletedFromProvider: s.status === 'DELETED',
       lastSyncedAt: new Date(),
     };
   }
 
-  private adData(a: Record<string, any>, adSetId: string) {
+  private adData(a: ProviderAd, adSetId: string) {
     return {
-      name: a.name ?? 'Unknown ad',
-      status: a.status ?? 'UNKNOWN',
+      name: a.name,
+      status: a.status,
       isArchived: ['ARCHIVED', 'DELETED'].includes(a.status),
       deletedFromProvider: a.status === 'DELETED',
       lastSyncedAt: new Date(),
-      creativeId: a.creative?.id ?? null,
-      creativeName: a.creative?.name ?? null,
+      creativeId: a.creativeId ?? null,
+      creativeName: a.creativeName ?? null,
     };
   }
 
   private async applyInsights(
     campaignMap: Map<string, { id: string; adAccountId: string }>,
-    rows: Awaited<ReturnType<MetaGraphService['fetchInsights']>>,
+    rows: InsightRow[],
   ): Promise<number> {
     let totalSpend = 0;
     const spendEntries: Array<{ campaignId: string; spend: number; date: Date }> = [];

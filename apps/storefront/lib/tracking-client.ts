@@ -114,6 +114,7 @@ export async function captureMarketingSession(): Promise<void> {
     // useless and would churn the rate-limited capture endpoint.
     const hasSignal = !!(
       attribution.fbclid ||
+      attribution.ttclid ||
       attribution.utmSource ||
       attribution.utmMedium ||
       attribution.utmCampaign ||
@@ -126,9 +127,10 @@ export async function captureMarketingSession(): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sessionToken: getOrCreateCtxId(),
-        fbclid: attribution.fbclid ?? undefined,
-        utmSource: attribution.utmSource ?? undefined,
+          sessionToken: getOrCreateCtxId(),
+          fbclid: attribution.fbclid ?? undefined,
+          clickId: attribution.fbclid || attribution.ttclid || undefined,
+          utmSource: attribution.utmSource ?? undefined,
         utmMedium: attribution.utmMedium ?? undefined,
         utmCampaign: attribution.utmCampaign ?? undefined,
         utmContent: attribution.utmContent ?? undefined,

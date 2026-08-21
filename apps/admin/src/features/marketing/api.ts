@@ -172,6 +172,17 @@ export interface ProfitabilityResponse {
   attributedOrders: number
 }
 
+export interface CampaignPerformanceResponse {
+  campaign: { id: string; name: string; status: string }
+  verdict: 'profitable' | 'near_break_even' | 'loss_making' | 'insufficient_data'
+  platform: {
+    spend: number; impressions: number; clicks: number; purchases: number; purchaseValue: number; roas: number | null
+  }
+  store: {
+    orders: number; revenue: number; marketingCost: number; profit: number; roas: number | null; aov: number | null
+  }
+}
+
 export const marketingApi = {
   platforms: () => apiClient.get<PlatformResponse[]>('/marketing/platforms'),
   connections: {

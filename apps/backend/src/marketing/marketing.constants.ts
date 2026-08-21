@@ -1,5 +1,3 @@
-export const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
-
 export const MARKETING_PLATFORMS = [
   { slug: 'facebook', name: 'Meta Ads (Facebook)' },
   { slug: 'google_ads', name: 'Google Ads' },
@@ -17,6 +15,9 @@ export const WEBHOOK_APP_SECRET_SETTING = 'marketing_webhook_app_secret';
 
 export const MARKETING_EXPENSE_ACCOUNT_CODE = 'marketing-expense';
 export const MARKETING_EXPENSE_ACCOUNT_NAME = 'Marketing Expenses';
+
+export const MARKETING_PREPAID_ACCOUNT_CODE = 'marketing-prepaid';
+export const MARKETING_PREPAID_ACCOUNT_NAME = 'Marketing Prepaid Credit';
 
 export const MARKETING_QUEUE = 'marketing';
 

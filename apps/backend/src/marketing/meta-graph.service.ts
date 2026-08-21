@@ -1,5 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { META_GRAPH_BASE, REQUEST_TIMEOUT_MS } from './marketing.constants';
+import { REQUEST_TIMEOUT_MS } from './marketing.constants';
+
+const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
 
 export class MetaApiError extends Error {
   constructor(

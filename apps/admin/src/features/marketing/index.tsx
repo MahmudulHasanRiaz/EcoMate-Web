@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { Megaphone, TrendingUp, TrendingDown, Wallet, ShoppingCart, BadgeDollarSign, PiggyBank, RefreshCw } from 'lucide-react'
 import { marketingApi, money, fmtDate } from './api'
 import { apiClient } from '@/lib/api-client'
@@ -24,6 +24,19 @@ function deltaBadge(d: number | null) {
       {Math.abs(d).toFixed(1)}%
     </span>
   )
+}
+
+function verdictBadge(verdict: string | undefined) {
+  if (!verdict || verdict === 'insufficient_data') {
+    return <Badge variant="outline" className="text-muted-foreground">Insufficient data</Badge>
+  }
+  if (verdict === 'profitable') {
+    return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Profitable</Badge>
+  }
+  if (verdict === 'near_break_even') {
+    return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Near break-even</Badge>
+  }
+  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Loss-making</Badge>
 }
 
 function StatCard({ title, value, sub, icon: Icon, delta }: {
@@ -72,6 +85,22 @@ export function MarketingDashboard() {
     queryKey: ['marketing-funding-summary'],
     queryFn: () => marketingApi.funding.summary().then(r => r.data),
   })
+
+  // Fetch performance for each displayed campaign (max 8)
+  const campaignIds = (campaigns?.data ?? []).map(c => c.id)
+  const campaignPerfQueries = useQueries({
+    queries: campaignIds.map(id => ({
+      queryKey: ['marketing-campaign-perf', id, from, toDate],
+      queryFn: () => marketingApi.campaigns.performance(id, { fromDate: from, toDate }).then(r => r.data as any),
+      enabled: campaignIds.length > 0,
+    })),
+  })
+  const campaignPerfMap = new Map(campaignIds.map((id, i) => [id, campaignPerfQueries[i]?.data]))
+
+  // Financial position: total prepaid balance across accounts
+  const totalPrepaid = (fundingSummary ?? []).reduce((s, f) => s + (f.remainingAmount ?? 0), 0)
+  const totalReceived = (fundingSummary ?? []).reduce((s, f) => s + (f.receivedAmount ?? 0), 0)
+  const totalConsumed = (fundingSummary ?? []).reduce((s, f) => s + (f.consumedAmount ?? 0), 0)
   const { data: accounts } = useQuery({
     queryKey: ['marketing-ad-accounts-dash'],
     queryFn: () => marketingApi.adAccounts.list({ page: 1, perPage: 50 }).then(r => r.data),
@@ -156,6 +185,14 @@ export function MarketingDashboard() {
                     <span className="text-sm font-semibold tabular-nums">{intelligence.cpp === null ? '—' : money(intelligence.cpp)}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">Break-even CPA</span>
+                    <span className="text-sm font-semibold tabular-nums">{intelligence.breakEvenCpa === null ? '—' : money(intelligence.breakEvenCpa)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">Gross margin</span>
+                    <span className="text-sm font-semibold tabular-nums">{intelligence.grossMargin === null ? '—' : `${(intelligence.grossMargin * 100).toFixed(1)}%`}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
                     <span className="text-sm text-muted-foreground">Avg attribution confidence</span>
                     <span className="text-sm font-semibold tabular-nums">
                       {intelligence.attributionConfidence?.avg ?? 0}%
@@ -228,11 +265,23 @@ export function MarketingDashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Funding balance</CardTitle>
-              <CardDescription>Per connected ad account</CardDescription>
+              <CardTitle className="text-base">Financial position</CardTitle>
+              <CardDescription>Marketing prepaid balance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {(fundingSummary ?? []).length === 0 && (
+              {fundingSummary && fundingSummary.length > 0 && (
+                <div className="rounded-md border bg-muted/40 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Total prepaid</span>
+                    <span className="text-lg font-semibold tabular-nums">{money(totalPrepaid)}</span>
+                  </div>
+                  <div className="mt-1 flex gap-4 text-xs text-muted-foreground">
+                    <span>Received {money(totalReceived)}</span>
+                    <span>Consumed {money(totalConsumed)}</span>
+                  </div>
+                </div>
+              )}
+              {fundingSummary && fundingSummary.length === 0 && (
                 <p className="text-sm text-muted-foreground">No funding entries yet.</p>
               )}
               {(fundingSummary ?? []).map((f) => (
@@ -272,28 +321,37 @@ export function MarketingDashboard() {
                       <TableHead>Campaign</TableHead>
                       <TableHead>Account</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Attributed orders</TableHead>
+                      <TableHead className="text-right">Orders</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                      <TableHead className="text-right">ROAS</TableHead>
+                      <TableHead>Verdict</TableHead>
                       <TableHead className="text-right">Last sync</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(campaigns?.data ?? []).map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell>
-                          <Link to="/op/marketing/campaigns/$id" params={{ id: c.id }} className="font-medium hover:underline">
-                            {c.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{c.adAccount?.name}</TableCell>
-                        <TableCell>
-                          <Badge variant={c.isArchived ? 'secondary' : c.status === 'ACTIVE' ? 'default' : 'outline'}>
-                            {c.effectiveStatus ?? c.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{c._count?.orderAttributions ?? 0}</TableCell>
-                        <TableCell className="text-right text-muted-foreground text-sm">{fmtDate(c.lastSyncedAt)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {(campaigns?.data ?? []).map((c) => {
+                      const perf = campaignPerfMap.get(c.id)
+                      return (
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <Link to="/op/marketing/campaigns/$id" params={{ id: c.id }} className="font-medium hover:underline">
+                              {c.name}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{c.adAccount?.name}</TableCell>
+                          <TableCell>
+                            <Badge variant={c.isArchived ? 'secondary' : c.status === 'ACTIVE' ? 'default' : 'outline'}>
+                              {c.effectiveStatus ?? c.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{perf?.store?.orders ?? c._count?.orderAttributions ?? 0}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{perf?.store?.revenue ? money(perf.store.revenue) : '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{perf?.store?.roas != null ? `${perf.store.roas.toFixed(2)}x` : '—'}</TableCell>
+                          <TableCell>{verdictBadge(perf?.verdict)}</TableCell>
+                          <TableCell className="text-right text-muted-foreground text-sm">{fmtDate(c.lastSyncedAt)}</TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               )}

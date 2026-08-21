@@ -119,6 +119,7 @@ export const sidebarData: SidebarData = {
             { title: 'Funding', url: '/op/marketing/funding', icon: Wallet },
             { title: 'Attribution', url: '/op/marketing/attribution', icon: Target },
             { title: 'Reports', url: '/op/marketing/reports', icon: BarChart3 },
+            { title: 'Help', url: '/op/marketing/help', icon: HelpCircle },
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },

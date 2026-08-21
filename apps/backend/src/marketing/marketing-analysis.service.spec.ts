@@ -351,10 +351,12 @@ describe('MarketingAnalysisService', () => {
       const res = await service.intelligence('2026-08-01', '2026-08-05');
       expect(Object.keys(res).sort()).toEqual([
         'attributionConfidence',
+        'breakEvenCpa',
         'cac',
         'costTrend',
         'cpp',
         'explainProfit',
+        'grossMargin',
         'productProfitTrend',
         'range',
         'roasTrend',

@@ -35,6 +35,7 @@ export class MarketingAttributionService {
     const data = {
       visitorId: dto.visitorId ?? 'anonymous',
       fbclid: dto.fbclid || existing?.fbclid || null,
+      clickId: dto.clickId || dto.fbclid || existing?.clickId || null,
       utmSource: dto.utmSource || existing?.utmSource || null,
       utmMedium: dto.utmMedium || existing?.utmMedium || null,
       utmCampaign: dto.utmCampaign || existing?.utmCampaign || null,
@@ -83,7 +84,7 @@ export class MarketingAttributionService {
     let target: {
       sessionId?: string;
       campaignId?: string;
-      method: 'fbclid' | 'conversion_api' | 'pixel' | 'session' | 'utm';
+      method: 'click_id' | 'conversion_api' | 'pixel' | 'session' | 'utm';
       confidence: number;
       explanation: string;
     } | null = null;
@@ -119,29 +120,33 @@ export class MarketingAttributionService {
     }
 
     if (!target?.campaignId) {
-      const fbclid =
+      const clickId =
+        (input.attribution?.clickId as string) ||
+        (input.attribution?.click_id as string) ||
         (input.attribution?.fbclid as string) ||
         (input.attribution?.fb_click_id as string) ||
         null;
-      if (fbclid) {
+      if (clickId) {
         const session = await this.prisma.marketingSession.findFirst({
-          where: { fbclid },
+          where: {
+            OR: [{ clickId }, { fbclid: clickId }],
+          },
           orderBy: { createdAt: 'desc' },
         });
         if (session?.campaignId) {
           target = {
             sessionId: session.id,
             campaignId: session.campaignId,
-            method: 'fbclid',
+            method: 'click_id',
             confidence: 90,
-            explanation: `fbclid ${fbclid} matched landing session`,
+            explanation: `click_id ${clickId} matched landing session`,
           };
         } else if (session) {
           target = {
             sessionId: session.id,
-            method: 'fbclid',
+            method: 'click_id',
             confidence: 30,
-            explanation: 'fbclid matched a session without a campaign',
+            explanation: 'click_id matched a session without a campaign',
           };
         }
       }
@@ -149,15 +154,12 @@ export class MarketingAttributionService {
 
     if (!target?.campaignId && campaignValue) {
       const campaign = await this.matchCampaign(campaignValue);
-      const isMeta =
-        input.sourcePlatform === 'facebook' ||
-        input.sourcePlatform === 'meta' ||
-        input.sourceType === 'ad';
+      const isAdPlatform = input.sourceType === 'ad';
       if (campaign) {
         target = {
           campaignId: campaign.id,
           method: 'utm',
-          confidence: isMeta ? 80 : 65,
+          confidence: isAdPlatform ? 80 : 65,
           explanation: `utm campaign "${campaignValue}" matched ${campaign.name}`,
         };
       }

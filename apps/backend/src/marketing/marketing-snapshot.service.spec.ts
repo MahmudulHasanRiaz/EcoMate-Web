@@ -111,7 +111,7 @@ describe('MarketingSnapshotService', () => {
   });
 
   describe('productSnapshotSummary', () => {
-    const row = (productId: string, name: string, profit: number, orders = 1) => ({
+    const row = (productId: string, profit: number, orders = 1) => ({
       productId,
       spend: '10',
       revenue: '100',
@@ -119,14 +119,13 @@ describe('MarketingSnapshotService', () => {
       profit: String(profit),
       orders,
       quantity: 1,
-      product: { id: productId, name },
     });
 
-    it('groups rows per product, orders by profit desc and includes product name', async () => {
+    it('groups rows per product, orders by profit desc and defaults product name', async () => {
       (prisma.marketingDailyProductCost.findMany as jest.Mock).mockResolvedValue([
-        row('p2', 'Shirt', 40),
-        row('p1', 'Jeans', 20),
-        row('p1', 'Jeans', 10),
+        row('p2', 40),
+        row('p1', 20),
+        row('p1', 10),
       ]);
 
       const res = await service.productSnapshotSummary('2026-08-01', '2026-08-31');
@@ -136,13 +135,13 @@ describe('MarketingSnapshotService', () => {
       expect(res.data[0].profit).toBe(40);
       expect(res.data[0].spend).toBe(10);
       expect(res.data[0].orders).toBe(1);
-      expect(res.data[1]).toMatchObject({ productName: 'Jeans', profit: 30, orders: 2, spend: 20 });
+      expect(res.data[1]).toMatchObject({ productName: 'Unknown', profit: 30, orders: 2, spend: 20 });
       expect(res.data[1].roas).toBe(10);
     });
 
     it('caps at 100 products', async () => {
       (prisma.marketingDailyProductCost.findMany as jest.Mock).mockResolvedValue(
-        Array.from({ length: 120 }, (_, i) => row(`p${i}`, `T${i}`, i)),
+        Array.from({ length: 120 }, (_, i) => row(`p${i}`, i)),
       );
 
       const res = await service.productSnapshotSummary('2026-08-01', '2026-08-31');

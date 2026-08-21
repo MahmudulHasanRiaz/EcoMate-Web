@@ -14,6 +14,8 @@ import {
 import {
   MARKETING_EXPENSE_ACCOUNT_CODE,
   MARKETING_EXPENSE_ACCOUNT_NAME,
+  MARKETING_PREPAID_ACCOUNT_CODE,
+  MARKETING_PREPAID_ACCOUNT_NAME,
 } from './marketing.constants';
 
 @Injectable()
@@ -28,6 +30,7 @@ export class MarketingFundingService {
   async addFunding(dto: CreateFundingDto, userId?: string) {
     const adAccount = await this.prisma.adAccount.findUnique({
       where: { id: dto.adAccountId },
+      include: { connection: { include: { platform: true } } },
     });
     if (!adAccount) throw new NotFoundException('Ad account not found');
 
@@ -49,8 +52,9 @@ export class MarketingFundingService {
     return this.prisma.$transaction(async (tx) => {
       const entry = await tx.marketingFundingEntry.create({
         data: {
-          platform: 'facebook',
+          platform: adAccount.connection.platform.slug,
           adAccountId: adAccount.id,
+          fundingType: (dto.fundingType as any) ?? 'paid',
           fundingSource: dto.fundingSource,
           fundingDate: new Date(dto.fundingDate),
           currency: dto.currency ?? adAccount.currency,
@@ -69,6 +73,7 @@ export class MarketingFundingService {
         data: {
           fundingEntryId: entry.id,
           adAccountId: adAccount.id,
+          fundingType: (dto.fundingType as any) ?? 'paid',
           receivedAmount: currencyAmount,
           remainingAmount: currencyAmount,
           effectiveRate,
@@ -177,50 +182,59 @@ export class MarketingFundingService {
       );
     }
 
-    const marketingAccount = await this.ensureMarketingExpenseAccount();
-    const fundingAccount = await this.prisma.account.findUnique({
-      where: { id: dto.fundingAccountId },
-    });
-    if (!fundingAccount) throw new NotFoundException('Funding account not found');
-    if (fundingAccount.isGroup) {
-      throw new BadRequestException(
-        `Account "${fundingAccount.name}" is a group account and cannot be posted to`,
+    const isPromotional = entry.fundingType === 'promotional';
+
+    // Promotional credit: no cash outflow → no journal entry
+    let journalEntry: any = null;
+    if (!isPromotional) {
+      const marketingPrepaid = await this.ensureMarketingPrepaidAccount();
+      const fundingAccount = await this.prisma.account.findUnique({
+        where: { id: dto.fundingAccountId },
+      });
+      if (!fundingAccount) throw new NotFoundException('Funding account not found');
+      if (fundingAccount.isGroup) {
+        throw new BadRequestException(
+          `Account "${fundingAccount.name}" is a group account and cannot be posted to`,
+        );
+      }
+
+      journalEntry = await this.accounting.createEntry(
+        {
+          periodId: period.id,
+          entryDate: entry.fundingDate.toISOString(),
+          description: `Marketing funding — ${entry.adAccount.name}${entry.reference ? ` (${entry.reference})` : ''}`,
+          referenceNo: `FUND-${entry.id.slice(0, 8)}`,
+          lines: [
+            {
+              accountId: marketingPrepaid.id,
+              debit: Number(entry.baseAmount),
+              credit: 0,
+              description: 'Marketing prepaid credit deposit',
+            },
+            {
+              accountId: fundingAccount.id,
+              debit: 0,
+              credit: Number(entry.baseAmount),
+              description: 'Funding source',
+            },
+          ],
+        },
+        userId,
       );
     }
-
-    const journalEntry = await this.accounting.createEntry(
-      {
-        periodId: period.id,
-        entryDate: entry.fundingDate.toISOString(),
-        description: `Marketing funding — ${entry.adAccount.name}${entry.reference ? ` (${entry.reference})` : ''}`,
-        referenceNo: `FUND-${entry.id.slice(0, 8)}`,
-        lines: [
-          {
-            accountId: marketingAccount.id,
-            debit: Number(entry.baseAmount),
-            credit: 0,
-            description: 'Marketing ad spend funding',
-          },
-          {
-            accountId: fundingAccount.id,
-            debit: 0,
-            credit: Number(entry.baseAmount),
-            description: 'Funding source',
-          },
-        ],
-      },
-      userId,
-    );
 
     const updated = await this.prisma.marketingFundingEntry.update({
       where: { id },
       data: {
-        journalEntryId: journalEntry.id,
+        journalEntryId: journalEntry?.id ?? null,
         status: 'posted',
         postedAt: new Date(),
       },
     });
-    await this.audit('funding.post', id, userId, { entryNo: journalEntry.entryNo });
+    await this.audit('funding.post', id, userId, {
+      entryNo: journalEntry?.entryNo ?? null,
+      fundingType: entry.fundingType,
+    });
     return { ...updated, journalEntry };
   }
 
@@ -280,6 +294,25 @@ export class MarketingFundingService {
     });
     this.logger.log(
       `Created marketing expense account ${created.code} (${created.id})`,
+    );
+    return created;
+  }
+
+  private async ensureMarketingPrepaidAccount() {
+    const account = await this.prisma.account.findFirst({
+      where: { code: MARKETING_PREPAID_ACCOUNT_CODE },
+    });
+    if (account) return account;
+    const created = await this.prisma.account.create({
+      data: {
+        code: MARKETING_PREPAID_ACCOUNT_CODE,
+        name: MARKETING_PREPAID_ACCOUNT_NAME,
+        type: 'asset',
+        isGroup: false,
+      },
+    });
+    this.logger.log(
+      `Created marketing prepaid account ${created.code} (${created.id})`,
     );
     return created;
   }

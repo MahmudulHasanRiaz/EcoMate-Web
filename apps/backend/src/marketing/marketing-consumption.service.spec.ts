@@ -2,10 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { MarketingConsumptionService } from './marketing-consumption.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccountingService } from '../accounting/accounting.service';
 
 describe('MarketingConsumptionService', () => {
   let service: MarketingConsumptionService;
   let prisma: PrismaService;
+  let accounting: AccountingService;
 
   const mockCampaign = { id: 'camp-1', adAccountId: 'acct-1' };
 
@@ -23,6 +25,8 @@ describe('MarketingConsumptionService', () => {
     marketingCampaign: { findUnique: jest.fn() },
     marketingFundingLedger: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     marketingConsumption: { create: jest.fn(), aggregate: jest.fn() },
+    financialPeriod: { findFirst: jest.fn() },
+    account: { findFirst: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
   });
 
@@ -31,10 +35,14 @@ describe('MarketingConsumptionService', () => {
       providers: [
         MarketingConsumptionService,
         { provide: PrismaService, useValue: mockPrisma() },
+        { provide: AccountingService, useValue: { createEntry: jest.fn().mockResolvedValue({ id: 'je-consume', entryNo: 'JE-C001' }) } },
       ],
     }).compile();
     service = module.get(MarketingConsumptionService);
     prisma = module.get(PrismaService);
+    accounting = module.get(AccountingService);
+    // Default: skip journal creation in unit tests (no open period)
+    (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue(null);
   });
 
   afterEach(() => jest.clearAllMocks());

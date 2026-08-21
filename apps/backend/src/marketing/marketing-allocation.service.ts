@@ -70,6 +70,12 @@ export class MarketingAllocationService {
     );
     if (candidates.length === 0) return { allocated: 0, orders: 0 };
 
+    const campaign = await this.prisma.marketingCampaign.findUnique({
+      where: { id: entry.campaignId },
+      select: { adAccount: { select: { currency: true } } },
+    });
+    const allocatedCurrency = campaign?.adAccount?.currency ?? 'USD';
+
     const mode = await this.resolveAllocationMode();
 
     const orderTotals = new Map<string, number>();
@@ -145,7 +151,7 @@ export class MarketingAllocationService {
             attributionId: a.id,
             campaignId: entry.campaignId,
             allocatedSpend,
-            allocatedCurrency: 'USD',
+            allocatedCurrency,
             allocatedRate: dayRate,
             allocatedCost,
             allocationMethod: mode,

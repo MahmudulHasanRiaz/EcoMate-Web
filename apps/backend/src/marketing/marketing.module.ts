@@ -11,7 +11,11 @@ import { MarketingFundingService } from './marketing-funding.service';
 import { MarketingAttributionService } from './marketing-attribution.service';
 import { MarketingAnalysisService } from './marketing-analysis.service';
 import { MarketingSnapshotService } from './marketing-snapshot.service';
+import { MarketingPaymentService } from './marketing-payment.service';
 import { MetaGraphService } from './meta-graph.service';
+import { MetaProviderAdapter } from './meta-provider.adapter';
+import { ProviderAdapterFactory } from './provider-factory';
+import { AdProviderAdapter, AD_PROVIDER_ADAPTER } from './ad-provider.adapter';
 import { MarketingSyncProcessor, enqueueMarketingSync } from './marketing-sync.processor';
 import { MarketingController } from './marketing.controller';
 import { MarketingFundingController } from './marketing-funding.controller';
@@ -19,6 +23,7 @@ import { MarketingAnalysisController } from './marketing-analysis.controller';
 import { MarketingSnapshotController } from './marketing-snapshot.controller';
 import { MarketingCaptureController } from './marketing-capture.controller';
 import { MarketingWebhooksController } from './marketing-webhooks.controller';
+import { MarketingPaymentController } from './marketing-payment.controller';
 import { MARKETING_QUEUE, DEFAULT_SYNC_INTERVAL_HOURS, SYNC_INTERVAL_SETTING } from './marketing.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/utils/encryption';
@@ -39,6 +44,7 @@ import { Queue } from 'bullmq';
     MarketingSnapshotController,
     MarketingCaptureController,
     MarketingWebhooksController,
+    MarketingPaymentController,
   ],
   providers: [
     MarketingPlatformsService,
@@ -50,7 +56,11 @@ import { Queue } from 'bullmq';
     MarketingAttributionService,
     MarketingAnalysisService,
     MarketingSnapshotService,
+    MarketingPaymentService,
     MetaGraphService,
+    MetaProviderAdapter,
+    { provide: AD_PROVIDER_ADAPTER, useClass: MetaProviderAdapter },
+    ProviderAdapterFactory,
     EncryptionService,
     MarketingSyncProcessor,
   ],
@@ -59,6 +69,7 @@ import { Queue } from 'bullmq';
     MarketingAllocationService,
     MarketingSyncService,
     MarketingPlatformsService,
+    MarketingPaymentService,
   ],
 })
 export class MarketingModule implements OnApplicationBootstrap {

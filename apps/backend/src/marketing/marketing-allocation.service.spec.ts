@@ -8,6 +8,7 @@ describe('MarketingAllocationService', () => {
 
   const mockPrisma = () => ({
     orderAttribution: { findMany: jest.fn() },
+    marketingCampaign: { findUnique: jest.fn() },
     marketingConsumption: { findMany: jest.fn(), groupBy: jest.fn(), aggregate: jest.fn() },
     marketingCampaignInsight: { findMany: jest.fn() },
     marketingCostAllocation: { upsert: jest.fn() },
@@ -25,6 +26,9 @@ describe('MarketingAllocationService', () => {
     }).compile();
     service = module.get(MarketingAllocationService);
     prisma = module.get(PrismaService);
+    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue({
+      adAccount: { currency: 'USD' },
+    });
   });
 
   afterEach(() => jest.clearAllMocks());

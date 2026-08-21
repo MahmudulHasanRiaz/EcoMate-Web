@@ -8,12 +8,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/utils/encryption';
 import { MarketingPlatformsService } from './marketing-platforms.service';
-import { MetaGraphService } from './meta-graph.service';
+import { ProviderAdapterFactory } from './provider-factory';
 import {
   CreateConnectionDto,
   UpdateConnectionDto,
   AddAdAccountDto,
 } from './dto/marketing.dto';
+import { MARKETING_PLATFORMS } from './marketing.constants';
 
 const APP_ID_SETTING = 'marketing_app_id';
 const APP_SECRET_SETTING = 'marketing_app_secret';
@@ -26,7 +27,7 @@ export class MarketingConnectionsService {
     private prisma: PrismaService,
     private encryption: EncryptionService,
     private platforms: MarketingPlatformsService,
-    private metaGraph: MetaGraphService,
+    private providerFactory: ProviderAdapterFactory,
   ) {}
 
   async create(dto: CreateConnectionDto, userId?: string) {
@@ -35,16 +36,18 @@ export class MarketingConnectionsService {
       where: { slug: dto.provider as any },
     });
     if (!platform) {
+      const supported = MARKETING_PLATFORMS.map((p) => p.slug).join(', ');
       throw new BadRequestException(
-        `Unsupported provider "${dto.provider}". Supported: facebook, google_ads, tiktok, linkedin`,
+        `Unsupported provider "${dto.provider}". Supported: ${supported}`,
       );
     }
 
     let providerUserId = dto.providerUserId;
-    if (!providerUserId && platform.slug === 'facebook') {
+    if (!providerUserId) {
+      const adapter = this.providerFactory.getAdapter(platform.slug);
       try {
-        const me = await this.metaGraph.validateToken(dto.accessToken);
-        providerUserId = me.id;
+        const result = await adapter.validateConnection(dto.accessToken);
+        providerUserId = result.providerUserId;
       } catch (err) {
         throw new BadRequestException(
           `Token validation failed: ${err instanceof Error ? err.message : 'unknown error'}`,
@@ -113,9 +116,15 @@ export class MarketingConnectionsService {
     if (dto.providerUserId !== undefined) {
       data.providerUserId = dto.providerUserId;
     } else if (dto.accessToken) {
+      // Resolve platform from connection → platform
+      const connWithPlatform = await this.prisma.marketingConnection.findUnique({
+        where: { id },
+        include: { platform: true },
+      });
+      const adapter = this.providerFactory.getAdapter(connWithPlatform?.platform?.slug ?? 'facebook');
       try {
-        const me = await this.metaGraph.validateToken(dto.accessToken);
-        data.providerUserId = me.id;
+        const result = await adapter.validateConnection(dto.accessToken);
+        data.providerUserId = result.providerUserId;
       } catch (err) {
         throw new BadRequestException(
           `Token validation failed: ${err instanceof Error ? err.message : 'unknown error'}`,
@@ -226,13 +235,15 @@ export class MarketingConnectionsService {
   async discoverAdAccounts(dto: { connectionId: string }, userId?: string) {
     const connection = await this.prisma.marketingConnection.findUnique({
       where: { id: dto.connectionId },
+      include: { platform: true },
     });
     if (!connection) throw new NotFoundException('Connection not found');
 
     const token = this.encryption.decrypt(connection.accessTokenEnc);
+    const adapter = this.providerFactory.getAdapter(connection.platform?.slug ?? 'facebook');
     let accounts;
     try {
-      accounts = await this.metaGraph.listAdAccounts(token);
+      accounts = await adapter.listAdAccounts(token);
     } catch (err) {
       throw new BadRequestException(
         `Failed to list ad accounts: ${err instanceof Error ? err.message : 'unknown error'}`,
@@ -500,22 +511,16 @@ export class MarketingConnectionsService {
     }
 
     const { token } = this.getDecryptedToken(connection);
+    const adapter = this.providerFactory.getAdapter(connection.platform?.slug ?? 'facebook');
     try {
-      const body = await this.metaGraph.request(
-        'oauth/access_token',
+      const result = await adapter.refreshToken(
         token,
-        {},
-        'POST',
-        {
-          grant_type: 'fb_exchange_token',
-          client_id: appIdSetting.value,
-          client_secret: appSecretSetting.value,
-          fb_exchange_token: token,
-        },
+        appIdSetting.value,
+        appSecretSetting.value,
       );
-      if (!body?.access_token) {
+      if (!result?.accessToken) {
         this.logger.warn(
-          `Token refresh failed for connection ${connectionId}: no access_token in Meta response`,
+          `Token refresh failed for connection ${connectionId}: no access_token returned`,
         );
         return null;
       }
@@ -523,9 +528,9 @@ export class MarketingConnectionsService {
       const updated = await this.prisma.marketingConnection.update({
         where: { id: connectionId },
         data: {
-          accessTokenEnc: this.encryption.encrypt(body.access_token),
-          tokenExpiry: body.expires_in
-            ? new Date(Date.now() + Number(body.expires_in) * 1000)
+          accessTokenEnc: this.encryption.encrypt(result.accessToken),
+          tokenExpiry: result.expiresIn
+            ? new Date(Date.now() + Number(result.expiresIn) * 1000)
             : null,
           status: 'connected',
         },
@@ -564,24 +569,23 @@ export class MarketingConnectionsService {
   ) {
     const campaign = await this.prisma.marketingCampaign.findUnique({
       where: { id: campaignId },
-      include: { adAccount: { include: { connection: true } } },
+      include: { adAccount: { include: { connection: { include: { platform: true } } } } },
     });
     if (!campaign || !campaign.adAccount?.connection) {
       throw new BadRequestException('Campaign not found');
     }
     const { token } = this.getDecryptedToken(campaign.adAccount.connection);
+    const adapter = this.providerFactory.getAdapter(campaign.adAccount.connection.platform?.slug ?? 'facebook');
     const verb = status === 'PAUSED' ? 'pause' : 'resume';
     try {
-      await this.metaGraph.request(
-        campaign.providerCampaignId,
-        token,
-        {},
-        'POST',
-        { status },
-      );
+      if (status === 'PAUSED') {
+        await adapter.pauseCampaign(token, campaign.providerCampaignId);
+      } else {
+        await adapter.resumeCampaign(token, campaign.providerCampaignId);
+      }
     } catch (err) {
       throw new BadRequestException(
-        `Failed to ${verb} campaign on Meta: ${err instanceof Error ? err.message : 'unknown error'}`,
+        `Failed to ${verb} campaign: ${err instanceof Error ? err.message : 'unknown error'}`,
       );
     }
     const updated = await this.prisma.marketingCampaign.update({

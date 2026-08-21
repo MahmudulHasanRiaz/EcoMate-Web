@@ -112,8 +112,19 @@ export class MarketingAnalysisService {
     const orders = attributions.length;
     const revenue = attributions.reduce((sum, a) => sum + Number(a.order.total), 0);
 
+    // Campaign verdict: Profitable / Near Break-even / Loss-making / Insufficient Data
+    let verdict: 'profitable' | 'near_break_even' | 'loss_making' | 'insufficient_data' = 'insufficient_data';
+    if (orders >= 5) {
+      const profit = revenue - spendCost;
+      const margin = revenue > 0 ? profit / revenue : 0;
+      if (profit > 0 && margin > 0.1) verdict = 'profitable';
+      else if (profit > 0 || margin >= -0.1) verdict = 'near_break_even';
+      else verdict = 'loss_making';
+    }
+
     return {
       campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
+      verdict,
       platform: {
         spend,
         impressions: Number(insights._sum.impressions ?? 0),
@@ -632,6 +643,13 @@ export class MarketingAnalysisService {
     const cac = orders > 0 ? this.round2(marketingCost / orders) : null;
     const cpp = purchaseCount > 0 ? this.round2(marketingCost / purchaseCount) : null;
 
+    // Break-even CPA = highest CPA at which revenue covers cost (gross margin based)
+    const avgOrderValue = orders > 0 ? this.round2(orderRevenue / orders) : null;
+    const grossMargin = orderRevenue > 0 ? this.round2((orderRevenue - marketingCost) / orderRevenue) : null;
+    const breakEvenCpa = avgOrderValue !== null && grossMargin !== null && grossMargin > 0
+      ? this.round2(avgOrderValue * grossMargin)
+      : null;
+
     const attributionConfidence = {
       avg: orders > 0 ? Math.round(confidenceSum / orders) : 0,
       byMethod: Object.fromEntries([...byMethod.entries()].sort()),
@@ -648,6 +666,8 @@ export class MarketingAnalysisService {
       productProfitTrend,
       cac,
       cpp,
+      breakEvenCpa,
+      grossMargin,
       roiTimeline,
       attributionConfidence,
       explainProfit: {

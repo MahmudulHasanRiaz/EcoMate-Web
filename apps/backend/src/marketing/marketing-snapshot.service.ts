@@ -114,7 +114,6 @@ export class MarketingSnapshotService {
 
     const rows = await this.prisma.marketingDailyProductCost.findMany({
       where: { date: { gte: from, lte: to } },
-      include: { product: { select: { id: true, name: true } } },
       orderBy: { date: 'asc' },
     });
 
@@ -134,7 +133,7 @@ export class MarketingSnapshotService {
     for (const r of rows) {
       const cur = byProduct.get(r.productId) ?? {
         productId: r.productId,
-        productName: r.product?.name ?? 'Unknown',
+        productName: 'Unknown',
         spend: 0,
         revenue: 0,
         cost: 0,

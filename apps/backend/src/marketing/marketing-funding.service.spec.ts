@@ -7,14 +7,21 @@ import {
 import { MarketingFundingService } from './marketing-funding.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
-import { MARKETING_EXPENSE_ACCOUNT_CODE, MARKETING_EXPENSE_ACCOUNT_NAME } from './marketing.constants';
+import { MARKETING_EXPENSE_ACCOUNT_CODE, MARKETING_EXPENSE_ACCOUNT_NAME, MARKETING_PREPAID_ACCOUNT_CODE, MARKETING_PREPAID_ACCOUNT_NAME } from './marketing.constants';
 
 describe('MarketingFundingService', () => {
   let service: MarketingFundingService;
   let prisma: PrismaService;
   let accounting: AccountingService;
 
-  const mockAdAccount = { id: 'acct-1', name: 'Meta (prod)', currency: 'USD' };
+  const mockAdAccount = {
+    id: 'acct-1',
+    name: 'Meta (prod)',
+    currency: 'USD',
+    connection: {
+      platform: { slug: 'facebook' },
+    },
+  };
   const mockEntry = (overrides: Partial<any> = {}) => ({
     id: 'fund-1',
     platform: 'facebook',
@@ -173,8 +180,8 @@ describe('MarketingFundingService', () => {
         isClosed: false,
       });
       (prisma.account.findFirst as jest.Mock).mockResolvedValue({
-        id: 'acct-expense',
-        code: MARKETING_EXPENSE_ACCOUNT_CODE,
+        id: 'acct-prepaid',
+        code: MARKETING_PREPAID_ACCOUNT_CODE,
       });
       (prisma.account.findUnique as jest.Mock).mockResolvedValue({
         id: 'acct-funding',
@@ -192,7 +199,7 @@ describe('MarketingFundingService', () => {
       const entryArg = (accounting.createEntry as jest.Mock).mock.calls[0][0];
       expect(entryArg.referenceNo).toBe(`FUND-${'fund-1'.slice(0, 8)}`);
       expect(entryArg.lines).toHaveLength(2);
-      expect(entryArg.lines[0]).toMatchObject({ accountId: 'acct-expense', debit: 12000 });
+      expect(entryArg.lines[0]).toMatchObject({ accountId: 'acct-prepaid', debit: 12000 });
       expect(entryArg.lines[1]).toMatchObject({ accountId: 'acct-funding', credit: 12000 });
       expect(res.journalEntry.id).toBe('je-1');
       expect(prisma.marketingFundingEntry.update).toHaveBeenCalledWith({

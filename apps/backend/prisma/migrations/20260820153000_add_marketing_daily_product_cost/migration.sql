@@ -20,6 +20,3 @@ CREATE INDEX "MarketingDailyProductCost_date_idx" ON "MarketingDailyProductCost"
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MarketingDailyProductCost_productId_date_key" ON "MarketingDailyProductCost"("productId", "date");
-
--- AddForeignKey
-ALTER TABLE "MarketingDailyProductCost" ADD CONSTRAINT "MarketingDailyProductCost_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
