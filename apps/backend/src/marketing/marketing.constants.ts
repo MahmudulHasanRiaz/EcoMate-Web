@@ -19,6 +19,16 @@ export const MARKETING_EXPENSE_ACCOUNT_NAME = 'Marketing Expenses';
 export const MARKETING_PREPAID_ACCOUNT_CODE = 'marketing-prepaid';
 export const MARKETING_PREPAID_ACCOUNT_NAME = 'Marketing Prepaid Credit';
 
+export const MARKETING_PAYABLE_ACCOUNT_CODE = 'marketing-payable';
+export const MARKETING_PAYABLE_ACCOUNT_NAME = 'Marketing Payable';
+
+/** System marketing accounts that must NOT appear as selectable wallets. */
+export const MARKETING_SYSTEM_ACCOUNT_CODES = [
+  MARKETING_EXPENSE_ACCOUNT_CODE,
+  MARKETING_PREPAID_ACCOUNT_CODE,
+  MARKETING_PAYABLE_ACCOUNT_CODE,
+];
+
 export const MARKETING_QUEUE = 'marketing';
 
 export const DEFAULT_INSIGHT_LOOKBACK_DAYS = 14;

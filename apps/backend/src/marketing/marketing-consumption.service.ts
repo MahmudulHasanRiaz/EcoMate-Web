@@ -7,6 +7,8 @@ import {
   MARKETING_EXPENSE_ACCOUNT_NAME,
   MARKETING_PREPAID_ACCOUNT_CODE,
   MARKETING_PREPAID_ACCOUNT_NAME,
+  MARKETING_PAYABLE_ACCOUNT_CODE,
+  MARKETING_PAYABLE_ACCOUNT_NAME,
 } from './marketing.constants';
 
 @Injectable()
@@ -54,6 +56,7 @@ export class MarketingConsumptionService {
 
     let remaining = amount;
     let consumedRows = 0;
+    let lastPaidRate = 0;
 
     for (const row of ledgerRows) {
       if (remaining <= 0) break;
@@ -92,6 +95,7 @@ export class MarketingConsumptionService {
           // Accrual journal: Dr Marketing Expense / Cr Marketing Prepaid
           // ONLY for paid credit — promotional credit has no cash outflow
           if (calculatedCost > 0 && row.fundingType !== 'promotional') {
+            lastPaidRate = Number(row.effectiveRate);
             await this.createConsumptionJournal(
               calculatedCost,
               spendDate ?? new Date(),
@@ -110,7 +114,18 @@ export class MarketingConsumptionService {
       consumedRows++;
     }
 
-    return { consumedRows, shortfall: Math.round(remaining * 10000) / 10000 };
+    const shortfall = Math.round(remaining * 10000) / 10000;
+
+    // Threshold shortfall: Dr Marketing Expense / Cr Marketing Payable
+    // This represents platform spend not covered by any prepaid funding.
+    // Uses the last consumed paid rate as the threshold FX proxy.
+    // Skip if no paid rate available — BDT amount will be set at payment reconciliation.
+    if (shortfall > 0.0001 && lastPaidRate > 0) {
+      const thresholdCost = Math.round(shortfall * lastPaidRate * 100) / 100;
+      await this.createThresholdJournal(thresholdCost, spendDate ?? new Date(), campaignId);
+    }
+
+    return { consumedRows, shortfall };
   }
 
   /**
@@ -148,6 +163,65 @@ export class MarketingConsumptionService {
         ? { ledger: { adAccountId } }
         : undefined,
     });
+  }
+
+  /**
+   * Threshold journal: Dr Marketing Expense / Cr Marketing Payable.
+   * Created when spend exceeds available prepaid funding (shortfall = billed amount).
+   */
+  private async createThresholdJournal(
+    amount: number,
+    spendDate: Date,
+    campaignId: string,
+  ) {
+    const period = await this.prisma.financialPeriod.findFirst({
+      where: {
+        startDate: { lte: spendDate },
+        endDate: { gte: spendDate },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!period || period.isClosed) {
+      this.logger.warn(
+        `No open period for threshold journal on ${spendDate.toISOString().slice(0, 10)} — skipping`,
+      );
+      return;
+    }
+
+    const expenseAccount = await this.ensureAccount(
+      MARKETING_EXPENSE_ACCOUNT_CODE,
+      MARKETING_EXPENSE_ACCOUNT_NAME,
+      'expense',
+    );
+    const payableAccount = await this.ensureAccount(
+      MARKETING_PAYABLE_ACCOUNT_CODE,
+      MARKETING_PAYABLE_ACCOUNT_NAME,
+      'liability',
+    );
+
+    await this.accounting.createEntry(
+      {
+        periodId: period.id,
+        entryDate: spendDate.toISOString(),
+        description: `Marketing threshold (unfunded) — campaign ${campaignId}`,
+        referenceNo: `MTH-${campaignId.slice(0, 8)}-${spendDate.toISOString().slice(0, 10)}`,
+        lines: [
+          {
+            accountId: expenseAccount.id,
+            debit: amount,
+            credit: 0,
+            description: 'Marketing expense from unfunded spend',
+          },
+          {
+            accountId: payableAccount.id,
+            debit: 0,
+            credit: amount,
+            description: 'Threshold payable to platform',
+          },
+        ],
+      },
+      undefined,
+    );
   }
 
   /**

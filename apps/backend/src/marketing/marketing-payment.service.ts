@@ -16,6 +16,8 @@ import {
   MARKETING_EXPENSE_ACCOUNT_NAME,
   MARKETING_PREPAID_ACCOUNT_CODE,
   MARKETING_PREPAID_ACCOUNT_NAME,
+  MARKETING_PAYABLE_ACCOUNT_CODE,
+  MARKETING_PAYABLE_ACCOUNT_NAME,
 } from './marketing.constants';
 
 export interface CreatePaymentDto {
@@ -126,7 +128,8 @@ export class MarketingPaymentService {
 
   /**
    * Post reconciled payment to accounting.
-   * Dr Marketing Expense / Cr Payment Source Account.
+   * Dr Marketing Payable / Cr Payment Source Account.
+   * Marketing Prepaid is NEVER touched by threshold payments.
    */
   async postToAccounting(id: string, userId?: string) {
     const payment = await this.prisma.marketingPayment.findUnique({
@@ -160,7 +163,7 @@ export class MarketingPaymentService {
       throw new BadRequestException('Financial period is closed');
     }
 
-    const marketingPrepaid = await this.ensureMarketingPrepaidAccount();
+    const marketingPayable = await this.ensureMarketingPayableAccount();
     const sourceAccount = payment.sourceAccountId
       ? await this.prisma.account.findUnique({ where: { id: payment.sourceAccountId } })
       : null;
@@ -181,14 +184,14 @@ export class MarketingPaymentService {
       {
         periodId: period.id,
         entryDate: payment.paymentDate.toISOString(),
-        description: `Marketing payment — ${payment.adAccount.name}${payment.notes ? ` (${payment.notes})` : ''}`,
+        description: `Marketing threshold payment — ${payment.adAccount.name}${payment.notes ? ` (${payment.notes})` : ''}`,
         referenceNo: `MPAY-${payment.id.slice(0, 8)}`,
         lines: [
           {
-            accountId: marketingPrepaid.id,
+            accountId: marketingPayable.id,
             debit: amount,
             credit: 0,
-            description: 'Marketing prepaid credit top-up',
+            description: 'Marketing payable reduction',
           },
           {
             accountId: sourceAccount.id,
@@ -248,10 +251,14 @@ export class MarketingPaymentService {
 
   /**
    * Credit/Due position per ad account.
-   * Paid credit = funded (paid) - consumed (paid) in platform currency.
-   * Promotional credit = funded (promotional) - consumed (promotional) in platform currency.
-   * Due = paid consumption (base currency) - paid (base currency via actualCost).
-   * Promotional consumption has no P&L impact — no cash outflow.
+   *
+   * Credit = remaining prepaid (paid + promotional) in platform currency.
+   * Due    = threshold consumption (base currency) − reconciled payments (base currency).
+   *           Only threshold/unfunded spend creates a payable.
+   * Net    = value of remaining prepaid − due.
+   *
+   * Lot-based valuation: remaining prepaid credit is valued from actual
+   * remaining ledger lots, not the first lot's effective rate.
    */
   async creditDuePosition(adAccountId?: string) {
     const accounts = await this.prisma.adAccount.findMany({
@@ -277,18 +284,25 @@ export class MarketingPaymentService {
       const promotionalCredit = Math.round((promoFunded - promoConsumed) * 100) / 100;
       const totalCredit = Math.round((paidCredit + promotionalCredit) * 100) / 100;
 
-      // Due: only paid consumption contributes (promotional has no cash cost)
-      const totalPaid = account.payments
-        .filter((p) => p.status === 'reconciled' && p.actualCost)
-        .reduce((sum, p) => sum + Number(p.actualCost), 0);
+      // Due: only threshold consumption (unfunded spend) creates a payable.
+      // Threshold amount = total spent − amount consumed from paid ledger − amount consumed from promo ledger.
+      // We compute this via: total paid consumption rate sum − paid consumption (already billed) − promo consumption.
+      // Simpler: due = all paid ledger consumption * rate − reconciled payments (already recorded as payable).
+      // Even simpler: due = total billed − total paid. Total billed = sum(paidConsumed * effectiveRate) for paid only.
       const billed = paidLedger.reduce(
         (sum, l) => sum + Number(l.consumedAmount) * Number(l.effectiveRate),
         0,
       );
+      const totalPaid = account.payments
+        .filter((p) => p.status === 'reconciled' && p.actualCost)
+        .reduce((sum, p) => sum + Number(p.actualCost), 0);
       const due = Math.round((billed - totalPaid) * 100) / 100;
 
-      // Net position (base currency): credit value minus due
-      const creditValue = paidConsumed * (paidLedger.length > 0 ? Number(paidLedger[0].effectiveRate) : 1);
+      // Net position (base currency): lot-based credit value minus due.
+      // Credit value = sum of (remaining × effectiveRate) across all remaining ledger lots.
+      const creditValue = paidLedger
+        .filter((l) => Number(l.remainingAmount) > 0)
+        .reduce((sum, l) => sum + Number(l.remainingAmount) * Number(l.effectiveRate), 0);
       const netPosition = Math.round((creditValue - due) * 100) / 100;
 
       return {
@@ -306,7 +320,7 @@ export class MarketingPaymentService {
         totalFunded: paidFunded + promoFunded,
         totalConsumed: paidConsumed + promoConsumed,
         totalCredit,
-        // Due (base currency)
+        // Due (base currency) — threshold-only
         totalPaid,
         billed: Math.round(billed * 100) / 100,
         due,
@@ -349,6 +363,25 @@ export class MarketingPaymentService {
     });
     this.logger.log(
       `Created marketing prepaid account ${created.code} (${created.id})`,
+    );
+    return created;
+  }
+
+  private async ensureMarketingPayableAccount() {
+    const account = await this.prisma.account.findFirst({
+      where: { code: MARKETING_PAYABLE_ACCOUNT_CODE },
+    });
+    if (account) return account;
+    const created = await this.prisma.account.create({
+      data: {
+        code: MARKETING_PAYABLE_ACCOUNT_CODE,
+        name: MARKETING_PAYABLE_ACCOUNT_NAME,
+        type: 'liability',
+        isGroup: false,
+      },
+    });
+    this.logger.log(
+      `Created marketing payable account ${created.code} (${created.id})`,
     );
     return created;
   }

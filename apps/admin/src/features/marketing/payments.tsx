@@ -240,7 +240,9 @@ function AddPaymentDialog({
   })
 
   const walletAccounts = Array.isArray(accounts)
-    ? (accounts as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter((a: any) => a.type === 'asset' && !a.isGroup)
+    ? (accounts as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter(
+        (a: any) => a.type === 'asset' && !a.isGroup && !['marketing-prepaid', 'marketing-expense', 'marketing-payable'].includes(a.code)
+      )
     : []
 
   const selectedAdAccount = adAccounts.find((a) => a.id === form.adAccountId)
@@ -266,7 +268,12 @@ function AddPaymentDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Record payment</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Record payment</DialogTitle>
+          <p className="text-xs text-muted-foreground">
+            Manually record a platform payment that was not automatically imported. Reconcile with actual BDT cost to derive the FX rate.
+          </p>
+        </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>Ad Account</Label>
@@ -353,7 +360,9 @@ function ReconcileDialog({
   })
 
   const walletAccounts = Array.isArray(accounts)
-    ? (accounts as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter((a: any) => a.type === 'asset' && !a.isGroup)
+    ? (accounts as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter(
+        (a: any) => a.type === 'asset' && !a.isGroup && !['marketing-prepaid', 'marketing-expense', 'marketing-payable'].includes(a.code)
+      )
     : []
 
   const reconcileMut = useMutation({

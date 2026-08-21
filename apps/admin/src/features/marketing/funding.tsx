@@ -68,7 +68,9 @@ export function MarketingFunding() {
   })
 
   const fundingAccounts = Array.isArray(accountTree)
-    ? (accountTree as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter((a: any) => a.type === 'asset' && !a.isGroup)
+    ? (accountTree as any[]).flatMap((a: any) => [a, ...(a.children || [])]).filter(
+        (a: any) => a.type === 'asset' && !a.isGroup && !['marketing-prepaid', 'marketing-expense', 'marketing-payable'].includes(a.code)
+      )
     : []
 
   const invalidate = () => {
