@@ -13,7 +13,7 @@ describe('Promotional Credit Accounting', () => {
   let accounting: AccountingService;
 
   const mockAdAccountId = 'acct-promo-test';
-  const mockCampaignId = 'camp-promo-1';
+  const mockCampaignId = '00000000-0000-0000-0000-000000000002';
 
   const mockPrisma = () => ({
     adAccount: {
@@ -22,6 +22,7 @@ describe('Promotional Credit Accounting', () => {
     },
     marketingCampaign: {
       findUnique: jest.fn().mockResolvedValue({ id: mockCampaignId, adAccountId: mockAdAccountId }),
+      findMany: jest.fn().mockResolvedValue([{ id: mockCampaignId, adAccountId: mockAdAccountId }]),
     },
     marketingFundingEntry: {
       create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `entry-${Date.now()}`, ...d.data })),
@@ -56,6 +57,9 @@ describe('Promotional Credit Accounting', () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'acct-expense', code: 'marketing-expense', name: 'Marketing Expenses' }),
       findUnique: jest.fn().mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false }),
       create: jest.fn(),
+    },
+    journalEntryLine: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     $transaction: jest.fn().mockImplementation(async (fn: any) => {
       const ledgerRows: Record<string, any> = {
@@ -285,11 +289,11 @@ describe('Promotional Credit Accounting', () => {
       expect(pos.totalCredit).toBe(90); // 60 + 30
       expect(pos.paidConsumed).toBe(40);
       expect(pos.promoConsumed).toBe(20);
-      // Due = paid consumed (40) * rate (132) - totalPaid (5280) = 5280 - 5280 = 0
+      // Due = 0 (no threshold journals → payable balance = 0)
       expect(pos.due).toBe(0);
     });
 
-    it('shows due when paid consumption exceeds payments', async () => {
+    it('shows due from payable balance when threshold consumption exists', async () => {
       (prisma.adAccount.findMany as jest.Mock).mockResolvedValue([{
         id: mockAdAccountId,
         name: 'Test Ad Account',
@@ -297,14 +301,18 @@ describe('Promotional Credit Accounting', () => {
         fundingLedger: [
           { fundingType: 'paid', receivedAmount: 100, consumedAmount: 60, effectiveRate: 132 },
         ],
-        payments: [
-          { status: 'reconciled', actualCost: 5280 },
-        ],
+        payments: [],
       }]);
+      // Simulate threshold journal credit of 2640 for this account's campaign
+      (prisma.journalEntryLine.findMany as jest.Mock).mockResolvedValue([
+        { credit: 2640, entry: { description: `Marketing threshold (unfunded) — campaign ${mockCampaignId}` } },
+      ]);
+      // No threshold payments yet
+      (prisma.marketingPayment.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await paymentService.creditDuePosition(mockAdAccountId);
       const pos = result[0];
-      // Due = 60 * 132 - 5280 = 7920 - 5280 = 2640
+      // Due = threshold credit = 2640 (no payments yet)
       expect(pos.due).toBe(2640);
       expect(pos.paidCredit).toBe(40); // 100 - 60
       expect(pos.promotionalCredit).toBe(0);
@@ -323,10 +331,12 @@ describe('Promotional Credit Accounting', () => {
           { status: 'reconciled', actualCost: 2640 },
         ],
       }]);
+      // No threshold → no payable lines
+      (prisma.journalEntryLine.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await paymentService.creditDuePosition(mockAdAccountId);
       const pos = result[0];
-      // Due = 20 * 132 - 2640 = 2640 - 2640 = 0 (promotional consumption not counted)
+      // Due = 0 (prepaid covered all consumption)
       expect(pos.due).toBe(0);
       expect(pos.paidCredit).toBe(80); // 100 - 20
       expect(pos.promotionalCredit).toBe(0); // 50 - 50

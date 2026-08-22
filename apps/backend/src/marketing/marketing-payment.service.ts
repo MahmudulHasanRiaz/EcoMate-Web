@@ -253,8 +253,7 @@ export class MarketingPaymentService {
    * Credit/Due position per ad account.
    *
    * Credit = remaining prepaid (paid + promotional) in platform currency.
-   * Due    = threshold consumption (base currency) − reconciled payments (base currency).
-   *           Only threshold/unfunded spend creates a payable.
+   * Due    = Marketing Payable net credit balance (threshold created − threshold paid).
    * Net    = value of remaining prepaid − due.
    *
    * Lot-based valuation: remaining prepaid credit is valued from actual
@@ -268,6 +267,60 @@ export class MarketingPaymentService {
         payments: true,
       },
     });
+
+    const accountIds = accounts.map((a) => a.id);
+
+    // Build campaignId → adAccountId map for payable scoping
+    const campaigns = await this.prisma.marketingCampaign.findMany({
+      where: { adAccountId: { in: accountIds } },
+      select: { id: true, adAccountId: true },
+    });
+    const campaignToAccount = new Map(campaigns.map((c) => [c.id, c.adAccountId]));
+
+    // Get the Marketing Payable balance scoped per ad account.
+    //
+    // Threshold journals: entry description = "Marketing threshold (unfunded) — campaign <campaignId>"
+    //   → credit line on payable account; campaignId links to adAccountId.
+    //
+    // Payment debits: from MarketingPayment table (has adAccountId directly).
+    //   Journal debit lines do NOT carry campaign info — so we use the payment
+    //   table instead, which already links to the ad account.
+    //
+    // Due per account = threshold credits (journal) − payments (MarketingPayment table).
+    const payableAccount = await this.prisma.account.findFirst({
+      where: { code: MARKETING_PAYABLE_ACCOUNT_CODE },
+    });
+    const dueByAccount = new Map<string, number>();
+    if (payableAccount) {
+      // Step 1: Get all threshold journal credits scoped to campaigns of these accounts
+      const payableLines = await this.prisma.journalEntryLine.findMany({
+        where: { accountId: payableAccount.id, credit: { gt: 0 } },
+        select: { credit: true, entry: { select: { description: true } } },
+      });
+      for (const line of payableLines) {
+        const entryDesc = line.entry?.description ?? '';
+        const campaignMatch = entryDesc.match(/campaign\s+([0-9a-f-]{36})/i);
+        if (campaignMatch) {
+          const campaignId = campaignMatch[1];
+          const accountId = campaignToAccount.get(campaignId);
+          if (accountId) {
+            dueByAccount.set(accountId, (dueByAccount.get(accountId) ?? 0) + Number(line.credit));
+          }
+        }
+      }
+    }
+
+    // Step 2: Subtract payments (reconciled, from MarketingPayment table)
+    const allPayments = await this.prisma.marketingPayment.findMany({
+      where: { status: 'reconciled', actualCost: { gt: 0 } },
+      select: { adAccountId: true, actualCost: true },
+    });
+    const paymentsByAccount = new Map<string, number>();
+    for (const p of allPayments) {
+      paymentsByAccount.set(p.adAccountId, (paymentsByAccount.get(p.adAccountId) ?? 0) + Number(p.actualCost));
+      // Subtract payment from due
+      dueByAccount.set(p.adAccountId, (dueByAccount.get(p.adAccountId) ?? 0) - Number(p.actualCost));
+    }
 
     return accounts.map((account) => {
       // Split by funding type
@@ -284,22 +337,16 @@ export class MarketingPaymentService {
       const promotionalCredit = Math.round((promoFunded - promoConsumed) * 100) / 100;
       const totalCredit = Math.round((paidCredit + promotionalCredit) * 100) / 100;
 
-      // Due: only threshold consumption (unfunded spend) creates a payable.
-      // Threshold amount = total spent − amount consumed from paid ledger − amount consumed from promo ledger.
-      // We compute this via: total paid consumption rate sum − paid consumption (already billed) − promo consumption.
-      // Simpler: due = all paid ledger consumption * rate − reconciled payments (already recorded as payable).
-      // Even simpler: due = total billed − total paid. Total billed = sum(paidConsumed * effectiveRate) for paid only.
-      const billed = paidLedger.reduce(
-        (sum, l) => sum + Number(l.consumedAmount) * Number(l.effectiveRate),
-        0,
-      );
-      const totalPaid = account.payments
-        .filter((p) => p.status === 'reconciled' && p.actualCost)
-        .reduce((sum, p) => sum + Number(p.actualCost), 0);
-      const due = Math.round((billed - totalPaid) * 100) / 100;
+      // Due = Marketing Payable net credit balance scoped to this account's campaigns.
+      // Threshold journals (credit) increase due; threshold payments (debit) decrease due.
+      const totalPaid = paymentsByAccount.get(account.id) ?? 0;
+      const accountPayable = dueByAccount.get(account.id) ?? 0;
+      const due = Math.round(accountPayable * 100) / 100;
+
+      // Billed = due + totalPaid (reconstruct for backward compat display)
+      const billed = Math.round((due + totalPaid) * 100) / 100;
 
       // Net position (base currency): lot-based credit value minus due.
-      // Credit value = sum of (remaining × effectiveRate) across all remaining ledger lots.
       const creditValue = paidLedger
         .filter((l) => Number(l.remainingAmount) > 0)
         .reduce((sum, l) => sum + Number(l.remainingAmount) * Number(l.effectiveRate), 0);
@@ -320,9 +367,9 @@ export class MarketingPaymentService {
         totalFunded: paidFunded + promoFunded,
         totalConsumed: paidConsumed + promoConsumed,
         totalCredit,
-        // Due (base currency) — threshold-only
+        // Due (base currency) — from Marketing Payable balance scoped per account
         totalPaid,
-        billed: Math.round(billed * 100) / 100,
+        billed,
         due,
         netPosition,
       };
