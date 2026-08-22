@@ -25,6 +25,9 @@ export interface LandingAttribution {
   utmContent?: string;
   utmTerm?: string;
   referrer?: string;
+  /** Generic click identifier — platform-agnostic (fbclid, ttclid, gclid, etc.) */
+  clickId?: string;
+  /** @deprecated Use clickId. Kept for backward compat with Meta-specific data. */
   fbclid?: string;
   ttclid?: string;
   igshid?: string;
@@ -63,6 +66,10 @@ function writeStored(attribution: LandingAttribution): void {
 function captureFromWindow(): LandingAttribution | null {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
   const params = new URLSearchParams(window.location.search || '');
+  const fbclid = clean(params.get('fbclid'));
+  const ttclid = clean(params.get('ttclid'));
+  // clickId: generic — first available provider click identifier
+  const clickId = fbclid || ttclid || undefined;
   return {
     utmSource: clean(params.get('utm_source')),
     utmMedium: clean(params.get('utm_medium')),
@@ -70,8 +77,9 @@ function captureFromWindow(): LandingAttribution | null {
     utmContent: clean(params.get('utm_content')),
     utmTerm: clean(params.get('utm_term')),
     referrer: clean(document.referrer),
-    fbclid: clean(params.get('fbclid')),
-    ttclid: clean(params.get('ttclid')),
+    clickId,
+    fbclid,
+    ttclid,
     igshid: clean(params.get('igshid')),
     ts: Date.now(),
   };

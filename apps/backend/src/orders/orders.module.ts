@@ -9,6 +9,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -20,6 +21,7 @@ import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module'
     InventoryModule,
     BlockedEntriesModule,
     CouponsModule,
+    MarketingModule,
   ],
 })
 export class OrdersModule {}

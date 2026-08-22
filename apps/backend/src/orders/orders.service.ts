@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -43,6 +44,7 @@ import { resolveWebAttribution } from './web-attribution';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { OrderEditLockService } from './order-edit-lock.service';
+import { MarketingAttributionService } from '../marketing/marketing-attribution.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -191,6 +193,8 @@ export class OrdersService {
     private readonly cancelReturnStock: CancelReturnStockService,
     private readonly orderStockDeduct: OrderStockDeductService,
     private readonly editLock: OrderEditLockService,
+    @Optional()
+    private readonly marketingAttribution?: MarketingAttributionService,
   ) {}
 
   private async resolveAndApplyStock(
@@ -1797,6 +1801,25 @@ export class OrdersService {
     });
 
     this.security.recordOrder(dto.guestPhone || '', clientIp || '');
+
+    // Deterministic marketing attribution (best-effort, never breaks ordering):
+    // maps the order's stored landing signals to a matched campaign/session.
+    if (this.marketingAttribution) {
+      this.marketingAttribution
+        .resolveFromOrder(order.id, {
+          sourcePlatform: order.sourcePlatform,
+          sourceType: order.sourceType,
+          sourceEntity: order.sourceEntity,
+          trackingSessionId: order.trackingSessionId,
+          attribution: dto.attribution as any,
+        })
+        .catch((err) => {
+          this.logger.error(
+            `Marketing attribution resolution failed for order ${order.id}:`,
+            err,
+          );
+        });
+    }
 
     if (dto.couponCode) {
       await this.couponsService.apply(
