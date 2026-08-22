@@ -18,6 +18,15 @@ import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyRedxHmac } from './webhook-verifier';
 
+/**
+ * Pathao's published, merchant-independent webhook integration token that every
+ * merchant URL must echo in the X-Pathao-Merchant-Webhook-Integration-Secret
+ * response header. It is a fixed constant (identical for all merchants), NOT
+ * the merchant's registered webhook secret — it must never be used to validate
+ * the inbound X-PATHAO-Signature, since anyone could replay it.
+ */
+export const PATHAO_WEBHOOK_INTEGRATION_SECRET = 'f3992ecc-59da-4cbe-a049-a13da2018d51';
+
 @Controller('webhooks/courier')
 export class CourierWebhookController {
   private readonly logger = new Logger(CourierWebhookController.name);
@@ -85,16 +94,21 @@ export class CourierWebhookController {
     const creds = await this.prisma.courierCredentials.findUnique({
       where: { courier: 'pathao' },
     });
-    // The merchant's registered integration secret (registered with Pathao,
-    // e.g. f3992ecc-59da-4cbe-a049-a13da2018d51) takes precedence; the legacy
-    // generic webhookSecret field is accepted as a fallback.
-    const secret = creds?.pathaoIntegrationSecret || creds?.webhookSecret;
+    // The inbound X-PATHAO-Signature carries the MERCHANT-REGISTERED webhook
+    // secret verbatim (Pathao does not HMAC the body). Pathao's separate
+    // integration token (echoed in the response header) is a public publisher
+    // constant shared by every merchant — it MUST NOT be used for validation,
+    // otherwise any spoofed request could replay it and bypass auth.
+    const secret = creds?.webhookSecret;
     if (!secret) {
-      return { result: 'CREDENTIAL_MISSING', detail: 'Pathao webhook secret not configured' };
+      return {
+        result: 'CREDENTIAL_MISSING',
+        detail: 'Pathao webhook secret not configured — set the Webhook Secret to the exact value registered with Pathao',
+      };
     }
 
     if (signature !== secret) {
-      return { result: 'MISMATCH', detail: 'Signature does not match stored secret' };
+      return { result: 'MISMATCH', detail: 'Signature does not match the registered webhook secret' };
     }
 
     return { result: 'MATCHED' };
@@ -283,7 +297,7 @@ export class CourierWebhookController {
       });
       res.header(
         'X-Pathao-Merchant-Webhook-Integration-Secret',
-        creds?.pathaoIntegrationSecret || creds?.webhookSecret || '',
+        (creds?.pathaoIntegrationSecret || '').trim() || PATHAO_WEBHOOK_INTEGRATION_SECRET,
       );
       res.status(202);
 

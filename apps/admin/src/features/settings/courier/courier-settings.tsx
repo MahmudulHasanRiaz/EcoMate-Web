@@ -61,7 +61,7 @@ const courierInfo: Record<string, CourierInfo> = {
   pathao: {
     name: 'Pathao', color: '#F97316',
     fields: ['clientId', 'clientSecret', 'username', 'password', 'storeId'],
-    guide: 'Get credentials from Pathao Merchant Portal. Store ID found in Store Settings.',
+    guide: 'Get credentials from Pathao Merchant Portal. Store ID found in Store Settings. Pathao sends your registered webhook Secret in the X-PATHAO-Signature header — put that exact Secret in the Webhook Secret box below (NOT the integration token).',
     docUrl: 'https://merchant.pathao.com',
     integrationField: 'pathaoIntegrationSecret',
   },
@@ -242,7 +242,7 @@ export function CourierSettings() {
     password: 'Password (Merchant Login)', clientId: 'Client ID', clientSecret: 'Client Secret',
     clientContext: 'Client Context', storeId: 'Store ID',
     shopId: 'Shop ID',
-    pathaoIntegrationSecret: 'Integration Secret (from Pathao)',
+    pathaoIntegrationSecret: 'Pathao Integration Token (echo in response header)',
   }
 
   return (
@@ -339,7 +339,7 @@ export function CourierSettings() {
                         className='h-8 text-sm'
                         value={String(form[info.integrationField] || '')}
                         onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [info.integrationField!]: e.target.value } }))}
-                        placeholder='Paste value from Pathao dashboard...'
+                        placeholder='The fixed token shown in Pathao docs (e.g. f3992ecc-...) — echoed in the response header'
                       />
                     </div>
                   )}
@@ -374,7 +374,7 @@ export function CourierSettings() {
                 ) : (
                   <div className='bg-muted/50 rounded-md p-2 space-y-2'>
                     <div className='flex items-center justify-between'>
-                      <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Bearer Token (Auth)</Label>
+                      <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> {courier === 'pathao' ? 'Webhook Secret' : 'Bearer Token (Auth)'}</Label>
                       {form.webhookSecret ? (
                         <Button 
                           variant='ghost' 
@@ -419,9 +419,15 @@ export function CourierSettings() {
                         Generate Bearer Token
                       </Button>
                     )}
-                    <p className='text-[10px] text-muted-foreground'>
-                      Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
-                    </p>
+                    {courier === 'pathao' ? (
+                      <p className='text-[10px] text-muted-foreground'>
+                        The exact Secret you entered in Pathao's Webhook Integration page. Pathao sends it in the <code className='text-[10px] bg-muted px-0.5 rounded'>X-PATHAO-Signature</code> header on every webhook.
+                      </p>
+                    ) : (
+                      <p className='text-[10px] text-muted-foreground'>
+                        Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
+                      </p>
+                    )}
                   </div>
                 )}
 
