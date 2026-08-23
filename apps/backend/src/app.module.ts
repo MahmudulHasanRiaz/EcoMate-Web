@@ -78,6 +78,7 @@ import { HrLedgersModule } from './hr-ledgers/hr-ledgers.module';
 import { HrLeaveModule } from './hr-leave/hr-leave.module';
 import { HrPaymentsModule } from './hr-payments/hr-payments.module';
 import { CommissionsModule } from './commissions/commissions.module';
+import { HrSelfServiceModule } from './hr-self-service/hr-self-service.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
@@ -168,6 +169,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     HrLeaveModule,
     HrPaymentsModule,
     CommissionsModule,
+    HrSelfServiceModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,
     AccountsModule,

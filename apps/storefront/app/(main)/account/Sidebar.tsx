@@ -1,10 +1,10 @@
 "use client";
 
-import { User, Package, MapPin, Heart, Settings, LogOut } from 'lucide-react';
+import { User, Package, MapPin, Heart, Settings, LogOut, Briefcase } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
-type Section = 'profile' | 'orders' | 'addresses' | 'settings';
+type Section = 'profile' | 'orders' | 'addresses' | 'settings' | 'hr';
 
 function SidebarItem({
   icon, label, isActive, onClick,
@@ -62,6 +62,9 @@ export function Sidebar({
         <SidebarItem icon={<MapPin size={18} />} label="Saved Addresses" isActive={activeSection === 'addresses'} onClick={() => onNavigate('addresses')} />
         <SidebarItem icon={<Heart size={18} />} label="Wishlist" onClick={() => router.push('/wishlist')} />
         <SidebarItem icon={<Settings size={18} />} label="Settings" isActive={activeSection === 'settings'} onClick={() => onNavigate('settings')} />
+        {user?.role === 'employee' && (
+          <SidebarItem icon={<Briefcase size={18} />} label="My HR" isActive={activeSection === 'hr'} onClick={() => onNavigate('hr')} />
+        )}
       </div>
 
       <div className="mt-8 pt-8 border-t border-gray-100">

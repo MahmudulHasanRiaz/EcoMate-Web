@@ -8,9 +8,10 @@ import { ProfileSection } from './sections/ProfileSection';
 import { OrdersSection } from './sections/OrdersSection';
 import { AddressesSection } from './sections/AddressesSection';
 import { SettingsSection } from './sections/SettingsSection';
+import { HrSection } from './sections/HrSection';
 import { useRouter } from 'next/navigation';
 
-type Section = 'profile' | 'orders' | 'addresses' | 'settings';
+type Section = 'profile' | 'orders' | 'addresses' | 'settings' | 'hr';
 
 export default function AccountPage() {
   const { user, loading, login, register } = useAuth();
@@ -113,6 +114,7 @@ export default function AccountPage() {
       case 'orders': return <OrdersSection />;
       case 'addresses': return <AddressesSection />;
       case 'settings': return <SettingsSection />;
+      case 'hr': return <HrSection />;
       default: return <ProfileSection />;
     }
   };
