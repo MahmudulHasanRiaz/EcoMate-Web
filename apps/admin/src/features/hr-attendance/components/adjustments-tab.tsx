@@ -132,7 +132,7 @@ function AdjustmentsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </div>
             <div className='grid gap-2'>
               <Label>Date</Label>
-              <DatePicker selected={date} onSelect={setDate} placeholder='Pick date' />
+              <DatePicker selected={date} onSelect={(d) => d && setDate(d)} placeholder='Pick date' />
             </div>
           </div>
 
