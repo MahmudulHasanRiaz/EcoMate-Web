@@ -11,6 +11,14 @@ export const PERMISSIONS = {
     'manage_presets',
   ],
   SALES: ['create_orders', 'view_orders', 'refund_orders', 'apply_discounts'],
+  HR: [
+    'view_hr',
+    'manage_employees',
+    'manage_payroll',
+    'manage_commissions',
+    'manage_leave',
+    'manage_schedule',
+  ],
   INVENTORY: [
     'view_products',
     'create_products',
@@ -56,6 +64,12 @@ export function getPermissionLabel(key: string): string {
     manage_stock: 'Manage Stock',
     view_system_settings: 'View System Settings',
     modify_integrations: 'Modify Integrations',
+    view_hr: 'View HR',
+    manage_employees: 'Manage Employees',
+    manage_payroll: 'Manage Payroll',
+    manage_commissions: 'Manage Commissions',
+    manage_leave: 'Manage Leave',
+    manage_schedule: 'Manage Schedule',
   };
   return (
     labels[key] ||
@@ -70,6 +84,7 @@ export function getModuleLabel(key: string): string {
     CUSTOMER: 'Customer Management',
     EMPLOYEE: 'Employee Management',
     SALES: 'Sales / POS',
+    HR: 'HR Management',
     INVENTORY: 'Inventory Management',
     SETTINGS: 'System Settings',
   };

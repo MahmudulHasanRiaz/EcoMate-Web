@@ -17,7 +17,8 @@ type BaseNavItem = {
   badge?: string
   icon?: React.ElementType
   feature?: string
-  panel?: 'operational' | 'monitoring'
+  permissions?: string[]
+  panel?: 'operational' | 'monitoring' | 'hr'
 }
 
 type NavLink = BaseNavItem & {

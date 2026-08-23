@@ -69,6 +69,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { EmployeesModule } from './employees/employees.module';
 import { DepartmentsModule } from './departments/departments.module';
+import { HrModule } from './hr/hr.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccessPresetsModule } from './access-presets/access-presets.module';
 import { DesignationsModule } from './designations/designations.module';
@@ -156,6 +157,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     DepartmentsModule,
     EmployeesModule,
     PayrollModule,
+    HrModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,
     AccountsModule,

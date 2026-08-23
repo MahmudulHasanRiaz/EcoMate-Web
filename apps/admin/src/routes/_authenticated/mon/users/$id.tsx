@@ -1,11 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { UserDetail } from '@/features/users/components/user-detail'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/mon/users/$id')({
-  component: RouteComponent,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/hr/users/$id', params })
+  },
 })
-
-function RouteComponent() {
-  const { id } = Route.useParams() as { id: string }
-  return <UserDetail userId={id} />
-}

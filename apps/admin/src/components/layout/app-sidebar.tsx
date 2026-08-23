@@ -6,18 +6,20 @@ import { NavGroup } from './nav-group'
 import { NavUser } from './nav-user'
 import { TeamSwitcher } from './team-switcher'
 import { useLicenseStore } from '@/stores/license-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { filterNavItems } from './data/sidebar-filter'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
   const features = useLicenseStore((s) => s.features)
+  const permissions = useAuthStore((s) => s.auth.user?.permissions || [])
 
   const mainGroups = sidebarData.navGroups
     .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
     .map((g) => ({
       ...g,
-      items: filterNavItems(g.items, features),
+      items: filterNavItems(g.items, features, permissions),
     }))
     .filter((g) => g.items.length > 0)
 
@@ -25,7 +27,7 @@ export function AppSidebar() {
   const footerItems = secondaryGroup?.items.filter(
     (item) => !item.panel || item.panel === activePanel
   )
-  const filteredFooter = footerItems ? filterNavItems(footerItems, features) : []
+  const filteredFooter = footerItems ? filterNavItems(footerItems, features, permissions) : []
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>

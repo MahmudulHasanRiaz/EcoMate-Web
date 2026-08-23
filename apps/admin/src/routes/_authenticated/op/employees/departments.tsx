@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import DepartmentsPage from '@/features/departments'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/op/employees/departments')({
-  component: DepartmentsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/hr/employees/departments' })
+  },
 })

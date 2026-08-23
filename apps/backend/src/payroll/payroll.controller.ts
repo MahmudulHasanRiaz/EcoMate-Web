@@ -12,14 +12,17 @@ import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
 import { GeneratePayslipDto } from './dto/generate-payslip.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsAny } from '../common/decorators/permissions.decorator';
 
 @Controller('payroll')
-@Roles('superadmin', 'admin')
+@Roles('superadmin', 'admin', 'manager')
+@PermissionsAny('view_hr')
 @RequiresFeature('admin_payroll')
 export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 
   @Post('salary-structure')
+  @PermissionsAny('manage_payroll')
   setSalaryStructure(@Body() dto: SetSalaryStructureDto) {
     return this.payrollService.setSalaryStructure(dto);
   }
@@ -30,6 +33,7 @@ export class PayrollController {
   }
 
   @Post('payslips/generate')
+  @PermissionsAny('manage_payroll')
   generatePayslip(@Body() dto: GeneratePayslipDto) {
     return this.payrollService.generatePayslip(
       dto.employeeId,
@@ -57,6 +61,7 @@ export class PayrollController {
   }
 
   @Patch('payslips/:id/approve')
+  @PermissionsAny('manage_payroll')
   approvePayslip(@Param('id') id: string) {
     return this.payrollService.approvePayslip(id);
   }

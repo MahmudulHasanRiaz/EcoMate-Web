@@ -124,22 +124,40 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },
-        {
-          title: 'Employees',
-          icon: UserCog,
-          feature: 'admin_employees',
-          items: [
-            { title: 'All Employees', url: '/op/employees' },
-            { title: 'Create Employee', url: '/op/employees/create' },
-            { title: 'Departments', url: '/op/employees/departments', feature: 'admin_employees' },
-            { title: 'Designations', url: '/op/employees/designations' },
-          ],
-        },
-        { title: 'Payroll', url: '/op/payroll', icon: DollarSign, feature: 'admin_payroll' },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' },
         { title: 'POS Terminal', url: '/pos', icon: Store, feature: 'pos_system' },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck, feature: 'admin_blocking' },
         { title: 'Media Gallery', url: '/op/media', icon: Monitor, feature: 'admin_media' },
+      ],
+    },
+    // ===== HR MANAGEMENT PANEL =====
+    {
+      title: '',
+      panel: 'hr',
+      items: [
+        { title: 'Dashboard', url: '/hr/overview', icon: LayoutDashboard, feature: 'admin_hr', permissions: ['view_hr'] },
+        {
+          title: 'Employees',
+          icon: UserCog,
+          feature: 'admin_employees',
+          permissions: ['view_hr'],
+          items: [
+            { title: 'All Employees', url: '/hr/employees' },
+            { title: 'Create Employee', url: '/hr/employees/create' },
+            { title: 'Departments', url: '/hr/employees/departments', feature: 'admin_employees' },
+            { title: 'Designations', url: '/hr/employees/designations' },
+          ],
+        },
+        { title: 'Payroll', url: '/hr/payroll', icon: DollarSign, feature: 'admin_payroll', permissions: ['view_hr'] },
+        {
+          title: 'User Management',
+          icon: Users,
+          permissions: ['view_hr'],
+          items: [
+            { title: 'All Users', url: '/hr/users', feature: 'admin_users' },
+            { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets' },
+          ],
+        },
       ],
     },
     // ===== MONITORING / ADMIN PANEL =====
@@ -151,14 +169,6 @@ export const sidebarData: SidebarData = {
         { title: 'Analytics', url: '/mon/analytics', icon: Monitor, feature: 'admin_analytics' },
         { title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert },
         { title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive },
-        {
-          title: 'User Management',
-          icon: Users,
-          items: [
-            { title: 'All Users', url: '/mon/users', feature: 'admin_users' },
-            { title: 'Access Presets', url: '/mon/users/presets', feature: 'admin_access_presets' },
-          ],
-        },
         { title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' },
         { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' },
         { title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' },

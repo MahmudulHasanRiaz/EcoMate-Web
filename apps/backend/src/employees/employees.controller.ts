@@ -13,14 +13,17 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsAny } from '../common/decorators/permissions.decorator';
 
 @Controller('employees')
 @Roles('superadmin', 'admin', 'manager')
+@PermissionsAny('view_hr')
 @RequiresFeature('admin_employees')
 export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
   @Post()
+  @PermissionsAny('manage_employees')
   create(@Body() dto: CreateEmployeeDto) {
     return this.employeesService.create(dto);
   }
@@ -51,11 +54,13 @@ export class EmployeesController {
   }
 
   @Put(':id')
+  @PermissionsAny('manage_employees')
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
     return this.employeesService.update(id, dto);
   }
 
   @Delete(':id')
+  @PermissionsAny('manage_employees')
   remove(@Param('id') id: string) {
     return this.employeesService.remove(id);
   }

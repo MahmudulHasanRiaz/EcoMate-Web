@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useRouterState } from '@tanstack/react-router'
 
-export type PanelType = 'operational' | 'monitoring'
+export type PanelType = 'operational' | 'monitoring' | 'hr'
 
 interface PanelContextType {
   activePanel: PanelType
@@ -18,6 +18,8 @@ export function PanelProvider({ children }: { children: React.ReactNode }) {
     const loc = routerState.location.pathname
     if (loc.includes('/mon/') || loc.includes('/mon')) {
       setActivePanel('monitoring')
+    } else if (loc.includes('/hr/') || loc.includes('/hr')) {
+      setActivePanel('hr')
     } else if (loc.includes('/op/') || loc.includes('/op') || loc === '/' || loc === '/admin/') {
       setActivePanel('operational')
     }

@@ -27,6 +27,8 @@ import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
+import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
+import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as authLicenseActivateRouteImport } from './routes/(auth)/license/activate'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
@@ -77,6 +79,9 @@ import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedMonBackupIndexRouteImport } from './routes/_authenticated/mon/backup/index'
 import { Route as AuthenticatedMonAnalyticsIndexRouteImport } from './routes/_authenticated/mon/analytics/index'
 import { Route as AuthenticatedMonActivityLogsIndexRouteImport } from './routes/_authenticated/mon/activity-logs/index'
+import { Route as AuthenticatedHrUsersIndexRouteImport } from './routes/_authenticated/hr/users/index'
+import { Route as AuthenticatedHrPayrollIndexRouteImport } from './routes/_authenticated/hr/payroll/index'
+import { Route as AuthenticatedHrEmployeesIndexRouteImport } from './routes/_authenticated/hr/employees/index'
 import { Route as AuthenticatedOpProductsIdRouteImport } from './routes/_authenticated/op/products/$id'
 import { Route as AuthenticatedOpOrdersCreateRouteImport } from './routes/_authenticated/op/orders/create'
 import { Route as AuthenticatedOpOrdersIdRouteImport } from './routes/_authenticated/op/orders/$id'
@@ -100,6 +105,10 @@ import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './r
 import { Route as AuthenticatedMonUsersPresetsRouteImport } from './routes/_authenticated/mon/users/presets'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
 import { Route as AuthenticatedMonBackupSettingsRouteImport } from './routes/_authenticated/mon/backup/settings'
+import { Route as AuthenticatedHrUsersIdRouteImport } from './routes/_authenticated/hr/users/$id'
+import { Route as AuthenticatedHrEmployeesDesignationsRouteImport } from './routes/_authenticated/hr/employees/designations'
+import { Route as AuthenticatedHrEmployeesDepartmentsRouteImport } from './routes/_authenticated/hr/employees/departments'
+import { Route as AuthenticatedHrEmployeesCreateRouteImport } from './routes/_authenticated/hr/employees/create'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
@@ -233,6 +242,16 @@ const AuthenticatedMonBlockingSettingsRoute =
     path: '/mon/blocking-settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedHrPresetsRoute = AuthenticatedHrPresetsRouteImport.update({
+  id: '/hr/presets',
+  path: '/hr/presets',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHrOverviewRoute = AuthenticatedHrOverviewRouteImport.update({
+  id: '/hr/overview',
+  path: '/hr/overview',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -532,6 +551,24 @@ const AuthenticatedMonActivityLogsIndexRoute =
     path: '/mon/activity-logs/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedHrUsersIndexRoute =
+  AuthenticatedHrUsersIndexRouteImport.update({
+    id: '/hr/users/',
+    path: '/hr/users/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrPayrollIndexRoute =
+  AuthenticatedHrPayrollIndexRouteImport.update({
+    id: '/hr/payroll/',
+    path: '/hr/payroll/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrEmployeesIndexRoute =
+  AuthenticatedHrEmployeesIndexRouteImport.update({
+    id: '/hr/employees/',
+    path: '/hr/employees/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpProductsIdRoute =
   AuthenticatedOpProductsIdRouteImport.update({
     id: '/op/products/$id',
@@ -666,6 +703,29 @@ const AuthenticatedMonBackupSettingsRoute =
   AuthenticatedMonBackupSettingsRouteImport.update({
     id: '/mon/backup/settings',
     path: '/mon/backup/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrUsersIdRoute = AuthenticatedHrUsersIdRouteImport.update({
+  id: '/hr/users/$id',
+  path: '/hr/users/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHrEmployeesDesignationsRoute =
+  AuthenticatedHrEmployeesDesignationsRouteImport.update({
+    id: '/hr/employees/designations',
+    path: '/hr/employees/designations',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrEmployeesDepartmentsRoute =
+  AuthenticatedHrEmployeesDepartmentsRouteImport.update({
+    id: '/hr/employees/departments',
+    path: '/hr/employees/departments',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrEmployeesCreateRoute =
+  AuthenticatedHrEmployeesCreateRouteImport.update({
+    id: '/hr/employees/create',
+    path: '/hr/employees/create',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpSettingsPersonalIndexRoute =
@@ -933,11 +993,17 @@ export interface FileRoutesByFullPath {
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
+  '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
+  '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
+  '/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
+  '/hr/users/$id': typeof AuthenticatedHrUsersIdRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -961,6 +1027,9 @@ export interface FileRoutesByFullPath {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
+  '/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
+  '/hr/users/': typeof AuthenticatedHrUsersIndexRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
@@ -1066,11 +1135,17 @@ export interface FileRoutesByTo {
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
+  '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
+  '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
+  '/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
+  '/hr/users/$id': typeof AuthenticatedHrUsersIdRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -1094,6 +1169,9 @@ export interface FileRoutesByTo {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/hr/employees': typeof AuthenticatedHrEmployeesIndexRoute
+  '/hr/payroll': typeof AuthenticatedHrPayrollIndexRoute
+  '/hr/users': typeof AuthenticatedHrUsersIndexRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
   '/mon/backup': typeof AuthenticatedMonBackupIndexRoute
@@ -1201,11 +1279,17 @@ export interface FileRoutesById {
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/(auth)/license/activate': typeof authLicenseActivateRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
+  '/_authenticated/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
+  '/_authenticated/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
+  '/_authenticated/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
+  '/_authenticated/hr/users/$id': typeof AuthenticatedHrUsersIdRoute
   '/_authenticated/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -1229,6 +1313,9 @@ export interface FileRoutesById {
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/_authenticated/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
+  '/_authenticated/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
+  '/_authenticated/hr/users/': typeof AuthenticatedHrUsersIndexRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
   '/_authenticated/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
@@ -1336,11 +1423,17 @@ export interface FileRouteTypes {
     | '/op/settings'
     | '/license/activate'
     | '/errors/$error'
+    | '/hr/overview'
+    | '/hr/presets'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
     | '/mon/'
     | '/op/'
+    | '/hr/employees/create'
+    | '/hr/employees/departments'
+    | '/hr/employees/designations'
+    | '/hr/users/$id'
     | '/mon/backup/settings'
     | '/mon/users/$id'
     | '/mon/users/presets'
@@ -1364,6 +1457,9 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/hr/employees/'
+    | '/hr/payroll/'
+    | '/hr/users/'
     | '/mon/activity-logs/'
     | '/mon/analytics/'
     | '/mon/backup/'
@@ -1469,11 +1565,17 @@ export interface FileRouteTypes {
     | '/op/settings'
     | '/license/activate'
     | '/errors/$error'
+    | '/hr/overview'
+    | '/hr/presets'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
     | '/mon'
     | '/op'
+    | '/hr/employees/create'
+    | '/hr/employees/departments'
+    | '/hr/employees/designations'
+    | '/hr/users/$id'
     | '/mon/backup/settings'
     | '/mon/users/$id'
     | '/mon/users/presets'
@@ -1497,6 +1599,9 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/hr/employees'
+    | '/hr/payroll'
+    | '/hr/users'
     | '/mon/activity-logs'
     | '/mon/analytics'
     | '/mon/backup'
@@ -1603,11 +1708,17 @@ export interface FileRouteTypes {
     | '/_authenticated/op/settings'
     | '/(auth)/license/activate'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/hr/overview'
+    | '/_authenticated/hr/presets'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
     | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
+    | '/_authenticated/hr/employees/create'
+    | '/_authenticated/hr/employees/departments'
+    | '/_authenticated/hr/employees/designations'
+    | '/_authenticated/hr/users/$id'
     | '/_authenticated/mon/backup/settings'
     | '/_authenticated/mon/users/$id'
     | '/_authenticated/mon/users/presets'
@@ -1631,6 +1742,9 @@ export interface FileRouteTypes {
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
     | '/_authenticated/op/products/$id'
+    | '/_authenticated/hr/employees/'
+    | '/_authenticated/hr/payroll/'
+    | '/_authenticated/hr/users/'
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
     | '/_authenticated/mon/backup/'
@@ -1861,6 +1975,20 @@ declare module '@tanstack/react-router' {
       path: '/mon/blocking-settings'
       fullPath: '/mon/blocking-settings'
       preLoaderRoute: typeof AuthenticatedMonBlockingSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/presets': {
+      id: '/_authenticated/hr/presets'
+      path: '/hr/presets'
+      fullPath: '/hr/presets'
+      preLoaderRoute: typeof AuthenticatedHrPresetsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/overview': {
+      id: '/_authenticated/hr/overview'
+      path: '/hr/overview'
+      fullPath: '/hr/overview'
+      preLoaderRoute: typeof AuthenticatedHrOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -2213,6 +2341,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonActivityLogsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/hr/users/': {
+      id: '/_authenticated/hr/users/'
+      path: '/hr/users'
+      fullPath: '/hr/users/'
+      preLoaderRoute: typeof AuthenticatedHrUsersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/payroll/': {
+      id: '/_authenticated/hr/payroll/'
+      path: '/hr/payroll'
+      fullPath: '/hr/payroll/'
+      preLoaderRoute: typeof AuthenticatedHrPayrollIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/employees/': {
+      id: '/_authenticated/hr/employees/'
+      path: '/hr/employees'
+      fullPath: '/hr/employees/'
+      preLoaderRoute: typeof AuthenticatedHrEmployeesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/products/$id': {
       id: '/_authenticated/op/products/$id'
       path: '/op/products/$id'
@@ -2372,6 +2521,34 @@ declare module '@tanstack/react-router' {
       path: '/mon/backup/settings'
       fullPath: '/mon/backup/settings'
       preLoaderRoute: typeof AuthenticatedMonBackupSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/users/$id': {
+      id: '/_authenticated/hr/users/$id'
+      path: '/hr/users/$id'
+      fullPath: '/hr/users/$id'
+      preLoaderRoute: typeof AuthenticatedHrUsersIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/employees/designations': {
+      id: '/_authenticated/hr/employees/designations'
+      path: '/hr/employees/designations'
+      fullPath: '/hr/employees/designations'
+      preLoaderRoute: typeof AuthenticatedHrEmployeesDesignationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/employees/departments': {
+      id: '/_authenticated/hr/employees/departments'
+      path: '/hr/employees/departments'
+      fullPath: '/hr/employees/departments'
+      preLoaderRoute: typeof AuthenticatedHrEmployeesDepartmentsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/employees/create': {
+      id: '/_authenticated/hr/employees/create'
+      path: '/hr/employees/create'
+      fullPath: '/hr/employees/create'
+      preLoaderRoute: typeof AuthenticatedHrEmployeesCreateRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/settings/personal/': {
@@ -2775,11 +2952,17 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPrintRouteRoute: typeof AuthenticatedOpPrintRouteRouteWithChildren
   AuthenticatedOpSettingsRouteRoute: typeof AuthenticatedOpSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
+  AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
+  AuthenticatedHrEmployeesCreateRoute: typeof AuthenticatedHrEmployeesCreateRoute
+  AuthenticatedHrEmployeesDepartmentsRoute: typeof AuthenticatedHrEmployeesDepartmentsRoute
+  AuthenticatedHrEmployeesDesignationsRoute: typeof AuthenticatedHrEmployeesDesignationsRoute
+  AuthenticatedHrUsersIdRoute: typeof AuthenticatedHrUsersIdRoute
   AuthenticatedMonBackupSettingsRoute: typeof AuthenticatedMonBackupSettingsRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
   AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
@@ -2803,6 +2986,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedOpProductsIdRoute: typeof AuthenticatedOpProductsIdRoute
+  AuthenticatedHrEmployeesIndexRoute: typeof AuthenticatedHrEmployeesIndexRoute
+  AuthenticatedHrPayrollIndexRoute: typeof AuthenticatedHrPayrollIndexRoute
+  AuthenticatedHrUsersIndexRoute: typeof AuthenticatedHrUsersIndexRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
   AuthenticatedMonBackupIndexRoute: typeof AuthenticatedMonBackupIndexRoute
@@ -2875,11 +3061,19 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpSettingsRouteRoute:
     AuthenticatedOpSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
+  AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
+  AuthenticatedHrEmployeesCreateRoute: AuthenticatedHrEmployeesCreateRoute,
+  AuthenticatedHrEmployeesDepartmentsRoute:
+    AuthenticatedHrEmployeesDepartmentsRoute,
+  AuthenticatedHrEmployeesDesignationsRoute:
+    AuthenticatedHrEmployeesDesignationsRoute,
+  AuthenticatedHrUsersIdRoute: AuthenticatedHrUsersIdRoute,
   AuthenticatedMonBackupSettingsRoute: AuthenticatedMonBackupSettingsRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
   AuthenticatedMonUsersPresetsRoute: AuthenticatedMonUsersPresetsRoute,
@@ -2912,6 +3106,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedOpProductsIdRoute: AuthenticatedOpProductsIdRoute,
+  AuthenticatedHrEmployeesIndexRoute: AuthenticatedHrEmployeesIndexRoute,
+  AuthenticatedHrPayrollIndexRoute: AuthenticatedHrPayrollIndexRoute,
+  AuthenticatedHrUsersIndexRoute: AuthenticatedHrUsersIndexRoute,
   AuthenticatedMonActivityLogsIndexRoute:
     AuthenticatedMonActivityLogsIndexRoute,
   AuthenticatedMonAnalyticsIndexRoute: AuthenticatedMonAnalyticsIndexRoute,

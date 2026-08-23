@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Payroll } from '@/features/payroll'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/op/payroll/')({
-  component: Payroll,
+  beforeLoad: () => {
+    throw redirect({ to: '/hr/payroll' })
+  },
 })

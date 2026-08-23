@@ -9,16 +9,23 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar'
 import { usePanel, type PanelType } from '@/context/panel-provider'
 import { useAuthStore } from '@/stores/auth-store'
+import { useLicenseStore } from '@/stores/license-store'
 
 export function TeamSwitcher() {
   const { isMobile } = useSidebar()
   const { activePanel, setActivePanel } = usePanel()
   const role = useAuthStore(s => s.auth.user?.role || 'admin')
+  const permissions = useAuthStore(s => s.auth.user?.permissions || [])
+  const hasFeature = useLicenseStore(s => s.hasFeature)
   const navigate = useNavigate()
+
+  const canAccessHr =
+    role === 'superadmin' || role === 'admin' || (hasFeature('admin_hr') && permissions.includes('view_hr'))
 
   const teams = [
     { name: 'Operational', key: 'operational' as PanelType, plan: 'Orders & Catalog', route: '/op', visible: true },
     { name: 'Admin', key: 'monitoring' as PanelType, plan: 'Settings & Overview', route: '/mon', visible: role === 'superadmin' || role === 'admin' },
+    { name: 'HR Management', key: 'hr' as PanelType, plan: 'People & Payroll', route: '/hr/overview', visible: canAccessHr },
     { name: 'Packing Workspace', key: 'packing' as any, plan: 'Order Packing Workspace', route: '/op/packing', visible: role === 'superadmin' || role === 'admin' },
   ].filter(t => t.visible)
 
