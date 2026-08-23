@@ -34,7 +34,7 @@ export function AttendanceTable({
   onPageChange,
 }: {
   date: Date
-  onDateChange: (date: Date) => void
+  onDateChange: (date: Date | undefined) => void
   employeeId: string
   onEmployeeChange: (id: string) => void
   status: AttendanceStatus | 'all'

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -46,7 +46,7 @@ import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
 import { LeaveTab } from '@/features/hr-leave'
-import { AttendanceTab } from '@/features/hr-attendance'
+import { AttendanceTab } from '@/features/hr-attendance/components/attendance-tab'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -67,7 +67,7 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function PlaceholderTab({ icon: Icon, module }: { icon: typeof Banknote; module: string }) {
+function PlaceholderTab({ icon: Icon, module }: { icon: ComponentType<{ className?: string }>; module: string }) {
   void Icon
   return (
     <Card>
@@ -421,7 +421,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     )
   }
 
-  function openEditEmployment() {
+  const openEditEmployment = () => {
     setEmpForm({
       status: employee.status,
       employmentType: employee.employmentType,
@@ -434,7 +434,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     setEmpEditOpen(true)
   }
 
-  function handleSaveEmployment() {
+  const handleSaveEmployment = () => {
     const dto: UpdateEmployeeDto = {}
     if (empForm.status) dto.status = empForm.status
     if (empForm.employmentType) dto.employmentType = empForm.employmentType

@@ -48,7 +48,7 @@ export function DailyOverview({ date }: { date: Date }) {
           <Card>
             <CardContent className='p-3'>
               <p className='text-xs font-medium text-muted-foreground'>Total Records</p>
-              <p className='mt-0.5 text-2xl font-bold tabular-nums'>{data.total}</p>
+              <p className='mt-0.5 text-2xl font-bold tabular-nums'>{data?.total ?? 0}</p>
             </CardContent>
           </Card>
           {ATTENDANCE_STATUSES.map((s) => (

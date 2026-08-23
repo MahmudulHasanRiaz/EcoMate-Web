@@ -3,11 +3,11 @@ import { toast } from 'sonner'
 import { designationsApi } from './api'
 
 export function useDesignationsQuery() {
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['designations'],
     queryFn: () => designationsApi.list().then((r) => r.data),
   })
-  return { data, isLoading, isError, error }
+  return { data, isLoading, isError, error, refetch }
 }
 
 export function useDesignationMutations() {

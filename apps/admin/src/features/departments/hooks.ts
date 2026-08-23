@@ -3,11 +3,11 @@ import { toast } from 'sonner'
 import { departmentsApi } from './api'
 
 export function useDepartmentsQuery() {
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['departments'],
     queryFn: () => departmentsApi.list().then((r) => r.data),
   })
-  return { data, isLoading, isError, error }
+  return { data, isLoading, isError, error, refetch }
 }
 
 export function useDepartmentMutations() {

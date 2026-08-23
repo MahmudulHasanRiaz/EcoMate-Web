@@ -63,7 +63,7 @@ export function AttendancePage() {
           <CardContent>
             <AttendanceTable
               date={date}
-              onDateChange={(d) => { setDate(d); resetPage() }}
+              onDateChange={(d) => { if (d) setDate(d); resetPage() }}
               employeeId={employeeId}
               onEmployeeChange={(id) => { setEmployeeId(id); resetPage() }}
               status={status}

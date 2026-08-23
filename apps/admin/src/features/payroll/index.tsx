@@ -47,7 +47,7 @@ export function Payroll() {
   const meta = data?.meta
 
   const approveMut = useMutation({
-    mutationFn: payrollApi.approvePayslip,
+    mutationFn: (id: string) => payrollApi.setPayslipStatus(id, { status: 'approved' }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['payroll-payslips'] }); toast.success('Payslip approved') },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
   })
