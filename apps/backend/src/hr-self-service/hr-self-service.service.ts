@@ -5,6 +5,7 @@ import { HrLedgersService } from '../hr-ledgers/hr-ledgers.service';
 import { CommissionsService } from '../commissions/commissions.service';
 import { HrLeaveService } from '../hr-leave/hr-leave.service';
 import { HrScheduleService } from '../hr-schedule/hr-schedule.service';
+import { HrAttendanceService } from '../hr-attendance/hr-attendance.service';
 import { CreateSelfLeaveRequestDto } from './dto/create-self-leave-request.dto';
 
 interface SelfUser {
@@ -22,6 +23,7 @@ export class HrSelfServiceService {
     private commissions: CommissionsService,
     private leave: HrLeaveService,
     private schedule: HrScheduleService,
+    private attendance: HrAttendanceService,
   ) {}
 
   /**
@@ -132,5 +134,10 @@ export class HrSelfServiceService {
     }
     const actorId = user?.userId ?? user?.id;
     return this.leave.cancelRequest(id, actorId);
+  }
+
+  async getAttendance(user: SelfUser, from?: string, to?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.history(employee.id, from, to);
   }
 }

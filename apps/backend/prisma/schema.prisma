@@ -1938,6 +1938,7 @@ model Employee {
   commissionRules  CommissionRule[]
   commissionEarnings CommissionEarning[]
   leaveRequests    LeaveRequest[]
+  attendanceRecords AttendanceRecord[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -3475,4 +3476,30 @@ model LeaveRequest {
 
   @@index([employeeId, startDate])
   @@index([status])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+  WEEKLY_OFF
+}
+
+model AttendanceRecord {
+  id           String           @id @default(uuid())
+  employeeId   String
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime         @db.Date
+  status       AttendanceStatus
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  note         String?
+  recordedById String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
 }

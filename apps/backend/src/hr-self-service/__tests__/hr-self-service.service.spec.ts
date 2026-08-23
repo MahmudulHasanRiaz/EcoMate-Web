@@ -7,6 +7,7 @@ import { HrLedgersService } from '../../hr-ledgers/hr-ledgers.service';
 import { CommissionsService } from '../../commissions/commissions.service';
 import { HrLeaveService } from '../../hr-leave/hr-leave.service';
 import { HrScheduleService } from '../../hr-schedule/hr-schedule.service';
+import { HrAttendanceService } from '../../hr-attendance/hr-attendance.service';
 
 const SESSION_USER = { betterAuthUserId: 'ba-1', userId: 'user-1' };
 const OTHER_USER = { betterAuthUserId: 'ba-2', userId: 'user-2' };
@@ -24,6 +25,7 @@ describe('HrSelfServiceService', () => {
   let commissions: CommissionsService;
   let leave: HrLeaveService;
   let schedule: HrScheduleService;
+  let attendance: HrAttendanceService;
 
   const prismaMock = {
     employee: { findFirst: jest.fn() },
@@ -47,6 +49,7 @@ describe('HrSelfServiceService', () => {
     cancelRequest: jest.fn(),
   };
   const scheduleMock = { getSchedule: jest.fn() };
+  const attendanceMock = { history: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -58,6 +61,7 @@ describe('HrSelfServiceService', () => {
         { provide: CommissionsService, useValue: commissionsMock },
         { provide: HrLeaveService, useValue: leaveMock },
         { provide: HrScheduleService, useValue: scheduleMock },
+        { provide: HrAttendanceService, useValue: attendanceMock },
       ],
     }).compile();
 
@@ -68,6 +72,7 @@ describe('HrSelfServiceService', () => {
     commissions = module.get(CommissionsService);
     leave = module.get(HrLeaveService);
     schedule = module.get(HrScheduleService);
+    attendance = module.get(HrAttendanceService);
 
     jest.clearAllMocks();
     prismaMock.employee.findFirst.mockResolvedValue(RESOLVED_EMP);
@@ -191,6 +196,38 @@ describe('HrSelfServiceService', () => {
         1,
         20,
       );
+    });
+
+    it('getAttendance returns only the resolved employee records, ignoring any client-supplied employeeId', async () => {
+      attendanceMock.history.mockResolvedValue([
+        { id: 'att-1', employeeId: 'emp-1', status: 'PRESENT' },
+        { id: 'att-2', employeeId: 'emp-1', status: 'LATE' },
+      ]);
+      const res = await service.getAttendance(
+        SESSION_USER,
+        undefined as any,
+        '2026-08-31',
+      );
+      expect(attendanceMock.history).toHaveBeenCalledWith(
+        'emp-1',
+        undefined,
+        '2026-08-31',
+      );
+      expect(res).toEqual([
+        { id: 'att-1', employeeId: 'emp-1', status: 'PRESENT' },
+        { id: 'att-2', employeeId: 'emp-1', status: 'LATE' },
+      ]);
+      const fromArg = attendanceMock.history.mock.calls[0][0];
+      expect(fromArg).toBe('emp-1');
+      expect(fromArg).not.toBe('emp-evil');
+    });
+
+    it('getAttendance 404s when the session employee is unlinked', async () => {
+      prismaMock.employee.findFirst.mockResolvedValue(null);
+      await expect(service.getAttendance(SESSION_USER)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(attendanceMock.history).not.toHaveBeenCalled();
     });
   });
 

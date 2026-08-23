@@ -18,6 +18,7 @@ export const PERMISSIONS = {
     'manage_commissions',
     'manage_leave',
     'manage_schedule',
+    'manage_attendance',
   ],
   INVENTORY: [
     'view_products',
@@ -70,6 +71,7 @@ export function getPermissionLabel(key: string): string {
     manage_commissions: 'Manage Commissions',
     manage_leave: 'Manage Leave',
     manage_schedule: 'Manage Schedule',
+    manage_attendance: 'Manage Attendance',
   };
   return (
     labels[key] ||

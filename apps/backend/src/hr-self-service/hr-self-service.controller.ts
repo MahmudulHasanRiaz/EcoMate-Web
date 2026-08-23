@@ -133,4 +133,13 @@ export class HrSelfServiceController {
   ) {
     return this.service.cancelLeaveRequest(this.assertEmployee(user), id);
   }
+
+  @Get('attendance')
+  getAttendance(
+    @CurrentUser() user: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.getAttendance(this.assertEmployee(user), from, to);
+  }
 }

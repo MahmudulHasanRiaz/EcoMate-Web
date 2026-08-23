@@ -46,6 +46,7 @@ import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
 import { LeaveTab } from '@/features/hr-leave'
+import { AttendanceTab } from '@/features/hr-attendance'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -481,6 +482,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <TabsTrigger value='earnings'>Earnings</TabsTrigger>
             <TabsTrigger value='deductions'>Deductions</TabsTrigger>
             <TabsTrigger value='leave'>Leave</TabsTrigger>
+            <TabsTrigger value='attendance'>Attendance</TabsTrigger>
             <TabsTrigger value='schedule'>Schedule &amp; History</TabsTrigger>
           </TabsList>
 
@@ -669,6 +671,10 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </TabsContent>
           <TabsContent value='leave'>
             <LeaveTab employeeId={employee.id} />
+          </TabsContent>
+
+          <TabsContent value='attendance'>
+            <AttendanceTab employeeId={employee.id} />
           </TabsContent>
 
           <TabsContent value='schedule' className='space-y-4'>

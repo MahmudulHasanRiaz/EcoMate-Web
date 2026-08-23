@@ -105,6 +105,17 @@ export interface Paginated<T> {
   };
 }
 
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  date: string;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE' | 'WEEKLY_OFF';
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
 function qp(page?: number, perPage?: number) {
   return { page, perPage };
 }
@@ -193,5 +204,12 @@ export async function cancelHrLeaveRequest(id: string) {
   const { data } = await apiClient.patch<LeaveRequest>(
     `/hr/my/leave-requests/${id}/cancel`,
   );
+  return data;
+}
+
+export async function getHrMyAttendance(params?: { from?: string; to?: string }) {
+  const { data } = await apiClient.get<AttendanceRecord[]>("/hr/my/attendance", {
+    params,
+  });
   return data;
 }

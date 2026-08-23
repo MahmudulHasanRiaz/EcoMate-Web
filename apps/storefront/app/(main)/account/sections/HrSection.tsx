@@ -10,6 +10,7 @@ import {
   ArrowDownCircle,
   CalendarOff,
   CalendarDays,
+  CalendarCheck,
   ChevronDown,
   Send,
   X,
@@ -29,6 +30,7 @@ import {
   getHrLeaveRequests,
   createHrLeaveRequest,
   cancelHrLeaveRequest,
+  getHrMyAttendance,
   type HrProfile,
   type SalaryStructure,
   type Payslip,
@@ -38,6 +40,7 @@ import {
   type EmployeeDeduction,
   type LeaveType,
   type LeaveRequest,
+  type AttendanceRecord,
 } from "@/lib/api/hr";
 
 type TabKey =
@@ -48,7 +51,8 @@ type TabKey =
   | "earnings"
   | "deductions"
   | "leave"
-  | "schedule";
+  | "schedule"
+  | "attendance";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "profile", label: "Profile", icon: <User size={16} /> },
@@ -59,6 +63,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "deductions", label: "Deductions", icon: <ArrowDownCircle size={16} /> },
   { key: "leave", label: "Leave", icon: <CalendarOff size={16} /> },
   { key: "schedule", label: "Schedule", icon: <CalendarDays size={16} /> },
+  { key: "attendance", label: "Attendance", icon: <CalendarCheck size={16} /> },
 ];
 
 function statusTone(s?: string) {
@@ -827,6 +832,96 @@ function ScheduleTab() {
   );
 }
 
+/* ---------------- Attendance ---------------- */
+const ATTENDANCE_LABELS: Record<string, string> = {
+  PRESENT: "Present",
+  ABSENT: "Absent",
+  LATE: "Late",
+  HALF_DAY: "Half Day",
+  ON_LEAVE: "On Leave",
+  WEEKLY_OFF: "Weekly Off",
+};
+
+const ATTENDANCE_TONE: Record<string, string> = {
+  PRESENT: "bg-green-100 text-green-700",
+  ABSENT: "bg-red-100 text-red-700",
+  LATE: "bg-amber-100 text-amber-700",
+  HALF_DAY: "bg-blue-100 text-blue-700",
+  ON_LEAVE: "bg-violet-100 text-violet-700",
+  WEEKLY_OFF: "bg-gray-100 text-gray-600",
+};
+
+function AttendanceStatusBadge({ value }: { value?: string }) {
+  if (!value) return null;
+  const key = value.toUpperCase();
+  return (
+    <span
+      className={`inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+        ATTENDANCE_TONE[key] || statusTone(value)
+      }`}
+    >
+      {ATTENDANCE_LABELS[key] || value}
+    </span>
+  );
+}
+
+function fmtTime(iso?: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function AttendanceTab() {
+  const [items, setItems] = useState<AttendanceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getHrMyAttendance()
+      .then((res) => setItems(Array.isArray(res) ? res : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Spinner />;
+
+  return (
+    <Card>
+      <h3 className="text-xl font-bold text-gray-800 mb-6">My Attendance</h3>
+      {items.length === 0 ? (
+        <EmptyState message="No attendance records found" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500">
+                <th className="py-2 pr-4 font-semibold">Date</th>
+                <th className="py-2 pr-4 font-semibold">Status</th>
+                <th className="py-2 pr-4 font-semibold">Check In</th>
+                <th className="py-2 pr-4 font-semibold">Check Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => (
+                <tr key={r.id} className="border-t border-gray-50">
+                  <td className="py-3 pr-4 text-gray-700">{fmtDate(r.date)}</td>
+                  <td className="py-3 pr-4">
+                    <AttendanceStatusBadge value={r.status} />
+                  </td>
+                  <td className="py-3 pr-4 text-gray-500">{fmtTime(r.checkInTime)}</td>
+                  <td className="py-3 pr-4 text-gray-500">{fmtTime(r.checkOutTime)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function HrSection() {
   const [active, setActive] = useState<TabKey>("profile");
 
@@ -848,6 +943,8 @@ export function HrSection() {
         return <LeaveTab />;
       case "schedule":
         return <ScheduleTab />;
+      case "attendance":
+        return <AttendanceTab />;
       default:
         return <ProfileTab />;
     }

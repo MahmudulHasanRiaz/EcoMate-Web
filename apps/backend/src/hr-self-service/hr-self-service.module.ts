@@ -7,6 +7,7 @@ import { HrLedgersModule } from '../hr-ledgers/hr-ledgers.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { HrLeaveModule } from '../hr-leave/hr-leave.module';
 import { HrScheduleModule } from '../hr-schedule/hr-schedule.module';
+import { HrAttendanceModule } from '../hr-attendance/hr-attendance.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { HrScheduleModule } from '../hr-schedule/hr-schedule.module';
     CommissionsModule,
     HrLeaveModule,
     HrScheduleModule,
+    HrAttendanceModule,
   ],
   controllers: [HrSelfServiceController],
   providers: [HrSelfServiceService],
