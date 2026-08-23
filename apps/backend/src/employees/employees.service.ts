@@ -4,11 +4,18 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { EmployeeStatus } from '@prisma/client';
+import {
+  AttendanceMethod,
+  AttendanceModeSetting,
+  EmployeeStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { baPrisma } from '../better-auth/prisma';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { CreateBankAccountDto } from './dto/create-bank-account.dto';
+import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 
 const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
 
@@ -19,6 +26,25 @@ const EMPLOYEE_STATUS_TRANSITIONS: Record<EmployeeStatus, EmployeeStatus[]> = {
   suspended: ['active', 'on_leave'],
   terminated: [],
   resigned: [],
+};
+
+const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
+  department: { select: { id: true, name: true, slug: true } },
+  designation: { select: { id: true, name: true, slug: true, level: true } },
+  accessPreset: { select: { id: true, name: true } },
+  reportingTo: {
+    select: {
+      id: true,
+      employeeId: true,
+      betterAuthUser: { select: { name: true } },
+    },
+  },
+  betterAuthUser: {
+    select: { id: true, name: true, email: true, role: true },
+  },
+  bankAccounts: {
+    orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+  },
 };
 
 @Injectable()
@@ -71,23 +97,38 @@ export class EmployeesService {
   async findOne(id: string) {
     const employee = await this.prisma.employee.findUnique({
       where: { id },
-      include: {
-        department: { select: { id: true, name: true, slug: true } },
-        designation: {
-          select: { id: true, name: true, slug: true, level: true },
-        },
-        accessPreset: { select: { id: true, name: true } },
-        reportingTo: {
-          select: {
-            id: true,
-            employeeId: true,
-            betterAuthUser: { select: { name: true } },
-          },
-        },
-        betterAuthUser: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-      },
+      include: EMPLOYEE_DETAIL_INCLUDE,
+    });
+    if (!employee) throw new NotFoundException('Employee not found');
+    return employee;
+  }
+
+  // AttendanceSettings (id='global') declares which attendanceMethod values
+  // are allowed on employees. mode APP → {APP, NONE}; mode MACHINE →
+  // {MACHINE, NONE}; mode BOTH → all three. Rows may not exist yet
+  // (singleton not seeded) — treat as APP, the schema default.
+  private async validateAttendanceMethod(method?: AttendanceMethod) {
+    if (!method) return;
+    const settings = await this.prisma.attendanceSettings.findUnique({
+      where: { id: 'global' },
+    });
+    const mode: AttendanceModeSetting = settings?.mode ?? 'APP';
+    if (mode === 'APP' && method === 'MACHINE') {
+      throw new BadRequestException(
+        'MACHINE method requires system mode MACHINE or BOTH.',
+      );
+    }
+    if (mode === 'MACHINE' && method === 'APP') {
+      throw new BadRequestException(
+        'APP method requires system mode APP or BOTH.',
+      );
+    }
+  }
+
+  private async ensureEmployeeExists(id: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      select: { id: true },
     });
     if (!employee) throw new NotFoundException('Employee not found');
     return employee;
@@ -103,6 +144,8 @@ export class EmployeesService {
       where: { betterAuthUserId: dto.betterAuthUserId },
     });
     if (existing) throw new ConflictException('User is already an employee');
+
+    await this.validateAttendanceMethod(dto.attendanceMethod);
 
     if (dto.departmentId) {
       const dept = await this.prisma.department.findUnique({
@@ -160,6 +203,20 @@ export class EmployeesService {
             bankName: dto.bankName,
             profilePictureUrl: dto.profilePictureUrl,
             notes: dto.notes,
+            dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+            gender: dto.gender,
+            nationality: dto.nationality,
+            nidNumber: dto.nidNumber,
+            presentAddress: dto.presentAddress,
+            permanentAddress: dto.permanentAddress,
+            emergencyContactName: dto.emergencyContactName,
+            emergencyContactPhone: dto.emergencyContactPhone,
+            emergencyContactRelation: dto.emergencyContactRelation,
+            confirmationDate: dto.confirmationDate
+              ? new Date(dto.confirmationDate)
+              : undefined,
+            exitReason: dto.exitReason,
+            attendanceMethod: dto.attendanceMethod,
           },
           include: {
             department: { select: { id: true, name: true, slug: true } },
@@ -215,6 +272,10 @@ export class EmployeesService {
       },
     });
     if (!current) throw new NotFoundException('Employee not found');
+
+    if (dto.attendanceMethod !== undefined) {
+      await this.validateAttendanceMethod(dto.attendanceMethod);
+    }
 
     let newDepartment: { id: string; name: string } | null = null;
     if (dto.departmentId !== undefined && dto.departmentId !== current.departmentId) {
@@ -366,6 +427,10 @@ export class EmployeesService {
           ...dto,
           joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
           exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          confirmationDate: dto.confirmationDate
+            ? new Date(dto.confirmationDate)
+            : undefined,
         },
         include: {
           department: { select: { id: true, name: true, slug: true } },
@@ -375,6 +440,9 @@ export class EmployeesService {
           accessPreset: { select: { id: true, name: true } },
           betterAuthUser: {
             select: { id: true, name: true, email: true, role: true },
+          },
+          bankAccounts: {
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
           },
         },
       });
@@ -397,6 +465,125 @@ export class EmployeesService {
       data: { role: profile?.role ?? 'customer' },
     });
     return this.prisma.employee.delete({ where: { id } });
+  }
+
+  // ---------- Bank accounts (sub-resource) ----------
+
+  async listBankAccounts(employeeId: string) {
+    await this.ensureEmployeeExists(employeeId);
+    return this.prisma.employeeBankAccount.findMany({
+      where: { employeeId },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async createBankAccount(
+    employeeId: string,
+    dto: CreateBankAccountDto,
+    actorId?: string,
+  ) {
+    await this.ensureEmployeeExists(employeeId);
+    const existingCount = await this.prisma.employeeBankAccount.count({
+      where: { employeeId },
+    });
+    const isPrimary = dto.isPrimary === true || existingCount === 0;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (isPrimary && existingCount > 0) {
+        await tx.employeeBankAccount.updateMany({
+          where: { employeeId, isPrimary: true },
+          data: { isPrimary: false },
+        });
+      }
+      return tx.employeeBankAccount.create({
+        data: {
+          employeeId,
+          bankName: dto.bankName,
+          branchName: dto.branchName ?? null,
+          accountName: dto.accountName,
+          accountNumber: dto.accountNumber,
+          accountType: dto.accountType ?? undefined,
+          routingNumber: dto.routingNumber ?? null,
+          isPrimary,
+          verificationStatus: dto.verificationStatus ?? undefined,
+          notes: dto.notes ?? null,
+          createdById: actorId ?? null,
+        },
+      });
+    });
+  }
+
+  async updateBankAccount(
+    id: string,
+    dto: UpdateBankAccountDto,
+    actorId?: string,
+  ) {
+    const account = await this.prisma.employeeBankAccount.findUnique({
+      where: { id },
+    });
+    if (!account) throw new NotFoundException('Bank account not found');
+
+    const wantPrimary = dto.isPrimary === true;
+    const isPrimary =
+      dto.isPrimary === undefined ? account.isPrimary : dto.isPrimary;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (wantPrimary) {
+        await tx.employeeBankAccount.updateMany({
+          where: {
+            employeeId: account.employeeId,
+            isPrimary: true,
+            NOT: { id },
+          },
+          data: { isPrimary: false },
+        });
+      }
+      return tx.employeeBankAccount.update({
+        where: { id },
+        data: {
+          bankName: dto.bankName,
+          branchName: dto.branchName,
+          accountName: dto.accountName,
+          accountNumber: dto.accountNumber,
+          accountType: dto.accountType,
+          routingNumber: dto.routingNumber,
+          isPrimary,
+          verificationStatus: dto.verificationStatus,
+          notes: dto.notes,
+          updatedById: actorId ?? null,
+        },
+      });
+    });
+  }
+
+  async setPrimaryBankAccount(id: string, actorId?: string) {
+    const account = await this.prisma.employeeBankAccount.findUnique({
+      where: { id },
+    });
+    if (!account) throw new NotFoundException('Bank account not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.employeeBankAccount.updateMany({
+        where: {
+          employeeId: account.employeeId,
+          isPrimary: true,
+          NOT: { id },
+        },
+        data: { isPrimary: false },
+      });
+      return tx.employeeBankAccount.update({
+        where: { id },
+        data: { isPrimary: true, updatedById: actorId ?? null },
+      });
+    });
+  }
+
+  async deleteBankAccount(id: string) {
+    const account = await this.prisma.employeeBankAccount.findUnique({
+      where: { id },
+    });
+    if (!account) throw new NotFoundException('Bank account not found');
+    return this.prisma.employeeBankAccount.delete({ where: { id } });
   }
 
   async searchBaUsers(query: string) {

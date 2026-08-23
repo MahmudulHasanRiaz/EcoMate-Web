@@ -7,7 +7,12 @@ import {
   IsNumber,
   Min,
 } from 'class-validator';
-import { EmploymentType, EmployeeStatus } from '@prisma/client';
+import {
+  EmploymentType,
+  EmployeeStatus,
+  EmployeeGender,
+  AttendanceMethod,
+} from '@prisma/client';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -66,4 +71,52 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsEnum(EmployeeGender)
+  gender?: EmployeeGender;
+
+  @IsOptional()
+  @IsString()
+  nationality?: string;
+
+  @IsOptional()
+  @IsString()
+  nidNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  presentAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  permanentAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContactName?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContactRelation?: string;
+
+  @IsOptional()
+  @IsDateString()
+  confirmationDate?: string;
+
+  @IsOptional()
+  @IsString()
+  exitReason?: string;
+
+  @IsOptional()
+  @IsEnum(AttendanceMethod)
+  attendanceMethod?: AttendanceMethod;
 }

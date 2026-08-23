@@ -29,6 +29,19 @@ export class PayrollService {
         `Employee with ID ${dto.employeeId} not found`,
       );
 
+    if (!dto.effectiveFrom)
+      throw new BadRequestException('effectiveFrom is required');
+
+    const effectiveFrom = new Date(dto.effectiveFrom);
+    const effDay = new Date(effectiveFrom);
+    effDay.setHours(0, 0, 0, 0);
+    const joinedDay = new Date(employee.joiningDate);
+    joinedDay.setHours(0, 0, 0, 0);
+    if (effDay < joinedDay)
+      throw new BadRequestException(
+        'effectiveFrom cannot be before the employee joining date',
+      );
+
     const basicSalary = dto.basicSalary;
     const houseAllowance = dto.houseAllowance || 0;
     const medicalAllowance = dto.medicalAllowance || 0;
@@ -47,10 +60,16 @@ export class PayrollService {
     const totalDeductions = taxDeduction + insuranceDeduction + otherDeduction;
     const netSalary = totalEarnings - totalDeductions;
 
+    // Close the active window the day before the new structure starts so
+    // the two windows never overlap and never leave a gap.
+    const effectiveTo = new Date(
+      effectiveFrom.getTime() - 24 * 60 * 60 * 1000,
+    );
+
     return this.prisma.$transaction(async (tx) => {
       await tx.salaryStructure.updateMany({
         where: { employeeId: dto.employeeId, isActive: true },
-        data: { isActive: false, effectiveTo: new Date() },
+        data: { isActive: false, effectiveTo },
       });
 
       const structure = await tx.salaryStructure.create({
@@ -67,6 +86,9 @@ export class PayrollService {
           totalEarnings,
           totalDeductions,
           netSalary,
+          effectiveFrom,
+          effectiveTo: null,
+          isActive: true,
         },
       });
 
@@ -104,11 +126,19 @@ export class PayrollService {
       throw new NotFoundException(`Employee with ID ${employeeId} not found`);
 
     const salaryStructure = await this.prisma.salaryStructure.findFirst({
-      where: { employeeId, isActive: true },
+      where: {
+        employeeId,
+        isActive: true,
+        effectiveFrom: { lte: periodStart },
+        OR: [
+          { effectiveTo: null },
+          { effectiveTo: { gte: periodEnd } },
+        ],
+      },
     });
     if (!salaryStructure)
       throw new BadRequestException(
-        `No active salary structure for employee ${employeeId}`,
+        'No active salary structure for this period',
       );
 
     // Decision #2 (§5.1): one payslip per employee per period. Use the
@@ -374,5 +404,78 @@ export class PayrollService {
       where: { payslipId },
       orderBy: { paidAt: 'desc' },
     });
+  }
+
+  async getSalaryStructureHistory(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true },
+    });
+    if (!employee)
+      throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+
+    return this.prisma.salaryStructure.findMany({
+      where: { employeeId },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+  }
+
+  async getSummary(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+    if (!employee)
+      throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+
+    const [currentStructure, structures, recentPayslips, settledPayslips] =
+      await Promise.all([
+        this.prisma.salaryStructure.findFirst({
+          where: { employeeId, isActive: true },
+        }),
+        this.prisma.salaryStructure.findMany({
+          where: { employeeId },
+          orderBy: { effectiveFrom: 'desc' },
+        }),
+        this.prisma.payslip.findMany({
+          where: { employeeId },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+          select: { id: true, periodKey: true, netPay: true, status: true },
+        }),
+        this.prisma.payslip.findMany({
+          where: {
+            employeeId,
+            status: { in: ['approved', 'partially_paid', 'paid'] },
+          },
+          select: {
+            id: true,
+            netPay: true,
+            payments: { select: { amount: true } },
+          },
+        }),
+      ]);
+
+    const paidAgg = await this.prisma.payrollPayment.aggregate({
+      where: { payslip: { employeeId } },
+      _sum: { amount: true },
+    });
+    const totalPaid = Number(paidAgg._sum.amount ?? 0);
+
+    const outstanding = Math.round(
+      settledPayslips.reduce((sum, p) => {
+        const paid = p.payments.reduce((s, pay) => s + Number(pay.amount), 0);
+        return sum + (Number(p.netPay) - paid);
+      }, 0) * 100,
+    ) / 100;
+
+    return {
+      currentStructure,
+      mirrorSalary:
+        employee.salary != null ? Number(employee.salary) : null,
+      structures,
+      payslips: recentPayslips,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      outstanding,
+    };
   }
 }

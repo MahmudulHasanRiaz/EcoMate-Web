@@ -54,7 +54,22 @@ export interface SalaryStructureResponse {
   totalDeductions: number
   netSalary: number
   effectiveFrom: string
+  effectiveTo?: string | null
   isActive: boolean
+}
+
+export interface PayrollSummaryResponse {
+  currentStructure: SalaryStructureResponse | null
+  mirrorSalary: number | null
+  structures: SalaryStructureResponse[]
+  payslips: {
+    id: string
+    periodKey: string | null
+    netPay: number
+    status: PayslipStatus
+  }[]
+  totalPaid: number
+  outstanding: number
 }
 
 export interface PayrollPayment {
@@ -99,6 +114,10 @@ export interface PaymentResult {
 export const payrollApi = {
   setSalaryStructure: (data: any) => apiClient.post<SalaryStructureResponse>('/payroll/salary-structure', data),
   getSalaryStructure: (employeeId: string) => apiClient.get<SalaryStructureResponse>(`/payroll/salary-structure/${employeeId}`),
+  getSalaryStructureHistory: (employeeId: string) =>
+    apiClient.get<SalaryStructureResponse[]>(`/payroll/salary-structure/history/${employeeId}`),
+  getPayrollSummary: (employeeId: string) =>
+    apiClient.get<PayrollSummaryResponse>(`/payroll/summary/${employeeId}`),
 
   generatePayslip: (data: GeneratePayslipDto) =>
     apiClient.post<PayslipResponse>('/payroll/payslips/generate', data),

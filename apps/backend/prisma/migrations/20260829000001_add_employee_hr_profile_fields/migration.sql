@@ -1,0 +1,12 @@
+ALTER TABLE "Employee" ADD COLUMN "dateOfBirth" TIMESTAMP(3),
+ADD COLUMN "gender" "EmployeeGender",
+ADD COLUMN "nationality" TEXT,
+ADD COLUMN "nidNumber" TEXT,
+ADD COLUMN "presentAddress" TEXT,
+ADD COLUMN "permanentAddress" TEXT,
+ADD COLUMN "emergencyContactName" TEXT,
+ADD COLUMN "emergencyContactPhone" TEXT,
+ADD COLUMN "emergencyContactRelation" TEXT,
+ADD COLUMN "confirmationDate" TIMESTAMP(3),
+ADD COLUMN "exitReason" TEXT,
+ADD COLUMN "attendanceMethod" "AttendanceMethod" NOT NULL DEFAULT 'APP';

@@ -33,11 +33,32 @@ export function useSetSalaryStructureMutation(employeeId: string) {
     mutationFn: (dto: any) => payrollApi.setSalaryStructure(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-structure', employeeId] })
+      queryClient.invalidateQueries({ queryKey: ['salary-history', employeeId] })
+      queryClient.invalidateQueries({ queryKey: ['payroll-summary', employeeId] })
       queryClient.invalidateQueries({ queryKey: ['employee', employeeId] })
       toast.success('Salary structure saved')
     },
     onError: (e: any) =>
       toast.error(e.response?.data?.message || 'Error saving salary structure'),
+  })
+}
+
+export function useSalaryStructureHistoryQuery(employeeId: string) {
+  return useQuery({
+    queryKey: ['salary-history', employeeId],
+    queryFn: () =>
+      payrollApi
+        .getSalaryStructureHistory(employeeId)
+        .then((r) => r.data),
+    enabled: !!employeeId,
+  })
+}
+
+export function usePayrollSummaryQuery(employeeId: string) {
+  return useQuery({
+    queryKey: ['payroll-summary', employeeId],
+    queryFn: () => payrollApi.getPayrollSummary(employeeId).then((r) => r.data),
+    enabled: !!employeeId,
   })
 }
 

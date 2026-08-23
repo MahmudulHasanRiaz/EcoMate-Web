@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,8 +29,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DatePicker } from '@/components/date-picker'
-import { useEmployeeQuery, useUpdateEmployeeMutation } from '../hooks'
-import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto } from '../api'
+import { useEmployeeQuery, useUpdateEmployeeMutation, useBankAccountsQuery, useCreateBankAccountMutation, useUpdateBankAccountMutation, useDeleteBankAccountMutation, useSetPrimaryBankAccountMutation } from '../hooks'
+import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender } from '../api'
+import { BankAccountsCard } from './bank-accounts-card'
+import { SalaryHistoryCard } from '@/features/payroll/components/salary-history'
+import { useSalaryStructureHistoryQuery, usePayrollSummaryQuery } from '@/features/payroll/hooks'
 import { STATUS_BADGE, STATUS_LABELS, EMPLOYMENT_TYPE_BADGE, EMPLOYMENT_TYPE_LABELS } from '../index'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useDesignationsQuery } from '@/features/designations/hooks'
@@ -88,6 +92,9 @@ interface EmploymentForm {
   designationId: string
   reportingToId: string
   exitDate?: Date
+  confirmationDate?: Date
+  exitReason: string
+  attendanceMethod: AttendanceMethod | ''
   notes: string
 }
 
@@ -104,6 +111,8 @@ const SALARY_FIELDS: { key: string; label: string }[] = [
 
 function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mirrorSalary?: number | null }) {
   const { data: structure, isLoading, isError, refetch } = useSalaryStructureQuery(employeeId)
+  const { data: historyData, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useSalaryStructureHistoryQuery(employeeId)
+  const { data: summary, isLoading: summaryLoading } = usePayrollSummaryQuery(employeeId)
   const setMut = useSetSalaryStructureMutation(employeeId)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<Record<string, string>>({
@@ -115,6 +124,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
     taxDeduction: '0',
     insuranceDeduction: '0',
     otherDeduction: '0',
+    effectiveFrom: '',
   })
 
   function openDialog() {
@@ -127,6 +137,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
       taxDeduction: String(structure?.taxDeduction ?? 0),
       insuranceDeduction: String(structure?.insuranceDeduction ?? 0),
       otherDeduction: String(structure?.otherDeduction ?? 0),
+      effectiveFrom: '',
     })
     setOpen(true)
   }
@@ -137,6 +148,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
   }
 
   function handleSubmit() {
+    if (!form.effectiveFrom) return
     setMut.mutate(
       {
         employeeId,
@@ -148,6 +160,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
         taxDeduction: num('taxDeduction'),
         insuranceDeduction: num('insuranceDeduction'),
         otherDeduction: num('otherDeduction'),
+        effectiveFrom: new Date(form.effectiveFrom).toISOString(),
       },
       { onSuccess: () => setOpen(false) },
     )
@@ -232,12 +245,34 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
         )}
       </CardContent>
 
+      <div className='mt-4'>
+        <SalaryHistoryCard
+          structures={historyData ?? []}
+          summary={summary}
+          mirrorSalary={mirrorSalary}
+          isLoading={historyLoading || summaryLoading}
+          isError={historyError}
+          onRetry={refetchHistory}
+        />
+      </div>
+
       <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false) }}>
         <DialogContent className='sm:max-w-[560px]'>
           <DialogHeader>
             <DialogTitle>{structure ? 'Change Salary Structure' : 'Set Salary Structure'}</DialogTitle>
           </DialogHeader>
           <div className='grid gap-3 py-4 sm:grid-cols-2'>
+            <div className='grid gap-2 col-span-2'>
+              <Label>Effective From *</Label>
+              <DatePicker
+                selected={form.effectiveFrom ? new Date(form.effectiveFrom) : undefined}
+                onSelect={(d) => setForm(f => ({ ...f, effectiveFrom: d ? d.toISOString() : '' }))}
+                placeholder='Pick effective date (required)'
+              />
+              {!form.effectiveFrom && (
+                <p className='text-xs text-destructive'>Effective date is required.</p>
+              )}
+            </div>
             {SALARY_FIELDS.map((f) => (
               <div className='grid gap-2' key={f.key}>
                 <Label>{f.label}</Label>
@@ -347,6 +382,179 @@ function PayrollTab({ employeeId }: { employeeId: string }) {
   )
 }
 
+function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
+  const updateMut = useUpdateEmployeeMutation()
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : undefined,
+    gender: (employee.gender || '') as EmployeeGender | '',
+    nationality: employee.nationality || '',
+    nidNumber: employee.nidNumber || '',
+    presentAddress: employee.presentAddress || '',
+    permanentAddress: employee.permanentAddress || '',
+    emergencyContactName: employee.emergencyContactName || '',
+    emergencyContactPhone: employee.emergencyContactPhone || '',
+    emergencyContactRelation: employee.emergencyContactRelation || '',
+  })
+
+  const openPersonalEdit = () => {
+    setForm({
+      dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : undefined,
+      gender: (employee.gender || '') as EmployeeGender | '',
+      nationality: employee.nationality || '',
+      nidNumber: employee.nidNumber || '',
+      presentAddress: employee.presentAddress || '',
+      permanentAddress: employee.permanentAddress || '',
+      emergencyContactName: employee.emergencyContactName || '',
+      emergencyContactPhone: employee.emergencyContactPhone || '',
+      emergencyContactRelation: employee.emergencyContactRelation || '',
+    })
+    setOpen(true)
+  }
+
+  const savePersonal = () => {
+    const dto: UpdateEmployeeDto = {
+      dateOfBirth: form.dateOfBirth ? form.dateOfBirth.toISOString() : null,
+      gender: form.gender || null,
+      nationality: form.nationality || null,
+      nidNumber: form.nidNumber || null,
+      presentAddress: form.presentAddress || null,
+      permanentAddress: form.permanentAddress || null,
+      emergencyContactName: form.emergencyContactName || null,
+      emergencyContactPhone: form.emergencyContactPhone || null,
+      emergencyContactRelation: form.emergencyContactRelation || null,
+    }
+    updateMut.mutate({ id: employee.id, dto }, { onSuccess: () => setOpen(false) })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div>
+            <CardTitle>Personal Information</CardTitle>
+            <CardDescription>HR master data — identity stays with the user account.</CardDescription>
+          </div>
+          <Button variant='outline' size='sm' onClick={openPersonalEdit}>
+            <Pencil className='h-3.5 w-3.5 mr-1' /> Edit Personal Info
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className='grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3'>
+          <InfoRow label='Date of Birth'>{formatDate(employee.dateOfBirth)}</InfoRow>
+          <InfoRow label='Gender'>{employee.gender || '—'}</InfoRow>
+          <InfoRow label='Nationality'>{employee.nationality || '—'}</InfoRow>
+          <InfoRow label='NID Number'>{employee.nidNumber || '—'}</InfoRow>
+          <InfoRow label='Phone'>{'—'}</InfoRow>
+          <InfoRow label='Email'>{employee.betterAuthUser?.email || '—'}</InfoRow>
+          <InfoRow label='Present Address'>{employee.presentAddress || '—'}</InfoRow>
+          <InfoRow label='Permanent Address'>{employee.permanentAddress || '—'}</InfoRow>
+          <InfoRow label='Emergency Contact'>
+            {employee.emergencyContactName
+              ? `${employee.emergencyContactName}${employee.emergencyContactPhone ? ` · ${employee.emergencyContactPhone}` : ''}${employee.emergencyContactRelation ? ` (${employee.emergencyContactRelation})` : ''}`
+              : '—'}
+          </InfoRow>
+        </div>
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false) }}>
+        <DialogContent className='sm:max-w-[620px]'>
+          <DialogHeader>
+            <DialogTitle>Edit Personal Information</DialogTitle>
+          </DialogHeader>
+          <div className='grid gap-3 py-4 sm:grid-cols-2'>
+            <div className='grid gap-2'>
+              <Label>Date of Birth</Label>
+              <DatePicker selected={form.dateOfBirth} onSelect={(d) => setForm(f => ({ ...f, dateOfBirth: d }))} placeholder='Pick date' />
+            </div>
+            <div className='grid gap-2'>
+              <Label>Gender</Label>
+              <Select value={form.gender || 'none'} onValueChange={(v) => setForm(f => ({ ...f, gender: v === 'none' ? '' : v as EmployeeGender }))}>
+                <SelectTrigger><SelectValue placeholder='Select gender' /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='none'>— None —</SelectItem>
+                  <SelectItem value='MALE'>Male</SelectItem>
+                  <SelectItem value='FEMALE'>Female</SelectItem>
+                  <SelectItem value='OTHER'>Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className='grid gap-2'>
+              <Label>Nationality</Label>
+              <Input value={form.nationality} onChange={(e) => setForm(f => ({ ...f, nationality: e.target.value }))} />
+            </div>
+            <div className='grid gap-2'>
+              <Label>NID Number</Label>
+              <Input value={form.nidNumber} onChange={(e) => setForm(f => ({ ...f, nidNumber: e.target.value }))} autoComplete='off' />
+            </div>
+            <div className='grid gap-2 col-span-2'>
+              <Label>Present Address</Label>
+              <Textarea value={form.presentAddress} onChange={(e) => setForm(f => ({ ...f, presentAddress: e.target.value }))} rows={2} />
+            </div>
+            <div className='grid gap-2 col-span-2'>
+              <Label>Permanent Address</Label>
+              <Textarea value={form.permanentAddress} onChange={(e) => setForm(f => ({ ...f, permanentAddress: e.target.value }))} rows={2} />
+            </div>
+            <div className='grid gap-2'>
+              <Label>Emergency Contact Name</Label>
+              <Input value={form.emergencyContactName} onChange={(e) => setForm(f => ({ ...f, emergencyContactName: e.target.value }))} />
+            </div>
+            <div className='grid gap-2'>
+              <Label>Emergency Contact Phone</Label>
+              <Input value={form.emergencyContactPhone} onChange={(e) => setForm(f => ({ ...f, emergencyContactPhone: e.target.value }))} />
+            </div>
+            <div className='grid gap-2'>
+              <Label>Emergency Contact Relationship</Label>
+              <Input value={form.emergencyContactRelation} onChange={(e) => setForm(f => ({ ...f, emergencyContactRelation: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={savePersonal} disabled={updateMut.isPending}>
+              {updateMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
+              Save Personal Info
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
+function BankAccountsSection({ employeeId }: { employeeId: string }) {
+  const { data: accounts = [], isLoading, isError, refetch } = useBankAccountsQuery(employeeId)
+  const createMut = useCreateBankAccountMutation(employeeId)
+  const updateMut = useUpdateBankAccountMutation(employeeId)
+  const deleteMut = useDeleteBankAccountMutation(employeeId)
+  const primaryMut = useSetPrimaryBankAccountMutation(employeeId)
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className='flex flex-col items-center gap-3 py-10 text-center'>
+          <p className='text-sm text-muted-foreground'>Could not load bank accounts.</p>
+          <Button variant='outline' size='sm' onClick={() => refetch()}>
+            <RotateCcw className='h-4 w-4 mr-1' /> Retry
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <BankAccountsCard
+      accounts={accounts}
+      isLoading={isLoading}
+      isSubmitting={createMut.isPending || updateMut.isPending || primaryMut.isPending}
+      onAdd={(dto) => createMut.mutate(dto)}
+      onEdit={(id, dto) => updateMut.mutate({ id, dto })}
+      onDelete={(id) => deleteMut.mutate(id)}
+      onSetPrimary={(id) => primaryMut.mutate(id)}
+    />
+  )
+}
+
 export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   const {
     data: employee,
@@ -369,6 +577,9 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     designationId: '',
     reportingToId: '',
     exitDate: undefined,
+    confirmationDate: undefined,
+    exitReason: '',
+    attendanceMethod: '',
     notes: '',
   })
 
@@ -429,6 +640,9 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
       designationId: employee.designationId || '',
       reportingToId: employee.reportingTo?.id || '',
       exitDate: employee.exitDate ? new Date(employee.exitDate) : undefined,
+      confirmationDate: employee.confirmationDate ? new Date(employee.confirmationDate) : undefined,
+      exitReason: employee.exitReason || '',
+      attendanceMethod: employee.attendanceMethod,
       notes: employee.notes || '',
     })
     setEmpEditOpen(true)
@@ -442,6 +656,9 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     dto.designationId = empForm.designationId || null
     dto.reportingToId = empForm.reportingToId || null
     if (empForm.exitDate) dto.exitDate = empForm.exitDate.toISOString()
+    if (empForm.confirmationDate) dto.confirmationDate = empForm.confirmationDate.toISOString()
+    if (empForm.exitReason) dto.exitReason = empForm.exitReason
+    if (empForm.attendanceMethod) dto.attendanceMethod = empForm.attendanceMethod
     dto.notes = empForm.notes || undefined
     updateEmpMut.mutate({ id: employee.id, dto }, { onSuccess: () => setEmpEditOpen(false) })
   }
@@ -542,6 +759,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                 </div>
               </CardContent>
             </Card>
+            <PersonalInfoCard employee={employee} />
+            <BankAccountsSection employeeId={employee.id} />
           </TabsContent>
 
           <TabsContent value='employment' className='space-y-4'>
@@ -575,6 +794,9 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                     )}
                   </InfoRow>
                   <InfoRow label='Exit Date'>{formatDate(employee.exitDate)}</InfoRow>
+                  <InfoRow label='Confirmation Date'>{formatDate(employee.confirmationDate)}</InfoRow>
+                  <InfoRow label='Exit Reason'>{employee.exitReason || '—'}</InfoRow>
+                  <InfoRow label='Attendance Method'>{employee.attendanceMethod || '—'}</InfoRow>
                 </div>
               </CardContent>
             </Card>
@@ -660,6 +882,37 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                         placeholder='Pick exit date'
                       />
                     </div>
+                    <div className='grid gap-2 col-span-2 sm:col-span-1'>
+                      <Label>Confirmation Date</Label>
+                      <DatePicker
+                        selected={empForm.confirmationDate}
+                        onSelect={d => setEmpForm(f => ({ ...f, confirmationDate: d }))}
+                        placeholder='Pick confirmation date'
+                      />
+                    </div>
+                    <div className='grid gap-2 col-span-2 sm:col-span-2'>
+                      <Label>Attendance Method</Label>
+                      <Select
+                        value={empForm.attendanceMethod || 'none'}
+                        onValueChange={v => setEmpForm(f => ({ ...f, attendanceMethod: v === 'none' ? '' : v as AttendanceMethod }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder='Select attendance method' /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='none'>— Not set —</SelectItem>
+                          <SelectItem value='APP'>App</SelectItem>
+                          <SelectItem value='MACHINE'>Machine</SelectItem>
+                          <SelectItem value='NONE'>None (disabled)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className='grid gap-2'>
+                    <Label>Exit Reason</Label>
+                    <Input
+                      value={empForm.exitReason}
+                      onChange={e => setEmpForm(f => ({ ...f, exitReason: e.target.value }))}
+                      placeholder='Reason for exit (optional)'
+                    />
                   </div>
                   <div className='grid gap-2'>
                     <Label>Notes</Label>

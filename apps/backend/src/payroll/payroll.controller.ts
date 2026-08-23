@@ -27,9 +27,19 @@ export class PayrollController {
     return this.payrollService.setSalaryStructure(dto);
   }
 
+  @Get('salary-structure/history/:employeeId')
+  getSalaryStructureHistory(@Param('employeeId') employeeId: string) {
+    return this.payrollService.getSalaryStructureHistory(employeeId);
+  }
+
   @Get('salary-structure/:employeeId')
   getSalaryStructure(@Param('employeeId') employeeId: string) {
     return this.payrollService.getSalaryStructure(employeeId);
+  }
+
+  @Get('summary/:employeeId')
+  getSummary(@Param('employeeId') employeeId: string) {
+    return this.payrollService.getSummary(employeeId);
   }
 
   @Post('payslips/generate')

@@ -1920,6 +1920,18 @@ model Employee {
   bankName          String?
   profilePictureUrl String?
   notes             String?        @db.Text
+  dateOfBirth       DateTime?
+  gender            EmployeeGender?
+  nationality       String?
+  nidNumber         String?
+  presentAddress    String?        @db.Text
+  permanentAddress  String?        @db.Text
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  confirmationDate  DateTime?
+  exitReason        String?        @db.Text
+  attendanceMethod  AttendanceMethod @default(APP)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -1939,6 +1951,11 @@ model Employee {
   commissionEarnings CommissionEarning[]
   leaveRequests    LeaveRequest[]
   attendanceRecords AttendanceRecord[]
+  bankAccounts     EmployeeBankAccount[]
+  attendanceDays   AttendanceDay[]
+  attendanceAdjustments AttendanceAdjustment[]
+  deviceMappings   DeviceEmployeeMapping[]
+  rawEvents        RawAttendanceEvent[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -3502,4 +3519,206 @@ model AttendanceRecord {
 
   @@unique([employeeId, date])
   @@index([date])
+}
+
+// ---------- HR domain completeness (Plan v3, approved) ----------
+
+enum EmployeeGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AttendanceMethod {
+  APP
+  MACHINE
+  NONE
+}
+
+enum AttendanceModeSetting {
+  APP
+  MACHINE
+  BOTH
+}
+
+enum AttendanceSessionSource {
+  APP
+  MACHINE
+  ADMIN
+}
+
+enum BankAccountType {
+  SAVINGS
+  CURRENT
+  OTHERS
+}
+
+enum BankVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum AttendanceDeviceSyncStatus {
+  IDLE
+  CONNECTED
+  DISCONNECTED
+  SYNCING
+  FAILED
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+  BREAK_START
+  BREAK_END
+  PUNCH
+}
+
+enum AttendanceEventStatus {
+  PENDING
+  UNMAPPED
+  PROCESSED
+  FAILED
+  SKIPPED
+}
+
+model EmployeeBankAccount {
+  id                 String                 @id @default(uuid())
+  employeeId         String
+  employee           Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  bankName           String
+  branchName         String?
+  accountName        String
+  accountNumber      String
+  accountType        BankAccountType?
+  routingNumber      String?
+  isPrimary          Boolean                @default(false)
+  verificationStatus BankVerificationStatus @default(PENDING)
+  notes              String?
+  createdById        String?
+  updatedById        String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  // NOTE(N1): one-primary-per-employee is enforced by a PostgreSQL partial
+  // unique index created in migration M3 (WHERE "isPrimary") — Prisma cannot
+  // express partial indexes; repo workflow is migrate deploy only.
+  @@index([employeeId])
+}
+
+model AttendanceSettings {
+  id          String                @id @default("global")
+  mode        AttendanceModeSetting @default(APP)
+  updatedById String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+model AttendanceDay {
+  id               String             @id @default(uuid())
+  employeeId       String
+  employee         Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date             DateTime           @db.Date
+  status           AttendanceStatus
+  attendanceMethod AttendanceMethod   @default(APP)
+  workedMinutes    Int?
+  breakMinutes     Int?
+  note             String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  sessions         AttendanceSession[]
+  adjustments      AttendanceAdjustment[]
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model AttendanceSession {
+  id         String              @id @default(uuid())
+  dayId      String
+  day        AttendanceDay       @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  source     AttendanceSessionSource @default(APP)
+  deviceId   String?
+  checkInAt  DateTime
+  checkOutAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  breaks     AttendanceBreak[]
+  @@index([dayId])
+}
+
+model AttendanceBreak {
+  id        String            @id @default(uuid())
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  startedAt DateTime
+  endedAt   DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  @@index([sessionId])
+}
+
+model AttendanceAdjustment {
+  id             String           @id @default(uuid())
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dayId          String?
+  day            AttendanceDay?   @relation(fields: [dayId], references: [id], onDelete: SetNull)
+  field          String
+  originalValue  String?
+  correctedValue String?
+  reason         String
+  adjustedById   String?
+  adjustedAt     DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  @@index([employeeId, adjustedAt])
+}
+
+model AttendanceDevice {
+  id                  String                      @id @default(uuid())
+  name                String
+  deviceType          String
+  vendor              String?
+  identifier          String?
+  location            String?
+  connectionMethod    String                      @default("API")
+  host                String?
+  port                Int?
+  enabled             Boolean                     @default(false)
+  syncStatus          AttendanceDeviceSyncStatus  @default(IDLE)
+  lastSyncAt          DateTime?
+  lastSyncError       String?
+  credentialsEncrypted String?
+  createdById         String?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  mappings            DeviceEmployeeMapping[]
+  rawEvents           RawAttendanceEvent[]
+}
+
+model DeviceEmployeeMapping {
+  id               String            @id @default(uuid())
+  deviceId         String
+  device           AttendanceDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deviceEmployeeId String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  @@unique([deviceId, deviceEmployeeId])
+  @@unique([deviceId, employeeId])
+}
+
+model RawAttendanceEvent {
+  id               String              @id @default(uuid())
+  deviceId         String?
+  device           AttendanceDevice?   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceEmployeeId String?
+  employeeId       String?
+  employee         Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  eventType        AttendanceEventType
+  occurredAt       DateTime
+  rawPayload       Json?
+  idempotencyKey   String              @unique
+  status           AttendanceEventStatus @default(PROCESSED)
+  ingestedAt       DateTime            @default(now())
 }

@@ -179,6 +179,7 @@ describe('PayrollService', () => {
       otherAllowance: 2000,
       taxDeduction: 2000,
       insuranceDeduction: 1000,
+      effectiveFrom: '2025-06-01',
     };
 
     it('should create salary structure for an employee', async () => {
@@ -211,6 +212,40 @@ describe('PayrollService', () => {
       await expect(service.setSalaryStructure(dto)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('rejects effectiveFrom before the joining date', async () => {
+      await expect(
+        service.setSalaryStructure({ ...dto, effectiveFrom: '2024-06-01' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a missing effectiveFrom', async () => {
+      const { effectiveFrom: _ef, ...rest } = dto as any;
+      await expect(service.setSalaryStructure(rest)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('closes the active structure with effectiveTo = effectiveFrom - 1 day', async () => {
+      await service.setSalaryStructure({ ...dto, effectiveFrom: '2025-06-01' });
+      const call = (
+        prisma.salaryStructure.updateMany as jest.Mock
+      ).mock.lastCall[0];
+      const effTo = new Date(call.data.effectiveTo) as Date;
+      expect(effTo.toISOString().slice(0, 10)).toBe('2025-05-31');
+    });
+
+    it('creates the new structure with an open-ended active window', async () => {
+      await service.setSalaryStructure({ ...dto, effectiveFrom: '2025-06-01' });
+      const call = (
+        prisma.salaryStructure.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(call.data.effectiveFrom.toISOString().slice(0, 10)).toBe(
+        '2025-06-01',
+      );
+      expect(call.data.effectiveTo).toBeNull();
+      expect(call.data.isActive).toBe(true);
     });
   });
 
@@ -594,6 +629,186 @@ describe('PayrollService', () => {
     it('throws NotFound when the payslip is missing', async () => {
       jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
       await expect(service.setStatus('missing', 'reviewed')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('generatePayslip — effective-dating resolution', () => {
+    it('scopes the active-structure lookup to the payslip window', async () => {
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+
+      const tx = {
+        payslip: {
+          create: jest.fn().mockReturnValue({ id: 'ps-win' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ ...mockPayslip, status: 'draft' }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      expect(findFirst.mock.lastCall[0].where).toMatchObject({
+        employeeId: 'emp-1',
+        isActive: true,
+        effectiveFrom: { lte: new Date('2025-06-01') },
+        OR: [
+          { effectiveTo: null },
+          { effectiveTo: { gte: new Date('2025-06-30') } },
+        ],
+      });
+    });
+
+    it('throws the friendly 400 when no structure covers the period', async () => {
+      jest.spyOn(prisma.salaryStructure, 'findFirst').mockResolvedValue(null);
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('2024-01-01'),
+          new Date('2024-01-31'),
+        ),
+      ).rejects.toThrow('No active salary structure for this period');
+    });
+
+    it('resolves the structure whose window covers the period (new vs old)', async () => {
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+      findFirst.mockResolvedValue({
+        ...mockSalaryStructure,
+        id: 'ss-2',
+        effectiveFrom: new Date('2025-06-01'),
+        effectiveTo: null,
+        isActive: true,
+      });
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
+
+      const tx = {
+        payslip: {
+          create: jest.fn().mockReturnValue({ id: 'ps-win' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ ...mockPayslip, status: 'draft' }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const data = (
+        tx.payslip.create as jest.Mock
+      ).mock.calls[0][0].data;
+      expect(data).toBeDefined();
+    });
+  });
+
+  describe('getSalaryStructureHistory', () => {
+    it('returns all structures ordered by effectiveFrom desc', async () => {
+      const result = await service.getSalaryStructureHistory('emp-1');
+      expect(prisma.salaryStructure.findMany).toHaveBeenCalledWith({
+        where: { employeeId: 'emp-1' },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      expect(result).toEqual([mockSalaryStructure]);
+    });
+
+    it('throws NotFound for a missing employee', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
+      await expect(
+        service.getSalaryStructureHistory('ghost'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getSummary', () => {
+    it('computes totals from payslips and payments', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findMany')
+        .mockResolvedValueOnce([
+          {
+            id: 'ps-2',
+            periodKey: '2025-05',
+            netPay: '10000',
+            status: 'approved' as const,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'ps-2',
+            netPay: '10000',
+            payments: [{ amount: '4000' }],
+          },
+        ]);
+      jest.spyOn(prisma.payrollPayment, 'aggregate').mockResolvedValue({
+        _sum: { amount: 4000 },
+      } as any);
+
+      const result = await service.getSummary('emp-1');
+
+      expect(result).toMatchObject({
+        currentStructure: mockSalaryStructure,
+        mirrorSalary: 50000,
+        structures: [mockSalaryStructure],
+        totalPaid: 4000,
+        outstanding: 6000,
+      });
+      expect(result.payslips).toEqual([
+        {
+          id: 'ps-2',
+          periodKey: '2025-05',
+          netPay: expect.anything(),
+          status: 'approved',
+        },
+      ]);
+    });
+
+    it('limits recent payslips to the last six', async () => {
+      (prisma.payslip.findMany as jest.Mock).mockClear();
+      (prisma.payslip.findMany as jest.Mock)
+        .mockResolvedValueOnce(
+          Array.from({ length: 6 }, (_, i) => ({
+            id: `ps-${i}`,
+            periodKey: '2025-05',
+            netPay: '10000',
+            status: 'paid' as const,
+          })),
+        )
+        .mockResolvedValueOnce([]);
+      jest.spyOn(prisma.payrollPayment, 'aggregate').mockResolvedValue({
+        _sum: { amount: null },
+      } as any);
+
+      const result = await service.getSummary('emp-1');
+      const recentCall = (prisma.payslip.findMany as jest.Mock).mock
+        .calls[0][0];
+      expect(recentCall).toMatchObject({
+        where: { employeeId: 'emp-1' },
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+      });
+      expect(result.payslips).toHaveLength(6);
+      expect(result.outstanding).toBe(0);
+    });
+
+    it('throws NotFound for a missing employee', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
+      await expect(service.getSummary('ghost')).rejects.toThrow(
         NotFoundException,
       );
     });

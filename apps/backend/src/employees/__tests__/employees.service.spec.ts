@@ -70,6 +70,22 @@ describe('EmployeesService', () => {
     designation: mockDesignation,
   };
 
+  const mockBankAccount = {
+    id: 'ba-1',
+    employeeId: 'emp-1',
+    bankName: 'DBBL',
+    branchName: null,
+    accountName: 'John Doe',
+    accountNumber: '1234567890',
+    accountType: 'SAVINGS',
+    routingNumber: null,
+    isPrimary: false,
+    verificationStatus: 'PENDING',
+    notes: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
   beforeEach(async () => {
     const prismaMock = {
       employee: {
@@ -104,6 +120,20 @@ describe('EmployeesService', () => {
       },
       orderCounter: {
         upsert: jest.fn().mockResolvedValue({ date: '250624', seq: 1 }),
+      },
+      attendanceSettings: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'global', mode: 'BOTH' }),
+      },
+      employeeBankAccount: {
+        count: jest.fn().mockResolvedValue(2),
+        findMany: jest.fn().mockResolvedValue([mockBankAccount]),
+        findUnique: jest.fn().mockResolvedValue(mockBankAccount),
+        create: jest.fn().mockResolvedValue(mockBankAccount),
+        update: jest.fn().mockResolvedValue(mockBankAccount),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        delete: jest.fn().mockResolvedValue(mockBankAccount),
       },
       $transaction: jest.fn(),
     };
@@ -667,6 +697,354 @@ describe('EmployeesService', () => {
         where: { id: 'ba-user-test' },
         data: { role: 'customer' },
       });
+    });
+  });
+
+  describe('create — HR personal fields', () => {
+    it('persists all personal fields as strings / dates', async () => {
+      const dto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        dateOfBirth: '1990-04-12',
+        gender: 'FEMALE' as const,
+        nationality: 'Bangladeshi',
+        nidNumber: '1234567890',
+        presentAddress: 'Dhaka',
+        permanentAddress: 'Sylhet',
+        emergencyContactName: 'Jane Doe',
+        emergencyContactPhone: '+8801711111111',
+        emergencyContactRelation: 'Spouse',
+        confirmationDate: '2025-04-01',
+        exitReason: 'Hygiene violation',
+        attendanceMethod: 'APP' as const,
+      };
+      await service.create(dto);
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            dateOfBirth: expect.any(Date),
+            gender: 'FEMALE',
+            nationality: 'Bangladeshi',
+            nidNumber: '1234567890',
+            presentAddress: 'Dhaka',
+            permanentAddress: 'Sylhet',
+            emergencyContactName: 'Jane Doe',
+            emergencyContactPhone: '+8801711111111',
+            emergencyContactRelation: 'Spouse',
+            confirmationDate: expect.any(Date),
+            exitReason: 'Hygiene violation',
+            attendanceMethod: 'APP',
+          }),
+        }),
+      );
+    });
+
+    it('stores NID as a plain string', async () => {
+      const dto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        nidNumber: '1122334455667',
+      };
+      await service.create(dto);
+      const call = (prisma.employee.create as jest.Mock).mock.lastCall[0];
+      expect(typeof call.data.nidNumber).toBe('string');
+      expect(call.data.nidNumber).toBe('1122334455667');
+    });
+  });
+
+  describe('attendanceMethod validation against AttendanceSettings', () => {
+    async function createWith(
+      method: 'APP' | 'MACHINE' | 'NONE',
+      mode: 'APP' | 'MACHINE' | 'BOTH',
+    ) {
+      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+        id: 'global',
+        mode,
+      });
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        attendanceMethod: method,
+      });
+    }
+
+    it('rejects MACHINE on create when system mode is APP', async () => {
+      await expect(createWith('MACHINE', 'APP')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(createWith('MACHINE', 'APP')).rejects.toThrow(
+        /MACHINE method requires system mode MACHINE or BOTH/,
+      );
+    });
+
+    it('rejects APP on create when system mode is MACHINE', async () => {
+      await expect(createWith('APP', 'MACHINE')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(createWith('APP', 'MACHINE')).rejects.toThrow(
+        /APP method requires system mode APP or BOTH/,
+      );
+    });
+
+    it('allows APP / NONE under mode APP on create', async () => {
+      await createWith('APP', 'APP');
+      await createWith('NONE', 'APP');
+      expect(prisma.employee.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('allows MACHINE / NONE under mode MACHINE on create', async () => {
+      await createWith('MACHINE', 'MACHINE');
+      await createWith('NONE', 'MACHINE');
+      expect(prisma.employee.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('allows all three methods under mode BOTH on create', async () => {
+      await createWith('APP', 'BOTH');
+      await createWith('MACHINE', 'BOTH');
+      await createWith('NONE', 'BOTH');
+      expect(prisma.employee.create).toHaveBeenCalledTimes(3);
+    });
+
+    it('skips validation on create when attendanceMethod is not sent', async () => {
+      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+        id: 'global',
+        mode: 'APP',
+      });
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      });
+      expect(prisma.employee.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects MACHINE on update when system mode is APP', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+        id: 'global',
+        mode: 'APP',
+      });
+      await expect(
+        service.update('emp-1', { attendanceMethod: 'MACHINE' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.employee.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts compatible method on update under mode APP', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+        id: 'global',
+        mode: 'APP',
+      });
+      await service.update('emp-1', { attendanceMethod: 'NONE' });
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ attendanceMethod: 'NONE' }),
+        }),
+      );
+    });
+
+    it('persists personal fields via update', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', {
+        dateOfBirth: '1991-02-03',
+        nationality: 'Indian',
+        confirmationDate: '2025-05-01',
+      });
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            dateOfBirth: expect.any(Date),
+            nationality: 'Indian',
+            confirmationDate: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('finds the employee with bankAccounts included', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.findOne('emp-1');
+      expect(prisma.employee.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            bankAccounts: expect.any(Object),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('bank accounts', () => {
+    const employeeExists = () =>
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        id: 'emp-1',
+      });
+
+    it('lists bank accounts for an employee, primary first', async () => {
+      employeeExists();
+      await service.listBankAccounts('emp-1');
+      expect(prisma.employeeBankAccount.findMany).toHaveBeenCalledWith({
+        where: { employeeId: 'emp-1' },
+        orderBy: [
+          { isPrimary: 'desc' },
+          { createdAt: 'asc' },
+        ],
+      });
+    });
+
+    it('throws 404 listing bank accounts for a missing employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(service.listBankAccounts('ghost')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('creates an account marked primary and unmarks the previous one', async () => {
+      employeeExists();
+      await service.createBankAccount('emp-1', {
+        bankName: 'DBBL',
+        accountName: 'John Doe',
+        accountNumber: '0987654321',
+        isPrimary: true,
+      });
+      expect(prisma.employeeBankAccount.updateMany).toHaveBeenCalledWith({
+        where: { employeeId: 'emp-1', isPrimary: true },
+        data: { isPrimary: false },
+      });
+      const createCall = (
+        prisma.employeeBankAccount.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(createCall.data).toMatchObject({
+        bankName: 'DBBL',
+        accountName: 'John Doe',
+        accountNumber: '0987654321',
+        isPrimary: true,
+      });
+    });
+
+    it('auto-primaries the first account even without isPrimary', async () => {
+      employeeExists();
+      (prisma.employeeBankAccount.updateMany as jest.Mock).mockClear();
+      (prisma.employeeBankAccount.create as jest.Mock).mockClear();
+      (prisma.employeeBankAccount.count as jest.Mock).mockResolvedValue(0);
+      await service.createBankAccount('emp-1', {
+        bankName: 'DBBL',
+        accountName: 'John Doe',
+        accountNumber: '0987654321',
+      });
+      expect(prisma.employeeBankAccount.updateMany).not.toHaveBeenCalled();
+      const createCall = (
+        prisma.employeeBankAccount.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(createCall.data.isPrimary).toBe(true);
+    });
+
+    it('does not force primary for a second account without isPrimary', async () => {
+      employeeExists();
+      (prisma.employeeBankAccount.count as jest.Mock).mockResolvedValue(2);
+      await service.createBankAccount('emp-1', {
+        bankName: 'EBL',
+        accountName: 'John Doe',
+        accountNumber: '1111111111',
+      });
+      const createCall = (
+        prisma.employeeBankAccount.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(createCall.data.isPrimary).toBe(false);
+    });
+
+    it('throws 404 creating an account for a missing employee', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.createBankAccount('ghost', {
+          bankName: 'DBBL',
+          accountName: 'X',
+          accountNumber: '1',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('updates an account and swaps primary off the sibling', async () => {
+      await service.updateBankAccount('ba-1', { isPrimary: true });
+      expect(prisma.employeeBankAccount.updateMany).toHaveBeenCalledWith({
+        where: {
+          employeeId: 'emp-1',
+          isPrimary: true,
+          NOT: { id: 'ba-1' },
+        },
+        data: { isPrimary: false },
+      });
+      const updateCall = (
+        prisma.employeeBankAccount.update as jest.Mock
+      ).mock.lastCall[0];
+      expect(updateCall.where).toEqual({ id: 'ba-1' });
+      expect(updateCall.data.isPrimary).toBe(true);
+    });
+
+    it('updates non-primary fields without touching primary status', async () => {
+      await service.updateBankAccount('ba-1', {
+        branchName: 'Gulshan',
+        verificationStatus: 'VERIFIED',
+      } as any);
+      const updateCall = (
+        prisma.employeeBankAccount.update as jest.Mock
+      ).mock.lastCall[0];
+      expect(updateCall.data).toMatchObject({
+        branchName: 'Gulshan',
+        verificationStatus: 'VERIFIED',
+        isPrimary: false,
+      });
+    });
+
+    it('throws 404 when the account to update is missing', async () => {
+      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
+      await expect(
+        service.updateBankAccount('ghost', { branchName: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('sets the account as primary and unmarks the others', async () => {
+      await service.setPrimaryBankAccount('ba-1');
+      expect(prisma.employeeBankAccount.updateMany).toHaveBeenCalledWith({
+        where: {
+          employeeId: 'emp-1',
+          isPrimary: true,
+          NOT: { id: 'ba-1' },
+        },
+        data: { isPrimary: false },
+      });
+      const updateCall = (
+        prisma.employeeBankAccount.update as jest.Mock
+      ).mock.lastCall[0];
+      expect(updateCall.where).toEqual({ id: 'ba-1' });
+      expect(updateCall.data).toMatchObject({ isPrimary: true });
+    });
+
+    it('throws 404 when the account to promote is missing', async () => {
+      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
+      await expect(
+        service.setPrimaryBankAccount('ghost'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('deletes a bank account', async () => {
+      await service.deleteBankAccount('ba-1');
+      expect(prisma.employeeBankAccount.delete).toHaveBeenCalledWith({
+        where: { id: 'ba-1' },
+      });
+    });
+
+    it('throws 404 when the account to delete is missing', async () => {
+      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
+      await expect(service.deleteBankAccount('ghost')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

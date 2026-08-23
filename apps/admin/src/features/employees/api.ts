@@ -2,6 +2,38 @@ import { apiClient } from '@/lib/api-client'
 
 export type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'internship'
 export type EmployeeStatus = 'active' | 'inactive' | 'terminated' | 'resigned' | 'on_leave' | 'suspended'
+export type EmployeeGender = 'MALE' | 'FEMALE' | 'OTHER'
+export type AttendanceMethod = 'APP' | 'MACHINE' | 'NONE'
+export type BankAccountType = 'SAVINGS' | 'CURRENT' | 'OTHERS'
+export type BankVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED'
+
+export interface EmployeeBankAccount {
+  id: string
+  employeeId: string
+  bankName: string
+  branchName?: string | null
+  accountName: string
+  accountNumber: string
+  accountType?: BankAccountType | null
+  routingNumber?: string | null
+  isPrimary: boolean
+  verificationStatus: BankVerificationStatus
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateBankAccountDto {
+  bankName: string
+  branchName?: string
+  accountName: string
+  accountNumber: string
+  accountType?: BankAccountType
+  routingNumber?: string
+  isPrimary?: boolean
+  verificationStatus?: BankVerificationStatus
+  notes?: string
+}
 
 export interface UpdateEmployeeDto {
   status?: EmployeeStatus
@@ -14,6 +46,18 @@ export interface UpdateEmployeeDto {
   bankName?: string
   bankAccountNo?: string
   notes?: string
+  dateOfBirth?: string | null
+  gender?: EmployeeGender | null
+  nationality?: string | null
+  nidNumber?: string | null
+  presentAddress?: string | null
+  permanentAddress?: string | null
+  emergencyContactName?: string | null
+  emergencyContactPhone?: string | null
+  emergencyContactRelation?: string | null
+  confirmationDate?: string | null
+  exitReason?: string | null
+  attendanceMethod?: AttendanceMethod
 }
 
 export interface EmployeeResponse {
@@ -43,6 +87,19 @@ export interface EmployeeResponse {
     employeeId: string
     betterAuthUser?: { id?: string; name: string } | null
   } | null
+  dateOfBirth?: string | null
+  gender?: EmployeeGender | null
+  nationality?: string | null
+  nidNumber?: string | null
+  presentAddress?: string | null
+  permanentAddress?: string | null
+  emergencyContactName?: string | null
+  emergencyContactPhone?: string | null
+  emergencyContactRelation?: string | null
+  confirmationDate?: string | null
+  exitReason?: string | null
+  attendanceMethod: AttendanceMethod
+  bankAccounts?: EmployeeBankAccount[]
 }
 
 export interface PaginatedResponse<T> {
@@ -68,6 +125,16 @@ export const employeesApi = {
     apiClient.put<EmployeeResponse>(`/employees/${id}`, data),
   delete: (id: string) =>
     apiClient.delete(`/employees/${id}`),
+  listBankAccounts: (employeeId: string) =>
+    apiClient.get<EmployeeBankAccount[]>(`/employees/${employeeId}/bank-accounts`),
+  createBankAccount: (employeeId: string, data: CreateBankAccountDto) =>
+    apiClient.post<EmployeeBankAccount>(`/employees/${employeeId}/bank-accounts`, data),
+  updateBankAccount: (id: string, data: Partial<CreateBankAccountDto>) =>
+    apiClient.patch<EmployeeBankAccount>(`/employees/bank-accounts/${id}`, data),
+  deleteBankAccount: (id: string) =>
+    apiClient.delete(`/employees/bank-accounts/${id}`),
+  setPrimaryBankAccount: (id: string) =>
+    apiClient.post<EmployeeBankAccount>(`/employees/bank-accounts/${id}/primary`),
 }
 
 export async function getEmployee(id: string) {

@@ -4,12 +4,17 @@ import {
   IsNumber,
   Min,
   IsOptional,
+  IsDateString,
 } from 'class-validator';
 
 export class SetSalaryStructureDto {
   @IsString()
   @IsNotEmpty()
   employeeId: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  effectiveFrom: string;
 
   @IsNumber()
   @Min(0)
