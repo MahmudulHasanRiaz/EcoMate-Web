@@ -208,8 +208,65 @@ export async function cancelHrLeaveRequest(id: string) {
 }
 
 export async function getHrMyAttendance(params?: { from?: string; to?: string }) {
-  const { data } = await apiClient.get<AttendanceRecord[]>("/hr/my/attendance", {
+  const { data } = await apiClient.get<HrAttendanceDay[]>("/hr/my/attendance", {
     params,
   });
+  return data;
+}
+
+export interface HrDayState {
+  state: "none" | "before_work" | "working" | "on_break" | "checked_out";
+  checkInAt?: string;
+  checkOutAt?: string;
+  workedMinutes: number;
+  breakMinutes: number;
+}
+
+export interface HrAttendanceDay {
+  id: string;
+  date: string;
+  status: string;
+  attendanceMethod?: string | null;
+  workedMinutes?: number | null;
+  breakMinutes?: number | null;
+  note?: string | null;
+  sessions?: Array<{ checkInAt: string; checkOutAt: string | null }>;
+  [key: string]: any;
+}
+
+export async function getHrMyAttendanceToday() {
+  const { data } = await apiClient.get<HrDayState>("/hr/my/attendance/today");
+  return data;
+}
+
+export async function hrMyCheckIn(note?: string) {
+  const { data } = await apiClient.post<{ id: string }>(
+    "/hr/my/attendance/check-in",
+    note ? { note } : {},
+  );
+  return data;
+}
+
+export async function hrMyBreakStart() {
+  const { data } = await apiClient.post<{ id: string }>(
+    "/hr/my/attendance/break/start",
+    {},
+  );
+  return data;
+}
+
+export async function hrMyBreakEnd() {
+  const { data } = await apiClient.post<{ id: string }>(
+    "/hr/my/attendance/break/end",
+    {},
+  );
+  return data;
+}
+
+export async function hrMyCheckOut(note?: string) {
+  const { data } = await apiClient.post<{ id: string }>(
+    "/hr/my/attendance/check-out",
+    note ? { note } : {},
+  );
   return data;
 }

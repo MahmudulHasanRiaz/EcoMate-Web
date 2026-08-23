@@ -140,4 +140,29 @@ export class HrSelfServiceService {
     const employee = await this.resolveEmployee(user);
     return this.attendance.history(employee.id, from, to);
   }
+
+  async getTodayAttendance(user: SelfUser, date?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.getDayState(employee.id, date);
+  }
+
+  async checkInSelf(user: SelfUser, note?: string, date?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.checkIn(employee.id, { note, date });
+  }
+
+  async breakStartSelf(user: SelfUser, date?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.breakStart(employee.id, { date });
+  }
+
+  async breakEndSelf(user: SelfUser, date?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.breakEnd(employee.id, { date });
+  }
+
+  async checkOutSelf(user: SelfUser, note?: string, date?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.checkOut(employee.id, { note, date });
+  }
 }

@@ -2,7 +2,6 @@ import { describe, expect, it, vi, beforeEach, type ReactElement } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { userEvent } from 'vitest/browser'
-import { toast } from 'sonner'
 import { AttendancePage } from '../index'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -18,11 +17,30 @@ vi.mock('@/components/profile-dropdown', () => ({ ProfileDropdown: () => null })
 vi.mock('@/components/layout/header', () => ({ Header: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+const authPermissions = vi.hoisted(() => ({
+  value: ['manage_attendance', 'manage_attendance_devices', 'manage_hr_settings'],
+}))
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector: (s: any) => unknown) =>
+    selector({
+      auth: {
+        user: {
+          id: 'u1',
+          email: 'admin@ecomate.com',
+          role: 'admin',
+          permissions: authPermissions.value,
+        },
+      },
+    }),
+}))
+
 const mockGet = vi.hoisted(() => vi.fn())
 const mockPost = vi.hoisted(() => vi.fn())
 const mockPatch = vi.hoisted(() => vi.fn())
+const mockDelete = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api-client', () => ({
-  apiClient: { get: mockGet, post: mockPost, patch: mockPatch, put: vi.fn(), delete: vi.fn() },
+  apiClient: { get: mockGet, post: mockPost, patch: mockPatch, put: vi.fn(), delete: mockDelete },
 }))
 
 const EMPLOYEES = [
@@ -34,6 +52,7 @@ const EMPLOYEES = [
     department: null,
     designation: null,
     status: 'active',
+    attendanceMethod: 'APP',
   },
 ]
 
@@ -49,6 +68,23 @@ function mockGetRoutes() {
     }
     if (url === '/hr/attendance') {
       return Promise.resolve({ data: EMPTY_LIST })
+    }
+    if (url === '/hr/attendance/today') {
+      return Promise.resolve({ data: { state: 'before_work', workedMinutes: 0, breakMinutes: 0 } })
+    }
+    if (url === '/hr/attendance/history') {
+      return Promise.resolve({ data: [] })
+    }
+    if (url === '/hr/attendance/adjustments') {
+      return Promise.resolve({ data: EMPTY_LIST })
+    }
+    if (url === '/hr/attendance/devices') {
+      return Promise.resolve({
+        data: [{ id: 'dev-1', name: 'Main Scanner', deviceType: 'FINGERPRINT', enabled: true, syncStatus: 'IDLE', lastSyncAt: null, host: '192.168.1.50', port: 4370, location: 'Gate', vendor: null }],
+      })
+    }
+    if (url === '/hr/attendance/settings') {
+      return Promise.resolve({ data: { id: 'global', mode: 'APP' } })
     }
     if (url === '/employees') {
       return Promise.resolve({ data: { data: EMPLOYEES, meta: { total: 1, page: 1, perPage: 100, totalPages: 1 } } })
@@ -68,115 +104,67 @@ function wrap(ui: ReactElement) {
 describe('AttendancePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authPermissions.value = ['manage_attendance', 'manage_attendance_devices', 'manage_hr_settings']
     mockGetRoutes()
   })
 
-  it('renders the filter row and default date', async () => {
-    const { getByText, getByRole } = await wrap(<AttendancePage />)
+  it('renders the sub-tabs Today, Calendar, Adjustments, Devices, Settings', async () => {
+    const { getByRole } = await wrap(<AttendancePage />)
 
-    await expect.element(getByText('Employee (optional)')).toBeInTheDocument()
-    await expect.element(getByText('Status (optional)')).toBeInTheDocument()
-    await expect.element(getByText('Department (optional)')).toBeInTheDocument()
-    await expect.element(getByText('All statuses')).toBeInTheDocument()
-    await expect.element(getByText('All employees')).toBeInTheDocument()
-    await expect.element(getByRole('button', { name: /Add Record/i })).toBeInTheDocument()
+    await expect.element(getByRole('tab', { name: 'Today' })).toBeInTheDocument()
+    await expect.element(getByRole('tab', { name: 'Calendar' })).toBeInTheDocument()
+    await expect.element(getByRole('tab', { name: 'Adjustments' })).toBeInTheDocument()
+    await expect.element(getByRole('tab', { name: 'Devices' })).toBeInTheDocument()
+    await expect.element(getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
   })
 
-  it('shows empty state when no records match the filters', async () => {
+  it('shows the Today state card by default (employee prompt)', async () => {
     const { getByText } = await wrap(<AttendancePage />)
 
     await expect
-      .element(getByText('No attendance records for this date/filter.'))
+      .element(getByText(/Select an employee to view today's attendance state/i))
       .toBeInTheDocument()
   })
 
-  it('toasts success when a record is created', async () => {
-    mockPost.mockResolvedValueOnce({
-      data: {
-        id: 'att-1',
-        employeeId: 'emp-1',
-        date: '2026-08-23T00:00:00.000Z',
-        status: 'PRESENT',
-        checkInTime: null,
-        checkOutTime: null,
-        note: null,
-        employee: EMPLOYEES[0],
-      },
-    })
-
+  it('shows devices table when the Devices tab is opened with permission', async () => {
     const { getByRole, getByText } = await wrap(<AttendancePage />)
 
-    await expect.element(getByRole('button', { name: /Add Record/i })).toBeInTheDocument()
-    await userEvent.click(getByRole('button', { name: /Add Record/i }))
+    await userEvent.click(getByRole('tab', { name: 'Devices' }))
 
-    await expect.element(getByRole('heading', { name: /Add Attendance Record/i })).toBeInTheDocument()
-
-    const employeeTrigger = getByText('Select employee')
-    await expect.element(employeeTrigger).toBeInTheDocument()
-    await userEvent.click(employeeTrigger)
-    await userEvent.click(getByRole('option', { name: /EMP-001 · John Doe/i }))
-
-    await userEvent.click(getByRole('button', { name: /Create Record/i }))
-
-    await vi.waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('Attendance record created')
-    })
-    expect(mockPost).toHaveBeenCalledWith(
-      '/hr/attendance',
-      expect.objectContaining({ employeeId: 'emp-1', status: 'PRESENT' }),
-    )
+    await expect.element(getByText('Main Scanner')).toBeInTheDocument()
+    await expect.element(getByText('IDLE')).toBeInTheDocument()
   })
 
-  it('shows the server conflict message (not a raw object) when creation fails with 409', async () => {
-    mockPost.mockRejectedValueOnce({
-      response: { status: 409, data: { message: 'Attendance record already exists for this employee on this date' } },
-    })
-
+  it('shows the permission gate instead of devices when permission is missing', async () => {
+    authPermissions.value = ['manage_attendance']
     const { getByRole, getByText } = await wrap(<AttendancePage />)
 
-    await expect.element(getByRole('button', { name: /Add Record/i })).toBeInTheDocument()
-    await userEvent.click(getByRole('button', { name: /Add Record/i }))
-
-    await expect.element(getByRole('heading', { name: /Add Attendance Record/i })).toBeInTheDocument()
-
-    const employeeTrigger = getByText('Select employee')
-    await expect.element(employeeTrigger).toBeInTheDocument()
-    await userEvent.click(employeeTrigger)
-    await userEvent.click(getByRole('option', { name: /EMP-001 · John Doe/i }))
-
-    await userEvent.click(getByRole('button', { name: /Create Record/i }))
-
-    await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1)
-    })
-    expect(toast.error).toHaveBeenCalledWith(
-      'Attendance record already exists for this employee on this date',
-    )
-  })
-
-  it('shows a friendly error with Retry (not an empty table) when the list request fails', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/hr/attendance/daily-overview') {
-        return Promise.resolve({ data: { date: '2026-08-23', total: 0, counts: EMPTY_COUNTS } })
-      }
-      if (url === '/hr/attendance') {
-        return Promise.reject({ response: { status: 403, data: { message: 'Forbidden' } } })
-      }
-      if (url === '/employees') {
-        return Promise.resolve({ data: { data: EMPLOYEES, meta: { total: 1, page: 1, perPage: 100, totalPages: 1 } } })
-      }
-      if (url === '/departments') {
-        return Promise.resolve({ data: EMPTY_LIST })
-      }
-      return Promise.resolve({ data: {} })
-    })
-
-    const { getByText, getByRole } = await wrap(<AttendancePage />)
+    await userEvent.click(getByRole('tab', { name: 'Devices' }))
 
     await expect
-      .element(getByText('Could not load attendance records.'))
+      .element(getByText('Devices require Manage Attendance Devices permission.'))
       .toBeInTheDocument()
-    await expect.element(getByRole('button', { name: /Retry/i })).toBeInTheDocument()
+    expect(mockGet).not.toHaveBeenCalledWith('/hr/attendance/devices', expect.anything())
+  })
+
+  it('shows the calendar with filters and empty state when Calendar tab is opened', async () => {
+    const { getByRole, getByText } = await wrap(<AttendancePage />)
+
+    await userEvent.click(getByRole('tab', { name: 'Calendar' }))
+
+    await expect.element(getByText('Employee (optional)')).toBeInTheDocument()
+    await expect
+      .element(getByText('No attendance records for this date/filter.'))
+      .toBeInTheDocument()
     expect(mockGet).toHaveBeenCalledWith('/hr/attendance', expect.anything())
+  })
+
+  it('shows the adjustment list with an Add Adjustment action in the Adjustments tab', async () => {
+    const { getByRole, getByText } = await wrap(<AttendancePage />)
+
+    await userEvent.click(getByRole('tab', { name: 'Adjustments' }))
+
+    await expect.element(getByText('Audit-trailed corrections to attendance days')).toBeInTheDocument()
+    await expect.element(getByRole('button', { name: /Add Adjustment/i })).toBeInTheDocument()
   })
 })

@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Pencil, RotateCcw, Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
@@ -10,14 +9,16 @@ import { useQuery } from '@tanstack/react-query'
 import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useAttendanceQuery } from '../hooks'
-import { AttendanceDialog } from './attendance-dialog'
 import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_BADGE,
   ATTENDANCE_STATUS_LABELS,
   formatDate,
+  formatDuration,
   formatTime,
-  type AttendanceRow,
+  sessionTimes,
+  toDateKey,
+  type AttendanceDayRow,
   type AttendanceStatus,
 } from '../api'
 
@@ -44,8 +45,7 @@ export function AttendanceTable({
   page: number
   onPageChange: (page: number) => void
 }) {
-  const [editing, setEditing] = useState<AttendanceRow | null>(null)
-  const dateKey = date ? date.toISOString().slice(0, 10) : undefined
+  const dateKey = toDateKey(date)
 
   const { data, isLoading, isError, refetch } = useAttendanceQuery({
     date: dateKey,
@@ -62,7 +62,7 @@ export function AttendanceTable({
 
   const { data: departments } = useDepartmentsQuery()
 
-  const rows: AttendanceRow[] = Array.isArray(data?.data) ? data.data : []
+  const rows: AttendanceDayRow[] = Array.isArray(data?.data) ? data.data : []
   const meta = data?.meta
 
   return (
@@ -136,37 +136,38 @@ export function AttendanceTable({
               <TableHead>Status</TableHead>
               <TableHead>Check In</TableHead>
               <TableHead>Check Out</TableHead>
-              <TableHead>Note</TableHead>
-              <TableHead className='w-20'>Actions</TableHead>
+              <TableHead className='text-right'>Worked</TableHead>
+              <TableHead className='text-right'>Break</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className='font-medium'>
-                  {row.employee?.employeeId} · {row.employee?.betterAuthUser?.name || '—'}
-                  {row.employee?.department?.name && (
-                    <div className='text-xs text-muted-foreground'>{row.employee.department.name}</div>
-                  )}
-                </TableCell>
-                <TableCell className='text-sm text-muted-foreground'>{formatDate(row.date)}</TableCell>
-                <TableCell>
-                  <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>
-                    {ATTENDANCE_STATUS_LABELS[row.status]}
-                  </Badge>
-                </TableCell>
-                <TableCell className='text-sm text-muted-foreground'>{formatTime(row.checkInTime)}</TableCell>
-                <TableCell className='text-sm text-muted-foreground'>{formatTime(row.checkOutTime)}</TableCell>
-                <TableCell className='max-w-[200px] truncate text-sm text-muted-foreground' title={row.note ?? undefined}>
-                  {row.note || '—'}
-                </TableCell>
-                <TableCell>
-                  <Button variant='ghost' size='sm' onClick={() => setEditing(row)}>
-                    <Pencil className='h-3.5 w-3.5 mr-1' /> Edit
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {rows.map((row) => {
+              const times = sessionTimes(row)
+              return (
+                <TableRow key={row.id}>
+                  <TableCell className='font-medium'>
+                    {row.employee?.employeeId} · {row.employee?.betterAuthUser?.name || '—'}
+                    {row.employee?.department?.name && (
+                      <div className='text-xs text-muted-foreground'>{row.employee.department.name}</div>
+                    )}
+                  </TableCell>
+                  <TableCell className='text-sm text-muted-foreground'>{formatDate(row.date)}</TableCell>
+                  <TableCell>
+                    <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>
+                      {ATTENDANCE_STATUS_LABELS[row.status]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className='text-sm text-muted-foreground'>{formatTime(times.checkInAt)}</TableCell>
+                  <TableCell className='text-sm text-muted-foreground'>{formatTime(times.checkOutAt)}</TableCell>
+                  <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
+                    {formatDuration(row.workedMinutes)}
+                  </TableCell>
+                  <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
+                    {formatDuration(row.breakMinutes)}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       )}
@@ -196,12 +197,6 @@ export function AttendanceTable({
           </div>
         </div>
       )}
-
-      <AttendanceDialog
-        open={!!editing}
-        onOpenChange={(o) => { if (!o) setEditing(null) }}
-        record={editing}
-      />
     </>
   )
 }

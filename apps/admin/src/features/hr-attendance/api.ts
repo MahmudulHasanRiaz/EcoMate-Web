@@ -1,6 +1,18 @@
 import { apiClient } from '@/lib/api-client'
 
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE' | 'WEEKLY_OFF'
+export type AttendanceMethod = 'APP' | 'MACHINE' | 'NONE'
+export type AttendanceMode = 'APP' | 'MACHINE' | 'BOTH'
+export type DayStateValue = 'none' | 'before_work' | 'working' | 'on_break' | 'checked_out'
+export type AdjustmentField =
+  | 'status'
+  | 'workedMinutes'
+  | 'breakMinutes'
+  | 'checkInAt'
+  | 'checkOutAt'
+  | 'startedAt'
+  | 'endedAt'
+export type DeviceSyncStatus = 'IDLE' | 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'FAILED'
 
 export const ATTENDANCE_STATUSES: AttendanceStatus[] = [
   'PRESENT',
@@ -29,6 +41,29 @@ export const ATTENDANCE_STATUS_BADGE: Record<AttendanceStatus, string> = {
   WEEKLY_OFF: 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
 }
 
+export const ATTENDANCE_METHOD_LABELS: Record<AttendanceMethod, string> = {
+  APP: 'App attendance',
+  MACHINE: 'Machine attendance',
+  NONE: 'Attendance disabled',
+}
+
+export interface AttendanceSession {
+  id: string
+  dayId: string
+  source: string
+  checkInAt: string
+  checkOutAt: string | null
+  breaks?: Array<{ id: string; startedAt: string; endedAt: string | null }>
+}
+
+export interface DayState {
+  state: DayStateValue
+  checkInAt?: string
+  checkOutAt?: string
+  workedMinutes: number
+  breakMinutes: number
+}
+
 export interface AttendanceEmployee {
   employeeId: string
   status: string
@@ -37,47 +72,24 @@ export interface AttendanceEmployee {
   betterAuthUser: { name: string } | null
 }
 
-export interface AttendanceRecord {
+export interface AttendanceDayRow {
   id: string
   employeeId: string
   date: string
   status: AttendanceStatus
-  checkInTime: string | null
-  checkOutTime: string | null
+  attendanceMethod: AttendanceMethod | null
+  workedMinutes: number | null
+  breakMinutes: number | null
   note: string | null
-  recordedById: string | null
   createdAt: string
-}
-
-export interface AttendanceRow extends AttendanceRecord {
+  updatedAt: string
+  sessions?: AttendanceSession[]
   employee: AttendanceEmployee
 }
 
 export interface AttendanceListResponse {
-  data: AttendanceRow[]
+  data: AttendanceDayRow[]
   meta: { total: number; page: number; perPage: number; totalPages: number }
-}
-
-export interface DailyOverview {
-  date: string
-  total: number
-  counts: Record<AttendanceStatus, number>
-}
-
-export interface CreateAttendanceDto {
-  employeeId: string
-  date: string
-  status: AttendanceStatus
-  checkInTime?: string
-  checkOutTime?: string
-  note?: string
-}
-
-export interface UpdateAttendanceDto {
-  status?: AttendanceStatus
-  checkInTime?: string | null
-  checkOutTime?: string | null
-  note?: string | null
 }
 
 export interface AttendanceListParams {
@@ -87,6 +99,101 @@ export interface AttendanceListParams {
   departmentId?: string
   page?: number
   perPage?: number
+}
+
+export interface DailyOverview {
+  date: string
+  total: number
+  counts: Record<AttendanceStatus, number>
+}
+
+export interface AttendanceAdjustment {
+  id: string
+  employeeId: string
+  dayId: string | null
+  field: string
+  originalValue: string | null
+  correctedValue: string
+  reason: string
+  adjustedAt: string
+  employee?: { employeeId: string; betterAuthUser: { name: string } | null }
+}
+
+export interface AdjustmentListResponse {
+  data: AttendanceAdjustment[]
+  meta: { total: number; page: number; perPage: number; totalPages: number }
+}
+
+export interface CreateAdjustmentDto {
+  employeeId: string
+  dayId?: string
+  field: AdjustmentField
+  originalValue?: string
+  correctedValue: string
+  reason: string
+}
+
+export interface AttendanceSettings {
+  id: string
+  mode: AttendanceMode
+  updatedById?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AttendanceDevice {
+  id: string
+  name: string
+  deviceType: string
+  vendor: string | null
+  identifier: string | null
+  location: string | null
+  connectionMethod: string
+  host: string | null
+  port: number | null
+  enabled: boolean
+  syncStatus: DeviceSyncStatus
+  lastSyncAt: string | null
+  lastSyncError: string | null
+  mappingCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeviceMapping {
+  id: string
+  deviceId: string
+  employeeId: string
+  deviceEmployeeId: string
+  createdAt: string
+  employee?: { employeeId: string; betterAuthUser: { name: string } | null }
+}
+
+export interface CreateDeviceDto {
+  name: string
+  deviceType: string
+  vendor?: string
+  identifier?: string
+  location?: string
+  connectionMethod?: string
+  host?: string
+  port?: number
+  enabled?: boolean
+  credentialsEncrypted?: string
+}
+
+export type UpdateDeviceDto = Partial<Omit<CreateDeviceDto, 'credentialsEncrypted'>>
+
+export interface DeviceTestResult {
+  syncStatus: 'CONNECTED' | 'DISCONNECTED'
+  error?: string
+  lastSyncAt?: string | null
+}
+
+export interface DeviceSyncResult {
+  syncStatus: 'CONNECTED' | 'FAILED'
+  error?: string
+  lastSyncAt?: string | null
 }
 
 export function toDateKey(d: Date): string {
@@ -114,21 +221,88 @@ export function formatDate(dateStr?: string | null): string {
   })
 }
 
-export function toTimeInput(iso?: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+export function formatDuration(minutes?: number | null): string {
+  if (minutes === null || minutes === undefined) return '—'
+  const m = Math.max(0, Math.round(minutes))
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  if (h === 0) return `${rest}m`
+  return `${h}h ${rest}m`
+}
+
+export function getErrorMessage(e: unknown, fallback: string): string {
+  const message = (e as any)?.response?.data?.message
+  if (Array.isArray(message)) return message.join(', ')
+  if (typeof message === 'string' && message.trim()) return message
+  return fallback
+}
+
+/** First/last session times of a day row (list/history rows nest sessions). */
+export function sessionTimes(row: AttendanceDayRow): {
+  checkInAt: string | null
+  checkOutAt: string | null
+} {
+  const sessions = row.sessions ?? []
+  const first = sessions[0]
+  const last = sessions[sessions.length - 1]
+  return {
+    checkInAt: first?.checkInAt ?? null,
+    checkOutAt: last?.checkOutAt ?? null,
+  }
 }
 
 export const hrAttendanceApi = {
+  // State machine (admin-driven)
+  checkIn: (employeeId: string, note?: string) =>
+    apiClient.post('/hr/attendance/check-in', { employeeId, ...(note ? { note } : {}) }),
+  breakStart: (employeeId: string) =>
+    apiClient.post('/hr/attendance/break/start', { employeeId }),
+  breakEnd: (employeeId: string) =>
+    apiClient.post('/hr/attendance/break/end', { employeeId }),
+  checkOut: (employeeId: string, note?: string) =>
+    apiClient.post('/hr/attendance/check-out', { employeeId, ...(note ? { note } : {}) }),
+  getToday: (employeeId: string, date?: string) =>
+    apiClient.get<DayState>('/hr/attendance/today', {
+      params: { employeeId, ...(date ? { date } : {}) },
+    }),
+
+  // Calendar list / overview / history
   listAttendance: (params: AttendanceListParams) =>
     apiClient.get<AttendanceListResponse>('/hr/attendance', { params }),
-  createAttendance: (dto: CreateAttendanceDto) =>
-    apiClient.post<AttendanceRow>('/hr/attendance', dto),
-  updateAttendance: (id: string, dto: UpdateAttendanceDto) =>
-    apiClient.patch<AttendanceRow>(`/hr/attendance/${id}`, dto),
   getDailyOverview: (date: string) =>
     apiClient.get<DailyOverview>('/hr/attendance/daily-overview', { params: { date } }),
-  getAttendanceHistory: (employeeId: string, from?: string, to?: string) =>
-    apiClient.get<AttendanceRecord[]>('/hr/attendance/history', { params: { employeeId, from, to } }),
+  getHistory: (employeeId: string, from?: string, to?: string) =>
+    apiClient.get<AttendanceDayRow[]>('/hr/attendance/history', {
+      params: { employeeId, from, to },
+    }),
+
+  // Adjustments
+  listAdjustments: (params: { employeeId?: string; page?: number; perPage?: number }) =>
+    apiClient.get<AdjustmentListResponse>('/hr/attendance/adjustments', { params }),
+  createAdjustment: (dto: CreateAdjustmentDto) =>
+    apiClient.post<AttendanceAdjustment>('/hr/attendance/adjustments', dto),
+
+  // Settings
+  getSettings: () => apiClient.get<AttendanceSettings>('/hr/attendance/settings'),
+  updateSettings: (mode: AttendanceMode) =>
+    apiClient.patch<AttendanceSettings>('/hr/attendance/settings', { mode }),
+
+  // Devices
+  listDevices: () => apiClient.get<AttendanceDevice[]>('/hr/attendance/devices'),
+  createDevice: (dto: CreateDeviceDto) =>
+    apiClient.post<AttendanceDevice>('/hr/attendance/devices', dto),
+  updateDevice: (id: string, dto: UpdateDeviceDto) =>
+    apiClient.patch<AttendanceDevice>(`/hr/attendance/devices/${id}`, dto),
+  deleteDevice: (id: string) =>
+    apiClient.delete(`/hr/attendance/devices/${id}`),
+  testDevice: (id: string) =>
+    apiClient.post<DeviceTestResult>(`/hr/attendance/devices/${id}/test`),
+  syncDevice: (id: string) =>
+    apiClient.post<DeviceSyncResult>(`/hr/attendance/devices/${id}/sync`),
+  listMappings: (deviceId: string) =>
+    apiClient.get<DeviceMapping[]>(`/hr/attendance/devices/${deviceId}/mappings`),
+  createMapping: (deviceId: string, dto: { employeeId: string; deviceEmployeeId: string }) =>
+    apiClient.post<DeviceMapping>(`/hr/attendance/devices/${deviceId}/mappings`, dto),
+  deleteMapping: (deviceId: string, mappingId: string) =>
+    apiClient.delete(`/hr/attendance/devices/${deviceId}/mappings/${mappingId}`),
 }

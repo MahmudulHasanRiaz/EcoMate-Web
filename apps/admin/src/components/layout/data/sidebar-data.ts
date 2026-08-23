@@ -5,7 +5,7 @@ import {
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
-  CalendarCheck,
+  CalendarCheck, LifeBuoy,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -153,6 +153,14 @@ export const sidebarData: SidebarData = {
         { title: 'Commissions', url: '/hr/commissions', icon: Percent, feature: 'admin_payroll', permissions: ['view_hr'] },
         { title: 'Leave', url: '/hr/leave', icon: CalendarDays, feature: 'admin_hr', permissions: ['view_hr'] },
         { title: 'Attendance', url: '/hr/attendance', icon: CalendarCheck, feature: 'admin_hr', permissions: ['manage_attendance'] },
+        {
+          title: 'Settings',
+          url: '/hr/settings',
+          icon: Settings,
+          feature: 'admin_hr',
+          permissions: ['manage_hr_settings'],
+        },
+        { title: 'Help', url: '/hr/help', icon: LifeBuoy, feature: 'admin_hr', permissions: ['view_hr'] },
         {
           title: 'User Management',
           icon: Users,

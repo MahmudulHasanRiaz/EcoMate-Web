@@ -32,6 +32,11 @@ import {
   createHrLeaveRequest,
   cancelHrLeaveRequest,
   getHrMyAttendance,
+  getHrMyAttendanceToday,
+  hrMyCheckIn,
+  hrMyBreakStart,
+  hrMyBreakEnd,
+  hrMyCheckOut,
   type HrProfile,
   type SalaryStructure,
   type Payslip,
@@ -41,7 +46,8 @@ import {
   type EmployeeDeduction,
   type LeaveType,
   type LeaveRequest,
-  type AttendanceRecord,
+  type HrDayState,
+  type HrAttendanceDay,
 } from "@/lib/api/hr";
 
 type TabKey =
@@ -1028,61 +1034,212 @@ function fmtTime(iso?: string | null) {
   });
 }
 
+function fmtDuration(minutes?: number | null) {
+  if (minutes === null || minutes === undefined || Number.isNaN(Number(minutes)))
+    return "—";
+  const m = Math.max(0, Math.round(Number(minutes)));
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return h === 0 ? `${rest}m` : `${h}h ${rest}m`;
+}
+
+function serverError(err: any, fallback: string) {
+  const m = err?.response?.data?.message;
+  if (Array.isArray(m)) return m.join(", ");
+  if (typeof m === "string" && m.trim()) return m;
+  return fallback;
+}
+
+function methodLabel(m?: string | null) {
+  if (m === "MACHINE") return "Machine";
+  if (m === "NONE") return "Disabled";
+  return "App";
+}
+
 function AttendanceTab() {
-  const [items, setItems] = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [dayState, setDayState] = useState<HrDayState | null>(null);
+  const [todayLoading, setTodayLoading] = useState(true);
+  const [todayError, setTodayError] = useState(false);
+  const [items, setItems] = useState<HrAttendanceDay[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const load = useCallback(() => {
-    setLoading(true);
-    setError(false);
+    setTodayLoading(true);
+    setTodayError(false);
+    getHrMyAttendanceToday()
+      .then(setDayState)
+      .catch(() => {
+        setDayState(null);
+        setTodayError(true);
+      })
+      .finally(() => setTodayLoading(false));
+
+    setListLoading(true);
+    setListError(false);
     getHrMyAttendance()
       .then((res) => setItems(Array.isArray(res) ? res : []))
       .catch(() => {
         setItems([]);
-        setError(true);
+        setListError(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => setListLoading(false));
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  if (loading) return <Spinner />;
+  const run = async (action: () => Promise<unknown>, successMsg: string) => {
+    setActionLoading(true);
+    try {
+      await action();
+      toast.success(successMsg);
+      load();
+    } catch (err: any) {
+      toast.error(serverError(err, "Could not complete the action"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (todayLoading && !dayState) return <Spinner />;
+
+  const state = dayState?.state ?? "none";
+  const worked = dayState?.workedMinutes ?? 0;
+  const broken = dayState?.breakMinutes ?? 0;
 
   return (
     <Card>
       <h3 className="text-xl font-bold text-gray-800 mb-6">My Attendance</h3>
-      {error ? (
+
+      {todayError ? (
         <ErrorState message="Could not load your attendance." onRetry={load} />
-      ) : items.length === 0 ? (
-        <EmptyState message="No attendance records found" />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-gray-500">
-                <th className="py-2 pr-4 font-semibold">Date</th>
-                <th className="py-2 pr-4 font-semibold">Status</th>
-                <th className="py-2 pr-4 font-semibold">Check In</th>
-                <th className="py-2 pr-4 font-semibold">Check Out</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((r) => (
-                <tr key={r.id} className="border-t border-gray-50">
-                  <td className="py-3 pr-4 text-gray-700">{fmtDate(r.date)}</td>
-                  <td className="py-3 pr-4">
-                    <AttendanceStatusBadge value={r.status} />
-                  </td>
-                  <td className="py-3 pr-4 text-gray-500">{fmtTime(r.checkInTime)}</td>
-                  <td className="py-3 pr-4 text-gray-500">{fmtTime(r.checkOutTime)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="mb-6 rounded-2xl border border-brand-blue/20 bg-brand-blue/5 p-5">
+            {state === "working" && (
+              <>
+                <p className="text-sm font-bold text-brand-blue">
+                  Working since {fmtTime(dayState?.checkInAt)}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Worked {fmtDuration(worked)} · Break {fmtDuration(broken)}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => run(hrMyBreakStart, "Break started")}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-1.5 bg-brand-blue hover:bg-brand-blue/90 text-white px-5 h-10 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading && <Loader2 className="animate-spin" size={15} />}
+                    Start Break
+                  </button>
+                  <button
+                    onClick={() => run(hrMyCheckOut, "Checked out")}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-1.5 border border-brand-blue/40 text-brand-blue px-5 h-10 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading && <Loader2 className="animate-spin" size={15} />}
+                    Check Out
+                  </button>
+                </div>
+              </>
+            )}
+            {state === "on_break" && (
+              <>
+                <p className="text-sm font-bold text-brand-blue">
+                  On Break since {fmtTime(dayState?.checkInAt)}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Worked {fmtDuration(worked)} · Break so far {fmtDuration(broken)}
+                </p>
+                <div className="mt-4">
+                  <button
+                    onClick={() => run(hrMyBreakEnd, "Break ended")}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-1.5 bg-brand-blue hover:bg-brand-blue/90 text-white px-5 h-10 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading && <Loader2 className="animate-spin" size={15} />}
+                    End Break
+                  </button>
+                </div>
+              </>
+            )}
+            {state === "checked_out" && (
+              <>
+                <p className="text-sm font-bold text-brand-blue">Checked Out</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  In {fmtTime(dayState?.checkInAt)} · Out {fmtTime(dayState?.checkOutAt)} ·
+                  Worked {fmtDuration(worked)} · Break {fmtDuration(broken)}
+                </p>
+                <div className="mt-3">
+                  <AttendanceStatusBadge
+                    value={items.find((d) => d.date?.slice?.(0, 10) === new Date().toISOString().slice(0, 10))?.status}
+                  />
+                </div>
+              </>
+            )}
+            {(state === "none" || state === "before_work") && (
+              <>
+                <p className="text-sm font-bold text-brand-blue">Not Checked In Yet</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Your attendance day has not started. Check in when you arrive.
+                </p>
+                <div className="mt-4">
+                  <button
+                    onClick={() => run(hrMyCheckIn, "Checked in")}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-1.5 bg-brand-blue hover:bg-brand-blue/90 text-white px-6 h-10 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading && <Loader2 className="animate-spin" size={15} />}
+                    Check In
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {listLoading ? (
+            <Spinner />
+          ) : listError ? (
+            <ErrorState message="Could not load your attendance history." onRetry={load} />
+          ) : items.length === 0 ? (
+            <EmptyState message="No attendance records found" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500">
+                    <th className="py-2 pr-4 font-semibold">Date</th>
+                    <th className="py-2 pr-4 font-semibold">Status</th>
+                    <th className="py-2 pr-4 font-semibold text-right">Worked</th>
+                    <th className="py-2 pr-4 font-semibold text-right">Break</th>
+                    <th className="py-2 pr-4 font-semibold">Method</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((r) => (
+                    <tr key={r.id} className="border-t border-gray-50">
+                      <td className="py-3 pr-4 text-gray-700">{fmtDate(r.date)}</td>
+                      <td className="py-3 pr-4">
+                        <AttendanceStatusBadge value={r.status} />
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-600 tabular-nums">
+                        {fmtDuration(r.workedMinutes)}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-600 tabular-nums">
+                        {fmtDuration(r.breakMinutes)}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-500">{methodLabel(r.attendanceMethod)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </Card>
   );

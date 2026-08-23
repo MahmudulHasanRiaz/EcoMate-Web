@@ -12,6 +12,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HrSelfServiceService } from './hr-self-service.service';
 import { CreateSelfLeaveRequestDto } from './dto/create-self-leave-request.dto';
+import { SelfAttendanceActionDto } from './dto/self-attendance-action.dto';
 
 @Controller('hr/my')
 @Roles('employee')
@@ -141,5 +142,47 @@ export class HrSelfServiceController {
     @Query('to') to?: string,
   ) {
     return this.service.getAttendance(this.assertEmployee(user), from, to);
+  }
+
+  @Get('attendance/today')
+  getTodayAttendance(
+    @CurrentUser() user: any,
+    @Query('date') date?: string,
+  ) {
+    return this.service.getTodayAttendance(this.assertEmployee(user), date);
+  }
+
+  @Post('attendance/check-in')
+  checkInSelf(
+    @CurrentUser() user: any,
+    @Body() dto: SelfAttendanceActionDto,
+  ) {
+    return this.service.checkInSelf(
+      this.assertEmployee(user),
+      dto.note,
+      dto.date,
+    );
+  }
+
+  @Post('attendance/break/start')
+  breakStartSelf(@CurrentUser() user: any, @Body() dto: SelfAttendanceActionDto) {
+    return this.service.breakStartSelf(this.assertEmployee(user), dto.date);
+  }
+
+  @Post('attendance/break/end')
+  breakEndSelf(@CurrentUser() user: any, @Body() dto: SelfAttendanceActionDto) {
+    return this.service.breakEndSelf(this.assertEmployee(user), dto.date);
+  }
+
+  @Post('attendance/check-out')
+  checkOutSelf(
+    @CurrentUser() user: any,
+    @Body() dto: SelfAttendanceActionDto,
+  ) {
+    return this.service.checkOutSelf(
+      this.assertEmployee(user),
+      dto.note,
+      dto.date,
+    );
   }
 }

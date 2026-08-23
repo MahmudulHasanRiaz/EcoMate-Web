@@ -27,9 +27,11 @@ import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
+import { Route as AuthenticatedHrSettingsRouteImport } from './routes/_authenticated/hr/settings'
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
 import { Route as AuthenticatedHrLeaveRouteImport } from './routes/_authenticated/hr/leave'
+import { Route as AuthenticatedHrHelpRouteImport } from './routes/_authenticated/hr/help'
 import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authenticated/hr/commissions'
 import { Route as AuthenticatedHrAttendanceRouteImport } from './routes/_authenticated/hr/attendance'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
@@ -246,6 +248,11 @@ const AuthenticatedMonBlockingSettingsRoute =
     path: '/mon/blocking-settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedHrSettingsRoute = AuthenticatedHrSettingsRouteImport.update({
+  id: '/hr/settings',
+  path: '/hr/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHrPresetsRoute = AuthenticatedHrPresetsRouteImport.update({
   id: '/hr/presets',
   path: '/hr/presets',
@@ -259,6 +266,11 @@ const AuthenticatedHrOverviewRoute = AuthenticatedHrOverviewRouteImport.update({
 const AuthenticatedHrLeaveRoute = AuthenticatedHrLeaveRouteImport.update({
   id: '/hr/leave',
   path: '/hr/leave',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHrHelpRoute = AuthenticatedHrHelpRouteImport.update({
+  id: '/hr/help',
+  path: '/hr/help',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedHrCommissionsRoute =
@@ -1022,9 +1034,11 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/hr/help': typeof AuthenticatedHrHelpRoute
   '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
+  '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
@@ -1168,9 +1182,11 @@ export interface FileRoutesByTo {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/hr/help': typeof AuthenticatedHrHelpRoute
   '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
+  '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
@@ -1316,9 +1332,11 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/_authenticated/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/_authenticated/hr/help': typeof AuthenticatedHrHelpRoute
   '/_authenticated/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
+  '/_authenticated/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
@@ -1464,9 +1482,11 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/hr/attendance'
     | '/hr/commissions'
+    | '/hr/help'
     | '/hr/leave'
     | '/hr/overview'
     | '/hr/presets'
+    | '/hr/settings'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
@@ -1610,9 +1630,11 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/hr/attendance'
     | '/hr/commissions'
+    | '/hr/help'
     | '/hr/leave'
     | '/hr/overview'
     | '/hr/presets'
+    | '/hr/settings'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/overview'
@@ -1757,9 +1779,11 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/hr/attendance'
     | '/_authenticated/hr/commissions'
+    | '/_authenticated/hr/help'
     | '/_authenticated/hr/leave'
     | '/_authenticated/hr/overview'
     | '/_authenticated/hr/presets'
+    | '/_authenticated/hr/settings'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
     | '/_authenticated/op/overview'
@@ -2028,6 +2052,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonBlockingSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/hr/settings': {
+      id: '/_authenticated/hr/settings'
+      path: '/hr/settings'
+      fullPath: '/hr/settings'
+      preLoaderRoute: typeof AuthenticatedHrSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/hr/presets': {
       id: '/_authenticated/hr/presets'
       path: '/hr/presets'
@@ -2047,6 +2078,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/leave'
       fullPath: '/hr/leave'
       preLoaderRoute: typeof AuthenticatedHrLeaveRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/help': {
+      id: '/_authenticated/hr/help'
+      path: '/hr/help'
+      fullPath: '/hr/help'
+      preLoaderRoute: typeof AuthenticatedHrHelpRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/hr/commissions': {
@@ -3033,9 +3071,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedHrAttendanceRoute: typeof AuthenticatedHrAttendanceRoute
   AuthenticatedHrCommissionsRoute: typeof AuthenticatedHrCommissionsRoute
+  AuthenticatedHrHelpRoute: typeof AuthenticatedHrHelpRoute
   AuthenticatedHrLeaveRoute: typeof AuthenticatedHrLeaveRoute
   AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
+  AuthenticatedHrSettingsRoute: typeof AuthenticatedHrSettingsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
@@ -3146,9 +3186,11 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedHrAttendanceRoute: AuthenticatedHrAttendanceRoute,
   AuthenticatedHrCommissionsRoute: AuthenticatedHrCommissionsRoute,
+  AuthenticatedHrHelpRoute: AuthenticatedHrHelpRoute,
   AuthenticatedHrLeaveRoute: AuthenticatedHrLeaveRoute,
   AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
+  AuthenticatedHrSettingsRoute: AuthenticatedHrSettingsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,

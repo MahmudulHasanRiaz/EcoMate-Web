@@ -2,8 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Param,
-  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -12,8 +10,10 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsAny } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HrAttendanceService } from './hr-attendance.service';
-import { CreateAttendanceDto } from './dto/create-attendance.dto';
-import { UpdateAttendanceDto } from './dto/update-attendance.dto';
+import { CheckInDto } from './dto/check-in.dto';
+import { CheckOutDto } from './dto/check-out.dto';
+import { BreakActionDto } from './dto/break-action.dto';
+import { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
 
 @Controller('hr')
 @Roles('superadmin', 'admin', 'manager')
@@ -22,15 +22,42 @@ import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 export class HrAttendanceController {
   constructor(private readonly hrAttendanceService: HrAttendanceService) {}
 
-  @Post('attendance')
-  createRecord(
-    @Body() dto: CreateAttendanceDto,
-    @CurrentUser() user?: any,
+  @Post('attendance/check-in')
+  checkIn(@Body() dto: CheckInDto) {
+    return this.hrAttendanceService.checkIn(dto.employeeId, {
+      note: dto.note,
+      date: dto.date,
+    });
+  }
+
+  @Post('attendance/break/start')
+  breakStart(@Body() dto: BreakActionDto) {
+    return this.hrAttendanceService.breakStart(dto.employeeId, {
+      date: dto.date,
+    });
+  }
+
+  @Post('attendance/break/end')
+  breakEnd(@Body() dto: BreakActionDto) {
+    return this.hrAttendanceService.breakEnd(dto.employeeId, {
+      date: dto.date,
+    });
+  }
+
+  @Post('attendance/check-out')
+  checkOut(@Body() dto: CheckOutDto) {
+    return this.hrAttendanceService.checkOut(dto.employeeId, {
+      note: dto.note,
+      date: dto.date,
+    });
+  }
+
+  @Get('attendance/today')
+  dayState(
+    @Query('employeeId') employeeId: string,
+    @Query('date') date?: string,
   ) {
-    return this.hrAttendanceService.createRecord(
-      dto,
-      user?.userId ?? user?.id,
-    );
+    return this.hrAttendanceService.getDayState(employeeId, date);
   }
 
   @Get('attendance')
@@ -63,19 +90,27 @@ export class HrAttendanceController {
     return this.hrAttendanceService.history(employeeId, from, to);
   }
 
-  @Get('attendance/:id')
-  findOne(@Param('id') id: string) {
-    return this.hrAttendanceService.findOne(id);
+  @Get('attendance/adjustments')
+  listAdjustments(
+    @Query('employeeId') employeeId?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.hrAttendanceService.listAdjustments(
+      employeeId,
+      page ? parseInt(page, 10) : 1,
+      perPage ? parseInt(perPage, 10) : 20,
+    );
   }
 
-  @Patch('attendance/:id')
-  updateRecord(
-    @Param('id') id: string,
-    @Body() dto: UpdateAttendanceDto,
+  @Post('attendance/adjustments')
+  @PermissionsAny('manage_attendance_adjustments')
+  createAdjustment(
+    @Body() dto: AdjustAttendanceDto,
     @CurrentUser() user?: any,
   ) {
-    return this.hrAttendanceService.updateRecord(
-      id,
+    return this.hrAttendanceService.adjust(
+      dto.employeeId,
       dto,
       user?.userId ?? user?.id,
     );

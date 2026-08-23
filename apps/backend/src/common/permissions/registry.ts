@@ -19,6 +19,9 @@ export const PERMISSIONS = {
     'manage_leave',
     'manage_schedule',
     'manage_attendance',
+    'manage_hr_settings',
+    'manage_attendance_devices',
+    'manage_attendance_adjustments',
   ],
   INVENTORY: [
     'view_products',
@@ -72,6 +75,9 @@ export function getPermissionLabel(key: string): string {
     manage_leave: 'Manage Leave',
     manage_schedule: 'Manage Schedule',
     manage_attendance: 'Manage Attendance',
+    manage_hr_settings: 'Manage HR Settings',
+    manage_attendance_devices: 'Manage Attendance Devices',
+    manage_attendance_adjustments: 'Manage Attendance Adjustments',
   };
   return (
     labels[key] ||

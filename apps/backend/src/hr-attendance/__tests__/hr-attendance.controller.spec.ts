@@ -27,44 +27,78 @@ describe('HrAttendanceController', () => {
     ).toBe('admin_hr');
   });
 
-  describe('route wiring (static paths before :id)', () => {
+  describe('route wiring', () => {
     const pathOf = (proto: any, method: string) =>
       Reflect.getMetadata('path', proto[method]);
+    const methodOf = (proto: any, method: string) =>
+      Reflect.getMetadata('method', proto[method]);
+    // Nest stores the HTTP method as the numeric RequestMethod enum (POST=1, GET=0).
 
-    it('POST /hr/attendance', () => {
-      expect(pathOf(HrAttendanceController.prototype, 'createRecord')).toBe(
-        'attendance',
+    it('walks today state transition handlers', () => {
+      expect(pathOf(HrAttendanceController.prototype, 'checkIn')).toBe(
+        'attendance/check-in',
       );
+      expect(methodOf(HrAttendanceController.prototype, 'checkIn')).toBe(1);
+      expect(pathOf(HrAttendanceController.prototype, 'breakStart')).toBe(
+        'attendance/break/start',
+      );
+      expect(pathOf(HrAttendanceController.prototype, 'breakEnd')).toBe(
+        'attendance/break/end',
+      );
+      expect(pathOf(HrAttendanceController.prototype, 'checkOut')).toBe(
+        'attendance/check-out',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'checkOut')).toBe(1);
     });
 
-    it('GET /hr/attendance', () => {
+    it('GET /hr/attendance/today provides the UI state', () => {
+      expect(pathOf(HrAttendanceController.prototype, 'dayState')).toBe(
+        'attendance/today',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'dayState')).toBe(0);
+    });
+
+    it('preserves the legacy list/overview/history contracts', () => {
       expect(pathOf(HrAttendanceController.prototype, 'findAll')).toBe(
         'attendance',
       );
-    });
-
-    it('GET /hr/attendance/daily-overview', () => {
       expect(
         pathOf(HrAttendanceController.prototype, 'dailyOverview'),
       ).toBe('attendance/daily-overview');
-    });
-
-    it('GET /hr/attendance/history', () => {
       expect(pathOf(HrAttendanceController.prototype, 'history')).toBe(
         'attendance/history',
       );
     });
 
-    it('GET /hr/attendance/:id', () => {
-      expect(pathOf(HrAttendanceController.prototype, 'findOne')).toBe(
-        'attendance/:id',
+    it('lists adjustments', () => {
+      expect(pathOf(HrAttendanceController.prototype, 'listAdjustments')).toBe(
+        'attendance/adjustments',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'listAdjustments')).toBe(
+        0,
       );
     });
 
-    it('PATCH /hr/attendance/:id', () => {
-      expect(pathOf(HrAttendanceController.prototype, 'updateRecord')).toBe(
-        'attendance/:id',
+    it('POST /hr/attendance/adjustments overrides the class permission with the dedicated key', () => {
+      expect(pathOf(HrAttendanceController.prototype, 'createAdjustment')).toBe(
+        'attendance/adjustments',
       );
+      expect(methodOf(HrAttendanceController.prototype, 'createAdjustment')).toBe(
+        1,
+      );
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          HrAttendanceController.prototype.createAdjustment,
+        ),
+      ).toEqual(['manage_attendance_adjustments']);
+    });
+
+    it('removes the old manual record create/update endpoints', () => {
+      const proto = HrAttendanceController.prototype as any;
+      expect(proto.createRecord).toBeUndefined();
+      expect(proto.updateRecord).toBeUndefined();
+      expect(proto.findOne).toBeUndefined();
     });
   });
 });

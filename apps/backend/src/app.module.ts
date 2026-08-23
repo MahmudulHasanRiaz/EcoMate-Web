@@ -80,6 +80,7 @@ import { HrPaymentsModule } from './hr-payments/hr-payments.module';
 import { CommissionsModule } from './commissions/commissions.module';
 import { HrSelfServiceModule } from './hr-self-service/hr-self-service.module';
 import { HrAttendanceModule } from './hr-attendance/hr-attendance.module';
+import { AttendanceDevicesModule } from './attendance-devices/attendance-devices.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
@@ -172,6 +173,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     CommissionsModule,
     HrSelfServiceModule,
     HrAttendanceModule,
+    AttendanceDevicesModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,
     AccountsModule,
