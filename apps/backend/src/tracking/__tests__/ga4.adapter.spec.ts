@@ -10,6 +10,7 @@ const normalizer = new TrackingNormalizer();
 
 const snapshot: TrackingSnapshotPayload = {
   eventType: 'Purchase',
+  eventId: 'purchase_ord-1001',
   orderId: 'ord-1001',
   value: 2500,
   currency: 'BDT',
@@ -222,7 +223,7 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
 
     it('maps Refund to the refund event with a positive value and refund_ event_id', () => {
       const payload = adapter.build(
-        { ...snapshot, eventType: 'Refund', value: 2500 },
+        { ...snapshot, eventType: 'Refund', eventId: 'refund_ord-1001', value: 2500 },
         ctx,
         normalizer,
       )!;
@@ -270,7 +271,7 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
     it('returns null when no dedup event id can be determined', () => {
       expect(
         adapter.build(
-          { ...snapshot, eventType: 'ViewContent' },
+          { ...snapshot, eventType: 'ViewContent', eventId: undefined },
           ctx,
           normalizer,
         ),

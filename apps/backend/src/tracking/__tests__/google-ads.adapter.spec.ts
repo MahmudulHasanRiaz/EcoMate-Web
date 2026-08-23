@@ -18,6 +18,7 @@ const normalizer = new TrackingNormalizer();
 
 const snapshot: TrackingSnapshotPayload = {
   eventType: 'Purchase',
+  eventId: 'purchase_ord-1001',
   orderId: 'ord-1001',
   value: 2500,
   currency: 'BDT',
@@ -154,7 +155,7 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
 
     it('maps Refund to a negated conversionValue and a distinct refund_ event id', () => {
       const payload = adapter.build(
-        { ...snapshot, eventType: 'Refund', value: 2500 },
+        { ...snapshot, eventType: 'Refund', eventId: 'refund_ord-1001', value: 2500 },
         ctx,
         normalizer,
       )!;

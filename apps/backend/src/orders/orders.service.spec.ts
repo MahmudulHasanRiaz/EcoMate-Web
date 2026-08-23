@@ -2185,6 +2185,98 @@ describe('OrdersService', () => {
       expect(trackingCapture.capture).not.toHaveBeenCalled();
     });
 
+    it('fires a validated Purchase when configured status matches (Delivered)', async () => {
+      const deliveredStatus = {
+        id: 'status-delivered',
+        name: 'Delivered',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { id: 'status-shipping', name: 'Shipping' },
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        deliveredStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: deliveredStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Delivered' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.updateStatus('order-id-1', { statusId: 'status-delivered' }, userId);
+
+      expect(trackingCapture.capture).toHaveBeenCalledTimes(1);
+      expect(trackingCapture.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'Purchase' }),
+        expect.anything(),
+      );
+    });
+
+    it('does NOT fire a validated Purchase for an earlier status when Delivered is configured', async () => {
+      // configured = Delivered; actual transition = Confirmed → should NOT fire
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Delivered' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.updateStatus('order-id-1', { statusId: 'status-confirmed' }, userId);
+
+      // Confirmed ≠ configured Delivered → no validated Purchase
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
+    });
+
+    it('fires only for the configured status, not for a different valid status', async () => {
+      // configured = Processing; actual transition = Confirmed → should NOT fire
+      const processingStatus = {
+        id: 'status-processing',
+        name: 'Processing',
+        isInitial: false,
+        nextStatuses: ['status-confirmed'],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Processing' },
+      ]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.updateStatus('order-id-1', { statusId: 'status-confirmed' }, userId);
+
+      // Confirmed ≠ configured Processing → no validated Purchase
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
+    });
+
     it('captures a refund snapshot inside the transaction for cancelled orders', async () => {
       const cancelledStatus = {
         id: 'status-cancelled',
@@ -2905,6 +2997,30 @@ describe('OrdersService', () => {
       const [input] = capture.mock.calls[0];
       expect(input.eventId).toBe('purchase_order-id-1');
       expect(input.eventType).toBe('Purchase');
+    });
+
+    it('does NOT fire validated Purchase in bulk when configured status does not match', async () => {
+      // configured = Delivered; bulk target = Confirmed → should NOT fire
+      const pendingToConfirmed = { ...pendingOrder, status: { name: 'Pending' } };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        pendingToConfirmed,
+      ]);
+      (prisma.order.update as jest.Mock).mockResolvedValue({});
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'validated' },
+        { key: 'tracking_meta_validated_status', value: 'Delivered' },
+      ]);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      await service.bulkStatusChange(['order-1'], 'status-c', 'staff-123');
+
+      // Confirmed ≠ configured Delivered → no validated Purchase
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
     });
   });
 

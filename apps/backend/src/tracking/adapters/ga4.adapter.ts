@@ -200,16 +200,14 @@ export class Ga4Adapter implements TrackingProviderAdapter {
   /**
    * Informational dedup id for dispatch bookkeeping. GA4 MP itself has no dedup
    * key — the dispatcher's work-set rule prevents duplicate sends to GA4
-   * (design §4.7), so this id is never sent to Google.
+   * (design §4.7), so this id is never sent to Google. Uses snapshot.eventId
+   * verbatim for consistency with the Meta/TikTok adapters (canonical internal
+   * event identity = purchase_{uuid} / refund_{uuid}).
    */
   private resolveEventId(
-    eventType: string,
+    _eventType: string,
     snapshot: TrackingSnapshotPayload,
   ): string | undefined {
-    if (eventType === 'Purchase' || eventType === 'Refund') {
-      if (snapshot.orderId) return `${eventType.toLowerCase()}_${snapshot.orderId}`;
-      return snapshot.eventId;
-    }
     return snapshot.eventId;
   }
 }

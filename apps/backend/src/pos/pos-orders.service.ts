@@ -798,7 +798,7 @@ export class PosOrdersService {
         {
           eventId: `purchase_${order.id}`,
           eventType: 'Purchase',
-          orderId: order.id,
+          orderId: order.displayId || order.id,
           ctxId: order.trackingSessionId || undefined,
           eventTime: Math.floor(
             new Date(order.createdAt).getTime() / 1000,

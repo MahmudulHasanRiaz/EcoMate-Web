@@ -4269,6 +4269,7 @@ export class OrdersService {
     // orderId = human-readable displayId (Meta custom_data.order_id) for
     // business-order identification; event_id = purchase_{internal UUID} for
     // dedup — the two serve different purposes and must never be conflated.
+    // The event_id reaches Meta unchanged so Pixel + CAPI dedup correctly.
     const businessOrderId = order.displayId || order.id;
 
     await this.trackingCapture.capture(

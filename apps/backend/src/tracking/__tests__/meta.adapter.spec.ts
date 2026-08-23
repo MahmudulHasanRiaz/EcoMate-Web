@@ -10,6 +10,7 @@ const normalizer = new TrackingNormalizer();
 
 const snapshot: TrackingSnapshotPayload = {
   eventType: 'Purchase',
+  eventId: 'purchase_ord-1001',
   orderId: 'ord-1001',
   value: 2500,
   currency: 'BDT',
@@ -214,7 +215,7 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
 
     it('maps Refund to a Purchase event_name with a negative value and refund_ event_id', () => {
       const payload = adapter.build(
-        { ...snapshot, eventType: 'Refund', value: 2500 },
+        { ...snapshot, eventType: 'Refund', eventId: 'refund_ord-1001', value: 2500 },
         ctx,
         normalizer,
       )!;
@@ -386,7 +387,7 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
     it('returns null when no dedup event id can be determined', () => {
       expect(
         adapter.build(
-          { ...snapshot, eventType: 'ViewContent' },
+          { ...snapshot, eventType: 'ViewContent', eventId: undefined },
           ctx,
           normalizer,
         ),
@@ -532,6 +533,7 @@ describe('MetaAdapter — EMQ diagnostics only (Wave-1 Decision C)', () => {
 
   const noIdentitySnapshot: TrackingSnapshotPayload = {
     eventType: 'Purchase',
+    eventId: 'purchase_ord-9001',
     orderId: 'ord-9001',
     value: 100,
     currency: 'BDT',
@@ -600,6 +602,33 @@ describe('MetaAdapter — forensic remediation tests', () => {
       if (payload) {
         expect(payload.custom_data.order_id).toBeUndefined();
       }
+    });
+  });
+
+  describe('event_id cross-source dedup contract', () => {
+    it('uses snapshot.eventId verbatim for Purchase (matches browser Pixel purchase_{uuid})', () => {
+      const uuidSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        eventId: 'purchase_a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        orderId: 'ORD-260820-00123',
+      };
+      const payload = adapter.build(uuidSnapshot, ctx, normalizer)!;
+      // event_id must be the capture-layer eventId (purchase_{uuid}), NOT purchase_{displayId}
+      expect(payload.eventId).toBe('purchase_a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      // custom_data.order_id is the human-readable displayId (separate field)
+      expect(payload.custom_data.order_id).toBe('ORD-260820-00123');
+    });
+
+    it('uses snapshot.eventId verbatim for Refund (matches capture refund_{uuid})', () => {
+      const refundSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        eventType: 'Refund',
+        eventId: 'refund_a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        orderId: 'ORD-260820-00123',
+        value: 2500,
+      };
+      const payload = adapter.build(refundSnapshot, ctx, normalizer)!;
+      expect(payload.eventId).toBe('refund_a1b2c3d4-e5f6-7890-abcd-ef1234567890');
     });
   });
 

@@ -218,15 +218,15 @@ export class GoogleAdsAdapter implements TrackingProviderAdapter {
     }
   }
 
-  /** purchase_{orderId} / refund_{orderId}; non-order events use the caller's id. */
+  /**
+   * Dispatch bookkeeping id. Google Ads deduplicates on order_id + gclid +
+   * value (not event_id). Uses snapshot.eventId verbatim for consistency with
+   * the Meta/TikTok adapters (canonical internal event identity).
+   */
   private resolveEventId(
-    eventType: string,
+    _eventType: string,
     snapshot: TrackingSnapshotPayload,
   ): string | undefined {
-    if (eventType === 'Purchase' || eventType === 'Refund') {
-      if (snapshot.orderId) return `${eventType.toLowerCase()}_${snapshot.orderId}`;
-      return snapshot.eventId;
-    }
     return snapshot.eventId;
   }
 }

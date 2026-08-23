@@ -264,15 +264,19 @@ export class MetaAdapter implements TrackingProviderAdapter {
     }
   }
 
-  /** purchase_{orderId} / refund_{orderId}; non-order events use the caller's id. */
+  /**
+   * Dedup id: use snapshot.eventId verbatim for ALL event types including
+   * Purchase/Refund.  The capture layer stores `purchase_{uuid}` which
+   * matches the browser Pixel's `purchase_{uuid}` — this is the only way
+   * Meta can dedup Pixel + CAPI for the same logical event (Meta dedup key
+   * = event_name + event_id).  The previous `purchase_{orderId}` (displayId)
+   * produced a DIFFERENT event_id from the browser, causing every website
+   * Purchase to appear as TWO separate events in Meta Events Manager.
+   */
   private resolveEventId(
-    eventType: string,
+    _eventType: string,
     snapshot: TrackingSnapshotPayload,
   ): string | undefined {
-    if (eventType === 'Purchase' || eventType === 'Refund') {
-      if (snapshot.orderId) return `${eventType.toLowerCase()}_${snapshot.orderId}`;
-      return snapshot.eventId;
-    }
     return snapshot.eventId;
   }
 }

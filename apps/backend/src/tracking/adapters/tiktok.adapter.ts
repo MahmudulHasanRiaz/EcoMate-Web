@@ -236,15 +236,16 @@ export class TikTokAdapter implements TrackingProviderAdapter {
     }
   }
 
-  /** purchase_{orderId} / refund_{orderId}; non-order events use the caller's id. */
+  /**
+   * Dedup id: use snapshot.eventId verbatim for ALL event types including
+   * Purchase/Refund.  See Meta adapter resolveEventId() for rationale —
+   * the capture layer stores `purchase_{uuid}` which must reach the
+   * provider unchanged for cross-source (Pixel + CAPI) dedup.
+   */
   private resolveEventId(
-    eventType: string,
+    _eventType: string,
     snapshot: TrackingSnapshotPayload,
   ): string | undefined {
-    if (eventType === 'Purchase' || eventType === 'Refund') {
-      if (snapshot.orderId) return `${eventType.toLowerCase()}_${snapshot.orderId}`;
-      return snapshot.eventId;
-    }
     return snapshot.eventId;
   }
 }
