@@ -11,11 +11,13 @@ import { usePanel, type PanelType } from '@/context/panel-provider'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLicenseStore } from '@/stores/license-store'
 
+const EMPTY_PERMISSIONS: string[] = []
+
 export function TeamSwitcher() {
   const { isMobile } = useSidebar()
   const { activePanel, setActivePanel } = usePanel()
   const role = useAuthStore(s => s.auth.user?.role || 'admin')
-  const permissions = useAuthStore(s => s.auth.user?.permissions || [])
+  const permissions = useAuthStore(s => s.auth.user?.permissions) ?? EMPTY_PERMISSIONS
   const hasFeature = useLicenseStore(s => s.hasFeature)
   const navigate = useNavigate()
 

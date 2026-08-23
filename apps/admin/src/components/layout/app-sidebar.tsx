@@ -9,11 +9,13 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { filterNavItems } from './data/sidebar-filter'
 
+const EMPTY_PERMISSIONS: string[] = []
+
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
   const features = useLicenseStore((s) => s.features)
-  const permissions = useAuthStore((s) => s.auth.user?.permissions || [])
+  const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? EMPTY_PERMISSIONS
 
   const mainGroups = sidebarData.navGroups
     .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
